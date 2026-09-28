@@ -1814,13 +1814,29 @@ class DbaAnswerComposeHandler:
         )
         if profile == ImplementationProfile.NONE:
             return None
+        database_snapshot = dict(
+            context.plan_snapshot.get("investigation_execution", {})
+        ).get("database", {})
+        database_snapshot = dict(database_snapshot or {})
+        implementation_context = {
+            "connection_profile": dict(
+                database_snapshot.get("connection_profile") or {}
+            ),
+            "implementation_parameters": dict(
+                dict(task_frame.get("subject_ref") or {}).get(
+                    "implementation_parameters"
+                )
+                or {}
+            ),
+        }
         runbook = compile_implementation_runbook(
             profile=profile,
             evidence=assessment.evidence,
+            context=implementation_context,
         )
         return TurnAnswerBlock(
             block_type=AnswerBlockType.IMPLEMENTATION_RUNBOOK,
-            schema_version="AIOPS_IMPLEMENTATION_RUNBOOK_BLOCK.v1",
+            schema_version="AIOPS_IMPLEMENTATION_RUNBOOK_BLOCK.v2",
             payload=runbook.model_dump(mode="json"),
             evidence_refs=runbook.evidence_refs,
         )

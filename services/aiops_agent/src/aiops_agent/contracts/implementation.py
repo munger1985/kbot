@@ -12,7 +12,7 @@ from platform_core.contracts.aiops import ImplementationProfile
 
 class RunbookStatus(StrEnum):
     READY = "READY"
-    READY_WITH_REQUIRED_INPUTS = "READY_WITH_REQUIRED_INPUTS"
+    BLOCKED_BY_REQUIRED_INPUTS = "BLOCKED_BY_REQUIRED_INPUTS"
     PARTIAL_EVIDENCE = "PARTIAL_EVIDENCE"
 
 
@@ -20,6 +20,12 @@ class RunbookApplicability(StrEnum):
     REQUIRED = "REQUIRED"
     ALREADY_SATISFIED = "ALREADY_SATISFIED"
     CONDITIONAL = "CONDITIONAL"
+    BLOCKED = "BLOCKED"
+
+
+class RunbookParameterStatus(StrEnum):
+    VERIFIED = "VERIFIED"
+    DERIVED = "DERIVED"
 
 
 class RunbookCommandType(StrEnum):
@@ -39,6 +45,16 @@ class RunbookRequiredInput(BaseModel):
     description: str = Field(min_length=1, max_length=1000)
     placeholder: str = Field(min_length=4, max_length=128)
     required: bool = True
+
+
+class RunbookResolvedParameter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str = Field(pattern=r"^[A-Z][A-Z0-9_]{1,63}$")
+    label: str = Field(min_length=1, max_length=128)
+    value: str = Field(min_length=1, max_length=2048)
+    status: RunbookParameterStatus
+    source: str = Field(min_length=1, max_length=256)
 
 
 class RunbookCommand(BaseModel):
@@ -77,12 +93,13 @@ class RunbookPhase(BaseModel):
 class ImplementationRunbook(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "AIOPS_IMPLEMENTATION_RUNBOOK.v1"
+    schema_version: str = "AIOPS_IMPLEMENTATION_RUNBOOK.v2"
     profile: ImplementationProfile
     title: str = Field(min_length=1, max_length=256)
     status: RunbookStatus
     execution_policy: str = Field(min_length=1, max_length=1000)
     current_state: tuple[dict[str, Any], ...] = ()
+    resolved_parameters: tuple[RunbookResolvedParameter, ...] = ()
     required_inputs: tuple[RunbookRequiredInput, ...] = ()
     phases: tuple[RunbookPhase, ...]
     stop_conditions: tuple[str, ...] = ()

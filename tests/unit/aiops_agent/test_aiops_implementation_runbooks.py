@@ -57,13 +57,19 @@ def _precheck_fact(
     names = (
         "database_name",
         "db_unique_name",
+        "instance_name",
+        "host_name",
+        "service_names",
         "container_name",
         "container_id",
         "database_role",
         "log_mode",
         "force_logging",
         "flashback_on",
+        "protection_mode",
         "db_recovery_file_dest",
+        "db_recovery_file_dest_size",
+        "db_create_file_dest",
         "standby_file_management",
         "standby_redo_shortage",
         "online_redo_max_size_mb",
@@ -83,13 +89,19 @@ def _precheck_fact(
             (
                 "TESTDB",
                 "testdb",
+                "testdb1",
+                "db-primary.example.com",
+                "testdb.example.com",
                 "CDB$ROOT",
                 1,
                 "PRIMARY",
                 log_mode,
                 force_logging,
                 "YES",
+                "MAXIMUM PERFORMANCE",
                 "+FRA",
+                "107374182400",
+                "+DATA",
                 "AUTO",
                 shortage,
                 200,
@@ -191,7 +203,11 @@ class OracleAdgRunbookTests(unittest.TestCase):
             for step in phase.steps
         }
 
-        self.assertEqual(RunbookStatus.READY_WITH_REQUIRED_INPUTS, runbook.status)
+        self.assertEqual(
+            RunbookStatus.BLOCKED_BY_REQUIRED_INPUTS,
+            runbook.status,
+        )
+        self.assertEqual("AIOPS_IMPLEMENTATION_RUNBOOK.v2", runbook.schema_version)
         self.assertEqual(
             RunbookApplicability.REQUIRED,
             steps["primary.archivelog"].applicability,
@@ -212,8 +228,54 @@ class OracleAdgRunbookTests(unittest.TestCase):
         )
         self.assertIn("ALTER DATABASE ARCHIVELOG", command_text)
         self.assertIn("ALTER DATABASE FORCE LOGGING", command_text)
+        self.assertIn(
+            "DG_CONFIG=(testdb,testdb_stby)",
+            command_text,
+        )
+        self.assertIn(
+            "SERVICE=testdb_stby ASYNC NOAFFIRM",
+            command_text,
+        )
+        self.assertIn("DB_UNIQUE_NAME=testdb_stby", command_text)
+        self.assertNotIn("${", command_text)
+        self.assertNotIn(
+            "STANDBY_DB_UNIQUE_NAME",
+            {item.key for item in runbook.required_inputs},
+        )
+        self.assertEqual(
+            RunbookApplicability.BLOCKED,
+            steps["standby.duplicate"].applicability,
+        )
+
+    def test_confirmed_external_facts_render_complete_commands(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_ADG_BUILD,
+            evidence=(_precheck_fact(),),
+            context={
+                "implementation_parameters": {
+                    "STANDBY_HOST": "db-standby.example.com",
+                    "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
+                    "STANDBY_STORAGE": (
+                        "*.db_create_file_dest='+DATA'\n"
+                        "*.db_recovery_file_dest='+FRA'\n"
+                        "*.db_recovery_file_dest_size=107374182400"
+                    ),
+                }
+            },
+        )
+        command_text = "\n".join(
+            command.content
+            for phase in runbook.phases
+            for step in phase.steps
+            for command in step.commands
+        )
+
+        self.assertEqual(RunbookStatus.READY, runbook.status)
+        self.assertFalse(runbook.required_inputs)
         self.assertIn("DUPLICATE TARGET DATABASE FOR STANDBY", command_text)
-        self.assertIn("${STANDBY_DB_UNIQUE_NAME}", command_text)
+        self.assertIn("HOST=db-standby.example.com", command_text)
+        self.assertIn("db_unique_name='testdb_stby'", command_text)
+        self.assertNotIn("${", command_text)
 
     def test_satisfied_prerequisites_are_marked_without_removing_steps(self) -> None:
         runbook = compile_implementation_runbook(
@@ -305,6 +367,8 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('block.block_type === "IMPLEMENTATION_RUNBOOK"', source)
+        self.assertIn("payload.resolved_parameters", source)
+        self.assertIn('BLOCKED: "等待外部输入"', source)
         self.assertIn("data-copy-code", source)
 
     def test_partial_runbook_does_not_degrade_to_evidence_request_only(self) -> None:
@@ -340,7 +404,7 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         blocks = handler._assemble_blocks(
             context=context,
             assessment=assessment,
-            markdown="当前前置证据不完整，已生成带占位符的方案。",
+            markdown="当前前置证据不完整，已生成受输入阻断的方案。",
         )
 
         block_types = tuple(block.block_type for block in blocks)

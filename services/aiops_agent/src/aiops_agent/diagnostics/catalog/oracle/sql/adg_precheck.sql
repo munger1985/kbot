@@ -1,6 +1,8 @@
 WITH parameter_values AS (
     SELECT
         MAX(CASE WHEN name = 'db_unique_name' THEN value END) AS db_unique_name,
+        MAX(CASE WHEN name = 'service_names' THEN value END) AS service_names,
+        MAX(CASE WHEN name = 'db_domain' THEN value END) AS db_domain,
         MAX(CASE WHEN name = 'remote_login_passwordfile' THEN value END) AS remote_login_passwordfile,
         MAX(CASE WHEN name = 'log_archive_config' THEN value END) AS log_archive_config,
         MAX(CASE WHEN name = 'log_archive_dest_1' THEN value END) AS log_archive_dest_1,
@@ -18,6 +20,8 @@ WITH parameter_values AS (
     FROM v$parameter
     WHERE name IN (
         'db_unique_name',
+        'service_names',
+        'db_domain',
         'remote_login_passwordfile',
         'log_archive_config',
         'log_archive_dest_1',
@@ -77,6 +81,10 @@ redo_summary AS (
 SELECT
     d.name AS database_name,
     p.db_unique_name,
+    i.instance_name,
+    i.host_name,
+    p.service_names,
+    p.db_domain,
     d.platform_name,
     d.cdb,
     SYS_CONTEXT('USERENV', 'CON_NAME') AS container_name,
@@ -115,6 +123,7 @@ SELECT
     rs.standby_redo_shortage,
     rs.redo_thread_plan
 FROM v$database d
+CROSS JOIN v$instance i
 CROSS JOIN parameter_values p
 CROSS JOIN redo_summary rs
 LEFT JOIN v$recovery_file_dest r ON 1 = 1

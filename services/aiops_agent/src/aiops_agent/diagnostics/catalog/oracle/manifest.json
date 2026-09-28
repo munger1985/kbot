@@ -62,6 +62,7 @@
       "required_entitlements": [],
       "required_privileges": [
         "V_$DATABASE",
+        "V_$INSTANCE",
         "V_$PARAMETER",
         "V_$LOG",
         "V_$STANDBY_LOG",
@@ -71,6 +72,10 @@
       "output_columns": [
         {"name": "database_name", "logical_type": "STRING", "nullable": false},
         {"name": "db_unique_name", "logical_type": "STRING"},
+        {"name": "instance_name", "logical_type": "STRING"},
+        {"name": "host_name", "logical_type": "STRING"},
+        {"name": "service_names", "logical_type": "STRING"},
+        {"name": "db_domain", "logical_type": "STRING"},
         {"name": "platform_name", "logical_type": "STRING"},
         {"name": "cdb", "logical_type": "STRING"},
         {"name": "container_name", "logical_type": "STRING"},
@@ -110,7 +115,7 @@
         {"name": "redo_thread_plan", "logical_type": "STRING"}
       ],
       "template_ref": "sql/adg_precheck.sql",
-      "template_sha256": "8513070c8bfeafc188690348d01e5ee03a7b09fe0fa746d84bef676d77f985ba",
+      "template_sha256": "ba908a6aebc625d11ca90ff1be6cc8b40edc5174fa3b8133cfd95df4669bb476",
       "timeout_seconds": 30,
       "max_rows": 1,
       "max_bytes": 262144,

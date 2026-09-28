@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 from aiops_agent.contracts.implementation import (
@@ -9,8 +11,10 @@ from aiops_agent.contracts.implementation import (
     RunbookApplicability,
     RunbookCommand,
     RunbookCommandType,
+    RunbookParameterStatus,
     RunbookPhase,
     RunbookRequiredInput,
+    RunbookResolvedParameter,
     RunbookStatus,
     RunbookStep,
 )
@@ -63,68 +67,313 @@ def _state_item(label: str, value: str, status: str) -> dict[str, Any]:
     return {"label": label, "value": value or "未取得", "status": status}
 
 
-def _adg_required_inputs() -> tuple[RunbookRequiredInput, ...]:
-    return (
-        RunbookRequiredInput(
-            key="STANDBY_HOST",
-            label="备库主机",
-            description="备库主机名或可解析地址，并确认主备双向网络和防火墙。",
-            placeholder="${STANDBY_HOST}",
+@dataclass(frozen=True)
+class _ImplementationParameter:
+    key: str
+    label: str
+    value: str
+    status: RunbookParameterStatus
+    source: str
+
+
+_ADG_EXTERNAL_INPUTS = {
+    "STANDBY_HOST": (
+        "备库主机",
+        "备库主机名或可解析地址，并确认主备双向网络和防火墙。",
+    ),
+    "ORACLE_HOME": (
+        "备库 Oracle Home",
+        "备库实际 Oracle Home；必须与主库数据库版本和补丁级别一致。",
+    ),
+    "STANDBY_STORAGE": (
+        "备库存储配置",
+        "确认备库 ASM/OMF 磁盘组或文件系统路径，以及数据文件、日志和 FRA 的放置规则。",
+    ),
+    "PRIMARY_LOG_STORAGE": (
+        "主库 Standby Redo Log 路径",
+        "主库未启用 OMF，需要确认新增 Standby Redo Log 的文件系统或 ASM 成员路径。",
+    ),
+    "PRIMARY_FRA_DEST": (
+        "主库 FRA 路径",
+        "当前主库未配置 FRA，需要先确定恢复区路径。",
+    ),
+    "PRIMARY_FRA_SIZE": (
+        "主库 FRA 容量",
+        "当前主库未配置 FRA，需要按归档量和保留窗口确定容量。",
+    ),
+}
+
+
+def _explicit_parameter(context: dict[str, Any], key: str) -> str:
+    values = dict(context.get("implementation_parameters") or {})
+    value = values.get(key)
+    return "" if value is None else str(value).strip()
+
+
+def _oracle_name_with_suffix(value: str, suffix: str, limit: int) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_$#]", "_", value.strip())
+    if not normalized:
+        return ""
+    if not normalized[0].isalpha():
+        normalized = f"D{normalized}"
+    return f"{normalized[: max(1, limit - len(suffix))]}{suffix}"
+
+
+def _resolve_adg_parameters(
+    *,
+    identity: dict[str, Any] | None,
+    precheck: dict[str, Any] | None,
+    context: dict[str, Any],
+) -> tuple[dict[str, str], tuple[RunbookResolvedParameter, ...]]:
+    parameters: list[_ImplementationParameter] = []
+
+    def add(
+        key: str,
+        label: str,
+        value: str,
+        status: RunbookParameterStatus,
+        source: str,
+    ) -> None:
+        if value:
+            parameters.append(
+                _ImplementationParameter(key, label, value, status, source)
+            )
+
+    primary_db_name = _text(precheck, "database_name")
+    primary_unique_name = _text(precheck, "db_unique_name")
+    add(
+        "PRIMARY_DB_NAME",
+        "主库 DB_NAME",
+        primary_db_name,
+        RunbookParameterStatus.VERIFIED,
+        "db.ha.adg_precheck:V$DATABASE.NAME",
+    )
+    add(
+        "PRIMARY_DB_UNIQUE_NAME",
+        "主库 DB_UNIQUE_NAME",
+        primary_unique_name,
+        RunbookParameterStatus.VERIFIED,
+        "db.ha.adg_precheck:V$PARAMETER",
+    )
+
+    standby_unique_name = _explicit_parameter(
+        context, "STANDBY_DB_UNIQUE_NAME"
+    ) or _oracle_name_with_suffix(primary_unique_name, "_stby", 30)
+    standby_name_source = (
+        "用户确认的实施参数"
+        if _explicit_parameter(context, "STANDBY_DB_UNIQUE_NAME")
+        else "由主库 DB_UNIQUE_NAME 按 <主库名>_stby 规则派生"
+    )
+    add(
+        "STANDBY_DB_UNIQUE_NAME",
+        "备库 DB_UNIQUE_NAME",
+        standby_unique_name,
+        (
+            RunbookParameterStatus.VERIFIED
+            if _explicit_parameter(context, "STANDBY_DB_UNIQUE_NAME")
+            else RunbookParameterStatus.DERIVED
         ),
-        RunbookRequiredInput(
-            key="STANDBY_DB_UNIQUE_NAME",
-            label="备库 DB_UNIQUE_NAME",
-            description="必须与主库不同，并符合现有数据库命名规范。",
-            placeholder="${STANDBY_DB_UNIQUE_NAME}",
+        standby_name_source,
+    )
+
+    explicit_primary_tns_alias = _explicit_parameter(
+        context, "PRIMARY_TNS_ALIAS"
+    )
+    explicit_standby_tns_alias = _explicit_parameter(
+        context, "STANDBY_TNS_ALIAS"
+    )
+    primary_tns_alias = explicit_primary_tns_alias or primary_unique_name
+    standby_tns_alias = explicit_standby_tns_alias or standby_unique_name
+    add(
+        "PRIMARY_TNS_ALIAS",
+        "主库 TNS Alias",
+        primary_tns_alias,
+        (
+            RunbookParameterStatus.VERIFIED
+            if explicit_primary_tns_alias
+            else RunbookParameterStatus.DERIVED
         ),
-        RunbookRequiredInput(
-            key="PRIMARY_TNS_ALIAS",
-            label="主库 TNS Alias",
-            description="从备库连接主库的静态服务别名。",
-            placeholder="${PRIMARY_TNS_ALIAS}",
+        (
+            "用户确认的实施参数"
+            if explicit_primary_tns_alias
+            else "采用主库 DB_UNIQUE_NAME 作为稳定别名"
         ),
-        RunbookRequiredInput(
-            key="STANDBY_TNS_ALIAS",
-            label="备库 TNS Alias",
-            description="从主库连接备库的静态服务别名。",
-            placeholder="${STANDBY_TNS_ALIAS}",
+    )
+    add(
+        "STANDBY_TNS_ALIAS",
+        "备库 TNS Alias",
+        standby_tns_alias,
+        (
+            RunbookParameterStatus.VERIFIED
+            if explicit_standby_tns_alias
+            else RunbookParameterStatus.DERIVED
         ),
-        RunbookRequiredInput(
-            key="ORACLE_HOME",
-            label="Oracle Home",
-            description="主备库实际 Oracle Home，必须使用相同数据库版本和补丁级别。",
-            placeholder="${ORACLE_HOME}",
+        (
+            "用户确认的实施参数"
+            if explicit_standby_tns_alias
+            else "采用备库 DB_UNIQUE_NAME 作为稳定别名"
         ),
-        RunbookRequiredInput(
-            key="STANDBY_ORACLE_SID",
-            label="备库 SID",
-            description="备库实例 SID；RAC 场景应扩展为每个实例 SID。",
-            placeholder="${STANDBY_ORACLE_SID}",
+    )
+
+    explicit_standby_sid = _explicit_parameter(context, "STANDBY_ORACLE_SID")
+    standby_sid = explicit_standby_sid
+    if not standby_sid and primary_db_name:
+        standby_sid = _oracle_name_with_suffix(primary_db_name, "STBY", 12)
+    add(
+        "STANDBY_ORACLE_SID",
+        "备库 ORACLE_SID",
+        standby_sid,
+        (
+            RunbookParameterStatus.VERIFIED
+            if explicit_standby_sid
+            else RunbookParameterStatus.DERIVED
         ),
-        RunbookRequiredInput(
-            key="STORAGE_STRATEGY",
-            label="存储与文件名策略",
-            description="确认 ASM/OMF 或文件系统路径，以及数据文件、联机日志和 FRA 的放置规则。",
-            placeholder="${STORAGE_STRATEGY}",
+        (
+            "用户确认的实施参数"
+            if explicit_standby_sid
+            else "由主库 DB_NAME 按 <DB_NAME>STBY 规则派生"
         ),
-        RunbookRequiredInput(
-            key="PROTECTION_MODE",
-            label="保护模式",
-            description="填写 SQL 关键字 PERFORMANCE、AVAILABILITY 或 PROTECTION，并完成业务 RPO/RTO 评审。",
-            placeholder="${PROTECTION_MODE}",
+    )
+
+    protection_value = _text(precheck, "protection_mode").upper()
+    protection_mode = {
+        "MAXIMUM PROTECTION": "PROTECTION",
+        "MAXIMUM AVAILABILITY": "AVAILABILITY",
+        "MAXIMUM PERFORMANCE": "PERFORMANCE",
+    }.get(protection_value, "")
+    transport_mode = "SYNC" if protection_mode in {
+        "PROTECTION",
+        "AVAILABILITY",
+    } else ("ASYNC" if protection_mode == "PERFORMANCE" else "")
+    transport_ack = "AFFIRM" if transport_mode == "SYNC" else (
+        "NOAFFIRM" if transport_mode == "ASYNC" else ""
+    )
+    add(
+        "PROTECTION_MODE",
+        "目标保护模式",
+        protection_mode,
+        RunbookParameterStatus.DERIVED,
+        f"沿用当前保护模式 {protection_value}",
+    )
+    add(
+        "REDO_TRANSPORT_MODE",
+        "Redo 传输模式",
+        transport_mode,
+        RunbookParameterStatus.DERIVED,
+        "由目标保护模式确定",
+    )
+    add(
+        "REDO_TRANSPORT_ACK",
+        "Redo 确认模式",
+        transport_ack,
+        RunbookParameterStatus.DERIVED,
+        "由 Redo 传输模式确定",
+    )
+    add(
+        "DG_CONFIG_NAME",
+        "Broker 配置名",
+        _oracle_name_with_suffix(primary_unique_name, "_dg", 30),
+        RunbookParameterStatus.DERIVED,
+        "由主库 DB_UNIQUE_NAME 派生",
+    )
+
+    connection_profile = dict(context.get("connection_profile") or {})
+    primary_host = _text(precheck, "host_name") or str(
+        connection_profile.get("host") or ""
+    ).strip()
+    configured_primary_port = connection_profile.get("port")
+    primary_port = str(configured_primary_port or "1521")
+    primary_service = (
+        _text(precheck, "service_names").split(",", 1)[0].strip()
+        or str(connection_profile.get("service") or "").strip()
+    )
+    add(
+        "PRIMARY_HOST",
+        "主库主机",
+        primary_host,
+        RunbookParameterStatus.VERIFIED,
+        "V$INSTANCE.HOST_NAME 或 Target 连接配置",
+    )
+    add(
+        "PRIMARY_PORT",
+        "主库监听端口",
+        primary_port,
+        (
+            RunbookParameterStatus.VERIFIED
+            if configured_primary_port
+            else RunbookParameterStatus.DERIVED
         ),
-        RunbookRequiredInput(
-            key="REDO_TRANSPORT_MODE",
-            label="Redo 传输模式",
-            description="通常 MaxPerformance 使用 ASYNC，MaxAvailability/MaxProtection 使用 SYNC。",
-            placeholder="${REDO_TRANSPORT_MODE}",
+        (
+            "Target 连接配置"
+            if configured_primary_port
+            else "使用 Oracle 默认监听端口 1521"
         ),
-        RunbookRequiredInput(
-            key="REDO_TRANSPORT_ACK",
-            label="Redo 确认模式",
-            description="通常 ASYNC 使用 NOAFFIRM，SYNC 保护模式使用 AFFIRM；须结合延迟和 RPO 评审。",
-            placeholder="${REDO_TRANSPORT_ACK}",
+    )
+    add(
+        "PRIMARY_SERVICE_NAME",
+        "主库服务名",
+        primary_service,
+        RunbookParameterStatus.VERIFIED,
+        "SERVICE_NAMES 参数或 Target 连接配置",
+    )
+
+    for key, label, column in (
+        ("PRIMARY_FRA_DEST", "主库 FRA", "db_recovery_file_dest"),
+        (
+            "PRIMARY_FRA_SIZE",
+            "主库 FRA 容量（字节）",
+            "db_recovery_file_dest_size",
         ),
+        ("PRIMARY_DB_CREATE_FILE_DEST", "主库 OMF 目录", "db_create_file_dest"),
+    ):
+        add(
+            key,
+            label,
+            _text(precheck, column) or _explicit_parameter(context, key),
+            RunbookParameterStatus.VERIFIED,
+            (
+                f"db.ha.adg_precheck:{column}"
+                if _text(precheck, column)
+                else "用户确认的实施参数"
+            ),
+        )
+
+    for key, label in (
+        ("STANDBY_HOST", "备库主机"),
+        ("ORACLE_HOME", "备库 Oracle Home"),
+        ("STANDBY_STORAGE", "备库存储配置"),
+    ):
+        add(
+            key,
+            label,
+            _explicit_parameter(context, key),
+            RunbookParameterStatus.VERIFIED,
+            "用户确认的实施参数",
+        )
+
+    values = {item.key: item.value for item in parameters}
+    rendered = tuple(
+        RunbookResolvedParameter(
+            key=item.key,
+            label=item.label,
+            value=item.value,
+            status=item.status,
+            source=item.source,
+        )
+        for item in parameters
+    )
+    return values, rendered
+
+
+def _required_inputs(*keys: str) -> tuple[RunbookRequiredInput, ...]:
+    return tuple(
+        RunbookRequiredInput(
+            key=key,
+            label=_ADG_EXTERNAL_INPUTS[key][0],
+            description=_ADG_EXTERNAL_INPUTS[key][1],
+            placeholder="尚未取得",
+        )
+        for key in keys
     )
 
 
@@ -150,24 +399,12 @@ ALTER DATABASE ADD STANDBY LOGFILE THREAD {thread_no}
                         "OMF/ASM 环境可直接执行；文件系统环境应按存储规范显式补充日志成员路径。",
                     )
                 )
-    if commands:
-        return tuple(commands)
-    return (
-        _command(
-            "primary.srl.template",
-            RunbookCommandType.SQLPLUS,
-            "按每线程联机日志组数加一补建 Standby Redo Log",
-            """
-ALTER DATABASE ADD STANDBY LOGFILE THREAD ${THREAD_NO}
-  SIZE ${ONLINE_REDO_SIZE_MB}M;
-""",
-            "先按线程查询 V$LOG 和 V$STANDBY_LOG；每线程 SRL 数量至少为 online redo group 数量加一。",
-        ),
-    )
+    return tuple(commands)
 
 
 def _compile_oracle_adg_build(
     evidence: tuple[TurnEvidenceFact, ...],
+    context: dict[str, Any],
 ) -> ImplementationRunbook:
     identity, identity_ref = _first_row(evidence, "db.instance.identity")
     precheck, precheck_ref = _first_row(evidence, "db.ha.adg_precheck")
@@ -179,9 +416,50 @@ def _compile_oracle_adg_build(
     standby_file_management = _text(
         precheck, "standby_file_management"
     ).upper()
-    fra_dest = _text(precheck, "db_recovery_file_dest")
+    fra_dest = _text(precheck, "db_recovery_file_dest") or _explicit_parameter(
+        context, "PRIMARY_FRA_DEST"
+    )
+    fra_size = _text(
+        precheck, "db_recovery_file_dest_size"
+    ) or _explicit_parameter(context, "PRIMARY_FRA_SIZE")
     srl_shortage = _integer(precheck, "standby_redo_shortage")
-    db_unique_name = _text(precheck, "db_unique_name") or "${PRIMARY_DB_UNIQUE_NAME}"
+    parameters, resolved_parameters = _resolve_adg_parameters(
+        identity=identity,
+        precheck=precheck,
+        context=context,
+    )
+    db_name = parameters.get("PRIMARY_DB_NAME", "")
+    db_unique_name = parameters.get("PRIMARY_DB_UNIQUE_NAME", "")
+    standby_unique_name = parameters.get("STANDBY_DB_UNIQUE_NAME", "")
+    primary_tns_alias = parameters.get("PRIMARY_TNS_ALIAS", "")
+    standby_tns_alias = parameters.get("STANDBY_TNS_ALIAS", "")
+    standby_sid = parameters.get("STANDBY_ORACLE_SID", "")
+    protection_mode = parameters.get("PROTECTION_MODE", "")
+    transport_mode = parameters.get("REDO_TRANSPORT_MODE", "")
+    transport_ack = parameters.get("REDO_TRANSPORT_ACK", "")
+    dg_config_name = parameters.get("DG_CONFIG_NAME", "")
+    primary_host = parameters.get("PRIMARY_HOST", "")
+    primary_port = parameters.get("PRIMARY_PORT", "1521")
+    primary_service = parameters.get("PRIMARY_SERVICE_NAME", "")
+    standby_host = _explicit_parameter(context, "STANDBY_HOST")
+    oracle_home = _explicit_parameter(context, "ORACLE_HOME")
+    standby_storage = _explicit_parameter(context, "STANDBY_STORAGE")
+    unresolved_inputs = ["STANDBY_HOST", "ORACLE_HOME", "STANDBY_STORAGE"]
+    if standby_host:
+        unresolved_inputs.remove("STANDBY_HOST")
+    if oracle_home:
+        unresolved_inputs.remove("ORACLE_HOME")
+    if standby_storage:
+        unresolved_inputs.remove("STANDBY_STORAGE")
+    if not fra_dest:
+        unresolved_inputs.extend(("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE"))
+    if (
+        precheck is not None
+        and srl_shortage > 0
+        and not _text(precheck, "db_create_file_dest")
+    ):
+        unresolved_inputs.append("PRIMARY_LOG_STORAGE")
+    required_inputs = _required_inputs(*unresolved_inputs)
     database_role = _text(precheck, "database_role") or _text(
         identity, "database_role"
     )
@@ -191,7 +469,11 @@ def _compile_oracle_adg_build(
     status = (
         RunbookStatus.PARTIAL_EVIDENCE
         if precheck is None
-        else RunbookStatus.READY_WITH_REQUIRED_INPUTS
+        else (
+            RunbookStatus.BLOCKED_BY_REQUIRED_INPUTS
+            if required_inputs
+            else RunbookStatus.READY
+        )
     )
     baseline_backup_commands = (
         (
@@ -240,6 +522,16 @@ BACKUP SPFILE TAG 'PRE_ADG_BUILD_SPFILE';
     current_state = (
         _state_item("DB_UNIQUE_NAME", db_unique_name, "VERIFIED" if precheck else "UNKNOWN"),
         _state_item(
+            "备库 DB_UNIQUE_NAME",
+            standby_unique_name,
+            "DERIVED" if standby_unique_name else "UNKNOWN",
+        ),
+        _state_item(
+            "日志传输",
+            " ".join(item for item in (transport_mode, transport_ack) if item),
+            "DERIVED" if transport_mode else "UNKNOWN",
+        ),
+        _state_item(
             "当前容器",
             f"{container_name} (CON_ID={container_id})" if container_name else "未取得",
             "SATISFIED"
@@ -276,18 +568,25 @@ BACKUP SPFILE TAG 'PRE_ADG_BUILD_SPFILE';
                 RunbookStep(
                     step_id="scope.confirm",
                     title="确认主备拓扑和实施输入",
-                    applicability=RunbookApplicability.REQUIRED,
-                    rationale="备库主机、命名、网络、存储和保护模式不能从数据库参数中可靠推断。",
+                    applicability=(
+                        RunbookApplicability.BLOCKED
+                        if required_inputs
+                        else RunbookApplicability.ALREADY_SATISFIED
+                    ),
+                    rationale=(
+                        "数据库命名、TNS 别名、保护模式和传输方式已经由当前主库证据确定；"
+                        "仅保留无法从主库查询的基础设施事实。"
+                    ),
                     commands=(
                         _command(
                             "scope.checklist",
                             RunbookCommandType.MANUAL,
                             "完成实施确认单",
-                            "确认全部 required_inputs，记录主库停机窗口、备份保留点、DNS/SCAN/监听变更人和回退负责人。",
+                            "确认页面列出的外部输入，记录主库停机窗口、备份保留点、DNS/SCAN/监听变更人和回退负责人。",
                         ),
                     ),
                     risks=("主备版本或补丁不一致会导致 Duplicate、日志应用或切换失败。",),
-                    required_inputs=tuple(item.key for item in _adg_required_inputs()),
+                    required_inputs=tuple(item.key for item in required_inputs),
                 ),
                 RunbookStep(
                     step_id="scope.recovery_baseline",
@@ -307,7 +606,11 @@ RESTORE DATABASE VALIDATE;
                         ),
                     ),
                     risks=("没有经过 VALIDATE 的备份不能作为实施回退依据。",),
-                    required_inputs=("STORAGE_STRATEGY",),
+                    required_inputs=(
+                        ("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE")
+                        if not fra_dest
+                        else ()
+                    ),
                 ),
             ),
         ),
@@ -430,15 +733,23 @@ ALTER DATABASE OPEN;
                         ),
                     ),
                     risks=("Flashback 会持续占用 FRA，必须同步调整容量和保留窗口。",),
-                    required_inputs=("STORAGE_STRATEGY",),
+                    required_inputs=(
+                        ("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE")
+                        if not fra_dest
+                        else ()
+                    ),
                 ),
                 RunbookStep(
                     step_id="primary.fra",
                     title="配置 FRA 与本地归档目标",
                     applicability=(
                         RunbookApplicability.ALREADY_SATISFIED
-                        if fra_dest
-                        else RunbookApplicability.REQUIRED
+                        if _text(precheck, "db_recovery_file_dest")
+                        else (
+                            RunbookApplicability.REQUIRED
+                            if fra_dest and fra_size
+                            else RunbookApplicability.BLOCKED
+                        )
                     ),
                     rationale="归档和恢复文件必须有明确容量、告警和清理策略。",
                     commands=(
@@ -446,13 +757,13 @@ ALTER DATABASE OPEN;
                             "primary.fra.configure",
                             RunbookCommandType.SQLPLUS,
                             "配置 FRA",
-                            """
-ALTER SYSTEM SET db_recovery_file_dest_size=${FRA_SIZE} SCOPE=BOTH SID='*';
-ALTER SYSTEM SET db_recovery_file_dest='${PRIMARY_FRA_DEST}' SCOPE=BOTH SID='*';
-ALTER SYSTEM SET log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=""" + db_unique_name + """' SCOPE=BOTH SID='*';
+                            f"""
+ALTER SYSTEM SET db_recovery_file_dest_size={fra_size} SCOPE=BOTH SID='*';
+ALTER SYSTEM SET db_recovery_file_dest='{fra_dest}' SCOPE=BOTH SID='*';
+ALTER SYSTEM SET log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME={db_unique_name}' SCOPE=BOTH SID='*';
 """,
                         ),
-                    ),
+                    ) if fra_dest and fra_size and db_unique_name else (),
                     verification_commands=(
                         _command(
                             "primary.fra.verify",
@@ -465,7 +776,11 @@ SELECT dest_id, status, destination, error FROM v$archive_dest_status WHERE dest
                         ),
                     ),
                     risks=("FRA 容量不足会阻塞归档并最终影响主库。",),
-                    required_inputs=("STORAGE_STRATEGY",),
+                    required_inputs=(
+                        ("PRIMARY_FRA_DEST", "PRIMARY_FRA_SIZE")
+                        if not (fra_dest and fra_size)
+                        else ()
+                    ),
                 ),
                 RunbookStep(
                     step_id="primary.srl",
@@ -473,10 +788,18 @@ SELECT dest_id, status, destination, error FROM v$archive_dest_status WHERE dest
                     applicability=(
                         RunbookApplicability.ALREADY_SATISFIED
                         if precheck is not None and srl_shortage <= 0
-                        else RunbookApplicability.REQUIRED
+                        else (
+                            RunbookApplicability.REQUIRED
+                            if _text(precheck, "db_create_file_dest")
+                            else RunbookApplicability.BLOCKED
+                        )
                     ),
                     rationale="每个 redo thread 的 SRL 数量至少应为 online redo group 数量加一，大小不小于对应联机日志。",
-                    commands=_srl_commands(precheck),
+                    commands=(
+                        _srl_commands(precheck)
+                        if _text(precheck, "db_create_file_dest")
+                        else ()
+                    ),
                     verification_commands=(
                         _command(
                             "primary.srl.verify",
@@ -488,16 +811,14 @@ FROM v$standby_log GROUP BY thread# ORDER BY thread#;
 """,
                         ),
                     ),
-                    rollback=(
-                        _command(
-                            "primary.srl.rollback",
-                            RunbookCommandType.SQLPLUS,
-                            "删除本次新增且从未使用的 SRL",
-                            "ALTER DATABASE DROP STANDBY LOGFILE GROUP ${SRL_GROUP_NO};",
-                        ),
-                    ),
+                    rollback=(),
                     risks=("不能删除 ACTIVE 或正在归档的日志组；文件系统路径必须预先存在且空间充足。",),
-                    required_inputs=("STORAGE_STRATEGY",),
+                    required_inputs=(
+                        ("PRIMARY_LOG_STORAGE",)
+                        if srl_shortage > 0
+                        and not _text(precheck, "db_create_file_dest")
+                        else ()
+                    ),
                 ),
             ),
         ),
@@ -509,7 +830,20 @@ FROM v$standby_log GROUP BY thread# ORDER BY thread#;
                 RunbookStep(
                     step_id="parameters.primary",
                     title="配置主库参数",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if all(
+                            (
+                                db_unique_name,
+                                standby_unique_name,
+                                standby_tns_alias,
+                                protection_mode,
+                                transport_mode,
+                                transport_ack,
+                            )
+                        )
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="显式声明 DG_CONFIG、远端归档目标和角色相关参数。",
                     commands=(
                         _command(
@@ -517,10 +851,10 @@ FROM v$standby_log GROUP BY thread# ORDER BY thread#;
                             RunbookCommandType.SQLPLUS,
                             "设置主库 Data Guard 参数",
                             f"""
-ALTER SYSTEM SET log_archive_config='DG_CONFIG=({db_unique_name},${{STANDBY_DB_UNIQUE_NAME}})' SCOPE=BOTH SID='*';
-ALTER SYSTEM SET log_archive_dest_2='SERVICE=${{STANDBY_TNS_ALIAS}} ${{REDO_TRANSPORT_MODE}} ${{REDO_TRANSPORT_ACK}} VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=${{STANDBY_DB_UNIQUE_NAME}}' SCOPE=BOTH SID='*';
+ALTER SYSTEM SET log_archive_config='DG_CONFIG=({db_unique_name},{standby_unique_name})' SCOPE=BOTH SID='*';
+ALTER SYSTEM SET log_archive_dest_2='SERVICE={standby_tns_alias} {transport_mode} {transport_ack} VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME={standby_unique_name}' SCOPE=BOTH SID='*';
 ALTER SYSTEM SET log_archive_dest_state_2=ENABLE SCOPE=BOTH SID='*';
-ALTER SYSTEM SET fal_server='${{STANDBY_TNS_ALIAS}}' SCOPE=BOTH SID='*';
+ALTER SYSTEM SET fal_server='{standby_tns_alias}' SCOPE=BOTH SID='*';
 ALTER SYSTEM SET standby_file_management=AUTO SCOPE=BOTH SID='*';
 ALTER SYSTEM SET dg_broker_start=TRUE SCOPE=BOTH SID='*';
 """,
@@ -529,10 +863,19 @@ ALTER SYSTEM SET dg_broker_start=TRUE SCOPE=BOTH SID='*';
                             "parameters.primary.protection_mode",
                             RunbookCommandType.SQLPLUS,
                             "在备库稳定同步后设置目标保护模式",
-                            "ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE ${PROTECTION_MODE};",
+                            f"ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE {protection_mode};",
                             "先用 PERFORMANCE 完成建设和追平；切换到 AVAILABILITY 或 PROTECTION 前必须确认 SYNC 目标健康。",
                         ),
-                    ),
+                    ) if all(
+                        (
+                            db_unique_name,
+                            standby_unique_name,
+                            standby_tns_alias,
+                            protection_mode,
+                            transport_mode,
+                            transport_ack,
+                        )
+                    ) else (),
                     verification_commands=(
                         _command(
                             "parameters.primary.verify",
@@ -553,13 +896,17 @@ ORDER BY name;
                             "ALTER SYSTEM SET log_archive_dest_state_2=DEFER SCOPE=BOTH SID='*';",
                         ),
                     ),
-                    required_inputs=("STANDBY_DB_UNIQUE_NAME", "STANDBY_TNS_ALIAS", "PROTECTION_MODE", "REDO_TRANSPORT_MODE", "REDO_TRANSPORT_ACK"),
+                    required_inputs=(),
                     risks=("错误的 SERVICE 或 DB_UNIQUE_NAME 会造成 ORA-160xx 日志传输错误。",),
                 ),
                 RunbookStep(
                     step_id="parameters.standby",
                     title="准备备库参数文件",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if standby_storage
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="备库必须使用独立 DB_UNIQUE_NAME，并按存储策略配置文件名转换或 OMF。",
                     commands=(
                         _command(
@@ -567,20 +914,29 @@ ORDER BY name;
                             RunbookCommandType.CONFIG,
                             "备库参数模板",
                             f"""
-*.db_name='{_text(precheck, 'database_name') or '${PRIMARY_DB_NAME}'}'
-*.db_unique_name='${{STANDBY_DB_UNIQUE_NAME}}'
-*.log_archive_config='DG_CONFIG=({db_unique_name},${{STANDBY_DB_UNIQUE_NAME}})'
-*.log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME=${{STANDBY_DB_UNIQUE_NAME}}'
-*.log_archive_dest_2='SERVICE=${{PRIMARY_TNS_ALIAS}} ${{REDO_TRANSPORT_MODE}} ${{REDO_TRANSPORT_ACK}} VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME={db_unique_name}'
-*.fal_server='${{PRIMARY_TNS_ALIAS}}'
+*.db_name='{db_name}'
+*.db_unique_name='{standby_unique_name}'
+*.log_archive_config='DG_CONFIG=({db_unique_name},{standby_unique_name})'
+*.log_archive_dest_1='LOCATION=USE_DB_RECOVERY_FILE_DEST VALID_FOR=(ALL_LOGFILES,ALL_ROLES) DB_UNIQUE_NAME={standby_unique_name}'
+*.log_archive_dest_2='SERVICE={primary_tns_alias} {transport_mode} {transport_ack} VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME={db_unique_name}'
+*.fal_server='{primary_tns_alias}'
 *.standby_file_management='AUTO'
-*.db_recovery_file_dest='${{STANDBY_FRA_DEST}}'
-*.db_recovery_file_dest_size=${{FRA_SIZE}}
-# 非 OMF/ASM 时再设置 db_file_name_convert 和 log_file_name_convert。
+{standby_storage}
 """,
                         ),
+                    ) if standby_storage and all(
+                        (
+                            db_name,
+                            db_unique_name,
+                            standby_unique_name,
+                            primary_tns_alias,
+                            transport_mode,
+                            transport_ack,
+                        )
+                    ) else (),
+                    required_inputs=(
+                        ("STANDBY_STORAGE",) if not standby_storage else ()
                     ),
-                    required_inputs=("STANDBY_DB_UNIQUE_NAME", "PRIMARY_TNS_ALIAS", "STORAGE_STRATEGY"),
                     risks=("db_name 必须与主库一致，db_unique_name 必须不同。",),
                 ),
             ),
@@ -593,19 +949,23 @@ ORDER BY name;
                 RunbookStep(
                     step_id="connectivity.password_file",
                     title="同步密码文件",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if oracle_home and standby_sid
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="主备 SYS 密码文件必须一致，且 remote_login_passwordfile 应为 EXCLUSIVE。",
                     commands=(
                         _command(
                             "connectivity.password_file.create",
                             RunbookCommandType.SHELL,
                             "在备库准备密码文件",
-                            """
-${ORACLE_HOME}/bin/orapwd file=${ORACLE_HOME}/dbs/orapw${STANDBY_ORACLE_SID} format=12.2 force=y
+                            f"""
+{oracle_home}/bin/orapwd file={oracle_home}/dbs/orapw{standby_sid} format=12.2 force=y
 """,
                             "优先通过受控安全通道复制主库密码文件；不要把 SYS 密码写入脚本或 Runbook。",
                         ),
-                    ),
+                    ) if oracle_home and standby_sid else (),
                     verification_commands=(
                         _command(
                             "connectivity.password_file.verify",
@@ -614,49 +974,82 @@ ${ORACLE_HOME}/bin/orapwd file=${ORACLE_HOME}/dbs/orapw${STANDBY_ORACLE_SID} for
                             "SHOW PARAMETER remote_login_passwordfile;",
                         ),
                     ),
-                    required_inputs=("ORACLE_HOME", "STANDBY_ORACLE_SID"),
+                    required_inputs=(
+                        ("ORACLE_HOME",) if not oracle_home else ()
+                    ),
                 ),
                 RunbookStep(
                     step_id="connectivity.listener_tns",
                     title="配置静态监听和双向 TNS",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if all(
+                            (
+                                standby_host,
+                                oracle_home,
+                                standby_sid,
+                                primary_host,
+                                primary_service,
+                            )
+                        )
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="NOMOUNT/MOUNT 状态的辅助实例需要静态注册，主备必须双向解析。",
                     commands=(
                         _command(
                             "connectivity.listener.config",
                             RunbookCommandType.CONFIG,
                             "备库 listener.ora 静态注册片段",
-                            """
+                            f"""
 SID_LIST_LISTENER =
   (SID_LIST =
     (SID_DESC =
-      (GLOBAL_DBNAME = ${STANDBY_DB_UNIQUE_NAME}_DGMGRL)
-      (ORACLE_HOME = ${ORACLE_HOME})
-      (SID_NAME = ${STANDBY_ORACLE_SID})))
+      (GLOBAL_DBNAME = {standby_unique_name}_DGMGRL)
+      (ORACLE_HOME = {oracle_home})
+      (SID_NAME = {standby_sid})))
 """,
                         ),
                         _command(
                             "connectivity.tns.config",
                             RunbookCommandType.CONFIG,
-                            "tnsnames.ora 双向别名模板",
-                            """
-${STANDBY_TNS_ALIAS} =
-  (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=${STANDBY_HOST})(PORT=1521))
-    (CONNECT_DATA=(SERVICE_NAME=${STANDBY_DB_UNIQUE_NAME}_DGMGRL)))
+                            "tnsnames.ora 双向别名",
+                            f"""
+{primary_tns_alias} =
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={primary_host})(PORT={primary_port}))
+    (CONNECT_DATA=(SERVICE_NAME={primary_service})))
+
+{standby_tns_alias} =
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={standby_host})(PORT=1521))
+    (CONNECT_DATA=(SERVICE_NAME={standby_unique_name}_DGMGRL)))
 """,
                         ),
                         _command(
                             "connectivity.listener.reload",
                             RunbookCommandType.SHELL,
                             "重载监听并测试",
-                            """
-${ORACLE_HOME}/bin/lsnrctl reload
-${ORACLE_HOME}/bin/tnsping ${PRIMARY_TNS_ALIAS}
-${ORACLE_HOME}/bin/tnsping ${STANDBY_TNS_ALIAS}
+                            f"""
+{oracle_home}/bin/lsnrctl reload
+{oracle_home}/bin/tnsping {primary_tns_alias}
+{oracle_home}/bin/tnsping {standby_tns_alias}
 """,
                         ),
+                    ) if all(
+                        (
+                            standby_host,
+                            oracle_home,
+                            standby_sid,
+                            primary_host,
+                            primary_service,
+                        )
+                    ) else (),
+                    required_inputs=tuple(
+                        key
+                        for key, value in (
+                            ("STANDBY_HOST", standby_host),
+                            ("ORACLE_HOME", oracle_home),
+                        )
+                        if not value
                     ),
-                    required_inputs=("STANDBY_HOST", "ORACLE_HOME", "STANDBY_ORACLE_SID", "PRIMARY_TNS_ALIAS", "STANDBY_TNS_ALIAS"),
                     risks=("监听静态服务名与 RMAN AUXILIARY 连接串不一致会导致 ORA-12514/12528。",),
                 ),
             ),
@@ -669,49 +1062,69 @@ ${ORACLE_HOME}/bin/tnsping ${STANDBY_TNS_ALIAS}
                 RunbookStep(
                     step_id="standby.nomount",
                     title="以 NOMOUNT 启动辅助实例",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if oracle_home and standby_sid and standby_storage
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="RMAN Duplicate 需要可远程连接的 NOMOUNT 辅助实例。",
                     commands=(
                         _command(
                             "standby.nomount.sql",
                             RunbookCommandType.SQLPLUS,
                             "启动备库辅助实例",
-                            """
-CREATE SPFILE FROM PFILE='${STANDBY_PFILE}';
+                            f"""
+CREATE SPFILE FROM PFILE='{oracle_home}/dbs/init{standby_sid}.ora';
 STARTUP NOMOUNT;
 """,
                         ),
+                    ) if oracle_home and standby_sid and standby_storage else (),
+                    required_inputs=tuple(
+                        key
+                        for key, value in (
+                            ("ORACLE_HOME", oracle_home),
+                            ("STANDBY_STORAGE", standby_storage),
+                        )
+                        if not value
                     ),
-                    required_inputs=("STANDBY_ORACLE_SID", "STORAGE_STRATEGY"),
                 ),
                 RunbookStep(
                     step_id="standby.duplicate",
                     title="执行 RMAN Active Duplicate",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if standby_host and standby_storage
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="从当前主库在线复制数据文件、控制文件和归档并建立物理备库。",
                     commands=(
                         _command(
                             "standby.duplicate.rman",
                             RunbookCommandType.RMAN,
                             "连接主库和辅助实例并复制",
-                            """
-CONNECT TARGET sys@${PRIMARY_TNS_ALIAS};
-CONNECT AUXILIARY sys@${STANDBY_TNS_ALIAS};
-RUN {
+                            f"""
+CONNECT TARGET sys@{primary_tns_alias};
+CONNECT AUXILIARY sys@{standby_tns_alias};
+RUN {{
   ALLOCATE CHANNEL c1 DEVICE TYPE DISK;
   ALLOCATE AUXILIARY CHANNEL a1 DEVICE TYPE DISK;
   DUPLICATE TARGET DATABASE FOR STANDBY FROM ACTIVE DATABASE
     DORECOVER
     SPFILE
-      SET db_unique_name='${STANDBY_DB_UNIQUE_NAME}'
-      SET fal_server='${PRIMARY_TNS_ALIAS}'
-      SET standby_file_management='AUTO'
-    NOFILENAMECHECK;
-}
+      SET db_unique_name='{standby_unique_name}'
+      SET fal_server='{primary_tns_alias}'
+      SET standby_file_management='AUTO';
+}}
 """,
-                            "仅在主备使用相同 ASM/OMF 命名或已经正确设置文件名转换时使用 NOFILENAMECHECK。",
+                            "备库参数文件必须已经包含经确认的 OMF/ASM 或文件名转换配置。",
                         ),
-                    ),
+                    ) if standby_host and standby_storage and all(
+                        (
+                            primary_tns_alias,
+                            standby_tns_alias,
+                            standby_unique_name,
+                        )
+                    ) else (),
                     verification_commands=(
                         _command(
                             "standby.duplicate.verify",
@@ -720,7 +1133,14 @@ RUN {
                             "SELECT database_role, open_mode, db_unique_name FROM v$database;",
                         ),
                     ),
-                    required_inputs=("PRIMARY_TNS_ALIAS", "STANDBY_TNS_ALIAS", "STANDBY_DB_UNIQUE_NAME", "STORAGE_STRATEGY"),
+                    required_inputs=tuple(
+                        key
+                        for key, value in (
+                            ("STANDBY_HOST", standby_host),
+                            ("STANDBY_STORAGE", standby_storage),
+                        )
+                        if not value
+                    ),
                     risks=("Active Duplicate 会消耗主库网络、IO 和备库存储；大库应评估备份恢复方式。",),
                 ),
             ),
@@ -814,7 +1234,11 @@ ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT
                 RunbookStep(
                     step_id="broker.configure",
                     title="创建并启用 Broker 配置",
-                    applicability=RunbookApplicability.REQUIRED,
+                    applicability=(
+                        RunbookApplicability.REQUIRED
+                        if standby_host and dg_config_name
+                        else RunbookApplicability.BLOCKED
+                    ),
                     rationale="Broker 提供一致的配置校验和切换前检查，但本 Runbook 不自动执行切换。",
                     commands=(
                         _command(
@@ -822,19 +1246,27 @@ ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT
                             RunbookCommandType.DGMGRL,
                             "建立 Broker 配置",
                             f"""
-CREATE CONFIGURATION '${{DG_CONFIG_NAME}}' AS
+CREATE CONFIGURATION '{dg_config_name}' AS
   PRIMARY DATABASE IS '{db_unique_name}'
-  CONNECT IDENTIFIER IS '${{PRIMARY_TNS_ALIAS}}';
-ADD DATABASE '${{STANDBY_DB_UNIQUE_NAME}}' AS
-  CONNECT IDENTIFIER IS '${{STANDBY_TNS_ALIAS}}'
+  CONNECT IDENTIFIER IS '{primary_tns_alias}';
+ADD DATABASE '{standby_unique_name}' AS
+  CONNECT IDENTIFIER IS '{standby_tns_alias}'
   MAINTAINED AS PHYSICAL;
 ENABLE CONFIGURATION;
 SHOW CONFIGURATION VERBOSE;
 VALIDATE DATABASE VERBOSE '{db_unique_name}';
-VALIDATE DATABASE VERBOSE '${{STANDBY_DB_UNIQUE_NAME}}';
+VALIDATE DATABASE VERBOSE '{standby_unique_name}';
 """,
                         ),
-                    ),
+                    ) if standby_host and all(
+                        (
+                            dg_config_name,
+                            db_unique_name,
+                            primary_tns_alias,
+                            standby_unique_name,
+                            standby_tns_alias,
+                        )
+                    ) else (),
                     rollback=(
                         _command(
                             "broker.configure.rollback",
@@ -846,7 +1278,9 @@ REMOVE CONFIGURATION PRESERVE DESTINATIONS;
 """,
                         ),
                     ),
-                    required_inputs=("PRIMARY_TNS_ALIAS", "STANDBY_TNS_ALIAS", "STANDBY_DB_UNIQUE_NAME"),
+                    required_inputs=(
+                        ("STANDBY_HOST",) if not standby_host else ()
+                    ),
                 ),
             ),
         ),
@@ -888,9 +1322,9 @@ SELECT process, status, thread#, sequence# FROM v$managed_standby ORDER BY proce
                             "validation.broker.dgmgrl",
                             RunbookCommandType.DGMGRL,
                             "Broker 健康检查",
-                            """
+                            f"""
 SHOW CONFIGURATION;
-SHOW DATABASE VERBOSE '${STANDBY_DB_UNIQUE_NAME}';
+SHOW DATABASE VERBOSE '{standby_unique_name}';
 VALIDATE NETWORK CONFIGURATION FOR ALL;
 """,
                         ),
@@ -906,10 +1340,12 @@ VALIDATE NETWORK CONFIGURATION FOR ALL;
         status=status,
         execution_policy=(
             "本产物仅生成实施步骤，不执行任何 SQL、RMAN、DGMGRL 或系统命令。"
+            "页面中的可复制命令均已代入本轮解析参数；被外部输入阻断的步骤不生成伪可执行命令。"
             "用户后续明确选择某一步执行时，必须重新核验当时状态并进入受控 Action/审批。"
         ),
         current_state=current_state,
-        required_inputs=_adg_required_inputs(),
+        resolved_parameters=resolved_parameters,
+        required_inputs=required_inputs,
         phases=phases,
         stop_conditions=(
             "主备数据库版本、补丁级别或字符集不兼容。",
@@ -928,8 +1364,9 @@ def compile_implementation_runbook(
     *,
     profile: ImplementationProfile,
     evidence: tuple[TurnEvidenceFact, ...],
+    context: dict[str, Any] | None = None,
 ) -> ImplementationRunbook:
     """按结构化档案编译 Runbook，禁止模型自由拼接执行命令。"""
     if profile == ImplementationProfile.ORACLE_ADG_BUILD:
-        return _compile_oracle_adg_build(evidence)
+        return _compile_oracle_adg_build(evidence, dict(context or {}))
     raise ValueError(f"不支持的实施方案档案：{profile}")

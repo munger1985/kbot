@@ -1123,18 +1123,19 @@ class TurnPlanningService:
                 database_context=dict(target_context),
                 known_facts=(f"当前逻辑 Target 为 {display_name}",),
                 unknowns=(
-                    "备库主机、网络、Oracle Home、SID 和服务名",
+                    "备库主机、网络和 Oracle Home",
                     "主备存储路径或 ASM/OMF 策略",
-                    "目标保护模式与实施窗口",
+                    "实施窗口和回退责任人",
                 ),
                 constraints=(
                     "本轮只执行固定只读前置核验并生成 Runbook，不执行任何变更命令",
-                    "缺少外部实施输入时使用显式占位符，不拒绝生成完整方案",
+                    "数据库可验证或可安全派生的参数必须直接代入；缺少外部基础设施事实时阻断相关步骤，不生成占位符命令",
                     "用户选择执行具体步骤后才进入受控 Action 和审批",
                 ),
                 success_criteria=(
                     "覆盖 ARCHIVELOG、FORCE LOGGING、FRA、SRL、Data Guard 参数、网络、RMAN Duplicate、日志应用、Broker、验收和回退",
                     "SQL、RMAN、DGMGRL、Shell 和配置命令按真实执行类型分开呈现",
+                    "所有可复制命令均已代入本轮解析值，不包含未解析占位符",
                     "已满足条件明确标记，未满足条件纳入整改步骤",
                 ),
                 action_intent=ActionIntent.NONE,

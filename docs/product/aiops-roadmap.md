@@ -421,7 +421,9 @@ Idle 会话占比、事务回滚率。
 
 通用 Runbook 框架和 `ORACLE_ADG_BUILD` 已进入当前版本。它使用聊天 Turn 内的独立规划模式，
 不归入 Advisory，不创建 Proposal，只读取当前参数并生成完整实施步骤。ADG 从零建设已覆盖前置
-整改、RMAN Duplicate、日志传输与应用、Broker、验收和回退。
+整改、RMAN Duplicate、日志传输与应用、Broker、验收和回退。数据库可验证或可安全派生的实施
+参数会直接代入命令；备库主机、Oracle Home 和存储等外部事实缺失时仅阻断相关步骤，不再输出
+占位符命令。
 
 后续继续补充：
 

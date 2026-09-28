@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook
 
-版本：1.0
+版本：1.1
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -46,9 +46,14 @@ SQL、RMAN、DGMGRL、Shell、配置片段和人工确认必须按真实命令�
 
 ## 3. 缺少外部输入时的行为
 
-备库主机、Oracle Home、SID、TNS Alias、ASM/OMF 或文件系统路径、保护模式等事实通常不在主库
-参数中。缺少这些输入时，系统仍交付完整 Runbook，状态为 `READY_WITH_REQUIRED_INPUTS`，并在
-命令中使用 `${STANDBY_HOST}`、`${STANDBY_DB_UNIQUE_NAME}` 等显式占位符。
+系统先把主库证据转换成一组确定的实施参数。备库 `DB_UNIQUE_NAME`、SID、主备 TNS Alias、
+Broker 配置名、保护模式和 Redo 传输方式等可安全派生的值直接显示并代入命令。例如主库
+`DB_UNIQUE_NAME=db26ai` 时，默认生成备库名和 TNS Alias `db26ai_stby`，命令直接包含
+`DG_CONFIG=(db26ai,db26ai_stby)`，不再输出待替换模板。
+
+备库主机、Oracle Home、ASM/OMF 或文件系统路径无法从当前主库可靠获知。缺少这些事实时，系统
+仍展示完整阶段，但状态为 `BLOCKED_BY_REQUIRED_INPUTS`，相关步骤标记为 `BLOCKED`，且不生成
+带 `${...}` 或 `<...>` 的伪可执行命令。已经完成参数解析的主库 SQL 仍可直接复制。
 
 只有数据库前置取证本身失败时，状态才是 `PARTIAL_EVIDENCE`。这表示当前状态标记可能不完整，
 不是拒绝生成方案。Runbook 不应仅返回“请先补充信息”。
@@ -58,6 +63,7 @@ SQL、RMAN、DGMGRL、Shell、配置片段和人工确认必须按真实命令�
 回答先给出简短摘要，随后展示权威 `IMPLEMENTATION_RUNBOOK` 区块：
 
 - 当前环境摘要和整改状态；
+- 已验证或派生的实施参数、值和来源；
 - 实施前必须确认的输入；
 - 可折叠的阶段和步骤；
 - 命令类型、复制按钮、验证命令、风险和回退；
