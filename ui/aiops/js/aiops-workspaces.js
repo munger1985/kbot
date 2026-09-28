@@ -782,7 +782,7 @@
         : "";
       const stopConditions = values(payload.stop_conditions).length ? `<section class="ops-runbook-stop"><h5>停止条件</h5><ul>${values(payload.stop_conditions).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>` : "";
       const download = turn?.conversation_id && turn?.turn_id
-        ? `<button type="button" data-download-implementation-runbook data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 PDF</button>`
+        ? `<div class="ops-runbook-downloads"><button type="button" data-download-implementation-runbook="pdf" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 PDF</button><button type="button" data-download-implementation-runbook="markdown" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 Markdown</button></div>`
         : "";
       const appendix = stateItems || resolvedParameters || requiredInputs
         ? `<section class="ops-runbook-appendix"><h3>附录：当前状态与实施参数</h3>${stateItems ? `<section><h4>当前环境摘要</h4><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<section class="ops-runbook-parameters"><h4>已解析实施参数</h4><ul>${resolvedParameters}</ul></section>` : ""}${requiredInputs ? `<section class="ops-runbook-inputs"><h4>实施前必须确认的外部输入</h4><ul>${requiredInputs}</ul></section>` : ""}</section>`
@@ -953,12 +953,15 @@
         try {
           const conversationId = encodeURIComponent(button.dataset.conversationId);
           const turnId = encodeURIComponent(button.dataset.turnId);
+          const format = button.dataset.downloadImplementationRunbook === "markdown"
+            ? { extension: "md", mediaType: "text/markdown", label: "Markdown" }
+            : { extension: "pdf", mediaType: "application/pdf", label: "PDF" };
           await KBotAIOpsAuth.download(
-            `${api}/conversations/${conversationId}/turns/${turnId}/implementation-runbook.pdf`,
-            `oracle-adg-implementation-${button.dataset.turnId}.pdf`,
-            "application/pdf",
+            `${api}/conversations/${conversationId}/turns/${turnId}/implementation-runbook.${format.extension}`,
+            `oracle-adg-implementation-${button.dataset.turnId}.${format.extension}`,
+            format.mediaType,
           );
-          shell.toast("ADG 实施文档已开始下载");
+          shell.toast(`ADG 实施文档 ${format.label} 已开始下载`);
         } catch (error) {
           shell.toast(error.message || "无法下载 ADG 实施文档");
         } finally {

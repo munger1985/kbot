@@ -1595,6 +1595,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             accept="application/pdf",
         )
 
+    async def download_implementation_runbook_markdown(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> AIOpsBinaryResponse:
+        """下载会话内已固化数据库实施操作文档的 Markdown 投影。"""
+        return await self._bytes(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/implementation-runbook.md"
+            ),
+            auth_context=auth_context,
+            accept="text/markdown",
+        )
+
     async def list_conversation_turn_events(
         self,
         conversation_id: UUID,

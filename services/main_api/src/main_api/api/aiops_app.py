@@ -743,7 +743,9 @@ async def download_workload_report(
 
 
 @router.get(
-    "/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf"
+    "/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
 )
 async def download_implementation_runbook_pdf(
     conversation_id: UUID,
@@ -764,6 +766,37 @@ async def download_implementation_runbook_pdf(
             "Content-Disposition": upstream.headers.get(
                 "Content-Disposition",
                 f'attachment; filename="oracle-adg-implementation-{turn_id}.pdf"',
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md",
+    response_class=Response,
+    responses={200: {"content": {"text/markdown": {}}}},
+)
+async def download_implementation_runbook_markdown(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+):
+    """代理数据库实施操作文档 Markdown，不暴露 Agent 内部接口。"""
+    await _conversation_with_access(request, conversation_id)
+    upstream = await _client(request).download_implementation_runbook_markdown(
+        conversation_id,
+        turn_id,
+        auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=upstream.body,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": upstream.headers.get(
+                "Content-Disposition",
+                f'attachment; filename="oracle-adg-implementation-{turn_id}.md"',
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

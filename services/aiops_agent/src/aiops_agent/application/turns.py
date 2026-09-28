@@ -29,6 +29,9 @@ from aiops_agent.application.investigation.projection import (
 from aiops_agent.application.implementation.pdf import (
     render_implementation_runbook_pdf,
 )
+from aiops_agent.application.implementation.markdown import (
+    render_implementation_runbook_markdown,
+)
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.entities import (
     OpsConversationEntity,
@@ -871,15 +874,15 @@ class ConversationTurnService:
                     raise state_conflict("原生工作负载报告正文为空")
         raise resource_not_found("Oracle Workload Report")
 
-    async def get_implementation_runbook_pdf(
+    async def _get_implementation_runbook_payload(
         self,
         *,
         domain_id: int,
         conversation_id: UUID,
         turn_id: UUID,
         actor_id: str,
-    ) -> bytes:
-        """导出会话中已固化的数据库实施 Runbook，兼容历史 Block。"""
+    ) -> dict[str, Any]:
+        """读取并鉴权会话中已固化的数据库实施 Runbook。"""
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_conversation(
                 domain_id=domain_id,
@@ -901,9 +904,43 @@ class ConversationTurnService:
                     continue
                 payload = block.payload_json
                 if isinstance(payload, dict):
-                    return render_implementation_runbook_pdf(dict(payload))
+                    return dict(payload)
                 raise state_conflict("数据库实施文档内容无效")
         raise resource_not_found("Implementation Runbook")
+
+    async def get_implementation_runbook_pdf(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+    ) -> bytes:
+        """导出会话中已固化的数据库实施 Runbook，兼容历史 Block。"""
+        payload = await self._get_implementation_runbook_payload(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+        )
+        return render_implementation_runbook_pdf(payload)
+
+    async def get_implementation_runbook_markdown(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+    ) -> bytes:
+        """导出会话中已固化 Runbook 的确定性 Markdown 投影。"""
+        payload = await self._get_implementation_runbook_payload(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+        )
+        return render_implementation_runbook_markdown(payload).encode("utf-8")
 
     async def list_events(
         self,

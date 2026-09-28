@@ -108,19 +108,26 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 `AnswerBlockType.IMPLEMENTATION_RUNBOOK`。该模式不再调用模型扩写背景说明，只输出一句执行边界，
 结构化 Block 是权威方案。Runbook 模式显式禁止 `PROPOSAL_SUMMARY`。
 
-前端按正式实施文档结构连续渲染封面信息、执行边界、目录、阶段、步骤、命令、停止条件和附录，
+前端按正式 Markdown 文档视觉连续渲染封面信息、执行边界、目录、阶段、步骤、命令、停止条件和附录，
 不再使用 `details` 折叠容器、固定最大高度或区块内滚动。目录链接定位到阶段和步骤，命令块在页面
 宽度内自动换行，但复制按钮始终复制结构化 Block 中保存的原始命令文本。
 
-PDF 导出接口为：
+结构化 Runbook JSON 是唯一真相。`application/implementation/markdown.py` 负责无状态、确定性的
+Markdown 投影；页面继续读取结构化 Block 以保留复制按钮和命令类型元数据，PDF 与 Markdown 下载
+均从同一 Block 即时生成，不把派生文本写回数据库。
+
+导出接口为：
 
 - 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
-- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`。
+- 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`；
+- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
+- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`。
 
 导出服务读取所属 Turn 的活动 `IMPLEMENTATION_RUNBOOK` Answer Block，并从持久化字典直接渲染 PDF，
 不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。PDF 使用两遍构建生成带页码和书签的
-阶段/步骤目录；命令使用独立字符清洗逻辑保留换行，并在空白或 SQL 分隔符处按页面宽度换行，避免
-越界裁切。接口复用会话所有者鉴权并禁止缓存。
+阶段/步骤目录；命令标题栏和浅色代码正文组成 Markdown 风格代码块，使用独立字符清洗逻辑保留
+换行，并在空白或 SQL 分隔符处按页面宽度换行，避免越界裁切。Markdown 投影使用与命令正文不冲突
+的动态 fenced code block，完整保留原始命令。两类接口复用会话所有者鉴权并禁止缓存。
 
 ## 6. 从方案升级到执行
 

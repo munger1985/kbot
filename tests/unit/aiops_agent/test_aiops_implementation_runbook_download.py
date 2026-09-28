@@ -13,6 +13,9 @@ from aiops_agent.application.implementation.pdf import (
     _wrapped_code,
     render_implementation_runbook_pdf,
 )
+from aiops_agent.application.implementation.markdown import (
+    render_implementation_runbook_markdown,
+)
 from aiops_agent.application.turns import ConversationTurnService
 from platform_core.identity import uuid7
 
@@ -57,6 +60,34 @@ def _historical_payload() -> dict:
 
 
 class ImplementationRunbookPdfTest(unittest.TestCase):
+    def test_markdown_projection_contains_toc_and_original_command(self) -> None:
+        payload = _historical_payload()
+        payload["phases"][0]["steps"][0]["commands"][0]["content"] = (
+            "ALTER SESSION SET CONTAINER=CDB$ROOT;\n"
+            "ALTER DATABASE ARCHIVELOG;"
+        )
+
+        content = render_implementation_runbook_markdown(payload)
+
+        self.assertIn("# 历史 ADG 实施文档", content)
+        self.assertIn("[主库整改](#phase-1)", content)
+        self.assertIn("```sql", content)
+        self.assertIn(
+            "ALTER SESSION SET CONTAINER=CDB$ROOT;\n"
+            "ALTER DATABASE ARCHIVELOG;",
+            content,
+        )
+
+    def test_markdown_projection_uses_safe_fence_length(self) -> None:
+        payload = _historical_payload()
+        payload["phases"][0]["steps"][0]["commands"][0]["content"] = (
+            "echo '```'"
+        )
+
+        content = render_implementation_runbook_markdown(payload)
+
+        self.assertIn("````sql\necho '```'\n````", content)
+
     def test_command_text_is_not_physically_wrapped(self) -> None:
         command = (
             "ALTER SYSTEM SET log_archive_dest_2='SERVICE=testdb_stby "
@@ -124,6 +155,15 @@ class ImplementationRunbookPdfTest(unittest.TestCase):
         ))
 
         self.assertTrue(content.startswith(b"%PDF-"))
+
+        markdown = asyncio.run(service.get_implementation_runbook_markdown(
+            domain_id=1,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id="user-1",
+        ))
+        self.assertTrue(markdown.startswith(b"# "))
+        self.assertIn(b"```sql", markdown)
 
     def test_service_rejects_foreign_conversation_and_missing_runbook(self) -> None:
         conversation_id, turn_id = uuid7(), uuid7()

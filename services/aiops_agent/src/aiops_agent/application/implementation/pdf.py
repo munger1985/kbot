@@ -195,6 +195,25 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
         spaceBefore=3,
         spaceAfter=7,
     )
+    ascii_code_style = ParagraphStyle(
+        "命令等宽",
+        parent=code_style,
+        fontName="Courier",
+    )
+    command_heading_style = ParagraphStyle(
+        "命令标题",
+        parent=body,
+        fontSize=8,
+        leading=11,
+        textColor=colors.white,
+        backColor=colors.HexColor("#2B3549"),
+        borderColor=colors.HexColor("#2B3549"),
+        borderWidth=0.4,
+        borderPadding=(5, 7, 5, 7),
+        spaceBefore=5,
+        spaceAfter=0,
+        keepWithNext=True,
+    )
     story: list[Any] = [Spacer(1, 16 * mm), Paragraph(_paragraph(title), title_style)]
     metadata = " · ".join(
         item
@@ -294,13 +313,20 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                         if item
                     )
                     if heading:
-                        story.append(Paragraph(_paragraph(heading), body))
+                        story.append(Paragraph(
+                            _paragraph(heading), command_heading_style
+                        ))
+                    formatted_code = _formatted_code(
+                        command.get("content"),
+                        command.get("command_type"),
+                    )
                     story.append(Preformatted(
-                        _formatted_code(
-                            command.get("content"),
-                            command.get("command_type"),
+                        formatted_code,
+                        (
+                            ascii_code_style
+                            if formatted_code.isascii()
+                            else code_style
                         ),
-                        code_style,
                     ))
                     for note in _items(command.get("notes")):
                         story.append(Paragraph(_paragraph(note), body, bulletText="•"))
