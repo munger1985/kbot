@@ -140,6 +140,43 @@
 .ops-findings, .ops-analysis, .ops-solution { margin: 0 0 14px; padding: 13px 15px; border: 1px solid var(--line); background: #f8f9fb; }
 .ops-findings header, .ops-analysis header, .ops-solution header { margin-bottom: 10px; }
 .ops-findings header strong, .ops-analysis header strong, .ops-solution header strong { color: var(--accent); font-size: 13px; }
+.ops-runbook { margin: 16px 0; border: 1px solid #b9c7dc; background: #f7faff; }
+.ops-runbook > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 17px; border-bottom: 1px solid #d8e1ee; background: #edf4ff; }
+.ops-runbook > header strong, .ops-runbook > header small { display: block; }
+.ops-runbook > header small { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.ops-runbook-status { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: #dfeafb; color: #264d7d; font-size: 11px; font-weight: 700; }
+.ops-runbook-policy { margin: 0; padding: 12px 17px; border-bottom: 1px solid #d8e1ee; color: #765313; background: #fff9e9; }
+.ops-runbook h5, .ops-runbook h6 { margin: 0; }
+.ops-runbook > section, .ops-runbook-inputs, .ops-runbook-stop { margin: 14px 17px; }
+.ops-runbook-state { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.ops-runbook-state li { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); background: #fff; }
+.ops-runbook-state li span, .ops-runbook-state li small { color: var(--muted); font-size: 11px; }
+.ops-runbook-state li.is-remediation_required { border-color: #e2b5ad; background: #fff7f5; }
+.ops-runbook-state li.is-satisfied { border-color: #add5bd; background: #f5fff8; }
+.ops-runbook-inputs > summary, .ops-runbook-phase > summary { cursor: pointer; font-weight: 700; }
+.ops-runbook-inputs ul { display: grid; gap: 7px; padding: 0; list-style: none; }
+.ops-runbook-inputs li { display: flex; justify-content: space-between; gap: 15px; padding: 8px 10px; background: #fff; border: 1px solid var(--line); }
+.ops-runbook-inputs li strong, .ops-runbook-inputs li small { display: block; }
+.ops-runbook-inputs li small { margin-top: 3px; color: var(--muted); }
+.ops-runbook-body { max-height: min(72vh, 920px); overflow: auto; padding: 0 17px 15px; border-top: 1px solid #d8e1ee; }
+.ops-runbook-phase { margin-top: 12px; border: 1px solid #cfd9e8; background: #fff; }
+.ops-runbook-phase > summary { padding: 11px 13px; background: #f2f6fc; }
+.ops-runbook-phase > summary span, .ops-runbook-phase > summary small { display: block; }
+.ops-runbook-phase > summary small { margin-top: 3px; color: var(--muted); font-weight: 400; }
+.ops-runbook-steps { padding: 0 12px 12px; }
+.ops-runbook-step { margin-top: 12px; padding: 12px; border: 1px solid var(--line); }
+.ops-runbook-step > header { display: flex; justify-content: space-between; gap: 14px; }
+.ops-runbook-step > header strong, .ops-runbook-step > header small { display: block; }
+.ops-runbook-step > header small { margin-top: 4px; color: var(--muted); }
+.ops-runbook-applicability { flex: 0 0 auto; height: fit-content; padding: 3px 7px; border-radius: 4px; background: #f5e8d0; color: #745218; font-size: 10px; font-weight: 700; }
+.ops-runbook-applicability.is-already_satisfied { background: #dff3e6; color: #276640; }
+.ops-runbook-applicability.is-conditional { background: #e7e9f5; color: #4c5178; }
+.ops-runbook-needs code { margin-right: 4px; }
+.ops-runbook-command-group { margin-top: 12px; }
+.ops-runbook-command-group h6 { color: var(--accent); }
+.ops-runbook-command .agent-code-toolbar span { display: flex; gap: 8px; align-items: center; }
+.ops-runbook-command ul, .ops-runbook-risks ul, .ops-runbook-stop ul { margin: 8px 0; }
+.ops-runbook-risks { margin-top: 10px; padding: 9px 11px; background: #fff7f2; color: #714326; }
 .ops-finding-card { margin-top: 10px; padding: 12px 13px; border: 1px solid var(--line); background: #fff; }
 .ops-finding-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 0; }
 .ops-finding-card header small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }

@@ -2823,6 +2823,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "oracle.storage.tablespace",
                 "oracle.transaction.long_running",
                 "oracle.replication.status",
+                "oracle.ha.adg_build",
                 "oracle.configuration.parameters",
                 "oracle.storage.temp_undo",
                 "oracle.instance.redo_alert",

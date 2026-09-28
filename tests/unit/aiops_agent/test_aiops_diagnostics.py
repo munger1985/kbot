@@ -382,7 +382,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(78, len(registry.tools))
+        self.assertEqual(79, len(registry.tools))
         self.assertTrue(
             all(
                 column.sensitivity == "PUBLIC"
@@ -409,6 +409,7 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertIn(("ORACLE", "db.sql.execution_plan"), pairs)
         self.assertIn(("ORACLE", "db.sql.display_cursor"), pairs)
         self.assertIn(("ORACLE", "db.sql.object_statistics"), pairs)
+        self.assertIn(("ORACLE", "db.ha.adg_precheck"), pairs)
         self.assertIn(
             ("ORACLE", "db.resource.session_utilization"), pairs
         )

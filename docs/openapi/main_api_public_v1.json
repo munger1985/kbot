@@ -992,7 +992,8 @@
           "ANALYSIS_MARKDOWN",
           "SOLUTION_MARKDOWN",
           "FACT_CONFIRMATION",
-          "HTML_REPORT_LINKS"
+          "HTML_REPORT_LINKS",
+          "IMPLEMENTATION_RUNBOOK"
         ],
         "title": "AnswerBlockType",
         "type": "string"
@@ -27345,6 +27346,7 @@
     },
     "/api/v1/apps/media-studio/auth/login": {
       "post": {
+        "description": "使用平台用户凭据进入固定的多媒体创作 Portal Domain。",
         "operationId": "login_api_v1_apps_media_studio_auth_login_post",
         "requestBody": {
           "content": {

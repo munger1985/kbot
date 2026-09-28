@@ -604,11 +604,20 @@ content = """
 tool_id 或 expected_evidence_kind 及最少成功结果数；actions 必须覆盖这些义务，不能用相近但
 不同的产物代替。普通查询、解释或方案任务可不声明完成义务。
 
-必须输出 diagnostic_profile 和 subject_ref。用户要求分析一个明确 SQL_ID 的性能、执行计划、
+必须输出 diagnostic_profile、implementation_profile 和 subject_ref。用户要求分析一个明确 SQL_ID 的性能、执行计划、
 资源消耗或调优问题时，选择 SINGLE_SQL_PERFORMANCE，并在 subject_ref.sql_id 中原样提取后
 转为小写；这是只读诊断，action_intent 必须为 NONE。该档案由服务端展开游标、完整执行计划、
 计划对象统计信息、DBMS_XPLAN ALLSTATS LAST 和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
 subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
+
+用户要求结合当前 Oracle 数据库参数生成从零建设、实施或改造 Active Data Guard/ADG 的完整
+方案时，选择 IMPLEMENTATION_RUNBOOK，implementation_profile=ORACLE_ADG_BUILD，objectives
+只能为 PLAN，action_intent 必须为 NONE，diagnostic_profile=GENERAL。此类请求不是
+CONTROLLED_ACTION，也不是 ADVISORY：服务端会固定取得 ADG 前置事实，并确定性生成包含整改、
+SQL、RMAN、DGMGRL、系统配置、验证和回退的完整 Runbook。备库地址、路径或保护模式缺失时仍
+生成带显式占位符的完整方案，不要求用户先补齐才能回答。只有用户后续明确选择“执行第 N 步”
+或要求执行某条命令时，才按 CONTROLLED_ACTION 和 EXECUTE 处理。其他问题的
+implementation_profile=NONE。
 
 必须先区分历史观察与未来预测。只问当前时点状态时 temporal_analysis_mode=CURRENT，历史窗口和
 预测窗口均为空。询问过去的趋势、增长、变化速度或持续性，但没有要求未来外推时为HISTORICAL。
@@ -631,7 +640,7 @@ DATABASE_FIRST；只有两类证据回答不同子问题且都不可缺少时才
 只读查询工具并严格遵守其 database_access、input 和 policy。不要额外查询已经绑定的逻辑
 Target 身份，系统会按需自动补充实际数据库身份核验。
 
-必须单独输出 action_intent：用户只要求“生成、给出、展示、查看”某个动作的语句或脚本时，
+必须单独输出 action_intent：除上述 IMPLEMENTATION_RUNBOOK 外，用户只要求“生成、给出、展示、查看”某个动作的语句或脚本时，
 action_intent=ADVISORY；只有用户明确要求系统“执行、运行、应用”动作时才为 EXECUTE；纯只读
 问题为 NONE。ADVISORY 与 EXECUTE 都选择 CONTROLLED_ACTION，并只生成核验目标对象、当前
 状态和模板参数所需的最小只读 actions。ADVISORY 不核验执行凭据、变更权限或执行白名单，
@@ -696,9 +705,11 @@ forecast_horizon_seconds；未明确时使用未来30天和2592000。历史窗�
 定义、锁链、会话明细和数据库目录事实不是监控指标，不适用该优先级。
 对应地，task_frame.evidence_source_strategy 使用 MONITORING_FIRST；数据库专属事实使用
 DATABASE_FIRST；只有监控和数据库回答不同的必要子问题时才使用 COMBINED。
-task_frame.action_intent 必须反映用户诉求：只要求生成、给出、展示动作语句时为 ADVISORY，
+task_frame.action_intent 必须反映用户诉求：只要求生成、给出、展示单个登记动作语句时为 ADVISORY，
 明确要求系统执行时为 EXECUTE，其他任务为 NONE。ADVISORY 不是执行请求，不得把执行凭据、
 变更权限或人工审批列为生成语句的前置条件；不得把 PL/SQL 或变更语句作为动态只读查询。
+完整数据库建设实施方案不属于 ADVISORY；若 Task Frame 已声明 implementation_profile，则目标
+只能为 PLAN、action_intent 必须为 NONE，并只安排该档案要求的固定只读前置取证。
 若问题围绕明确的单个 SQL_ID 做性能诊断，task_frame.diagnostic_profile 应为
 SINGLE_SQL_PERFORMANCE，subject_ref.sql_id 保存规范化小写 SQL_ID。此时游标指标、完整执行
 计划和计划对象统计信息是核心证据，不得仅用临时动态 SQL 或实时 Plan Monitor 代替。
@@ -910,6 +921,9 @@ content = """
     预测部分明确预测窗口、forecast_value、forecast_utilization_percent和estimated_days_to_limit，
     并声明这是基于历史斜率的外推；forecast_confidence=LOW时仍须展示预测数值，同时结合
     history_elapsed_days明确标注低置信度，不得改写为“无法预测”。
+11. task_frame.implementation_profile 不为 NONE 时，只摘要当前前置条件和方案状态；完整命令、
+    验证、风险和回退由服务端 IMPLEMENTATION_RUNBOOK 区块展示。不得把缺少备库地址或路径写成
+    拒绝生成方案的理由，也不得在正文另行编造命令。
 """
 
 [[prompts]]
@@ -949,6 +963,9 @@ forecast_horizon_days、forecast_value、forecast_utilization_percent和estimate
 并明确其为基于历史斜率的外推。forecast_confidence=LOW时仍须展示预测数值，并结合
 history_elapsed_days明确说明低置信度及复核要求，不得表述为“无法预测”；不得把预测写成
 已经发生的事实，也不能只列当前使用率。
+task_frame.implementation_profile 不为 NONE 时，只输出当前前置状态和 Runbook 交付摘要；完整
+步骤由服务端结构化区块展示。缺少备库地址、路径或保护模式时说明方案内已有显式占位符，不得
+要求用户先补齐后才生成，也不得自行编造额外命令。
 """
 
 [[prompts]]

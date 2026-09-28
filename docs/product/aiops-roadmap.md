@@ -417,13 +417,19 @@ Idle 会话占比、事务回滚率。
 
 后续只推诊断阶段结论，不转发监控原文。
 
-#### N. ADG 切换演练（独立功能，后置）
+#### N. 数据库实施方案 Runbook
 
-不进入三个入口的诊断主链，也不在 P0/P1 交付。后续单独做：
+通用 Runbook 框架和 `ORACLE_ADG_BUILD` 已进入当前版本。它使用聊天 Turn 内的独立规划模式，
+不归入 Advisory，不创建 Proposal，只读取当前参数并生成完整实施步骤。ADG 从零建设已覆盖前置
+整改、RMAN Duplicate、日志传输与应用、Broker、验收和回退。
 
-- HA Group：一套已有主库 + 备库；
-- 演练前检查、演练步骤、演练后恢复检查；
-- 只生成固定命令和活检查证据，不自动执行 switchover / failover。
+后续继续补充：
+
+- `ORACLE_DATABASE_UPGRADE`；
+- `ORACLE_DATABASE_MIGRATION`；
+- `ORACLE_RAC_BUILD`；
+- `DATABASE_BACKUP_STRATEGY`；
+- 已有 ADG 环境的 switchover/failover 演练仍保持独立且不自动执行。
 
 ## 7. 分阶段 Roadmap
 
@@ -431,7 +437,7 @@ Idle 会话占比、事务回滚率。
 P0  诊断主链成型           4-6 周
 P1  巡检 / 容量 / AWR分析  6-10 周
 P2  专项技能与多库经营     8-12 周
-P3  ADG 演练与平台深化     独立功能，按环境需要
+P3  Runbook 扩展与平台深化 升级、迁移、RAC、备份与 ADG 演练
 ```
 
 ### P0｜三个入口都按同一套诊断逻辑输出
@@ -482,12 +488,14 @@ P3  ADG 演练与平台深化     独立功能，按环境需要
 | 飞书出站 | 加 | 诊断阶段结论推送 |
 | PG/MySQL 诊断包 | 加 | 延迟、死元组、Autovacuum、Idle、连接、QPS |
 
-### P3｜ADG 演练与平台深化
+### P3｜实施 Runbook 扩展与平台深化
 
-ADG 切换演练在此作为独立功能启动，不回头改三个入口的诊断主链。
+ADG 建设 Runbook 已提前交付；P3 在同一框架上扩展升级、迁移、RAC 和备份，并补充已有 ADG
+环境的切换演练，不回头把这些任务塞进诊断或 Advisory 主链。
 
 - 选择已有主从环境，生成演练前检查、步骤、恢复检查；
 - 永不自动执行 switchover / failover；
+- 数据库升级、迁移、RAC、备份各自增加固定前置取证与确定性 Runbook 编译器；
 - 主机/OS/网络证据、变更/拓扑、飞书静默升级按环境需要再加；
 - `ADD DATAFILE` 等存储动作，等 ASM/文件系统余量契约完整后再开放。
 

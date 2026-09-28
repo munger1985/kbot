@@ -751,6 +751,22 @@
     if (block.block_type === "FACT_CONFIRMATION") return factConfirmationHtml(payload, turn);
     if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload);
     if (block.block_type === "HTML_REPORT_LINKS") return htmlReportLinksHtml(payload, turn);
+    if (block.block_type === "IMPLEMENTATION_RUNBOOK") {
+      const applicabilityLabel = {
+        REQUIRED: "必须实施",
+        ALREADY_SATISFIED: "当前已满足",
+        CONDITIONAL: "按条件实施",
+      };
+      const commandHtml = (command) => `<div class="agent-code-block ops-runbook-command"><div class="agent-code-toolbar"><span><b>${esc(command.command_type || "COMMAND")}</b>${esc(command.title || "")}</span><button type="button" data-copy-code>复制命令</button></div><pre><code>${esc(command.content || "")}</code></pre>${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
+      const commandGroup = (title, commands) => values(commands).length
+        ? `<div class="ops-runbook-command-group"><h6>${esc(title)}</h6>${values(commands).map(commandHtml).join("")}</div>`
+        : "";
+      const stateItems = values(payload.current_state).map((item) => `<li class="is-${esc(String(item.status || "unknown").toLowerCase())}"><span>${esc(item.label || "-")}</span><strong>${esc(item.value || "-")}</strong><small>${esc(item.status || "UNKNOWN")}</small></li>`).join("");
+      const requiredInputs = values(payload.required_inputs).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.description || "")}</small></div><code>${esc(item.placeholder || "")}</code></li>`).join("");
+      const phases = values(payload.phases).map((phase, phaseIndex) => `<details class="ops-runbook-phase"${phaseIndex === 0 ? " open" : ""}><summary><span>${esc(phase.title || phase.phase_id)}</span><small>${esc(phase.objective || "")}</small></summary><div class="ops-runbook-steps">${values(phase.steps).map((step) => `<article class="ops-runbook-step"><header><div><strong>${esc(step.title || step.step_id)}</strong><small>${esc(step.rationale || "")}</small></div><span class="ops-runbook-applicability is-${esc(String(step.applicability || "required").toLowerCase())}">${esc(applicabilityLabel[step.applicability] || step.applicability || "")}</span></header>${values(step.required_inputs).length ? `<p class="ops-runbook-needs"><strong>所需输入：</strong>${values(step.required_inputs).map((item) => `<code>${esc(item)}</code>`).join(" ")}</p>` : ""}${commandGroup("实施命令", step.commands)}${commandGroup("验证命令", step.verification_commands)}${commandGroup("回退命令", step.rollback)}${values(step.risks).length ? `<div class="ops-runbook-risks"><strong>风险与注意事项</strong><ul>${values(step.risks).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : ""}</article>`).join("")}</div></details>`).join("");
+      const stopConditions = values(payload.stop_conditions).length ? `<section class="ops-runbook-stop"><h5>停止条件</h5><ul>${values(payload.stop_conditions).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>` : "";
+      return `<section class="ops-runbook"><header><div><strong>${esc(payload.title || "数据库实施 Runbook")}</strong><small>${esc(payload.profile || "")}</small></div><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span></header><p class="ops-runbook-policy">${esc(payload.execution_policy || "")}</p>${stateItems ? `<section><h5>当前环境摘要</h5><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${requiredInputs ? `<details class="ops-runbook-inputs" open><summary>实施前必须确认的外部输入</summary><ul>${requiredInputs}</ul></details>` : ""}<div class="ops-runbook-body">${phases}</div>${stopConditions}</section>`;
+    }
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
       const cell = (row, column, index) => Array.isArray(row)

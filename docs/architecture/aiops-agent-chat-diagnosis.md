@@ -16,6 +16,11 @@
 Schema 13兼容列、旧规划事件、双读双写或旧Planner回退路径。Run/Task、Artifact、Outbox、
 SSE、审批执行器等可靠性基础继续复用。
 
+完整数据库建设方案在同一 Turn 内使用 `IMPLEMENTATION_RUNBOOK` 规划模式和结构化
+`ImplementationProfile`，不新增顶层 WorkflowKind，也不复用 Advisory/Proposal。详细契约、
+ADG 前置 Tool、确定性编译和执行升级边界见
+[AIOps 数据库实施方案 Runbook 技术设计](aiops-implementation-runbooks.md)。
+
 ## 2. 当前实现问题
 
 当前实现把Message压缩为单一`text`，模型先输出单一Intent、Domain和Subject，确定性Planner

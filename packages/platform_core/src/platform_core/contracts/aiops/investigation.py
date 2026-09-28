@@ -125,6 +125,13 @@ class DiagnosticProfile(StrEnum):
     SINGLE_SQL_PERFORMANCE = "SINGLE_SQL_PERFORMANCE"
 
 
+class ImplementationProfile(StrEnum):
+    """由语义路由选择、由服务端编译的实施方案档案。"""
+
+    NONE = "NONE"
+    ORACLE_ADG_BUILD = "ORACLE_ADG_BUILD"
+
+
 class EvidenceSourceStrategy(StrEnum):
     """同类事实在监控与数据库之间的确定性取证顺序。"""
 
@@ -204,6 +211,7 @@ class TaskFrame(AIOpsContract):
         ),
     )
     diagnostic_profile: DiagnosticProfile = DiagnosticProfile.GENERAL
+    implementation_profile: ImplementationProfile = ImplementationProfile.NONE
     evidence_source_strategy: EvidenceSourceStrategy = (
         EvidenceSourceStrategy.DATABASE_FIRST
     )
@@ -237,6 +245,11 @@ class TaskFrame(AIOpsContract):
         )
         if len(set(requirement_ids)) != len(requirement_ids):
             raise ValueError("完成义务ID不能重复")
+        if self.implementation_profile != ImplementationProfile.NONE:
+            if self.objectives != (TaskObjective.PLAN,):
+                raise ValueError("实施方案任务只能使用 PLAN 目标")
+            if self.action_intent != ActionIntent.NONE or self.requires_change:
+                raise ValueError("实施方案生成阶段不能请求或标记执行")
         return self
 
 
@@ -358,6 +371,7 @@ class InvestigationPlanningOutput(AIOpsContract):
 class CompactPlanningMode(StrEnum):
     READ_ONLY_LOOKUP = "READ_ONLY_LOOKUP"
     CONTROLLED_ACTION = "CONTROLLED_ACTION"
+    IMPLEMENTATION_RUNBOOK = "IMPLEMENTATION_RUNBOOK"
     FULL_INVESTIGATION = "FULL_INVESTIGATION"
 
 
@@ -383,6 +397,13 @@ class CompactPlanningOutput(AIOpsContract):
             "SINGLE_SQL_PERFORMANCE表示围绕一个明确SQL_ID执行完整SQL性能基线；"
             "其他问题使用GENERAL。"
         )
+    )
+    implementation_profile: ImplementationProfile = Field(
+        default=ImplementationProfile.NONE,
+        description=(
+            "实施方案档案；ORACLE_ADG_BUILD 表示生成完整 ADG 建设 Runbook，"
+            "NONE 表示普通调查。"
+        ),
     )
     evidence_source_strategy: EvidenceSourceStrategy = (
         EvidenceSourceStrategy.DATABASE_FIRST
@@ -434,6 +455,20 @@ class CompactPlanningOutput(AIOpsContract):
             and not self.completion_requirements
         ):
             raise ValueError("对比任务必须声明结构化完成义务")
+        implementation_mode = (
+            self.planning_mode == CompactPlanningMode.IMPLEMENTATION_RUNBOOK
+        )
+        has_implementation_profile = (
+            self.implementation_profile != ImplementationProfile.NONE
+        )
+        if implementation_mode != has_implementation_profile:
+            raise ValueError("实施方案模式必须与 implementation_profile 同时出现")
+        if implementation_mode and (
+            self.objectives != (TaskObjective.PLAN,)
+            or self.action_intent != ActionIntent.NONE
+            or self.diagnostic_profile != DiagnosticProfile.GENERAL
+        ):
+            raise ValueError("实施方案必须使用 PLAN、NONE 和 GENERAL")
         return self
 
 class InvestigationAssessment(AIOpsContract):

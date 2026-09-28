@@ -36,6 +36,10 @@ Agent 能思考的问题边界。
 10. 诊断能力放开不等于变更能力放开，所有变更继续经过策略、审批、执行和验证。
 11. 一个Agent版本可以绑定多个逻辑Target；创建会话时必须选择其中一个，Conversation、Turn和Task Frame始终冻结该单一Target，不提供跨Target调查。
 12. 逻辑Target代表一个数据库对象，名称和数据库类型必填；数据库地址、只读凭据和执行凭据均是可选能力，不是Target存在的前提。
+13. 数据库建设、升级、迁移等完整实施方案使用独立 Runbook 模式，不归入 Advisory；方案生成阶段不创建 Proposal。
+
+完整实施方案的产品边界和首期 ADG 能力见
+[AIOps 数据库实施方案 Runbook](aiops-implementation-runbooks.md)。
 
 ## 3. 用户输入模型
 

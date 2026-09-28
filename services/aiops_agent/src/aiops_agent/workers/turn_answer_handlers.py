@@ -35,6 +35,9 @@ from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_TOOL_ID,
     EXACHECK_REPORT_KIND,
 )
+from aiops_agent.application.implementation import (
+    compile_implementation_runbook,
+)
 from aiops_agent.application.sqlhc_report import (
     SQLHC_FACT_COLUMNS,
     SQLHC_FACT_TOOL_ID,
@@ -53,6 +56,7 @@ from aiops_agent.contracts.turn_answer import (
 from aiops_agent.domain.evidence import extract_metric_trend_rows, summarize_numeric_trend
 from platform_core.contracts.aiops import (
     AnswerBlockType,
+    ImplementationProfile,
     InvestigationAssessment,
     MeasurementSemantics,
     SufficiencyStatus,
@@ -1189,12 +1193,14 @@ class DbaAnswerComposeHandler:
     async def execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
-        if assessment.status in {
+        waiting_status = assessment.status in {
             SufficiencyStatus.NEEDS_CLARIFICATION,
             SufficiencyStatus.NEEDS_EVIDENCE,
             SufficiencyStatus.CAPABILITY_UNAVAILABLE,
-            SufficiencyStatus.UNSAFE,
-        }:
+        }
+        if assessment.status == SufficiencyStatus.UNSAFE or (
+            waiting_status and not self._is_implementation_runbook(context)
+        ):
             return self._waiting_result(assessment, context)
 
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
@@ -1297,12 +1303,14 @@ class DbaAnswerComposeHandler:
         """诊断 Turn 先生成结构化草稿再切块；非诊断仍走带引用的正文流。"""
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
-        if assessment.status in {
+        waiting_status = assessment.status in {
             SufficiencyStatus.NEEDS_CLARIFICATION,
             SufficiencyStatus.NEEDS_EVIDENCE,
             SufficiencyStatus.CAPABILITY_UNAVAILABLE,
-            SufficiencyStatus.UNSAFE,
-        }:
+        }
+        if assessment.status == SufficiencyStatus.UNSAFE or (
+            waiting_status and not self._is_implementation_runbook(context)
+        ):
             result = self._waiting_result(assessment, context).model_copy(
                 update={"answer_streamed": True}
             )
@@ -1583,6 +1591,12 @@ class DbaAnswerComposeHandler:
                     evidence_refs=evidence_refs,
                 )
             )
+        runbook_block = self._implementation_runbook_block(
+            context=context,
+            assessment=assessment,
+        )
+        if runbook_block is not None:
+            blocks.append(runbook_block)
         if self._include_proposal(context):
             proposal_block = self._proposal_block(context.input_artifacts)
             if proposal_block is not None:
@@ -1591,7 +1605,11 @@ class DbaAnswerComposeHandler:
         if html_block is not None:
             blocks.append(html_block)
         blocks.extend(self._data_blocks(assessment.evidence))
-        evidence_request = self._evidence_request_block(assessment, context)
+        evidence_request = (
+            None
+            if self._is_implementation_runbook(context)
+            else self._evidence_request_block(assessment, context)
+        )
         if evidence_request is not None:
             blocks.append(evidence_request)
         return blocks
@@ -1689,6 +1707,15 @@ class DbaAnswerComposeHandler:
         )
 
     @staticmethod
+    def _is_implementation_runbook(context: TaskExecutionContext) -> bool:
+        task_frame = dict(
+            DbaAnswerComposeHandler._answer_context(context).get(
+                "task_frame", {}
+            )
+        )
+        return str(task_frame.get("implementation_profile") or "NONE") != "NONE"
+
+    @staticmethod
     def _fact_confirmation_block(
         *,
         context: TaskExecutionContext,
@@ -1758,6 +1785,8 @@ class DbaAnswerComposeHandler:
     def _include_proposal(context: TaskExecutionContext) -> bool:
         answer_context = DbaAnswerComposeHandler._answer_context(context)
         task_frame = dict(answer_context.get("task_frame", {}))
+        if str(task_frame.get("implementation_profile") or "NONE") != "NONE":
+            return False
         if is_automatic_entry(
             workflow_kind=str(answer_context.get("workflow_kind") or ""),
             trigger_type=context.trigger_type,
@@ -1767,6 +1796,34 @@ class DbaAnswerComposeHandler:
             intent = str(task_frame.get("action_intent") or "")
             return intent in {"ADVISORY", "EXECUTE"}
         return True
+
+    @staticmethod
+    def _implementation_runbook_block(
+        *,
+        context: TaskExecutionContext,
+        assessment: DbaSufficiencyAssessment,
+    ) -> TurnAnswerBlock | None:
+        """从已验证证据编译权威 Runbook，模型正文只承担摘要。"""
+        task_frame = dict(
+            DbaAnswerComposeHandler._answer_context(context).get(
+                "task_frame", {}
+            )
+        )
+        profile = ImplementationProfile(
+            str(task_frame.get("implementation_profile") or "NONE")
+        )
+        if profile == ImplementationProfile.NONE:
+            return None
+        runbook = compile_implementation_runbook(
+            profile=profile,
+            evidence=assessment.evidence,
+        )
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.IMPLEMENTATION_RUNBOOK,
+            schema_version="AIOPS_IMPLEMENTATION_RUNBOOK_BLOCK.v1",
+            payload=runbook.model_dump(mode="json"),
+            evidence_refs=runbook.evidence_refs,
+        )
 
     @staticmethod
     def _validate_evidence_refs(

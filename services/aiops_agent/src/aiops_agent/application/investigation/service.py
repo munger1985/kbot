@@ -78,6 +78,7 @@ from platform_core.contracts.aiops import (
     CompactPlanningMode,
     DiagnosticProfile,
     EvidenceSourceStrategy,
+    ImplementationProfile,
     InputMaterial,
     InvestigationAction,
     InvestigationPlan,
@@ -118,6 +119,7 @@ class TurnPlanningService:
     """在外部模型调用两侧使用短事务冻结并持久化计划。"""
 
     SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID = "oracle.sql.healthcheck"
+    ORACLE_ADG_BUILD_PLAYBOOK_ID = "oracle.ha.adg_build"
 
     def __init__(
         self,
@@ -656,11 +658,14 @@ class TurnPlanningService:
         )
         single_sql_id = self._single_sql_id(compact)
         profile_incomplete = (
-            compact.diagnostic_profile
-            == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
-            and (
-                single_sql_id is None
-                or not set(profile_tool_ids)
+            (
+                compact.diagnostic_profile
+                == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+                and single_sql_id is None
+            )
+            or (
+                bool(profile_tool_ids)
+                and not set(profile_tool_ids)
                 <= {str(item["tool_id"]) for item in selected_tools}
             )
         )
@@ -712,6 +717,7 @@ class TurnPlanningService:
             ],
             "model_receipt": routed.receipt.model_dump(mode="json"),
             "diagnostic_profile": str(compact.diagnostic_profile),
+            "implementation_profile": str(compact.implementation_profile),
             "subject_ref": dict(compact.subject_ref),
         }
         if compact_route_incomplete:
@@ -752,6 +758,22 @@ class TurnPlanningService:
                 compact=compact,
                 target_context=context.target_context,
                 sql_id=single_sql_id,
+            )
+            return (
+                StructuredModelResult(output=output, receipt=routed.receipt),
+                selected_tools,
+                selected_playbooks,
+                route_snapshot,
+            )
+        if (
+            not compact_route_incomplete
+            and compact.planning_mode
+            == CompactPlanningMode.IMPLEMENTATION_RUNBOOK
+        ):
+            output = self._implementation_runbook_output(
+                question=compact_question,
+                compact=compact,
+                target_context=context.target_context,
             )
             return (
                 StructuredModelResult(output=output, receipt=routed.receipt),
@@ -821,6 +843,7 @@ class TurnPlanningService:
                 ),
                 "action_intent": compact.action_intent,
                 "diagnostic_profile": compact.diagnostic_profile,
+                "implementation_profile": compact.implementation_profile,
                 "evidence_source_strategy": (
                     compact.evidence_source_strategy
                 ),
@@ -834,7 +857,12 @@ class TurnPlanningService:
 
     @staticmethod
     def _profile_tool_ids(compact) -> tuple[str, ...]:
-        """把模型选择的诊断档案展开为确定性固定 Tool 集合。"""
+        """把模型选择的诊断或实施档案展开为确定性固定 Tool 集合。"""
+        if (
+            compact.implementation_profile
+            == ImplementationProfile.ORACLE_ADG_BUILD
+        ):
+            return ("db.instance.identity", "db.ha.adg_precheck")
         if (
             compact.diagnostic_profile
             == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
@@ -854,15 +882,24 @@ class TurnPlanningService:
         compact,
         available_playbooks: tuple[dict, ...],
     ) -> tuple[str, ...]:
-        """把单 SQL 诊断档案挂到 SQLHC 语义 Playbook；不可用时记缺口不中断。"""
+        """把结构化档案挂到确定性 Playbook；不可用时记缺口不中断。"""
+        available_ids = {
+            str(item["playbook_id"]) for item in available_playbooks
+        }
+        if (
+            compact.implementation_profile
+            == ImplementationProfile.ORACLE_ADG_BUILD
+        ):
+            return (
+                (cls.ORACLE_ADG_BUILD_PLAYBOOK_ID,)
+                if cls.ORACLE_ADG_BUILD_PLAYBOOK_ID in available_ids
+                else ()
+            )
         if (
             compact.diagnostic_profile
             != DiagnosticProfile.SINGLE_SQL_PERFORMANCE
         ):
             return ()
-        available_ids = {
-            str(item["playbook_id"]) for item in available_playbooks
-        }
         if cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID not in available_ids:
             return ()
         return (cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID,)
@@ -1024,6 +1061,91 @@ class TurnPlanningService:
             suggested_playbook_ids=cls._suggested_single_sql_playbook_ids(
                 compact
             ),
+        )
+
+    @classmethod
+    def _implementation_runbook_output(
+        cls,
+        *,
+        question: str,
+        compact,
+        target_context: dict,
+    ) -> InvestigationPlanningOutput:
+        """为实施方案建立固定只读取证计划，不进入受控动作。"""
+        if (
+            compact.implementation_profile
+            != ImplementationProfile.ORACLE_ADG_BUILD
+        ):
+            raise ValueError("实施方案模式缺少受支持的 implementation_profile")
+        display_name = str(
+            target_context.get("display_name")
+            or target_context.get("target_id")
+            or "当前 Target"
+        )
+        actions = (
+            InvestigationAction(
+                action_id="a1",
+                question="核对当前连接的 Oracle 实例身份和数据库角色",
+                tool_id="db.instance.identity",
+                input={},
+                expected_evidence_kind="DATABASE_IDENTITY",
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+            ),
+            InvestigationAction(
+                action_id="a2",
+                question="取得 ADG 建设所需的主库参数、归档、FRA、联机日志和 Standby Redo Log 前置事实",
+                tool_id="db.ha.adg_precheck",
+                input={},
+                expected_evidence_kind="ORACLE_ADG_PRECHECK",
+                measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+                depends_on=("a1",),
+            ),
+        )
+        return InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary=question[:2000],
+                        key_facts=(f"用户已选择逻辑 Target：{display_name}",),
+                        confidence=1,
+                        contains_user_evidence=False,
+                    ),
+                ),
+                explicit_question=question,
+            ),
+            task_frame=TaskFrame(
+                objectives=(TaskObjective.PLAN,),
+                problem_statement=(
+                    "结合当前数据库真实参数，生成从前置整改到验收回退的完整 Oracle ADG 建设实施方案"
+                ),
+                database_context=dict(target_context),
+                known_facts=(f"当前逻辑 Target 为 {display_name}",),
+                unknowns=(
+                    "备库主机、网络、Oracle Home、SID 和服务名",
+                    "主备存储路径或 ASM/OMF 策略",
+                    "目标保护模式与实施窗口",
+                ),
+                constraints=(
+                    "本轮只执行固定只读前置核验并生成 Runbook，不执行任何变更命令",
+                    "缺少外部实施输入时使用显式占位符，不拒绝生成完整方案",
+                    "用户选择执行具体步骤后才进入受控 Action 和审批",
+                ),
+                success_criteria=(
+                    "覆盖 ARCHIVELOG、FORCE LOGGING、FRA、SRL、Data Guard 参数、网络、RMAN Duplicate、日志应用、Broker、验收和回退",
+                    "SQL、RMAN、DGMGRL、Shell 和配置命令按真实执行类型分开呈现",
+                    "已满足条件明确标记，未满足条件纳入整改步骤",
+                ),
+                action_intent=ActionIntent.NONE,
+                diagnostic_profile=DiagnosticProfile.GENERAL,
+                implementation_profile=ImplementationProfile.ORACLE_ADG_BUILD,
+                evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
+                subject_ref={},
+                requires_change=False,
+            ),
+            plan=InvestigationPlan(revision_no=1, actions=actions),
+            suggested_playbook_ids=(cls.ORACLE_ADG_BUILD_PLAYBOOK_ID,),
         )
 
     async def _record_planning_route(
