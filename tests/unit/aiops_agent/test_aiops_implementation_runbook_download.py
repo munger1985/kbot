@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.implementation.pdf import (
+    _RunbookCodeBlock,
     _formatted_code,
     _wrapped_code,
     render_implementation_runbook_pdf,
@@ -60,6 +61,24 @@ def _historical_payload() -> dict:
 
 
 class ImplementationRunbookPdfTest(unittest.TestCase):
+    def test_pdf_code_block_splits_without_losing_lines(self) -> None:
+        source_lines = [f"SELECT {index} FROM dual;" for index in range(20)]
+        block = _RunbookCodeBlock(
+            title="SQLPLUS · 分页验证",
+            code="\n".join(source_lines),
+            text_font_name="Helvetica",
+        )
+
+        parts = block.split(420, 80)
+
+        self.assertEqual(2, len(parts))
+        self.assertEqual(
+            source_lines,
+            [line for part in parts for line in part.lines],
+        )
+        self.assertEqual("SQLPLUS · 分页验证", parts[0].title)
+        self.assertEqual("SQLPLUS · 分页验证（续）", parts[1].title)
+
     def test_markdown_projection_contains_toc_and_original_command(self) -> None:
         payload = _historical_payload()
         payload["phases"][0]["steps"][0]["commands"][0]["content"] = (

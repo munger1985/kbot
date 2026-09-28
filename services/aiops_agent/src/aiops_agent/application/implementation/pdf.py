@@ -12,9 +12,9 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
+    Flowable,
     PageBreak,
     Paragraph,
-    Preformatted,
     SimpleDocTemplate,
     Spacer,
 )
@@ -87,6 +87,125 @@ def _formatted_code(
             continuation_indent = "" if compact_split else "  "
         rendered.append(f"{continuation_indent}{remaining}")
     return "\n".join(rendered)
+
+
+class _RunbookCodeBlock(Flowable):
+    """把标题和命令正文绘制成可分页的单一代码块。"""
+
+    header_height = 20
+    code_font_size = 7
+    code_leading = 10
+    body_padding_top = 7
+    body_padding_bottom = 7
+    body_padding_horizontal = 9
+
+    def __init__(
+        self,
+        *,
+        title: str,
+        code: str,
+        text_font_name: str,
+        continuation: bool = False,
+    ) -> None:
+        super().__init__()
+        self.title = f"{title}（续）" if continuation else title
+        self.lines = code.splitlines() or [""]
+        self.text_font_name = text_font_name
+        self.code_font_name = (
+            "Courier" if code.isascii() else text_font_name
+        )
+        self.spaceBefore = 5
+        self.spaceAfter = 7
+        self._available_width = 0.0
+
+    def _body_height(self, line_count: int | None = None) -> float:
+        count = len(self.lines) if line_count is None else line_count
+        return (
+            self.body_padding_top
+            + count * self.code_leading
+            + self.body_padding_bottom
+        )
+
+    def wrap(
+        self,
+        available_width: float,
+        available_height: float,
+    ) -> tuple[float, float]:
+        self._available_width = available_width
+        return available_width, self.header_height + self._body_height()
+
+    def split(self, available_width: float, available_height: float) -> list[Flowable]:
+        self._available_width = available_width
+        full_height = self.header_height + self._body_height()
+        if full_height <= available_height:
+            return [self]
+        fixed_height = (
+            self.header_height
+            + self.body_padding_top
+            + self.body_padding_bottom
+        )
+        line_capacity = int(
+            (available_height - fixed_height) // self.code_leading
+        )
+        if line_capacity < 1:
+            return []
+        first = _RunbookCodeBlock(
+            title=self.title,
+            code="\n".join(self.lines[:line_capacity]),
+            text_font_name=self.text_font_name,
+        )
+        first.spaceAfter = 0
+        remainder = _RunbookCodeBlock(
+            title=self.title.removesuffix("（续）"),
+            code="\n".join(self.lines[line_capacity:]),
+            text_font_name=self.text_font_name,
+            continuation=True,
+        )
+        remainder.spaceBefore = 0
+        return [first, remainder]
+
+    def draw(self) -> None:
+        canvas = self.canv
+        width = self._available_width
+        body_height = self._body_height()
+        total_height = self.header_height + body_height
+
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#F0F3F5"))
+        canvas.setStrokeColor(colors.HexColor("#C8D2D8"))
+        canvas.setLineWidth(0.5)
+        canvas.rect(0, 0, width, body_height, fill=1, stroke=1)
+
+        canvas.setFillColor(colors.HexColor("#2B3549"))
+        canvas.setStrokeColor(colors.HexColor("#2B3549"))
+        canvas.rect(
+            0,
+            body_height,
+            width,
+            self.header_height,
+            fill=1,
+            stroke=1,
+        )
+        canvas.setFillColor(colors.white)
+        canvas.setFont(self.text_font_name, 8)
+        canvas.drawString(
+            self.body_padding_horizontal,
+            total_height - 13,
+            _pdf_text(self.title),
+        )
+
+        canvas.setFillColor(colors.HexColor("#1E2A30"))
+        text = canvas.beginText()
+        text.setTextOrigin(
+            self.body_padding_horizontal,
+            body_height - self.body_padding_top - self.code_font_size,
+        )
+        text.setFont(self.code_font_name, self.code_font_size)
+        text.setLeading(self.code_leading)
+        for line in self.lines:
+            text.textLine(line.expandtabs(4))
+        canvas.drawText(text)
+        canvas.restoreState()
 
 
 class _RunbookDocTemplate(SimpleDocTemplate):
@@ -178,40 +297,6 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
         textColor=colors.HexColor("#275D82"),
         spaceBefore=7,
         spaceAfter=4,
-        keepWithNext=True,
-    )
-    code_style = ParagraphStyle(
-        "命令",
-        fontName=font_name,
-        fontSize=7,
-        leading=10,
-        textColor=colors.HexColor("#1E2A30"),
-        backColor=colors.HexColor("#F0F3F5"),
-        borderColor=colors.HexColor("#C8D2D8"),
-        borderWidth=0.4,
-        borderPadding=7,
-        leftIndent=2,
-        rightIndent=2,
-        spaceBefore=3,
-        spaceAfter=7,
-    )
-    ascii_code_style = ParagraphStyle(
-        "命令等宽",
-        parent=code_style,
-        fontName="Courier",
-    )
-    command_heading_style = ParagraphStyle(
-        "命令标题",
-        parent=body,
-        fontSize=8,
-        leading=11,
-        textColor=colors.white,
-        backColor=colors.HexColor("#2B3549"),
-        borderColor=colors.HexColor("#2B3549"),
-        borderWidth=0.4,
-        borderPadding=(5, 7, 5, 7),
-        spaceBefore=5,
-        spaceAfter=0,
         keepWithNext=True,
     )
     story: list[Any] = [Spacer(1, 16 * mm), Paragraph(_paragraph(title), title_style)]
@@ -312,21 +397,14 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                         )
                         if item
                     )
-                    if heading:
-                        story.append(Paragraph(
-                            _paragraph(heading), command_heading_style
-                        ))
                     formatted_code = _formatted_code(
                         command.get("content"),
                         command.get("command_type"),
                     )
-                    story.append(Preformatted(
-                        formatted_code,
-                        (
-                            ascii_code_style
-                            if formatted_code.isascii()
-                            else code_style
-                        ),
+                    story.append(_RunbookCodeBlock(
+                        title=heading or "COMMAND",
+                        code=formatted_code,
+                        text_font_name=font_name,
                     ))
                     for note in _items(command.get("notes")):
                         story.append(Paragraph(_paragraph(note), body, bulletText="•"))
