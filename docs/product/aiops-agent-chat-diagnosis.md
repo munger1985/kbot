@@ -40,6 +40,8 @@ Agent 能思考的问题边界。
 
 完整实施方案的产品边界和首期 ADG 能力见
 [AIOps 数据库实施方案 Runbook](aiops-implementation-runbooks.md)。
+RAC、RMAN、升级、迁移和其他常用实施文档的目标态见
+[AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。
 
 ## 3. 用户输入模型
 

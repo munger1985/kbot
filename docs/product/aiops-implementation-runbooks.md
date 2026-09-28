@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook
 
-版本：1.5
+版本：1.6
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -89,14 +89,23 @@ Broker 配置名、保护模式和 Redo 传输方式等可安全派生的值直�
 
 ## 5. 后续实施档案
 
-通用契约和展示框架已经建立，后续按独立档案增加：
+通用契约和展示框架已经建立，后续按独立档案增加。以下条目是已完成设计、尚未实现的能力，不能
+在产品页面中展示为已经可用：
 
 | 档案 | 目标范围 |
 | --- | --- |
+| `ORACLE_RAC_BUILD` | 两节点 GI/ASM/RAC 从零建设及现有数据库迁移 |
+| `ORACLE_RMAN_BACKUP_BUILD` | RMAN 策略、备份脚本、调度、校验和监控 |
+| `ORACLE_RMAN_RECOVERY` | 控制文件、数据文件、全库、PITR 和 PDB 恢复 |
+| `ORACLE_RU_PATCH` | GI、DB Home、RU/OJVM 补丁、验证和回退 |
 | `ORACLE_DATABASE_UPGRADE` | 版本/补丁兼容检查、升级路径、预检查、升级、字典与组件验证、回退 |
 | `ORACLE_DATABASE_MIGRATION` | 源目标盘点、迁移方式选择、预同步、停机切换、校验和回退 |
-| `ORACLE_RAC_BUILD` | GI/ASM/网络/SCAN/VIP 前置、集群安装、数据库转换、服务和故障验证 |
-| `DATABASE_BACKUP_STRATEGY` | RPO/RTO、RMAN 策略、保留、归档、异地副本、恢复演练和监控 |
+| `ORACLE_CLONE_REFRESH` | 非生产克隆、刷新、隔离和脱敏交接 |
+| `ORACLE_DATAPUMP_MIGRATION` | Schema/PDB 逻辑迁移及对象校验 |
+| `ORACLE_ADG_DRILL` | Switchover、Failover 和 Reinstate 演练文档 |
 
 新增档案必须复用同一 `ImplementationRunbook` 契约、命令类型、安全边界和执行升级规则，不能
 为每类方案另建一套自由文本功能。
+
+RAC、RMAN 和其他常用档案的业务默认值、交付脚本、事实来源、阶段、风险和验收标准见
+[AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。

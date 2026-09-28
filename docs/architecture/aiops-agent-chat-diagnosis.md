@@ -20,6 +20,8 @@ SSE、审批执行器等可靠性基础继续复用。
 `ImplementationProfile`，不新增顶层 WorkflowKind，也不复用 Advisory/Proposal。详细契约、
 ADG 前置 Tool、确定性编译和执行升级边界见
 [AIOps 数据库实施方案 Runbook 技术设计](aiops-implementation-runbooks.md)。
+RAC、RMAN、补丁、升级和迁移等扩展档案的契约、事实和脚本包设计见
+[AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。
 
 ## 2. 当前实现问题
 

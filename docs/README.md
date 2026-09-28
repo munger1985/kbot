@@ -10,6 +10,7 @@ Git 历史保存，不再作为有效文档。
 - [Agent Runtime](architecture/agent-runtime.md)：Execution Spec、Skill、记忆、Artifact 和 SSE。
 - [AIOps Agent](architecture/aiops-agent.md)：监控、诊断、HITL、审批执行和报告。
 - [AIOps Agent 专业 DBA 对话诊断详细设计](architecture/aiops-agent-chat-diagnosis.md)：Turn、Skill、证据、表结构、API 与 SSE。
+- [AIOps 数据库实施方案 Runbook 技术设计](architecture/aiops-implementation-runbooks.md)：当前 ADG/DGPDB 契约、编译和导出边界。
 - [Model Serving](architecture/model-serving.md)：模型注册、托管进程和功能模型绑定。
 - [身份与 API](architecture/security-and-api.md)：Domain、用户 Token、App API Key 和内部 AuthContext。
 - [App API Key 安全设计](architecture/app-api-key-security.md)：App 绑定、Scope、Agent 白名单、轮换与撤销。
@@ -21,6 +22,7 @@ Git 历史保存，不再作为有效文档。
 - [知识入库、解析与检索](product/knowledge-lifecycle.md)
 - [AIOps Agent 产品能力](product/aiops-agent.md)
 - [AIOps Agent 专业 DBA 对话诊断设计](product/aiops-agent-chat-diagnosis.md)
+- [AIOps 数据库实施方案 Runbook](product/aiops-implementation-runbooks.md)
 - [AIOps 功能介绍与 PPT 生成说明](product/aiops-ppt-brief.md)
 - [KBot 4.0 功能分享幻灯片](product/kbot4-function-share/README.md)
 - [Slack 集成](product/slack-integration.md)
@@ -36,6 +38,10 @@ Git 历史保存，不再作为有效文档。
 - [Oracle 初始化](../database/oracle/README.md)
 - [脚本说明](../scripts/README.md)
 - [开发日志页面](../tools/dev_console/README.md)
+
+## 详细设计与实施方案
+
+- [AIOps 数据库实施文档中心详细设计](proposals/aiops-database-implementation-library-detailed-design.md)：RAC、RMAN、补丁、升级、迁移、克隆和 ADG 演练的待实施目标态。
 
 ## 契约
 

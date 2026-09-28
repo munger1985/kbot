@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook 技术设计
 
-版本：1.4
+版本：1.5
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -150,3 +150,11 @@ Flowable 绘制，正文具有固定内边距、浅色背景和边框，不允�
 数据库升级、迁移、RAC 建设和备份策略通过新增 `ImplementationProfile` 和独立编译器扩展。
 每个档案必须提供固定前置 Tool、确定性条件规则、完整阶段、验证/回退、测试和文档；共用现有
 Task Frame、Evidence、Answer Block 和 UI，不新增平行的自由文本方案系统。
+
+后续实现还必须增加结构化 Script Artifact、确定性 ZIP、部署拓扑事实和 Profile Registry。
+数据库能够确认或安全派生的值继续自动代入；RAC IP、VIP、SCAN、共享磁盘 WWID、补丁介质等不能
+从数据库事实推导的值必须来自 Target 拓扑或主机取证，禁止输出占位符或伪造值。
+
+完整的目标契约、RAC/RMAN Tool、编译规则、脚本包、API、模块拆分和验收矩阵见
+[AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。该文档
+描述待实施目标态，不代表当前代码已经支持 RAC、RMAN、升级或迁移 Runbook。

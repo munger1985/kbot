@@ -1,8 +1,8 @@
 # KBot 4.0 AIOps 后续能力 Roadmap
 
-版本：1.4
+版本：1.5
 状态：P0/P1 主链已实施，按审计补齐修订
-基准日期：2026-09-20
+基准日期：2026-09-28
 依据：客户沟通纪要 `meeting.txt`、当前 KBot 4.0 AIOps 代码与产品契约、真实 DBA 日常工作流
 
 本文回答三件事：现在已经能做什么、客户真正要补什么、后续按什么顺序改和加。
@@ -40,6 +40,10 @@ Finding Card → 指标与趋势分析 → 根因分析 → 解决方案
 
 ADG 切换演练不进入诊断主链，作为后续独立功能。
 
+数据库建设、备份、恢复、升级和迁移不进入诊断或 Advisory 主链，统一使用 Implementation Runbook。
+当前已交付 ADG/DGPDB 文档；RAC、RMAN 和其他常用文档按
+[数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md) 分阶段实施。
+
 官方诊断脚本按实际跑在哪一层接入，三种方式不能混用：SQL Monitor / AWR / XPLAN
 由产品内 Report Tool 生成，用户不跑也不上传；SQLHC 做成 Playbook 组合已有 SQL Tool，
 默认也不上传；只有 ExaCheck / ORAchk / TFA 近端消费客户已有报告。
@@ -70,16 +74,18 @@ ADG 切换演练不进入诊断主链，作为后续独立功能。
 - MySQL / PostgreSQL 只读诊断已覆盖复制延迟、死元组、Autovacuum、Idle 会话、连接使用率、QPS。
 - 正式报告、站内通知订阅已有后台；飞书/Email/ITSM 未交付。
 - 对话诊断支持用户补证；控制面与数据库执行器已经分离。
+- ADG/DGPDB 实施 Runbook 已支持正式页面、PDF 和 Markdown；RAC、RMAN、升级和迁移仍处于详细设计阶段。
 
 ### 明确缺口
 
 | 缺口 | 现状 |
 | --- | --- |
 | 外部通知 | 只有站内；客户值班看飞书。本期不做。 |
-| Host Runner / 主机证据 | 指标目录有 host CPU/内存模板，但还不是 DBA 工作区里的一等证据。本期不做。 |
+| Host Runner / 主机证据 | 指标目录有 host CPU/内存模板，但还不是 DBA 工作区里的一等证据；诊断 P0/P1 不做，后续 RAC Runbook 阶段 B 前必须补齐。 |
 | ADG 演练 | Target 只有 `db_role`，没有独立演练功能；本期不纳入主路径。 |
 | 真实审批联调 | 契约和诊断页逐条审批已落地，未做真实环境联调。 |
 | PLANNED 检查项 | 行迁移、Top 段、过索引表、系统表空间非系统对象、审计量尚未做成 Tool，界面不可勾选。 |
+| 数据库实施文档目录 | ADG/DGPDB 已交付；RAC、RMAN、RU、升级、迁移、克隆和演练尚未实现。 |
 
 ## 3. 会议诉求映射
 
@@ -427,11 +433,18 @@ Idle 会话占比、事务回滚率。
 
 后续继续补充：
 
+- `ORACLE_RAC_BUILD`；
+- `ORACLE_RMAN_BACKUP_BUILD`；
+- `ORACLE_RMAN_RECOVERY`；
+- `ORACLE_RU_PATCH`；
 - `ORACLE_DATABASE_UPGRADE`；
 - `ORACLE_DATABASE_MIGRATION`；
-- `ORACLE_RAC_BUILD`；
-- `DATABASE_BACKUP_STRATEGY`；
+- `ORACLE_CLONE_REFRESH`；
+- `ORACLE_DATAPUMP_MIGRATION`；
 - 已有 ADG 环境的 switchover/failover 演练仍保持独立且不自动执行。
+
+详细契约、事实来源、脚本包和实施顺序见
+[数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。
 
 ## 7. 分阶段 Roadmap
 
