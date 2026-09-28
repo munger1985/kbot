@@ -46,6 +46,11 @@ from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
     tool_class_for,
 )
+from aiops_agent.application.investigation.progress import (
+    drop_repeated_plan_actions,
+    execution_action_fingerprints,
+    plan_action_fingerprints,
+)
 from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
     InvestigationReasoner,
@@ -106,6 +111,7 @@ class _ReplanInputSnapshot:
     prior_artifacts: tuple[tuple[str, str], ...]
     tool_results: tuple[dict, ...] = ()
     input_envelope: dict | None = None
+    executed_action_fingerprints: tuple[str, ...] = ()
 
 
 class TurnPlanningService:
@@ -1121,6 +1127,21 @@ class TurnPlanningService:
         )
         action_intent = compact.action_intent
         controlled_action = action_intent != ActionIntent.NONE
+        intent_objective = (
+            TaskObjective.CHANGE
+            if action_intent == ActionIntent.EXECUTE
+            else TaskObjective.PLAN
+            if action_intent == ActionIntent.ADVISORY
+            else None
+        )
+        objectives = tuple(
+            dict.fromkeys(
+                (
+                    *compact.objectives,
+                    *((intent_objective,) if intent_objective else ()),
+                )
+            )
+        )
         return InvestigationPlanningOutput(
             input_envelope=TurnInputEnvelope(
                 materials=(
@@ -1136,13 +1157,7 @@ class TurnPlanningService:
                 explicit_question=question,
             ),
             task_frame=TaskFrame(
-                objectives=(
-                    (TaskObjective.CHANGE,)
-                    if action_intent == ActionIntent.EXECUTE
-                    else (TaskObjective.PLAN,)
-                    if action_intent == ActionIntent.ADVISORY
-                    else (TaskObjective.UNDERSTAND,)
-                ),
+                objectives=objectives,
                 problem_statement=compact.problem_statement,
                 database_context=dict(target_context),
                 time_scope=compact.time_scope,
@@ -1167,6 +1182,7 @@ class TurnPlanningService:
                     ),
                 ),
                 success_criteria=compact.success_criteria,
+                completion_requirements=compact.completion_requirements,
                 action_intent=action_intent,
                 diagnostic_profile=compact.diagnostic_profile,
                 evidence_source_strategy=(
@@ -1185,8 +1201,8 @@ class TurnPlanningService:
     async def execute_replan(self, payload: dict) -> dict:
         """根据上一轮Evidence Assessment生成并持久化下一轮调查DAG。"""
         revision_no = int(payload["revision_no"])
-        if revision_no != 2:
-            raise state_conflict("当前调查预算最多允许两轮")
+        if revision_no < 2:
+            raise state_conflict("重规划版本号必须大于首轮")
         context = await self._prepare(payload, revision_no=revision_no)
         if context.workflow_kind == "INSPECTION":
             return await self.fall_back_from_replan(
@@ -1260,6 +1276,31 @@ class TurnPlanningService:
                     error_code="AIOPS_DISCOVERY_BINDING_AMBIGUOUS",
                 )
             else:
+                (
+                    investigation,
+                    dynamic_queries,
+                    source_queries,
+                    removed_action_ids,
+                ) = self._drop_repeated_replan_actions(
+                    investigation=investigation,
+                    dynamic_queries=dynamic_queries,
+                    source_queries={
+                        **source_queries,
+                        "attachment_search": attachment_searches,
+                    },
+                    inputs=inputs,
+                )
+                if not executable_plan_actions(investigation.plan.actions):
+                    logger.info(
+                        "重规划未产生新的可执行动作，依据现有证据收敛回答："
+                        "turn_id={} removed={}",
+                        context.turn_id,
+                        removed_action_ids,
+                    )
+                    return await self.fall_back_from_replan(
+                        payload,
+                        error_code="AIOPS_REPLAN_NO_NEW_ACTION",
+                    )
                 logger.info(
                     "发现结果已绑定原诊断工具，跳过模型重规划继续取证："
                     "turn_id={} tools={}",
@@ -1273,14 +1314,7 @@ class TurnPlanningService:
                     investigation=investigation,
                     planning_receipt=None,
                     dynamic_queries=dynamic_queries,
-                    source_queries=(
-                        {
-                            **source_queries,
-                            "attachment_search": attachment_searches,
-                        }
-                        if attachment_searches
-                        else source_queries
-                    ),
+                    source_queries=source_queries,
                     diagnosis_model_snapshot=diagnosis_model_snapshot,
                     planner_model_snapshot=planner_model_snapshot,
                     public_summary="发现结果已绑定到原诊断工具，正在继续取证",
@@ -1333,6 +1367,28 @@ class TurnPlanningService:
                 revision_no=revision_no,
             )
         )
+        (
+            investigation,
+            dynamic_queries,
+            source_queries,
+            removed_action_ids,
+        ) = self._drop_repeated_replan_actions(
+            investigation=investigation,
+            dynamic_queries=dynamic_queries,
+            source_queries=source_queries,
+            inputs=inputs,
+        )
+        if not executable_plan_actions(investigation.plan.actions):
+            logger.info(
+                "模型重规划只生成了已执行动作，依据现有证据收敛回答："
+                "turn_id={} removed={}",
+                context.turn_id,
+                removed_action_ids,
+            )
+            return await self.fall_back_from_replan(
+                payload,
+                error_code="AIOPS_REPLAN_NO_NEW_ACTION",
+            )
         return await self._compile_and_persist_replan(
             context=context,
             revision_no=revision_no,
@@ -1343,6 +1399,46 @@ class TurnPlanningService:
             source_queries=source_queries,
             diagnosis_model_snapshot=diagnosis_model_snapshot,
             planner_model_snapshot=planner_model_snapshot,
+        )
+
+    @staticmethod
+    def _drop_repeated_replan_actions(
+        *,
+        investigation: InvestigationPlanningOutput,
+        dynamic_queries,
+        source_queries: dict,
+        inputs: _ReplanInputSnapshot,
+    ):
+        """删除跨轮重复动作，并同步删除对应的冻结查询。"""
+        plan, removed = drop_repeated_plan_actions(
+            investigation.plan,
+            executed_fingerprints=inputs.executed_action_fingerprints,
+        )
+        if not removed:
+            return investigation, dynamic_queries, source_queries, ()
+        kept_ids = {action.action_id for action in plan.actions}
+        filtered_dynamic = tuple(
+            item
+            for item in dynamic_queries
+            if str(item.get("action_id") or "") in kept_ids
+        )
+        filtered_sources = {}
+        for key, value in source_queries.items():
+            if not isinstance(value, (list, tuple)):
+                filtered_sources[key] = value
+                continue
+            filtered_sources[key] = tuple(
+                item
+                for item in value
+                if not isinstance(item, dict)
+                or not item.get("action_id")
+                or str(item.get("action_id")) in kept_ids
+            )
+        return (
+            investigation.model_copy(update={"plan": plan}),
+            filtered_dynamic,
+            filtered_sources,
+            removed,
         )
 
     def _investigation_from_continuation(
@@ -1534,6 +1630,23 @@ class TurnPlanningService:
                 or {}
             ) if run is not None else {}
             envelope = answer_context.get("input_envelope")
+            execution = dict(
+                dict(getattr(run, "plan_snapshot_json", None) or {}).get(
+                    "investigation_execution"
+                )
+                or {}
+            ) if run is not None else {}
+            scheduled_fingerprints = tuple(
+                fingerprint
+                for item in prior_artifacts
+                if str(item.schema_version)
+                == "aiops.investigation-plan.v1"
+                for fingerprint in plan_action_fingerprints(
+                    item.payload_json
+                    if isinstance(item.payload_json, dict)
+                    else None
+                )
+            )
             return _ReplanInputSnapshot(
                 prior_plan=dict(plan_artifact.payload_json or {}),
                 task_frame=dict(task_frame_artifact.payload_json or {}),
@@ -1550,6 +1663,16 @@ class TurnPlanningService:
                 ),
                 input_envelope=(
                     dict(envelope) if isinstance(envelope, dict) else None
+                ),
+                executed_action_fingerprints=(
+                    tuple(
+                        dict.fromkeys(
+                            (
+                                *execution_action_fingerprints(execution),
+                                *scheduled_fingerprints,
+                            )
+                        )
+                    )
                 ),
             )
 

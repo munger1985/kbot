@@ -22,6 +22,11 @@ from aiops_agent.application.investigation.service import (
     TurnPlanningService,
     _ReplanInputSnapshot,
 )
+from aiops_agent.application.investigation.progress import (
+    action_fingerprint,
+    drop_repeated_plan_actions,
+    plan_action_fingerprints,
+)
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from aiops_agent.playbooks import PlaybookRegistry
 from aiops_agent.tools import ToolExecutionSnapshotBuilder
@@ -97,13 +102,56 @@ def _envelope() -> dict:
 
 def _task_frame() -> dict:
     return {
-        "objectives": ["DIAGNOSE"],
+        "objectives": ["DIAGNOSE", "COMPARE"],
         "problem_statement": "对比两个整点窗口的 AWR",
         "success_criteria": ["生成 AWR 对比报告"],
+        "completion_requirements": [
+            {
+                "requirement_id": "r1",
+                "description": "生成正式 AWR 对比报告",
+                "accepted_tool_ids": ["db.oracle.awr.diff_report"],
+                "accepted_evidence_kinds": ["AWR_DIFF_REPORT"],
+                "minimum_successful_results": 1,
+            }
+        ],
     }
 
 
 class DiscoveryBindingTest(unittest.TestCase):
+    def test_compare_task_requires_structured_completion_obligation(self) -> None:
+        with self.assertRaisesRegex(ValueError, "结构化完成义务"):
+            InvestigationPlanningOutput.model_validate(
+                {
+                    "input_envelope": _envelope(),
+                    "task_frame": {
+                        "objectives": ["COMPARE"],
+                        "problem_statement": "对比两个 AWR 时段",
+                        "success_criteria": ["生成正式对比报告"],
+                    },
+                    "plan": _plan(
+                        _action(
+                            action_id="a1",
+                            tool_id="db.oracle.awr.report",
+                        )
+                    ).model_dump(mode="json"),
+                }
+            )
+
+    def test_initial_compare_plan_must_cover_required_diff_report(self) -> None:
+        with self.assertRaisesRegex(ValueError, "未覆盖完成义务"):
+            InvestigationPlanningOutput.model_validate(
+                {
+                    "input_envelope": _envelope(),
+                    "task_frame": _task_frame(),
+                    "plan": _plan(
+                        _action(
+                            action_id="a1",
+                            tool_id="db.oracle.awr.report",
+                        )
+                    ).model_dump(mode="json"),
+                }
+            )
+
     def test_datetime_snapshot_ids_bind_to_nearest_end_time(self) -> None:
         plan = _plan(
             _action(
@@ -135,6 +183,38 @@ class DiscoveryBindingTest(unittest.TestCase):
         self.assertEqual(
             {"begin_snapshot_id": 100, "end_snapshot_id": 101},
             report.input,
+        )
+
+    def test_action_fingerprint_only_removes_exact_repeat(self) -> None:
+        repeated = _action(
+            action_id="a1",
+            input={"begin_snapshot_id": 100, "end_snapshot_id": 101},
+        )
+        new_window = _action(
+            action_id="a2",
+            input={"begin_snapshot_id": 124, "end_snapshot_id": 125},
+        )
+        plan, removed = drop_repeated_plan_actions(
+            _plan(repeated, new_window),
+            executed_fingerprints=(
+                action_fingerprint(repeated.tool_id, repeated.input),
+            ),
+        )
+
+        self.assertEqual(("a1",), removed)
+        self.assertEqual(("a2",), tuple(a.action_id for a in plan.actions))
+
+    def test_persisted_plan_fingerprint_excludes_deferred_actions(self) -> None:
+        active = _action(action_id="a1", tool_id="monitor.query_range")
+        deferred = _action(action_id="a2", deferred=True)
+
+        fingerprints = plan_action_fingerprints(
+            _plan(active, deferred).model_dump(mode="json")
+        )
+
+        self.assertEqual(
+            (action_fingerprint(active.tool_id, active.input),),
+            fingerprints,
         )
 
     def test_two_bound_reports_synthesize_diff_report(self) -> None:
@@ -273,7 +353,11 @@ class DiscoveryBindingTest(unittest.TestCase):
         investigation = InvestigationPlanningOutput.model_validate(
             {
                 "input_envelope": _envelope(),
-                "task_frame": _task_frame(),
+                "task_frame": {
+                    "objectives": ["DIAGNOSE"],
+                    "problem_statement": "生成单窗口 AWR",
+                    "success_criteria": ["生成 AWR 报告"],
+                },
                 "plan": _plan(
                     _action(
                         action_id="a1",
@@ -865,6 +949,27 @@ class ExecuteReplanContinuationTest(unittest.IsolatedAsyncioTestCase):
             },
             captured["investigation"].plan.actions[2].input,
         )
+
+    async def test_third_revision_can_continue_bound_discovery(self) -> None:
+        service, captured = self._service(
+            prior=_continuation_plan(),
+            tool_results=(_snapshot_result(),),
+        )
+
+        result = await TurnPlanningService.execute_replan(
+            service,
+            {
+                "domain_id": 7,
+                "turn_id": "turn",
+                "ops_run_id": "run",
+                "assessment_artifact_id": str(uuid7()),
+                "revision_no": 3,
+            },
+        )
+
+        self.assertEqual("COLLECTING", result["status"])
+        self.assertEqual(3, captured["revision_no"])
+        service._investigation_reasoner.replan.assert_not_called()
 
     async def test_unbound_deferred_skips_model_replan(self) -> None:
         service, _captured = self._service(

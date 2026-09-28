@@ -2206,18 +2206,27 @@ class AIOpsRuntimeService:
             )
         elif artifact.schema_version == "DBA_SUFFICIENCY.v1":
             assessment = DbaSufficiencyAssessment.model_validate(payload)
+            previous_evidence_refs = {
+                str(item.get("evidence_ref") or "")
+                for item in dict(turn.sufficiency_json or {}).get(
+                    "evidence", ()
+                )
+                if isinstance(item, dict) and item.get("evidence_ref")
+            }
+            current_evidence_refs = {
+                fact.evidence_ref for fact in assessment.evidence
+            }
+            gained_new_evidence = bool(
+                current_evidence_refs - previous_evidence_refs
+            )
             turn.sufficiency_status = str(assessment.status)
             turn.sufficiency_json = assessment.model_dump(mode="json")
             turn.sufficiency_artifact_id = artifact.artifact_id
             turn.assessment_artifact_id = artifact.artifact_id
-            if (
-                assessment.investigation is not None
-                and not assessment.investigation.progress_made
-            ) or (
-                assessment.investigation is None
-                and not assessment.evidence
-            ):
+            if not gained_new_evidence:
                 turn.no_progress_count = int(turn.no_progress_count or 0) + 1
+            else:
+                turn.no_progress_count = 0
             revisions = await uow.turns.list_investigation_revisions(
                 turn_id=turn.turn_id
             )
@@ -2249,8 +2258,16 @@ class AIOpsRuntimeService:
                 assessment=assessment,
                 deterministic_replan=deterministic_replan,
                 no_progress_count=int(turn.no_progress_count or 0),
-                current_plan_revision=int(turn.current_plan_revision or 1),
                 has_deferred=prior_plan_has_deferred(investigation_plan),
+                deadline_reached=(
+                    run.deadline_at is not None and run.deadline_at <= now
+                ),
+                tool_budget_remaining=(
+                    int(turn.tool_call_count or 0)
+                    < int(
+                        getattr(self._diagnosis_config, "max_tool_calls", 12)
+                    )
+                ),
             )
             if should_replan and run.workflow_kind != "INSPECTION":
                 await self._schedule_turn_replan(
@@ -2285,10 +2302,11 @@ class AIOpsRuntimeService:
         assessment: DbaSufficiencyAssessment,
         deterministic_replan: bool,
         no_progress_count: int,
-        current_plan_revision: int,
         has_deferred: bool = False,
+        deadline_reached: bool = False,
+        tool_budget_remaining: bool = True,
     ) -> bool:
-        """只要持续取得进展，就在 Run 截止时间内继续自动补证。"""
+        """存在可执行缺口时按截止时间、工具预算和连续进展决定补证。"""
         next_action = (
             assessment.investigation.next_action
             if assessment.investigation is not None
@@ -2297,7 +2315,8 @@ class AIOpsRuntimeService:
         if (
             next_action == "STOP_UNSAFE"
             or no_progress_count >= 2
-            or current_plan_revision >= 2
+            or deadline_reached
+            or not tool_budget_remaining
         ):
             return False
         if has_deferred:
@@ -2383,7 +2402,7 @@ class AIOpsRuntimeService:
             event_type="turn.status",
             payload={
                 "status": "REPLANNING",
-                "public_summary": "首轮证据仍有关键缺口，正在调整调查计划",
+                "public_summary": "当前证据仍有可补齐的关键缺口，正在调整调查计划",
             },
         )
 

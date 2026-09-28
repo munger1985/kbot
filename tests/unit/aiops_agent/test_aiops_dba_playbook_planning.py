@@ -600,7 +600,19 @@ class _ReplanReasoner(_PastedLogReasoner):
         output = planned.output.model_copy(
             update={
                 "plan": planned.output.plan.model_copy(
-                    update={"revision_no": 2}
+                    update={
+                        "revision_no": 2,
+                        "actions": (
+                            InvestigationAction(
+                                action_id="a1",
+                                question="核验当前数据库实例身份",
+                                tool_id="db.instance.identity",
+                                input={},
+                                expected_evidence_kind="INSTANCE_IDENTITY",
+                                measurement_semantics="CURRENT_ACTIVITY",
+                            ),
+                        ),
+                    }
                 )
             }
         )
@@ -617,6 +629,7 @@ class _CompactLookupReasoner(_PastedLogReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
+                "objectives": ["UNDERSTAND"],
                 "action_intent": "NONE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -670,6 +683,7 @@ class _CompactSingleSqlReasoner(_CompactLookupReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
+                "objectives": ["DIAGNOSE", "ASSESS"],
                 "action_intent": "NONE",
                 "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
                 "subject_ref": {"sql_id": "6TJX7SU0Q5TTJ"},
@@ -704,6 +718,7 @@ class _CompactControlledActionReasoner(_CompactLookupReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "objectives": ["CHANGE"],
                 "action_intent": "EXECUTE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -774,6 +789,7 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "objectives": ["CHANGE"],
                 "action_intent": "EXECUTE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -806,6 +822,7 @@ class _IncompleteCompactControlledActionReasoner(_CompactLookupReasoner):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "objectives": ["CHANGE"],
                 "action_intent": "EXECUTE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -1543,6 +1560,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
+                "objectives": ["UNDERSTAND"],
                 "action_intent": "NONE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -1583,6 +1601,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "objectives": ["CHANGE"],
                 "action_intent": "EXECUTE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -1624,6 +1643,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "objectives": ["PLAN"],
                 "action_intent": "ADVISORY",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -2806,6 +2826,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 CompactPlanningOutput.model_validate(
                     {
                         "planning_mode": "READ_ONLY_LOOKUP",
+                        "objectives": ["DIAGNOSE", "ASSESS"],
                         "action_intent": "NONE",
                         "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
                         "subject_ref": {"sql_id": "6tjx7su0q5ttj"},
@@ -2823,6 +2844,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         compact = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "READ_ONLY_LOOKUP",
+                "objectives": ["DIAGNOSE", "ASSESS"],
                 "action_intent": "NONE",
                 "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
                 "subject_ref": {"sql_id": "6TJX7SU0Q5TTJ"},

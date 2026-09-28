@@ -141,6 +141,24 @@ class TemporalAnalysisMode(StrEnum):
     HISTORICAL_AND_FORECAST = "HISTORICAL_AND_FORECAST"
 
 
+class CompletionRequirement(AIOpsContract):
+    """用户明确要求交付、且必须由真实证据满足的一项完成义务。"""
+
+    requirement_id: str = Field(pattern=r"^r[0-9]+$")
+    description: str = Field(min_length=1, max_length=1000)
+    accepted_tool_ids: tuple[str, ...] = Field(default=(), max_length=8)
+    accepted_evidence_kinds: tuple[str, ...] = Field(
+        default=(), max_length=8
+    )
+    minimum_successful_results: int = Field(default=1, ge=1, le=8)
+
+    @model_validator(mode="after")
+    def validate_selectors(self) -> "CompletionRequirement":
+        if not self.accepted_tool_ids and not self.accepted_evidence_kinds:
+            raise ValueError("完成义务必须声明可验证的工具或证据类型")
+        return self
+
+
 class TaskFrame(AIOpsContract):
     schema_version: str = TASK_FRAME_SCHEMA_VERSION
     objectives: tuple[TaskObjective, ...] = Field(
@@ -175,6 +193,9 @@ class TaskFrame(AIOpsContract):
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     success_criteria: tuple[str, ...]
+    completion_requirements: tuple[CompletionRequirement, ...] = Field(
+        default=(), max_length=8
+    )
     action_intent: ActionIntent = Field(
         default=ActionIntent.NONE,
         description=(
@@ -211,6 +232,11 @@ class TaskFrame(AIOpsContract):
     def validate_objectives(self) -> "TaskFrame":
         if len(set(self.objectives)) != len(self.objectives):
             raise ValueError("任务目标不能重复")
+        requirement_ids = tuple(
+            item.requirement_id for item in self.completion_requirements
+        )
+        if len(set(requirement_ids)) != len(requirement_ids):
+            raise ValueError("完成义务ID不能重复")
         return self
 
 
@@ -304,6 +330,28 @@ class InvestigationPlanningOutput(AIOpsContract):
         )
         if requires_observation and not supplied and not self.plan.actions:
             raise ValueError("诊断或评估任务在没有用户证据时必须安排取证动作")
+        if (
+            TaskObjective.COMPARE in self.task_frame.objectives
+            and not self.task_frame.completion_requirements
+        ):
+            raise ValueError("对比任务必须声明结构化完成义务")
+        if self.plan.revision_no == 1:
+            for requirement in self.task_frame.completion_requirements:
+                matching = sum(
+                    1
+                    for action in self.plan.actions
+                    if not action.optional
+                    and (
+                        action.tool_id in requirement.accepted_tool_ids
+                        or action.expected_evidence_kind
+                        in requirement.accepted_evidence_kinds
+                    )
+                )
+                if matching < requirement.minimum_successful_results:
+                    raise ValueError(
+                        "首轮调查计划未覆盖完成义务："
+                        f"{requirement.requirement_id}"
+                    )
         return self
 
 
@@ -323,6 +371,7 @@ class CompactPlanningOutput(AIOpsContract):
 
     schema_version: str = COMPACT_PLANNING_SCHEMA_VERSION
     planning_mode: CompactPlanningMode
+    objectives: tuple[TaskObjective, ...] = Field(min_length=1, max_length=8)
     action_intent: ActionIntent = Field(
         description=(
             "NONE表示只读回答；ADVISORY表示只生成或展示登记动作模板的语句、"
@@ -368,10 +417,24 @@ class CompactPlanningOutput(AIOpsContract):
         ),
     )
     success_criteria: tuple[str, ...] = Field(min_length=1, max_length=4)
+    completion_requirements: tuple[CompletionRequirement, ...] = Field(
+        default=(), max_length=8
+    )
     selected_tool_ids: tuple[str, ...] = Field(default=(), max_length=5)
     selected_playbook_ids: tuple[str, ...] = Field(default=(), max_length=3)
     actions: tuple[InvestigationAction, ...] = Field(default=(), max_length=4)
     public_reasoning_summary: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_completion_contract(self) -> "CompactPlanningOutput":
+        if len(set(self.objectives)) != len(self.objectives):
+            raise ValueError("任务目标不能重复")
+        if (
+            TaskObjective.COMPARE in self.objectives
+            and not self.completion_requirements
+        ):
+            raise ValueError("对比任务必须声明结构化完成义务")
+        return self
 
 class InvestigationAssessment(AIOpsContract):
     schema_version: str = INVESTIGATION_ASSESSMENT_SCHEMA_VERSION

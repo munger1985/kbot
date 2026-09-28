@@ -144,6 +144,11 @@ def safe_plan_projection(
                 str(value)
                 for value in task_frame.get("success_criteria") or ()
             ],
+            "completion_requirements": [
+                dict(value)
+                for value in task_frame.get("completion_requirements") or ()
+                if isinstance(value, Mapping)
+            ],
             "action_intent": str(
                 task_frame.get("action_intent") or "NONE"
             ),

@@ -132,6 +132,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
     async def test_compact_planner_uses_small_routing_contract(self) -> None:
         payload = {
             "planning_mode": "READ_ONLY_LOOKUP",
+            "objectives": ["UNDERSTAND"],
             "action_intent": "NONE",
             "diagnostic_profile": "GENERAL",
             "subject_ref": {},
@@ -185,6 +186,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
     async def test_compact_planner_rejects_unknown_selected_tool(self) -> None:
         payload = {
             "planning_mode": "FULL_INVESTIGATION",
+            "objectives": ["DIAGNOSE"],
             "action_intent": "NONE",
             "diagnostic_profile": "GENERAL",
             "subject_ref": {},
@@ -214,6 +216,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         payload = {
             "planning_mode": "READ_ONLY_LOOKUP",
+            "objectives": ["UNDERSTAND"],
             "action_intent": "NONE",
             "diagnostic_profile": "GENERAL",
             "subject_ref": {},
@@ -262,6 +265,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "CONTROLLED_ACTION",
+                "objectives": ["CHANGE"],
                 "action_intent": "EXECUTE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},
@@ -280,6 +284,7 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
         output = CompactPlanningOutput.model_validate(
             {
                 "planning_mode": "FULL_INVESTIGATION",
+                "objectives": ["DIAGNOSE"],
                 "action_intent": "NONE",
                 "diagnostic_profile": "GENERAL",
                 "subject_ref": {},

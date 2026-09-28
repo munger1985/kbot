@@ -1841,7 +1841,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=assessment,
                 deterministic_replan=True,
                 no_progress_count=0,
-                current_plan_revision=1,
             )
         )
         self.assertFalse(
@@ -1849,7 +1848,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=assessment,
                 deterministic_replan=True,
                 no_progress_count=2,
-                current_plan_revision=1,
             )
         )
         self.assertFalse(
@@ -1857,7 +1855,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=assessment,
                 deterministic_replan=True,
                 no_progress_count=0,
-                current_plan_revision=2,
+                deadline_reached=True,
             )
         )
 
@@ -1907,7 +1905,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=answer,
                 deterministic_replan=False,
                 no_progress_count=0,
-                current_plan_revision=1,
                 has_deferred=True,
             )
         )
@@ -1916,7 +1913,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=answer,
                 deterministic_replan=False,
                 no_progress_count=0,
-                current_plan_revision=1,
                 has_deferred=False,
             )
         )
@@ -1925,7 +1921,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=ask_user,
                 deterministic_replan=False,
                 no_progress_count=0,
-                current_plan_revision=1,
                 has_deferred=True,
             )
         )
@@ -1934,7 +1929,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=ask_user,
                 deterministic_replan=False,
                 no_progress_count=0,
-                current_plan_revision=1,
                 has_deferred=False,
             )
         )
@@ -1943,7 +1937,6 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=stop_unsafe,
                 deterministic_replan=False,
                 no_progress_count=0,
-                current_plan_revision=1,
                 has_deferred=True,
             )
         )
@@ -1952,8 +1945,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 assessment=answer,
                 deterministic_replan=False,
                 no_progress_count=0,
-                current_plan_revision=2,
                 has_deferred=True,
+                tool_budget_remaining=False,
             )
         )
 
@@ -1970,6 +1963,56 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
         self.assertEqual(1, len(result.evidence))
         self.assertIn("累计口径", result.reasons[0])
+
+    def test_awr_comparison_requires_diff_report_evidence(self) -> None:
+        task_frame = {
+            "objectives": ["COMPARE"],
+            "completion_requirements": [
+                {
+                    "requirement_id": "r1",
+                    "description": "生成正式 AWR 对比报告",
+                    "accepted_tool_ids": [
+                        "db.oracle.awr.diff_report"
+                    ],
+                    "minimum_successful_results": 1,
+                }
+            ],
+        }
+        single_report = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(
+                            semantics="SNAPSHOT_DELTA",
+                            tool_id="db.oracle.awr.report",
+                        ),
+                    ),
+                    task_frame_overrides=task_frame,
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.PARTIAL, single_report.status)
+        self.assertIn(
+            "COMPLETION_REQUIREMENT_UNSATISFIED",
+            {gap.code for gap in single_report.gaps},
+        )
+
+        diff_report = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(
+                            semantics="SNAPSHOT_DELTA",
+                            tool_id="db.oracle.awr.diff_report",
+                        ),
+                    ),
+                    task_frame_overrides=task_frame,
+                )
+            )
+        )
+
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, diff_report.status)
 
     def test_partial_answer_requests_missing_prometheus_evidence(self) -> None:
         base = asyncio.run(

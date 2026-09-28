@@ -569,6 +569,63 @@ class DbaEvidenceAssessmentHandler:
                 reasons.append(
                     "单 SQL 性能基线缺少游标、执行计划或计划对象统计信息"
                 )
+        completion_gaps: list[TurnEvidenceGap] = []
+        plan_actions = {
+            str(item.get("action_id") or ""): item
+            for item in dict(
+                answer_context.get("investigation_plan", {})
+            ).get("actions", ())
+            if isinstance(item, dict) and item.get("action_id")
+        }
+        for requirement in task_frame.get("completion_requirements", ()):
+            if not isinstance(requirement, dict):
+                continue
+            accepted_tools = {
+                str(value)
+                for value in requirement.get("accepted_tool_ids", ())
+                if value
+            }
+            accepted_kinds = {
+                str(value)
+                for value in requirement.get(
+                    "accepted_evidence_kinds", ()
+                )
+                if value
+            }
+            matching = {
+                fact.evidence_ref
+                for fact in facts
+                if fact.tool_id in accepted_tools
+                or str(
+                    plan_actions.get(fact.step_id, {}).get(
+                        "expected_evidence_kind", ""
+                    )
+                )
+                in accepted_kinds
+            }
+            minimum = int(
+                requirement.get("minimum_successful_results") or 1
+            )
+            if len(matching) >= minimum:
+                continue
+            requirement_id = str(
+                requirement.get("requirement_id") or "required-evidence"
+            )
+            completion_gaps.append(
+                TurnEvidenceGap(
+                    source_id="task.completion-requirement",
+                    step_id=requirement_id,
+                    code="COMPLETION_REQUIREMENT_UNSATISFIED",
+                    detail=(
+                        "尚未取得用户要求的交付证据："
+                        f"{requirement.get('description') or requirement_id}"
+                    ),
+                    retryable=True,
+                )
+            )
+        if completion_gaps:
+            gaps.extend(completion_gaps)
+            reasons.append("用户明确要求的结构化完成义务尚未全部满足")
         requested_window = bool(task_frame.get("time_scope"))
         cumulative_only = bool(facts) and all(
             fact.measurement_semantics
@@ -663,6 +720,12 @@ class DbaEvidenceAssessmentHandler:
             assessed_status = SufficiencyStatus.PARTIAL
         if profile_core_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
             assessed_status = SufficiencyStatus.PARTIAL
+        if completion_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
+            assessed_status = (
+                SufficiencyStatus.PARTIAL
+                if facts
+                else SufficiencyStatus.NEEDS_EVIDENCE
+            )
         monitoring_fallback_required = (
             task_frame.get("evidence_source_strategy")
             == "MONITORING_FIRST"

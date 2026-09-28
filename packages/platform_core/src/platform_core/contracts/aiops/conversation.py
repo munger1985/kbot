@@ -245,6 +245,16 @@ class TurnInvestigationActionView(AIOpsContract):
     approval_reason_codes: tuple[str, ...] = ()
 
 
+class TurnCompletionRequirementView(AIOpsContract):
+    """用户明确要求、且由真实工具证据验证的完成义务。"""
+
+    requirement_id: str = Field(pattern=r"^r[0-9]+$")
+    description: str = Field(min_length=1, max_length=1000)
+    accepted_tool_ids: tuple[str, ...] = ()
+    accepted_evidence_kinds: tuple[str, ...] = ()
+    minimum_successful_results: int = Field(default=1, ge=1, le=8)
+
+
 class TurnTaskFrameView(AIOpsContract):
     """用户可见的问题框架，不包含模型隐藏推理。"""
 
@@ -266,6 +276,7 @@ class TurnTaskFrameView(AIOpsContract):
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     success_criteria: tuple[str, ...] = ()
+    completion_requirements: tuple[TurnCompletionRequirementView, ...] = ()
     action_intent: str = Field(
         default="NONE", pattern=r"^(NONE|ADVISORY|EXECUTE)$"
     )

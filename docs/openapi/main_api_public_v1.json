@@ -12270,6 +12270,52 @@
         "title": "TriggerType",
         "type": "string"
       },
+      "TurnCompletionRequirementView": {
+        "additionalProperties": false,
+        "description": "用户明确要求、且由真实工具证据验证的完成义务。",
+        "properties": {
+          "accepted_evidence_kinds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted Evidence Kinds",
+            "type": "array"
+          },
+          "accepted_tool_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted Tool Ids",
+            "type": "array"
+          },
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "minimum_successful_results": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Minimum Successful Results",
+            "type": "integer"
+          },
+          "requirement_id": {
+            "pattern": "^r[0-9]+$",
+            "title": "Requirement Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_id",
+          "description"
+        ],
+        "title": "TurnCompletionRequirementView",
+        "type": "object"
+      },
       "TurnEvidenceGapView": {
         "additionalProperties": false,
         "description": "对话页可安全展示的未取证摘要，不包含原始证据行。",
@@ -12754,6 +12800,14 @@
             "pattern": "^(NONE|ADVISORY|EXECUTE)$",
             "title": "Action Intent",
             "type": "string"
+          },
+          "completion_requirements": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TurnCompletionRequirementView"
+            },
+            "title": "Completion Requirements",
+            "type": "array"
           },
           "constraints": {
             "default": [],
