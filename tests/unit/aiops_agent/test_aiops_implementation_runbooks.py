@@ -387,7 +387,15 @@ class OracleAdgRunbookTests(unittest.TestCase):
         self.assertEqual(RunbookStatus.READY, runbook.status)
         self.assertFalse(runbook.required_inputs)
         self.assertIn("PDB 级 Data Guard（DGPDB）", runbook.title)
-        self.assertIn("dbca -silent -createDatabase", command_text)
+        self.assertIn(
+            "dbca -silent -createDatabase \\\n  -templateName",
+            command_text,
+        )
+        self.assertIn(
+            "$ORACLE_HOME/runInstaller -silent -waitforcompletion \\\n"
+            "  oracle.install.option=INSTALL_DB_SWONLY",
+            command_text,
+        )
         self.assertIn("ADD PLUGGABLE DATABASE 'PDB01'", command_text)
         self.assertIn(
             "ADD CONFIGURATION 'testdb_dgpdb_cfg' CONNECT IDENTIFIER IS "
@@ -622,10 +630,18 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         source = (ROOT / "ui/aiops/js/aiops-workspaces.js").read_text(
             encoding="utf-8"
         )
+        styles = (ROOT / "ui/aiops/css/workspaces.css").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('block.block_type === "IMPLEMENTATION_RUNBOOK"', source)
         self.assertIn("payload.resolved_parameters", source)
         self.assertIn('BLOCKED: "等待外部输入"', source)
         self.assertIn("data-copy-code", source)
+        self.assertIn('class="ops-runbook-toc"', source)
+        self.assertNotIn('<details class="ops-runbook-phase"', source)
+        self.assertNotIn('<details class="ops-runbook-appendix"', source)
+        self.assertNotIn(".ops-runbook-body { max-height:", styles)
+        self.assertIn("white-space: pre-wrap", styles)
 
     def test_partial_runbook_does_not_degrade_to_evidence_request_only(self) -> None:
         handler = DbaAnswerComposeHandler(model_client=None, prompts=None)

@@ -18,6 +18,7 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Spacer,
 )
+from reportlab.platypus.tableofcontents import TableOfContents
 
 from aiops_agent.application.reporting import (
     _pdf_report_font_name,
@@ -38,8 +39,80 @@ def _paragraph(value: object) -> str:
 
 
 def _wrapped_code(value: object) -> str:
-    """保留命令原文，避免 PDF 为排版而拆断 SQL 标识符。"""
-    return _pdf_text(str(value or "").strip())
+    """保留命令换行，仅替换 PDF 字体无法表达的控制字符。"""
+    return "".join(
+        character
+        if character in {"\n", "\t"} or 0x20 <= ord(character) <= 0xFFFF
+        else "?"
+        for character in str(value or "").strip()
+    )
+
+
+def _formatted_code(
+    value: object,
+    command_type: object,
+    *,
+    width: int = 90,
+) -> str:
+    """按命令类型生成可见且仍可复制执行的 PDF 换行。"""
+    command = _wrapped_code(value)
+    is_shell = str(command_type or "").upper() == "SHELL"
+    rendered: list[str] = []
+    for source_line in command.splitlines() or [""]:
+        remaining = source_line.rstrip()
+        continuation_indent = ""
+        while len(continuation_indent + remaining) > width:
+            available = max(20, width - len(continuation_indent))
+            split_at = remaining.rfind(" ", 0, available + 1)
+            compact_split = False
+            if split_at <= 0 and is_shell:
+                split_at = max(
+                    remaining.rfind(character, 0, available + 1) + 1
+                    for character in ",;"
+                )
+                compact_split = split_at > 0
+            if split_at <= 0:
+                break
+            segment = remaining[:split_at].rstrip()
+            remaining = remaining[
+                split_at if compact_split else split_at + 1:
+            ].lstrip()
+            continuation = (
+                "\\" if is_shell and compact_split
+                else (" \\" if is_shell else "")
+            )
+            rendered.append(
+                f"{continuation_indent}{segment}{continuation}"
+            )
+            continuation_indent = "" if compact_split else "  "
+        rendered.append(f"{continuation_indent}{remaining}")
+    return "\n".join(rendered)
+
+
+class _RunbookDocTemplate(SimpleDocTemplate):
+    """为实施文档生成目录条目、书签和 PDF 大纲。"""
+
+    def afterFlowable(self, flowable: object) -> None:
+        entry = getattr(flowable, "_runbook_toc_entry", None)
+        if not entry:
+            return
+        level, title, bookmark = entry
+        self.canv.bookmarkPage(bookmark)
+        self.canv.addOutlineEntry(title, bookmark, level=level, closed=False)
+        self.notify("TOCEntry", (level, title, self.page, bookmark))
+
+
+def _toc_heading(
+    value: str,
+    style: ParagraphStyle,
+    *,
+    level: int,
+    bookmark: str,
+) -> Paragraph:
+    """创建同时进入正文、目录和 PDF 大纲的标题。"""
+    paragraph = Paragraph(_paragraph(value), style)
+    paragraph._runbook_toc_entry = (level, value, bookmark)
+    return paragraph
 
 
 def _page_chrome(canvas: Canvas, document: SimpleDocTemplate) -> None:
@@ -60,7 +133,7 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
     font_name = _pdf_report_font_name()
     buffer = BytesIO()
     title = str(payload.get("title") or "数据库实施操作文档")
-    document = SimpleDocTemplate(
+    document = _RunbookDocTemplate(
         buffer,
         pagesize=A4,
         leftMargin=18 * mm,
@@ -95,6 +168,7 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
         textColor=colors.HexColor("#173F5F"),
         spaceBefore=10,
         spaceAfter=6,
+        keepWithNext=True,
     )
     step_style = ParagraphStyle(
         "步骤标题",
@@ -104,12 +178,13 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
         textColor=colors.HexColor("#275D82"),
         spaceBefore=7,
         spaceAfter=4,
+        keepWithNext=True,
     )
     code_style = ParagraphStyle(
         "命令",
         fontName=font_name,
-        fontSize=7.5,
-        leading=11,
+        fontSize=7,
+        leading=10,
         textColor=colors.HexColor("#1E2A30"),
         backColor=colors.HexColor("#F0F3F5"),
         borderColor=colors.HexColor("#C8D2D8"),
@@ -135,7 +210,32 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
     policy = payload.get("execution_policy")
     if policy:
         story.append(Paragraph(_paragraph(policy), body))
-    story.append(Spacer(1, 7 * mm))
+    story.extend((Spacer(1, 7 * mm), PageBreak()))
+
+    story.append(Paragraph("目录", title_style))
+    contents = TableOfContents()
+    contents.dotsMinLevel = 0
+    contents.levelStyles = (
+        ParagraphStyle(
+            "目录阶段",
+            parent=body,
+            fontSize=10,
+            leading=16,
+            leftIndent=0,
+            firstLineIndent=0,
+            spaceBefore=4,
+        ),
+        ParagraphStyle(
+            "目录步骤",
+            parent=body,
+            fontSize=8.5,
+            leading=13,
+            leftIndent=12 * mm,
+            firstLineIndent=0,
+            textColor=colors.HexColor("#536B7A"),
+        ),
+    )
+    story.extend((contents, PageBreak()))
 
     group_labels = (
         ("commands", "实施命令"),
@@ -145,9 +245,15 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
     phases = _items(payload.get("phases"))
     for phase_index, phase_value in enumerate(phases, start=1):
         phase = _mapping(phase_value)
-        story.append(Paragraph(
-            _paragraph(f"{phase_index}. {phase.get('title') or phase.get('phase_id') or '实施阶段'}"),
+        phase_title = (
+            f"{phase_index}. "
+            f"{phase.get('title') or phase.get('phase_id') or '实施阶段'}"
+        )
+        story.append(_toc_heading(
+            phase_title,
             phase_style,
+            level=0,
+            bookmark=f"phase-{phase_index}",
         ))
         if phase.get("objective"):
             story.append(Paragraph(_paragraph(phase["objective"]), body))
@@ -155,9 +261,14 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
             step = _mapping(step_value)
             status = str(step.get("applicability") or "")
             step_title = step.get("title") or step.get("step_id") or "操作步骤"
-            story.append(Paragraph(
-                _paragraph(f"{phase_index}.{step_index} {step_title} [{status}]"),
+            numbered_step_title = (
+                f"{phase_index}.{step_index} {step_title} [{status}]"
+            )
+            story.append(_toc_heading(
+                numbered_step_title,
                 step_style,
+                level=1,
+                bookmark=f"phase-{phase_index}-step-{step_index}",
             ))
             if step.get("rationale"):
                 story.append(Paragraph(_paragraph(step["rationale"]), body))
@@ -185,7 +296,10 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                     if heading:
                         story.append(Paragraph(_paragraph(heading), body))
                     story.append(Preformatted(
-                        _wrapped_code(command.get("content")),
+                        _formatted_code(
+                            command.get("content"),
+                            command.get("command_type"),
+                        ),
                         code_style,
                     ))
                     for note in _items(command.get("notes")):
@@ -231,5 +345,9 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
         for item in stop_conditions:
             story.append(Paragraph(_paragraph(item), body, bulletText="•"))
 
-    document.build(story, onFirstPage=_page_chrome, onLaterPages=_page_chrome)
+    document.multiBuild(
+        story,
+        onFirstPage=_page_chrome,
+        onLaterPages=_page_chrome,
+    )
     return buffer.getvalue()

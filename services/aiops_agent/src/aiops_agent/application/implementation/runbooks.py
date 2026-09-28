@@ -1039,14 +1039,14 @@ export ORACLE_HOME={oracle_home}
 export PATH=$ORACLE_HOME/bin:$PATH
 mkdir -p "$ORACLE_HOME"
 unzip -q {software_archive} -d "$ORACLE_HOME"
-$ORACLE_HOME/runInstaller -silent -waitforcompletion \
-  oracle.install.option=INSTALL_DB_SWONLY \
-  UNIX_GROUP_NAME=oinstall \
-  INVENTORY_LOCATION={oracle_base}/oraInventory \
-  ORACLE_HOME="$ORACLE_HOME" \
-  ORACLE_BASE="$ORACLE_BASE" \
-  oracle.install.db.InstallEdition=EE \
-  oracle.install.db.OSDBA_GROUP=dba \
+$ORACLE_HOME/runInstaller -silent -waitforcompletion \\
+  oracle.install.option=INSTALL_DB_SWONLY \\
+  UNIX_GROUP_NAME=oinstall \\
+  INVENTORY_LOCATION={oracle_base}/oraInventory \\
+  ORACLE_HOME="$ORACLE_HOME" \\
+  ORACLE_BASE="$ORACLE_BASE" \\
+  oracle.install.db.InstallEdition=EE \\
+  oracle.install.db.OSDBA_GROUP=dba \\
   DECLINE_SECURITY_UPDATES=true
 """,
                             "安装介质固定放置在 /stage/oracle；安装完成后由 root 执行提示的 root.sh，并应用与主库完全一致的 RU。",
@@ -1087,22 +1087,22 @@ export ORACLE_HOME={oracle_home}
 export ORACLE_SID={target_sid}
 export PATH=$ORACLE_HOME/bin:$PATH
 read -rsp '输入与源库一致的 SYS 密码: ' KBOT_SYS_PASSWORD; echo
-dbca -silent -createDatabase \
-  -templateName General_Purpose.dbc \
-  -gdbname {target_cdb} \
-  -sid {target_sid} \
-  -createAsContainerDatabase true \
-  -numberOfPDBs 0 \
-  -characterSet {character_set} \
-  -nationalCharacterSet {national_character_set} \
-  -databaseType MULTIPURPOSE \
-  -memoryMgmtType auto_sga \
-  -totalMemory {memory_mb} \
-  -initParams compatible={compatible},processes={processes},db_unique_name={target_cdb},remote_login_passwordfile=EXCLUSIVE \
-  {dbca_storage} \
-  {recovery_option} \
-  -recoveryAreaSize {fra_size_mb} \
-  -sysPassword "$KBOT_SYS_PASSWORD" \
+dbca -silent -createDatabase \\
+  -templateName General_Purpose.dbc \\
+  -gdbname {target_cdb} \\
+  -sid {target_sid} \\
+  -createAsContainerDatabase true \\
+  -numberOfPDBs 0 \\
+  -characterSet {character_set} \\
+  -nationalCharacterSet {national_character_set} \\
+  -databaseType MULTIPURPOSE \\
+  -memoryMgmtType auto_sga \\
+  -totalMemory {memory_mb} \\
+  -initParams compatible={compatible},processes={processes},db_unique_name={target_cdb},remote_login_passwordfile=EXCLUSIVE \\
+  {dbca_storage} \\
+  {recovery_option} \\
+  -recoveryAreaSize {fra_size_mb} \\
+  -sysPassword "$KBOT_SYS_PASSWORD" \\
   -systemPassword "$KBOT_SYS_PASSWORD"
 unset KBOT_SYS_PASSWORD
 """,
@@ -2028,14 +2028,14 @@ export ORACLE_HOME={oracle_home}
 export PATH=$ORACLE_HOME/bin:$PATH
 mkdir -p "$ORACLE_HOME"
 unzip -q {software_archive} -d "$ORACLE_HOME"
-$ORACLE_HOME/runInstaller -silent -waitforcompletion \
-  oracle.install.option=INSTALL_DB_SWONLY \
-  UNIX_GROUP_NAME=oinstall \
-  INVENTORY_LOCATION={oracle_base}/oraInventory \
-  ORACLE_HOME="$ORACLE_HOME" \
-  ORACLE_BASE="$ORACLE_BASE" \
-  oracle.install.db.InstallEdition=EE \
-  oracle.install.db.OSDBA_GROUP=dba \
+$ORACLE_HOME/runInstaller -silent -waitforcompletion \\
+  oracle.install.option=INSTALL_DB_SWONLY \\
+  UNIX_GROUP_NAME=oinstall \\
+  INVENTORY_LOCATION={oracle_base}/oraInventory \\
+  ORACLE_HOME="$ORACLE_HOME" \\
+  ORACLE_BASE="$ORACLE_BASE" \\
+  oracle.install.db.InstallEdition=EE \\
+  oracle.install.db.OSDBA_GROUP=dba \\
   DECLINE_SECURITY_UPDATES=true
 """,
                             "安装完成后由 root 执行安装器提示的 root.sh，并应用与主库完全一致的 RU。",

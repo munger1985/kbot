@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.implementation.pdf import (
+    _formatted_code,
     _wrapped_code,
     render_implementation_runbook_pdf,
 )
@@ -60,16 +61,40 @@ class ImplementationRunbookPdfTest(unittest.TestCase):
         command = (
             "ALTER SYSTEM SET log_archive_dest_2='SERVICE=testdb_stby "
             "ASYNC NOAFFIRM VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) "
-            "DB_UNIQUE_NAME=testdb_stby' SCOPE=BOTH SID='*';"
+            "DB_UNIQUE_NAME=testdb_stby' SCOPE=BOTH SID='*';\n"
+            "ALTER SYSTEM SET log_archive_dest_state_2=ENABLE SCOPE=BOTH;"
         )
 
         self.assertEqual(command, _wrapped_code(command))
+
+    def test_shell_visual_wrap_uses_executable_continuation(self) -> None:
+        command = "mkdir -p " + " ".join(
+            f"/u02/oradata/TESTDB/PDB{index}" for index in range(1, 8)
+        )
+
+        rendered = _formatted_code(command, "SHELL", width=72)
+
+        self.assertIn(" \\\n", rendered)
+        self.assertNotIn("\n/u02", rendered)
+
+    def test_shell_visual_wrap_preserves_long_comma_separated_value(self) -> None:
+        value = (
+            "compatible=26.0.0,processes=1000,"
+            "db_unique_name=testdb_dgpdb,"
+            "remote_login_passwordfile=EXCLUSIVE"
+        )
+
+        rendered = _formatted_code(value, "SHELL", width=48)
+
+        self.assertIn(",\\\n", rendered)
+        self.assertEqual(value, rendered.replace("\\\n", ""))
 
     def test_renderer_accepts_historical_payload_without_v2_validation(self) -> None:
         content = render_implementation_runbook_pdf(_historical_payload())
 
         self.assertTrue(content.startswith(b"%PDF-"))
         self.assertGreater(len(content), 1000)
+        self.assertIn(b"/Outlines", content)
 
     def test_service_downloads_authorized_active_runbook(self) -> None:
         conversation_id, turn_id = uuid7(), uuid7()

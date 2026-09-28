@@ -1,6 +1,6 @@
 # AIOps 数据库实施方案 Runbook 技术设计
 
-版本：1.3
+版本：1.4
 状态：首期已实现
 基准日期：2026-09-28
 
@@ -108,9 +108,9 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 `AnswerBlockType.IMPLEMENTATION_RUNBOOK`。该模式不再调用模型扩写背景说明，只输出一句执行边界，
 结构化 Block 是权威方案。Runbook 模式显式禁止 `PROPOSAL_SUMMARY`。
 
-前端先渲染阶段、步骤和命令，当前状态、已解析参数和外部输入放到后置折叠附录，并复用代码复制
-能力。阶段默认折叠，Runbook 主体设置最大高度和内部滚动；页面不把长方案当作普通 Markdown
-一次性铺开。
+前端按正式实施文档结构连续渲染封面信息、执行边界、目录、阶段、步骤、命令、停止条件和附录，
+不再使用 `details` 折叠容器、固定最大高度或区块内滚动。目录链接定位到阶段和步骤，命令块在页面
+宽度内自动换行，但复制按钮始终复制结构化 Block 中保存的原始命令文本。
 
 PDF 导出接口为：
 
@@ -118,8 +118,9 @@ PDF 导出接口为：
 - 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`。
 
 导出服务读取所属 Turn 的活动 `IMPLEMENTATION_RUNBOOK` Answer Block，并从持久化字典直接渲染 PDF，
-不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。PDF 命令块保留原始文本，不为排版物理拆分
-SQL 标识符或参数名。接口复用会话所有者鉴权并禁止缓存。
+不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。PDF 使用两遍构建生成带页码和书签的
+阶段/步骤目录；命令使用独立字符清洗逻辑保留换行，并在空白或 SQL 分隔符处按页面宽度换行，避免
+越界裁切。接口复用会话所有者鉴权并禁止缓存。
 
 ## 6. 从方案升级到执行
 
