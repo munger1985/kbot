@@ -56,6 +56,7 @@ class Settings:
     service: str
     target_key: str
     poll_seconds: int
+    query_timeout_seconds: int
     initial_lookback_seconds: int
     max_rows: int
     username_file: Path
@@ -73,6 +74,9 @@ class Settings:
             service=_required("ORACLE_SERVICE"),
             target_key=_required("ORACLE_TARGET_KEY"),
             poll_seconds=_bounded_int("ORACLE_POLL_SECONDS", 15, 5, 3600),
+            query_timeout_seconds=_bounded_int(
+                "ORACLE_QUERY_TIMEOUT_SECONDS", 15, 1, 300
+            ),
             initial_lookback_seconds=_bounded_int(
                 "ORACLE_INITIAL_LOOKBACK_SECONDS", 900, 0, 86400
             ),
@@ -273,6 +277,14 @@ def _collect_once(
     return next_checkpoint
 
 
+def _configure_connection(
+    connection: oracledb.Connection,
+    settings: Settings,
+) -> None:
+    """限制单次Oracle调用时长，避免健康进程永久阻塞。"""
+    connection.call_timeout = settings.query_timeout_seconds * 1000
+
+
 def run(settings: Settings) -> None:
     stopping = False
 
@@ -291,6 +303,7 @@ def run(settings: Settings) -> None:
     while not stopping:
         try:
             with oracledb.connect(user=username, password=password, dsn=dsn) as connection:
+                _configure_connection(connection, settings)
                 checkpoint = _collect_once(connection, settings, checkpoint)
             _write_health(settings, "healthy")
         except Exception as exc:  # noqa: BLE001

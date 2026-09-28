@@ -103,6 +103,10 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
     assert "--query.timeout=15" in oracle_exporter["command"]
     assert any("kbot-custom-metrics.yaml" in item for item in oracle_exporter["volumes"])
     assert len(oracle_exporter["environment"]["KBOT_CUSTOM_METRICS_REVISION"]) == 64
+    oracle_collector = generated["services"][
+        "oracle-oracle-prod-01-alert-collector"
+    ]
+    assert oracle_collector["environment"]["ORACLE_QUERY_TIMEOUT_SECONDS"] == 15
     overrides = json.loads(
         (state / "prometheus/kbot-aiops-query-overrides.json").read_text()
     )["prometheus_queries"]
@@ -506,6 +510,7 @@ def test_oracle_collector_writes_normalized_severity(tmp_path: Path) -> None:
         service="PDB01",
         target_key="oracle-test",
         poll_seconds=15,
+        query_timeout_seconds=15,
         initial_lookback_seconds=900,
         max_rows=1000,
         username_file=tmp_path / "username",
@@ -530,6 +535,32 @@ def test_oracle_collector_writes_normalized_severity(tmp_path: Path) -> None:
     assert payload["target_key"] == "oracle-test"
     assert payload["severity"] == "critical"
     assert payload["message_text"] == "ORA-12012: 自动任务执行失败"
+
+
+def test_oracle_collector_applies_configured_query_timeout(tmp_path: Path) -> None:
+    collector = _load_collector()
+    settings = collector.Settings(
+        host="oracle.internal",
+        port=1521,
+        service="PDB01",
+        target_key="oracle-test",
+        poll_seconds=15,
+        query_timeout_seconds=27,
+        initial_lookback_seconds=900,
+        max_rows=1000,
+        username_file=tmp_path / "username",
+        password_file=tmp_path / "password",
+        output_file=tmp_path / "alert.jsonl",
+        checkpoint_file=tmp_path / "checkpoint.json",
+        health_file=tmp_path / "health.json",
+    )
+
+    class Connection:
+        call_timeout = 0
+
+    connection = Connection()
+    collector._configure_connection(connection, settings)
+    assert connection.call_timeout == 27_000
 
 
 def test_oracle_rules_use_exporter_metric_contract_without_double_percentage() -> None:

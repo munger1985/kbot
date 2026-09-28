@@ -124,6 +124,8 @@ local_access = false
 # exporter_query_timeout = 15
 # 自动启用KBot PDB CPU、连接使用率和SQL解析失败补充指标，需要V_$RSRCPDBMETRIC、V_$PARAMETER和V_$SYSSTAT读取权限。
 # alert_poll_seconds = 15
+# Alert Log查询单次Oracle调用超时；超时后Collector会记录健康状态并重新连接。
+# alert_query_timeout_seconds = 15
 # alert_initial_lookback_seconds = 900
 # alert_max_rows = 1000
 # Collector角色必须显式填写中心Prometheus可达的监听地址和宿主机端口。
@@ -377,6 +379,9 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
             _bounded_int(parser, section, "port", 1521, 1, 65535)
             _bounded_int(parser, section, "exporter_query_timeout", 15, 1, 300)
             _bounded_int(parser, section, "alert_poll_seconds", 15, 5, 3600)
+            _bounded_int(
+                parser, section, "alert_query_timeout_seconds", 15, 1, 300
+            )
             _bounded_int(
                 parser, section, "alert_initial_lookback_seconds", 900, 0, 86400
             )
@@ -908,6 +913,14 @@ def _database_generated_compose(
                     "ORACLE_TARGET_KEY": key,
                     "ORACLE_POLL_SECONDS": _bounded_int(
                         parser, section, "alert_poll_seconds", 15, 5, 3600
+                    ),
+                    "ORACLE_QUERY_TIMEOUT_SECONDS": _bounded_int(
+                        parser,
+                        section,
+                        "alert_query_timeout_seconds",
+                        15,
+                        1,
+                        300,
                     ),
                     "ORACLE_INITIAL_LOOKBACK_SECONDS": _bounded_int(
                         parser,
