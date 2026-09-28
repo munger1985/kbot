@@ -197,11 +197,18 @@
 .ops-runbook-command-group { margin-top: 20px; }
 .ops-runbook-command-group h5 { margin-bottom: 8px; color: #315b82; font-size: 13px; }
 .ops-runbook-command .agent-code-toolbar span { display: flex; gap: 8px; align-items: center; }
+.ops-runbook-command-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; background: #f0f3f5; }
+.ops-runbook-command-meta span { padding: 2px 6px; border: 1px solid #c8d2d8; border-radius: 3px; color: #526473; background: #fff; font-size: 10px; }
+.ops-runbook-expected { padding: 0 12px 8px; color: #315b82; }
 .ops-runbook-command { border-color: #c8d2d8; background: #f0f3f5; color: #1e2a30; }
 .ops-runbook-command .agent-code-toolbar { background: #2b3549; color: #fff; }
 .ops-runbook-command pre { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .ops-runbook-command ul, .ops-runbook-risks ul, .ops-runbook-stop ul { margin: 8px 0; }
 .ops-runbook-risks { margin-top: 14px; padding: 12px 14px; border-left: 3px solid #cf895c; background: #fff7f2; color: #714326; }
+.ops-runbook-missing-facts ul, .ops-runbook-artifacts ul { display: grid; gap: 8px; padding: 0; list-style: none; }
+.ops-runbook-missing-facts li, .ops-runbook-artifacts li { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr); gap: 6px 14px; padding: 10px 12px; border: 1px solid var(--line); background: #fff; }
+.ops-runbook-missing-facts li span, .ops-runbook-artifacts li span { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }
+.ops-runbook-missing-facts li small, .ops-runbook-artifacts li small { display: block; margin-top: 3px; color: var(--muted); }
 .ops-finding-card { margin-top: 10px; padding: 12px 13px; border: 1px solid var(--line); background: #fff; }
 .ops-finding-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 0; }
 .ops-finding-card header small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }

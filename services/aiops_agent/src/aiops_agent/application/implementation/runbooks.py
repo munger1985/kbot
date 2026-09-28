@@ -2701,16 +2701,16 @@ FROM v$database;
     )
 
 
-def compile_implementation_runbook(
+def compile_adg_runbook(
     *,
     profile: ImplementationProfile,
     evidence: tuple[TurnEvidenceFact, ...],
     context: dict[str, Any] | None = None,
 ) -> ImplementationRunbook:
     """按结构化档案编译 Runbook，禁止模型自由拼接执行命令。"""
-    if profile == ImplementationProfile.ORACLE_ADG_BUILD:
-        precheck, _ = _first_row(evidence, "db.ha.adg_precheck")
-        if _integer(precheck, "container_id") > 1:
-            return _compile_oracle_dgpdb_build(evidence, dict(context or {}))
-        return _compile_oracle_adg_build(evidence, dict(context or {}))
-    raise ValueError(f"不支持的实施方案档案：{profile}")
+    if profile != ImplementationProfile.ORACLE_ADG_BUILD:
+        raise ValueError(f"ADG 编译器不支持实施档案：{profile}")
+    precheck, _ = _first_row(evidence, "db.ha.adg_precheck")
+    if _integer(precheck, "container_id") > 1:
+        return _compile_oracle_dgpdb_build(evidence, dict(context or {}))
+    return _compile_oracle_adg_build(evidence, dict(context or {}))

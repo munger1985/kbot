@@ -58,12 +58,31 @@ def _append_commands(
         command_type = _text(command.get("command_type"), "COMMAND")
         title = _text(command.get("title"), "命令")
         lines.extend((f"#### {command_type} · {title}", ""))
+        metadata = [
+            f"执行器 `{_text(command.get('executor'), command_type)}`",
+            f"身份 `{_text(command.get('run_as'))}`",
+        ]
+        if _items(command.get("node_scope")):
+            metadata.append(
+                "节点 " + "、".join(
+                    f"`{_text(item)}`"
+                    for item in _items(command.get("node_scope"))
+                )
+            )
+        if command.get("risk_level"):
+            metadata.append(f"风险 `{_text(command.get('risk_level'))}`")
+        lines.extend(("；".join(metadata), ""))
         lines.extend(_fenced_code(
             command.get("content"),
             _command_language(command.get("command_type")),
         ))
         lines.append("")
         notes = _items(command.get("notes"))
+        expected = _items(command.get("expected_result"))
+        if expected:
+            lines.extend(("预期结果：", ""))
+            lines.extend(f"- {_text(item)}" for item in expected)
+            lines.append("")
         if notes:
             lines.append("说明：")
             lines.append("")
@@ -176,7 +195,9 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
     state = _items(payload.get("current_state"))
     parameters = _items(payload.get("resolved_parameters"))
     required_inputs = _items(payload.get("required_inputs"))
-    if state or parameters or required_inputs:
+    missing_facts = _items(payload.get("missing_facts"))
+    artifacts = _items(payload.get("artifacts"))
+    if state or parameters or required_inputs or missing_facts or artifacts:
         lines.extend(("## 附录：当前状态与实施参数", ""))
     if state:
         lines.extend((
@@ -222,6 +243,38 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
                 f"| {_table_cell(item.get('label') or item.get('key'))} | "
                 f"{_table_cell(item.get('description'))} | "
                 f"{_table_cell(item.get('placeholder'))} |"
+            )
+        lines.append("")
+    if missing_facts:
+        lines.extend((
+            "### 缺失的必要事实",
+            "",
+            "| 事实 | 补齐位置 | 原因 | 阻断步骤 |",
+            "| --- | --- | --- | --- |",
+        ))
+        for item_value in missing_facts:
+            item = _mapping(item_value)
+            lines.append(
+                f"| {_table_cell(item.get('fact_key'))} | "
+                f"{_table_cell(item.get('resolution_source'))} | "
+                f"{_table_cell(item.get('reason'))} | "
+                f"{_table_cell('、'.join(map(str, _items(item.get('blocking_steps')))))} |"
+            )
+        lines.append("")
+    if artifacts:
+        lines.extend((
+            "### 脚本与配置清单",
+            "",
+            "| 文件 | 目标路径 | 权限/身份 | SHA256 |",
+            "| --- | --- | --- | --- |",
+        ))
+        for item_value in artifacts:
+            item = _mapping(item_value)
+            lines.append(
+                f"| {_table_cell(item.get('file_name'))} | "
+                f"{_table_cell(item.get('target_path'))} | "
+                f"{_table_cell(str(item.get('file_mode') or '') + '/' + str(item.get('run_as') or ''))} | "
+                f"`{_text(item.get('sha256'))}` |"
             )
         lines.append("")
 

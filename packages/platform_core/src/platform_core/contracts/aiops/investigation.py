@@ -130,6 +130,15 @@ class ImplementationProfile(StrEnum):
 
     NONE = "NONE"
     ORACLE_ADG_BUILD = "ORACLE_ADG_BUILD"
+    ORACLE_RAC_BUILD = "ORACLE_RAC_BUILD"
+    ORACLE_RMAN_BACKUP_BUILD = "ORACLE_RMAN_BACKUP_BUILD"
+    ORACLE_RMAN_RECOVERY = "ORACLE_RMAN_RECOVERY"
+    ORACLE_RU_PATCH = "ORACLE_RU_PATCH"
+    ORACLE_DATABASE_UPGRADE = "ORACLE_DATABASE_UPGRADE"
+    ORACLE_DATABASE_MIGRATION = "ORACLE_DATABASE_MIGRATION"
+    ORACLE_CLONE_REFRESH = "ORACLE_CLONE_REFRESH"
+    ORACLE_DATAPUMP_MIGRATION = "ORACLE_DATAPUMP_MIGRATION"
+    ORACLE_ADG_DRILL = "ORACLE_ADG_DRILL"
 
 
 class EvidenceSourceStrategy(StrEnum):
@@ -400,7 +409,7 @@ class CompactPlanningOutput(AIOpsContract):
     )
     implementation_profile: ImplementationProfile = Field(
         description=(
-            "实施方案档案；ORACLE_ADG_BUILD 表示生成完整 ADG 建设 Runbook，"
+            "数据库实施档案；由服务端映射固定 Playbook 和确定性编译器，"
             "NONE 表示普通调查。"
         ),
     )
@@ -456,12 +465,11 @@ class CompactPlanningOutput(AIOpsContract):
         profile = str(normalized.get("implementation_profile") or "")
         implementation_route = (
             mode == CompactPlanningMode.IMPLEMENTATION_RUNBOOK
-            or profile == ImplementationProfile.ORACLE_ADG_BUILD
+            or profile not in {"", ImplementationProfile.NONE}
         )
         if implementation_route:
             if profile in {"", ImplementationProfile.NONE}:
-                # 当前实施方案目录只登记 ADG；模型选中实施方案模式后，
-                # 其安全语义由服务端固定，不依赖模型重复填写关联字段。
+                # 保留模型偶发漏字段时的安全恢复；只有 ADG 是历史默认档案。
                 normalized["implementation_profile"] = (
                     ImplementationProfile.ORACLE_ADG_BUILD
                 )

@@ -431,7 +431,7 @@ Idle 会话占比、事务回滚率。
 参数会直接代入命令；备库主机、Oracle Home 和存储等外部事实缺失时仅阻断相关步骤，不再输出
 占位符命令。
 
-后续继续补充：
+当前已补充：
 
 - `ORACLE_RAC_BUILD`；
 - `ORACLE_RMAN_BACKUP_BUILD`；
@@ -441,7 +441,7 @@ Idle 会话占比、事务回滚率。
 - `ORACLE_DATABASE_MIGRATION`；
 - `ORACLE_CLONE_REFRESH`；
 - `ORACLE_DATAPUMP_MIGRATION`；
-- 已有 ADG 环境的 switchover/failover 演练仍保持独立且不自动执行。
+- `ORACLE_ADG_DRILL`，已有 ADG 环境的 switchover/failover/reinstate 演练保持人工执行。
 
 详细契约、事实来源、脚本包和实施顺序见
 [数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。

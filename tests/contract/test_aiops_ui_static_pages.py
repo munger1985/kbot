@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "fleet", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
@@ -49,7 +49,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(9, len(scripts))
+        self.assertEqual(10, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -128,6 +128,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("implementation-runbook.${format.extension}", workspace)
         self.assertIn('"application/pdf"', workspace)
         self.assertIn('"text/markdown"', workspace)
+        self.assertIn('"application/json"', workspace)
+        self.assertIn('"application/zip"', workspace)
         self.assertIn("bindImplementationRunbookActions(panel)", workspace)
 
     def test_pages_do_not_embed_demo_records_or_api_keys(self):

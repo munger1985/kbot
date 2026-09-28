@@ -120,6 +120,38 @@ class TurnPlanningService:
 
     SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID = "oracle.sql.healthcheck"
     ORACLE_ADG_BUILD_PLAYBOOK_ID = "oracle.ha.adg_build"
+    IMPLEMENTATION_PROFILE_CATALOG = {
+        ImplementationProfile.ORACLE_ADG_BUILD: (
+            "db.ha.adg_precheck", "oracle.ha.adg_build", "ADG 建设前置事实",
+        ),
+        ImplementationProfile.ORACLE_RAC_BUILD: (
+            "db.ha.rac_precheck", "oracle.ha.rac_build", "RAC/ASM 建设与迁移前置事实",
+        ),
+        ImplementationProfile.ORACLE_RMAN_BACKUP_BUILD: (
+            "db.backup.rman_configuration", "oracle.backup.rman_build", "RMAN 配置、容量与恢复能力事实",
+        ),
+        ImplementationProfile.ORACLE_RMAN_RECOVERY: (
+            "db.recovery.capabilities", "oracle.backup.rman_recovery", "恢复能力、备份链与归档覆盖事实",
+        ),
+        ImplementationProfile.ORACLE_RU_PATCH: (
+            "db.maintenance.patch_precheck", "oracle.maintenance.ru_patch", "补丁范围、组件与版本前置事实",
+        ),
+        ImplementationProfile.ORACLE_DATABASE_UPGRADE: (
+            "db.maintenance.upgrade_precheck", "oracle.maintenance.database_upgrade", "升级组件、参数和兼容性事实",
+        ),
+        ImplementationProfile.ORACLE_DATABASE_MIGRATION: (
+            "db.migration.precheck", "oracle.migration.database", "迁移规模、平台和兼容性事实",
+        ),
+        ImplementationProfile.ORACLE_CLONE_REFRESH: (
+            "db.clone.precheck", "oracle.clone.refresh", "克隆源库、服务和隔离前置事实",
+        ),
+        ImplementationProfile.ORACLE_DATAPUMP_MIGRATION: (
+            "db.datapump.precheck", "oracle.migration.datapump", "Data Pump 对象、字符集和容量事实",
+        ),
+        ImplementationProfile.ORACLE_ADG_DRILL: (
+            "db.ha.adg_drill_precheck", "oracle.ha.adg_drill", "Broker、角色、延迟和日志缺口事实",
+        ),
+    }
 
     def __init__(
         self,
@@ -858,11 +890,11 @@ class TurnPlanningService:
     @staticmethod
     def _profile_tool_ids(compact) -> tuple[str, ...]:
         """把模型选择的诊断或实施档案展开为确定性固定 Tool 集合。"""
-        if (
+        implementation = TurnPlanningService.IMPLEMENTATION_PROFILE_CATALOG.get(
             compact.implementation_profile
-            == ImplementationProfile.ORACLE_ADG_BUILD
-        ):
-            return ("db.instance.identity", "db.ha.adg_precheck")
+        )
+        if implementation is not None:
+            return ("db.instance.identity", implementation[0])
         if (
             compact.diagnostic_profile
             == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
@@ -886,13 +918,14 @@ class TurnPlanningService:
         available_ids = {
             str(item["playbook_id"]) for item in available_playbooks
         }
-        if (
+        implementation = cls.IMPLEMENTATION_PROFILE_CATALOG.get(
             compact.implementation_profile
-            == ImplementationProfile.ORACLE_ADG_BUILD
-        ):
+        )
+        if implementation is not None:
+            playbook_id = implementation[1]
             return (
-                (cls.ORACLE_ADG_BUILD_PLAYBOOK_ID,)
-                if cls.ORACLE_ADG_BUILD_PLAYBOOK_ID in available_ids
+                (playbook_id,)
+                if playbook_id in available_ids
                 else ()
             )
         if (
@@ -1072,11 +1105,15 @@ class TurnPlanningService:
         target_context: dict,
     ) -> InvestigationPlanningOutput:
         """为实施方案建立固定只读取证计划，不进入受控动作。"""
-        if (
+        profile_config = cls.IMPLEMENTATION_PROFILE_CATALOG.get(
             compact.implementation_profile
-            != ImplementationProfile.ORACLE_ADG_BUILD
-        ):
+        )
+        if profile_config is None:
             raise ValueError("实施方案模式缺少受支持的 implementation_profile")
+        tool_id, playbook_id, fact_description = profile_config
+        implementation_profile = ImplementationProfile(
+            str(compact.implementation_profile)
+        )
         display_name = str(
             target_context.get("display_name")
             or target_context.get("target_id")
@@ -1093,10 +1130,12 @@ class TurnPlanningService:
             ),
             InvestigationAction(
                 action_id="a2",
-                question="取得 ADG 建设所需的主库参数、归档、FRA、联机日志和 Standby Redo Log 前置事实",
-                tool_id="db.ha.adg_precheck",
+                question=f"取得{fact_description}",
+                tool_id=tool_id,
                 input={},
-                expected_evidence_kind="ORACLE_ADG_PRECHECK",
+                expected_evidence_kind=(
+                    implementation_profile.value + "_PRECHECK"
+                ),
                 measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
                 depends_on=("a1",),
             ),
@@ -1118,14 +1157,13 @@ class TurnPlanningService:
             task_frame=TaskFrame(
                 objectives=(TaskObjective.PLAN,),
                 problem_statement=(
-                    "结合当前数据库真实参数，生成从前置整改到验收回退的完整 Oracle ADG 建设实施方案"
+                    "结合当前数据库和已登记运维事实，生成从前置整改到验收回退的完整数据库实施操作文档"
                 ),
                 database_context=dict(target_context),
                 known_facts=(f"当前逻辑 Target 为 {display_name}",),
                 unknowns=(
-                    "备库主机、网络和 Oracle Home",
-                    "主备存储路径或 ASM/OMF 策略",
-                    "实施窗口和回退责任人",
+                    "目标主机、网络、存储和软件介质事实",
+                    "实施策略、窗口和业务决策事实",
                 ),
                 constraints=(
                     "本轮只执行固定只读前置核验并生成 Runbook，不执行任何变更命令",
@@ -1133,20 +1171,20 @@ class TurnPlanningService:
                     "用户选择执行具体步骤后才进入受控 Action 和审批",
                 ),
                 success_criteria=(
-                    "覆盖 ARCHIVELOG、FORCE LOGGING、FRA、SRL、Data Guard 参数、网络、RMAN Duplicate、日志应用、Broker、验收和回退",
-                    "SQL、RMAN、DGMGRL、Shell 和配置命令按真实执行类型分开呈现",
+                    "覆盖前置检查、整改、实施、验证、停止条件和回退边界",
+                    "SQL、RMAN、Shell 和专用工具命令按真实执行器、身份和节点呈现",
                     "所有可复制命令均已代入本轮解析值，不包含未解析占位符",
-                    "已满足条件明确标记，未满足条件纳入整改步骤",
+                    "缺失基础设施事实时保留完整阶段并阻断相关步骤，不伪造值",
                 ),
                 action_intent=ActionIntent.NONE,
                 diagnostic_profile=DiagnosticProfile.GENERAL,
-                implementation_profile=ImplementationProfile.ORACLE_ADG_BUILD,
+                implementation_profile=implementation_profile,
                 evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
-                subject_ref={},
+                subject_ref=dict(compact.subject_ref),
                 requires_change=False,
             ),
             plan=InvestigationPlan(revision_no=1, actions=actions),
-            suggested_playbook_ids=(cls.ORACLE_ADG_BUILD_PLAYBOOK_ID,),
+            suggested_playbook_ids=(playbook_id,),
         )
 
     async def _record_planning_route(

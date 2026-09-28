@@ -1818,9 +1818,31 @@ class AIOpsRuntimeService:
                 ops_run_id=run.ops_run_id,
                 artifact_key=artifact_key,
             )
+            artifact_payload = command.artifact.payload
+            generated_runbook_artifacts: tuple[dict[str, Any], ...] = ()
+            if (
+                command.artifact.schema_version == "AIOPS_TURN_RESULT.v1"
+                and isinstance(artifact_payload, dict)
+            ):
+                artifact_payload = json.loads(json.dumps(artifact_payload))
+                blocks = list(artifact_payload.get("blocks") or [])
+                generated: list[dict[str, Any]] = []
+                for block_value in blocks:
+                    block = dict(block_value or {})
+                    payload_value = dict(block.get("payload") or {})
+                    generated.extend(
+                        dict(item)
+                        for item in tuple(
+                            payload_value.pop("_generated_artifacts", ()) or ()
+                        )
+                    )
+                    block["payload"] = payload_value
+                    block_value.clear()
+                    block_value.update(block)
+                generated_runbook_artifacts = tuple(generated)
             content = (
-                command.artifact.payload
-                if command.artifact.payload is not None
+                artifact_payload
+                if artifact_payload is not None
                 else {"payload_uri": command.artifact.payload_uri}
             )
             content_hash = sha256_json(content)
@@ -1857,7 +1879,7 @@ class AIOpsRuntimeService:
                     artifact_key=artifact_key,
                     artifact_type=command.artifact.artifact_type,
                     schema_version=command.artifact.schema_version,
-                    payload_json=command.artifact.payload,
+                    payload_json=artifact_payload,
                     payload_uri=command.artifact.payload_uri,
                     content_hash=content_hash,
                     byte_size=len(canonical_bytes(content)),
@@ -1872,6 +1894,40 @@ class AIOpsRuntimeService:
                     security_level=command.artifact.security_level,
                 )
             )
+            for generated_payload in generated_runbook_artifacts:
+                artifact_id = str(generated_payload["artifact_id"])
+                generated_content = str(generated_payload["content"])
+                generated_hash = hashlib.sha256(
+                    generated_content.encode("utf-8")
+                ).hexdigest()
+                if generated_hash != str(generated_payload["sha256"]):
+                    raise state_conflict(
+                        f"实施脚本摘要不一致：{artifact_id}"
+                    )
+                await uow.runs.add_artifact(
+                    OpsArtifactEntity(
+                        ops_run_id=run.ops_run_id,
+                        ops_task_id=task.ops_task_id,
+                        artifact_key=f"implementation-runbook:{artifact_id}",
+                        artifact_type="IMPLEMENTATION_SCRIPT",
+                        schema_version="AIOPS_RUNBOOK_ARTIFACT.v1",
+                        payload_json={
+                            "artifact_id": artifact_id,
+                            "relative_path": generated_payload["relative_path"],
+                            "media_type": generated_payload["media_type"],
+                            "content": generated_content,
+                        },
+                        payload_uri=None,
+                        content_hash=generated_hash,
+                        byte_size=len(generated_content.encode("utf-8")),
+                        provenance_json={
+                            "producer": "aiops.implementation-compiler",
+                            "answer_artifact_id": str(artifact.artifact_id),
+                        },
+                        trust_level="SYSTEM",
+                        security_level=1,
+                    )
+                )
             if command.artifact.schema_version == "OBSERVATION_SET.v1":
                 await self._reduce_observation_health(
                     uow=uow,

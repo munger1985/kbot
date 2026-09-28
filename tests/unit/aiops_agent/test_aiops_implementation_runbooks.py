@@ -292,7 +292,7 @@ class OracleAdgRunbookTests(unittest.TestCase):
         }
 
         self.assertEqual(RunbookStatus.READY, runbook.status)
-        self.assertEqual("AIOPS_IMPLEMENTATION_RUNBOOK.v2", runbook.schema_version)
+        self.assertEqual("AIOPS_IMPLEMENTATION_RUNBOOK.v3", runbook.schema_version)
         self.assertEqual(
             RunbookApplicability.REQUIRED,
             steps["primary.archivelog"].applicability,
@@ -635,10 +635,11 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         )
         self.assertIn('block.block_type === "IMPLEMENTATION_RUNBOOK"', source)
         self.assertIn("payload.resolved_parameters", source)
-        self.assertIn('BLOCKED: "等待外部输入"', source)
+        self.assertIn('BLOCKED: "等待必要事实"', source)
         self.assertIn("data-copy-code", source)
         self.assertIn('data-download-implementation-runbook="pdf"', source)
         self.assertIn('data-download-implementation-runbook="markdown"', source)
+        self.assertIn('data-download-implementation-runbook="json"', source)
         self.assertIn("implementation-runbook.${format.extension}", source)
         self.assertIn('class="ops-runbook-toc"', source)
         self.assertNotIn('<details class="ops-runbook-phase"', source)

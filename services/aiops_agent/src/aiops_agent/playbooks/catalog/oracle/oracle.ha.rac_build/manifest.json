@@ -1,0 +1,78 @@
+{
+    "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+    "playbook_id": "oracle.ha.rac_build",
+    "version": "1.0.0",
+    "database_types": [
+        "ORACLE"
+    ],
+    "version_range": {
+        "minimum": "19",
+        "maximum": "26"
+    },
+    "supported_intents": [
+        "PLAN"
+    ],
+    "domains": [
+        "HIGH_AVAILABILITY",
+        "CONFIGURATION",
+        "STORAGE_AND_CAPACITY"
+    ],
+    "subjects": [
+        "ORACLE_RAC_BUILD"
+    ],
+    "required_source_capabilities": [],
+    "optional_source_capabilities": [],
+    "required_target_capabilities": [
+        "DB_READONLY",
+        "dynamic_performance_views"
+    ],
+    "required_privileges": [
+        "V_$DATABASE",
+        "V_$INSTANCE",
+        "V_$PARAMETER",
+        "V_$DATAFILE",
+        "V_$LOG",
+        "V_$BACKUP_SET",
+        "V_$RMAN_CONFIGURATION",
+        "DBA_REGISTRY",
+        "NLS_DATABASE_PARAMETERS"
+    ],
+    "required_entitlements": [],
+    "input_schema": "oracle.ha.rac_build.input.v1",
+    "defaults": {},
+    "limits": {
+        "max_rows": 2,
+        "timeout_seconds": 60,
+        "max_attempts": 2,
+        "cost_units": 2
+    },
+    "tool_dag": [
+        {
+            "step_id": "identity",
+            "tool_id": "db.instance.identity",
+            "tool_version": "1.0.0",
+            "depends_on": [],
+            "input": {}
+        },
+        {
+            "step_id": "precheck",
+            "tool_id": "db.ha.rac_precheck",
+            "tool_version": "1.0.0",
+            "depends_on": [
+                "identity"
+            ],
+            "input": {}
+        }
+    ],
+    "output_schema": "oracle.ha.rac_build.output.v1",
+    "measurement_semantics": "CURRENT_ACTIVITY",
+    "presentation_kind": "TABLE",
+    "fallback_playbooks": [],
+    "manual_evidence_template": "oracle.ha.rac_build.manual.v1",
+    "sensitive_fields": [],
+    "redaction_rules": [],
+    "freshness": {
+        "max_age_seconds": 300,
+        "requires_observed_at": true
+    }
+}

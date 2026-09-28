@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from platform_core.contracts.aiops import ImplementationProfile
 
@@ -13,6 +13,7 @@ from platform_core.contracts.aiops import ImplementationProfile
 class RunbookStatus(StrEnum):
     READY = "READY"
     BLOCKED_BY_REQUIRED_INPUTS = "BLOCKED_BY_REQUIRED_INPUTS"
+    BLOCKED_BY_REQUIRED_FACTS = "BLOCKED_BY_REQUIRED_FACTS"
     PARTIAL_EVIDENCE = "PARTIAL_EVIDENCE"
 
 
@@ -35,6 +36,35 @@ class RunbookCommandType(StrEnum):
     SHELL = "SHELL"
     CONFIG = "CONFIG"
     MANUAL = "MANUAL"
+
+
+class RunbookExecutor(StrEnum):
+    SQLPLUS = "SQLPLUS"
+    RMAN = "RMAN"
+    DGMGRL = "DGMGRL"
+    BASH = "BASH"
+    CRSCTL = "CRSCTL"
+    SRVCTL = "SRVCTL"
+    ASMCMD = "ASMCMD"
+    DBCA = "DBCA"
+    OPATCH = "OPATCH"
+    DATAPUMP = "DATAPUMP"
+    MANUAL = "MANUAL"
+
+
+class RunbookRiskLevel(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class RunbookFactSource(StrEnum):
+    TARGET_FACT = "TARGET_FACT"
+    DEPLOYMENT_TOPOLOGY = "DEPLOYMENT_TOPOLOGY"
+    HOST_COLLECTOR = "HOST_COLLECTOR"
+    POLICY_TEMPLATE = "POLICY_TEMPLATE"
+    EXPLICIT_USER_DECISION = "EXPLICIT_USER_DECISION"
 
 
 class RunbookRequiredInput(BaseModel):
@@ -65,6 +95,62 @@ class RunbookCommand(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     content: str = Field(min_length=1, max_length=16000)
     notes: tuple[str, ...] = ()
+    executor: RunbookExecutor | None = None
+    run_as: str | None = Field(default=None, max_length=64)
+    node_scope: tuple[str, ...] = ()
+    container_name: str | None = Field(default=None, max_length=128)
+    working_directory: str | None = Field(default=None, max_length=1024)
+    target_path: str | None = Field(default=None, max_length=2048)
+    expected_result: tuple[str, ...] = ()
+    artifact_ref: str | None = Field(default=None, max_length=256)
+    risk_level: RunbookRiskLevel = RunbookRiskLevel.LOW
+
+    @model_validator(mode="after")
+    def fill_execution_metadata(self) -> "RunbookCommand":
+        """为既有 ADG 编译器补齐 v3 执行元数据。"""
+        executor_map = {
+            RunbookCommandType.SQLPLUS: RunbookExecutor.SQLPLUS,
+            RunbookCommandType.RMAN: RunbookExecutor.RMAN,
+            RunbookCommandType.DGMGRL: RunbookExecutor.DGMGRL,
+            RunbookCommandType.SHELL: RunbookExecutor.BASH,
+            RunbookCommandType.CONFIG: RunbookExecutor.MANUAL,
+            RunbookCommandType.MANUAL: RunbookExecutor.MANUAL,
+        }
+        if self.executor is None:
+            self.executor = executor_map[self.command_type]
+        if self.run_as is None:
+            self.run_as = (
+                "SYSDBA"
+                if self.executor == RunbookExecutor.SQLPLUS
+                else "oracle"
+            )
+        if not self.node_scope:
+            self.node_scope = ("source",)
+        return self
+
+
+class RunbookMissingFact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fact_key: str = Field(pattern=r"^[A-Z][A-Z0-9_.-]{1,127}$")
+    resolution_source: RunbookFactSource
+    reason: str = Field(min_length=1, max_length=1000)
+    blocking_steps: tuple[str, ...] = ()
+
+
+class RunbookArtifactDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")
+    file_name: str = Field(min_length=1, max_length=256)
+    relative_path: str = Field(min_length=1, max_length=1024)
+    media_type: str = Field(min_length=1, max_length=128)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    file_mode: str = Field(pattern=r"^0[0-7]{3}$")
+    run_as: str = Field(min_length=1, max_length=64)
+    target_path: str = Field(min_length=1, max_length=2048)
+    description: str = Field(min_length=1, max_length=1000)
+    contains_secret: bool = False
 
 
 class RunbookStep(BaseModel):
@@ -93,7 +179,7 @@ class RunbookPhase(BaseModel):
 class ImplementationRunbook(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "AIOPS_IMPLEMENTATION_RUNBOOK.v2"
+    schema_version: str = "AIOPS_IMPLEMENTATION_RUNBOOK.v3"
     profile: ImplementationProfile
     title: str = Field(min_length=1, max_length=256)
     status: RunbookStatus
@@ -101,6 +187,9 @@ class ImplementationRunbook(BaseModel):
     current_state: tuple[dict[str, Any], ...] = ()
     resolved_parameters: tuple[RunbookResolvedParameter, ...] = ()
     required_inputs: tuple[RunbookRequiredInput, ...] = ()
+    missing_facts: tuple[RunbookMissingFact, ...] = ()
+    artifacts: tuple[RunbookArtifactDescriptor, ...] = ()
     phases: tuple[RunbookPhase, ...]
     stop_conditions: tuple[str, ...] = ()
     evidence_refs: tuple[str, ...] = ()
+    _artifact_payloads: dict[str, str] = PrivateAttr(default_factory=dict)

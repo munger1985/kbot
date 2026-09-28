@@ -32,6 +32,9 @@ from aiops_agent.application.implementation.pdf import (
 from aiops_agent.application.implementation.markdown import (
     render_implementation_runbook_markdown,
 )
+from aiops_agent.application.implementation.artifacts import (
+    render_runbook_artifact_zip,
+)
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.entities import (
     OpsConversationEntity,
@@ -941,6 +944,90 @@ class ConversationTurnService:
             actor_id=actor_id,
         )
         return render_implementation_runbook_markdown(payload).encode("utf-8")
+
+    async def get_implementation_runbook_json(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+    ) -> bytes:
+        """导出结构化 Runbook 唯一真相，不重新运行编译器。"""
+        payload = await self._get_implementation_runbook_payload(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+        )
+        return (
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+
+    async def get_implementation_runbook_zip(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+    ) -> bytes:
+        """导出当前 Turn 已固化脚本，不生成空 ZIP。"""
+        payload = await self._get_implementation_runbook_payload(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+        )
+        descriptors = tuple(payload.get("artifacts") or ())
+        if not descriptors:
+            raise resource_not_found("Implementation Runbook Artifacts")
+        async with self._uow_factory() as uow:
+            link = await uow.turns.get_run_link(
+                turn_id=turn_id,
+                purpose="PRIMARY",
+            )
+            if link is None:
+                raise resource_not_found("Implementation Runbook Artifacts")
+            contents: dict[str, str] = {}
+            for artifact in await uow.runs.list_artifacts(
+                ops_run_id=link.ops_run_id
+            ):
+                if artifact.schema_version != "AIOPS_RUNBOOK_ARTIFACT.v1":
+                    continue
+                artifact_payload = dict(artifact.payload_json or {})
+                artifact_id = str(artifact_payload.get("artifact_id") or "")
+                content = artifact_payload.get("content")
+                if artifact_id and isinstance(content, str):
+                    contents[artifact_id] = content
+        try:
+            return render_runbook_artifact_zip(payload, contents)
+        except ValueError as exc:
+            raise state_conflict(str(exc)) from exc
+
+    async def get_implementation_runbook_file_stem(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+    ) -> str:
+        """返回与实施档案一致的安全下载文件名前缀。"""
+        payload = await self._get_implementation_runbook_payload(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+        )
+        profile = str(payload.get("profile") or "database-implementation")
+        return profile.lower().replace("_", "-") + f"-{turn_id}"
 
     async def list_events(
         self,

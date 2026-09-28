@@ -332,12 +332,18 @@ async def download_implementation_runbook_pdf(
             actor_id=actor_id,
         )
     )
+    file_stem = await service.get_implementation_runbook_file_stem(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        actor_id=actor_id,
+    )
     return Response(
         content=content,
         media_type="application/pdf",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="oracle-adg-implementation-{turn_id}.pdf"'
+                f'attachment; filename="{file_stem}.pdf"'
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
@@ -367,13 +373,85 @@ async def download_implementation_runbook_markdown(
             actor_id=actor_id,
         )
     )
+    file_stem = await service.get_implementation_runbook_file_stem(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        actor_id=actor_id,
+    )
     return Response(
         content=content,
         media_type="text/markdown; charset=utf-8",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="oracle-adg-implementation-{turn_id}.md"'
+                f'attachment; filename="{file_stem}.md"'
             ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/{conversation_id}/turns/{turn_id}/implementation-runbook.json",
+    response_class=Response,
+    responses={200: {"content": {"application/json": {}}}},
+)
+async def download_implementation_runbook_json(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+) -> Response:
+    """下载本轮固化的结构化实施 Runbook。"""
+    domain_id, actor_id = _scope(request, context)
+    service = request.app.state.conversation_turn_service
+    content = await service.get_implementation_runbook_json(
+        domain_id=domain_id, conversation_id=conversation_id,
+        turn_id=turn_id, actor_id=actor_id,
+    )
+    file_stem = await service.get_implementation_runbook_file_stem(
+        domain_id=domain_id, conversation_id=conversation_id,
+        turn_id=turn_id, actor_id=actor_id,
+    )
+    return Response(
+        content=content,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_stem}.json"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/{conversation_id}/turns/{turn_id}/implementation-runbook.zip",
+    response_class=Response,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def download_implementation_runbook_zip(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+) -> Response:
+    """下载本轮固化的实施脚本包。"""
+    domain_id, actor_id = _scope(request, context)
+    service = request.app.state.conversation_turn_service
+    content = await service.get_implementation_runbook_zip(
+        domain_id=domain_id, conversation_id=conversation_id,
+        turn_id=turn_id, actor_id=actor_id,
+    )
+    file_stem = await service.get_implementation_runbook_file_stem(
+        domain_id=domain_id, conversation_id=conversation_id,
+        turn_id=turn_id, actor_id=actor_id,
+    )
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_stem}.zip"',
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
         },

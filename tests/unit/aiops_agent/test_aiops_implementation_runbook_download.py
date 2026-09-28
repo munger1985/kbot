@@ -17,7 +17,14 @@ from aiops_agent.application.implementation.pdf import (
 from aiops_agent.application.implementation.markdown import (
     render_implementation_runbook_markdown,
 )
+from aiops_agent.application.implementation import (
+    compile_implementation_runbook,
+)
+from aiops_agent.application.implementation.artifacts import (
+    generated_artifact_payloads,
+)
 from aiops_agent.application.turns import ConversationTurnService
+from platform_core.contracts.aiops import ImplementationProfile
 from platform_core.identity import uuid7
 
 
@@ -183,6 +190,68 @@ class ImplementationRunbookPdfTest(unittest.TestCase):
         ))
         self.assertTrue(markdown.startswith(b"# "))
         self.assertIn(b"```sql", markdown)
+
+        structured = asyncio.run(service.get_implementation_runbook_json(
+            domain_id=1,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id="user-1",
+        ))
+        self.assertIn(b'"schema_version": "AIOPS_IMPLEMENTATION_RUNBOOK.v1"', structured)
+
+    def test_service_downloads_materialized_script_zip(self) -> None:
+        conversation_id, turn_id, run_id = uuid7(), uuid7(), uuid7()
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RMAN_BACKUP_BUILD,
+            evidence=(),
+            context={
+                "implementation_parameters": {
+                    "INSTANCE_NAME": "TESTDB",
+                    "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
+                    "BACKUP_DEST": "/backup/testdb",
+                }
+            },
+        )
+        generated = generated_artifact_payloads(runbook)
+        uow = SimpleNamespace(
+            conversations=SimpleNamespace(get_conversation=AsyncMock(
+                return_value=SimpleNamespace(created_by="user-1")
+            )),
+            turns=SimpleNamespace(
+                get_turn=AsyncMock(
+                    return_value=SimpleNamespace(conversation_id=conversation_id)
+                ),
+                list_answer_blocks=AsyncMock(return_value=[SimpleNamespace(
+                    block_type="IMPLEMENTATION_RUNBOOK",
+                    payload_json=runbook.model_dump(mode="json"),
+                )]),
+                get_run_link=AsyncMock(
+                    return_value=SimpleNamespace(ops_run_id=run_id)
+                ),
+            ),
+            runs=SimpleNamespace(list_artifacts=AsyncMock(return_value=[
+                SimpleNamespace(
+                    schema_version="AIOPS_RUNBOOK_ARTIFACT.v1",
+                    payload_json={
+                        "artifact_id": item["artifact_id"],
+                        "relative_path": item["relative_path"],
+                        "media_type": item["media_type"],
+                        "content": item["content"],
+                    },
+                )
+                for item in generated
+            ])),
+        )
+        service = ConversationTurnService(uow_factory=lambda: _context(uow))
+
+        content = asyncio.run(service.get_implementation_runbook_zip(
+            domain_id=1,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id="user-1",
+        ))
+
+        self.assertTrue(content.startswith(b"PK"))
 
     def test_service_rejects_foreign_conversation_and_missing_runbook(self) -> None:
         conversation_id, turn_id = uuid7(), uuid7()

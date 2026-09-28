@@ -120,16 +120,21 @@ Markdown 投影；页面继续读取结构化 Block 以保留复制按钮和命�
 
 - 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
 - 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`；
+- 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.json`；
+- 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.zip`；
 - 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
 - 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`。
+- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.json`；
+- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.zip`。
 
 导出服务读取所属 Turn 的活动 `IMPLEMENTATION_RUNBOOK` Answer Block，并从持久化字典直接渲染 PDF，
-不强制套用当前 v2 Pydantic 契约，从而兼容历史 v1 文档。PDF 使用两遍构建生成带页码和书签的
+不强制套用当前 v3 Pydantic 契约，从而兼容历史 v1/v2 文档。PDF 使用两遍构建生成带页码和书签的
 阶段/步骤目录；命令标题栏和浅色代码正文组成 Markdown 风格代码块，使用独立字符清洗逻辑保留
 换行，并在空白或 SQL 分隔符处按页面宽度换行，避免越界裁切。PDF 标题栏和正文由同一个可分页
 Flowable 绘制，正文具有固定内边距、浅色背景和边框，不允许标题覆盖首行；长命令跨页时重复带“续”
 标记的标题栏。Markdown 投影使用与命令正文不冲突的动态 fenced code block，完整保留原始命令。
-两类接口复用会话所有者鉴权并禁止缓存。
+四类接口复用会话所有者鉴权并禁止缓存。ZIP 只从当前 Turn 已固化的
+`AIOPS_RUNBOOK_ARTIFACT.v1` 组装；没有 Artifact 时返回 404，不生成空包。
 
 ## 6. 从方案升级到执行
 
@@ -151,10 +156,10 @@ Flowable 绘制，正文具有固定内边距、浅色背景和边框，不允�
 每个档案必须提供固定前置 Tool、确定性条件规则、完整阶段、验证/回退、测试和文档；共用现有
 Task Frame、Evidence、Answer Block 和 UI，不新增平行的自由文本方案系统。
 
-后续实现还必须增加结构化 Script Artifact、确定性 ZIP、部署拓扑事实和 Profile Registry。
+当前实现已增加结构化 Script Artifact、确定性 ZIP、部署拓扑事实入口和 Profile Registry。
 数据库能够确认或安全派生的值继续自动代入；RAC IP、VIP、SCAN、共享磁盘 WWID、补丁介质等不能
 从数据库事实推导的值必须来自 Target 拓扑或主机取证，禁止输出占位符或伪造值。
 
 完整的目标契约、RAC/RMAN Tool、编译规则、脚本包、API、模块拆分和验收矩阵见
 [AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。该文档
-描述待实施目标态，不代表当前代码已经支持 RAC、RMAN、升级或迁移 Runbook。
+同时作为当前实现的验收基准。

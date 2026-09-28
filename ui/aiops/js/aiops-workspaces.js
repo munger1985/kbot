@@ -756,15 +756,26 @@
         REQUIRED: "必须实施",
         ALREADY_SATISFIED: "当前已满足",
         CONDITIONAL: "按条件实施",
-        BLOCKED: "等待外部输入",
+        BLOCKED: "等待必要事实",
       };
-      const commandHtml = (command) => `<div class="agent-code-block ops-runbook-command"><div class="agent-code-toolbar"><span><b>${esc(command.command_type || "COMMAND")}</b>${esc(command.title || "")}</span><button type="button" data-copy-code>复制命令</button></div><pre><code>${esc(command.content || "")}</code></pre>${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
+      const commandHtml = (command) => {
+        const metadata = [
+          command.executor || command.command_type,
+          command.run_as ? `身份 ${command.run_as}` : "",
+          values(command.node_scope).length ? `节点 ${values(command.node_scope).join("、")}` : "",
+          command.container_name ? `容器 ${command.container_name}` : "",
+          command.risk_level ? `风险 ${command.risk_level}` : "",
+        ].filter(Boolean).map((item) => `<span>${esc(item)}</span>`).join("");
+        return `<div class="agent-code-block ops-runbook-command"><div class="agent-code-toolbar"><span><b>${esc(command.executor || command.command_type || "COMMAND")}</b>${esc(command.title || "")}</span><button type="button" data-copy-code>复制命令</button></div>${metadata ? `<div class="ops-runbook-command-meta">${metadata}</div>` : ""}<pre><code>${esc(command.content || "")}</code></pre>${values(command.expected_result).length ? `<div class="ops-runbook-expected"><strong>预期结果</strong><ul>${values(command.expected_result).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : ""}${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
+      };
       const commandGroup = (title, commands) => values(commands).length
         ? `<section class="ops-runbook-command-group"><h5>${esc(title)}</h5>${values(commands).map(commandHtml).join("")}</section>`
         : "";
       const stateItems = values(payload.current_state).map((item) => `<li class="is-${esc(String(item.status || "unknown").toLowerCase())}"><span>${esc(item.label || "-")}</span><strong>${esc(item.value || "-")}</strong><small>${esc(item.status || "UNKNOWN")}</small></li>`).join("");
       const resolvedParameters = values(payload.resolved_parameters).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.source || "")}</small></div><code>${esc(item.value || "")}</code><span>${esc(item.status || "")}</span></li>`).join("");
       const requiredInputs = values(payload.required_inputs).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.description || "")}</small></div><code>${esc(item.placeholder || "")}</code></li>`).join("");
+      const missingFacts = values(payload.missing_facts).map((item) => `<li><div><strong>${esc(item.fact_key || "必要事实")}</strong><small>${esc(item.reason || "")}</small></div><code>${esc(item.resolution_source || "")}</code><span>${values(item.blocking_steps).length ? `阻断 ${esc(values(item.blocking_steps).join("、"))}` : ""}</span></li>`).join("");
+      const artifactItems = values(payload.artifacts).map((item) => `<li><div><strong>${esc(item.file_name || item.artifact_id)}</strong><small>${esc(item.description || "")}</small></div><code>${esc(item.target_path || item.relative_path || "")}</code><span>${esc(item.file_mode || "")} · ${esc(item.run_as || "")} · SHA256 ${esc(String(item.sha256 || "").slice(0, 12))}…</span></li>`).join("");
       const runbookId = `runbook-${String(turn?.turn_id || "current").replace(/[^a-zA-Z0-9_-]/g, "")}`;
       const phaseValues = values(payload.phases);
       const phases = phaseValues.map((phase, phaseIndex) => {
@@ -782,10 +793,10 @@
         : "";
       const stopConditions = values(payload.stop_conditions).length ? `<section class="ops-runbook-stop"><h5>停止条件</h5><ul>${values(payload.stop_conditions).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>` : "";
       const download = turn?.conversation_id && turn?.turn_id
-        ? `<div class="ops-runbook-downloads"><button type="button" data-download-implementation-runbook="pdf" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 PDF</button><button type="button" data-download-implementation-runbook="markdown" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 Markdown</button></div>`
+        ? `<div class="ops-runbook-downloads"><button type="button" data-download-implementation-runbook="pdf" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 PDF</button><button type="button" data-download-implementation-runbook="markdown" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 Markdown</button><button type="button" data-download-implementation-runbook="json" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 JSON</button>${artifactItems ? `<button type="button" data-download-implementation-runbook="zip" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载脚本 ZIP</button>` : ""}</div>`
         : "";
-      const appendix = stateItems || resolvedParameters || requiredInputs
-        ? `<section class="ops-runbook-appendix"><h3>附录：当前状态与实施参数</h3>${stateItems ? `<section><h4>当前环境摘要</h4><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<section class="ops-runbook-parameters"><h4>已解析实施参数</h4><ul>${resolvedParameters}</ul></section>` : ""}${requiredInputs ? `<section class="ops-runbook-inputs"><h4>实施前必须确认的外部输入</h4><ul>${requiredInputs}</ul></section>` : ""}</section>`
+      const appendix = stateItems || resolvedParameters || requiredInputs || missingFacts || artifactItems
+        ? `<section class="ops-runbook-appendix"><h3>附录：当前状态与实施参数</h3>${stateItems ? `<section><h4>当前环境摘要</h4><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<section class="ops-runbook-parameters"><h4>已解析实施参数</h4><ul>${resolvedParameters}</ul></section>` : ""}${missingFacts ? `<section class="ops-runbook-missing-facts"><h4>缺失的必要事实</h4><p>请在对应 Target 的部署拓扑、主机采集或策略配置中补齐，重新生成后解除阻断。</p><ul>${missingFacts}</ul></section>` : ""}${requiredInputs ? `<section class="ops-runbook-inputs"><h4>历史档案所需输入</h4><ul>${requiredInputs}</ul></section>` : ""}${artifactItems ? `<section class="ops-runbook-artifacts"><h4>脚本与配置清单</h4><ul>${artifactItems}</ul></section>` : ""}</section>`
         : "";
       return `<article class="ops-runbook"><header class="ops-runbook-document-header"><div><p class="ops-runbook-kicker">KBot 智能运维 · 数据库实施操作文档</p><h2>${esc(payload.title || "数据库实施 Runbook")}</h2><p class="ops-runbook-meta">${esc(payload.profile || "")} · ${esc(payload.schema_version || "")}</p></div><div class="ops-runbook-header-actions"><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span>${download}</div></header><section class="ops-runbook-policy"><h3>执行边界</h3><p>${esc(payload.execution_policy || "")}</p></section>${tableOfContents}<div class="ops-runbook-body">${phases}</div>${stopConditions}${appendix}</article>`;
     }
@@ -953,17 +964,22 @@
         try {
           const conversationId = encodeURIComponent(button.dataset.conversationId);
           const turnId = encodeURIComponent(button.dataset.turnId);
-          const format = button.dataset.downloadImplementationRunbook === "markdown"
-            ? { extension: "md", mediaType: "text/markdown", label: "Markdown" }
-            : { extension: "pdf", mediaType: "application/pdf", label: "PDF" };
+          const formats = {
+            pdf: { extension: "pdf", mediaType: "application/pdf", label: "PDF" },
+            markdown: { extension: "md", mediaType: "text/markdown", label: "Markdown" },
+            json: { extension: "json", mediaType: "application/json", label: "JSON" },
+            zip: { extension: "zip", mediaType: "application/zip", label: "脚本 ZIP" },
+          };
+          const format = formats[button.dataset.downloadImplementationRunbook] || formats.pdf;
+          const profile = String(button.dataset.runbookProfile || "database-implementation").toLowerCase().replaceAll("_", "-");
           await KBotAIOpsAuth.download(
             `${api}/conversations/${conversationId}/turns/${turnId}/implementation-runbook.${format.extension}`,
-            `oracle-adg-implementation-${button.dataset.turnId}.${format.extension}`,
+            `${profile}-${button.dataset.turnId}.${format.extension}`,
             format.mediaType,
           );
-          shell.toast(`ADG 实施文档 ${format.label} 已开始下载`);
+          shell.toast(`数据库实施文档 ${format.label} 已开始下载`);
         } catch (error) {
-          shell.toast(error.message || "无法下载 ADG 实施文档");
+          shell.toast(error.message || "无法下载数据库实施文档");
         } finally {
           button.disabled = false;
           button.textContent = label;

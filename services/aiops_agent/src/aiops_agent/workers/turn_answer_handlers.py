@@ -38,6 +38,9 @@ from aiops_agent.application.exacheck_report import (
 from aiops_agent.application.implementation import (
     compile_implementation_runbook,
 )
+from aiops_agent.application.implementation.artifacts import (
+    generated_artifact_payloads,
+)
 from aiops_agent.application.sqlhc_report import (
     SQLHC_FACT_COLUMNS,
     SQLHC_FACT_TOOL_ID,
@@ -1872,26 +1875,73 @@ class DbaAnswerComposeHandler:
             context.plan_snapshot.get("investigation_execution", {})
         ).get("database", {})
         database_snapshot = dict(database_snapshot or {})
+        subject_ref = dict(task_frame.get("subject_ref") or {})
+        registered_facts: dict[str, Any] = {}
+        for item_value in list(
+            context.plan_snapshot.get("target_facts") or []
+        ):
+            item = dict(item_value or {})
+            if str(item.get("status") or "ACTIVE") != "ACTIVE":
+                continue
+            fact_value = dict(item.get("fact_value") or {})
+            for key, fact_item in fact_value.items():
+                if fact_item not in (None, "", [], {}):
+                    registered_facts[str(key).upper()] = fact_item
+            fact_key = str(item.get("fact_key") or "").upper()
+            scalar = fact_value.get("value")
+            if fact_key and scalar not in (None, ""):
+                registered_facts[fact_key] = scalar
+        database_context = dict(task_frame.get("database_context") or {})
+        if database_context.get("observed_oracle_database_name"):
+            registered_facts.setdefault(
+                "DATABASE_NAME",
+                database_context["observed_oracle_database_name"],
+            )
+        explicit_parameters = (
+            registered_facts
+            | dict(subject_ref.get("implementation_parameters") or {})
+        )
+        for key, subject_key in (
+            ("DESTINATION_REF", "destination_ref"),
+            ("RECOVERY_SCENARIO", "scenario"),
+            ("RECOVERY_TARGET_TIME", "recovery_target_time"),
+            ("RECOVERY_TARGET_SCN", "recovery_target_scn"),
+            ("TARGET_VERSION", "requested_target_version"),
+        ):
+            if subject_ref.get(subject_key) not in (None, ""):
+                explicit_parameters[key] = subject_ref[subject_key]
         implementation_context = {
             "connection_profile": dict(
                 database_snapshot.get("connection_profile") or {}
             ),
             "implementation_parameters": dict(
-                dict(task_frame.get("subject_ref") or {}).get(
-                    "implementation_parameters"
-                )
-                or {}
+                explicit_parameters
             ),
+            "deployment_topology": dict(
+                registered_facts
+                | dict(subject_ref.get("deployment_topology") or {})
+            ),
+            "policy_parameters": dict(
+                subject_ref.get("policy_parameters") or {}
+            ),
+            "destination_ref": subject_ref.get("destination_ref"),
+            "scenario": subject_ref.get("scenario"),
+            "recovery_target_time": subject_ref.get("recovery_target_time"),
+            "recovery_target_scn": subject_ref.get("recovery_target_scn"),
         }
         runbook = compile_implementation_runbook(
             profile=profile,
             evidence=assessment.evidence,
             context=implementation_context,
         )
+        payload = runbook.model_dump(mode="json")
+        generated_artifacts = generated_artifact_payloads(runbook)
+        if generated_artifacts:
+            payload["_generated_artifacts"] = generated_artifacts
         return TurnAnswerBlock(
             block_type=AnswerBlockType.IMPLEMENTATION_RUNBOOK,
-            schema_version="AIOPS_IMPLEMENTATION_RUNBOOK_BLOCK.v2",
-            payload=runbook.model_dump(mode="json"),
+            schema_version="AIOPS_IMPLEMENTATION_RUNBOOK_BLOCK.v3",
+            payload=payload,
             evidence_refs=runbook.evidence_refs,
         )
 

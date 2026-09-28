@@ -392,7 +392,7 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                     heading = " · ".join(
                         item
                         for item in (
-                            str(command.get("command_type") or ""),
+                            str(command.get("executor") or command.get("command_type") or ""),
                             str(command.get("title") or ""),
                         )
                         if item
@@ -406,6 +406,19 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                         code=formatted_code,
                         text_font_name=font_name,
                     ))
+                    execution_metadata = " · ".join(
+                        item for item in (
+                            f"身份 {command.get('run_as')}" if command.get("run_as") else "",
+                            f"节点 {'、'.join(map(str, _items(command.get('node_scope'))))}" if _items(command.get("node_scope")) else "",
+                            f"风险 {command.get('risk_level')}" if command.get("risk_level") else "",
+                        ) if item
+                    )
+                    if execution_metadata:
+                        story.append(Paragraph(_paragraph(execution_metadata), body))
+                    for expected in _items(command.get("expected_result")):
+                        story.append(Paragraph(
+                            _paragraph(f"预期：{expected}"), body, bulletText="•"
+                        ))
                     for note in _items(command.get("notes")):
                         story.append(Paragraph(_paragraph(note), body, bulletText="•"))
             for risk in _items(step.get("risks")):
@@ -443,6 +456,33 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
             body,
             bulletText="•",
         ))
+    missing_facts = _items(payload.get("missing_facts"))
+    if missing_facts:
+        story.append(Paragraph("缺失的必要事实", step_style))
+        for item_value in missing_facts:
+            item = _mapping(item_value)
+            story.append(Paragraph(
+                _paragraph(
+                    f"{item.get('fact_key') or '-'}：{item.get('reason') or '-'}；"
+                    f"补齐位置 {item.get('resolution_source') or '-'}"
+                ),
+                body,
+                bulletText="•",
+            ))
+    artifacts = _items(payload.get("artifacts"))
+    if artifacts:
+        story.append(Paragraph("脚本与配置清单", step_style))
+        for item_value in artifacts:
+            item = _mapping(item_value)
+            story.append(Paragraph(
+                _paragraph(
+                    f"{item.get('file_name') or '-'} → {item.get('target_path') or '-'}；"
+                    f"{item.get('file_mode') or '-'} / {item.get('run_as') or '-'}；"
+                    f"SHA256 {item.get('sha256') or '-'}"
+                ),
+                body,
+                bulletText="•",
+            ))
     stop_conditions = _items(payload.get("stop_conditions"))
     if stop_conditions:
         story.append(Paragraph("停止条件", step_style))

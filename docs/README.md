@@ -41,7 +41,7 @@ Git 历史保存，不再作为有效文档。
 
 ## 详细设计与实施方案
 
-- [AIOps 数据库实施文档中心详细设计](proposals/aiops-database-implementation-library-detailed-design.md)：RAC、RMAN、补丁、升级、迁移、克隆和 ADG 演练的待实施目标态。
+- [AIOps 数据库实施文档中心详细设计](proposals/aiops-database-implementation-library-detailed-design.md)：已实施的 Runbook v3、RAC、RMAN、补丁、升级、迁移、克隆和 ADG 演练基准。
 
 ## 契约
 

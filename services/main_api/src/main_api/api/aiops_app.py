@@ -804,6 +804,64 @@ async def download_implementation_runbook_markdown(
     )
 
 
+@router.get(
+    "/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.json",
+    response_class=Response,
+    responses={200: {"content": {"application/json": {}}}},
+)
+async def download_implementation_runbook_json(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+):
+    """代理结构化数据库实施 Runbook JSON。"""
+    await _conversation_with_access(request, conversation_id)
+    upstream = await _client(request).download_implementation_runbook_json(
+        conversation_id, turn_id, auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=upstream.body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": upstream.headers.get(
+                "Content-Disposition",
+                f'attachment; filename="database-implementation-{turn_id}.json"',
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.zip",
+    response_class=Response,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def download_implementation_runbook_zip(
+    conversation_id: UUID,
+    turn_id: UUID,
+    request: Request,
+):
+    """代理数据库实施脚本包。"""
+    await _conversation_with_access(request, conversation_id)
+    upstream = await _client(request).download_implementation_runbook_zip(
+        conversation_id, turn_id, auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=upstream.body,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": upstream.headers.get(
+                "Content-Disposition",
+                f'attachment; filename="database-implementation-{turn_id}.zip"',
+            ),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post(
     "/conversations/{conversation_id}/turns/{turn_id}/cancel",
     response_model=TurnSummary,
