@@ -19,7 +19,7 @@ INPUT_ENVELOPE_SCHEMA_VERSION = "aiops.input-envelope.v1"
 TASK_FRAME_SCHEMA_VERSION = "aiops.task-frame.v1"
 INVESTIGATION_PLAN_SCHEMA_VERSION = "aiops.investigation-plan.v1"
 INVESTIGATION_ASSESSMENT_SCHEMA_VERSION = "aiops.investigation-assessment.v1"
-COMPACT_PLANNING_SCHEMA_VERSION = "aiops.compact-planning.v2"
+COMPACT_PLANNING_SCHEMA_VERSION = "aiops.compact-planning.v3"
 
 
 class InputContentType(StrEnum):
@@ -399,7 +399,6 @@ class CompactPlanningOutput(AIOpsContract):
         )
     )
     implementation_profile: ImplementationProfile = Field(
-        default=ImplementationProfile.NONE,
         description=(
             "实施方案档案；ORACLE_ADG_BUILD 表示生成完整 ADG 建设 Runbook，"
             "NONE 表示普通调查。"
@@ -445,6 +444,29 @@ class CompactPlanningOutput(AIOpsContract):
     selected_playbook_ids: tuple[str, ...] = Field(default=(), max_length=3)
     actions: tuple[InvestigationAction, ...] = Field(default=(), max_length=4)
     public_reasoning_summary: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_implementation_contract(cls, value):
+        """归一化实施方案固定语义，避免模型默认字段遗漏中断规划。"""
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        mode = str(normalized.get("planning_mode") or "")
+        if mode == CompactPlanningMode.IMPLEMENTATION_RUNBOOK:
+            profile = str(normalized.get("implementation_profile") or "")
+            if profile in {"", ImplementationProfile.NONE}:
+                # 当前实施方案目录只登记 ADG；模型选中实施方案模式后，
+                # 其安全语义由服务端固定，不依赖模型重复填写关联字段。
+                normalized["implementation_profile"] = (
+                    ImplementationProfile.ORACLE_ADG_BUILD
+                )
+            normalized["objectives"] = (TaskObjective.PLAN,)
+            normalized["action_intent"] = ActionIntent.NONE
+            normalized["diagnostic_profile"] = DiagnosticProfile.GENERAL
+        elif "implementation_profile" not in normalized:
+            normalized["implementation_profile"] = ImplementationProfile.NONE
+        return normalized
 
     @model_validator(mode="after")
     def validate_completion_contract(self) -> "CompactPlanningOutput":

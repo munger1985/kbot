@@ -101,6 +101,38 @@ def _precheck_fact(
 
 
 class ImplementationRunbookPlanningTests(unittest.TestCase):
+    def test_contract_repairs_omitted_adg_profile_and_fixed_semantics(
+        self,
+    ) -> None:
+        compact = CompactPlanningOutput.model_validate(
+            {
+                "planning_mode": "IMPLEMENTATION_RUNBOOK",
+                "objectives": ["PLAN", "ASSESS"],
+                "action_intent": "ADVISORY",
+                "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
+                "subject_ref": {},
+                "problem_statement": "根据当前参数生成 ADG 实施文档",
+                "success_criteria": ["生成完整实施 Runbook"],
+                "public_reasoning_summary": "生成 ADG 实施方案",
+            }
+        )
+
+        self.assertEqual(
+            ImplementationProfile.ORACLE_ADG_BUILD,
+            compact.implementation_profile,
+        )
+        self.assertEqual((TaskObjective.PLAN,), compact.objectives)
+        self.assertEqual(ActionIntent.NONE, compact.action_intent)
+        self.assertEqual(
+            DiagnosticProfile.GENERAL,
+            compact.diagnostic_profile,
+        )
+
+    def test_schema_requires_explicit_implementation_profile(self) -> None:
+        required = CompactPlanningOutput.model_json_schema()["required"]
+
+        self.assertIn("implementation_profile", required)
+
     def test_adg_profile_expands_to_fixed_readonly_plan(self) -> None:
         compact = _compact()
 
