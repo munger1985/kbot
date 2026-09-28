@@ -19,6 +19,21 @@ OUTPUT_PATH = (
     / "aiops_agent"
     / "rebuild_aiops_schema.sql"
 )
+PRESERVING_OUTPUT_PATH = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "generated"
+    / "aiops_agent"
+    / "rebuild_aiops_preserve_sources_targets.sql"
+)
+
+PRESERVED_TABLES = (
+    ("KBOT_OPS_TARGET", "KBOT_KEEP_AIOPS_TARGET"),
+    ("KBOT_OPS_DIAGNOSTIC_SOURCE", "KBOT_KEEP_AIOPS_SOURCE"),
+    ("KBOT_OPS_TARGET_FACT", "KBOT_KEEP_AIOPS_TARGET_FACT"),
+    ("KBOT_OPS_TARGET_SOURCE_BINDING", "KBOT_KEEP_AIOPS_TSRC_BIND"),
+)
 
 HEADER = """-- KBot 4.0 AIOps Schema 全量重建脚本。
 -- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工复制规范 DDL。
@@ -157,6 +172,7 @@ DECLARE
     l_report_summary_count PLS_INTEGER;
     l_task_type_constraint_count PLS_INTEGER;
     l_tool_class_constraint_count PLS_INTEGER;
+    l_answer_block_type_constraint_count PLS_INTEGER;
     l_component VARCHAR2(32);
     l_schema_version NUMBER;
     l_contract_version VARCHAR2(64);
@@ -289,6 +305,20 @@ BEGIN
        AND search_condition_vc LIKE '%''ORACLE_SQL_DYNAMIC''%'
        AND search_condition_vc LIKE '%''USER_EVIDENCE''%';
 
+    SELECT COUNT(*)
+      INTO l_answer_block_type_constraint_count
+      FROM user_constraints
+     WHERE table_name = 'KBOT_OPS_ANSWER_BLOCK'
+       AND constraint_name = 'CK_OPS_ANSWER_BLOCK_TYPE'
+       AND constraint_type = 'C'
+       AND status = 'ENABLED'
+       AND validated = 'VALIDATED'
+       AND search_condition_vc LIKE '%''FINDING_CARDS''%'
+       AND search_condition_vc LIKE '%''ANALYSIS_MARKDOWN''%'
+       AND search_condition_vc LIKE '%''SOLUTION_MARKDOWN''%'
+       AND search_condition_vc LIKE '%''FACT_CONFIRMATION''%'
+       AND search_condition_vc LIKE '%''HTML_REPORT_LINKS''%';
+
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
@@ -330,6 +360,9 @@ BEGIN
     IF l_tool_class_constraint_count <> 1 THEN
         raise_application_error(-20012, 'CK_OPS_TOOL_INV_CLASS 与 Schema {schema_version} 合同不一致。');
     END IF;
+    IF l_answer_block_type_constraint_count <> 1 THEN
+        raise_application_error(-20014, 'CK_OPS_ANSWER_BLOCK_TYPE 与应用合同不一致。');
+    END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> {schema_version}
        OR l_contract_version <> '{contract_version}' THEN
@@ -349,8 +382,6 @@ END;
 
 SELECT component, schema_version, contract_version
 FROM KBOT_V_OPS_SCHEMA_VERSION;
-
-PROMPT === AIOps Schema 重建完成；启动服务后检查 AIOps /ready ===
 """
 
 
@@ -446,10 +477,10 @@ def _format_expected_names(names: list[str]) -> str:
     return ",\n".join(f"          '{name}'" for name in names)
 
 
-def render_rebuild_sql() -> str:
-    """生成包含全部规范 DDL 的单文件重建脚本。"""
+def _load_canonical_sections() -> tuple[dict, list[tuple[str, str]]]:
+    """校验 Manifest，并返回按规范顺序排列的 DDL。"""
     manifest = _load_manifest()
-    sections = [HEADER.rstrip()]
+    canonical_sections: list[tuple[str, str]] = []
     for definition in manifest["scripts"]:
         name = str(definition["name"])
         path = SCHEMA_DIR / name
@@ -464,6 +495,16 @@ def render_rebuild_sql() -> str:
                 f"规范 DDL 语句数与 Manifest 不一致：{name}，"
                 f"实际 {actual_statements}，期望 {expected_statements}"
             )
+        canonical_sections.append((name, content))
+    return manifest, canonical_sections
+
+
+def _render_canonical_sections(
+    canonical_sections: list[tuple[str, str]],
+) -> list[str]:
+    """生成自包含脚本中的规范 DDL 区段。"""
+    sections: list[str] = []
+    for name, content in canonical_sections:
         sections.extend(
             (
                 f"-- ===== 开始规范 DDL：{name} =====",
@@ -471,17 +512,395 @@ def render_rebuild_sql() -> str:
                 f"-- ===== 结束规范 DDL：{name} =====",
             )
         )
-    sections.append(
-        FOOTER.format(
-            table_count=len(manifest["tables"]),
-            view_count=len(manifest["views"]),
-            expected_tables=_format_expected_names(manifest["tables"]),
-            expected_views=_format_expected_names(manifest["views"]),
-            schema_version=int(manifest["schema_version"]),
-            contract_version=str(manifest["contract_version"]),
-        ).strip()
+    return sections
+
+
+def _render_validation(manifest: dict) -> str:
+    """生成重建后的 Schema 合同验证。"""
+    return FOOTER.format(
+        table_count=len(manifest["tables"]),
+        view_count=len(manifest["views"]),
+        expected_tables=_format_expected_names(manifest["tables"]),
+        expected_views=_format_expected_names(manifest["views"]),
+        schema_version=int(manifest["schema_version"]),
+        contract_version=str(manifest["contract_version"]),
+    ).strip()
+
+
+def _extract_table_columns(
+    canonical_sections: list[tuple[str, str]], table_name: str
+) -> tuple[str, ...]:
+    """从规范 CREATE TABLE 中提取列名，避免保存脚本复制表结构。"""
+    marker = f"CREATE TABLE {table_name} ("
+    for name, content in canonical_sections:
+        if marker not in content:
+            continue
+        body = content.split(marker, 1)[1]
+        columns: list[str] = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if line.startswith("        "):
+                continue
+            if stripped.startswith("CONSTRAINT ") or stripped == ");":
+                break
+            column_name = stripped.split(None, 1)[0].rstrip(",")
+            if not column_name.replace("_", "").isalnum():
+                raise RuntimeError(
+                    f"无法解析规范表列：{name}:{table_name}:{stripped}"
+                )
+            columns.append(column_name)
+        if not columns:
+            raise RuntimeError(f"规范表没有可保存列：{name}:{table_name}")
+        return tuple(columns)
+    raise RuntimeError(f"规范 DDL 缺少待保存表：{table_name}")
+
+
+def _format_columns(columns: tuple[str, ...], *, indent: str = "    ") -> str:
+    """按每行一个列名输出稳定 SQL。"""
+    return ",\n".join(f"{indent}{column}" for column in columns)
+
+
+def _render_preserving_header(
+    manifest: dict,
+    canonical_sections: list[tuple[str, str]],
+) -> str:
+    """生成保存监控源、运维目标及直接子数据的重建前半段。"""
+    source_tables = ", ".join(f"'{table}'" for table, _ in PRESERVED_TABLES)
+    backup_tables = ", ".join(f"'{backup}'" for _, backup in PRESERVED_TABLES)
+    backup_statements: list[str] = []
+    count_queries: list[str] = []
+    for table_name, backup_name in PRESERVED_TABLES:
+        columns = _extract_table_columns(canonical_sections, table_name)
+        backup_statements.append(
+            "\n".join(
+                (
+                    f"CREATE TABLE {backup_name} AS",
+                    "SELECT",
+                    _format_columns(columns),
+                    f"FROM {table_name};",
+                )
+            )
+        )
+        count_queries.append(
+            f"SELECT '{table_name}' AS OBJECT_NAME, COUNT(*) AS ROW_COUNT "
+            f"FROM {backup_name}"
+        )
+    backups_sql = "\n\n".join(backup_statements)
+    counts_sql = "\nUNION ALL\n".join(count_queries) + ";"
+    return f"""-- KBot 4.0 AIOps 保留配置数据的全量重建脚本。
+-- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工修改内嵌 DDL。
+-- 使用 KBot Schema 所有者在 SQL Developer 中以 Run Script（F5）执行。
+-- 仅保留运维目标、目标事实、监控源以及目标与监控源绑定；其他 AIOps 数据全部清空。
+-- Managed Credential、平台用户、Domain、权限、角色和 KC Collection 位于共享表，不会删除。
+-- 执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并完成数据库备份。
+-- Oracle DDL 会自动提交；中途失败时 KBOT_KEEP_AIOPS_% 备份表会保留，请勿直接删除。
+
+WHENEVER OSERROR EXIT FAILURE ROLLBACK
+WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
+
+SET SERVEROUTPUT ON
+SET VERIFY OFF
+SET SQLBLANKLINES ON
+
+PROMPT === 正在检查保留式重建前置条件 ===
+
+DECLARE
+    l_component VARCHAR2(32 CHAR);
+    l_schema_version NUMBER;
+    l_contract_version VARCHAR2(64 CHAR);
+    l_source_table_count PLS_INTEGER;
+    l_backup_table_count PLS_INTEGER;
+    l_external_fk_count PLS_INTEGER;
+    l_domain_key_count PLS_INTEGER;
+    l_credential_key_count PLS_INTEGER;
+BEGIN
+    SELECT component, schema_version, contract_version
+      INTO l_component, l_schema_version, l_contract_version
+      FROM KBOT_V_OPS_SCHEMA_VERSION;
+
+    IF l_component <> 'AIOPS'
+       OR l_schema_version <> {int(manifest['schema_version'])}
+       OR l_contract_version <> '{manifest['contract_version']}' THEN
+        raise_application_error(
+            -20100,
+            '仅支持 AIOPS/{int(manifest['schema_version'])}/'
+            || '{manifest['contract_version']}，当前为 '
+            || l_component || '/' || l_schema_version || '/' || l_contract_version
+        );
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_source_table_count
+      FROM user_tables
+     WHERE table_name IN ({source_tables});
+    IF l_source_table_count <> {len(PRESERVED_TABLES)} THEN
+        raise_application_error(-20101, '待保留的 AIOps 配置表不完整。');
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_backup_table_count
+      FROM user_tables
+     WHERE table_name IN ({backup_tables});
+    IF l_backup_table_count <> 0 THEN
+        raise_application_error(
+            -20102,
+            '发现上次执行留下的 KBOT_KEEP_AIOPS_% 表，请先核实并人工处理。'
+        );
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_external_fk_count
+      FROM user_constraints child_constraint
+      JOIN user_constraints parent_constraint
+        ON parent_constraint.constraint_name = child_constraint.r_constraint_name
+     WHERE child_constraint.constraint_type = 'R'
+       AND parent_constraint.table_name LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
+       AND child_constraint.table_name NOT LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\';
+    IF l_external_fk_count <> 0 THEN
+        raise_application_error(
+            -20103,
+            '存在非 AIOps 表指向 KBOT_OPS_% 的外键，禁止自动重建。'
+        );
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_domain_key_count
+      FROM user_constraints constraint_row
+     WHERE constraint_row.table_name = 'KBOT_PLATFORM_DOMAIN'
+       AND constraint_row.constraint_type IN ('P', 'U')
+       AND constraint_row.status = 'ENABLED'
+       AND constraint_row.validated = 'VALIDATED'
+       AND (
+            SELECT COUNT(*)
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+       ) = 1
+       AND EXISTS (
+            SELECT 1
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+               AND column_row.position = 1
+               AND column_row.column_name = 'DOMAIN_ID'
+       );
+
+    SELECT COUNT(*)
+      INTO l_credential_key_count
+      FROM user_constraints constraint_row
+     WHERE constraint_row.table_name = 'KBOT_MANAGED_CREDENTIAL'
+       AND constraint_row.constraint_type IN ('P', 'U')
+       AND constraint_row.status = 'ENABLED'
+       AND constraint_row.validated = 'VALIDATED'
+       AND (
+            SELECT COUNT(*)
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+       ) = 2
+       AND EXISTS (
+            SELECT 1
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+               AND column_row.position = 1
+               AND column_row.column_name = 'CREDENTIAL_ID'
+       )
+       AND EXISTS (
+            SELECT 1
+              FROM user_cons_columns column_row
+             WHERE column_row.constraint_name = constraint_row.constraint_name
+               AND column_row.table_name = constraint_row.table_name
+               AND column_row.position = 2
+               AND column_row.column_name = 'DOMAIN_ID'
+       );
+
+    IF l_domain_key_count = 0 OR l_credential_key_count = 0 THEN
+        raise_application_error(-20104, '共享 Domain 或 Managed Credential 父键不可用。');
+    END IF;
+END;
+/
+
+PROMPT === 正在备份监控源和运维目标配置 ===
+
+{backups_sql}
+
+PROMPT === 已保存的数据行数 ===
+
+{counts_sql}
+
+PROMPT === 正在删除旧 AIOps 视图和表 ===
+
+DECLARE
+BEGIN
+    FOR view_row IN (
+        SELECT view_name
+        FROM user_views
+        WHERE view_name LIKE 'KBOT\\_V\\_OPS\\_%' ESCAPE '\\'
+        ORDER BY view_name
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP VIEW ' || dbms_assert.enquote_name(view_row.view_name, FALSE);
+        dbms_output.put_line('已删除视图 ' || view_row.view_name);
+    END LOOP;
+
+    FOR table_row IN (
+        SELECT table_name
+        FROM user_tables
+        WHERE table_name LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
+        ORDER BY table_name
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP TABLE '
+            || dbms_assert.enquote_name(table_row.table_name, FALSE)
+            || ' CASCADE CONSTRAINTS PURGE';
+        dbms_output.put_line('已删除表 ' || table_row.table_name);
+    END LOOP;
+END;
+/
+
+PROMPT === 正在执行当前规范 AIOps DDL ==="""
+
+
+def _render_restore_and_verify(
+    canonical_sections: list[tuple[str, str]],
+) -> str:
+    """生成配置恢复、行数验证与非配置数据清空验证。"""
+    restore_statements: list[str] = []
+    row_pairs: list[str] = []
+    for table_name, backup_name in PRESERVED_TABLES:
+        columns = _extract_table_columns(canonical_sections, table_name)
+        restore_statements.append(
+            "\n".join(
+                (
+                    f"INSERT INTO {table_name} (",
+                    _format_columns(columns),
+                    ")",
+                    "SELECT",
+                    _format_columns(columns),
+                    f"FROM {backup_name};",
+                )
+            )
+        )
+        row_pairs.append(
+            f"SELECT '{table_name}' AS TABLE_NAME, '{backup_name}' AS BACKUP_NAME "
+            "FROM DUAL"
+        )
+    restore_sql = "\n\n".join(restore_statements)
+    pairs_sql = "\n        UNION ALL\n        ".join(row_pairs)
+    preserved_names = ", ".join(f"'{table}'" for table, _ in PRESERVED_TABLES)
+    return f"""PROMPT === 正在恢复监控源和运维目标配置 ===
+
+{restore_sql}
+
+COMMIT;
+
+PROMPT === 正在验证保留行数和清空边界 ===
+
+DECLARE
+    l_current_count PLS_INTEGER;
+    l_backup_count PLS_INTEGER;
+    l_other_row_count PLS_INTEGER := 0;
+BEGIN
+    FOR keep_row IN (
+        {pairs_sql}
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM '
+            || dbms_assert.enquote_name(keep_row.table_name, FALSE)
+            INTO l_current_count;
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM '
+            || dbms_assert.enquote_name(keep_row.backup_name, FALSE)
+            INTO l_backup_count;
+        IF l_current_count <> l_backup_count THEN
+            raise_application_error(
+                -20110,
+                keep_row.table_name || ' 恢复行数不一致：当前='
+                || l_current_count || '，备份=' || l_backup_count
+            );
+        END IF;
+        dbms_output.put_line(
+            '已恢复 ' || keep_row.table_name || '：' || l_current_count || ' 行'
+        );
+    END LOOP;
+
+    FOR table_row IN (
+        SELECT table_name
+          FROM user_tables
+         WHERE table_name LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
+           AND table_name NOT IN ({preserved_names})
+         ORDER BY table_name
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM '
+            || dbms_assert.enquote_name(table_row.table_name, FALSE)
+            INTO l_current_count;
+        l_other_row_count := l_other_row_count + l_current_count;
+    END LOOP;
+
+    IF l_other_row_count <> 0 THEN
+        raise_application_error(-20111, '非保留 AIOps 表仍存在业务数据。');
+    END IF;
+END;
+/"""
+
+
+def _render_backup_cleanup() -> str:
+    """生成成功后删除临时备份表的 SQL。"""
+    backup_names = "\n        UNION ALL\n        ".join(
+        f"SELECT '{backup}' AS TABLE_NAME FROM DUAL"
+        for _, backup in PRESERVED_TABLES
     )
+    return f"""PROMPT === Schema 与数据验证通过，正在删除临时备份表 ===
+
+DECLARE
+BEGIN
+    FOR backup_row IN (
+        {backup_names}
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP TABLE '
+            || dbms_assert.enquote_name(backup_row.table_name, FALSE)
+            || ' PURGE';
+        dbms_output.put_line('已删除临时备份表 ' || backup_row.table_name);
+    END LOOP;
+END;
+/
+
+PROMPT === AIOps Schema 重建完成；配置数据已恢复，其他 AIOps 数据已清空 ===
+PROMPT === 启动服务后检查 AIOps /ready ==="""
+
+
+def render_rebuild_sql() -> str:
+    """生成清空全部 AIOps 数据的单文件重建脚本。"""
+    manifest, canonical_sections = _load_canonical_sections()
+    sections = [HEADER.rstrip()]
+    sections.extend(_render_canonical_sections(canonical_sections))
+    sections.append(_render_validation(manifest))
+    sections.append("PROMPT === AIOps Schema 重建完成；启动服务后检查 AIOps /ready ===")
     return "\n\n".join(sections) + "\n"
+
+
+def render_preserving_rebuild_sql() -> str:
+    """生成仅保留监控源和运维目标配置的单文件重建脚本。"""
+    manifest, canonical_sections = _load_canonical_sections()
+    sections = [_render_preserving_header(manifest, canonical_sections).rstrip()]
+    sections.extend(_render_canonical_sections(canonical_sections))
+    sections.append(_render_restore_and_verify(canonical_sections))
+    sections.append(_render_validation(manifest))
+    sections.append(_render_backup_cleanup())
+    return "\n\n".join(sections) + "\n"
+
+
+def _outputs() -> tuple[tuple[Path, str], ...]:
+    """返回全部生成物及其当前内容。"""
+    return (
+        (OUTPUT_PATH, render_rebuild_sql()),
+        (PRESERVING_OUTPUT_PATH, render_preserving_rebuild_sql()),
+    )
 
 
 def main() -> int:
@@ -492,15 +911,23 @@ def main() -> int:
         help="只检查已生成脚本是否与当前规范 DDL 一致",
     )
     args = parser.parse_args()
-    rendered = render_rebuild_sql()
+    outputs = _outputs()
     if args.check:
-        if not OUTPUT_PATH.is_file() or OUTPUT_PATH.read_text(encoding="utf-8") != rendered:
-            print("AIOps 重建脚本已过期，请重新运行生成器。")
+        stale_paths = [
+            path.relative_to(ROOT)
+            for path, rendered in outputs
+            if not path.is_file() or path.read_text(encoding="utf-8") != rendered
+        ]
+        if stale_paths:
+            for path in stale_paths:
+                print(f"AIOps 重建脚本已过期：{path}")
             return 1
         print("AIOps 重建脚本与当前规范 DDL 一致。")
         return 0
-    OUTPUT_PATH.write_text(rendered, encoding="utf-8")
-    print(f"已生成 SQL Developer 单文件脚本：{OUTPUT_PATH.relative_to(ROOT)}")
+    for path, rendered in outputs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(rendered, encoding="utf-8")
+        print(f"已生成 SQL Developer 单文件脚本：{path.relative_to(ROOT)}")
     return 0
 
 

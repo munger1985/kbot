@@ -1,10 +1,10 @@
--- KBot 4.0 AIOps Schema 全量重建脚本。
--- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工复制规范 DDL。
+-- KBot 4.0 AIOps 保留配置数据的全量重建脚本。
+-- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工修改内嵌 DDL。
 -- 使用 KBot Schema 所有者在 SQL Developer 中以 Run Script（F5）执行。
--- 本脚本永久删除当前 Schema 内全部 KBOT_OPS_% 表、KBOT_V_OPS_% 视图及其数据。
--- 执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并备份需要保留的数据。
--- 平台用户、Domain、权限、角色以及 KC Collection 不在删除范围内。
--- Oracle DDL 会自动提交；失败后应修复原因并重新执行本脚本。
+-- 仅保留运维目标、目标事实、监控源以及目标与监控源绑定；其他 AIOps 数据全部清空。
+-- Managed Credential、平台用户、Domain、权限、角色和 KC Collection 位于共享表，不会删除。
+-- 执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并完成数据库备份。
+-- Oracle DDL 会自动提交；中途失败时 KBOT_KEEP_AIOPS_% 备份表会保留，请勿直接删除。
 
 WHENEVER OSERROR EXIT FAILURE ROLLBACK
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
@@ -13,12 +13,67 @@ SET SERVEROUTPUT ON
 SET VERIFY OFF
 SET SQLBLANKLINES ON
 
-PROMPT === 正在检查 AIOps 重建前置条件 ===
+PROMPT === 正在检查保留式重建前置条件 ===
 
 DECLARE
+    l_component VARCHAR2(32 CHAR);
+    l_schema_version NUMBER;
+    l_contract_version VARCHAR2(64 CHAR);
+    l_source_table_count PLS_INTEGER;
+    l_backup_table_count PLS_INTEGER;
+    l_external_fk_count PLS_INTEGER;
     l_domain_key_count PLS_INTEGER;
     l_credential_key_count PLS_INTEGER;
 BEGIN
+    SELECT component, schema_version, contract_version
+      INTO l_component, l_schema_version, l_contract_version
+      FROM KBOT_V_OPS_SCHEMA_VERSION;
+
+    IF l_component <> 'AIOPS'
+       OR l_schema_version <> 26
+       OR l_contract_version <> 'aiops-oracle-v16' THEN
+        raise_application_error(
+            -20100,
+            '仅支持 AIOPS/26/'
+            || 'aiops-oracle-v16，当前为 '
+            || l_component || '/' || l_schema_version || '/' || l_contract_version
+        );
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_source_table_count
+      FROM user_tables
+     WHERE table_name IN ('KBOT_OPS_TARGET', 'KBOT_OPS_DIAGNOSTIC_SOURCE', 'KBOT_OPS_TARGET_FACT', 'KBOT_OPS_TARGET_SOURCE_BINDING');
+    IF l_source_table_count <> 4 THEN
+        raise_application_error(-20101, '待保留的 AIOps 配置表不完整。');
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_backup_table_count
+      FROM user_tables
+     WHERE table_name IN ('KBOT_KEEP_AIOPS_TARGET', 'KBOT_KEEP_AIOPS_SOURCE', 'KBOT_KEEP_AIOPS_TARGET_FACT', 'KBOT_KEEP_AIOPS_TSRC_BIND');
+    IF l_backup_table_count <> 0 THEN
+        raise_application_error(
+            -20102,
+            '发现上次执行留下的 KBOT_KEEP_AIOPS_% 表，请先核实并人工处理。'
+        );
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_external_fk_count
+      FROM user_constraints child_constraint
+      JOIN user_constraints parent_constraint
+        ON parent_constraint.constraint_name = child_constraint.r_constraint_name
+     WHERE child_constraint.constraint_type = 'R'
+       AND parent_constraint.table_name LIKE 'KBOT\_OPS\_%' ESCAPE '\'
+       AND child_constraint.table_name NOT LIKE 'KBOT\_OPS\_%' ESCAPE '\';
+    IF l_external_fk_count <> 0 THEN
+        raise_application_error(
+            -20103,
+            '存在非 AIOps 表指向 KBOT_OPS_% 的外键，禁止自动重建。'
+        );
+    END IF;
+
     SELECT COUNT(*)
       INTO l_domain_key_count
       FROM user_constraints constraint_row
@@ -71,20 +126,140 @@ BEGIN
                AND column_row.column_name = 'DOMAIN_ID'
        );
 
-    IF l_domain_key_count = 0 THEN
-        raise_application_error(
-            -20010,
-            '重建前置条件错误：KBOT_PLATFORM_DOMAIN(DOMAIN_ID) 主键或唯一键不可用。'
-        );
-    END IF;
-    IF l_credential_key_count = 0 THEN
-        raise_application_error(
-            -20011,
-            '重建前置条件错误：KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID) 唯一键不可用。'
-        );
+    IF l_domain_key_count = 0 OR l_credential_key_count = 0 THEN
+        raise_application_error(-20104, '共享 Domain 或 Managed Credential 父键不可用。');
     END IF;
 END;
 /
+
+PROMPT === 正在备份监控源和运维目标配置 ===
+
+CREATE TABLE KBOT_KEEP_AIOPS_TARGET AS
+SELECT
+    TARGET_ID,
+    DOMAIN_ID,
+    DISPLAY_NAME,
+    DB_TYPE,
+    VERSION_CODE,
+    ENVIRONMENT,
+    DB_ROLE,
+    ORACLE_CONTAINER_SCOPE,
+    ORACLE_PDB_NAME,
+    OBSERVED_ORACLE_CONTAINER_SCOPE,
+    OBSERVED_ORACLE_CONTAINER_NAME,
+    OBSERVED_ORACLE_CONTAINER_NUMBER,
+    OBSERVED_ORACLE_DATABASE_NAME,
+    ENDPOINT_JSON,
+    READONLY_CONNECTION_ENABLED,
+    CONTROLLED_CHANGE_ENABLED,
+    DIAGNOSTIC_CREDENTIAL_ID,
+    EXECUTION_CREDENTIAL_ID,
+    SECURITY_LEVEL,
+    CAPABILITIES_JSON,
+    STATUS,
+    CONNECTIVITY_STATUS,
+    OBSERVED_STATUS,
+    LAST_OBSERVED_AT,
+    CONNECTIVITY_CHECK_REQUEST_ID,
+    CONNECTIVITY_CHECK_REQUESTED_AT,
+    LAST_CONNECTIVITY_CHECK_AT,
+    LAST_CONNECTIVITY_SUCCESS_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    CONNECTIVITY_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_OPS_TARGET;
+
+CREATE TABLE KBOT_KEEP_AIOPS_SOURCE AS
+SELECT
+    DIAGNOSTIC_SOURCE_ID,
+    DOMAIN_ID,
+    DISPLAY_NAME,
+    SOURCE_TYPE,
+    ADAPTER_ID,
+    ADAPTER_VERSION,
+    ENDPOINT,
+    AUTH_CREDENTIAL_ID,
+    WEBHOOK_CREDENTIAL_ID,
+    TLS_PROFILE_REF,
+    WEBHOOK_KEY_HASH,
+    PREVIOUS_WEBHOOK_KEY_HASH,
+    PREVIOUS_WEBHOOK_KEY_EXPIRES_AT,
+    DECLARED_CAPABILITIES_JSON,
+    DISCOVERED_CAPABILITIES_JSON,
+    CONFIG_JSON,
+    STATUS,
+    CONNECTIVITY_STATUS,
+    CONNECTIVITY_CHECK_REQUEST_ID,
+    CONNECTIVITY_CHECK_REQUESTED_AT,
+    LAST_CONNECTIVITY_CHECK_AT,
+    LAST_CONNECTIVITY_SUCCESS_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    CONNECTIVITY_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_OPS_DIAGNOSTIC_SOURCE;
+
+CREATE TABLE KBOT_KEEP_AIOPS_TARGET_FACT AS
+SELECT
+    TARGET_FACT_ID,
+    TARGET_ID,
+    DOMAIN_ID,
+    FACT_TYPE,
+    FACT_KEY,
+    FACT_VALUE,
+    SOURCE,
+    STATUS,
+    CONFIRMED_BY,
+    CONFIRMED_AT,
+    RETIRED_BY,
+    RETIRED_AT,
+    ROW_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_OPS_TARGET_FACT;
+
+CREATE TABLE KBOT_KEEP_AIOPS_TSRC_BIND AS
+SELECT
+    TARGET_SOURCE_BINDING_ID,
+    TARGET_ID,
+    DIAGNOSTIC_SOURCE_ID,
+    SOURCE_LOCATOR_KEY,
+    SOURCE_LOCATOR_JSON,
+    ROLE,
+    PRIORITY,
+    CAPABILITY_SCOPE_JSON,
+    MAPPING_OVERRIDES_JSON,
+    QUERY_BUDGET_JSON,
+    STATUS,
+    HEALTH_STATUS,
+    LAST_HEALTH_CHECK_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    HEALTH_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_OPS_TARGET_SOURCE_BINDING;
+
+PROMPT === 已保存的数据行数 ===
+
+SELECT 'KBOT_OPS_TARGET' AS OBJECT_NAME, COUNT(*) AS ROW_COUNT FROM KBOT_KEEP_AIOPS_TARGET
+UNION ALL
+SELECT 'KBOT_OPS_DIAGNOSTIC_SOURCE' AS OBJECT_NAME, COUNT(*) AS ROW_COUNT FROM KBOT_KEEP_AIOPS_SOURCE
+UNION ALL
+SELECT 'KBOT_OPS_TARGET_FACT' AS OBJECT_NAME, COUNT(*) AS ROW_COUNT FROM KBOT_KEEP_AIOPS_TARGET_FACT
+UNION ALL
+SELECT 'KBOT_OPS_TARGET_SOURCE_BINDING' AS OBJECT_NAME, COUNT(*) AS ROW_COUNT FROM KBOT_KEEP_AIOPS_TSRC_BIND;
 
 PROMPT === 正在删除旧 AIOps 视图和表 ===
 
@@ -2883,6 +3058,288 @@ ALTER TABLE KBOT_OPS_CHANGE_PROPOSAL
 
 -- ===== 结束规范 DDL：008_ops_conversations_reports.sql =====
 
+PROMPT === 正在恢复监控源和运维目标配置 ===
+
+INSERT INTO KBOT_OPS_TARGET (
+    TARGET_ID,
+    DOMAIN_ID,
+    DISPLAY_NAME,
+    DB_TYPE,
+    VERSION_CODE,
+    ENVIRONMENT,
+    DB_ROLE,
+    ORACLE_CONTAINER_SCOPE,
+    ORACLE_PDB_NAME,
+    OBSERVED_ORACLE_CONTAINER_SCOPE,
+    OBSERVED_ORACLE_CONTAINER_NAME,
+    OBSERVED_ORACLE_CONTAINER_NUMBER,
+    OBSERVED_ORACLE_DATABASE_NAME,
+    ENDPOINT_JSON,
+    READONLY_CONNECTION_ENABLED,
+    CONTROLLED_CHANGE_ENABLED,
+    DIAGNOSTIC_CREDENTIAL_ID,
+    EXECUTION_CREDENTIAL_ID,
+    SECURITY_LEVEL,
+    CAPABILITIES_JSON,
+    STATUS,
+    CONNECTIVITY_STATUS,
+    OBSERVED_STATUS,
+    LAST_OBSERVED_AT,
+    CONNECTIVITY_CHECK_REQUEST_ID,
+    CONNECTIVITY_CHECK_REQUESTED_AT,
+    LAST_CONNECTIVITY_CHECK_AT,
+    LAST_CONNECTIVITY_SUCCESS_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    CONNECTIVITY_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+)
+SELECT
+    TARGET_ID,
+    DOMAIN_ID,
+    DISPLAY_NAME,
+    DB_TYPE,
+    VERSION_CODE,
+    ENVIRONMENT,
+    DB_ROLE,
+    ORACLE_CONTAINER_SCOPE,
+    ORACLE_PDB_NAME,
+    OBSERVED_ORACLE_CONTAINER_SCOPE,
+    OBSERVED_ORACLE_CONTAINER_NAME,
+    OBSERVED_ORACLE_CONTAINER_NUMBER,
+    OBSERVED_ORACLE_DATABASE_NAME,
+    ENDPOINT_JSON,
+    READONLY_CONNECTION_ENABLED,
+    CONTROLLED_CHANGE_ENABLED,
+    DIAGNOSTIC_CREDENTIAL_ID,
+    EXECUTION_CREDENTIAL_ID,
+    SECURITY_LEVEL,
+    CAPABILITIES_JSON,
+    STATUS,
+    CONNECTIVITY_STATUS,
+    OBSERVED_STATUS,
+    LAST_OBSERVED_AT,
+    CONNECTIVITY_CHECK_REQUEST_ID,
+    CONNECTIVITY_CHECK_REQUESTED_AT,
+    LAST_CONNECTIVITY_CHECK_AT,
+    LAST_CONNECTIVITY_SUCCESS_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    CONNECTIVITY_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_KEEP_AIOPS_TARGET;
+
+INSERT INTO KBOT_OPS_DIAGNOSTIC_SOURCE (
+    DIAGNOSTIC_SOURCE_ID,
+    DOMAIN_ID,
+    DISPLAY_NAME,
+    SOURCE_TYPE,
+    ADAPTER_ID,
+    ADAPTER_VERSION,
+    ENDPOINT,
+    AUTH_CREDENTIAL_ID,
+    WEBHOOK_CREDENTIAL_ID,
+    TLS_PROFILE_REF,
+    WEBHOOK_KEY_HASH,
+    PREVIOUS_WEBHOOK_KEY_HASH,
+    PREVIOUS_WEBHOOK_KEY_EXPIRES_AT,
+    DECLARED_CAPABILITIES_JSON,
+    DISCOVERED_CAPABILITIES_JSON,
+    CONFIG_JSON,
+    STATUS,
+    CONNECTIVITY_STATUS,
+    CONNECTIVITY_CHECK_REQUEST_ID,
+    CONNECTIVITY_CHECK_REQUESTED_AT,
+    LAST_CONNECTIVITY_CHECK_AT,
+    LAST_CONNECTIVITY_SUCCESS_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    CONNECTIVITY_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+)
+SELECT
+    DIAGNOSTIC_SOURCE_ID,
+    DOMAIN_ID,
+    DISPLAY_NAME,
+    SOURCE_TYPE,
+    ADAPTER_ID,
+    ADAPTER_VERSION,
+    ENDPOINT,
+    AUTH_CREDENTIAL_ID,
+    WEBHOOK_CREDENTIAL_ID,
+    TLS_PROFILE_REF,
+    WEBHOOK_KEY_HASH,
+    PREVIOUS_WEBHOOK_KEY_HASH,
+    PREVIOUS_WEBHOOK_KEY_EXPIRES_AT,
+    DECLARED_CAPABILITIES_JSON,
+    DISCOVERED_CAPABILITIES_JSON,
+    CONFIG_JSON,
+    STATUS,
+    CONNECTIVITY_STATUS,
+    CONNECTIVITY_CHECK_REQUEST_ID,
+    CONNECTIVITY_CHECK_REQUESTED_AT,
+    LAST_CONNECTIVITY_CHECK_AT,
+    LAST_CONNECTIVITY_SUCCESS_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    CONNECTIVITY_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_KEEP_AIOPS_SOURCE;
+
+INSERT INTO KBOT_OPS_TARGET_FACT (
+    TARGET_FACT_ID,
+    TARGET_ID,
+    DOMAIN_ID,
+    FACT_TYPE,
+    FACT_KEY,
+    FACT_VALUE,
+    SOURCE,
+    STATUS,
+    CONFIRMED_BY,
+    CONFIRMED_AT,
+    RETIRED_BY,
+    RETIRED_AT,
+    ROW_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+)
+SELECT
+    TARGET_FACT_ID,
+    TARGET_ID,
+    DOMAIN_ID,
+    FACT_TYPE,
+    FACT_KEY,
+    FACT_VALUE,
+    SOURCE,
+    STATUS,
+    CONFIRMED_BY,
+    CONFIRMED_AT,
+    RETIRED_BY,
+    RETIRED_AT,
+    ROW_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_KEEP_AIOPS_TARGET_FACT;
+
+INSERT INTO KBOT_OPS_TARGET_SOURCE_BINDING (
+    TARGET_SOURCE_BINDING_ID,
+    TARGET_ID,
+    DIAGNOSTIC_SOURCE_ID,
+    SOURCE_LOCATOR_KEY,
+    SOURCE_LOCATOR_JSON,
+    ROLE,
+    PRIORITY,
+    CAPABILITY_SCOPE_JSON,
+    MAPPING_OVERRIDES_JSON,
+    QUERY_BUDGET_JSON,
+    STATUS,
+    HEALTH_STATUS,
+    LAST_HEALTH_CHECK_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    HEALTH_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+)
+SELECT
+    TARGET_SOURCE_BINDING_ID,
+    TARGET_ID,
+    DIAGNOSTIC_SOURCE_ID,
+    SOURCE_LOCATOR_KEY,
+    SOURCE_LOCATOR_JSON,
+    ROLE,
+    PRIORITY,
+    CAPABILITY_SCOPE_JSON,
+    MAPPING_OVERRIDES_JSON,
+    QUERY_BUDGET_JSON,
+    STATUS,
+    HEALTH_STATUS,
+    LAST_HEALTH_CHECK_AT,
+    LAST_ERROR_CODE,
+    ROW_VERSION,
+    HEALTH_VERSION,
+    CREATED_BY,
+    UPDATED_BY,
+    CREATED_AT,
+    UPDATED_AT
+FROM KBOT_KEEP_AIOPS_TSRC_BIND;
+
+COMMIT;
+
+PROMPT === 正在验证保留行数和清空边界 ===
+
+DECLARE
+    l_current_count PLS_INTEGER;
+    l_backup_count PLS_INTEGER;
+    l_other_row_count PLS_INTEGER := 0;
+BEGIN
+    FOR keep_row IN (
+        SELECT 'KBOT_OPS_TARGET' AS TABLE_NAME, 'KBOT_KEEP_AIOPS_TARGET' AS BACKUP_NAME FROM DUAL
+        UNION ALL
+        SELECT 'KBOT_OPS_DIAGNOSTIC_SOURCE' AS TABLE_NAME, 'KBOT_KEEP_AIOPS_SOURCE' AS BACKUP_NAME FROM DUAL
+        UNION ALL
+        SELECT 'KBOT_OPS_TARGET_FACT' AS TABLE_NAME, 'KBOT_KEEP_AIOPS_TARGET_FACT' AS BACKUP_NAME FROM DUAL
+        UNION ALL
+        SELECT 'KBOT_OPS_TARGET_SOURCE_BINDING' AS TABLE_NAME, 'KBOT_KEEP_AIOPS_TSRC_BIND' AS BACKUP_NAME FROM DUAL
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM '
+            || dbms_assert.enquote_name(keep_row.table_name, FALSE)
+            INTO l_current_count;
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM '
+            || dbms_assert.enquote_name(keep_row.backup_name, FALSE)
+            INTO l_backup_count;
+        IF l_current_count <> l_backup_count THEN
+            raise_application_error(
+                -20110,
+                keep_row.table_name || ' 恢复行数不一致：当前='
+                || l_current_count || '，备份=' || l_backup_count
+            );
+        END IF;
+        dbms_output.put_line(
+            '已恢复 ' || keep_row.table_name || '：' || l_current_count || ' 行'
+        );
+    END LOOP;
+
+    FOR table_row IN (
+        SELECT table_name
+          FROM user_tables
+         WHERE table_name LIKE 'KBOT\_OPS\_%' ESCAPE '\'
+           AND table_name NOT IN ('KBOT_OPS_TARGET', 'KBOT_OPS_DIAGNOSTIC_SOURCE', 'KBOT_OPS_TARGET_FACT', 'KBOT_OPS_TARGET_SOURCE_BINDING')
+         ORDER BY table_name
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'SELECT COUNT(*) FROM '
+            || dbms_assert.enquote_name(table_row.table_name, FALSE)
+            INTO l_current_count;
+        l_other_row_count := l_other_row_count + l_current_count;
+    END LOOP;
+
+    IF l_other_row_count <> 0 THEN
+        raise_application_error(-20111, '非保留 AIOps 表仍存在业务数据。');
+    END IF;
+END;
+/
+
 PROMPT === 正在验证 AIOps Schema ===
 
 DECLARE
@@ -3161,4 +3618,27 @@ END;
 SELECT component, schema_version, contract_version
 FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-PROMPT === AIOps Schema 重建完成；启动服务后检查 AIOps /ready ===
+PROMPT === Schema 与数据验证通过，正在删除临时备份表 ===
+
+DECLARE
+BEGIN
+    FOR backup_row IN (
+        SELECT 'KBOT_KEEP_AIOPS_TARGET' AS TABLE_NAME FROM DUAL
+        UNION ALL
+        SELECT 'KBOT_KEEP_AIOPS_SOURCE' AS TABLE_NAME FROM DUAL
+        UNION ALL
+        SELECT 'KBOT_KEEP_AIOPS_TARGET_FACT' AS TABLE_NAME FROM DUAL
+        UNION ALL
+        SELECT 'KBOT_KEEP_AIOPS_TSRC_BIND' AS TABLE_NAME FROM DUAL
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP TABLE '
+            || dbms_assert.enquote_name(backup_row.table_name, FALSE)
+            || ' PURGE';
+        dbms_output.put_line('已删除临时备份表 ' || backup_row.table_name);
+    END LOOP;
+END;
+/
+
+PROMPT === AIOps Schema 重建完成；配置数据已恢复，其他 AIOps 数据已清空 ===
+PROMPT === 启动服务后检查 AIOps /ready ===

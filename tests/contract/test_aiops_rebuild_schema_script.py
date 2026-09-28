@@ -10,6 +10,7 @@ import unittest
 from tools.db.render_aiops_rebuild_schema import (
     _analyze_canonical_sql,
     render_rebuild_sql,
+    render_preserving_rebuild_sql,
 )
 
 
@@ -22,6 +23,14 @@ REBUILD_SCRIPT = (
     / "generated"
     / "aiops_agent"
     / "rebuild_aiops_schema.sql"
+)
+PRESERVING_REBUILD_SCRIPT = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "generated"
+    / "aiops_agent"
+    / "rebuild_aiops_preserve_sources_targets.sql"
 )
 MANIFEST = SCHEMA_DIR / "schema_manifest.json"
 UPGRADE_SCHEMA_19 = (
@@ -59,9 +68,31 @@ APPLY_SCHEMA_23 = (
     / "operations"
     / "apply_aiops_schema_23.sql"
 )
+APPLY_SCHEMA_26 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_26.sql"
+)
+CHECK_CATALOG = (
+    ROOT
+    / "services"
+    / "aiops_agent"
+    / "src"
+    / "aiops_agent"
+    / "application"
+    / "inspections"
+    / "check_catalog.json"
+)
+
+
 class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
     def setUp(self) -> None:
         self.sql = REBUILD_SCRIPT.read_text(encoding="utf-8")
+        self.preserving_sql = PRESERVING_REBUILD_SCRIPT.read_text(
+            encoding="utf-8"
+        )
         self.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
     def test_rebuild_uses_every_canonical_script_in_manifest_order(self) -> None:
@@ -88,6 +119,61 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
                 )
             ),
         )
+
+    def test_preserving_rebuild_uses_current_canonical_ddl(self) -> None:
+        self.assertEqual(render_preserving_rebuild_sql(), self.preserving_sql)
+        self.assertNotRegex(self.preserving_sql, r"(?m)^@@")
+        sections = re.findall(
+            r"^-- ===== 开始规范 DDL：([0-9]{3}_[a-z0-9_]+\.sql) =====$",
+            self.preserving_sql,
+            re.MULTILINE,
+        )
+        self.assertEqual(
+            [item["name"] for item in self.manifest["scripts"]],
+            sections,
+        )
+
+    def test_preserving_rebuild_keeps_only_sources_targets_and_direct_data(
+        self,
+    ) -> None:
+        preserved = {
+            "KBOT_OPS_TARGET": "KBOT_KEEP_AIOPS_TARGET",
+            "KBOT_OPS_TARGET_FACT": "KBOT_KEEP_AIOPS_TARGET_FACT",
+            "KBOT_OPS_DIAGNOSTIC_SOURCE": "KBOT_KEEP_AIOPS_SOURCE",
+            "KBOT_OPS_TARGET_SOURCE_BINDING": "KBOT_KEEP_AIOPS_TSRC_BIND",
+        }
+        for table_name, backup_name in preserved.items():
+            self.assertIn(f"CREATE TABLE {backup_name} AS", self.preserving_sql)
+            self.assertIn(f"FROM {table_name};", self.preserving_sql)
+            self.assertIn(f"INSERT INTO {table_name} (", self.preserving_sql)
+            self.assertIn(f"FROM {backup_name};", self.preserving_sql)
+
+        self.assertNotIn("SELECT *", self.preserving_sql.upper())
+        self.assertNotIn("KBOT_KEEP_AIOPS_AGENT", self.preserving_sql)
+        self.assertNotIn("KBOT_KEEP_AIOPS_POLICY", self.preserving_sql)
+        self.assertIn("非保留 AIOps 表仍存在业务数据", self.preserving_sql)
+        self.assertIn("正在删除临时备份表", self.preserving_sql)
+        self.assertLess(
+            self.preserving_sql.index("正在验证保留行数和清空边界"),
+            self.preserving_sql.index("正在删除临时备份表"),
+        )
+
+    def test_answer_block_constraint_supports_current_application_types(
+        self,
+    ) -> None:
+        canonical = (SCHEMA_DIR / "008_ops_conversations_reports.sql").read_text(
+            encoding="utf-8"
+        )
+        for block_type in (
+            "FINDING_CARDS",
+            "ANALYSIS_MARKDOWN",
+            "SOLUTION_MARKDOWN",
+            "FACT_CONFIRMATION",
+            "HTML_REPORT_LINKS",
+        ):
+            self.assertIn(f"'{block_type}'", canonical)
+            self.assertIn(f"''{block_type}''", self.sql)
+            self.assertIn(f"''{block_type}''", self.preserving_sql)
 
     def test_rebuild_validation_matches_manifest_contract(self) -> None:
         self.assertIn(f"l_table_count <> {len(self.manifest['tables'])}", self.sql)
@@ -271,6 +357,41 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             "UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP",
             target_table,
         )
+
+    def test_schema_26_apply_adds_selected_checks_and_target_facts(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_26.read_text(encoding="utf-8")
+        normalized = sql.upper()
+        catalog = json.loads(CHECK_CATALOG.read_text(encoding="utf-8"))
+        ready_ids = [
+            item["check_id"]
+            for group in catalog["groups"]
+            for item in group["checks"]
+            if item.get("availability") == "READY"
+            and not str(item.get("tool_id") or "").startswith("user.")
+        ]
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        self.assertIn("SELECTED_CHECKS_JSON", normalized)
+        self.assertIn("CREATE TABLE KBOT_OPS_TARGET_FACT", normalized)
+        self.assertIn("UX_OPS_TARGET_FACT_ACTIVE", normalized)
+        self.assertIn("CREATE OR REPLACE VIEW KBOT_V_OPS_INSPECTION_PLAN", normalized)
+        self.assertIn("26 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V16' AS CONTRACT_VERSION", normalized)
+        self.assertIn("AIOPS-ORACLE-V13", normalized)
+        self.assertIn("AIOPS-ORACLE-V14", normalized)
+        self.assertEqual(18, len(ready_ids))
+        for check_id in ready_ids:
+            self.assertIn(check_id, sql)
+        self.assertNotIn("user.report", sql)
+
+        roots_sql = (SCHEMA_DIR / "001_ops_roots.sql").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("CREATE TABLE KBOT_OPS_TARGET_FACT", roots_sql)
 
     def test_canonical_statement_counts_and_parentheses_match_manifest(self) -> None:
         for definition in self.manifest["scripts"]:

@@ -90,6 +90,7 @@ SERVICE_TABLES = {
     },
     "aiops_agent": {
         "KBOT_OPS_TARGET",
+        "KBOT_OPS_TARGET_FACT",
         "KBOT_OPS_POLICY",
         "KBOT_OPS_TARGET_BINDING",
         "KBOT_OPS_NOTIFICATION_SUBSCRIPTION",

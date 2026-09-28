@@ -160,12 +160,33 @@ class AIOpsProcessRuntime:
                         )
                     )
                 ).scalar_one_or_none()
+                answer_block_type_constraint = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT COUNT(*)
+                            FROM USER_CONSTRAINTS
+                            WHERE TABLE_NAME = 'KBOT_OPS_ANSWER_BLOCK'
+                              AND CONSTRAINT_NAME = 'CK_OPS_ANSWER_BLOCK_TYPE'
+                              AND CONSTRAINT_TYPE = 'C'
+                              AND STATUS = 'ENABLED'
+                              AND VALIDATED = 'VALIDATED'
+                              AND SEARCH_CONDITION_VC LIKE '%''FINDING_CARDS''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''ANALYSIS_MARKDOWN''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''SOLUTION_MARKDOWN''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''FACT_CONFIRMATION''%'
+                              AND SEARCH_CONDITION_VC LIKE '%''HTML_REPORT_LINKS''%'
+                            """
+                        )
+                    )
+                ).scalar_one_or_none()
                 integrity_ready = (
                     required_columns == 9
                     and report_summary_column == 1
                     and report_source_table == 1
                     and task_type_constraint == 1
                     and tool_class_constraint == 1
+                    and answer_block_type_constraint == 1
                 )
             return {
                 "aiops_schema": "ok",
