@@ -88,7 +88,7 @@ class ConversationTurnService:
     async def start_alert_diagnosis(
         self, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        """把已选中 Agent 的告警转换为标准智能诊断 Turn。"""
+        """把已选中 Agent 的告警转换为标准智能运维 Turn。"""
         domain_id = int(payload["domain_id"])
         agent_id = UUID(str(payload["agent_id"]))
         target_id = UUID(str(payload["target_id"]))

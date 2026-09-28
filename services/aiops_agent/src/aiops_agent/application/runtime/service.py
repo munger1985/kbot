@@ -6606,7 +6606,7 @@ class AIOpsRuntimeService:
         template: ReportTemplate,
         trace_id: str,
     ) -> ReportEntity:
-        """冻结一个智能诊断 Session 内全部已终态 Turn 的报告上下文。"""
+        """冻结一个智能运维 Session 内全部已终态 Turn 的报告上下文。"""
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
             conversation = await uow.conversations.get_conversation(
@@ -6617,7 +6617,7 @@ class AIOpsRuntimeService:
             if conversation is None or conversation.created_by != actor_id:
                 raise resource_not_found("Conversation")
             if "CHAT" not in template.applicable_source_kinds:
-                raise validation_failed("所选报告模板不适用于智能诊断会话")
+                raise validation_failed("所选报告模板不适用于智能运维会话")
             if "AD_HOC" not in template.allowed_period_kinds:
                 raise validation_failed("所选报告模板不适用于会话诊断报告")
             turns = await uow.turns.list_all_turns(

@@ -113,7 +113,7 @@ Agent 给出受控只读 SQL，用户手工执行并粘贴结果，系统持续�
 或明确说明能力边界。只有 `DIAGNOSE` 意图进入假设与反证循环；观察、解释、规划、
 变更、验证和检查意图使用各自的 Skill 流程。
 
-Portal 将上述触发方式投影为智能诊断、告警诊断、日常巡检三个业务工作区。告警或
+Portal 将上述触发方式投影为智能运维、告警诊断、日常巡检三个业务工作区。告警或
 巡检续聊创建 `OpsConversation` 时，服务端校验 `source_run_id` 属于同一 Domain、
 同一 Target、触发类型为 `ALERT/SCHEDULE` 且已经形成最终 Artifact；随后冻结
 `source_situation_id/source_run_id/source_report_id`，并把公开诊断摘要加入新的 Chat

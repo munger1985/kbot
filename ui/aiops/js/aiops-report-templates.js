@@ -6,7 +6,7 @@
   const values = (form, name) => Array.from(form.querySelectorAll(`[name="${name}"]:checked`)).map((item) => item.value);
 
   function names(items) {
-    const labels = { CHAT: "智能诊断", ALERT: "告警诊断", INSPECTION: "日常巡检", AD_HOC: "单次诊断", DAILY: "日常", MONTHLY: "月度", QUARTERLY: "季度", ANNUAL: "年度" };
+    const labels = { CHAT: "智能运维", ALERT: "告警诊断", INSPECTION: "日常巡检", AD_HOC: "单次诊断", DAILY: "日常", MONTHLY: "月度", QUARTERLY: "季度", ANNUAL: "年度" };
     return items.map((item) => labels[item] || item).join("、") || "—";
   }
 

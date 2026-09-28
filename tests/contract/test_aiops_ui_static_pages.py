@@ -460,7 +460,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["chat", "智能诊断"]', shell)
+        self.assertIn('["chat", "智能运维"]', shell)
         self.assertIn('["situations", "告警诊断"]', shell)
         self.assertIn('["inspections", "日常巡检"]', shell)
         self.assertNotIn('["runs", "诊断运行"]', shell)

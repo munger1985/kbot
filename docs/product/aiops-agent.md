@@ -53,7 +53,7 @@ GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO kbot_monitor;
 Portal 不再把 Run、Report、Proposal 等内部领域对象分别暴露成业务用户必须理解的
 一级页面，而是按用户来这里要完成的工作提供三个入口：
 
-1. **智能诊断**：用户选择一个已启用的 Agent 后直接开始提问。Target 和允许使用的
+1. **智能运维**：用户选择一个已启用的 Agent 后直接开始提问。Target 和允许使用的
    监控源由 Agent 绑定决定，不再让用户重复填写内部 ID。回答以流式 Markdown 展示，
    同一 Conversation 可持续追问、补充现象和查看引用。聊天回答不套用巡检报告模板：
    每条消息建立独立 Turn，Agent 先识别工作意图、DBA 专业领域、对象和时间范围，再选择
@@ -66,7 +66,7 @@ Portal 不再把 Run、Report、Proposal 等内部领域对象分别暴露成业
 3. **日常巡检**：展示计划触发的 Inspection Fire、巡检报告、异常 Finding 和建议。
    用户可从报告继续对话，沿用巡检证据深入定位；审批与执行规则与告警续聊一致。
 
-固定标题、发现、建议和数据缺口等报告结构只属于正式报告 Artifact，不作为智能诊断
+固定标题、发现、建议和数据缺口等报告结构只属于正式报告 Artifact，不作为智能运维
 或告警续聊中每一轮 Agent 消息的统一格式。报告生成、模板、周期与导出规则见
 [AIOps 正式报告与导出设计](aiops-reporting.md)。
 

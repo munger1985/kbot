@@ -144,7 +144,7 @@ APEX 中以 Navigation Menu 实现；AIOps 与平台配置按授权方案隐藏�
 | 知识中心 | 41 | Collection 详情 | 查看配置、启停、模型绑定、入库记录及处理状态 | 已有详情/状态/模型/Bundle API |
 | 知识中心 | 42 | 文件入库向导 | 上传普通文件或 KM Asset，选择目标集合，提交后跟踪 Bundle | 已有 user-files、km-assets、Bundle API |
 | 知识中心 | 43 | 入库审批 | 对需要人工确认的 Revision 批准/驳回 | 已有 approvals/review API |
-| AIOps | 50 | 智能诊断 | 选 Agent 发起持续对话，在同一时间线中查看流式结论、引用、补证和审批 | 已有 Conversation、Ops Run、SSE、HITL 与 Proposal API，需统一投影 |
+| AIOps | 50 | 智能运维 | 选 Agent 发起持续对话，在同一时间线中查看流式结论、引用、补证和审批 | 已有 Conversation、Ops Run、SSE、HITL 与 Proposal API，需统一投影 |
 | AIOps | 51 | 告警诊断 | 查看告警自动诊断结果，并从该证据上下文继续人工对话 | 已有 Situation 与 Alert Run API，需建立 Conversation 来源关联 |
 | AIOps | 52 | 日常巡检 | 查看 Inspection Fire 与报告，并从异常 Finding 继续人工对话 | 已有 Inspection Fire、Report API，需建立 Conversation 来源关联 |
 | AIOps | 55 | Target 管理 | 创建、编辑、启用、维护、停用 Target；管理 Agent/监控绑定 | 已有 Target 与 Binding API |
@@ -232,7 +232,7 @@ Collection 状态和模型接口未暴露 `row_version`/ETag 条件，页面保�
 
 ### 3.4 AIOps 三入口工作区（P50–P52）
 
-**P50 智能诊断**先选择已启用 Agent，再进入持续 Conversation。Target 和监控源来自
+**P50 智能运维**先选择已启用 Agent，再进入持续 Conversation。Target 和监控源来自
 Agent 的有效绑定，页面不要求用户填写 Target ID、Source ID 或 JSON。消息时间线统一
 展示用户输入、Agent 进度、流式 Markdown 结论、引用、报告和待审批动作；刷新页面后以
 Conversation 和 Run Result 恢复权威内容，不能只依赖浏览器中收到的 SSE 片段。
@@ -263,7 +263,7 @@ Conversation 和 Run Result 恢复权威内容，不能只依赖浏览器中收�
 **P52 日常巡检**以 Inspection Fire 和报告为主线，展示计划、Target、异常 Finding、
 趋势、建议和执行状态。点击“继续分析”创建带 `source_run_id/source_report_id` 的
 Conversation，并复用巡检的时间窗口、证据和报告结论。后续对话、补证、审批和验证与
-智能诊断共用同一组件和契约。
+智能运维共用同一组件和契约。
 
 Run、Report、Proposal 不再设置面向业务用户的一级列表入口。它们作为三个工作区中的
 详情、结果和待办出现；运维目标、诊断源、Agent、巡检计划等管理对象仍保留在资源配置。

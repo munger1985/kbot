@@ -3,7 +3,7 @@
 ## 目标与边界
 
 正式报告服务于用户汇报和可追溯复盘，而不是替代三个业务入口中的实时
-诊断界面。智能诊断、告警诊断和日常巡检继续是唯一的业务入口；报告模板
+诊断界面。智能运维、告警诊断和日常巡检继续是唯一的业务入口；报告模板
 属于资源配置能力，不增加第四个业务入口。
 
 三个入口必须复用同一条报告链路：来源适配器取得经过授权的业务事实，报告
@@ -11,7 +11,7 @@
 和 PDF 下载。入口层不得自行拼接 Markdown、HTML 或 PDF。
 
 自动告警诊断只创建 Situation、Run、证据和诊断结论，绝不自动创建 READY 或
-PARTIAL 报告。用户可直接选择生成报告，或者进入智能诊断继续取证后再生成。
+PARTIAL 报告。用户可直接选择生成报告，或者进入智能运维继续取证后再生成。
 本版本所有正式报告均由用户明确发起：Run 完成只冻结诊断结果，用户选择模板后才
 创建正式报告。告警诊断绝不自动生成报告；巡检月报、季报和年报也只汇总已完整闭合的
 自然时间窗，不能用单次 Run 冒充。
@@ -45,7 +45,7 @@ Chat Run / Alert Situation + Run / Inspection 时间窗
 
 | 模板引用 | 适用入口 | 周期 |
 | --- | --- | --- |
-| `system:diagnosis.standard` | 智能诊断、告警诊断 | 单次诊断 |
+| `system:diagnosis.standard` | 智能运维、告警诊断 | 单次诊断 |
 | `system:inspection.daily` | 日常巡检 | 当日或当次 |
 | `system:inspection.monthly` | 日常巡检 | 自然月 |
 | `system:inspection.quarterly` | 日常巡检 | 自然季度 |
@@ -62,7 +62,7 @@ Chat Run / Alert Situation + Run / Inspection 时间窗
 
 ## 用户流程
 
-### 智能诊断
+### 智能运维
 
 会话中没有进行中的 Turn，且至少一个 Turn 已形成终态诊断结果时，会话底部显示唯一的
 “生成正式报告”入口。用户选择适用模板后，系统冻结该 Session 全部已结束 Turn 的诊断
@@ -71,7 +71,7 @@ Chat Run / Alert Situation + Run / Inspection 时间窗
 
 ### 告警诊断
 
-已完成的自动诊断显示“生成报告”和“进入智能诊断”。前者由用户显式发起，
+已完成的自动诊断显示“生成报告”和“进入智能运维”。前者由用户显式发起，
 后者通过 `source_situation_id`、`source_run_id` 继承原告警的 Target、时间窗、
 事实和证据。自动告警结果未完成时，报告按钮不可用；后台不得创建报告。
 
@@ -92,7 +92,7 @@ GET  /api/v1/apps/aiops/reports/{report_id}/presentation
 GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 ```
 
-生成请求仅可选择来源 Session 或来源 Run 和模板，不可提交事实正文。智能诊断使用
+生成请求仅可选择来源 Session 或来源 Run 和模板，不可提交事实正文。智能运维使用
 `conversation_id`，告警和巡检继续使用 `ops_run_id`；二者必须且只能选择其一。所有写请求带
 `Idempotency-Key`；模板更新带并发版本校验。当前报告状态为 `READY`、`PARTIAL`
 或 `FAILED`，PDF 根据冻结内容同步渲染，导出不会修改正式报告。

@@ -1033,7 +1033,7 @@
     state.conversation = conversation;
     state.turns = turns;
     document.getElementById("conversation-title").textContent = conversation.title || "诊断对话";
-    document.getElementById("conversation-context").textContent = conversation.source_type === "RUN" ? "这次对话继承自告警或巡检结果。" : "人工发起的智能诊断。";
+    document.getElementById("conversation-context").textContent = conversation.source_type === "RUN" ? "这次对话继承自告警或巡检结果。" : "人工发起的智能运维。";
     const panel = document.getElementById("message-list");
     panel.innerHTML = conversation.source_run_id ? '<div class="ops-context-banner">已关联来源诊断；后续回答只会引用当前 Turn 明确关联的证据。</div>' : "";
     turns.forEach((turn) => panel.insertAdjacentHTML("beforeend", turnHtml(turn)));
