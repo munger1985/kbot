@@ -1901,6 +1901,11 @@ class DbaAnswerComposeHandler:
             registered_facts
             | dict(subject_ref.get("implementation_parameters") or {})
         )
+        configured_version = str(
+            database_snapshot.get("configured_version") or ""
+        ).strip()
+        if configured_version:
+            explicit_parameters.setdefault("VERSION", configured_version)
         for key, subject_key in (
             ("DESTINATION_REF", "destination_ref"),
             ("RECOVERY_SCENARIO", "scenario"),
@@ -1911,6 +1916,7 @@ class DbaAnswerComposeHandler:
             if subject_ref.get(subject_key) not in (None, ""):
                 explicit_parameters[key] = subject_ref[subject_key]
         implementation_context = {
+            "configured_version": configured_version,
             "connection_profile": dict(
                 database_snapshot.get("connection_profile") or {}
             ),

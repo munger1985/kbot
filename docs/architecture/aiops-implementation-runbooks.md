@@ -96,6 +96,8 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 - `container_id > 1` 时路由到 Oracle 26ai DGPDB 编译器，创建独立目标 CDB、组合两端 Broker 配置并建立 standby PDB；
 - CDB Root/NON-CDB 才生成整库物理备库和 RMAN Duplicate；
 - 所有可复制命令必须已经代入解析值，禁止出现 `${...}` 或 `<...>` 伪可执行占位符；
+- RAC 预安装包和 Grid Home 必须由 Target `version_code` 或数据库版本证据派生；Oracle 内部版本
+  `23.26.x` 按产品语义映射为 `26ai`，缺少可确认版本时阻断 OS/GI/ASM 阶段，不生成猜测命令；
 - 前置证据缺失时产物为 `PARTIAL_EVIDENCE`，但仍包含完整阶段；
 - Runbook 中不包含明文密码、密钥或自动切换/failover 命令。
 

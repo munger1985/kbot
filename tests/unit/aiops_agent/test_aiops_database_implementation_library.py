@@ -65,6 +65,32 @@ def _rman_fact(
     )
 
 
+def _database_fact(
+    *,
+    tool_id: str,
+    version: str = "",
+    compatible: str = "",
+) -> TurnEvidenceFact:
+    names = ["database_name", "version"]
+    values = ["TESTDB", version]
+    if tool_id == "db.ha.rac_precheck":
+        names.append("compatible")
+        values.append(compatible)
+    return TurnEvidenceFact(
+        evidence_ref=f"evidence:{tool_id}",
+        artifact_id=f"artifact-{tool_id}",
+        source_id="oracle-source",
+        step_id="precheck",
+        tool_id=tool_id,
+        measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+        presentation_kind=PresentationPreference.TABLE,
+        captured_at="2026-09-29T08:00:00Z",
+        columns=tuple({"name": name} for name in names),
+        rows=(tuple(values),),
+        row_count=1,
+    )
+
+
 class DatabaseImplementationLibraryTest(unittest.TestCase):
     def test_registry_covers_every_implementation_profile(self) -> None:
         self.assertEqual(
@@ -213,6 +239,7 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             context={
                 "implementation_parameters": {
                     "DATABASE_NAME": "TESTDB",
+                    "VERSION": "26ai",
                 }
             },
         )
@@ -266,6 +293,106 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
         self.assertNotIn("NODE1_VIP", missing_keys)
         self.assertNotIn("NODE2_VIP", missing_keys)
         self.assertNotIn("ASM_DISK_WWIDS", missing_keys)
+
+    def test_rac_uses_target_release_for_preinstall_package(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RAC_BUILD,
+            evidence=(),
+            context={
+                "implementation_parameters": {
+                    "DATABASE_NAME": "TESTDB",
+                    "VERSION": "26ai",
+                }
+            },
+        )
+
+        serialized = runbook.model_dump_json()
+        self.assertIn("oracle-database-preinstall-26ai", serialized)
+        self.assertNotIn("oracle-database-preinstall-23ai", serialized)
+        resolved = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertEqual("26ai", resolved["ORACLE_RELEASE"])
+        self.assertEqual(
+            "TARGET_CONFIGURATION",
+            resolved["ORACLE_RELEASE_SOURCE"],
+        )
+
+    def test_rac_maps_26ai_internal_version_without_using_base_version(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RAC_BUILD,
+            evidence=(
+                _database_fact(
+                    tool_id="db.instance.identity",
+                    version="23.26.0.0.0",
+                ),
+                _database_fact(
+                    tool_id="db.ha.rac_precheck",
+                    version="23.0.0.0.0",
+                    compatible="23.0.0",
+                ),
+            ),
+            context={},
+        )
+
+        serialized = runbook.model_dump_json()
+        self.assertIn("oracle-database-preinstall-26ai", serialized)
+        self.assertNotIn("oracle-database-preinstall-23ai", serialized)
+        resolved = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertEqual(
+            "V$INSTANCE.VERSION_FULL",
+            resolved["ORACLE_RELEASE_SOURCE"],
+        )
+        self.assertEqual("23.26.0.0.0", resolved["ORACLE_OBSERVED_VERSION"])
+
+    def test_rac_maps_19c_release_from_database_version(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RAC_BUILD,
+            evidence=(
+                _database_fact(
+                    tool_id="db.instance.identity",
+                    version="19.27.0.0.0",
+                ),
+            ),
+            context={},
+        )
+
+        serialized = runbook.model_dump_json()
+        self.assertIn("oracle-database-preinstall-19c", serialized)
+        self.assertNotIn("oracle-database-preinstall-23ai", serialized)
+
+    def test_rac_blocks_version_specific_steps_when_release_is_unknown(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RAC_BUILD,
+            evidence=(),
+            context={
+                "implementation_parameters": {
+                    "DATABASE_NAME": "TESTDB",
+                }
+            },
+        )
+
+        steps = {
+            step.step_id: step
+            for phase in runbook.phases
+            for step in phase.steps
+        }
+        for step_id in ("os_prepare", "grid_install", "asm"):
+            self.assertEqual("BLOCKED", steps[step_id].applicability.value)
+            self.assertFalse(steps[step_id].commands)
+        serialized = runbook.model_dump_json()
+        self.assertNotIn("oracle-database-preinstall-", serialized)
+        self.assertNotIn("/u01/app/23ai/grid", serialized)
+        self.assertNotIn("/u01/app/26ai/grid", serialized)
+        self.assertNotIn(
+            "rac.verify.cluster",
+            {item.artifact_id for item in runbook.artifacts},
+        )
+        resolved_keys = {item.key for item in runbook.resolved_parameters}
+        self.assertNotIn("ORACLE_RELEASE", resolved_keys)
+        self.assertNotIn("GRID_HOME", resolved_keys)
 
     def test_blocked_steps_do_not_publish_manual_pseudo_commands(self) -> None:
         runbook = compile_implementation_runbook(

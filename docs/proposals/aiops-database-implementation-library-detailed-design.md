@@ -82,6 +82,15 @@ RAC 从零建设的 OS、网络检查、共享盘发现、GI 安装和 ASM 初�
 网卡用途和 ASM 设备在 Oracle 安装器的交互及预检查过程中登记，不得因此把这些建设阶段标记为
 `BLOCKED`；只有后续数据库资源注册或业务服务发布确实需要固化值时才允许阻断相应后续步骤。
 
+RAC 的 Oracle 发行版不得在编译器中写死。回答编译器先在未登记显式版本时把 Target 的
+`version_code` 注入 `VERSION`，
+RAC 编译器再按 Target 明确发行标签、`V$INSTANCE.VERSION_FULL`、`V$INSTANCE.VERSION`、
+`V$PARAMETER.COMPATIBLE` 解析安装发行版。Oracle 26ai 的内部完整版本 `23.26.x` 必须映射为
+`26ai`，不能因为首段为 `23` 而生成 `oracle-database-preinstall-23ai`。解析结果及来源分别固化为
+`ORACLE_RELEASE`、`ORACLE_RELEASE_SOURCE` 和 `ORACLE_OBSERVED_VERSION`，并据此派生
+`GRID_HOME`。如果所有来源都无法确认发行版，OS 准备、GI 安装和 ASM 阶段必须标记为
+`BLOCKED`，且不得生成预安装 RPM、Grid Home 路径或集群验证脚本。
+
 ### 2.4 文档生成与实际执行继续分离
 
 Runbook 阶段不创建 Proposal，不执行脚本。用户明确要求执行某一步时，必须重新核验实时状态，并把

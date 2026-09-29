@@ -626,6 +626,60 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         )
         self.assertFalse(handler._include_proposal(context))
 
+    def test_rac_runbook_receives_version_from_target_snapshot(self) -> None:
+        handler = DbaAnswerComposeHandler(model_client=None, prompts=None)
+        context = TaskExecutionContext(
+            run_id="run",
+            task_id="task",
+            task_key="answer",
+            target_id="target",
+            agent_id="agent",
+            trigger_type="API",
+            trace_id="trace",
+            attempt=1,
+            deadline_at=None,
+            plan_snapshot={
+                "answer_context": {
+                    "task_frame": {
+                        "objectives": ["PLAN"],
+                        "action_intent": "NONE",
+                        "implementation_profile": "ORACLE_RAC_BUILD",
+                    },
+                    "workflow_kind": "",
+                },
+                "investigation_execution": {
+                    "database": {
+                        "configured_version": "26ai",
+                    }
+                },
+            },
+            policy_snapshot={},
+            input_artifacts=(),
+        )
+        assessment = DbaSufficiencyAssessment(
+            status=SufficiencyStatus.ANSWERABLE,
+            evidence=(),
+        )
+
+        block = handler._implementation_runbook_block(
+            context=context,
+            assessment=assessment,
+        )
+
+        self.assertIsNotNone(block)
+        payload = block.payload
+        self.assertIn(
+            "oracle-database-preinstall-26ai",
+            str(payload),
+        )
+        self.assertNotIn("oracle-database-preinstall-23ai", str(payload))
+        resolved = {
+            item["key"]: item["value"]
+            for item in payload["resolved_parameters"]
+        }
+        self.assertEqual("26ai", resolved["VERSION"])
+        self.assertEqual("26ai", resolved["ORACLE_RELEASE"])
+
     def test_ui_has_runbook_renderer_and_copy_buttons(self) -> None:
         source = (ROOT / "ui/aiops/js/aiops-workspaces.js").read_text(
             encoding="utf-8"
