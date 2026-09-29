@@ -30,19 +30,6 @@ def _facts(profile: ImplementationProfile):
         "预检查出现未解决的 ERROR 或不可接受警告。",
     )
     specs = {
-        ImplementationProfile.ORACLE_RU_PATCH: ProfileSpec(
-            profile=profile,
-            title="Oracle GI/数据库 Home RU 与 OJVM 补丁实施操作文档",
-            policy_id="oracle.patch.approved-ru.v1",
-            fact_tool_id="db.maintenance.patch_precheck",
-            required_facts=(
-                ("ORACLE_HOME", "需要确认待补丁 Oracle Home。", RunbookFactSource.HOST_COLLECTOR, ("inventory", "apply")),
-                ("APPROVED_RU_ID", "需要从平台批准补丁目录选择 RU。", RunbookFactSource.POLICY_TEMPLATE, ("conflict", "apply")),
-                ("PATCH_STAGE_PATH", "需要确认补丁介质已落盘并校验。", RunbookFactSource.POLICY_TEMPLATE, ("conflict", "apply")),
-            ),
-            phases=(("scope", "范围、拓扑与滚动能力", ("scope",)), ("backup", "保护备份与回退准备", ("backup",)), ("inventory_phase", "Inventory、OPatch 与空间核验", ("inventory",)), ("conflict_phase", "补丁冲突分析", ("conflict",)), ("apply_phase", "GI/DB Home 补丁实施", ("apply",)), ("sql_phase", "Datapatch 与组件更新", ("datapatch",)), ("verify", "组件、服务与告警验证", ("verify",)), ("rollback_phase", "回退与交接", ("rollback",))),
-            stop_conditions=common_stops + ("补丁冲突分析未通过，或补丁介质摘要不一致。",),
-        ),
         ImplementationProfile.ORACLE_DATABASE_UPGRADE: ProfileSpec(
             profile=profile,
             title="Oracle 数据库 AutoUpgrade 跨版本升级实施操作文档",
@@ -155,47 +142,7 @@ def compile_standard(
     stage = f"/var/tmp/kbot-runbooks/{stage_name}"
 
     oracle_home = value(context, merged, "ORACLE_HOME")
-    if profile == ImplementationProfile.ORACLE_RU_PATCH:
-        patch_stage = value(context, merged, "PATCH_STAGE_PATH")
-        ru_id = value(context, merged, "APPROVED_RU_ID")
-        if oracle_home:
-            commands["inventory"] = (command(
-                "patch.inventory", "核对 OPatch 和 Inventory",
-                f"{oracle_home}/OPatch/opatch version\n{oracle_home}/OPatch/opatch lsinventory -detail",
-                executor=RunbookExecutor.OPATCH, run_as="oracle",
-            ),)
-        if oracle_home and patch_stage and ru_id:
-            patch_dir = f"{patch_stage}/{ru_id}"
-            patch_script = (
-                "#!/usr/bin/env bash\nset -euo pipefail\n"
-                f"{oracle_home}/OPatch/opatch prereq CheckConflictAgainstOHWithDetail -phBaseDir {patch_dir}\n"
-                f"cd {patch_dir}\n{oracle_home}/OPatch/opatch apply -silent\n"
-                f"{oracle_home}/OPatch/opatch lsinventory -detail\n"
-            )
-            artifacts.append(GeneratedRunbookArtifact(
-                "patch.apply.script", f"{stage_name}/bin/apply-approved-ru.sh",
-                patch_script, "text/x-shellscript", "0750", "oracle",
-                f"{stage}/bin/apply-approved-ru.sh", "冲突检查通过后应用批准 RU。",
-            ))
-            commands["conflict"] = (command(
-                "patch.conflict", "执行补丁冲突分析",
-                f"{oracle_home}/OPatch/opatch prereq CheckConflictAgainstOHWithDetail -phBaseDir {patch_dir}",
-                executor=RunbookExecutor.OPATCH, run_as="oracle",
-            ),)
-            commands["apply"] = (command(
-                "patch.apply", "在批准维护窗口应用 RU",
-                f"{stage}/bin/apply-approved-ru.sh",
-                executor=RunbookExecutor.OPATCH, run_as="oracle",
-                risk=RunbookRiskLevel.CRITICAL,
-                artifact_ref="patch.apply.script",
-            ),)
-            commands["datapatch"] = (command(
-                "patch.datapatch", "启动数据库后执行 Datapatch",
-                f"{oracle_home}/OPatch/datapatch -verbose",
-                executor=RunbookExecutor.OPATCH, run_as="oracle",
-                risk=RunbookRiskLevel.HIGH,
-            ),)
-    elif profile == ImplementationProfile.ORACLE_DATABASE_UPGRADE:
+    if profile == ImplementationProfile.ORACLE_DATABASE_UPGRADE:
         sid = value(context, merged, "INSTANCE_NAME") or value(context, merged, "instance_name")
         target_home = value(context, merged, "TARGET_ORACLE_HOME")
         target_version = value(context, merged, "TARGET_VERSION")

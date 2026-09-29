@@ -93,6 +93,24 @@ def _profile_usage(
 
 源端和目标端都使用本机 OS 认证，不需要把 TNS、用户名或密码写入脚本。
 """
+    if profile == "ORACLE_RU_PATCH":
+        stage_root = (
+            target_root
+            or "/var/tmp/kbot-runbooks/oracle-ru-patch"
+        )
+        return f"""## RU 补丁包使用顺序
+
+1. 将本 ZIP 部署到数据库主机的 `{stage_root}`，先执行主文档中的数据库身份、拓扑和现有补丁核对。
+2. 执行介质目录创建命令。将唯一已审批 RU ZIP 放入参数附录所列补丁暂存目录的 `media/ru/`；可选 OJVM ZIP 放入 `media/ojvm/`。
+3. 将批准来源提供的官方 SHA-256 记录写入暂存目录的 `SHA256SUMS`，清单文件名使用相对暂存目录的路径。不要用下载后自行计算的摘要代替官方摘要。
+4. 以 `root` 执行 `{stage_root}/bin/prepare-media.sh`，完成摘要校验、解压和唯一顶层补丁包识别。
+5. 依次执行 `{stage_root}/bin/inventory-and-media-check.sh` 和 `{stage_root}/bin/analyze-patch.sh`；任何一项失败都必须停止。
+6. 完成保护备份并取得维护窗口批准后，执行 `{stage_root}/bin/apply-patch.sh`。
+7. 以 `oracle` 执行 `{stage_root}/bin/run-datapatch.sh`，随后执行二进制和数据库验证。
+8. 回退决定获批后才可执行 `{stage_root}/bin/rollback-patch.sh`；二进制回退完成后还必须执行 `run-datapatch.sh` 和 `verify-patch.sh`。正常成功流程不得运行回退脚本。
+
+脚本运行时按 `/etc/oratab`、PMON 和 `oraenv` 自动定位数据库 Home；GI 或 Oracle Restart 环境按 `/etc/oracle/olr.loc` 定位 GI Home。暂存目录中出现多套 RU/OJVM、摘要不一致、Inventory 异常或 Analyze 失败时，脚本会非零退出。
+"""
     if profile != "ORACLE_RMAN_BACKUP_BUILD":
         return (
             "## 本方案的执行方式\n\n"

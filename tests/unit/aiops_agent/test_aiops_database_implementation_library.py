@@ -171,6 +171,41 @@ def _migration_fact(*, log_mode: str = "ARCHIVELOG") -> TurnEvidenceFact:
     )
 
 
+def _patch_fact() -> TurnEvidenceFact:
+    names = (
+        "database_name",
+        "db_unique_name",
+        "instance_name",
+        "version",
+        "compatible",
+        "cluster_database",
+        "database_role",
+        "open_mode",
+    )
+    return TurnEvidenceFact(
+        evidence_ref="evidence:patch-precheck",
+        artifact_id="artifact-patch-precheck",
+        source_id="oracle-source",
+        step_id="precheck",
+        tool_id="db.maintenance.patch_precheck",
+        measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+        presentation_kind=PresentationPreference.TABLE,
+        captured_at="2026-09-29T08:00:00Z",
+        columns=tuple({"name": name} for name in names),
+        rows=((
+            "TESTDB",
+            "testdb",
+            "testdb1",
+            "23.26.0.0.0",
+            "23.0.0",
+            "FALSE",
+            "PRIMARY",
+            "READ WRITE",
+        ),),
+        row_count=1,
+    )
+
+
 class DatabaseImplementationLibraryTest(unittest.TestCase):
     def test_registry_covers_every_implementation_profile(self) -> None:
         self.assertEqual(
@@ -209,6 +244,7 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
                 ImplementationProfile.ORACLE_ADG_BUILD,
                 ImplementationProfile.ORACLE_DATABASE_MIGRATION,
                 ImplementationProfile.ORACLE_DATAPUMP_MIGRATION,
+                ImplementationProfile.ORACLE_RU_PATCH,
             }:
                 continue
             runbook = compile_implementation_runbook(
@@ -225,6 +261,110 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             serialized = runbook.model_dump_json()
             for marker in ("${", "CHANGEME", "TODO", "<NODE", "<SCAN"):
                 self.assertNotIn(marker, serialized)
+
+    def test_ru_patch_generates_complete_runtime_discovery_runbook(
+        self,
+    ) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RU_PATCH,
+            evidence=(
+                _database_fact(
+                    tool_id="db.instance.identity",
+                    version="23.26.0.0.0",
+                ),
+                _patch_fact(),
+            ),
+            context={},
+        )
+
+        self.assertEqual(RunbookStatus.READY, runbook.status)
+        self.assertFalse(runbook.missing_facts)
+        self.assertTrue(
+            all(
+                step.applicability.value != "BLOCKED" and step.commands
+                for phase in runbook.phases
+                for step in phase.steps
+            )
+        )
+        serialized = runbook.model_dump_json()
+        self.assertNotIn("等待必要事实", serialized)
+        self.assertNotIn("需要确认待补丁 Oracle Home", serialized)
+        self.assertIn("/u01/stage/oracle/patches/26ai/testdb", serialized)
+        self.assertIn("prepare-media.sh", serialized)
+        self.assertIn("analyze-patch.sh", serialized)
+        self.assertIn("run-datapatch.sh", serialized)
+
+        parameters = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertNotIn("ORACLE_HOME", parameters)
+        self.assertNotIn("APPROVED_RU_ID", parameters)
+        self.assertEqual(
+            "ORATAB_THEN_PMON_THEN_ORAENV",
+            parameters["ORACLE_HOME_RESOLUTION"],
+        )
+        self.assertEqual(
+            "/u01/stage/oracle/patches/26ai/testdb",
+            parameters["PATCH_STAGE_PATH"],
+        )
+        self.assertEqual("YES", parameters["PATCH_STAGE_PATH_REVIEW_REQUIRED"])
+
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        environment = generated["patch.environment"]
+        self.assertIn("/etc/oratab", environment)
+        self.assertIn("ora_pmon_", environment)
+        self.assertIn("/etc/oracle/olr.loc", environment)
+        self.assertIn("mindepth 1 -maxdepth 1 -type d", environment)
+        self.assertIn("inventory.xml", environment)
+        self.assertIn("sha256sum -c SHA256SUMS", environment)
+        self.assertIn(
+            "opatchauto\" apply \"$RU_DIR\" -analyze",
+            generated["patch.analyze"],
+        )
+        self.assertIn(
+            "opatch\" apply -silent \"$RU_DIR\"",
+            generated["patch.apply"],
+        )
+        self.assertIn("datapatch\" -verbose", generated["patch.datapatch"])
+        self.assertIn("opatchauto\" rollback", generated["patch.rollback"])
+
+        payload = runbook.model_dump(mode="json")
+        archive_payload = render_runbook_artifact_zip(payload, generated)
+        with zipfile.ZipFile(io.BytesIO(archive_payload)) as archive:
+            names = archive.namelist()
+            self.assertIn("README.md", names)
+            self.assertIn(
+                "oracle-ru-patch/bin/prepare-media.sh",
+                names,
+            )
+            self.assertIn(
+                "oracle-ru-patch/bin/apply-patch.sh",
+                names,
+            )
+            readme = archive.read("README.md").decode("utf-8")
+            self.assertIn("RU 补丁包使用顺序", readme)
+            self.assertIn("官方 SHA-256", readme)
+
+    def test_ru_patch_without_live_facts_is_not_input_blocked(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RU_PATCH,
+            evidence=(),
+            context={},
+        )
+
+        self.assertEqual(RunbookStatus.PARTIAL_EVIDENCE, runbook.status)
+        self.assertFalse(runbook.missing_facts)
+        self.assertTrue(
+            all(
+                step.applicability.value != "BLOCKED" and step.commands
+                for phase in runbook.phases
+                for step in phase.steps
+            )
+        )
+        self.assertNotIn("等待必要事实", runbook.model_dump_json())
 
     def test_datapump_resolves_static_document_without_required_inputs(self) -> None:
         runbook = compile_implementation_runbook(

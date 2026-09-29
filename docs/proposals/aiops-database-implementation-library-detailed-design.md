@@ -553,10 +553,20 @@ FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracl
 ### 9.1 `ORACLE_RU_PATCH`
 
 - 区分单实例、RAC、GI 和 DB Home；
-- 补丁版本只来自平台批准补丁目录；
+- 不把 `ORACLE_HOME`、`APPROVED_RU_ID` 或 `PATCH_STAGE_PATH` 作为静态文档生成的阻断输入；
+- DB Home 运行时按 `/etc/oratab`、PMON、`oraenv` 顺序发现，GI Home 从 `/etc/oracle/olr.loc` 发现；
+- 补丁暂存目录优先读取显式 Target/策略配置，否则按发行版和 `DB_UNIQUE_NAME` 派生
+  `/u01/stage/oracle/patches/<release>/<db_unique_name>`，并标记执行前审阅；
+- 补丁版本只来自批准介质：`media/ru/` 必须只有一个 RU ZIP，`media/ojvm/` 最多一个 OJVM ZIP，
+  解压后必须形成唯一顶层补丁目录并包含 Oracle Inventory 元数据；
+- 明确提供批准补丁编号时，唯一顶层 RU 目录名必须与编号一致；未提供时在执行阶段从唯一目录识别，
+  不在生成阶段伪造补丁编号；
+- 原始 ZIP 必须使用批准来源提供的 `SHA256SUMS` 校验，禁止用下载后自行计算的摘要冒充官方摘要；
 - 检查冲突、空间、OPatch、Inventory、Data Guard 和 RAC Rolling 能力；
 - 输出 `opatchauto`/`opatch`、停启、`datapatch`、组件验证和回退；
-- 补丁介质不存在时标记 `BLOCKED`，不伪造文件名。
+- GI 或 Oracle Restart 环境执行 OPatchAuto Analyze/Apply，普通 DB Home 执行 OPatch；
+- 补丁介质不存在、多套介质、摘要不一致、Inventory 异常或 Analyze 失败时脚本非零退出；空间核验
+  不满足补丁 README 要求时由执行人员停止，均不在文档中生成“等待必要事实”步骤。
 
 ### 9.2 `ORACLE_DATABASE_UPGRADE`
 

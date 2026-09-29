@@ -114,9 +114,16 @@ RMAN 备份档案不要求用户补充 `ORACLE_HOME`，运行脚本通过 `ORACL
 `BACKUP_DEST` 优先读取现有 RMAN Disk Channel 或文件系统 FRA；没有现有配置时按数据库唯一名派生
 标准路径，并在正式配置前输出创建目录、容量核验和 RMAN Channel FORMAT 命令，提醒用户按实际挂载点调整。
 
-RAC、补丁、升级和迁移等档案遇到 IP、VIP、SCAN、WWID、目标环境或批准介质缺失时，状态为
+RAC、升级等档案遇到无法安全派生的 IP、VIP、SCAN、WWID、目标版本或目标环境事实时，状态为
 `BLOCKED_BY_REQUIRED_FACTS`：文档仍完整展示所有阶段，但相关步骤不会生成猜测值或占位符命令。
 事实必须来自 Target、部署拓扑、Host Collector、策略模板或用户明确的业务决策。
+
+RU 补丁静态文档不要求用户补录 `ORACLE_HOME`、`APPROVED_RU_ID` 和 `PATCH_STAGE_PATH`。
+脚本运行时依次通过 `/etc/oratab`、PMON 和 `oraenv` 定位 DB Home，通过
+`/etc/oracle/olr.loc` 定位 GI Home；补丁暂存目录优先使用显式配置，否则按数据库发行版和
+`DB_UNIQUE_NAME` 派生。已审批补丁编号不明确时不伪造编号，而是在执行前要求暂存目录中只有一套
+RU 和至多一套 OJVM，通过官方 SHA-256、补丁 Inventory 和 Analyze 校验后才允许实施。
+介质、摘要、空间、Inventory 或冲突分析失败属于执行停止条件，不会把已生成文档降为“等待必要事实”。
 
 Data Pump 静态实施文档不把 Directory 路径、业务 Schema 和目标连接标识作为分阶段交互输入。
 生成时优先读取现有 `DATA_PUMP_DIR` 和当前容器非 Oracle 维护 Schema；没有可用目录时按
