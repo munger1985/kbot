@@ -668,6 +668,9 @@ class SignalEventIntakeService:
             return None
         binding, policy = resolved
         minimum = str(policy.rules_json.get("auto_observe_min_severity", "CRITICAL"))
+        minimum_target_level = int(
+            policy.rules_json.get("auto_observe_min_target_level", 1)
+        )
         cooldown_seconds = int(policy.rules_json.get("alert_cooldown_seconds", 900))
         if _SEVERITY_RANK[severity] < _SEVERITY_RANK.get(
             minimum, _SEVERITY_RANK["CRITICAL"]
@@ -681,6 +684,20 @@ class SignalEventIntakeService:
                 severity=severity,
                 agent_id=binding.agent_id,
                 minimum_severity=minimum,
+            )
+            return None
+        target_level = int(target.importance_level)
+        if target_level < minimum_target_level:
+            self._log_auto_agent_decision(
+                decision="SKIPPED",
+                reason="BELOW_MINIMUM_TARGET_LEVEL",
+                target_id=target.target_id,
+                source_id=source_id,
+                situation_id=situation_id,
+                severity=severity,
+                agent_id=binding.agent_id,
+                target_level=target_level,
+                minimum_target_level=minimum_target_level,
             )
             return None
         latest = await uow.runs.get_latest_by_situation_correlation(
@@ -730,6 +747,8 @@ class SignalEventIntakeService:
         severity: str,
         agent_id=None,
         minimum_severity: str | None = None,
+        target_level: int | None = None,
+        minimum_target_level: int | None = None,
         cooldown_seconds: int | None = None,
         outbox_id=None,
         outbox_status: str | None = None,
@@ -745,6 +764,8 @@ class SignalEventIntakeService:
             severity=severity,
             agent_id=str(agent_id) if agent_id is not None else None,
             minimum_severity=minimum_severity,
+            target_level=target_level,
+            minimum_target_level=minimum_target_level,
             cooldown_seconds=cooldown_seconds,
             outbox_id=(str(outbox_id) if outbox_id is not None else None),
             outbox_status=outbox_status,

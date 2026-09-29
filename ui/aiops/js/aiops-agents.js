@@ -47,7 +47,7 @@
         <td>${shell.badge(agent.status)}</td>
         <td><strong>${sourceNames.length} 个监控源</strong><small class="agent-row-description">${sourceNames.join("、") || "—"}</small></td>
         <td><strong>${access}</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
-        <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
+        <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起 · Target L${escape(agent.auto_observe_min_target_level)}+</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
         <td><button type="button" data-agent-id="${escape(agent.agent_id)}">编辑</button></td>
       </tr>`;
     }).join("");
@@ -348,6 +348,7 @@
     const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
     document.getElementById("agent-alert-settings").classList.toggle("agent-settings-disabled", !enabled);
     document.getElementById("agent-min-severity").disabled = !enabled;
+    document.getElementById("agent-min-target-level").disabled = !enabled;
     document.getElementById("agent-cooldown").disabled = !enabled;
   }
 
@@ -362,6 +363,7 @@
     resetMappingInputs();
     form.elements.status.value = "DRAFT";
     form.elements.alert_cooldown_minutes.value = 15;
+    form.elements.auto_observe_min_target_level.value = 1;
     form.elements.auto_alert_enabled.checked = true;
     form.elements.status.disabled = true;
     const localModelId = firstLocalDeepseekId();
@@ -392,6 +394,7 @@
     form.elements.status.value = editing.status;
     form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled);
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
+    form.elements.auto_observe_min_target_level.value = editing.auto_observe_min_target_level || 1;
     form.elements.alert_cooldown_minutes.value = editing.alert_cooldown_minutes ?? 15;
     form.elements.planner_model_id.value = editing.models?.planner_llm || "";
     form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
@@ -455,6 +458,7 @@
       target_ids: targetIds,
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
+      auto_observe_min_target_level: autoAlertEnabled ? Number(form.elements.auto_observe_min_target_level.value) : (editing?.auto_observe_min_target_level || 1),
       alert_cooldown_minutes: autoAlertEnabled ? Number(form.elements.alert_cooldown_minutes.value) : (editing?.alert_cooldown_minutes ?? 15),
       models: {
         planner_llm: plannerModelId,

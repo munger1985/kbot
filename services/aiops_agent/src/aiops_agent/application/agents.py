@@ -58,6 +58,7 @@ class CreateAIOpsAgentCommand(_Model):
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] = "CRITICAL"
+    auto_observe_min_target_level: int = Field(default=1, ge=1, le=5)
     alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
     models: AgentModelBindings = Field(default_factory=AgentModelBindings)
     image_capabilities: AgentImageCapabilities = Field(
@@ -93,6 +94,9 @@ class UpdateAIOpsAgentCommand(_Model):
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] | None = None
+    auto_observe_min_target_level: int | None = Field(
+        default=None, ge=1, le=5
+    )
     alert_cooldown_minutes: int | None = Field(default=None, ge=0, le=1440)
     models: AgentModelBindings | None = None
     image_capabilities: AgentImageCapabilities | None = None
@@ -320,6 +324,10 @@ class AIOpsAgentService:
                     "auto_observe_min_severity",
                     current_rules.get("auto_observe_min_severity", "CRITICAL"),
                 ),
+                "auto_observe_min_target_level": changes.get(
+                    "auto_observe_min_target_level",
+                    int(current_rules.get("auto_observe_min_target_level", 1)),
+                ),
                 "alert_cooldown_minutes": changes.get(
                     "alert_cooldown_minutes",
                     int(current_rules.get("alert_cooldown_seconds", 900)) // 60,
@@ -342,6 +350,7 @@ class AIOpsAgentService:
                 "target_ids",
                 "auto_alert_enabled",
                 "auto_observe_min_severity",
+                "auto_observe_min_target_level",
                 "alert_cooldown_minutes",
                 "models",
                 "image_capabilities",
@@ -651,6 +660,9 @@ class AIOpsAgentService:
             "auto_observe_min_severity": values.get(
                 "auto_observe_min_severity", "CRITICAL"
             ),
+            "auto_observe_min_target_level": int(
+                values.get("auto_observe_min_target_level", 1)
+            ),
             "alert_cooldown_seconds": int(
                 values.get("alert_cooldown_minutes", 15)
             )
@@ -734,6 +746,7 @@ class AIOpsAgentService:
                     "display_name": target.display_name,
                     "db_type": target.db_type,
                     "status": target.status,
+                    "importance_level": int(target.importance_level),
                     "connectivity_status": target.connectivity_status,
                     "readonly_connection_enabled": bool(
                         target.readonly_connection_enabled
@@ -767,6 +780,9 @@ class AIOpsAgentService:
             "auto_alert_enabled": bool(rules.get("auto_alert_enabled", True)),
             "auto_observe_min_severity": rules.get(
                 "auto_observe_min_severity", "CRITICAL"
+            ),
+            "auto_observe_min_target_level": int(
+                rules.get("auto_observe_min_target_level", 1)
             ),
             "alert_cooldown_minutes": int(
                 rules.get("alert_cooldown_seconds", 900)

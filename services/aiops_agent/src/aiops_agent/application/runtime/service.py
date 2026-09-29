@@ -5978,18 +5978,20 @@ class AIOpsRuntimeService:
 
     async def list_situations(
         self, *, scope: ConfigurationScope, target_id: UUID | None,
-        status: str | None, severity: str | None,
+        agent_id: UUID | None, status: str | None, severity: str | None,
         cursor: str | None, limit: int,
     ) -> SituationPage:
         filters = {"target_id": str(target_id) if target_id else None,
+                   "agent_id": str(agent_id) if agent_id else None,
                    "status": status, "severity": severity}
         before_at = before_id = None
         if cursor:
             before_at, before_id = self._decode_cursor(token=cursor, scope=scope, filters=filters)
         async with self._uow_factory() as uow:
             entities = await uow.situations.page_situations(
-                domain_id=scope.domain_id, target_id=target_id, status=status,
-                severity=severity, before_created_at=before_at,
+                domain_id=scope.domain_id, target_id=target_id,
+                agent_id=agent_id, status=status, severity=severity,
+                before_created_at=before_at,
                 before_id=before_id, limit=limit + 1,
             )
             page = entities[:limit]

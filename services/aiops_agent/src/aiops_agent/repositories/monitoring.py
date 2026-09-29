@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     DiagnosticSourceEntity,
+    OpsRunEntity,
     SignalEventEntity,
     SituationEntity,
     SituationEventEntity,
@@ -348,7 +349,8 @@ class SituationRepository(AIOpsRepository):
 
     async def page_situations(
         self, *, domain_id: int, target_id: UUID | None = None,
-        status: str | None = None, severity: str | None = None,
+        agent_id: UUID | None = None, status: str | None = None,
+        severity: str | None = None,
         before_created_at: datetime | None = None,
         before_id: UUID | None = None, limit: int = 51,
     ) -> list[SituationEntity]:
@@ -356,6 +358,16 @@ class SituationRepository(AIOpsRepository):
         statement = select(SituationEntity).where(SituationEntity.domain_id == domain_id)
         if target_id is not None:
             statement = statement.where(SituationEntity.target_id == target_id)
+        if agent_id is not None:
+            statement = statement.where(
+                SituationEntity.situation_id.in_(
+                    select(OpsRunEntity.situation_id).where(
+                        OpsRunEntity.domain_id == domain_id,
+                        OpsRunEntity.agent_id == agent_id,
+                        OpsRunEntity.situation_id.is_not(None),
+                    )
+                )
+            )
         if status is not None:
             statement = statement.where(SituationEntity.status == status)
         if severity is not None:

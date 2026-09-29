@@ -6,6 +6,7 @@
   const markdown = globalThis.KBotMarkdown;
   const state = {
     agents: [], targets: [], conversation: null, selectedFiles: [],
+    caseAgents: [], caseTargets: [],
     permissions: new Set(), starters: [], starterCatalogVersion: "",
     starterCatalogLoaded: false,
   };
@@ -364,7 +365,8 @@
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
     ]);
-    state.agents = values(rows).filter((item) => item.status === "ACTIVE");
+    state.caseAgents = values(rows);
+    state.agents = state.caseAgents.filter((item) => item.status === "ACTIVE");
     state.targets = values(targetPage?.items);
     return state.agents;
   }
@@ -1668,12 +1670,13 @@
       if (activeSituationId !== situationId) return;
       document.getElementById("case-title").textContent = detail.title;
       const panel = document.getElementById("case-detail");
-      const runId = detail.run_ids[0];
+      const selectedAgentId = document.getElementById("case-filters")?.elements.agent_id.value || "";
       let run = null; let result = null;
-      if (runId) {
-        run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`);
+      if (detail.run_ids.length) {
+        const runs = await Promise.all(detail.run_ids.map((runId) => KBotAIOpsAuth.request(`${api}/runs/${runId}`)));
+        run = runs.find((candidate) => !selectedAgentId || String(candidate.agent_id) === selectedAgentId) || runs[0];
         try {
-          result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`);
+          result = await KBotAIOpsAuth.request(`${api}/runs/${run.ops_run_id}/result`);
         } catch (error) {
           if (error.status !== 404 && error.status !== 409) throw error;
         }
@@ -1740,14 +1743,42 @@
 
   async function initCases(page) {
     await agents();
-    const endpoint = page === "situations" ? "/situations" : "/inspection-fires";
-    const payload = await KBotAIOpsAuth.request(`${api}${endpoint}?limit=100`);
-    const rows = payload.items || [];
+    state.caseTargets = page === "situations"
+      ? values((await KBotAIOpsAuth.request(`${api}/targets?limit=200`))?.items)
+      : state.targets;
     const list = document.getElementById("case-list");
-    list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-case-row" data-id="${esc(item.situation_id || item.fire_id)}"><strong>${esc(item.title || `巡检 ${shell.fmt(item.scheduled_at)}`)}</strong>${shell.badge(item.severity || item.status)}<p>${esc(item.summary || `${item.completed_count || 0}/${item.target_count || 0} 个目标已完成`)}</p></button>`).join("") : '<div class="ops-empty">当前范围内暂无记录</div>';
-    list.querySelectorAll("button").forEach((button, index) => { button.onclick = () => (page === "situations" ? showSituation(rows[index]) : showInspection(rows[index])).catch((error) => shell.toast(error.message)); });
-    document.getElementById("refresh-workspace").onclick = () => location.reload();
-    if (rows[0]) await (page === "situations" ? showSituation(rows[0]) : showInspection(rows[0]));
+    const filters = document.getElementById("case-filters");
+    if (filters) {
+      filters.elements.agent_id.innerHTML = '<option value="">全部 Agent</option>' + state.caseAgents.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
+      filters.elements.target_id.innerHTML = '<option value="">全部 Target</option>' + state.caseTargets.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name)} · L${esc(item.importance_level)}</option>`).join("");
+    }
+    const loadRows = async () => {
+      window.clearTimeout(situationRefreshTimer);
+      const endpoint = page === "situations" ? "/situations" : "/inspection-fires";
+      const query = new URLSearchParams({ limit: "100" });
+      if (filters) {
+        for (const name of ["agent_id", "severity", "target_id"]) {
+          if (filters.elements[name].value) query.set(name, filters.elements[name].value);
+        }
+      }
+      const payload = await KBotAIOpsAuth.request(`${api}${endpoint}?${query}`);
+      const rows = payload.items || [];
+      const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
+      list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-case-row" data-id="${esc(item.situation_id || item.fire_id)}"><strong>${esc(item.title || `巡检 ${shell.fmt(item.scheduled_at)}`)}</strong>${shell.badge(item.severity || item.status)}<p>${esc(item.summary || targetNames.get(String(item.target_id)) || `${item.completed_count || 0}/${item.target_count || 0} 个目标已完成`)}</p></button>`).join("") : '<div class="ops-empty">当前筛选范围内暂无记录</div>';
+      list.querySelectorAll("button").forEach((button, index) => { button.onclick = () => (page === "situations" ? showSituation(rows[index]) : showInspection(rows[index])).catch((error) => shell.toast(error.message)); });
+      if (rows[0]) await (page === "situations" ? showSituation(rows[0]) : showInspection(rows[0]));
+      else {
+        activeSituationId = null;
+        document.getElementById("case-title").textContent = page === "situations" ? "没有匹配的告警事件" : "没有匹配的巡检";
+        document.getElementById("case-detail").innerHTML = '<div class="ops-empty">请调整筛选条件后重试。</div>';
+      }
+    };
+    if (filters) {
+      filters.onsubmit = (event) => { event.preventDefault(); loadRows().catch((error) => shell.toast(error.message)); };
+      filters.onreset = () => window.setTimeout(() => loadRows().catch((error) => shell.toast(error.message)), 0);
+    }
+    document.getElementById("refresh-workspace").onclick = () => loadRows().catch((error) => shell.toast(error.message));
+    await loadRows();
   }
 
   addEventListener("click", (event) => {

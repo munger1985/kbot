@@ -263,7 +263,8 @@ async def list_runs(
 @router.get("/situations", response_model=SituationPage)
 async def list_situations(
     request: Request, service: Service, context: Auth,
-    target_id: UUID | None = None, status: str | None = None,
+    target_id: UUID | None = None, agent_id: UUID | None = None,
+    status: str | None = None,
     severity: str | None = None,
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
@@ -271,6 +272,7 @@ async def list_situations(
     require_service_scope(request, "aiops.run")
     return await service.list_situations(
         scope=_query_scope(request, context), target_id=target_id,
+        agent_id=agent_id,
         status=status, severity=severity, cursor=cursor, limit=limit,
     )
 

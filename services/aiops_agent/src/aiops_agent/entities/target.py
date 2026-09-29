@@ -45,6 +45,9 @@ class TargetEntity(BaseEntity):
     )
     diagnostic_credential_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     execution_credential_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    importance_level: Mapped[int] = mapped_column(
+        Numeric(1, 0), nullable=False, default=3
+    )
     security_level: Mapped[int] = mapped_column(
         Numeric(3, 0), nullable=False, default=1
     )

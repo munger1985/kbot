@@ -2730,6 +2730,28 @@
             "title": "Created At",
             "type": "string"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
           "final_artifact": {
             "anyOf": [
               {
@@ -4831,6 +4853,13 @@
               }
             ]
           },
+          "importance_level": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
           "oracle_container_scope": {
             "anyOf": [
               {
@@ -4978,6 +5007,12 @@
           "execution_credential_configured": {
             "title": "Execution Credential Configured",
             "type": "boolean"
+          },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
           },
           "last_connectivity_check_at": {
             "anyOf": [
@@ -5170,6 +5205,7 @@
           "display_name",
           "db_type",
           "environment",
+          "importance_level",
           "status",
           "connectivity_status",
           "observed_status",
@@ -5579,6 +5615,19 @@
             ],
             "title": "Environment"
           },
+          "importance_level": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance Level"
+          },
           "oracle_container_scope": {
             "anyOf": [
               {
@@ -5695,6 +5744,12 @@
             "title": "Execution Credential Configured",
             "type": "boolean"
           },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
           "observed_status": {
             "enum": [
               "UNKNOWN",
@@ -5743,6 +5798,7 @@
           "display_name",
           "db_type",
           "environment",
+          "importance_level",
           "status",
           "connectivity_status",
           "observed_status",
@@ -8826,6 +8882,23 @@
                 }
               ],
               "title": "Target Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
             }
           },
           {

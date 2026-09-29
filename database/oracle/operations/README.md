@@ -37,6 +37,12 @@ Schema 28 / `aiops-oracle-v18`。脚本移除全部 `KBOT_OPS_%` 表上的用户
 60 秒 DDL 锁等待；若仍遇到活动事务，会跳过该表并以 `-20064` 结束。此前成功删除的约束
 不会回滚，停止持锁服务后重新执行同一脚本即可从剩余约束继续。
 
+`apply_aiops_schema_29.sql` 用于将 AIOps Schema 28 / `aiops-oracle-v18` 原地升级到
+Schema 29 / `aiops-oracle-v19`。脚本为 `KBOT_OPS_TARGET` 新增
+`IMPORTANCE_LEVEL`，既有 Target 回填为 3（普通），不增加业务 `CHECK` 或 `UNIQUE`
+约束；同时更新 Target 查询视图和 Schema 版本视图。执行前必须停止 AIOps API、Worker、
+Scheduler 和 DB Executor，并完成 Schema 备份。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、

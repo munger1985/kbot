@@ -1729,6 +1729,7 @@ BEGIN
             'KBOT_OPS_TARGET|ENDPOINT_JSON',
             'KBOT_OPS_TARGET|ENVIRONMENT',
             'KBOT_OPS_TARGET|EXECUTION_CREDENTIAL_ID',
+            'KBOT_OPS_TARGET|IMPORTANCE_LEVEL',
             'KBOT_OPS_TARGET|LAST_CONNECTIVITY_CHECK_AT',
             'KBOT_OPS_TARGET|LAST_CONNECTIVITY_SUCCESS_AT',
             'KBOT_OPS_TARGET|LAST_ERROR_CODE',
@@ -2505,6 +2506,7 @@ BEGIN
             'KBOT_OPS_TARGET|ENDPOINT_JSON',
             'KBOT_OPS_TARGET|ENVIRONMENT',
             'KBOT_OPS_TARGET|EXECUTION_CREDENTIAL_ID',
+            'KBOT_OPS_TARGET|IMPORTANCE_LEVEL',
             'KBOT_OPS_TARGET|LAST_CONNECTIVITY_CHECK_AT',
             'KBOT_OPS_TARGET|LAST_CONNECTIVITY_SUCCESS_AT',
             'KBOT_OPS_TARGET|LAST_ERROR_CODE',
@@ -2633,7 +2635,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 759 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 760 项。');
     END IF;
 
     l_issue_count := 0;
@@ -2725,19 +2727,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 28
-           OR l_contract_version <> 'aiops-oracle-v18' THEN
+           OR l_schema_version <> 29
+           OR l_contract_version <> 'aiops-oracle-v19' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '28/aiops-oracle-v18'
+                || '29/aiops-oracle-v19'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/28/'
-                || 'aiops-oracle-v18'
+                '[通过] Schema 合同：AIOPS/29/'
+                || 'aiops-oracle-v19'
             );
         END IF;
     EXCEPTION
@@ -2765,7 +2767,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：44 张表、10 个视图、'
         || '215 个命名索引、193 个命名约束、'
-        || '759 个表列；Schema 与当前规范一致。'
+        || '760 个表列；Schema 与当前规范一致。'
     );
 END;
 /

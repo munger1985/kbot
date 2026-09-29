@@ -84,6 +84,7 @@ class _UnitOfWork:
             status="ENABLED", connectivity_status="UNKNOWN",
             readonly_connection_enabled=False,
             controlled_change_enabled=False, execution_credential_id=None,
+            importance_level=3,
             version_code=None, capabilities_json={},
         )
         self.targets.list_source_bindings = self._list_source_bindings
@@ -132,6 +133,17 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_auto_alert_target_level_requires_one_to_five(self):
+        with self.assertRaises(ValidationError):
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="非法重要程度 Agent",
+                diagnostic_source_ids=(uuid7(),),
+                target_ids=(uuid7(),),
+                auto_observe_min_target_level=0,
+                actor_id="kbotui_dev",
+            )
+
     async def test_controlled_actions_are_not_agent_input(self):
         with self.assertRaises(ValidationError):
             CreateAIOpsAgentCommand(
@@ -201,6 +213,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ACTIVE", policy.status)
         self.assertTrue(policy.rules_json["readonly_database_enabled"])
         self.assertTrue(policy.rules_json["auto_alert_enabled"])
+        self.assertEqual(1, policy.rules_json["auto_observe_min_target_level"])
         self.assertEqual(900, policy.rules_json["alert_cooldown_seconds"])
 
     async def test_active_agent_requires_diagnosis_model(self):
@@ -297,6 +310,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             readonly_connection_enabled=True,
             controlled_change_enabled=False,
             execution_credential_id=None,
+            importance_level=3,
             version_code=None,
             capabilities_json={},
         )
@@ -327,6 +341,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             readonly_connection_enabled=True,
             controlled_change_enabled=True,
             execution_credential_id=uuid7(),
+            importance_level=5,
             version_code="19c",
             environment="DEV",
             capabilities_json={"session_management": True},

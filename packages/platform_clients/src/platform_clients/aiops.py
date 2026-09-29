@@ -1017,12 +1017,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs?{urlencode(query)}",
                                 auth_context=auth_context)
 
-    async def list_situations(self, *, target_id: UUID | None, status: str | None,
+    async def list_situations(self, *, target_id: UUID | None,
+                              agent_id: UUID | None, status: str | None,
                               severity: str | None, cursor: str | None,
                               limit: int, auth_context: AuthContext) -> dict[str, Any]:
         query = {"limit": str(limit)}
-        for key, value in (("target_id", target_id), ("status", status),
-                           ("severity", severity), ("cursor", cursor)):
+        for key, value in (("target_id", target_id), ("agent_id", agent_id),
+                           ("status", status), ("severity", severity),
+                           ("cursor", cursor)):
             if value is not None:
                 query[key] = str(value)
         return await self._json("GET", f"{INTERNAL_API_V1}/aiops/situations?{urlencode(query)}",

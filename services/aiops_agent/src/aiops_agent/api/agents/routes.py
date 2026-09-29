@@ -33,6 +33,7 @@ class AgentCreateRequest(_Request):
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] = "CRITICAL"
+    auto_observe_min_target_level: int = Field(default=1, ge=1, le=5)
     alert_cooldown_minutes: int = Field(default=15, ge=0, le=1440)
     models: AgentModelBindings = Field(default_factory=AgentModelBindings)
     image_capabilities: AgentImageCapabilities = Field(
@@ -57,6 +58,9 @@ class AgentUpdateRequest(_Request):
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
     ] | None = None
+    auto_observe_min_target_level: int | None = Field(
+        default=None, ge=1, le=5
+    )
     alert_cooldown_minutes: int | None = Field(default=None, ge=0, le=1440)
     models: AgentModelBindings | None = None
     image_capabilities: AgentImageCapabilities | None = None

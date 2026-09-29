@@ -149,17 +149,23 @@
           <div class="agent-section-index">04</div>
           <div class="agent-section-content">
             <div class="agent-section-heading">
-              <div><h3 id="agent-section-automation">自动告警诊断</h3><p>最低级别和冷却时间只适用于告警自动触发，不影响聊天诊断、人工运行和计划巡检。</p></div>
+              <div><h3 id="agent-section-automation">自动告警诊断</h3><p>告警级别、Target 重要程度和冷却时间只适用于自动触发，不影响聊天诊断、人工运行和计划巡检。</p></div>
               <label class="agent-compact-switch"><input name="auto_alert_enabled" type="checkbox" checked><span>允许自动触发</span></label>
             </div>
             <div id="agent-alert-settings" class="ops-form">
-              <div class="ops-field span-6">
+              <div class="ops-field span-4">
                 <label for="agent-min-severity">最低告警级别</label>
                 <select id="agent-min-severity" name="auto_observe_min_severity">
                   <option>INFO</option><option>WARNING</option><option>HIGH</option><option selected>CRITICAL</option>
                 </select>
               </div>
-              <div class="ops-field span-6">
+              <div class="ops-field span-4">
+                <label for="agent-min-target-level">最低 Target 重要程度</label>
+                <select id="agent-min-target-level" name="auto_observe_min_target_level">
+                  <option value="1" selected>1 · 全部 Target</option><option value="2">2 及以上</option><option value="3">3 及以上</option><option value="4">4 及以上</option><option value="5">仅 5</option>
+                </select>
+              </div>
+              <div class="ops-field span-4">
                 <label for="agent-cooldown">同一告警冷却时间（分钟）</label>
                 <input id="agent-cooldown" name="alert_cooldown_minutes" type="number" min="0" max="1440" value="15" required>
               </div>

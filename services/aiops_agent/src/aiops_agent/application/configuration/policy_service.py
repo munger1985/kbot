@@ -125,6 +125,17 @@ class PolicyConfigurationMixin:
             raise validation_failed(
                 "Policy auto_observe_min_severity 无效"
             )
+        minimum_target_level = rules.get(
+            "auto_observe_min_target_level", 1
+        )
+        if (
+            isinstance(minimum_target_level, bool)
+            or not isinstance(minimum_target_level, int)
+            or not 1 <= minimum_target_level <= 5
+        ):
+            raise validation_failed(
+                "Policy auto_observe_min_target_level 必须为 1 到 5"
+            )
         cooldown = rules.get("alert_cooldown_seconds", 900)
         if (
             not isinstance(cooldown, int)

@@ -5,7 +5,7 @@
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
   const configs = {
-    targets: { path: "/targets", cols: [["display_name", "目标"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
+    targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
@@ -57,6 +57,10 @@
     }
     if (type === "schedule") {
       return shell.escape({ DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期" }[value] || value || "—");
+    }
+    if (type === "importance") {
+      const labels = { 1: "可按需忽略", 2: "较低", 3: "普通", 4: "重要", 5: "最重要" };
+      return `<strong>L${shell.escape(value)}</strong><small>${shell.escape(labels[value] || "未知")}</small>`;
     }
     if (type === "badge") return shell.badge(value);
     if (type === "date") return shell.escape(shell.fmt(value));

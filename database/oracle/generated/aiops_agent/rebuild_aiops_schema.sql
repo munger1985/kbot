@@ -142,6 +142,7 @@ CREATE TABLE KBOT_OPS_TARGET (
     CONTROLLED_CHANGE_ENABLED NUMBER(1) DEFAULT 0 NOT NULL,
     DIAGNOSTIC_CREDENTIAL_ID RAW(16),
     EXECUTION_CREDENTIAL_ID RAW(16),
+    IMPORTANCE_LEVEL NUMBER(1) DEFAULT 3 NOT NULL,
     SECURITY_LEVEL NUMBER(3) DEFAULT 1 NOT NULL,
     CAPABILITIES_JSON JSON,
     STATUS VARCHAR2(16 CHAR) DEFAULT 'DISABLED' NOT NULL,
@@ -1228,6 +1229,7 @@ SELECT
     t.OBSERVED_ORACLE_CONTAINER_NAME,
     t.OBSERVED_ORACLE_CONTAINER_NUMBER,
     t.OBSERVED_ORACLE_DATABASE_NAME,
+    t.IMPORTANCE_LEVEL,
     t.SECURITY_LEVEL,
     t.STATUS,
     t.CONNECTIVITY_STATUS,
@@ -1253,7 +1255,8 @@ GROUP BY
     t.ORACLE_CONTAINER_SCOPE, t.ORACLE_PDB_NAME,
     t.OBSERVED_ORACLE_CONTAINER_SCOPE, t.OBSERVED_ORACLE_CONTAINER_NAME,
     t.OBSERVED_ORACLE_CONTAINER_NUMBER, t.OBSERVED_ORACLE_DATABASE_NAME,
-    t.SECURITY_LEVEL, t.STATUS, t.CONNECTIVITY_STATUS, t.OBSERVED_STATUS,
+    t.IMPORTANCE_LEVEL, t.SECURITY_LEVEL, t.STATUS,
+    t.CONNECTIVITY_STATUS, t.OBSERVED_STATUS,
     t.LAST_OBSERVED_AT,
     t.LAST_CONNECTIVITY_CHECK_AT, t.LAST_ERROR_CODE, t.ROW_VERSION,
     t.CREATED_AT, t.UPDATED_AT;
@@ -1600,8 +1603,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    28 AS SCHEMA_VERSION,
-    'aiops-oracle-v18' AS CONTRACT_VERSION
+    29 AS SCHEMA_VERSION,
+    'aiops-oracle-v19' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2455,6 +2458,8 @@ BEGIN
              AND column_name = 'AGENT_ID')
          OR (table_name = 'KBOT_OPS_INSPECTION_PLAN'
              AND column_name = 'SELECTED_CHECKS_JSON')
+         OR (table_name = 'KBOT_OPS_TARGET'
+             AND column_name = 'IMPORTANCE_LEVEL')
        );
 
     SELECT COUNT(*)
@@ -2500,8 +2505,8 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 16 THEN
-        raise_application_error(-20008, 'Schema 28 必需列缺失或允许为空。');
+    IF l_required_column_count <> 17 THEN
+        raise_application_error(-20008, 'Schema 29 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -2510,8 +2515,8 @@ BEGIN
         raise_application_error(-20009, 'AIOps 业务表不得包含命名 CHECK 约束。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 28
-       OR l_contract_version <> 'aiops-oracle-v18' THEN
+       OR l_schema_version <> 29
+       OR l_contract_version <> 'aiops-oracle-v19' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -2521,7 +2526,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：44 张表、10 个视图，Schema Version '
-        || '28，合同 aiops-oracle-v18。'
+        || '29，合同 aiops-oracle-v19。'
     );
 END;
 /

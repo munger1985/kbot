@@ -82,6 +82,13 @@ APPLY_SCHEMA_28 = (
     / "operations"
     / "apply_aiops_schema_28.sql"
 )
+APPLY_SCHEMA_29 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_29.sql"
+)
 CHECK_CATALOG = (
     ROOT
     / "services"
@@ -192,7 +199,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         )
         self.assertIn("l_missing_table_count <> 0", self.sql)
         self.assertIn("l_missing_view_count <> 0", self.sql)
-        self.assertIn("l_required_column_count <> 16", self.sql)
+        self.assertIn("l_required_column_count <> 17", self.sql)
         self.assertIn("l_report_summary_count <> 1", self.sql)
         self.assertIn("l_business_check_constraint_count <> 0", self.sql)
         self.assertNotIn("CK_OPS_TASK_TYPE", self.sql)
@@ -420,6 +427,21 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("CONTRACT_VERSION = 'AIOPS-ORACLE-V18'", normalized)
         self.assertIn("28 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V18' AS CONTRACT_VERSION", normalized)
+
+    def test_schema_29_apply_adds_target_importance_without_business_constraints(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_29.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        self.assertIn("IMPORTANCE_LEVEL NUMBER(1) DEFAULT 3 NOT NULL", normalized)
+        self.assertNotIn("CHECK (IMPORTANCE_LEVEL", normalized)
+        self.assertIn("DDL_LOCK_TIMEOUT = 60", normalized)
+        self.assertIn("29 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V19' AS CONTRACT_VERSION", normalized)
 
     def test_canonical_analyzer_rejects_unclosed_check_constraint(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "括号未闭合"):

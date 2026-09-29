@@ -39,7 +39,10 @@ from aiops_agent.application.configuration.service import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.config import InspectionTemplateRegistration
 from aiops_agent.entities import DiagnosticSourceEntity, TargetEntity
-from aiops_agent.repositories.monitoring import DiagnosticSourceRepository
+from aiops_agent.repositories.monitoring import (
+    DiagnosticSourceRepository,
+    SituationRepository,
+)
 from aiops_agent.repositories.target import TargetRepository
 from platform_core.contracts.aiops import (
     DiagnosticSourceCreate,
@@ -67,6 +70,23 @@ class _CapturingSession:
 
 
 class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_situation_page_filters_by_related_agent_run(self) -> None:
+        session = _CapturingSession()
+        agent_id = uuid7()
+
+        await SituationRepository(session).page_situations(
+            domain_id=100,
+            agent_id=agent_id,
+            before_created_at=None,
+            before_id=None,
+            limit=51,
+        )
+
+        sql = str(session.statement.compile(dialect=oracle.dialect()))
+        normalized = sql.replace('"', "").lower()
+        self.assertIn("kbot_ops_run.agent_id", normalized)
+        self.assertIn("kbot_ops_run.situation_id", normalized)
+
     async def test_target_page_uses_immutable_stable_order(self) -> None:
         session = _CapturingSession()
         await TargetRepository(session).page_scoped(
@@ -691,6 +711,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             display_name="Oracle Dev",
             db_type="ORACLE",
             environment="DEV",
+            importance_level=4,
             readonly_connection_enabled=True,
             oracle_container_scope="PDB",
             oracle_pdb_name="PDB01",
@@ -729,6 +750,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual("DISABLED", result.status)
+        self.assertEqual(4, result.importance_level)
         self.assertEqual("CONNECTED", result.connectivity_status)
         self.assertEqual("UNKNOWN", result.observed_status)
         self.assertEqual("PDB", result.oracle_container_scope)
@@ -797,6 +819,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             controlled_change_enabled=False,
             diagnostic_credential_id=uuid7(),
             execution_credential_id=None,
+            importance_level=3,
             security_level=1,
             capabilities_json={},
             status="ENABLED",
@@ -863,6 +886,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             controlled_change_enabled=False,
             diagnostic_credential_id=uuid7(),
             execution_credential_id=None,
+            importance_level=3,
             security_level=1,
             capabilities_json={},
             status="DISABLED",
@@ -1027,6 +1051,22 @@ class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ConfigurationContractTest(unittest.TestCase):
+    def test_target_importance_level_is_application_validated(self) -> None:
+        target = TargetCreate(
+            display_name="低重要程度测试库",
+            db_type="ORACLE",
+            environment="DEV",
+            importance_level=1,
+        )
+        self.assertEqual(1, target.importance_level)
+        with self.assertRaises(ValidationError):
+            TargetCreate(
+                display_name="非法重要程度测试库",
+                db_type="ORACLE",
+                environment="DEV",
+                importance_level=6,
+            )
+
     def test_policy_rules_validator_supports_instance_invocation(self) -> None:
         PolicyConfigurationMixin()._validate_policy_rules(
             {
@@ -1034,6 +1074,7 @@ class ConfigurationContractTest(unittest.TestCase):
                 "readonly_database_enabled": False,
                 "auto_alert_enabled": True,
                 "auto_observe_min_severity": "CRITICAL",
+                "auto_observe_min_target_level": 1,
                 "alert_cooldown_seconds": 900,
             }
         )

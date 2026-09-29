@@ -258,6 +258,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("execution-credential:rotate", script)
         self.assertIn('name="execution_username"', page)
         self.assertIn('name="execution_password"', page)
+        self.assertIn('name="importance_level"', page)
+        self.assertIn("importance_level: Number", script)
         self.assertIn("openEdit", script)
         self.assertIn("db_type", script)
         self.assertNotIn("engine_type", script)
@@ -430,13 +432,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('/action-catalog/', script)
         self.assertIn("受控动作逐次审批", script)
         self.assertIn('name="auto_alert_enabled"', page)
+        self.assertIn('name="auto_observe_min_target_level"', page)
+        self.assertIn("auto_observe_min_target_level:", script)
         self.assertIn('name="diagnosis_model_id" required', page)
         self.assertIn('name="planner_model_id" required', page)
         self.assertIn('planner_llm: plannerModelId', script)
         self.assertIn('diagnosis_llm: diagnosisModelId', script)
         self.assertIn('`${api}/model-catalog`', script)
         self.assertNotIn('models: modelId ? { diagnosis:', script)
-        self.assertIn("只适用于告警自动触发", page)
+        self.assertIn("只适用于自动触发", page)
         self.assertIn('id="agent-binding-summary"', page)
         self.assertIn('class="agent-form-section"', page)
         self.assertIn("/source-bindings", script)
@@ -475,6 +479,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        situations = (AIOPS_ROOT / "situations.html").read_text(
             encoding="utf-8"
         )
         self.assertIn('["chat", "智能运维"]', shell)
@@ -519,6 +526,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertIn("KBotAIOpsAuth.stream", workspace)
         self.assertIn('event === "answer.delta"', workspace)
+        self.assertIn('id="case-filters"', situations)
+        self.assertIn('name="agent_id"', situations)
+        self.assertIn('name="severity"', situations)
+        self.assertIn('name="target_id"', situations)
+        self.assertIn('["agent_id", "severity", "target_id"]', workspace)
         self.assertIn(
             'progress.insertAdjacentHTML("afterend", messageHtml("AGENT", ""))',
             workspace,

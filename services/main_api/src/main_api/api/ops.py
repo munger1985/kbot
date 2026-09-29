@@ -503,12 +503,14 @@ async def list_ops_runs(
 @router.get("/situations", response_model=SituationPage)
 async def list_situations(
     request: Request, target_id: UUID | None = None,
-    status: str | None = None, severity: str | None = None,
+    agent_id: UUID | None = None, status: str | None = None,
+    severity: str | None = None,
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> SituationPage:
     payload = await _client(request).list_situations(
-        target_id=target_id, status=status, severity=severity,
+        target_id=target_id, agent_id=agent_id,
+        status=status, severity=severity,
         cursor=cursor, limit=limit, auth_context=request.state.auth_context,
     )
     return SituationPage.model_validate(payload)

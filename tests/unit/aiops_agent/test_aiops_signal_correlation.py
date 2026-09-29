@@ -167,7 +167,9 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         service = object.__new__(SignalEventIntakeService)
-        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        target = SimpleNamespace(
+            domain_id=7, target_id=uuid7(), importance_level=3
+        )
         source_id = uuid7()
         binding = SimpleNamespace(
             agent_id=uuid7(),
@@ -205,9 +207,64 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(binding, result[0])
         self.assertEqual(900, result[1])
 
+    async def test_low_importance_target_is_skipped_by_agent_threshold(
+        self,
+    ) -> None:
+        service = object.__new__(SignalEventIntakeService)
+        target = SimpleNamespace(
+            domain_id=7,
+            target_id=uuid7(),
+            importance_level=2,
+        )
+        source_id = uuid7()
+        binding = SimpleNamespace(
+            agent_id=uuid7(),
+            diagnostic_source_ids=(source_id,),
+        )
+        policy = SimpleNamespace(
+            rules_json={
+                "auto_observe_min_severity": "WARNING",
+                "auto_observe_min_target_level": 3,
+                "alert_cooldown_seconds": 900,
+            }
+        )
+        uow = SimpleNamespace(
+            agents=SimpleNamespace(
+                resolve_auto_alert=AsyncMock(
+                    return_value=(binding, policy)
+                )
+            ),
+        )
+
+        with patch(
+            "aiops_agent.application.diagnostic_sources.webhook_intake.logger"
+        ) as log:
+            result = await service._resolve_auto_agent(
+                uow=uow,
+                target=target,
+                source_id=source_id,
+                situation_id=uuid7(),
+                severity="CRITICAL",
+                fingerprint="f" * 64,
+                now=datetime(2026, 9, 1, tzinfo=UTC),
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(
+            "BELOW_MINIMUM_TARGET_LEVEL",
+            log.bind.call_args.kwargs["reason"],
+        )
+        self.assertEqual(2, log.bind.call_args.kwargs["target_level"])
+        self.assertEqual(
+            3,
+            log.bind.call_args.kwargs["minimum_target_level"],
+        )
+
     async def test_auto_agent_logs_target_fallback_selection(self) -> None:
         service = object.__new__(SignalEventIntakeService)
-        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        target = SimpleNamespace(
+            domain_id=7, target_id=uuid7(), importance_level=3
+        )
         alertmanager_source_id = uuid7()
         binding = SimpleNamespace(
             agent_id=uuid7(),
@@ -253,7 +310,9 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_auto_agent_rejection_records_structured_reason(self) -> None:
         service = object.__new__(SignalEventIntakeService)
-        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        target = SimpleNamespace(
+            domain_id=7, target_id=uuid7(), importance_level=3
+        )
         source_id = uuid7()
         situation_id = uuid7()
         uow = SimpleNamespace(
@@ -290,7 +349,9 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         service = object.__new__(SignalEventIntakeService)
-        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        target = SimpleNamespace(
+            domain_id=7, target_id=uuid7(), importance_level=3
+        )
         source_id = uuid7()
         current_situation_id = uuid7()
         previous_situation_id = uuid7()
@@ -335,7 +396,9 @@ class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_recent_diagnosis_cools_down_same_situation(self) -> None:
         service = object.__new__(SignalEventIntakeService)
-        target = SimpleNamespace(domain_id=7, target_id=uuid7())
+        target = SimpleNamespace(
+            domain_id=7, target_id=uuid7(), importance_level=3
+        )
         source_id = uuid7()
         situation_id = uuid7()
         binding = SimpleNamespace(

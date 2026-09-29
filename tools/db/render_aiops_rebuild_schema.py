@@ -265,6 +265,8 @@ BEGIN
              AND column_name = 'AGENT_ID')
          OR (table_name = 'KBOT_OPS_INSPECTION_PLAN'
              AND column_name = 'SELECTED_CHECKS_JSON')
+         OR (table_name = 'KBOT_OPS_TARGET'
+             AND column_name = 'IMPORTANCE_LEVEL')
        );
 
     SELECT COUNT(*)
@@ -310,7 +312,7 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 16 THEN
+    IF l_required_column_count <> 17 THEN
         raise_application_error(-20008, 'Schema {schema_version} 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
