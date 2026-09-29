@@ -30,7 +30,7 @@ from platform_core.contracts.aiops import (
     ApprovalReceipt,
     CancelRunCommand,
     DiagnosticQueryApprovalDecision,
-    FleetDashboard,
+    OpsDashboard,
     HitlResponse,
     HitlResult,
     HitlSkipCommand,
@@ -105,7 +105,7 @@ def _route_permissions() -> dict[str, str]:
             "edit_report", "get_report_presentation", "download_report_pdf",
             "list_reports", "list_report_versions", "list_inspection_fires",
             "get_inspection_fire", "create_ops_run", "list_ops_runs",
-            "get_fleet_dashboard",
+            "get_dashboard",
             "list_situations", "get_situation", "get_ops_run",
             "get_ops_run_result", "get_pending_input", "get_hitl_input",
             "respond_hitl", "skip_hitl", "decide_diagnostic_query",
@@ -478,12 +478,12 @@ async def create_ops_run(
     return result
 
 
-@router.get("/fleet", response_model=FleetDashboard)
-async def get_fleet_dashboard(request: Request) -> FleetDashboard:
-    payload = await _client(request).get_fleet_dashboard(
+@router.get("/dashboard", response_model=OpsDashboard)
+async def get_dashboard(request: Request) -> OpsDashboard:
+    payload = await _client(request).get_dashboard(
         auth_context=request.state.auth_context,
     )
-    return FleetDashboard.model_validate(payload)
+    return OpsDashboard.model_validate(payload)
 
 
 @router.get("/runs", response_model=OpsRunPage)

@@ -1,23 +1,26 @@
 # AIOps 诊断内核与后续能力详细设计
 
-版本：1.1
+版本：1.2
 状态：部分落地（P0/P1 主链已实施）
 基准日期：2026-09-20
 依据：
 
-- 产品 Roadmap [`docs/product/aiops-roadmap.md`](../product/aiops-roadmap.md) v1.4
+- 产品 Roadmap [`docs/product/aiops-roadmap.md`](../product/aiops-roadmap.md) v1.6
 - 现有调查设计 [`docs/product/aiops-agent-chat-diagnosis.md`](../product/aiops-agent-chat-diagnosis.md)
 - 现有受控动作计划 [`docs/proposals/aiops-controlled-actions-implementation-plan.md`](aiops-controlled-actions-implementation-plan.md)
-- 当前代码：Finding Compiler、Check Catalog、SQL Monitor / SQLHC / ExaCheck 近端报告、容量约束、AWR Fact、Fleet、诊断四段与逐条审批
+- 当前代码：Finding Compiler、Check Catalog、SQL Monitor / SQLHC / ExaCheck 近端报告、容量约束、AWR Fact、DBA Dashboard、诊断四段与逐条审批
 
 本文把 Roadmap 落成可实施设计：先冻结共用诊断内核，再按现有实现给出改造方案。
 EICC 与 ADG 演练不在本期设计范围。
+
+库群首屏已从 Fleet 完整替换为异常优先 DBA Dashboard；健康、新鲜度、排序、批量投影和深链
+契约见 [AIOps DBA Dashboard 详细设计](aiops-dba-dashboard-detailed-design.md)。
 
 实施状态：
 
 - 已落地：共用诊断内核、Finding Card 第一屏、三入口同一套 Agent 逻辑、诊断页逐条审批、
   Check Catalog 勾选、P1 Finding 五类、SQL Monitor 官方 HTML、SQLHC Playbook、
-  ExaCheck 上传解析、AWR 对比/趋势 Fact、Fleet / leadership briefing、容量约束。
+  ExaCheck 上传解析、AWR 对比/趋势 Fact、DBA Dashboard / leadership briefing、容量约束。
 - 本轮补齐：Cube 告警/巡检/运行详情只读渲染四段 blocks；P1 Finding
   `INVALID_OBJECT` / `ARCHIVE_HEADROOM` / `BACKUP_FAILED` / `LONG_TRANSACTION` / `TOP_SQL`；
   PLANNED 检查项 UI 标「规划中」且不可勾选。归档 Finding 只挂 FRA 余量，不假装有归档生成量。

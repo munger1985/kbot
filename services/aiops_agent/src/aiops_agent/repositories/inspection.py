@@ -406,6 +406,30 @@ class InspectionRepository(AIOpsRepository):
         ).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
+    async def count_fire_statuses_since(
+        self,
+        *,
+        domain_id: int,
+        since: datetime,
+    ) -> dict[str, int]:
+        """按状态聚合 Dashboard 最近 24 小时巡检 Fire。"""
+        self._check_active()
+        statement = (
+            select(InspectionFireEntity.status, func.count())
+            .join(
+                InspectionPlanEntity,
+                InspectionPlanEntity.inspection_plan_id
+                == InspectionFireEntity.inspection_plan_id,
+            )
+            .where(
+                InspectionPlanEntity.domain_id == domain_id,
+                InspectionFireEntity.created_at >= since,
+            )
+            .group_by(InspectionFireEntity.status)
+        )
+        rows = (await self._session.execute(statement)).all()
+        return {str(status): int(count) for status, count in rows}
+
     async def list_open_fires(
         self, *, inspection_plan_id: UUID, lock: bool = False
     ) -> list[InspectionFireEntity]:

@@ -1,6 +1,6 @@
 # KBot 4.0 AIOps 后续能力 Roadmap
 
-版本：1.5
+版本：1.6
 状态：P0/P1 主链已实施，按审计补齐修订
 基准日期：2026-09-28
 依据：客户沟通纪要 `meeting.txt`、当前 KBot 4.0 AIOps 代码与产品契约、真实 DBA 日常工作流
@@ -14,6 +14,8 @@ SQL Monitor / AWR / XPLAN 由产品内生成，SQLHC 做成 Playbook，仅 ExaCh
 
 详细设计与改造方案见
 [AIOps 诊断内核与后续能力详细设计](../proposals/aiops-roadmap-detailed-design.md)。
+DBA 首屏与库群态势见
+[AIOps DBA Dashboard 详细设计](../proposals/aiops-dba-dashboard-detailed-design.md)。
 
 ## 1. 评估结论
 
@@ -70,7 +72,7 @@ ADG 切换演练不进入诊断主链，作为后续独立功能。
 - `switchover` 仍为 `UNSUPPORTED`，`failover` 仅允许人工命令展示。
 - SQLHC 已是 Playbook；ExaCheck / ORAchk / TFA 近端消费已有报告，不把 MOS 脚本集成进程序。
 - AWR 原生 HTML 保留，分析阶段可按需求做对比和趋势。
-- 库群 Fleet 总览、领导 briefing、容量约束、Target 运维记忆已有实现。
+- 异常优先 DBA Dashboard、领导 briefing、容量约束、Target 运维记忆已有实现。
 - MySQL / PostgreSQL 只读诊断已覆盖复制延迟、死元组、Autovacuum、Idle 会话、连接使用率、QPS。
 - 正式报告、站内通知订阅已有后台；飞书/Email/ITSM 未交付。
 - 对话诊断支持用户补证；控制面与数据库执行器已经分离。
@@ -419,6 +421,10 @@ Idle 会话占比、事务回滚率。
 服务“很多库”和领导，不替代 DBA 诊断页。领导视图只保留影响、风险、建议，
 不下钻 SID。
 
+DBA Dashboard 已按异常优先方式实施：首屏提供态势、优先处理队列、健康分布、风险热点、
+最近 24 小时自动化结果、最近活动和可筛选 Target 表。`STALE` 与 `UNKNOWN` 不计入健康，
+详细契约见 [AIOps DBA Dashboard 详细设计](../proposals/aiops-dba-dashboard-detailed-design.md)。
+
 #### M. 飞书出站
 
 后续只推诊断阶段结论，不转发监控原文。
@@ -498,7 +504,7 @@ P3  Runbook 扩展与平台深化 升级、迁移、RAC、备份与 ADG 演练
 | SQL Monitor 官方报告 | 加 | 方式 A，产品内生成 HTML/TEXT，用户不上传 |
 | SQL 诊断 Playbook | 加 | 方式 B，SQLHC 语义组合已有 Tool，不进 MOS 文件 |
 | ExaCheck 报告导入 | 加 | 方式 C 近端，消费已有报告，FAIL/WARNING 变 Finding |
-| Fleet Dashboard | 加 | 多库健康、告警、容量、延迟总览 |
+| DBA Dashboard | 已实施 | 多库健康、告警、容量、延迟、数据新鲜度与自动化结果总览 |
 | 领导简报 | 改 | 正式报告增加业务影响摘要 |
 | 飞书出站 | 加 | 诊断阶段结论推送 |
 | PG/MySQL 诊断包 | 加 | 延迟、死元组、Autovacuum、Idle、连接、QPS |

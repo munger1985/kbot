@@ -435,41 +435,132 @@ class ReportPresentation(BaseModel):
     leadership_briefing: LeadershipBriefing
 
 
-FleetHealth = Literal["HEALTHY", "WARNING", "CRITICAL", "UNREACHABLE", "DISABLED"]
+DashboardHealth = Literal[
+    "CRITICAL",
+    "UNREACHABLE",
+    "WARNING",
+    "STALE",
+    "UNKNOWN",
+    "HEALTHY",
+    "DISABLED",
+]
+DashboardDataFreshness = Literal["CURRENT", "STALE", "UNKNOWN"]
 
 
-class FleetTargetCard(AIOpsContract):
-    """库群总览卡片；只保留健康、告警、容量和延迟，不展开 SID 明细。"""
+class DashboardSummary(AIOpsContract):
+    """DBA 首屏只展示需要立即判断的库群态势。"""
 
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    target_count: int = Field(ge=0)
+    attention_target_count: int = Field(ge=0)
+    critical_alert_count: int = Field(ge=0)
+    high_alert_count: int = Field(ge=0)
+    open_alert_count: int = Field(ge=0)
+    unreachable_count: int = Field(ge=0)
+    stale_or_unknown_count: int = Field(ge=0)
+    failed_automation_count: int = Field(ge=0)
+    healthy_count: int = Field(ge=0)
+    disabled_count: int = Field(ge=0)
+
+
+class DashboardHealthCount(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    health: DashboardHealth
+    count: int = Field(ge=0)
+
+
+class DashboardAttentionItem(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    target_id: UUIDv7
+    target_name: str = Field(min_length=1, max_length=256)
+    environment: str = Field(min_length=1, max_length=16)
+    importance_level: int = Field(ge=1, le=5)
+    health: DashboardHealth
+    category: str = Field(min_length=1, max_length=32)
+    severity: str = Field(min_length=1, max_length=16)
+    title: str = Field(min_length=1, max_length=512)
+    status: str = Field(min_length=1, max_length=32)
+    started_at: UtcDatetime | None = None
+    observed_at: UtcDatetime | None = None
+    situation_id: UUIDv7 | None = None
+    run_id: UUIDv7 | None = None
+
+
+class DashboardRiskItem(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    target_id: UUIDv7
+    target_name: str = Field(min_length=1, max_length=256)
+    importance_level: int = Field(ge=1, le=5)
+    category: Literal["CAPACITY", "REPLICATION", "BACKUP", "SESSION"]
+    finding_type: str = Field(min_length=1, max_length=64)
+    severity: str = Field(min_length=1, max_length=16)
+    label: str = Field(min_length=1, max_length=256)
+    value_text: str = Field(min_length=1, max_length=128)
+    observed_at: UtcDatetime | None = None
+    run_id: UUIDv7
+
+
+class DashboardAutomationSummary(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    run_total: int = Field(ge=0)
+    run_succeeded: int = Field(ge=0)
+    run_partial: int = Field(ge=0)
+    run_failed: int = Field(ge=0)
+    inspection_total: int = Field(ge=0)
+    inspection_succeeded: int = Field(ge=0)
+    inspection_partial: int = Field(ge=0)
+    inspection_failed: int = Field(ge=0)
+
+
+class DashboardActivityItem(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    kind: Literal["ALERT", "DIAGNOSIS"]
+    status: str = Field(min_length=1, max_length=32)
+    title: str = Field(min_length=1, max_length=512)
+    occurred_at: UtcDatetime
+    target_id: UUIDv7 | None = None
+    target_name: str | None = Field(default=None, max_length=256)
+    situation_id: UUIDv7 | None = None
+    run_id: UUIDv7 | None = None
+
+
+class DashboardTargetRow(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     target_id: UUIDv7
     display_name: str = Field(min_length=1, max_length=256)
     db_type: str = Field(min_length=1, max_length=32)
     environment: str = Field(min_length=1, max_length=16)
-    health: FleetHealth
+    db_role: str = Field(min_length=1, max_length=16)
+    importance_level: int = Field(ge=1, le=5)
+    health: DashboardHealth
+    attention_reason: str | None = Field(default=None, max_length=512)
     open_alert_count: int = Field(ge=0)
-    max_capacity_percent: float | None = None
-    max_lag_seconds: float | None = None
+    critical_alert_count: int = Field(ge=0)
+    high_alert_count: int = Field(ge=0)
+    capacity_percent: float | None = None
+    capacity_label: str | None = Field(default=None, max_length=128)
+    lag_seconds: float | None = None
+    data_freshness: DashboardDataFreshness
+    evidence_observed_at: UtcDatetime | None = None
     last_diagnosed_at: UtcDatetime | None = None
     latest_run_id: UUIDv7 | None = None
 
 
-class FleetSummary(AIOpsContract):
-    schema_version: str = PUBLIC_SCHEMA_VERSION
-    target_count: int = Field(ge=0)
-    healthy_count: int = Field(ge=0)
-    warning_count: int = Field(ge=0)
-    critical_count: int = Field(ge=0)
-    unreachable_count: int = Field(ge=0)
-    disabled_count: int = Field(ge=0)
-    open_alert_count: int = Field(ge=0)
-    last_diagnosed_at: UtcDatetime | None = None
+class OpsDashboard(AIOpsContract):
+    """面向 DBA 的异常优先 Dashboard，不展开 SID 或 SQL 明细。"""
 
-
-class FleetDashboard(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
-    summary: FleetSummary
-    items: tuple[FleetTargetCard, ...] = ()
+    generated_at: UtcDatetime
+    stale_after_seconds: int = Field(gt=0)
+    summary: DashboardSummary
+    health_distribution: tuple[DashboardHealthCount, ...] = ()
+    attention_items: tuple[DashboardAttentionItem, ...] = ()
+    risk_items: tuple[DashboardRiskItem, ...] = ()
+    automation: DashboardAutomationSummary
+    recent_activities: tuple[DashboardActivityItem, ...] = ()
+    targets: tuple[DashboardTargetRow, ...] = ()
 
 
 class UploadSession(AIOpsContract):

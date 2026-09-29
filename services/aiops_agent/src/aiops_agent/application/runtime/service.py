@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -25,12 +25,12 @@ from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
 )
-from aiops_agent.application.runtime.fleet import (
-    FleetRunSnapshot,
-    FleetSituationSnapshot,
-    FleetTargetSnapshot,
+from aiops_agent.application.runtime.dashboard import (
+    DashboardRunSnapshot,
+    DashboardSituationSnapshot,
+    DashboardTargetSnapshot,
     parse_finding_payload,
-    project_fleet_dashboard,
+    project_ops_dashboard,
 )
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from aiops_agent.domain.operations import (
@@ -146,7 +146,7 @@ from platform_core.contracts.aiops.internal import (
 )
 from platform_core.contracts.aiops.public import (
     DiagnosticQueryApprovalDecision,
-    FleetDashboard,
+    OpsDashboard,
     HitlResponse,
     HitlResult,
     InspectionFirePage,
@@ -5901,55 +5901,112 @@ class AIOpsRuntimeService:
                 return True
             return False
 
-    async def get_fleet_dashboard(
+    async def get_dashboard(
         self, *, scope: ConfigurationScope
-    ) -> FleetDashboard:
-        """投影域内全部 Target 的健康总览，不过滤当前 Agent。"""
+    ) -> OpsDashboard:
+        """投影域内全部 Target 的 DBA Dashboard，不过滤当前 Agent。"""
+        now = datetime.now(UTC)
+        since = now - timedelta(hours=24)
         async with self._uow_factory() as uow:
             targets = await uow.targets.list_scoped(domain_id=scope.domain_id)
             situations = await uow.situations.list_open_for_domain(
                 domain_id=scope.domain_id
             )
-            runs = await uow.runs.list_latest_completed_by_target(
+            latest_runs = await uow.runs.list_latest_completed_by_target(
                 domain_id=scope.domain_id
             )
-            payloads = await uow.turns.list_finding_blocks_for_runs(
-                ops_run_ids=tuple(item.ops_run_id for item in runs)
+            recent_runs = await uow.runs.list_recent_for_dashboard(
+                domain_id=scope.domain_id,
+                since=since,
             )
-            return project_fleet_dashboard(
+            failed_runs = await uow.runs.list_latest_failed_by_target_since(
+                domain_id=scope.domain_id,
+                since=since,
+            )
+            run_status_counts = await uow.runs.count_statuses_since(
+                domain_id=scope.domain_id,
+                since=since,
+            )
+            inspection_status_counts = (
+                await uow.inspections.count_fire_statuses_since(
+                    domain_id=scope.domain_id,
+                    since=since,
+                )
+            )
+            payloads = await uow.turns.list_finding_blocks_for_runs(
+                ops_run_ids=tuple(item.ops_run_id for item in latest_runs)
+            )
+            return project_ops_dashboard(
                 targets=tuple(
-                    FleetTargetSnapshot(
+                    DashboardTargetSnapshot(
                         target_id=item.target_id,
                         display_name=item.display_name,
                         db_type=item.db_type,
                         environment=item.environment,
+                        db_role=item.db_role,
+                        importance_level=int(item.importance_level),
                         status=item.status,
                         connectivity_status=item.connectivity_status,
                         observed_status=item.observed_status,
                         readonly_connection_enabled=bool(
                             item.readonly_connection_enabled
                         ),
+                        last_observed_at=item.last_observed_at,
+                        last_error_code=item.last_error_code,
                     )
                     for item in targets
                 ),
                 situations=tuple(
-                    FleetSituationSnapshot(
+                    DashboardSituationSnapshot(
+                        situation_id=item.situation_id,
                         target_id=item.target_id,
                         status=item.status,
+                        severity=item.severity,
+                        title=item.title,
+                        first_observed_at=item.first_observed_at,
+                        last_observed_at=item.last_observed_at,
                     )
                     for item in situations
                 ),
-                runs=tuple(
-                    FleetRunSnapshot(
+                latest_runs=tuple(
+                    DashboardRunSnapshot(
                         target_id=item.target_id,
                         ops_run_id=item.ops_run_id,
+                        status=item.status,
+                        created_at=item.created_at,
                         completed_at=item.completed_at,
+                        error_code=item.error_code,
                         findings=parse_finding_payload(
                             payloads.get(item.ops_run_id)
                         ),
                     )
-                    for item in runs
+                    for item in latest_runs
                 ),
+                recent_runs=tuple(
+                    DashboardRunSnapshot(
+                        target_id=item.target_id,
+                        ops_run_id=item.ops_run_id,
+                        status=item.status,
+                        created_at=item.created_at,
+                        completed_at=item.completed_at,
+                        error_code=item.error_code,
+                    )
+                    for item in recent_runs
+                ),
+                failed_runs=tuple(
+                    DashboardRunSnapshot(
+                        target_id=item.target_id,
+                        ops_run_id=item.ops_run_id,
+                        status=item.status,
+                        created_at=item.created_at,
+                        completed_at=item.completed_at,
+                        error_code=item.error_code,
+                    )
+                    for item in failed_runs
+                ),
+                run_status_counts=run_status_counts,
+                inspection_status_counts=inspection_status_counts,
+                now=now,
             )
 
     async def list_runs(

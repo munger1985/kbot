@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "fleet", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
         "agents",
@@ -59,6 +59,36 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 check=False, capture_output=True, text=True,
             )
             self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_dashboard_is_exception_first_and_truthful_about_missing_data(self):
+        page = (AIOPS_ROOT / "dashboard.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-dashboard.js").read_text(
+            encoding="utf-8"
+        )
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('["dashboard", "Dashboard"]', shell)
+        self.assertNotIn('["fleet", "库群总览"]', shell)
+        self.assertIn('href="./dashboard.html"', shell)
+        self.assertIn("location.replace('./dashboard.html')", (
+            AIOPS_ROOT / "login.html"
+        ).read_text(encoding="utf-8"))
+        self.assertIn("/dashboard", script)
+        self.assertIn("优先处理队列", page)
+        self.assertIn("风险热点", page)
+        self.assertIn("最近 24 小时运维结果", page)
+        self.assertIn("无数据不会计入健康", page)
+        self.assertIn('UNKNOWN: "无有效数据"', script)
+        self.assertIn('STALE: "数据过期"', script)
+        self.assertIn('health === "BLIND_SPOT"', script)
+        self.assertIn("data-risk-category=\"CAPACITY\"", page)
+        self.assertIn("data-risk-category=\"REPLICATION\"", page)
+        self.assertIn("data-risk-category=\"BACKUP\"", page)
+        self.assertIn("data-risk-category=\"SESSION\"", page)
+        self.assertNotIn("scrollIntoView", script)
+        self.assertFalse((AIOPS_ROOT / "fleet.html").exists())
+        self.assertFalse((AIOPS_ROOT / "js" / "aiops-fleet.js").exists())
 
     def test_chat_code_copy_supports_insecure_http_context(self):
         renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(
@@ -630,7 +660,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("关联的诊断、证据和变更审计记录仍会保留", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
-            "dashboard.html", "runs.html",
+            "fleet.html", "runs.html",
             "changes.html", "notifications.html",
         ):
             self.assertFalse((AIOPS_ROOT / obsolete).exists())

@@ -41,9 +41,9 @@ from platform_core.contracts.aiops.internal import (
     RootDelegationReceipt,
 )
 from platform_core.contracts.aiops.public import (
-    FleetDashboard,
     InspectionFirePage,
     InspectionFireView,
+    OpsDashboard,
     OpsRunResult,
     OpsRunPage,
     OpsRunSummary,
@@ -238,12 +238,12 @@ async def cancel_delegation(
     )
 
 
-@router.get("/fleet", response_model=FleetDashboard)
-async def get_fleet_dashboard(
+@router.get("/dashboard", response_model=OpsDashboard)
+async def get_dashboard(
     request: Request, service: Service, context: Auth,
-) -> FleetDashboard:
+) -> OpsDashboard:
     require_service_scope(request, "aiops.run")
-    return await service.get_fleet_dashboard(scope=_query_scope(request, context))
+    return await service.get_dashboard(scope=_query_scope(request, context))
 
 
 @router.get("/runs", response_model=OpsRunPage)

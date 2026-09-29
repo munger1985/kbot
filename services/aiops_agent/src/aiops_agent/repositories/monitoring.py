@@ -332,7 +332,7 @@ class SituationRepository(AIOpsRepository):
     async def list_open_for_domain(
         self, *, domain_id: int
     ) -> list[SituationEntity]:
-        """读取域内尚未关闭的故障情境，供库群总览一次投影。"""
+        """读取域内尚未关闭的故障情境，供 Dashboard 一次投影。"""
         self._check_active()
         statement = (
             select(SituationEntity)

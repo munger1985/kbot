@@ -1624,6 +1624,681 @@
         "title": "CredentialIssueResponse",
         "type": "object"
       },
+      "DashboardActivityItem": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "ALERT",
+              "DIAGNOSIS"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "situation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Situation Id"
+          },
+          "status": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Name"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "title",
+          "occurred_at"
+        ],
+        "title": "DashboardActivityItem",
+        "type": "object"
+      },
+      "DashboardAttentionItem": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "environment": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "health": {
+            "enum": [
+              "CRITICAL",
+              "UNREACHABLE",
+              "WARNING",
+              "STALE",
+              "UNKNOWN",
+              "HEALTHY",
+              "DISABLED"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "severity": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Severity",
+            "type": "string"
+          },
+          "situation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Situation Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Target Name",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_name",
+          "environment",
+          "importance_level",
+          "health",
+          "category",
+          "severity",
+          "title",
+          "status"
+        ],
+        "title": "DashboardAttentionItem",
+        "type": "object"
+      },
+      "DashboardAutomationSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "inspection_failed": {
+            "minimum": 0.0,
+            "title": "Inspection Failed",
+            "type": "integer"
+          },
+          "inspection_partial": {
+            "minimum": 0.0,
+            "title": "Inspection Partial",
+            "type": "integer"
+          },
+          "inspection_succeeded": {
+            "minimum": 0.0,
+            "title": "Inspection Succeeded",
+            "type": "integer"
+          },
+          "inspection_total": {
+            "minimum": 0.0,
+            "title": "Inspection Total",
+            "type": "integer"
+          },
+          "run_failed": {
+            "minimum": 0.0,
+            "title": "Run Failed",
+            "type": "integer"
+          },
+          "run_partial": {
+            "minimum": 0.0,
+            "title": "Run Partial",
+            "type": "integer"
+          },
+          "run_succeeded": {
+            "minimum": 0.0,
+            "title": "Run Succeeded",
+            "type": "integer"
+          },
+          "run_total": {
+            "minimum": 0.0,
+            "title": "Run Total",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "run_total",
+          "run_succeeded",
+          "run_partial",
+          "run_failed",
+          "inspection_total",
+          "inspection_succeeded",
+          "inspection_partial",
+          "inspection_failed"
+        ],
+        "title": "DashboardAutomationSummary",
+        "type": "object"
+      },
+      "DashboardHealthCount": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "health": {
+            "enum": [
+              "CRITICAL",
+              "UNREACHABLE",
+              "WARNING",
+              "STALE",
+              "UNKNOWN",
+              "HEALTHY",
+              "DISABLED"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "health",
+          "count"
+        ],
+        "title": "DashboardHealthCount",
+        "type": "object"
+      },
+      "DashboardRiskItem": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "CAPACITY",
+              "REPLICATION",
+              "BACKUP",
+              "SESSION"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "finding_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Finding Type",
+            "type": "string"
+          },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "severity": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Severity",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Target Name",
+            "type": "string"
+          },
+          "value_text": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Value Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "target_name",
+          "importance_level",
+          "category",
+          "finding_type",
+          "severity",
+          "label",
+          "value_text",
+          "run_id"
+        ],
+        "title": "DashboardRiskItem",
+        "type": "object"
+      },
+      "DashboardSummary": {
+        "additionalProperties": false,
+        "description": "DBA 首屏只展示需要立即判断的库群态势。",
+        "properties": {
+          "attention_target_count": {
+            "minimum": 0.0,
+            "title": "Attention Target Count",
+            "type": "integer"
+          },
+          "critical_alert_count": {
+            "minimum": 0.0,
+            "title": "Critical Alert Count",
+            "type": "integer"
+          },
+          "disabled_count": {
+            "minimum": 0.0,
+            "title": "Disabled Count",
+            "type": "integer"
+          },
+          "failed_automation_count": {
+            "minimum": 0.0,
+            "title": "Failed Automation Count",
+            "type": "integer"
+          },
+          "healthy_count": {
+            "minimum": 0.0,
+            "title": "Healthy Count",
+            "type": "integer"
+          },
+          "high_alert_count": {
+            "minimum": 0.0,
+            "title": "High Alert Count",
+            "type": "integer"
+          },
+          "open_alert_count": {
+            "minimum": 0.0,
+            "title": "Open Alert Count",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "stale_or_unknown_count": {
+            "minimum": 0.0,
+            "title": "Stale Or Unknown Count",
+            "type": "integer"
+          },
+          "target_count": {
+            "minimum": 0.0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "unreachable_count": {
+            "minimum": 0.0,
+            "title": "Unreachable Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_count",
+          "attention_target_count",
+          "critical_alert_count",
+          "high_alert_count",
+          "open_alert_count",
+          "unreachable_count",
+          "stale_or_unknown_count",
+          "failed_automation_count",
+          "healthy_count",
+          "disabled_count"
+        ],
+        "title": "DashboardSummary",
+        "type": "object"
+      },
+      "DashboardTargetRow": {
+        "additionalProperties": false,
+        "properties": {
+          "attention_reason": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attention Reason"
+          },
+          "capacity_label": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Label"
+          },
+          "capacity_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Percent"
+          },
+          "critical_alert_count": {
+            "minimum": 0.0,
+            "title": "Critical Alert Count",
+            "type": "integer"
+          },
+          "data_freshness": {
+            "enum": [
+              "CURRENT",
+              "STALE",
+              "UNKNOWN"
+            ],
+            "title": "Data Freshness",
+            "type": "string"
+          },
+          "db_role": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Db Role",
+            "type": "string"
+          },
+          "db_type": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Db Type",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "evidence_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Observed At"
+          },
+          "health": {
+            "enum": [
+              "CRITICAL",
+              "UNREACHABLE",
+              "WARNING",
+              "STALE",
+              "UNKNOWN",
+              "HEALTHY",
+              "DISABLED"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "high_alert_count": {
+            "minimum": 0.0,
+            "title": "High Alert Count",
+            "type": "integer"
+          },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
+          "lag_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Seconds"
+          },
+          "last_diagnosed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Diagnosed At"
+          },
+          "latest_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Run Id"
+          },
+          "open_alert_count": {
+            "minimum": 0.0,
+            "title": "Open Alert Count",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "display_name",
+          "db_type",
+          "environment",
+          "db_role",
+          "importance_level",
+          "health",
+          "open_alert_count",
+          "critical_alert_count",
+          "high_alert_count",
+          "data_freshness"
+        ],
+        "title": "DashboardTargetRow",
+        "type": "object"
+      },
       "DatabaseCredentialInput": {
         "additionalProperties": false,
         "properties": {
@@ -2727,206 +3402,6 @@
           "root_cause_grade"
         ],
         "title": "FinalDiagnosisRef",
-        "type": "object"
-      },
-      "FleetDashboard": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/FleetTargetCard"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "summary": {
-            "$ref": "#/components/schemas/FleetSummary"
-          }
-        },
-        "required": [
-          "summary"
-        ],
-        "title": "FleetDashboard",
-        "type": "object"
-      },
-      "FleetSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "critical_count": {
-            "minimum": 0.0,
-            "title": "Critical Count",
-            "type": "integer"
-          },
-          "disabled_count": {
-            "minimum": 0.0,
-            "title": "Disabled Count",
-            "type": "integer"
-          },
-          "healthy_count": {
-            "minimum": 0.0,
-            "title": "Healthy Count",
-            "type": "integer"
-          },
-          "last_diagnosed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Diagnosed At"
-          },
-          "open_alert_count": {
-            "minimum": 0.0,
-            "title": "Open Alert Count",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "target_count": {
-            "minimum": 0.0,
-            "title": "Target Count",
-            "type": "integer"
-          },
-          "unreachable_count": {
-            "minimum": 0.0,
-            "title": "Unreachable Count",
-            "type": "integer"
-          },
-          "warning_count": {
-            "minimum": 0.0,
-            "title": "Warning Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "target_count",
-          "healthy_count",
-          "warning_count",
-          "critical_count",
-          "unreachable_count",
-          "disabled_count",
-          "open_alert_count"
-        ],
-        "title": "FleetSummary",
-        "type": "object"
-      },
-      "FleetTargetCard": {
-        "additionalProperties": false,
-        "description": "库群总览卡片；只保留健康、告警、容量和延迟，不展开 SID 明细。",
-        "properties": {
-          "db_type": {
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Db Type",
-            "type": "string"
-          },
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "environment": {
-            "maxLength": 16,
-            "minLength": 1,
-            "title": "Environment",
-            "type": "string"
-          },
-          "health": {
-            "enum": [
-              "HEALTHY",
-              "WARNING",
-              "CRITICAL",
-              "UNREACHABLE",
-              "DISABLED"
-            ],
-            "title": "Health",
-            "type": "string"
-          },
-          "last_diagnosed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Diagnosed At"
-          },
-          "latest_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Latest Run Id"
-          },
-          "max_capacity_percent": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Capacity Percent"
-          },
-          "max_lag_seconds": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Lag Seconds"
-          },
-          "open_alert_count": {
-            "minimum": 0.0,
-            "title": "Open Alert Count",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "target_id",
-          "display_name",
-          "db_type",
-          "environment",
-          "health",
-          "open_alert_count"
-        ],
-        "title": "FleetTargetCard",
         "type": "object"
       },
       "GenerateUserReportRequest": {
@@ -4620,6 +5095,81 @@
           "command"
         ],
         "title": "OpsCommand",
+        "type": "object"
+      },
+      "OpsDashboard": {
+        "additionalProperties": false,
+        "description": "面向 DBA 的异常优先 Dashboard，不展开 SID 或 SQL 明细。",
+        "properties": {
+          "attention_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DashboardAttentionItem"
+            },
+            "title": "Attention Items",
+            "type": "array"
+          },
+          "automation": {
+            "$ref": "#/components/schemas/DashboardAutomationSummary"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "health_distribution": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DashboardHealthCount"
+            },
+            "title": "Health Distribution",
+            "type": "array"
+          },
+          "recent_activities": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DashboardActivityItem"
+            },
+            "title": "Recent Activities",
+            "type": "array"
+          },
+          "risk_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DashboardRiskItem"
+            },
+            "title": "Risk Items",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "stale_after_seconds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Stale After Seconds",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DashboardSummary"
+          },
+          "targets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DashboardTargetRow"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "stale_after_seconds",
+          "summary",
+          "automation"
+        ],
+        "title": "OpsDashboard",
         "type": "object"
       },
       "OpsRunEventPage": {
@@ -13856,6 +14406,27 @@
         ]
       }
     },
+    "/internal/v1/aiops/dashboard": {
+      "get": {
+        "operationId": "get_dashboard_internal_v1_aiops_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpsDashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dashboard",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
     "/internal/v1/aiops/delegations": {
       "post": {
         "operationId": "create_delegation_internal_v1_aiops_delegations_post",
@@ -14149,27 +14720,6 @@
         "summary": "Apply Execution Event",
         "tags": [
           "AIOps Executions"
-        ]
-      }
-    },
-    "/internal/v1/aiops/fleet": {
-      "get": {
-        "operationId": "get_fleet_dashboard_internal_v1_aiops_fleet_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FleetDashboard"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Fleet Dashboard",
-        "tags": [
-          "AIOps Runtime"
         ]
       }
     },

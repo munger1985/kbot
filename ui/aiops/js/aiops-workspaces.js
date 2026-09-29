@@ -1578,6 +1578,12 @@
     await agents();
     const targetSelect = document.getElementById("target-select");
     targetSelect.innerHTML = '<option value="">选择逻辑 Target</option>' + state.targets.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name)} · ${esc(item.db_type)}${item.readonly_connection_enabled ? "" : " · 仅监控"}</option>`).join("");
+    const requestedTargetId = new URLSearchParams(location.search).get("target_id");
+    if (requestedTargetId && state.targets.some((item) => String(item.target_id) === requestedTargetId)) {
+      targetSelect.value = requestedTargetId;
+      renderAgentOptions();
+      syncAgentTargetContext();
+    }
     targetSelect.onchange = () => {
       clearConversationUrl();
       state.conversation = null;
@@ -1745,6 +1751,9 @@
 
   async function initCases(page) {
     await agents();
+    const requested = new URLSearchParams(location.search);
+    const requestedTargetId = requested.get("target_id");
+    const requestedSituationId = page === "situations" ? requested.get("situation") : "";
     state.caseTargets = page === "situations"
       ? values((await KBotAIOpsAuth.request(`${api}/targets?limit=200`))?.items)
       : state.targets;
@@ -1753,6 +1762,9 @@
     if (filters) {
       filters.elements.agent_id.innerHTML = '<option value="">全部 Agent</option>' + state.caseAgents.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
       filters.elements.target_id.innerHTML = '<option value="">全部 Target</option>' + state.caseTargets.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name)} · L${esc(item.importance_level)}</option>`).join("");
+      if (requestedTargetId && state.caseTargets.some((item) => String(item.target_id) === requestedTargetId)) {
+        filters.elements.target_id.value = requestedTargetId;
+      }
     }
     const loadRows = async () => {
       window.clearTimeout(situationRefreshTimer);
@@ -1768,7 +1780,10 @@
       const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
       list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-case-row" data-id="${esc(item.situation_id || item.fire_id)}"><strong>${esc(item.title || `巡检 ${shell.fmt(item.scheduled_at)}`)}</strong>${shell.badge(item.severity || item.status)}<p>${esc(item.summary || targetNames.get(String(item.target_id)) || `${item.completed_count || 0}/${item.target_count || 0} 个目标已完成`)}</p></button>`).join("") : '<div class="ops-empty">当前筛选范围内暂无记录</div>';
       list.querySelectorAll("button").forEach((button, index) => { button.onclick = () => (page === "situations" ? showSituation(rows[index]) : showInspection(rows[index])).catch((error) => shell.toast(error.message)); });
-      if (rows[0]) await (page === "situations" ? showSituation(rows[0]) : showInspection(rows[0]));
+      const selected = page === "situations" && requestedSituationId
+        ? rows.find((item) => String(item.situation_id) === requestedSituationId) || rows[0]
+        : rows[0];
+      if (selected) await (page === "situations" ? showSituation(selected) : showInspection(selected));
       else {
         activeSituationId = null;
         document.getElementById("case-title").textContent = page === "situations" ? "没有匹配的告警事件" : "没有匹配的巡检";

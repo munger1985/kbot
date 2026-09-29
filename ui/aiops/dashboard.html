@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard · KBot AIOps</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20260929_3">
+</head>
+<body data-page="dashboard">
+  <main class="ops-main ops-dashboard-main">
+    <header class="ops-head ops-dashboard-head">
+      <div>
+        <h1>Dashboard</h1>
+        <p>DBA 运维态势与待处理事项。异常优先展示，并明确区分健康、数据过期和无有效数据。</p>
+        <small id="dashboard-freshness" class="ops-dashboard-freshness">正在读取运维态势…</small>
+      </div>
+      <div class="ops-actions">
+        <label class="ops-dashboard-refresh">自动刷新
+          <select id="dashboard-refresh-interval">
+            <option value="0">关闭</option>
+            <option value="30">30 秒</option>
+            <option value="60" selected>1 分钟</option>
+            <option value="300">5 分钟</option>
+          </select>
+        </label>
+        <button id="refresh-dashboard" type="button">立即刷新</button>
+      </div>
+    </header>
+
+    <form id="dashboard-filters" class="ops-dashboard-filters" aria-label="数据库清单筛选">
+      <p>清单筛选 · 上方态势、优先队列与风险热点始终覆盖当前 Domain 全部 Target。</p>
+      <label>搜索数据库<input name="search" type="search" placeholder="名称或风险内容"></label>
+      <label>环境<select name="environment"><option value="">全部环境</option><option>PROD</option><option>STG</option><option>DEV</option></select></label>
+      <label>数据库<select name="db_type"><option value="">全部类型</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select></label>
+      <label>最低重要程度<select name="importance"><option value="1">L1 及以上</option><option value="3" selected>L3 及以上</option><option value="4">L4 及以上</option><option value="5">仅 L5</option></select></label>
+      <label>健康状态<select name="health"><option value="">全部状态</option><option value="CRITICAL">严重</option><option value="UNREACHABLE">不可达</option><option value="WARNING">警告</option><option value="BLIND_SPOT">数据盲区</option><option value="STALE">数据过期</option><option value="UNKNOWN">无有效数据</option><option value="HEALTHY">健康</option><option value="DISABLED">停用</option></select></label>
+      <label class="ops-dashboard-check"><input name="attention_only" type="checkbox">仅显示需要关注</label>
+      <button type="reset">重置</button>
+    </form>
+
+    <section id="dashboard-summary" class="ops-dashboard-summary" aria-label="当前态势"></section>
+
+    <section class="ops-dashboard-primary">
+      <article class="ops-panel ops-dashboard-attention">
+        <div class="ops-panel-head"><div><h2>优先处理队列</h2><p>按健康状态、Target Level、告警级别和持续时间排序。</p></div><span id="dashboard-attention-count"></span></div>
+        <div id="dashboard-attention" class="ops-dashboard-attention-list"><div class="ops-empty">正在读取待处理事项…</div></div>
+      </article>
+      <aside class="ops-panel ops-dashboard-health">
+        <div class="ops-panel-head"><div><h2>库群健康分布</h2><p>无数据不会计入健康。</p></div></div>
+        <div id="dashboard-health" class="ops-dashboard-health-list"></div>
+      </aside>
+    </section>
+
+    <section class="ops-panel ops-dashboard-risk-panel">
+      <div class="ops-panel-head">
+        <div><h2>风险热点</h2><p>容量、复制、备份和会话风险保持各自指标语义。</p></div>
+        <div id="dashboard-risk-tabs" class="ops-dashboard-tabs" role="tablist">
+          <button type="button" class="is-active" data-risk-category="">全部</button>
+          <button type="button" data-risk-category="CAPACITY">容量</button>
+          <button type="button" data-risk-category="REPLICATION">复制</button>
+          <button type="button" data-risk-category="BACKUP">备份</button>
+          <button type="button" data-risk-category="SESSION">会话与锁</button>
+        </div>
+      </div>
+      <div class="ops-table-wrap"><table class="ops-table ops-dashboard-table"><thead><tr><th>数据库</th><th>风险对象</th><th>类别</th><th>当前值</th><th>级别</th><th>证据时间</th><th>操作</th></tr></thead><tbody id="dashboard-risks"></tbody></table></div>
+    </section>
+
+    <section class="ops-dashboard-secondary">
+      <article class="ops-panel">
+        <div class="ops-panel-head"><div><h2>最近 24 小时运维结果</h2><p>自动诊断和日常巡检分别统计。</p></div></div>
+        <div id="dashboard-automation" class="ops-dashboard-automation"></div>
+      </article>
+      <article class="ops-panel">
+        <div class="ops-panel-head"><div><h2>最近活动</h2><p>只展示可下钻的告警和诊断状态变化。</p></div></div>
+        <div id="dashboard-activities" class="ops-dashboard-activities"></div>
+      </article>
+    </section>
+
+    <section class="ops-panel ops-dashboard-target-panel">
+      <div class="ops-panel-head"><div><h2>数据库清单</h2><p id="dashboard-target-count">按当前筛选显示数据库。</p></div></div>
+      <div class="ops-table-wrap"><table class="ops-table ops-dashboard-table ops-dashboard-target-table"><thead><tr><th>数据库</th><th>Level</th><th>环境 / 角色</th><th>健康</th><th>未关闭告警</th><th>容量风险</th><th>复制延迟</th><th>数据新鲜度</th><th>最近诊断</th><th>操作</th></tr></thead><tbody id="dashboard-targets"></tbody></table></div>
+    </section>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-dashboard.js?v=20260929_1"></script>
+</body>
+</html>

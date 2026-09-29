@@ -995,12 +995,12 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def get_fleet_dashboard(
+    async def get_dashboard(
         self, *, auth_context: AuthContext
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
-            f"{INTERNAL_API_V1}/aiops/fleet",
+            f"{INTERNAL_API_V1}/aiops/dashboard",
             auth_context=auth_context,
         )
 
