@@ -413,6 +413,11 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("CONSTRAINT_TYPE = 'C'", normalized)
         self.assertIn("GENERATED = 'USER NAME'", normalized)
         self.assertIn("DROP CONSTRAINT", normalized)
+        self.assertIn("DDL_LOCK_TIMEOUT = 60", normalized)
+        self.assertIn("SQLCODE = -54", normalized)
+        self.assertIn("-20064", normalized)
+        self.assertIn("SCHEMA_VERSION = 28", normalized)
+        self.assertIn("CONTRACT_VERSION = 'AIOPS-ORACLE-V18'", normalized)
         self.assertIn("28 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V18' AS CONTRACT_VERSION", normalized)
 
