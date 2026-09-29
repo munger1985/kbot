@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from typing import Any
 
 from aiops_agent.application.implementation.artifacts import GeneratedRunbookArtifact
@@ -91,11 +93,7 @@ def _facts(profile: ImplementationProfile):
             title="Oracle Data Pump Schema/PDB 逻辑迁移实施操作文档",
             policy_id="oracle.datapump.standard.v1",
             fact_tool_id="db.datapump.precheck",
-            required_facts=(
-                ("DATAPUMP_DIRECTORY_PATH", "需要确认数据库服务器可访问的目录路径。", RunbookFactSource.HOST_COLLECTOR, ("directory", "export", "import")),
-                ("SOURCE_SCHEMAS", "需要明确导出的 Schema 范围。", RunbookFactSource.EXPLICIT_USER_DECISION, ("export", "validation")),
-                ("TARGET_CONNECT_IDENTIFIER", "需要确认目标连接标识。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("import",)),
-            ),
+            required_facts=(),
             phases=(("assessment", "对象量、LOB、分区与字符集", ("assessment",)), ("mapping", "Schema、表空间与对象映射", ("mapping",)), ("directory_phase", "Directory 与目录权限", ("directory",)), ("export_phase", "一致性导出", ("export",)), ("transfer", "转储校验与传输", ("transfer",)), ("import_phase", "目标导入", ("import",)), ("validation_phase", "对象计数、无效对象和统计信息", ("validation",)), ("cutover", "业务切换与清理", ("cutover",))),
             stop_conditions=common_stops + ("源目标字符集、时区或对象兼容性未确认。",),
         ),
@@ -167,6 +165,7 @@ def compile_standard(
         ),),
     }
     artifacts: list[GeneratedRunbookArtifact] = []
+    derived_parameters = {"POLICY_TEMPLATE_ID": spec.policy_id}
     stage_name = profile.value.lower().replace("_", "-")
     stage = f"/var/tmp/kbot-runbooks/{stage_name}"
 
@@ -248,52 +247,314 @@ def compile_standard(
                 artifact_ref="upgrade.autoupgrade.config",
             ),)
     elif profile == ImplementationProfile.ORACLE_DATAPUMP_MIGRATION:
-        directory_path = value(context, merged, "DATAPUMP_DIRECTORY_PATH")
+        directory_name = "KBOT_DATAPUMP_DIR"
+        observed_directory_path = value(
+            context, merged, "DATAPUMP_DIRECTORY_PATH"
+        )
+        database_key = (
+            value(context, merged, "DB_UNIQUE_NAME")
+            or value(context, merged, "DATABASE_NAME")
+            or value(context, merged, "INSTANCE_NAME")
+            or "database"
+        )
+        path_key = re.sub(r"[^A-Za-z0-9_-]", "_", database_key).lower()
+        directory_path = observed_directory_path
+        if not directory_path.startswith("/"):
+            directory_path = f"/u01/app/oracle/admin/{path_key}/dpdump"
+
         schemas = value(context, merged, "SOURCE_SCHEMAS")
-        target = value(context, merged, "TARGET_CONNECT_IDENTIFIER")
-        if directory_path and schemas:
-            sql = (
-                f"CREATE OR REPLACE DIRECTORY KBOT_DATAPUMP_DIR AS '{directory_path}';\n"
-                "GRANT READ, WRITE ON DIRECTORY KBOT_DATAPUMP_DIR TO SYSTEM;\n"
+        schema_names = tuple(
+            item.strip().upper() for item in schemas.split(",") if item.strip()
+        )
+        if schema_names:
+            export_scope = "schemas=" + ",".join(schema_names)
+            export_mode = "SCHEMA"
+            owner_filter = "owner IN (" + ",".join(
+                f"'{item}'" for item in schema_names
+            ) + ")"
+            user_filter = "username IN (" + ",".join(
+                f"'{item}'" for item in schema_names
+            ) + ")"
+        else:
+            export_scope = "full=yes"
+            export_mode = "FULL_CURRENT_CONTAINER"
+            owner_filter = (
+                "owner IN (SELECT username FROM dba_users "
+                "WHERE oracle_maintained='N' AND common='NO')"
             )
-            export_par = (
-                f"schemas={schemas}\ndirectory=KBOT_DATAPUMP_DIR\n"
-                "dumpfile=kbot_export_%U.dmp\nlogfile=kbot_export.log\n"
-                "parallel=4\ncompression=all\nmetrics=yes\nlogtime=all\n"
-            )
-            artifacts.extend((
-                GeneratedRunbookArtifact("datapump.directory", f"{stage_name}/sql/create-directory.sql", sql, "text/x-sql", "0640", "oracle", f"{stage}/sql/create-directory.sql", "创建 Data Pump Directory。"),
-                GeneratedRunbookArtifact("datapump.export.par", f"{stage_name}/par/expdp.par", export_par, "text/plain", "0640", "oracle", f"{stage}/par/expdp.par", "源端 Schema 导出参数文件。"),
-            ))
-            commands["directory"] = (command(
-                "datapump.directory.apply", "创建并授权 Data Pump Directory",
+            user_filter = "oracle_maintained='N' AND common='NO'"
+
+        quoted_directory_path = shlex.quote(directory_path)
+        directory_sql = (
+            "WHENEVER SQLERROR EXIT SQL.SQLCODE\n"
+            f"CREATE OR REPLACE DIRECTORY {directory_name} AS "
+            f"'{directory_path}';\n"
+            "SELECT directory_name, directory_path FROM dba_directories "
+            f"WHERE directory_name='{directory_name}';\n"
+            "EXIT\n"
+        )
+        export_par = (
+            f"{export_scope}\n"
+            f"directory={directory_name}\n"
+            "dumpfile=kbot_export_%U.dmp\n"
+            "logfile=kbot_export.log\n"
+            "flashback_time=systimestamp\n"
+            "parallel=4\n"
+            "compression=all\n"
+            "metrics=yes\n"
+            "logtime=all\n"
+        )
+        import_par = (
+            f"{export_scope}\n"
+            f"directory={directory_name}\n"
+            "dumpfile=kbot_export_%U.dmp\n"
+            "logfile=kbot_import.log\n"
+            "parallel=4\n"
+            "metrics=yes\n"
+            "logtime=all\n"
+        )
+        preview_par = import_par.replace(
+            "logfile=kbot_import.log\n",
+            "logfile=kbot_import_preview.log\nsqlfile=kbot_import_preview.sql\n",
+        )
+        assessment_sql = (
+            "WHENEVER SQLERROR EXIT SQL.SQLCODE\n"
+            "SET PAGESIZE 500 LINESIZE 240 TRIMSPOOL ON\n"
+            "SELECT name, db_unique_name, open_mode, cdb, platform_name "
+            "FROM v$database;\n"
+            "SELECT parameter, value FROM nls_database_parameters "
+            "WHERE parameter IN ('NLS_CHARACTERSET','NLS_NCHAR_CHARACTERSET') "
+            "ORDER BY parameter;\n"
+            "SELECT version FROM v$timezone_file;\n"
+            "SELECT owner, object_type, COUNT(*) object_count "
+            f"FROM dba_objects WHERE {owner_filter} "
+            "GROUP BY owner, object_type ORDER BY owner, object_type;\n"
+            "SELECT owner, segment_type, ROUND(SUM(bytes)/1024/1024,2) mb "
+            f"FROM dba_segments WHERE {owner_filter} "
+            "GROUP BY owner, segment_type ORDER BY owner, segment_type;\n"
+            "SELECT owner, COUNT(*) lob_count FROM dba_lobs "
+            f"WHERE {owner_filter} GROUP BY owner ORDER BY owner;\n"
+            "SELECT table_owner owner, COUNT(*) partition_count "
+            f"FROM dba_tab_partitions WHERE table_owner IN "
+            "(SELECT username FROM dba_users WHERE " + user_filter + ") "
+            "GROUP BY table_owner ORDER BY table_owner;\n"
+            "EXIT\n"
+        )
+        mapping_sql = (
+            "WHENEVER SQLERROR EXIT SQL.SQLCODE\n"
+            "SET PAGESIZE 500 LINESIZE 240 TRIMSPOOL ON\n"
+            "SELECT username, default_tablespace, temporary_tablespace, "
+            "account_status FROM dba_users WHERE " + user_filter +
+            " ORDER BY username;\n"
+            "SELECT owner, tablespace_name, ROUND(SUM(bytes)/1024/1024,2) mb "
+            f"FROM dba_segments WHERE {owner_filter} "
+            "GROUP BY owner, tablespace_name ORDER BY owner, tablespace_name;\n"
+            "EXIT\n"
+        )
+        validation_sql = (
+            "WHENEVER SQLERROR EXIT SQL.SQLCODE\n"
+            "SET PAGESIZE 500 LINESIZE 240 TRIMSPOOL ON\n"
+            "SELECT owner, object_type, COUNT(*) object_count "
+            f"FROM dba_objects WHERE {owner_filter} "
+            "GROUP BY owner, object_type ORDER BY owner, object_type;\n"
+            "SELECT owner, object_type, COUNT(*) invalid_count "
+            f"FROM dba_objects WHERE status='INVALID' AND {owner_filter} "
+            "GROUP BY owner, object_type ORDER BY owner, object_type;\n"
+            "SELECT owner, COUNT(*) stale_or_missing_statistics "
+            "FROM dba_tab_statistics WHERE "
+            f"({owner_filter}) AND (stale_stats='YES' OR last_analyzed IS NULL) "
+            "GROUP BY owner ORDER BY owner;\n"
+            "EXIT\n"
+        )
+        artifacts.extend((
+            GeneratedRunbookArtifact(
+                "datapump.assessment", f"{stage_name}/sql/assess-source.sql",
+                assessment_sql, "text/x-sql", "0640", "oracle",
+                f"{stage}/sql/assess-source.sql", "源端对象、容量、字符集和时区评估 SQL。",
+            ),
+            GeneratedRunbookArtifact(
+                "datapump.mapping", f"{stage_name}/sql/review-mapping.sql",
+                mapping_sql, "text/x-sql", "0640", "oracle",
+                f"{stage}/sql/review-mapping.sql", "源目标 Schema 与表空间映射核对 SQL。",
+            ),
+            GeneratedRunbookArtifact(
+                "datapump.directory", f"{stage_name}/sql/create-directory.sql",
+                directory_sql, "text/x-sql", "0640", "oracle",
+                f"{stage}/sql/create-directory.sql", "在源端和目标端创建 Data Pump Directory。",
+            ),
+            GeneratedRunbookArtifact(
+                "datapump.export.par", f"{stage_name}/par/expdp.par",
+                export_par, "text/plain", "0640", "oracle",
+                f"{stage}/par/expdp.par", "已固化导出范围与一致性时间点的 expdp 参数文件。",
+            ),
+            GeneratedRunbookArtifact(
+                "datapump.import.preview.par", f"{stage_name}/par/impdp-preview.par",
+                preview_par, "text/plain", "0640", "oracle",
+                f"{stage}/par/impdp-preview.par", "正式导入前生成 SQLFILE 的 impdp 参数文件。",
+            ),
+            GeneratedRunbookArtifact(
+                "datapump.import.par", f"{stage_name}/par/impdp.par",
+                import_par, "text/plain", "0640", "oracle",
+                f"{stage}/par/impdp.par", "目标端本机 SYSDBA 导入参数文件。",
+            ),
+            GeneratedRunbookArtifact(
+                "datapump.validation", f"{stage_name}/sql/validate-objects.sql",
+                validation_sql, "text/x-sql", "0640", "oracle",
+                f"{stage}/sql/validate-objects.sql", "源端和目标端对象、无效对象及统计信息校验 SQL。",
+            ),
+        ))
+        commands["assessment"] = (command(
+            "datapump.assessment", "评估源端对象、容量和兼容性",
+            f"sqlplus / as sysdba @{stage}/sql/assess-source.sql",
+            executor=RunbookExecutor.SQLPLUS, run_as="oracle",
+            artifact_ref="datapump.assessment",
+        ),)
+        commands["mapping"] = (
+            command(
+                "datapump.mapping.source", "记录源端 Schema 与表空间映射",
+                f"sqlplus / as sysdba @{stage}/sql/review-mapping.sql",
+                executor=RunbookExecutor.SQLPLUS, run_as="oracle",
+                artifact_ref="datapump.mapping", node_scope=("source",),
+            ),
+            command(
+                "datapump.mapping.target", "核对目标端表空间和用户冲突",
+                f"sqlplus / as sysdba @{stage}/sql/review-mapping.sql",
+                executor=RunbookExecutor.SQLPLUS, run_as="oracle",
+                artifact_ref="datapump.mapping", node_scope=("target",),
+            ),
+        )
+        commands["directory"] = (
+            command(
+                "datapump.directory.os.source", "在源端创建转储目录",
+                f"install -d -m 0750 -o oracle -g oinstall {quoted_directory_path}",
+                executor=RunbookExecutor.BASH, run_as="root",
+                node_scope=("source",), risk=RunbookRiskLevel.MEDIUM,
+            ),
+            command(
+                "datapump.directory.db.source", "在源库创建 Directory 对象",
                 f"sqlplus / as sysdba @{stage}/sql/create-directory.sql",
                 executor=RunbookExecutor.SQLPLUS, run_as="oracle",
-                artifact_ref="datapump.directory", risk=RunbookRiskLevel.MEDIUM,
-            ),)
-            commands["export"] = (command(
+                node_scope=("source",), artifact_ref="datapump.directory",
+            ),
+            command(
+                "datapump.directory.os.target", "在目标端创建转储目录",
+                f"install -d -m 0750 -o oracle -g oinstall {quoted_directory_path}",
+                executor=RunbookExecutor.BASH, run_as="root",
+                node_scope=("target",), risk=RunbookRiskLevel.MEDIUM,
+            ),
+            command(
+                "datapump.directory.db.target", "在目标库创建 Directory 对象",
+                f"sqlplus / as sysdba @{stage}/sql/create-directory.sql",
+                executor=RunbookExecutor.SQLPLUS, run_as="oracle",
+                node_scope=("target",), artifact_ref="datapump.directory",
+            ),
+        )
+        commands["export"] = (
+            command(
+                "datapump.export.precheck", "确认不存在同名历史转储",
+                f"test -z \"$(find {quoted_directory_path} -maxdepth 1 "
+                "-type f -name 'kbot_export_*.dmp' -print -quit)\"",
+                executor=RunbookExecutor.BASH, run_as="oracle",
+                node_scope=("source",),
+            ),
+            command(
                 "datapump.export", "执行一致性逻辑导出",
-                f"expdp / parfile={stage}/par/expdp.par",
+                f"expdp '/ as sysdba' parfile={stage}/par/expdp.par",
                 executor=RunbookExecutor.DATAPUMP, run_as="oracle",
-                artifact_ref="datapump.export.par", risk=RunbookRiskLevel.MEDIUM,
-            ),)
-        if target and schemas:
-            import_par = (
-                f"schemas={schemas}\ndirectory=KBOT_DATAPUMP_DIR\n"
-                "dumpfile=kbot_export_%U.dmp\nlogfile=kbot_import.log\n"
-                "parallel=4\nmetrics=yes\nlogtime=all\n"
-            )
-            artifacts.append(GeneratedRunbookArtifact(
-                "datapump.import.par", f"{stage_name}/par/impdp.par", import_par,
-                "text/plain", "0640", "oracle", f"{stage}/par/impdp.par",
-                "目标端 Schema 导入参数文件。",
-            ))
-            commands["import"] = (command(
-                "datapump.import", "执行目标端逻辑导入",
-                f"impdp /@{target} parfile={stage}/par/impdp.par",
+                node_scope=("source",), artifact_ref="datapump.export.par",
+                risk=RunbookRiskLevel.MEDIUM,
+            ),
+        )
+        commands["transfer"] = (
+            command(
+                "datapump.transfer.checksum.source", "在源端生成转储摘要清单",
+                f"cd {quoted_directory_path}\n"
+                "sha256sum kbot_export_*.dmp kbot_export.log > kbot_export.sha256\n"
+                "sha256sum -c kbot_export.sha256",
+                executor=RunbookExecutor.BASH, run_as="oracle",
+                node_scope=("source",),
+            ),
+            command(
+                "datapump.transfer.approved-channel", "通过批准通道传输转储文件",
+                "将 kbot_export_*.dmp、kbot_export.log 和 kbot_export.sha256 "
+                f"从源端 {directory_path} 传输到目标端同一路径。"
+                "传输工具、主机地址和网络账号以已批准的运维通道为准；"
+                "本静态文档不伪造目标主机或凭据。",
+                executor=RunbookExecutor.MANUAL, run_as="DBA",
+                node_scope=("source", "target"), risk=RunbookRiskLevel.MEDIUM,
+            ),
+            command(
+                "datapump.transfer.checksum.target", "在目标端校验转储摘要",
+                f"cd {quoted_directory_path}\nsha256sum -c kbot_export.sha256",
+                executor=RunbookExecutor.BASH, run_as="oracle",
+                node_scope=("target",),
+            ),
+        )
+        commands["import"] = (
+            command(
+                "datapump.import.preview", "在目标端生成导入 SQL 预览",
+                f"impdp '/ as sysdba' parfile={stage}/par/impdp-preview.par",
                 executor=RunbookExecutor.DATAPUMP, run_as="oracle",
-                artifact_ref="datapump.import.par", risk=RunbookRiskLevel.HIGH,
-            ),)
+                node_scope=("target",),
+                artifact_ref="datapump.import.preview.par",
+            ),
+            command(
+                "datapump.import", "审批 SQL 预览后执行目标端导入",
+                f"impdp '/ as sysdba' parfile={stage}/par/impdp.par",
+                executor=RunbookExecutor.DATAPUMP, run_as="oracle",
+                node_scope=("target",), artifact_ref="datapump.import.par",
+                risk=RunbookRiskLevel.HIGH,
+            ),
+        )
+        commands["validation"] = (
+            command(
+                "datapump.validation.source", "在源端输出对象基线",
+                f"sqlplus / as sysdba @{stage}/sql/validate-objects.sql",
+                executor=RunbookExecutor.SQLPLUS, run_as="oracle",
+                node_scope=("source",), artifact_ref="datapump.validation",
+            ),
+            command(
+                "datapump.validation.target", "在目标端核对对象、无效对象和统计信息",
+                f"sqlplus / as sysdba @{stage}/sql/validate-objects.sql",
+                executor=RunbookExecutor.SQLPLUS, run_as="oracle",
+                node_scope=("target",), artifact_ref="datapump.validation",
+            ),
+        )
+        commands["cutover"] = (
+            command(
+                "datapump.cutover.database", "执行切换前数据库最终核验",
+                "SELECT name, open_mode, database_role FROM v$database;\n"
+                "SELECT owner, object_type, COUNT(*) FROM dba_objects "
+                f"WHERE status='INVALID' AND {owner_filter} "
+                "GROUP BY owner, object_type ORDER BY owner, object_type;",
+                executor=RunbookExecutor.SQLPLUS, run_as="SYSDBA",
+                node_scope=("target",),
+            ),
+            command(
+                "datapump.cutover.application", "按批准变更单切换应用连接并验证业务",
+                "停止源端写入，记录最终导出日志和对象基线；按已批准变更单更新应用连接，"
+                "完成登录、查询、写入和批处理验证。若任一验收失败，立即恢复原连接。",
+                executor=RunbookExecutor.MANUAL, run_as="DBA/应用负责人",
+                node_scope=("application",), risk=RunbookRiskLevel.CRITICAL,
+            ),
+        )
+        derived_parameters.update({
+            "DATAPUMP_DIRECTORY_NAME": directory_name,
+            "DATAPUMP_DIRECTORY_PATH": directory_path,
+            "DATAPUMP_DIRECTORY_SOURCE": (
+                "TARGET_OR_DATABASE_FACT"
+                if observed_directory_path.startswith("/")
+                else "DERIVED_STANDARD_PATH"
+            ),
+            "DATAPUMP_TARGET_PATH_REVIEW_REQUIRED": "YES",
+            "EXPORT_MODE": export_mode,
+            "SOURCE_SCHEMAS": (
+                ",".join(schema_names)
+                if schema_names
+                else "ALL_BUSINESS_SCHEMAS_IN_CURRENT_CONTAINER"
+            ),
+            "TARGET_EXECUTION_MODE": "LOCAL_SYSDBA",
+        })
     elif profile == ImplementationProfile.ORACLE_DATABASE_MIGRATION:
         method = value(context, merged, "MIGRATION_METHOD").upper()
         source_tns = value(context, merged, "SOURCE_CONNECT_IDENTIFIER")
@@ -377,5 +638,5 @@ def compile_standard(
         context=context,
         commands_by_phase=commands,
         artifacts=tuple(artifacts),
-        derived_parameters={"POLICY_TEMPLATE_ID": spec.policy_id},
+        derived_parameters=derived_parameters,
     )

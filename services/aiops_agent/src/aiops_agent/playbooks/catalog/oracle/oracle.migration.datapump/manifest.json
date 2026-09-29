@@ -30,11 +30,9 @@
         "V_$INSTANCE",
         "V_$PARAMETER",
         "V_$DATAFILE",
-        "V_$LOG",
-        "V_$BACKUP_SET",
-        "V_$RMAN_CONFIGURATION",
-        "DBA_REGISTRY",
-        "NLS_DATABASE_PARAMETERS"
+        "NLS_DATABASE_PARAMETERS",
+        "DBA_DIRECTORIES",
+        "DBA_USERS"
     ],
     "required_entitlements": [],
     "input_schema": "oracle.migration.datapump.input.v1",

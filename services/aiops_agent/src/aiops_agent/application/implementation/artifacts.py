@@ -58,6 +58,23 @@ def _profile_usage(
     target_root: str,
 ) -> str:
     """生成不同实施类型的最小、安全使用入口。"""
+    if profile == "ORACLE_DATAPUMP_MIGRATION":
+        stage_root = (
+            target_root
+            or "/var/tmp/kbot-runbooks/oracle-datapump-migration"
+        )
+        return f"""## Data Pump 包使用顺序
+
+1. 将本 ZIP 分别部署到源数据库主机和目标数据库主机的 `{stage_root}`。
+2. 按主文档参数附录核对导出模式、Schema 范围、Directory 路径和目标端路径审阅标记。
+3. 先执行 `sql/assess-source.sql` 和 `sql/review-mapping.sql`，确认字符集、时区、对象及表空间差异。
+4. 在源端和目标端分别创建文件系统目录，再执行 `sql/create-directory.sql`。
+5. 源端使用 `par/expdp.par` 导出并生成 SHA-256 清单；通过批准通道传输转储后在目标端校验摘要。
+6. 目标端先使用 `par/impdp-preview.par` 生成 SQLFILE，审批通过后再使用 `par/impdp.par` 正式导入。
+7. 在源端和目标端分别执行 `sql/validate-objects.sql`，对比对象计数、无效对象和统计信息。
+
+目标端命令使用本机 OS 认证，不需要在文件中保存 TNS、用户名或密码。
+"""
     if profile != "ORACLE_RMAN_BACKUP_BUILD":
         return (
             "## 本方案的执行方式\n\n"

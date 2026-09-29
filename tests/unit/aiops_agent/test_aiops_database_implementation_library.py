@@ -91,6 +91,41 @@ def _database_fact(
     )
 
 
+def _datapump_fact(
+    *,
+    directory_path: str = "/u03/oracle/dpump/testdb",
+    source_schemas: str = "APP_CORE,APP_REPORT",
+) -> TurnEvidenceFact:
+    names = (
+        "database_name",
+        "db_unique_name",
+        "datapump_directory_name",
+        "datapump_directory_path",
+        "source_schemas",
+        "source_schema_count",
+    )
+    return TurnEvidenceFact(
+        evidence_ref="evidence:datapump-precheck",
+        artifact_id="artifact-datapump-precheck",
+        source_id="oracle-source",
+        step_id="precheck",
+        tool_id="db.datapump.precheck",
+        measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+        presentation_kind=PresentationPreference.TABLE,
+        captured_at="2026-09-29T08:00:00Z",
+        columns=tuple({"name": name} for name in names),
+        rows=((
+            "TESTDB",
+            "testdb",
+            "DATA_PUMP_DIR" if directory_path else "",
+            directory_path,
+            source_schemas,
+            len(source_schemas.split(",")) if source_schemas else 0,
+        ),),
+        row_count=1,
+    )
+
+
 class DatabaseImplementationLibraryTest(unittest.TestCase):
     def test_registry_covers_every_implementation_profile(self) -> None:
         self.assertEqual(
@@ -125,7 +160,10 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
 
     def test_missing_infrastructure_facts_block_steps_without_placeholders(self) -> None:
         for profile in registered_implementation_profiles():
-            if profile == ImplementationProfile.ORACLE_ADG_BUILD:
+            if profile in {
+                ImplementationProfile.ORACLE_ADG_BUILD,
+                ImplementationProfile.ORACLE_DATAPUMP_MIGRATION,
+            }:
                 continue
             runbook = compile_implementation_runbook(
                 profile=profile,
@@ -141,6 +179,118 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             serialized = runbook.model_dump_json()
             for marker in ("${", "CHANGEME", "TODO", "<NODE", "<SCAN"):
                 self.assertNotIn(marker, serialized)
+
+    def test_datapump_resolves_static_document_without_required_inputs(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_DATAPUMP_MIGRATION,
+            evidence=(
+                _database_fact(tool_id="db.instance.identity"),
+                _datapump_fact(),
+            ),
+            context={},
+        )
+
+        self.assertEqual(RunbookStatus.READY, runbook.status)
+        self.assertFalse(runbook.missing_facts)
+        self.assertTrue(
+            all(
+                step.applicability.value != "BLOCKED" and step.commands
+                for phase in runbook.phases
+                for step in phase.steps
+            )
+        )
+        serialized = runbook.model_dump_json()
+        self.assertNotIn("TARGET_CONNECT_IDENTIFIER", serialized)
+        self.assertNotIn("等待必要事实", serialized)
+        self.assertIn("expdp '/ as sysdba'", serialized)
+        self.assertIn("impdp '/ as sysdba'", serialized)
+        self.assertIn("sha256sum -c kbot_export.sha256", serialized)
+        self.assertIn("/u03/oracle/dpump/testdb", serialized)
+
+        parameters = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertEqual("SCHEMA", parameters["EXPORT_MODE"])
+        self.assertEqual(
+            "APP_CORE,APP_REPORT",
+            parameters["SOURCE_SCHEMAS"],
+        )
+        self.assertEqual("LOCAL_SYSDBA", parameters["TARGET_EXECUTION_MODE"])
+
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertIn(
+            "schemas=APP_CORE,APP_REPORT",
+            generated["datapump.export.par"],
+        )
+        self.assertIn(
+            "flashback_time=systimestamp",
+            generated["datapump.export.par"],
+        )
+        self.assertIn(
+            "sqlfile=kbot_import_preview.sql",
+            generated["datapump.import.preview.par"],
+        )
+        self.assertIn(
+            "stale_or_missing_statistics",
+            generated["datapump.validation"],
+        )
+
+        payload = runbook.model_dump(mode="json")
+        archive_payload = render_runbook_artifact_zip(payload, generated)
+        with zipfile.ZipFile(io.BytesIO(archive_payload)) as archive:
+            names = archive.namelist()
+            self.assertIn("README.md", names)
+            self.assertIn(
+                "oracle-datapump-migration/par/expdp.par",
+                names,
+            )
+            self.assertIn(
+                "oracle-datapump-migration/par/impdp.par",
+                names,
+            )
+            self.assertIn(
+                "oracle-datapump-migration/sql/validate-objects.sql",
+                names,
+            )
+
+    def test_datapump_derives_path_and_full_export_when_no_schemas_found(
+        self,
+    ) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_DATAPUMP_MIGRATION,
+            evidence=(
+                _database_fact(tool_id="db.instance.identity"),
+                _datapump_fact(directory_path="", source_schemas=""),
+            ),
+            context={},
+        )
+
+        self.assertEqual(RunbookStatus.READY, runbook.status)
+        self.assertFalse(runbook.missing_facts)
+        parameters = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertEqual(
+            "/u01/app/oracle/admin/testdb/dpdump",
+            parameters["DATAPUMP_DIRECTORY_PATH"],
+        )
+        self.assertEqual(
+            "DERIVED_STANDARD_PATH",
+            parameters["DATAPUMP_DIRECTORY_SOURCE"],
+        )
+        self.assertEqual(
+            "FULL_CURRENT_CONTAINER",
+            parameters["EXPORT_MODE"],
+        )
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertIn("full=yes", generated["datapump.export.par"])
+        self.assertNotIn("schemas=", generated["datapump.export.par"])
 
     def test_rman_backup_artifacts_are_hashed_and_zip_is_deterministic(self) -> None:
         runbook = compile_implementation_runbook(

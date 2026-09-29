@@ -118,5 +118,12 @@ RAC、补丁、升级和迁移等档案遇到 IP、VIP、SCAN、WWID、目标环
 `BLOCKED_BY_REQUIRED_FACTS`：文档仍完整展示所有阶段，但相关步骤不会生成猜测值或占位符命令。
 事实必须来自 Target、部署拓扑、Host Collector、策略模板或用户明确的业务决策。
 
+Data Pump 静态实施文档不把 Directory 路径、业务 Schema 和目标连接标识作为分阶段交互输入。
+生成时优先读取现有 `DATA_PUMP_DIR` 和当前容器非 Oracle 维护 Schema；没有可用目录时按
+`DB_UNIQUE_NAME` 派生标准目录，没有可用业务 Schema 清单时生成当前容器 `FULL=YES` 方案。
+源端和目标端均创建同名 `KBOT_DATAPUMP_DIR`，目标导入在目标主机使用本机 OS 认证执行，避免在
+文档中伪造 TNS、主机名或凭据。派生目录会在参数附录标记为需执行前审阅，但不会把后续阶段降为
+“等待必要事实”。
+
 RAC、RMAN 和其他常用档案的业务默认值、交付脚本、事实来源、阶段、风险和验收标准见
 [AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。

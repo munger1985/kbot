@@ -589,6 +589,13 @@ FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracl
 
 - 生成 `expdp`/`impdp` parfile，不把超长参数放在单行 Shell；
 - 读取对象量、LOB、分区、目录、字符集、时区和无效对象；
+- 优先复用源库 `DATA_PUMP_DIR` 的文件系统路径；未取得时按 `DB_UNIQUE_NAME` 派生
+  `/u01/app/oracle/admin/<db_unique_name>/dpdump`，并在源端和目标端给出目录创建命令；
+- 自动把当前容器 `ORACLE_MAINTAINED='N' AND COMMON='NO'` 的用户固化为 Schema 导出范围；
+  查询不到业务 Schema 时改为当前容器 `FULL=YES`，不生成需要用户补录的阻断步骤；
+- 目标端使用本机 `impdp '/ as sysdba'`，不要求静态文档补充或猜测目标 TNS；
+- 导出固定使用 `FLASHBACK_TIME=SYSTIMESTAMP`，传输阶段生成并核对 SHA-256 清单，导入前先通过
+  `SQLFILE` 预览实际 DDL；
 - 输出表空间映射、Schema 映射、统计信息、对象计数和无效对象验证；
 - 密码通过 Wallet 或运行时安全输入，不写入 parfile。
 
