@@ -144,6 +144,36 @@ class ConversationStart(AIOpsContract):
     first_turn: "TurnCreate"
 
 
+class ConversationStarterSelection(AIOpsContract):
+    """用户从功能目录选择的结构化入口。"""
+
+    starter_id: str = Field(
+        pattern=r"^[a-z][a-z0-9_.-]{2,127}$"
+    )
+    catalog_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    parameters: JsonObject = Field(default_factory=dict)
+
+
+class ConversationStarterView(AIOpsContract):
+    starter_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,127}$")
+    category: Literal["RECOMMENDED", "DIAGNOSTIC", "REPORT", "RUNBOOK"]
+    title: str = Field(min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=1000)
+    supported_db_types: tuple[str, ...] = Field(min_length=1, max_length=3)
+    execution_mode: Literal["DIAGNOSTIC", "REPORT", "RUNBOOK"]
+    input_schema: tuple[JsonObject, ...] = Field(default=(), max_length=8)
+    sort_order: int = Field(ge=0)
+    status: Literal["AVAILABLE", "LIMITED", "UNAVAILABLE"]
+    availability_reason: str | None = Field(default=None, max_length=1000)
+
+
+class ConversationStarterCatalogView(AIOpsContract):
+    catalog_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    target_id: UUIDv7
+    db_type: str = Field(min_length=1, max_length=32)
+    starters: tuple[ConversationStarterView, ...]
+
+
 class ConversationReceipt(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     conversation_id: UUIDv7
@@ -175,9 +205,16 @@ class ConversationSummary(AIOpsContract):
 
 class TurnCreate(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
-    content: tuple["InputContent", ...] = Field(min_length=1, max_length=16)
+    content: tuple["InputContent", ...] = Field(default=(), max_length=16)
     idempotency_key: str = Field(min_length=1, max_length=128)
     source_run_id: UUIDv7 | None = None
+    starter: ConversationStarterSelection | None = None
+
+    @model_validator(mode="after")
+    def validate_input(self) -> "TurnCreate":
+        if not self.content and self.starter is None:
+            raise ValueError("Turn 必须包含对话内容或功能入口选择")
+        return self
 
 
 class TurnReceipt(AIOpsContract):

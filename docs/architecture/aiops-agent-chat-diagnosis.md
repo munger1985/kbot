@@ -22,6 +22,8 @@ ADG 前置 Tool、确定性编译和执行升级边界见
 [AIOps 数据库实施方案 Runbook 技术设计](aiops-implementation-runbooks.md)。
 RAC、RMAN、补丁、升级和迁移等扩展档案的契约、事实和脚本包设计见
 [AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。
+新会话结构化功能目录、选择冻结和确定性规划分支见
+[智能运维功能入口技术设计](aiops-conversation-starters.md)。
 
 ## 2. 当前实现问题
 

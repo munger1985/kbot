@@ -162,7 +162,10 @@ class TurnPlannerService:
                     "client_metadata": {
                         "inspection": dict(
                             execution_context.get("inspection") or {}
-                        )
+                        ),
+                        "conversation_starter": dict(
+                            execution_context.get("conversation_starter") or {}
+                        ),
                     },
                     "target_facts": target_facts,
                 },

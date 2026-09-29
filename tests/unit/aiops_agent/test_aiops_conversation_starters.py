@@ -1,0 +1,167 @@
+"""新会话功能入口目录与确定性计划测试。"""
+
+from __future__ import annotations
+
+import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from aiops_agent.application.conversation_starters import ConversationStarterCatalog
+from aiops_agent.application.investigation.service import TurnPlanningService
+from platform_core.contracts.aiops import ConversationStarterSelection
+
+
+def _target(**overrides):
+    values = {
+        "target_id": "target-1",
+        "db_type": "ORACLE",
+        "status": "ENABLED",
+        "readonly_connection_enabled": True,
+        "connectivity_status": "CONNECTED",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+class ConversationStarterCatalogTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.catalog = ConversationStarterCatalog()
+
+    def test_catalog_filters_database_type_and_hides_internal_planning(self) -> None:
+        payload = self.catalog.list_for_target(_target(db_type="MYSQL"))
+        ids = {item["starter_id"] for item in payload["starters"]}
+        self.assertIn("database.health.overview", ids)
+        self.assertIn("database.replication.status", ids)
+        self.assertNotIn("oracle.report.awr", ids)
+        self.assertTrue(all("planning" not in item for item in payload["starters"]))
+
+    def test_unavailable_target_disables_every_starter(self) -> None:
+        payload = self.catalog.list_for_target(
+            _target(readonly_connection_enabled=False)
+        )
+        self.assertTrue(payload["starters"])
+        self.assertEqual(
+            {"UNAVAILABLE"},
+            {item["status"] for item in payload["starters"]},
+        )
+
+    def test_unknown_connectivity_is_limited_but_still_selectable(self) -> None:
+        payload = self.catalog.list_for_target(
+            _target(connectivity_status="UNKNOWN")
+        )
+        self.assertEqual(
+            {"LIMITED"},
+            {item["status"] for item in payload["starters"]},
+        )
+
+    def test_awr_diff_requires_equal_time_windows(self) -> None:
+        selection = ConversationStarterSelection(
+            starter_id="oracle.report.awr-diff",
+            catalog_version="1.0.0",
+            parameters={
+                "first_begin_time": "2026-09-28T08:00:00+00:00",
+                "first_end_time": "2026-09-28T09:00:00+00:00",
+                "second_begin_time": "2026-09-28T10:00:00+00:00",
+                "second_end_time": "2026-09-28T12:00:00+00:00",
+                "timezone": "Asia/Shanghai",
+            },
+        )
+        with self.assertRaisesRegex(Exception, "必须等长"):
+            self.catalog.freeze(selection=selection, target=_target())
+
+    def test_freeze_uses_server_catalog_planning_and_message(self) -> None:
+        frozen = self.catalog.freeze(
+            selection=ConversationStarterSelection(
+                starter_id="oracle.runbook.adg-build",
+                catalog_version="1.0.0",
+            ),
+            target=_target(),
+        )
+        self.assertEqual("IMPLEMENTATION", frozen["planning"]["kind"])
+        self.assertEqual(
+            "ORACLE_ADG_BUILD",
+            frozen["planning"]["implementation_profile"],
+        )
+        self.assertEqual("执行功能：ADG 部署文档", frozen["user_message"])
+
+    def test_awr_diff_compiler_builds_snapshots_reports_and_diff(self) -> None:
+        context = SimpleNamespace(
+            question="执行 AWR 对比",
+            target_context={"db_type": "ORACLE", "display_name": "TestDB"},
+            conversation_starter={"starter_id": "oracle.report.awr-diff"},
+        )
+        output, tool_ids = TurnPlanningService._starter_diagnostic_output(
+            object.__new__(TurnPlanningService),
+            context=context,
+            kind="AWR_DIFF",
+            planning={},
+            parameters={
+                "first_begin_time": "2026-09-28T08:00:00+00:00",
+                "first_end_time": "2026-09-28T09:00:00+00:00",
+                "second_begin_time": "2026-09-28T10:00:00+00:00",
+                "second_end_time": "2026-09-28T11:00:00+00:00",
+            },
+            title="生成 AWR 对比报告",
+        )
+        self.assertEqual(
+            (
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+                "db.oracle.awr.report",
+                "db.oracle.awr.diff_report",
+            ),
+            tuple(action.tool_id for action in output.plan.actions),
+        )
+        self.assertIn("db.oracle.awr.diff_report", tool_ids)
+        self.assertEqual(1, len(output.task_frame.completion_requirements))
+
+
+class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
+    async def test_adg_starter_maps_directly_to_implementation_profile(self) -> None:
+        service = object.__new__(TurnPlanningService)
+        service._record_planning_route = AsyncMock()
+        context = SimpleNamespace(
+            question="执行功能：ADG 部署文档",
+            target_context={"db_type": "ORACLE", "display_name": "TestDB"},
+            conversation_starter={
+                "starter_id": "oracle.runbook.adg-build",
+                "catalog_version": "1.0.0",
+                "title": "ADG 部署文档",
+                "parameters": {},
+                "planning": {
+                    "kind": "IMPLEMENTATION",
+                    "implementation_profile": "ORACLE_ADG_BUILD",
+                },
+            },
+        )
+        investigation, tools, playbooks, route = (
+            await service._plan_conversation_starter(
+                context=context,
+                available_tools=(
+                    {"tool_id": "db.instance.identity"},
+                    {"tool_id": "db.ha.adg_precheck"},
+                ),
+                available_playbooks=(
+                    {"playbook_id": "oracle.ha.adg_build"},
+                ),
+            )
+        )
+        self.assertEqual(
+            "ORACLE_ADG_BUILD",
+            investigation.task_frame.implementation_profile,
+        )
+        self.assertEqual(
+            ("db.instance.identity", "db.ha.adg_precheck"),
+            tuple(item["tool_id"] for item in tools),
+        )
+        self.assertEqual(
+            ("oracle.ha.adg_build",),
+            tuple(item["playbook_id"] for item in playbooks),
+        )
+        self.assertEqual("CONVERSATION_STARTER", route["mode"])
+        service._record_planning_route.assert_awaited_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

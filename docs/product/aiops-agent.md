@@ -29,6 +29,8 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 
 人工对话的权威设计见
 [AIOps Agent 专业 DBA 对话诊断设计](aiops-agent-chat-diagnosis.md)。
+新会话的 Target 感知功能菜单、参数表单和自由提问并行入口见
+[智能运维新会话功能引导](aiops-conversation-starters.md)。
 
 ### Oracle 原生工作负载报告
 

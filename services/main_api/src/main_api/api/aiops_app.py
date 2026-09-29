@@ -22,6 +22,8 @@ from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 from platform_core.contracts.aiops import (
     ConversationUploadReceipt,
+    ConversationStarterSelection,
+    ConversationStarterCatalogView,
     ConversationSummary,
     InputContent,
     TargetFactConfirmCommand,
@@ -124,7 +126,8 @@ class AIOpsAgentUpdatePayload(_Payload):
 class ConversationStartPayload(_Payload):
     agent_id: UUID
     target_id: UUID
-    content: list[InputContent] = Field(min_length=1, max_length=16)
+    content: list[InputContent] = Field(default_factory=list, max_length=16)
+    starter: ConversationStarterSelection | None = None
     title: str | None = Field(default=None, min_length=1, max_length=256)
     source_situation_id: UUID | None = None
     source_run_id: UUID | None = None
@@ -133,12 +136,21 @@ class ConversationStartPayload(_Payload):
     def validate_source(self) -> "ConversationStartPayload":
         if self.source_situation_id is not None and self.source_run_id is not None:
             raise ValueError("会话来源只能选择 Situation 或 Run 其中之一")
+        if not self.content and self.starter is None:
+            raise ValueError("会话必须包含内容或功能入口选择")
         return self
 
 
 class AIOpsConversationTurnPayload(_Payload):
-    content: list[InputContent] = Field(min_length=1, max_length=16)
+    content: list[InputContent] = Field(default_factory=list, max_length=16)
     source_run_id: UUID | None = None
+    starter: ConversationStarterSelection | None = None
+
+    @model_validator(mode="after")
+    def validate_input(self) -> "AIOpsConversationTurnPayload":
+        if not self.content and self.starter is None:
+            raise ValueError("Turn 必须包含内容或功能入口选择")
+        return self
 
 
 class ReportTemplateCreatePayload(_Payload):
@@ -542,8 +554,32 @@ async def start_conversation(
                     if payload.source_run_id
                     else None
                 ),
+                "starter": (
+                    payload.starter.model_dump(mode="json")
+                    if payload.starter is not None
+                    else None
+                ),
             },
         },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get(
+    "/conversation-starters",
+    response_model=ConversationStarterCatalogView,
+)
+async def list_conversation_starters(
+    request: Request,
+    target_id: UUID,
+    agent_id: UUID,
+):
+    """返回当前 Agent 与 Target 可以执行的结构化功能入口。"""
+    await _require(request, "aiops:use")
+    require_app_api_agent(request, agent_id)
+    return await _client(request).list_conversation_starters(
+        agent_id=agent_id,
+        target_id=target_id,
         auth_context=request.state.auth_context,
     )
 
@@ -630,6 +666,11 @@ async def create_conversation_turn(
             "idempotency_key": idempotency_key,
             "source_run_id": (
                 str(payload.source_run_id) if payload.source_run_id else None
+            ),
+            "starter": (
+                payload.starter.model_dump(mode="json")
+                if payload.starter is not None
+                else None
             ),
         },
         auth_context=request.state.auth_context,

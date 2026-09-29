@@ -88,6 +88,19 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("selectedFiles", workspace)
         self.assertIn("HTML_TEXT_EXTRACT", (ROOT / "services" / "aiops_agent" / "src" / "aiops_agent" / "application" / "conversation_inputs.py").read_text(encoding="utf-8"))
 
+    def test_chat_exposes_target_aware_conversation_starters(self):
+        chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('id="open-starter-menu"', chat)
+        self.assertIn('id="starter-dialog"', chat)
+        self.assertIn("/conversation-starters?agent_id=", workspace)
+        self.assertIn("starterCatalogVersion", workspace)
+        self.assertIn("executeStarter", workspace)
+        self.assertIn("datetime-local", workspace)
+        self.assertNotIn("includes(\"ADG\")", workspace)
+
     def test_chat_reloads_images_through_authenticated_api(self):
         auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
             encoding="utf-8"

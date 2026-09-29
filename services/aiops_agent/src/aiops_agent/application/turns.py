@@ -14,6 +14,9 @@ from aiops_agent.application.inspections.check_catalog import (
     compile_selected_check_steps,
     normalize_selected_check_ids,
 )
+from aiops_agent.application.conversation_starters import (
+    ConversationStarterCatalog,
+)
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.configuration.projections import _target_fact_view
 from aiops_agent.application.errors import (
@@ -50,6 +53,7 @@ from platform_core.contracts.aiops import (
     ConversationSourceType,
     TargetFactConfirmCommand,
     TargetFactView,
+    InputContent,
     TurnCreate,
 )
 from platform_core.contracts.aiops.types import WorkflowKind
@@ -65,10 +69,14 @@ class ConversationTurnService:
         uow_factory,
         upload_store=None,
         inspection_template_registry=None,
+        conversation_starter_catalog=None,
     ):
         self._uow_factory = uow_factory
         self._upload_store = upload_store
         self._inspection_template_registry = inspection_template_registry
+        self._conversation_starter_catalog = (
+            conversation_starter_catalog or ConversationStarterCatalog()
+        )
 
     async def start(
         self,
@@ -1193,8 +1201,39 @@ class ConversationTurnService:
         source_run,
         execution_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        target_id = await self._resolve_target(
+            uow=uow,
+            domain_id=int(conversation.domain_id),
+            conversation=conversation,
+            version=version,
+            source_run=source_run,
+        )
+        effective_context = dict(execution_context or {})
+        content = tuple(command.content)
+        if command.starter is not None:
+            target = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=int(conversation.domain_id),
+            )
+            if target is None:
+                raise resource_not_found("Target")
+            frozen_starter = self._conversation_starter_catalog.freeze(
+                selection=command.starter,
+                target=target,
+            )
+            content = (
+                InputContent(
+                    content_type="TEXT",
+                    text=str(frozen_starter["user_message"]),
+                ),
+                *tuple(
+                    item for item in content
+                    if str(item.content_type) != "TEXT"
+                ),
+            )
+            effective_context["conversation_starter"] = frozen_starter
         upload_metadata = {}
-        for item in command.content:
+        for item in content:
             if not item.upload_id:
                 continue
             if self._upload_store is None:
@@ -1221,7 +1260,6 @@ class ConversationTurnService:
                     "上传引用的媒体类型与登记信息不一致",
                 )
             upload_metadata[item.upload_id] = stored
-        content = tuple(command.content)
         text_parts = [
             str(item.text).strip()
             for item in content
@@ -1234,13 +1272,6 @@ class ConversationTurnService:
         message = "\n\n".join(text_parts)
         if not message:
             raise self._error("AIOPS_TURN_CONTENT_REQUIRED", "诊断输入不能为空")
-        target_id = await self._resolve_target(
-            uow=uow,
-            domain_id=int(conversation.domain_id),
-            conversation=conversation,
-            version=version,
-            source_run=source_run,
-        )
         conversation.last_turn_no = int(conversation.last_turn_no) + 1
         conversation.last_message_no = int(conversation.last_message_no) + 1
         conversation.updated_by = actor_id
@@ -1295,8 +1326,8 @@ class ConversationTurnService:
             "source_run_id": str(source_run.ops_run_id) if source_run else None,
             "trace_id": trace_id,
         }
-        if execution_context:
-            outbox_payload["execution_context"] = execution_context
+        if effective_context:
+            outbox_payload["execution_context"] = effective_context
         encoded = json.dumps(
             outbox_payload, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")

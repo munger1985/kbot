@@ -1,0 +1,169 @@
+{
+  "catalog_version": "1.0.0",
+  "starters": [
+    {
+      "starter_id": "database.health.overview",
+      "category": "RECOMMENDED",
+      "title": "全面健康诊断",
+      "description": "检查实例、会话、阻塞、容量、长事务和复制状态。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.session.active", "db.session.blocking_chain", "db.storage.capacity", "db.transaction.long_running", "db.replication.status"]},
+      "sort_order": 10
+    },
+    {
+      "starter_id": "database.performance.current",
+      "category": "RECOMMENDED",
+      "title": "当前性能诊断",
+      "description": "分析当前负载、活跃会话、等待和吞吐。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "CURRENT_PERFORMANCE"},
+      "sort_order": 20
+    },
+    {
+      "starter_id": "database.sessions.blocking",
+      "category": "RECOMMENDED",
+      "title": "阻塞与长事务",
+      "description": "定位阻塞链、活跃会话和长事务。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.session.blocking_chain", "db.session.active", "db.transaction.long_running"]},
+      "sort_order": 30
+    },
+    {
+      "starter_id": "database.storage.trend",
+      "category": "RECOMMENDED",
+      "title": "空间变化趋势",
+      "description": "结合数据库容量事实和监控历史分析空间变化。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [{"name": "days", "label": "统计天数", "type": "integer", "required": true, "default": 7, "min": 1, "max": 30}],
+      "planning": {"kind": "STORAGE_TREND", "tool_ids": ["db.instance.identity", "db.storage.capacity"]},
+      "sort_order": 40
+    },
+    {
+      "starter_id": "oracle.report.awr",
+      "category": "REPORT",
+      "title": "生成 AWR 报告",
+      "description": "按数据库服务器时间选择快照并生成原生 AWR。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "REPORT",
+      "input_schema": [{"name": "begin_time", "label": "开始时间", "type": "datetime", "required": true}, {"name": "end_time", "label": "结束时间", "type": "datetime", "required": true}, {"name": "timezone", "label": "时区", "type": "timezone", "required": true, "default": "Asia/Shanghai"}],
+      "planning": {"kind": "AWR_REPORT"},
+      "sort_order": 50
+    },
+    {
+      "starter_id": "oracle.report.awr-diff",
+      "category": "REPORT",
+      "title": "生成 AWR 对比报告",
+      "description": "选择两个等长区间并生成原生 AWR Diff。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "REPORT",
+      "input_schema": [{"name": "first_begin_time", "label": "区间一开始", "type": "datetime", "required": true}, {"name": "first_end_time", "label": "区间一结束", "type": "datetime", "required": true}, {"name": "second_begin_time", "label": "区间二开始", "type": "datetime", "required": true}, {"name": "second_end_time", "label": "区间二结束", "type": "datetime", "required": true}, {"name": "timezone", "label": "时区", "type": "timezone", "required": true, "default": "Asia/Shanghai"}],
+      "planning": {"kind": "AWR_DIFF"},
+      "sort_order": 60
+    },
+    {
+      "starter_id": "oracle.report.ash",
+      "category": "REPORT",
+      "title": "生成 ASH 报告",
+      "description": "按时间区间生成原生 ASH HTML 报告。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "REPORT",
+      "input_schema": [{"name": "begin_time", "label": "开始时间", "type": "datetime", "required": true}, {"name": "end_time", "label": "结束时间", "type": "datetime", "required": true}, {"name": "timezone", "label": "时区", "type": "timezone", "required": true, "default": "Asia/Shanghai"}],
+      "planning": {"kind": "ASH_REPORT", "tool_ids": ["db.instance.identity", "db.oracle.ash.report"]},
+      "sort_order": 70
+    },
+    {
+      "starter_id": "oracle.sql.performance",
+      "category": "REPORT",
+      "title": "单 SQL 深度分析",
+      "description": "采集游标、计划、对象统计、DBMS_XPLAN 和实时监控基线。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [{"name": "sql_id", "label": "SQL_ID", "type": "text", "required": true, "pattern": "^[a-zA-Z0-9]{13}$"}],
+      "planning": {"kind": "SINGLE_SQL"},
+      "sort_order": 80
+    },
+    {
+      "starter_id": "oracle.backup.status",
+      "category": "DIAGNOSTIC",
+      "title": "备份与恢复检查",
+      "description": "检查近期备份作业、RMAN 配置和恢复能力。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.backup.recent_jobs", "db.backup.rman_configuration", "db.recovery.capabilities"]},
+      "sort_order": 90
+    },
+    {
+      "starter_id": "database.replication.status",
+      "category": "DIAGNOSTIC",
+      "title": "主备复制检查",
+      "description": "检查复制角色、状态和延迟。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "REPLICATION"},
+      "sort_order": 100
+    },
+    {
+      "starter_id": "oracle.archive.fra",
+      "category": "DIAGNOSTIC",
+      "title": "归档与 FRA 检查",
+      "description": "检查归档模式、归档目的地、重做日志和空间风险。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.archive.status", "db.redo.status", "db.storage.capacity"]},
+      "sort_order": 110
+    },
+    {
+      "starter_id": "oracle.errors.recent",
+      "category": "DIAGNOSTIC",
+      "title": "最近数据库错误",
+      "description": "读取最近告警日志摘要和失败调度作业。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.alert.recent", "db.scheduler.failed_jobs"]},
+      "sort_order": 120
+    },
+    {
+      "starter_id": "oracle.objects.invalid",
+      "category": "DIAGNOSTIC",
+      "title": "无效对象检查",
+      "description": "汇总无效对象并识别影响范围。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.objects.invalid_summary"]},
+      "sort_order": 130
+    },
+    {
+      "starter_id": "oracle.parameters.review",
+      "category": "DIAGNOSTIC",
+      "title": "数据库参数检查",
+      "description": "读取实例参数并分析配置风险。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [],
+      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.instance.parameters"]},
+      "sort_order": 140
+    },
+    {"starter_id": "oracle.runbook.adg-build", "category": "RUNBOOK", "title": "ADG 部署文档", "description": "根据当前主库事实生成可执行的 ADG 建设文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_ADG_BUILD"}, "sort_order": 200},
+    {"starter_id": "oracle.runbook.rac-build", "category": "RUNBOOK", "title": "RAC 部署文档", "description": "根据数据库版本和源库事实生成 RAC/Grid 建设文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_RAC_BUILD"}, "sort_order": 210},
+    {"starter_id": "oracle.runbook.rman-backup", "category": "RUNBOOK", "title": "RMAN 备份部署文档", "description": "生成备份策略、脚本、调度、验证和恢复演练文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_RMAN_BACKUP_BUILD"}, "sort_order": 220},
+    {"starter_id": "oracle.runbook.rman-recovery", "category": "RUNBOOK", "title": "RMAN 恢复文档", "description": "生成恢复场景、命令、验证和回退文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_RMAN_RECOVERY"}, "sort_order": 230},
+    {"starter_id": "oracle.runbook.ru-patch", "category": "RUNBOOK", "title": "RU 补丁实施文档", "description": "生成补丁前检查、实施、验证和回退步骤。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_RU_PATCH"}, "sort_order": 240},
+    {"starter_id": "oracle.runbook.upgrade", "category": "RUNBOOK", "title": "数据库升级文档", "description": "生成源库评估、升级、验证和回退文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_DATABASE_UPGRADE"}, "sort_order": 250},
+    {"starter_id": "oracle.runbook.migration", "category": "RUNBOOK", "title": "数据库迁移文档", "description": "生成迁移评估、实施、切换、验证和回退文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_DATABASE_MIGRATION"}, "sort_order": 260},
+    {"starter_id": "oracle.runbook.clone", "category": "RUNBOOK", "title": "克隆与刷新文档", "description": "生成数据库克隆或环境刷新操作文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_CLONE_REFRESH"}, "sort_order": 270},
+    {"starter_id": "oracle.runbook.datapump", "category": "RUNBOOK", "title": "Data Pump 迁移文档", "description": "生成 expdp/impdp 迁移、校验和回退文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_DATAPUMP_MIGRATION"}, "sort_order": 280},
+    {"starter_id": "oracle.runbook.adg-drill", "category": "RUNBOOK", "title": "ADG 切换演练文档", "description": "生成角色切换、验证、停止条件和回切文档。", "supported_db_types": ["ORACLE"], "execution_mode": "RUNBOOK", "input_schema": [], "planning": {"kind": "IMPLEMENTATION", "implementation_profile": "ORACLE_ADG_DRILL"}, "sort_order": 290}
+  ]
+}

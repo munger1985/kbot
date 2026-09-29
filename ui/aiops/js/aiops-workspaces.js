@@ -6,7 +6,8 @@
   const markdown = globalThis.KBotMarkdown;
   const state = {
     agents: [], targets: [], conversation: null, selectedFiles: [],
-    permissions: new Set(),
+    permissions: new Set(), starters: [], starterCatalogVersion: "",
+    starterCatalogLoaded: false,
   };
   const maxDiagnosticFiles = 15;
   const typingFrameMs = 22;
@@ -1138,14 +1139,168 @@
       ? "可以选择历史会话，或在下方发起一次新诊断。"
       : "选择 Target 和 Agent 后，才会显示对应的会话历史。";
     document.getElementById("message-list").innerHTML = agentSelected
-      ? '<div class="ops-empty">请在下方描述需要诊断的问题。</div>'
+      ? starterHomeHtml()
       : '<div class="ops-empty">请选择 Target 和 Agent 以查看历史并开始诊断。</div>';
+    if (agentSelected) bindStarterButtons(document.getElementById("message-list"));
+  }
+
+  const starterCategoryLabels = {
+    RECOMMENDED: "常用功能",
+    DIAGNOSTIC: "诊断检查",
+    REPORT: "性能报告",
+    RUNBOOK: "实施文档",
+  };
+
+  function starterCardHtml(item) {
+    const unavailable = item.status === "UNAVAILABLE";
+    const hint = item.status === "LIMITED"
+      ? item.availability_reason || "执行时将再次核验能力"
+      : item.input_schema?.length ? "需要填写参数" : "点击后立即执行";
+    return `<button class="ops-starter-card" type="button" data-starter-id="${esc(item.starter_id)}"${unavailable ? " disabled" : ""}><strong>${esc(item.title)}</strong><span>${esc(item.description)}</span><small>${unavailable ? esc(item.availability_reason || "当前不可用") : esc(hint)}</small></button>`;
+  }
+
+  function starterSectionsHtml(items, { recommendedOnly = false } = {}) {
+    const categories = recommendedOnly ? ["RECOMMENDED", "REPORT", "RUNBOOK"] : ["RECOMMENDED", "DIAGNOSTIC", "REPORT", "RUNBOOK"];
+    return categories.map((category) => {
+      let rows = values(items).filter((item) => item.category === category);
+      if (recommendedOnly) rows = rows.slice(0, category === "RECOMMENDED" ? 4 : 3);
+      if (!rows.length) return "";
+      return `<section class="ops-starter-section"><h4>${esc(starterCategoryLabels[category] || category)}</h4><div class="ops-starter-grid">${rows.map(starterCardHtml).join("")}</div></section>`;
+    }).join("");
+  }
+
+  function starterHomeHtml() {
+    if (!state.starters.length) return state.starterCatalogLoaded
+      ? '<div class="ops-empty">功能目录暂不可用，仍可在下方直接输入数据库运维问题。</div>'
+      : '<div class="ops-empty">正在读取当前 Target 可用功能…</div>';
+    return `<section class="ops-starter-home"><header><h3>今天要处理什么？</h3><p>选择一个功能直接执行，或在下方输入任何数据库运维问题。</p></header>${starterSectionsHtml(state.starters, { recommendedOnly: true })}<button class="ops-button ops-starter-more" type="button" data-open-all-starters>查看全部功能</button></section>`;
+  }
+
+  function bindStarterButtons(root) {
+    root.querySelectorAll("[data-starter-id]").forEach((button) => {
+      button.onclick = () => selectStarter(button.dataset.starterId);
+    });
+    root.querySelectorAll("[data-open-all-starters]").forEach((button) => {
+      button.onclick = openStarterMenu;
+    });
+  }
+
+  async function loadConversationStarters() {
+    const agentId = document.getElementById("agent-select").value;
+    const targetId = document.getElementById("target-select").value;
+    state.starters = [];
+    state.starterCatalogVersion = "";
+    state.starterCatalogLoaded = false;
+    if (!agentId || !targetId) return;
+    try {
+      const payload = await KBotAIOpsAuth.request(`${api}/conversation-starters?agent_id=${encodeURIComponent(agentId)}&target_id=${encodeURIComponent(targetId)}`);
+      state.starters = values(payload.starters);
+      state.starterCatalogVersion = payload.catalog_version || "";
+    } catch (error) {
+      shell.toast(`功能目录读取失败：${error.message}`);
+    } finally {
+      state.starterCatalogLoaded = true;
+    }
+    if (!state.conversation) resetConversationView({ agentSelected: true });
+  }
+
+  function openStarterMenu() {
+    if (!document.getElementById("agent-select").value) return shell.toast("请先选择 Agent");
+    const dialog = document.getElementById("starter-dialog");
+    document.getElementById("starter-dialog-title").textContent = "全部功能";
+    document.getElementById("starter-dialog-description").textContent = "功能会根据当前 Target 类型和连接状态自动筛选。";
+    const content = document.getElementById("starter-dialog-content");
+    content.innerHTML = starterSectionsHtml(state.starters)
+      || '<div class="ops-empty">当前没有可展示的功能，请直接在聊天框中描述问题。</div>';
+    bindStarterButtons(content);
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function starterParameterValue(field) {
+    if (field.type === "timezone") return Intl.DateTimeFormat().resolvedOptions().timeZone || field.default || "Asia/Shanghai";
+    return field.default ?? "";
+  }
+
+  function starterParameterHtml(field) {
+    const type = field.type === "datetime" ? "datetime-local" : field.type === "integer" ? "number" : "text";
+    const attributes = [
+      field.required ? "required" : "",
+      field.min !== undefined ? `min="${esc(field.min)}"` : "",
+      field.max !== undefined ? `max="${esc(field.max)}"` : "",
+      field.pattern ? `pattern="${esc(field.pattern)}"` : "",
+    ].filter(Boolean).join(" ");
+    return `<label>${esc(field.label)}<input name="${esc(field.name)}" type="${type}" value="${esc(starterParameterValue(field))}" ${attributes}></label>`;
+  }
+
+  function selectStarter(starterId) {
+    const item = state.starters.find((row) => row.starter_id === starterId);
+    if (!item) return shell.toast("功能目录已经更新，请重新打开菜单");
+    if (item.status === "UNAVAILABLE") return shell.toast(item.availability_reason || "当前功能不可用");
+    if (!values(item.input_schema).length) {
+      document.getElementById("starter-dialog").close();
+      executeStarter(item, {}).catch((error) => shell.toast(error.message));
+      return;
+    }
+    const dialog = document.getElementById("starter-dialog");
+    document.getElementById("starter-dialog-title").textContent = item.title;
+    document.getElementById("starter-dialog-description").textContent = item.description;
+    const content = document.getElementById("starter-dialog-content");
+    content.innerHTML = `<div class="ops-starter-parameters">${item.input_schema.map(starterParameterHtml).join("")}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button><button class="primary" type="button" data-starter-submit>开始执行</button></div>`;
+    content.querySelector("[data-starter-back]").onclick = openStarterMenu;
+    content.querySelector("[data-starter-submit]").onclick = () => {
+      const parameters = {};
+      for (const field of item.input_schema) {
+        const input = content.querySelector(`[name="${CSS.escape(field.name)}"]`);
+        if (!input.reportValidity()) return;
+        let value = input.value;
+        if (field.type === "datetime") value = new Date(value).toISOString();
+        if (field.type === "integer") value = Number(value);
+        parameters[field.name] = value;
+      }
+      dialog.close();
+      executeStarter(item, parameters).catch((error) => shell.toast(error.message));
+    };
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function starterSubmittedText(item, parameters) {
+    const labels = Object.fromEntries(values(item.input_schema).map((field) => [field.name, field.label]));
+    return [`执行功能：${item.title}`, ...Object.entries(parameters).map(([key, value]) => `${labels[key] || key}：${value}`)].join("\n");
+  }
+
+  async function executeStarter(item, parameters) {
+    const agentId = document.getElementById("agent-select").value;
+    const targetId = document.getElementById("target-select").value;
+    const path = state.conversation
+      ? `${api}/conversations/${state.conversation.conversation_id}/turns`
+      : `${api}/conversations`;
+    const starter = {
+      starter_id: item.starter_id,
+      catalog_version: state.starterCatalogVersion,
+      parameters,
+    };
+    const body = state.conversation
+      ? { content: [], starter }
+      : { agent_id: agentId, target_id: targetId, content: [], starter };
+    const receipt = await KBotAIOpsAuth.request(path, {
+      method: "POST",
+      headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+      body: JSON.stringify(body),
+    });
+    const panel = document.getElementById("message-list");
+    if (!state.conversation) panel.innerHTML = "";
+    panel.insertAdjacentHTML("beforeend", messageHtml("USER", starterSubmittedText(item, parameters)));
+    panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在按所选功能建立确定性执行计划…</section>');
+    await followTurn(receipt.conversation_id, receipt.turn_id, document.getElementById("live-progress"));
+    await loadConversation(receipt.conversation_id);
+    await loadConversationList();
   }
 
   function setComposerAvailability(enabled) {
     const form = document.getElementById("conversation-form");
     form.elements.message.disabled = !enabled;
     form.querySelector('button[type="submit"]').disabled = !enabled;
+    document.getElementById("open-starter-menu").disabled = !enabled;
   }
 
   function clearConversationUrl() {
@@ -1190,6 +1345,7 @@
       return;
     }
     setComposerAvailability(true);
+    await loadConversationStarters();
     const rows = await KBotAIOpsAuth.request(`${api}/conversations?agent_id=${encodeURIComponent(selectedAgent)}&target_id=${encodeURIComponent(selectedTarget)}`);
     renderConversationList(rows);
     if (requestedId && String(state.conversation?.conversation_id) !== String(requestedId)) {
@@ -1438,6 +1594,7 @@
       resetConversationView({ agentSelected: true });
     };
     document.getElementById("conversation-form").onsubmit = submitConversation;
+    document.getElementById("open-starter-menu").onclick = openStarterMenu;
     document.getElementById("evidence-file").onchange = (event) => {
       const files = Array.from(event.target.files || []);
       if (files.length > maxDiagnosticFiles) {

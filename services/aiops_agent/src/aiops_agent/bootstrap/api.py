@@ -32,8 +32,15 @@ from aiops_agent.adapters.diagnostic_sources.payload_store import (
 from aiops_agent.api.management import router as management_router
 from aiops_agent.api.agents import router as agent_router
 from aiops_agent.api.conversations import router as conversation_router
+from aiops_agent.api.conversation_starters import (
+    router as conversation_starter_router,
+)
 from aiops_agent.api.report_templates import router as report_template_router
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.application.conversation_starters import (
+    ConversationStarterCatalog,
+    ConversationStarterService,
+)
 from aiops_agent.application.report_templates import InspectionReportTemplateService
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
@@ -121,9 +128,15 @@ def create_aiops_api(
             ttl_seconds=resolved.limits.conversation_upload_ttl_seconds,
         )
         app.state.conversation_upload_store = conversation_upload_store
+        conversation_starter_catalog = ConversationStarterCatalog()
+        app.state.conversation_starter_service = ConversationStarterService(
+            uow_factory=runtime.uow_factory,
+            catalog=conversation_starter_catalog,
+        )
         app.state.conversation_turn_service = ConversationTurnService(
             uow_factory=runtime.uow_factory,
             upload_store=conversation_upload_store,
+            conversation_starter_catalog=conversation_starter_catalog,
         )
         app.state.report_template_service = InspectionReportTemplateService(
             uow_factory=runtime.uow_factory
@@ -353,6 +366,7 @@ def create_aiops_api(
     )
     app.include_router(management_router)
     app.include_router(agent_router)
+    app.include_router(conversation_starter_router)
     app.include_router(conversation_router)
     app.include_router(report_template_router)
     app.include_router(runtime_router)

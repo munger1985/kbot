@@ -1442,6 +1442,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def list_conversation_starters(
+        self,
+        *,
+        agent_id: UUID,
+        target_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversation-starters"
+                f"?agent_id={agent_id}&target_id={target_id}"
+            ),
+            auth_context=auth_context,
+        )
+
     async def upload_conversation_input(
         self,
         *,

@@ -76,6 +76,8 @@ from aiops_agent.tools import (
 from platform_core.contracts.aiops import (
     ActionIntent,
     CompactPlanningMode,
+    CompactPlanningOutput,
+    CompletionRequirement,
     DiagnosticProfile,
     EvidenceSourceStrategy,
     ImplementationProfile,
@@ -308,6 +310,43 @@ class TurnPlanningService:
                 )
             )
             planning_receipt = None
+        elif context.conversation_starter:
+            investigation, planning_tools, planning_playbooks, planning_route = (
+                await self._plan_conversation_starter(
+                    context=context,
+                    available_tools=discovered_tools,
+                    available_playbooks=discovered_playbooks,
+                )
+            )
+            investigation = self._enforce_initial_evidence_source_strategy(
+                investigation=self._bind_target_to_plan(
+                    investigation=self._apply_default_temporal_windows(
+                        reset_model_deferred_flags(investigation)
+                    ),
+                    target_context=context.target_context,
+                    available_tools=planning_tools,
+                ),
+                available_tools=planning_tools,
+                revision_no=1,
+            )
+            rewritten = rewrite_incomplete_discovery_actions(
+                investigation=investigation,
+                available_tools=planning_tools,
+            )
+            if rewritten is not None:
+                investigation = rewritten
+            self._validate_evidence_source_strategy(
+                investigation=investigation,
+                available_tools=planning_tools,
+                revision_no=1,
+            )
+            investigation, dynamic_queries, source_queries, attachment_searches = (
+                self._prepare_query_inputs(
+                    investigation=investigation,
+                    context=context,
+                )
+            )
+            planning_receipt = None
         else:
             planned, planning_tools, planning_playbooks, planning_route = (
                 await self._plan_initial(
@@ -416,6 +455,359 @@ class TurnPlanningService:
             monitoring_execution=monitoring_execution,
             attachment_searches=attachment_searches,
         )
+
+    async def _plan_conversation_starter(
+        self,
+        *,
+        context: TurnPlanningContext,
+        available_tools: tuple[dict, ...],
+        available_playbooks: tuple[dict, ...],
+    ) -> tuple[
+        InvestigationPlanningOutput,
+        tuple[dict, ...],
+        tuple[dict, ...],
+        dict,
+    ]:
+        """把已验证功能入口编译成固定调查计划，不调用模型分类。"""
+        starter = dict(context.conversation_starter)
+        planning = dict(starter.get("planning") or {})
+        kind = str(planning.get("kind") or "")
+        parameters = dict(starter.get("parameters") or {})
+        title = str(
+            starter.get("title")
+            or starter.get("starter_id")
+            or "功能入口"
+        )
+        if kind == "IMPLEMENTATION":
+            profile = ImplementationProfile(
+                str(planning["implementation_profile"])
+            )
+            compact = CompactPlanningOutput(
+                planning_mode=CompactPlanningMode.IMPLEMENTATION_RUNBOOK,
+                objectives=(TaskObjective.PLAN,),
+                action_intent=ActionIntent.NONE,
+                diagnostic_profile=DiagnosticProfile.GENERAL,
+                implementation_profile=profile,
+                evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
+                subject_ref={},
+                problem_statement=f"生成{title}",
+                success_criteria=("生成完整、可下载、可执行的实施操作文档",),
+                public_reasoning_summary=f"已按功能入口固定为 {profile.value} 实施档案",
+            )
+            investigation = self._implementation_runbook_output(
+                question=context.question,
+                compact=compact,
+                target_context=context.target_context,
+            )
+            requested_tool_ids = self._profile_tool_ids(compact)
+            requested_playbook_ids = self._profile_playbook_ids(
+                compact, available_playbooks
+            )
+        elif kind == "SINGLE_SQL":
+            sql_id = str(parameters.get("sql_id") or "").lower()
+            compact = CompactPlanningOutput(
+                planning_mode=CompactPlanningMode.READ_ONLY_LOOKUP,
+                objectives=(TaskObjective.DIAGNOSE,),
+                action_intent=ActionIntent.NONE,
+                diagnostic_profile=DiagnosticProfile.SINGLE_SQL_PERFORMANCE,
+                implementation_profile=ImplementationProfile.NONE,
+                evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
+                subject_ref={"sql_id": sql_id},
+                problem_statement=f"深度分析 SQL_ID {sql_id}",
+                success_criteria=("形成单 SQL 性能证据基线和优化结论",),
+                public_reasoning_summary="已按单 SQL 固定诊断档案建立计划",
+            )
+            investigation = self._single_sql_investigation_output(
+                question=context.question,
+                compact=compact,
+                target_context=context.target_context,
+                sql_id=sql_id,
+            )
+            requested_tool_ids = self._profile_tool_ids(compact)
+            requested_playbook_ids = self._profile_playbook_ids(
+                compact, available_playbooks
+            )
+        else:
+            investigation, requested_tool_ids = self._starter_diagnostic_output(
+                context=context,
+                kind=kind,
+                planning=planning,
+                parameters=parameters,
+                title=title,
+            )
+            requested_playbook_ids = ()
+        planning_tools, planning_playbooks = select_planning_candidates(
+            tools=available_tools,
+            playbooks=available_playbooks,
+            tool_ids=tuple(requested_tool_ids),
+            playbook_ids=tuple(requested_playbook_ids),
+        )
+        planning_tools = self._include_identity_tool(
+            planning_tools, available_tools
+        )
+        route = {
+            "mode": "CONVERSATION_STARTER",
+            "starter_id": starter.get("starter_id"),
+            "catalog_version": starter.get("catalog_version"),
+            "public_summary": f"已按功能入口“{title}”建立确定性执行计划",
+            "selected_tool_ids": [item["tool_id"] for item in planning_tools],
+            "selected_playbook_ids": [
+                item["playbook_id"] for item in planning_playbooks
+            ],
+        }
+        await self._record_planning_route(
+            context=context,
+            mode=route["mode"],
+            public_summary=route["public_summary"],
+            public_sections=[
+                {"title": "已选择功能", "items": [title]},
+                {
+                    "title": "执行方式",
+                    "items": ["使用版本化功能目录直接编译计划，不进行模型意图分类"],
+                },
+            ],
+        )
+        return investigation, planning_tools, planning_playbooks, route
+
+    def _starter_diagnostic_output(
+        self,
+        *,
+        context: TurnPlanningContext,
+        kind: str,
+        planning: dict,
+        parameters: dict,
+        title: str,
+    ) -> tuple[InvestigationPlanningOutput, tuple[str, ...]]:
+        """编译报告和通用诊断入口的固定 Tool DAG。"""
+        db_type = str(context.target_context.get("db_type") or "")
+        tool_ids = tuple(str(value) for value in planning.get("tool_ids", ()))
+        inputs: dict[str, dict] = {}
+        objectives = (TaskObjective.DIAGNOSE,)
+        completion_requirements: tuple[CompletionRequirement, ...] = ()
+        strategy = EvidenceSourceStrategy.DATABASE_FIRST
+        requested_window_seconds = None
+        temporal_mode = TemporalAnalysisMode.CURRENT
+        if kind == "CURRENT_PERFORMANCE":
+            tool_ids = {
+                "ORACLE": (
+                    "db.instance.identity",
+                    "db.instance.performance",
+                    "db.session.active",
+                    "db.wait.class_summary",
+                ),
+                "MYSQL": (
+                    "db.instance.identity",
+                    "db.mysql.instance.throughput",
+                    "db.session.active",
+                    "db.mysql.connection.utilization",
+                ),
+                "POSTGRESQL": (
+                    "db.instance.identity",
+                    "db.postgresql.instance.throughput",
+                    "db.session.active",
+                    "db.postgresql.connection.utilization",
+                ),
+            }.get(db_type, ("db.instance.identity", "db.session.active"))
+        elif kind == "REPLICATION":
+            lag_tool = {
+                "ORACLE": "db.replication.lag",
+                "MYSQL": "db.mysql.replication.lag",
+                "POSTGRESQL": "db.postgresql.replication.lag",
+            }.get(db_type)
+            tool_ids = tuple(
+                value
+                for value in (
+                    "db.instance.identity",
+                    "db.replication.status",
+                    lag_tool,
+                )
+                if value
+            )
+        elif kind == "STORAGE_TREND":
+            days = int(parameters.get("days") or 7)
+            requested_window_seconds = days * 86_400
+            temporal_mode = TemporalAnalysisMode.HISTORICAL
+            strategy = EvidenceSourceStrategy.MONITORING_FIRST
+        elif kind == "AWR_REPORT":
+            tool_ids = (
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+            )
+            inputs["db.oracle.awr.report"] = {
+                "begin_snapshot_id": parameters["begin_time"],
+                "end_snapshot_id": parameters["end_time"],
+            }
+            objectives = (TaskObjective.DIAGNOSE,)
+            completion_requirements = (
+                CompletionRequirement(
+                    requirement_id="r1",
+                    description="生成正式 AWR 报告",
+                    accepted_tool_ids=("db.oracle.awr.report",),
+                    accepted_evidence_kinds=("AWR_REPORT",),
+                    minimum_successful_results=1,
+                ),
+            )
+        elif kind == "AWR_DIFF":
+            tool_ids = (
+                "db.instance.identity",
+                "db.oracle.awr.snapshots",
+                "db.oracle.awr.report",
+                "db.oracle.awr.diff_report",
+            )
+            objectives = (TaskObjective.DIAGNOSE, TaskObjective.COMPARE)
+            completion_requirements = (
+                CompletionRequirement(
+                    requirement_id="r1",
+                    description="生成正式 AWR 对比报告",
+                    accepted_tool_ids=("db.oracle.awr.diff_report",),
+                    accepted_evidence_kinds=("AWR_DIFF_REPORT",),
+                    minimum_successful_results=1,
+                ),
+            )
+        elif kind == "ASH_REPORT":
+            inputs["db.oracle.ash.report"] = {
+                "begin_time": parameters["begin_time"],
+                "end_time": parameters["end_time"],
+            }
+            completion_requirements = (
+                CompletionRequirement(
+                    requirement_id="r1",
+                    description="生成正式 ASH 报告",
+                    accepted_tool_ids=("db.oracle.ash.report",),
+                    accepted_evidence_kinds=("ASH_REPORT",),
+                    minimum_successful_results=1,
+                ),
+            )
+        actions: list[InvestigationAction] = []
+        if kind == "AWR_DIFF":
+            actions = [
+                InvestigationAction(
+                    action_id="a1",
+                    question="核对数据库实例身份",
+                    tool_id="db.instance.identity",
+                    input={},
+                    expected_evidence_kind="DATABASE_IDENTITY",
+                    measurement_semantics=(
+                        MeasurementSemantics.CURRENT_ACTIVITY
+                    ),
+                ),
+                InvestigationAction(
+                    action_id="a2",
+                    question="列出可用 AWR 快照",
+                    tool_id="db.oracle.awr.snapshots",
+                    input={},
+                    expected_evidence_kind="AWR_SNAPSHOTS",
+                    measurement_semantics=(
+                        MeasurementSemantics.SNAPSHOT_DELTA
+                    ),
+                    depends_on=("a1",),
+                ),
+                InvestigationAction(
+                    action_id="a3",
+                    question="生成第一个时间区间的 AWR",
+                    tool_id="db.oracle.awr.report",
+                    input={
+                        "begin_snapshot_id": parameters["first_begin_time"],
+                        "end_snapshot_id": parameters["first_end_time"],
+                    },
+                    expected_evidence_kind="AWR_REPORT",
+                    measurement_semantics=(
+                        MeasurementSemantics.SNAPSHOT_DELTA
+                    ),
+                    depends_on=("a2",),
+                    deferred=True,
+                ),
+                InvestigationAction(
+                    action_id="a4",
+                    question="生成第二个时间区间的 AWR",
+                    tool_id="db.oracle.awr.report",
+                    input={
+                        "begin_snapshot_id": parameters["second_begin_time"],
+                        "end_snapshot_id": parameters["second_end_time"],
+                    },
+                    expected_evidence_kind="AWR_REPORT",
+                    measurement_semantics=(
+                        MeasurementSemantics.SNAPSHOT_DELTA
+                    ),
+                    depends_on=("a2",),
+                    deferred=True,
+                ),
+                InvestigationAction(
+                    action_id="a5",
+                    question="生成两个等长区间的 AWR 对比报告",
+                    tool_id="db.oracle.awr.diff_report",
+                    input={},
+                    expected_evidence_kind="AWR_DIFF_REPORT",
+                    measurement_semantics=(
+                        MeasurementSemantics.SNAPSHOT_DELTA
+                    ),
+                    depends_on=("a3", "a4"),
+                    deferred=True,
+                ),
+            ]
+        else:
+            for index, tool_id in enumerate(tool_ids, start=1):
+                actions.append(
+                    InvestigationAction(
+                        action_id=f"a{index}",
+                        question=f"为“{title}”采集 {tool_id} 事实",
+                        tool_id=tool_id,
+                        input=dict(inputs.get(tool_id) or {}),
+                        expected_evidence_kind=(
+                            "AWR_REPORT"
+                            if tool_id == "db.oracle.awr.report"
+                            else "ASH_REPORT"
+                            if tool_id == "db.oracle.ash.report"
+                            else "DATABASE_OBSERVATION"
+                        ),
+                        measurement_semantics=(
+                            MeasurementSemantics.SNAPSHOT_DELTA
+                            if ".awr." in tool_id
+                            else MeasurementSemantics.CURRENT_ACTIVITY
+                        ),
+                        depends_on=(("a1",) if index > 1 else ()),
+                        deferred=(tool_id == "db.oracle.awr.report"),
+                    )
+                )
+        output = InvestigationPlanningOutput(
+            input_envelope=TurnInputEnvelope(
+                materials=(
+                    InputMaterial(
+                        item_no=1,
+                        material_kind=MaterialKind.QUESTION,
+                        summary=context.question[:2000],
+                        key_facts=(f"功能入口：{title}",),
+                        confidence=1,
+                        contains_user_evidence=False,
+                    ),
+                ),
+                explicit_question=context.question,
+            ),
+            task_frame=TaskFrame(
+                objectives=objectives,
+                problem_statement=f"执行功能入口“{title}”并给出直接结论",
+                database_context=dict(context.target_context),
+                requested_window_seconds=requested_window_seconds,
+                temporal_analysis_mode=temporal_mode,
+                known_facts=(f"用户明确选择功能入口：{title}",),
+                unknowns=(),
+                constraints=("只执行当前 Target 的只读取证，不执行变更",),
+                success_criteria=(f"完成{title}并正面回答用户问题",),
+                completion_requirements=completion_requirements,
+                action_intent=ActionIntent.NONE,
+                diagnostic_profile=DiagnosticProfile.GENERAL,
+                evidence_source_strategy=strategy,
+                subject_ref={
+                    "conversation_starter": (
+                        context.conversation_starter.get("starter_id")
+                    )
+                },
+                requires_change=False,
+            ),
+            plan=InvestigationPlan(revision_no=1, actions=tuple(actions)),
+        )
+        return output, tool_ids
 
     async def _plan_template_inspection(
         self,
@@ -3360,6 +3752,11 @@ class TurnPlanningService:
                     dict(run.plan_snapshot_json or {}).get(
                         "client_metadata", {}
                     ).get("inspection", {})
+                ),
+                conversation_starter=dict(
+                    dict(run.plan_snapshot_json or {}).get(
+                        "client_metadata", {}
+                    ).get("conversation_starter", {})
                 ),
                 source_run_evidence=source_run_evidence,
             )

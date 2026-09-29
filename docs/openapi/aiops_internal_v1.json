@@ -1040,6 +1040,167 @@
         "title": "ConversationStart",
         "type": "object"
       },
+      "ConversationStarterCatalogView": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_version": {
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "db_type": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Db Type",
+            "type": "string"
+          },
+          "starters": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationStarterView"
+            },
+            "title": "Starters",
+            "type": "array"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_version",
+          "target_id",
+          "db_type",
+          "starters"
+        ],
+        "title": "ConversationStarterCatalogView",
+        "type": "object"
+      },
+      "ConversationStarterSelection": {
+        "additionalProperties": false,
+        "description": "用户从功能目录选择的结构化入口。",
+        "properties": {
+          "catalog_version": {
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "starter_id": {
+            "pattern": "^[a-z][a-z0-9_.-]{2,127}$",
+            "title": "Starter Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starter_id",
+          "catalog_version"
+        ],
+        "title": "ConversationStarterSelection",
+        "type": "object"
+      },
+      "ConversationStarterView": {
+        "additionalProperties": false,
+        "properties": {
+          "availability_reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Reason"
+          },
+          "category": {
+            "enum": [
+              "RECOMMENDED",
+              "DIAGNOSTIC",
+              "REPORT",
+              "RUNBOOK"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "execution_mode": {
+            "enum": [
+              "DIAGNOSTIC",
+              "REPORT",
+              "RUNBOOK"
+            ],
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "input_schema": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 8,
+            "title": "Input Schema",
+            "type": "array"
+          },
+          "sort_order": {
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "starter_id": {
+            "pattern": "^[a-z][a-z0-9_.-]{2,127}$",
+            "title": "Starter Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "AVAILABLE",
+              "LIMITED",
+              "UNAVAILABLE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "supported_db_types": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Supported Db Types",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starter_id",
+          "category",
+          "title",
+          "description",
+          "supported_db_types",
+          "execution_mode",
+          "sort_order",
+          "status"
+        ],
+        "title": "ConversationStarterView",
+        "type": "object"
+      },
       "ConversationStatus": {
         "enum": [
           "ACTIVE",
@@ -8677,11 +8838,11 @@
         "additionalProperties": false,
         "properties": {
           "content": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/InputContent"
             },
             "maxItems": 16,
-            "minItems": 1,
             "title": "Content",
             "type": "array"
           },
@@ -8707,10 +8868,19 @@
               }
             ],
             "title": "Source Run Id"
+          },
+          "starter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationStarterSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
-          "content",
           "idempotency_key"
         ],
         "title": "TurnCreate",
@@ -12710,6 +12880,59 @@
         "summary": "Command Source Binding",
         "tags": [
           "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/conversation-starters": {
+      "get": {
+        "operationId": "list_conversation_starters_internal_v1_aiops_conversation_starters_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationStarterCatalogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Conversation Starters",
+        "tags": [
+          "AIOps Conversation Starters"
         ]
       }
     },
