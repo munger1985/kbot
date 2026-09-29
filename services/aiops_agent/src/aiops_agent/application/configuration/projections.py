@@ -15,9 +15,6 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
-from aiops_agent.application.inspections.check_catalog import (
-    selected_check_ids_from_json,
-)
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     IdempotencyGuard,
@@ -26,10 +23,7 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-    next_cron_run,
-)
+from aiops_agent.application.configuration.schedule import next_cron_run
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -350,19 +344,25 @@ def _inspection_detail(
     entity: InspectionPlanEntity,
     *,
     agent_target_count: int,
+    template,
+    template_version,
 ) -> InspectionPlanDetail:
+    definition = dict(template_version.definition_json or {})
     return InspectionPlanDetail(
         **_inspection_summary(entity).model_dump(),
         cron_expression=entity.cron_expression,
-        template_id=entity.template_id,
-        template_version=entity.template_version,
-        selected_check_ids=selected_check_ids_from_json(
-            entity.selected_checks_json
+        inspection_template_id=entity.inspection_template_id,
+        inspection_template_version_id=(
+            entity.inspection_template_version_id
+        ),
+        inspection_template_name=template.display_name,
+        inspection_template_version=int(template_version.version_no),
+        selected_check_ids=tuple(
+            definition.get("selected_check_ids") or ()
         ),
         timeout_seconds=int(entity.timeout_seconds),
         overlap_policy=entity.overlap_policy,
         misfire_policy=entity.misfire_policy,
-        schedule_resolver_version=entity.schedule_resolver_version,
         agent_target_count=agent_target_count,
         created_at=entity.created_at.astimezone(UTC),
         created_by=entity.created_by,

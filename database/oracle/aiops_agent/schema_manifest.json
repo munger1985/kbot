@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 29,
-  "contract_version": "aiops-oracle-v19",
+  "schema_version": 30,
+  "contract_version": "aiops-oracle-v20",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "name": "004_ops_inspection.sql",
-      "statements": 23,
-      "sha256": "a31db85587cde815d15e9e6d804bb1dc391cddc2d3e5d77e64a4f25b4e79666f"
+      "statements": 33,
+      "sha256": "ba372165b54d692dfcec5f78d10fb83b2749540f8a1d45625cec03bd4efcf2c5"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "e1efb387ca96ba1653ee13f5b1b057c4937071dee97b0edcb645954bb233db36"
+      "sha256": "038adff74c996e7e19aabe693adb75a95345866faa600ae66fd170f1e1300802"
     },
     {
       "name": "007_ops_agents.sql",
@@ -42,7 +42,7 @@
     {
       "name": "008_ops_conversations_reports.sql",
       "statements": 83,
-      "sha256": "bb02b2ef2efa91691783c803747f709e79acdc9d781f26f9415a15f31089f784"
+      "sha256": "edb4a82e2f83131b2cf394417c9a28fd6ce3369c4f4c2452043090955ef13ba4"
     }
   ],
   "tables": [
@@ -64,6 +64,8 @@
     "KBOT_OPS_HITL",
     "KBOT_OPS_APPROVAL_TOKEN",
     "KBOT_OPS_EXECUTION",
+    "KBOT_OPS_INSPECTION_TEMPLATE",
+    "KBOT_OPS_INSPECTION_TEMPLATE_VER",
     "KBOT_OPS_INSPECTION_PLAN",
     "KBOT_OPS_INSPECTION_FIRE",
     "KBOT_OPS_REPORT",
@@ -109,6 +111,8 @@
     "FK_OPS_PROP_SNAPSHOT_ART",
     "FK_OPS_EXEC_RESULT_ART",
     "FK_OPS_REPORT_CONTENT_ART",
+    "FK_OPS_INSP_TPL_CURRENT_VER",
+    "FK_OPS_INSP_TPL_VER_TEMPLATE",
     "FK_OPS_RPT_TPL_CURRENT_VERSION",
     "FK_OPS_RPT_TPL_VER_TEMPLATE"
   ],
@@ -211,6 +215,71 @@
         "AGENT_ID",
         "DOMAIN_ID",
         "STATUS"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_TPL_DOMAIN",
+      "index": "IX_OPS_INSP_TEMPLATE_SCOPE",
+      "table": "KBOT_OPS_INSPECTION_TEMPLATE",
+      "columns": [
+        "DOMAIN_ID",
+        "STATUS"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_TPL_CURRENT_VER",
+      "index": "IX_OPS_INSP_TPL_CURRENT_VER",
+      "table": "KBOT_OPS_INSPECTION_TEMPLATE",
+      "columns": [
+        "CURRENT_VERSION_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_TPL_VER_DOMAIN",
+      "index": "IX_OPS_INSP_TPL_VER_DOMAIN",
+      "table": "KBOT_OPS_INSPECTION_TEMPLATE_VER",
+      "columns": [
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_TPL_VER_TEMPLATE",
+      "index": "IX_OPS_INSP_TPL_VER_TEMPLATE",
+      "table": "KBOT_OPS_INSPECTION_TEMPLATE_VER",
+      "columns": [
+        "INSPECTION_TEMPLATE_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_PLAN_TEMPLATE",
+      "index": "IX_OPS_INSP_PLAN_TEMPLATE",
+      "table": "KBOT_OPS_INSPECTION_PLAN",
+      "columns": [
+        "INSPECTION_TEMPLATE_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_PLAN_TEMPLATE_VER",
+      "index": "IX_OPS_INSP_PLAN_TEMPLATE_VER",
+      "table": "KBOT_OPS_INSPECTION_PLAN",
+      "columns": [
+        "INSPECTION_TEMPLATE_VERSION_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_FIRE_TEMPLATE",
+      "index": "IX_OPS_INSP_FIRE_TEMPLATE",
+      "table": "KBOT_OPS_INSPECTION_FIRE",
+      "columns": [
+        "INSPECTION_TEMPLATE_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_INSP_FIRE_TEMPLATE_VER",
+      "index": "IX_OPS_INSP_FIRE_TEMPLATE_VER",
+      "table": "KBOT_OPS_INSPECTION_FIRE",
+      "columns": [
+        "INSPECTION_TEMPLATE_VERSION_ID"
       ]
     },
     {
@@ -610,7 +679,6 @@
     "resource_id_type": "RAW(16)",
     "resource_id_generation": "application_uuidv7",
     "timestamp_type": "TIMESTAMP(6) WITH TIME ZONE",
-    "scheduled_fire_unique_helper": "SCHEDULED_FOR_UTC",
     "conversation_sequence_allocation": "locked_counter",
     "turn_event_sequence_allocation": "locked_counter",
     "apex_dml": false,

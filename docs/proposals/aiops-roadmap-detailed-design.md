@@ -82,7 +82,7 @@ Finding Card → 指标/趋势/根因分析 → 解决方案 → 可选逐条动
 | 提示词 | `aiops_agent.answer_compose` / `answer_stream` 明确要求不要套“根因/事实/建议”模板 |
 | 锁取证 | `session_blocking.sql` 只有 waiter/blocker 的 inst/sid/username、event、seconds_in_wait；无 serial#、sql_id、type、lmode、ctime |
 | 锁 Playbook | `oracle.session.blocking_chain` 只跑 identity + blocking_chain |
-| 巡检范围 | 计划只绑 `template_id=database_daily` 的固定 7 步；`optional_checks` 只是 override key，页面不能勾选 |
+| 巡检范围 | 已拆为可勾选的巡检模板和不可变版本；计划只引用固定模板版本，Fire 冻结目录哈希、检查项和取证步骤 |
 | 巡检结论 | 有行也写成“结果正常”；没有越界 Finding |
 | 动手呈现 | Proposal 可出现在回答任意位置；自动入口未强制 `ActionIntent.NONE` |
 | SQL Monitor | `db.oracle.sql_monitor.report` 已用 `REPORT_SQL_MONITOR` 生成官方 HTML；`db.sql.plan_monitor` 仍是 `GV$SQL_PLAN_MONITOR` 行级 Fact |
@@ -266,7 +266,7 @@ Finding Compiler 用新列映射 `LOCK_WAIT`。字段缺失则卡片仍出，值
 
 ### 6.4 巡检 Check Catalog（P1，改计划模型 + 加目录）
 
-现状：`InspectionPlan` 绑死 `database_daily` 的 7 个 `evidence_steps`。
+现状：Check Catalog、巡检模板版本、Plan/Fire 固定版本引用已经落地；计划不再保存自由模板字符串或自行勾选检查项。
 
 目标：
 
@@ -278,9 +278,9 @@ Check Catalog（随代码发布）
   default_for: DAILY / WEEKLY
   trend_required: bool
         ↓
-InspectionPlan.selected_check_ids   用户勾选，不能自由写 SQL
+InspectionTemplateVersion.selected_check_ids   用户勾选，不能自由写 SQL
         ↓
-Fire 时只编译勾选检查项为调查 DAG
+InspectionPlan 引用固定模板版本，Fire 冻结并执行对应调查 DAG
         ↓
 同一套 Finding Compiler + 四段输出
 ```
@@ -289,7 +289,7 @@ Fire 时只编译勾选检查项为调查 DAG
 
 客户点名的 Oracle 项按 Roadmap 第 6.2.H 分组进入 Catalog。页面从 Catalog 勾选，禁止手填 Tool SQL。
 
-Schema：计划表增加 `selected_checks_json`（或子表），与 contracts、UI、Fire 投影、测试一起升级，不做兼容读旧 7 步。
+Schema：独立巡检模板及不可变版本表冻结 `selected_check_ids`、目录哈希和取证步骤；计划与 Fire 只引用确定的模板版本，与 contracts、UI、投影和测试一起升级，不在计划内重复保存勾选项。
 
 ### 6.5 Target 运维记忆与容量（P1，加表 + 改容量决策）
 

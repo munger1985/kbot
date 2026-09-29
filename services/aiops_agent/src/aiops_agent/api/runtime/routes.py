@@ -14,6 +14,7 @@ from aiops_agent.api.dependencies import (
     require_service_scope,
 )
 from aiops_agent.application.runtime import AIOpsRuntimeService
+from aiops_agent.application.reporting import resolve_system_template
 from aiops_agent.application.configuration.common import ConfigurationScope
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops import (
@@ -354,11 +355,11 @@ async def generate_user_report(
     """只在用户明确操作后，从完整会话或终态诊断结果创建报告。"""
     require_service_scope(request, "aiops.run")
     domain_id = _scope(request, context)
-    template = await request.app.state.report_template_service.resolve(
-        domain_id=domain_id, template_ref=body.template_ref
-    )
     actor_id = context.asserted_user_id or context.client_id
     if body.conversation_id is not None:
+        template = await request.app.state.session_report_template_service.resolve(
+            domain_id=domain_id, template_ref=body.template_ref
+        )
         agent_id = await service.get_conversation_source_agent_id(
             conversation_id=body.conversation_id,
             domain_id=domain_id,
@@ -376,6 +377,15 @@ async def generate_user_report(
         )
     else:
         assert body.ops_run_id is not None
+        template = resolve_system_template(body.template_ref)
+        if template is None:
+            raise HTTPException(
+                422,
+                {
+                    "code": "AIOPS_REPORT_LAYOUT_INVALID",
+                    "message": "告警和巡检报告只能使用系统报告版式",
+                },
+            )
         run = await service.get_run(
             ops_run_id=body.ops_run_id, domain_id=domain_id
         )

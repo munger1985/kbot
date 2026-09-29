@@ -26,10 +26,6 @@ from aiops_agent.application.configuration.common import (
 from aiops_agent.application.configuration.connection_test import (
     test_target_connection as run_target_connection_test,
 )
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-    next_cron_run,
-)
 from aiops_agent.application.targets.facts import (
     create_confirmed_fact,
     list_active_facts,

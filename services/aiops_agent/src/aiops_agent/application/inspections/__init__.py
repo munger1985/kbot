@@ -3,6 +3,7 @@
 from .check_catalog import (
     compile_selected_check_steps,
     default_selected_check_ids,
+    inspection_template_steps,
     load_check_catalog,
     normalize_selected_check_ids,
     selected_check_ids_from_json,
@@ -11,6 +12,7 @@ from .check_catalog import (
 __all__ = [
     "compile_selected_check_steps",
     "default_selected_check_ids",
+    "inspection_template_steps",
     "load_check_catalog",
     "normalize_selected_check_ids",
     "selected_check_ids_from_json",

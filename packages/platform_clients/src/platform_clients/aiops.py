@@ -1703,7 +1703,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def report_template_request(
+    async def inspection_template_request(
         self,
         method: str,
         suffix: str,
@@ -1713,8 +1713,32 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ):
         return await self._json(
             method,
-            f"{INTERNAL_API_V1}/aiops/report-templates{suffix}",
+            f"{INTERNAL_API_V1}/aiops/inspection-templates{suffix}",
             payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def session_report_template_request(
+        self,
+        method: str,
+        suffix: str,
+        *,
+        auth_context: AuthContext,
+        payload: dict[str, Any] | None = None,
+    ):
+        return await self._json(
+            method,
+            f"{INTERNAL_API_V1}/aiops/session-report-templates{suffix}",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def list_report_layouts(
+        self, *, auth_context: AuthContext,
+    ):
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/report-layouts",
             auth_context=auth_context,
         )
 

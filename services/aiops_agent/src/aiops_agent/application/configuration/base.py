@@ -26,10 +26,6 @@ from aiops_agent.application.configuration.common import (
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-    next_cron_run,
-)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -103,7 +99,6 @@ class ConfigurationServiceBase:
         cursor_codec: SignedCursorCodec,
         secret_store: SecretStorePort,
         agent_catalog: AgentCatalogPort,
-        template_registry: InspectionTemplateRegistry,
         management: AIOpsManagementConfig,
         credential_cipher: ManagedCredentialCipher,
         managed_credential_service: AIOpsManagedCredentialService,
@@ -114,7 +109,6 @@ class ConfigurationServiceBase:
         self._cursor_codec = cursor_codec
         self._secret_store = secret_store
         self._agent_catalog = agent_catalog
-        self._template_registry = template_registry
         self._management = management
         self._idempotency = IdempotencyGuard()
         self._credential_cipher = credential_cipher

@@ -107,6 +107,8 @@ SERVICE_TABLES = {
         "KBOT_OPS_HITL",
         "KBOT_OPS_APPROVAL_TOKEN",
         "KBOT_OPS_EXECUTION",
+        "KBOT_OPS_INSPECTION_TEMPLATE",
+        "KBOT_OPS_INSPECTION_TEMPLATE_VER",
         "KBOT_OPS_INSPECTION_PLAN",
         "KBOT_OPS_INSPECTION_FIRE",
         "KBOT_OPS_REPORT",
@@ -520,13 +522,8 @@ def main() -> int:
         errors.append("AIOps 禁止使用 Oracle 26ai 保留字 MODE 作为列名")
     if re.search(r"\bCONSTRAINT\s+CK_OPS_|\bCHECK\s*\(", aiops_sql):
         errors.append("AIOps 规范 DDL 不得包含业务 CHECK 约束")
-    if not re.search(
-        r"\bSCHEDULED_FOR_UTC\s+TIMESTAMP\s*\(\s*6\s*\)"
-        r"\s+GENERATED\s+ALWAYS\s+AS\s*"
-        r"\(\s*SYS_EXTRACT_UTC\s*\(\s*SCHEDULED_FOR\s*\)\s*\)\s+VIRTUAL",
-        aiops_sql,
-    ):
-        errors.append("AIOps 缺少巡检时点 UTC 唯一键虚拟列")
+    if "SCHEDULED_FOR_UTC" in aiops_sql:
+        errors.append("AIOps 不应保留仅服务于业务唯一约束的巡检时点虚拟列")
     for forbidden_projection in (
         "KBOT_V_OPS_TARGET AS\nSELECT\n    T.ENDPOINT_JSON",
         "KBOT_V_OPS_DIAGNOSTIC_SOURCE AS\nSELECT\n    M.ENDPOINT",

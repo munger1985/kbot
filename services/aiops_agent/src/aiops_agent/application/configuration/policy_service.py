@@ -23,10 +23,6 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-    next_cron_run,
-)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,

@@ -157,12 +157,22 @@ class AIOpsConversationTurnPayload(_Payload):
         return self
 
 
-class ReportTemplateCreatePayload(_Payload):
+class InspectionTemplateCreatePayload(_Payload):
+    display_name: str = Field(min_length=1, max_length=256)
+    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class InspectionTemplateVersionPayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class SessionReportTemplateCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     definition: dict[str, Any]
 
 
-class ReportTemplateVersionPayload(_Payload):
+class SessionReportTemplateVersionPayload(_Payload):
     expected_row_version: int = Field(ge=1)
     definition: dict[str, Any]
 
@@ -976,43 +986,93 @@ async def stream_conversation_turn_events(
     )
 
 
-@router.get("/report-templates")
-async def list_report_templates(request: Request):
-    # 业务用户需要在三个工作入口选择可用模板；模板写操作仍由管理员控制。
-    await _require(request, "aiops:use")
-    return await _client(request).report_template_request(
+@router.get("/inspection-templates")
+async def list_inspection_templates(request: Request):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).inspection_template_request(
         "GET", "", auth_context=request.state.auth_context
     )
 
 
-@router.get("/report-templates/{template_id}")
-async def get_report_template(template_id: UUID, request: Request):
+@router.get("/inspection-templates/{template_id}")
+async def get_inspection_template(template_id: UUID, request: Request):
     await _require(request, "aiops:plan_manage")
-    return await _client(request).report_template_request(
+    return await _client(request).inspection_template_request(
         "GET", f"/{template_id}", auth_context=request.state.auth_context
     )
 
 
-@router.post("/report-templates", status_code=201)
-async def create_report_template(
-    payload: ReportTemplateCreatePayload, request: Request
+@router.post("/inspection-templates", status_code=201)
+async def create_inspection_template(
+    payload: InspectionTemplateCreatePayload, request: Request
 ):
     await _require(request, "aiops:plan_manage")
-    return await _client(request).report_template_request(
+    return await _client(request).inspection_template_request(
         "POST", "", payload=payload.model_dump(mode="json"),
         auth_context=request.state.auth_context,
     )
 
 
-@router.post("/report-templates/{template_id}/versions", status_code=201)
-async def create_report_template_version(
-    template_id: UUID, payload: ReportTemplateVersionPayload, request: Request
+@router.post("/inspection-templates/{template_id}/versions", status_code=201)
+async def create_inspection_template_version(
+    template_id: UUID,
+    payload: InspectionTemplateVersionPayload,
+    request: Request,
 ):
     await _require(request, "aiops:plan_manage")
-    return await _client(request).report_template_request(
+    return await _client(request).inspection_template_request(
         "POST", f"/{template_id}/versions",
         payload=payload.model_dump(mode="json"),
         auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/session-report-templates")
+async def list_session_report_templates(request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).session_report_template_request(
+        "GET", "", auth_context=request.state.auth_context
+    )
+
+
+@router.get("/session-report-templates/{template_id}")
+async def get_session_report_template(template_id: UUID, request: Request):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).session_report_template_request(
+        "GET", f"/{template_id}", auth_context=request.state.auth_context
+    )
+
+
+@router.post("/session-report-templates", status_code=201)
+async def create_session_report_template(
+    payload: SessionReportTemplateCreatePayload, request: Request
+):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).session_report_template_request(
+        "POST", "", payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/session-report-templates/{template_id}/versions", status_code=201)
+async def create_session_report_template_version(
+    template_id: UUID,
+    payload: SessionReportTemplateVersionPayload,
+    request: Request,
+):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).session_report_template_request(
+        "POST", f"/{template_id}/versions",
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/report-layouts")
+async def list_report_layouts(request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).list_report_layouts(
+        auth_context=request.state.auth_context
     )
 
 

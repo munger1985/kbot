@@ -11,8 +11,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.inspections.check_catalog import (
-    compile_selected_check_steps,
-    normalize_selected_check_ids,
+    inspection_template_steps,
 )
 from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
@@ -68,12 +67,10 @@ class ConversationTurnService:
         *,
         uow_factory,
         upload_store=None,
-        inspection_template_registry=None,
         conversation_starter_catalog=None,
     ):
         self._uow_factory = uow_factory
         self._upload_store = upload_store
-        self._inspection_template_registry = inspection_template_registry
         self._conversation_starter_catalog = (
             conversation_starter_catalog or ConversationStarterCatalog()
         )
@@ -306,24 +303,15 @@ class ConversationTurnService:
         fire_id = UUID(str(payload["inspection_fire_id"]))
         actor_id = str(payload["actor_id"])
         trace_id = str(payload["trace_id"])
-        if self._inspection_template_registry is None:
-            raise self._error(
-                "AIOPS_INSPECTION_TEMPLATE_REGISTRY_MISSING",
-                "巡检固定取证模板未配置，不能以自由规划方式执行",
-            )
-        self._inspection_template_registry.validate(
-            template_id=str(payload["template_id"]),
-            template_version=str(payload["template_version"]),
-            schedule_resolver_version=str(
-                payload["schedule_resolver_version"]
-            ),
-        )
         try:
-            selected_check_ids = normalize_selected_check_ids(
-                payload.get("selected_check_ids")
+            template_definition = dict(
+                payload.get("inspection_template_definition") or {}
             )
-            evidence_steps = compile_selected_check_steps(
-                selected_check_ids,
+            selected_check_ids = tuple(
+                template_definition.get("selected_check_ids") or ()
+            )
+            evidence_steps = inspection_template_steps(
+                template_definition,
                 schedule_type=str(payload.get("schedule_type") or "DAILY"),
             )
         except ValueError as exc:
@@ -437,9 +425,20 @@ class ConversationTurnService:
                             "observation_start": period_start.isoformat(),
                             "observation_end": period_end.isoformat(),
                             "inspection": {
-                                "template_id": payload["template_id"],
-                                "template_version": payload[
-                                    "template_version"
+                                "template_id": payload[
+                                    "inspection_template_id"
+                                ],
+                                "template_version": str(payload[
+                                    "inspection_template_version"
+                                ]),
+                                "template_version_id": payload[
+                                    "inspection_template_version_id"
+                                ],
+                                "template_name": payload[
+                                    "inspection_template_name"
+                                ],
+                                "template_hash": payload[
+                                    "inspection_template_hash"
                                 ],
                                 "schedule_resolver_version": payload[
                                     "schedule_resolver_version"

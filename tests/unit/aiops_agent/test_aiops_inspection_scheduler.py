@@ -18,10 +18,6 @@ from aiops_agent.scheduling import (
     resolve_due_schedule,
 )
 from aiops_agent.application.turns import ConversationTurnService
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-)
-from aiops_agent.config import AIOpsManagementConfig
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.identity import uuid7
 from sqlalchemy.dialects import oracle
@@ -92,6 +88,21 @@ class ScheduleResolverTest(unittest.TestCase):
 
 
 class InspectionSchedulerTest(unittest.TestCase):
+    @staticmethod
+    def _template_definition(selected=None):
+        check_ids = tuple(
+            selected or default_selected_check_ids("DAILY")
+        )
+        return {
+            "schema_version": "INSPECTION_TEMPLATE.v1",
+            "display_name": "数据库巡检",
+            "catalog_hash": "a" * 64,
+            "selected_check_ids": list(check_ids),
+            "evidence_steps": list(
+                compile_selected_check_steps(check_ids)
+            ),
+        }
+
     def test_current_report_query_is_scoped_by_report_target_domain(self) -> None:
         result = SimpleNamespace(scalar_one_or_none=lambda: None)
         session = SimpleNamespace(execute=AsyncMock(return_value=result))
@@ -183,12 +194,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         )
         context = AsyncMock()
         context.__aenter__.return_value = uow
-        service = ConversationTurnService(
-            uow_factory=lambda: context,
-            inspection_template_registry=InspectionTemplateRegistry(
-                AIOpsManagementConfig().inspection_templates
-            ),
-        )
+        service = ConversationTurnService(uow_factory=lambda: context)
         service._require_existing_target = AsyncMock()
         service._create_turn = AsyncMock(
             return_value={"status": "QUEUED"}
@@ -199,15 +205,18 @@ class InspectionSchedulerTest(unittest.TestCase):
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(agent_id),
             "plan_display_name": "数据库日报",
-            "template_id": "database_daily",
-            "template_version": "1.0.0",
+            "inspection_template_id": str(uuid7()),
+            "inspection_template_version_id": str(uuid7()),
+            "inspection_template_name": "数据库每日巡检",
+            "inspection_template_version": 1,
+            "inspection_template_hash": "a" * 64,
+            "inspection_template_definition": self._template_definition(),
             "schedule_resolver_version": "1.0.0",
             "schedule_type": "DAILY",
             "timezone": "Asia/Shanghai",
             "period_start": "2026-07-22T16:00:00+00:00",
             "period_end": "2026-07-23T16:00:00+00:00",
             "timeout_seconds": 3600,
-            "selected_check_ids": list(default_selected_check_ids("DAILY")),
             "trace_id": "trace-inspection",
         }
 
@@ -293,12 +302,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         )
         context = AsyncMock()
         context.__aenter__.return_value = uow
-        service = ConversationTurnService(
-            uow_factory=lambda: context,
-            inspection_template_registry=InspectionTemplateRegistry(
-                AIOpsManagementConfig().inspection_templates
-            ),
-        )
+        service = ConversationTurnService(uow_factory=lambda: context)
         service._require_existing_target = AsyncMock()
         service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
         selected = [
@@ -311,15 +315,20 @@ class InspectionSchedulerTest(unittest.TestCase):
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(agent_id),
             "plan_display_name": "数据库周报",
-            "template_id": "database_daily",
-            "template_version": "1.0.0",
+            "inspection_template_id": str(uuid7()),
+            "inspection_template_version_id": str(uuid7()),
+            "inspection_template_name": "数据库周度巡检",
+            "inspection_template_version": 1,
+            "inspection_template_hash": "b" * 64,
+            "inspection_template_definition": self._template_definition(
+                selected
+            ),
             "schedule_resolver_version": "1.0.0",
             "schedule_type": "WEEKLY",
             "timezone": "Asia/Shanghai",
             "period_start": "2026-07-16T16:00:00+00:00",
             "period_end": "2026-07-23T16:00:00+00:00",
             "timeout_seconds": 3600,
-            "selected_check_ids": selected,
             "trace_id": "trace-weekly-inspection",
         }
 
@@ -357,6 +366,9 @@ class InspectionSchedulerTest(unittest.TestCase):
     ) -> None:
         now = datetime(2026, 7, 24, 1, 0, 10, tzinfo=UTC)
         agent_id = uuid7()
+        template_id = uuid7()
+        template_version_id = uuid7()
+        template_definition = self._template_definition()
         plan = SimpleNamespace(
             inspection_plan_id=uuid7(),
             domain_id=200,
@@ -365,13 +377,11 @@ class InspectionSchedulerTest(unittest.TestCase):
             schedule_type="DAILY",
             cron_expression="0 9 * * *",
             timezone="Asia/Shanghai",
-            template_id="database_daily",
-            template_version="1.0.0",
-            selected_checks_json=list(default_selected_check_ids("DAILY")),
+            inspection_template_id=template_id,
+            inspection_template_version_id=template_version_id,
             timeout_seconds=3600,
             overlap_policy="SKIP",
             misfire_policy="LATEST_ONLY",
-            schedule_resolver_version="1.0.0",
             next_run_at=datetime(2026, 7, 24, 1, 0, tzinfo=UTC),
             row_version=3,
         )
@@ -388,6 +398,18 @@ class InspectionSchedulerTest(unittest.TestCase):
 
         inspections = SimpleNamespace(
             claim_due_plan=AsyncMock(return_value=plan),
+            get_inspection_template=AsyncMock(return_value=SimpleNamespace(
+                inspection_template_id=template_id,
+                display_name="数据库每日巡检",
+            )),
+            get_inspection_template_version=AsyncMock(
+                return_value=SimpleNamespace(
+                    inspection_template_version_id=template_version_id,
+                    version_no=1,
+                    content_hash="a" * 64,
+                    definition_json=template_definition,
+                )
+            ),
             list_open_fires=AsyncMock(return_value=[]),
             add_fire=AsyncMock(side_effect=add_fire),
             advance_claimed_plan=AsyncMock(return_value=True),
@@ -429,8 +451,8 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertNotIn("agent_version_id", messages[0].payload_json)
         self.assertNotIn("target_id", messages[0].payload_json)
         self.assertEqual(
-            messages[0].payload_json["selected_check_ids"],
-            list(default_selected_check_ids("DAILY")),
+            messages[0].payload_json["inspection_template_definition"],
+            template_definition,
         )
         inspections.advance_claimed_plan.assert_awaited_once()
         uow.commit.assert_awaited_once()
@@ -507,8 +529,12 @@ class InspectionSchedulerTest(unittest.TestCase):
             "actor_id": "system:inspection-scheduler",
             "agent_id": str(uuid7()),
             "plan_display_name": "数据库日报",
-            "template_id": "database_daily",
-            "template_version": "1.0.0",
+            "inspection_template_id": str(uuid7()),
+            "inspection_template_version_id": str(uuid7()),
+            "inspection_template_name": "数据库每日巡检",
+            "inspection_template_version": 1,
+            "inspection_template_hash": "a" * 64,
+            "inspection_template_definition": self._template_definition(),
             "schedule_type": "DAILY",
             "timezone": "Asia/Shanghai",
             "period_start": "2026-07-22T16:00:00+00:00",

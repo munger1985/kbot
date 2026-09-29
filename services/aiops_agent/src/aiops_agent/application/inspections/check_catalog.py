@@ -220,3 +220,56 @@ def compile_selected_check_steps(
         raise ValueError("勾选检查项没有可执行的取证工具")
     return tuple(steps)
 
+
+def inspection_template_steps(
+    definition: Any,
+    *,
+    schedule_type: str,
+) -> tuple[dict[str, Any], ...]:
+    """从冻结模板定义生成本次步骤，不再读取当前 Check Catalog。"""
+    if not isinstance(definition, dict):
+        raise ValueError("巡检模板定义无效")
+    if definition.get("schema_version") != "INSPECTION_TEMPLATE.v1":
+        raise ValueError("巡检模板 schema_version 无效")
+    raw_steps = definition.get("evidence_steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ValueError("巡检模板未冻结取证步骤")
+    weekly = schedule_type == "WEEKLY"
+    steps: list[dict[str, Any]] = []
+    index_by_tool: dict[str, int] = {}
+    for raw in raw_steps:
+        if not isinstance(raw, dict) or not raw.get("tool_id"):
+            raise ValueError("巡检模板取证步骤无效")
+        step = dict(raw)
+        step["input"] = dict(step.get("input") or {})
+        step["measurement_semantics"] = _measurement_semantics(
+            weekly=weekly,
+            trend_required=bool(step.get("trend_required")),
+        )
+        tool_id = str(step["tool_id"])
+        existing_index = index_by_tool.get(tool_id)
+        if existing_index is None:
+            index_by_tool[tool_id] = len(steps)
+            steps.append(step)
+            continue
+        existing = steps[existing_index]
+        existing_ids = list(existing.get("check_ids") or ())
+        for check_id in step.get("check_ids") or ():
+            if check_id not in existing_ids:
+                existing_ids.append(check_id)
+        existing["check_ids"] = existing_ids
+        titles = [
+            item for item in str(existing.get("title") or "").split("、")
+            if item
+        ]
+        title = str(step.get("title") or "")
+        if title and title not in titles:
+            titles.append(title)
+        existing["title"] = "、".join(titles)
+        if step.get("trend_required"):
+            existing["trend_required"] = True
+            existing["measurement_semantics"] = _measurement_semantics(
+                weekly=weekly,
+                trend_required=True,
+            )
+    return tuple(steps)

@@ -1686,6 +1686,11 @@
             "title": "Display Name",
             "type": "string"
           },
+          "inspection_template_id": {
+            "format": "uuid",
+            "title": "Inspection Template Id",
+            "type": "string"
+          },
           "misfire_policy": {
             "default": "LATEST_ONLY",
             "enum": [
@@ -1704,12 +1709,6 @@
             "title": "Overlap Policy",
             "type": "string"
           },
-          "schedule_resolver_version": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Schedule Resolver Version",
-            "type": "string"
-          },
           "schedule_type": {
             "enum": [
               "DAILY",
@@ -1722,26 +1721,6 @@
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
-            "type": "string"
-          },
-          "selected_check_ids": {
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Selected Check Ids",
-            "type": "array"
-          },
-          "template_id": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Template Id",
-            "type": "string"
-          },
-          "template_version": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Template Version",
             "type": "string"
           },
           "timeout_seconds": {
@@ -1763,11 +1742,8 @@
           "schedule_type",
           "cron_expression",
           "timezone",
-          "template_id",
-          "template_version",
-          "selected_check_ids",
-          "timeout_seconds",
-          "schedule_resolver_version"
+          "inspection_template_id",
+          "timeout_seconds"
         ],
         "title": "InspectionPlanCreate",
         "type": "object"
@@ -1802,6 +1778,25 @@
             "title": "Display Name",
             "type": "string"
           },
+          "inspection_template_id": {
+            "format": "uuid",
+            "title": "Inspection Template Id",
+            "type": "string"
+          },
+          "inspection_template_name": {
+            "title": "Inspection Template Name",
+            "type": "string"
+          },
+          "inspection_template_version": {
+            "minimum": 1.0,
+            "title": "Inspection Template Version",
+            "type": "integer"
+          },
+          "inspection_template_version_id": {
+            "format": "uuid",
+            "title": "Inspection Template Version Id",
+            "type": "string"
+          },
           "misfire_policy": {
             "title": "Misfire Policy",
             "type": "string"
@@ -1832,10 +1827,6 @@
             "title": "Row Version",
             "type": "integer"
           },
-          "schedule_resolver_version": {
-            "title": "Schedule Resolver Version",
-            "type": "string"
-          },
           "schedule_type": {
             "title": "Schedule Type",
             "type": "string"
@@ -1860,14 +1851,6 @@
               "DISABLED"
             ],
             "title": "Status",
-            "type": "string"
-          },
-          "template_id": {
-            "title": "Template Id",
-            "type": "string"
-          },
-          "template_version": {
-            "title": "Template Version",
             "type": "string"
           },
           "timeout_seconds": {
@@ -1898,13 +1881,14 @@
           "row_version",
           "updated_at",
           "cron_expression",
-          "template_id",
-          "template_version",
+          "inspection_template_id",
+          "inspection_template_version_id",
+          "inspection_template_name",
+          "inspection_template_version",
           "selected_check_ids",
           "timeout_seconds",
           "overlap_policy",
           "misfire_policy",
-          "schedule_resolver_version",
           "agent_target_count",
           "created_at",
           "created_by",
@@ -1991,6 +1975,18 @@
             ],
             "title": "Display Name"
           },
+          "inspection_template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Template Id"
+          },
           "misfire_policy": {
             "anyOf": [
               {
@@ -2021,63 +2017,10 @@
             ],
             "title": "Overlap Policy"
           },
-          "schedule_resolver_version": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schedule Resolver Version"
-          },
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
             "type": "string"
-          },
-          "selected_check_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Check Ids"
-          },
-          "template_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Template Id"
-          },
-          "template_version": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Template Version"
           },
           "timeout_seconds": {
             "anyOf": [

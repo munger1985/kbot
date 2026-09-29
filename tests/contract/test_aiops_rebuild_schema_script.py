@@ -89,6 +89,13 @@ APPLY_SCHEMA_29 = (
     / "operations"
     / "apply_aiops_schema_29.sql"
 )
+APPLY_SCHEMA_30 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_30.sql"
+)
 CHECK_CATALOG = (
     ROOT
     / "services"
@@ -199,7 +206,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         )
         self.assertIn("l_missing_table_count <> 0", self.sql)
         self.assertIn("l_missing_view_count <> 0", self.sql)
-        self.assertIn("l_required_column_count <> 17", self.sql)
+        self.assertIn("l_required_column_count <> 22", self.sql)
         self.assertIn("l_report_summary_count <> 1", self.sql)
         self.assertIn("l_business_check_constraint_count <> 0", self.sql)
         self.assertNotIn("CK_OPS_TASK_TYPE", self.sql)
@@ -442,6 +449,27 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("DDL_LOCK_TIMEOUT = 60", normalized)
         self.assertIn("29 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V19' AS CONTRACT_VERSION", normalized)
+
+    def test_schema_30_apply_freezes_inspection_templates_and_removes_old_fields(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_30.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotIn("TRUNCATE TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+        self.assertIn("CREATE TABLE KBOT_OPS_INSPECTION_TEMPLATE", normalized)
+        self.assertIn("CREATE TABLE KBOT_OPS_INSPECTION_TEMPLATE_VER", normalized)
+        self.assertIn("INSPECTION_TEMPLATE.V1", normalized)
+        self.assertIn("SELECTED_CHECK_IDS", normalized)
+        self.assertIn("EVIDENCE_STEPS", normalized)
+        self.assertIn("INSPECTION_TEMPLATE_VERSION_ID NOT NULL", normalized)
+        self.assertIn("DROP_COLUMN_IF_PRESENT", normalized)
+        self.assertIn("UK_OPS_REPORT_TEMPLATE_NAME", normalized)
+        self.assertIn("DDL_LOCK_TIMEOUT = 60", normalized)
+        self.assertIn("30 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V20' AS CONTRACT_VERSION", normalized)
 
     def test_canonical_analyzer_rejects_unclosed_check_constraint(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "括号未闭合"):

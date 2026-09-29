@@ -9,10 +9,12 @@ from .change import (
 from .inspection import (
     InspectionFireEntity,
     InspectionPlanEntity,
-    InspectionReportTemplateEntity,
-    InspectionReportTemplateVersionEntity,
+    InspectionTemplateEntity,
+    InspectionTemplateVersionEntity,
     ReportEntity,
     ReportSourceEntity,
+    SessionReportTemplateEntity,
+    SessionReportTemplateVersionEntity,
 )
 from .messaging import InboxEntity, OutboxEntity
 from .notification import NotificationSubscriptionEntity
@@ -66,8 +68,8 @@ __all__ = [
     "InboxEntity",
     "InspectionFireEntity",
     "InspectionPlanEntity",
-    "InspectionReportTemplateEntity",
-    "InspectionReportTemplateVersionEntity",
+    "InspectionTemplateEntity",
+    "InspectionTemplateVersionEntity",
     "DiagnosticSourceEntity",
     "SituationEntity",
     "SituationEventEntity",
@@ -81,6 +83,8 @@ __all__ = [
     "PolicyEntity",
     "ReportEntity",
     "ReportSourceEntity",
+    "SessionReportTemplateEntity",
+    "SessionReportTemplateVersionEntity",
     "TargetBindingEntity",
     "TargetEntity",
     "TargetFactEntity",

@@ -41,7 +41,10 @@ from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
     ConversationStarterService,
 )
-from aiops_agent.application.report_templates import InspectionReportTemplateService
+from aiops_agent.application.report_templates import (
+    InspectionTemplateService,
+    SessionReportTemplateService,
+)
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
 from aiops_agent.api.changes import router as changes_router
@@ -55,9 +58,6 @@ from aiops_agent.application.diagnostic_sources import SignalEventIntakeService
 from aiops_agent.application.configuration import AIOpsConfigurationService
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.configuration.common import SignedCursorCodec
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-)
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
@@ -138,7 +138,10 @@ def create_aiops_api(
             upload_store=conversation_upload_store,
             conversation_starter_catalog=conversation_starter_catalog,
         )
-        app.state.report_template_service = InspectionReportTemplateService(
+        app.state.inspection_template_service = InspectionTemplateService(
+            uow_factory=runtime.uow_factory
+        )
+        app.state.session_report_template_service = SessionReportTemplateService(
             uow_factory=runtime.uow_factory
         )
         app.state.ready_check = runtime.check_aiops_schema
@@ -225,9 +228,6 @@ def create_aiops_api(
             cursor_codec=cursor_codec,
             secret_store=secret_store,
             agent_catalog=agent_catalog,
-            template_registry=InspectionTemplateRegistry(
-                resolved.management.inspection_templates
-            ),
             management=resolved.management,
             credential_cipher=credential_cipher,
             managed_credential_service=managed_credential_service,

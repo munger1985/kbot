@@ -552,6 +552,30 @@ class InspectionCheckCatalogView(AIOpsContract):
     groups: tuple[InspectionCheckCatalogGroup, ...] = Field(min_length=1)
 
 
+class InspectionTemplateCreate(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    display_name: str = Field(min_length=1, max_length=256)
+    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class InspectionTemplateVersionCreate(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    expected_row_version: int = Field(ge=1)
+    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class InspectionTemplateSummary(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    inspection_template_id: UUIDv7
+    display_name: str
+    status: str
+    version_no: int = Field(ge=1)
+    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    row_version: int = Field(ge=1)
+    updated_at: UtcDatetime
+
+
 class InspectionPlanCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
@@ -559,13 +583,10 @@ class InspectionPlanCreate(AIOpsContract):
     schedule_type: Literal["DAILY", "WEEKLY", "CRON"]
     cron_expression: str = Field(min_length=9, max_length=256)
     timezone: str = Field(min_length=1, max_length=64)
-    template_id: str = Field(min_length=1, max_length=128)
-    template_version: str = Field(min_length=1, max_length=64)
-    selected_check_ids: tuple[str, ...] = Field(min_length=1)
+    inspection_template_id: UUIDv7
     timeout_seconds: int = Field(ge=1, le=86400)
     overlap_policy: Literal["SKIP", "QUEUE"] = "SKIP"
     misfire_policy: Literal["SKIP", "LATEST_ONLY"] = "LATEST_ONLY"
-    schedule_resolver_version: str = Field(min_length=1, max_length=64)
 
 
 class InspectionPlanPatch(AIOpsContract):
@@ -574,15 +595,10 @@ class InspectionPlanPatch(AIOpsContract):
     agent_id: UUIDv7 | None = None
     cron_expression: str | None = Field(default=None, min_length=9, max_length=256)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
-    template_id: str | None = Field(default=None, min_length=1, max_length=128)
-    template_version: str | None = Field(default=None, min_length=1, max_length=64)
-    selected_check_ids: tuple[str, ...] | None = None
+    inspection_template_id: UUIDv7 | None = None
     timeout_seconds: int | None = Field(default=None, ge=1, le=86400)
     overlap_policy: Literal["SKIP", "QUEUE"] | None = None
     misfire_policy: Literal["SKIP", "LATEST_ONLY"] | None = None
-    schedule_resolver_version: str | None = Field(
-        default=None, min_length=1, max_length=64
-    )
 
 
 class InspectionPlanSummary(AIOpsContract):
@@ -600,13 +616,14 @@ class InspectionPlanSummary(AIOpsContract):
 
 class InspectionPlanDetail(InspectionPlanSummary):
     cron_expression: str
-    template_id: str
-    template_version: str
+    inspection_template_id: UUIDv7
+    inspection_template_version_id: UUIDv7
+    inspection_template_name: str
+    inspection_template_version: int = Field(ge=1)
     selected_check_ids: tuple[str, ...] = Field(min_length=1)
     timeout_seconds: int
     overlap_policy: str
     misfire_policy: str
-    schedule_resolver_version: str
     agent_target_count: int = Field(ge=0)
     created_at: UtcDatetime
     created_by: str

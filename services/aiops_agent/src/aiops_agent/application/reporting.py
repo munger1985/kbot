@@ -173,7 +173,7 @@ def _system_template(
     report_types: tuple[str, ...],
 ) -> ReportTemplate:
     definition = {
-        "schema_version": "REPORT_TEMPLATE.v1",
+        "schema_version": "REPORT_LAYOUT.v1",
         "display_name": name,
         "applicable_source_kinds": list(source_kinds),
         "allowed_period_kinds": list(periods),
@@ -266,6 +266,7 @@ def template_summary(template: ReportTemplate) -> dict[str, Any]:
         "display_name": template.display_name,
         "applicable_source_kinds": list(template.applicable_source_kinds),
         "allowed_period_kinds": list(template.allowed_period_kinds),
+        "sections": list(template.sections),
         "content_hash": template.content_hash,
         "system_defined": template.template_ref.startswith("system:"),
     }

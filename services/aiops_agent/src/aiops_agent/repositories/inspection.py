@@ -12,14 +12,16 @@ from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     InspectionFireEntity,
     InspectionPlanEntity,
-    InspectionReportTemplateEntity,
-    InspectionReportTemplateVersionEntity,
+    InspectionTemplateEntity,
+    InspectionTemplateVersionEntity,
     OpsConversationEntity,
     OpsConversationTurnEntity,
     OpsRunEntity,
     OutboxEntity,
     ReportEntity,
     ReportSourceEntity,
+    SessionReportTemplateEntity,
+    SessionReportTemplateVersionEntity,
     TargetEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
@@ -69,35 +71,86 @@ class InspectionRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
-    async def add_report_template(self, entity): return await self._add(entity)
-    async def add_report_template_version(self, entity): return await self._add(entity)
+    async def add_session_report_template(self, entity):
+        return await self._add(entity)
 
-    async def list_report_templates(self, *, domain_id: int):
+    async def add_session_report_template_version(self, entity):
+        return await self._add(entity)
+
+    async def list_session_report_templates(self, *, domain_id: int):
         rows = await self._session.scalars(select(
-            InspectionReportTemplateEntity
-        ).where(InspectionReportTemplateEntity.domain_id == domain_id).order_by(
-            InspectionReportTemplateEntity.updated_at.desc()
+            SessionReportTemplateEntity
+        ).where(SessionReportTemplateEntity.domain_id == domain_id).order_by(
+            SessionReportTemplateEntity.updated_at.desc()
         ))
         return list(rows)
 
-    async def get_report_template(self, *, domain_id: int, template_id: UUID, lock: bool = False):
-        statement = select(InspectionReportTemplateEntity).where(
-            InspectionReportTemplateEntity.domain_id == domain_id,
-            InspectionReportTemplateEntity.template_id == template_id,
+    async def get_session_report_template(self, *, domain_id: int, template_id: UUID, lock: bool = False):
+        statement = select(SessionReportTemplateEntity).where(
+            SessionReportTemplateEntity.domain_id == domain_id,
+            SessionReportTemplateEntity.template_id == template_id,
         )
         if lock: statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_report_template_version(self, *, template_version_id: UUID):
+    async def get_session_report_template_version(self, *, template_version_id: UUID):
         return await self._session.get(
-            InspectionReportTemplateVersionEntity, template_version_id
+            SessionReportTemplateVersionEntity, template_version_id
         )
 
-    async def next_report_template_version(self, *, template_id: UUID) -> int:
+    async def next_session_report_template_version(self, *, template_id: UUID) -> int:
         value = await self._session.scalar(select(func.coalesce(func.max(
-            InspectionReportTemplateVersionEntity.version_no), 0)).where(
-                InspectionReportTemplateVersionEntity.template_id == template_id
+            SessionReportTemplateVersionEntity.version_no), 0)).where(
+                SessionReportTemplateVersionEntity.template_id == template_id
             ))
+        return int(value) + 1
+
+    async def add_inspection_template(self, entity):
+        return await self._add(entity)
+
+    async def add_inspection_template_version(self, entity):
+        return await self._add(entity)
+
+    async def list_inspection_templates(self, *, domain_id: int):
+        rows = await self._session.scalars(
+            select(InspectionTemplateEntity)
+            .where(InspectionTemplateEntity.domain_id == domain_id)
+            .order_by(InspectionTemplateEntity.updated_at.desc())
+        )
+        return list(rows)
+
+    async def get_inspection_template(
+        self, *, domain_id: int, inspection_template_id: UUID,
+        lock: bool = False,
+    ):
+        statement = select(InspectionTemplateEntity).where(
+            InspectionTemplateEntity.domain_id == domain_id,
+            InspectionTemplateEntity.inspection_template_id
+            == inspection_template_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_inspection_template_version(
+        self, *, inspection_template_version_id: UUID,
+    ):
+        return await self._session.get(
+            InspectionTemplateVersionEntity,
+            inspection_template_version_id,
+        )
+
+    async def next_inspection_template_version(
+        self, *, inspection_template_id: UUID,
+    ) -> int:
+        value = await self._session.scalar(
+            select(
+                func.coalesce(func.max(InspectionTemplateVersionEntity.version_no), 0)
+            ).where(
+                InspectionTemplateVersionEntity.inspection_template_id
+                == inspection_template_id
+            )
+        )
         return int(value) + 1
 
     async def get_plan_scoped(

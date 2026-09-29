@@ -41,6 +41,8 @@ BEGIN
             'KBOT_OPS_HITL',
             'KBOT_OPS_APPROVAL_TOKEN',
             'KBOT_OPS_EXECUTION',
+            'KBOT_OPS_INSPECTION_TEMPLATE',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER',
             'KBOT_OPS_INSPECTION_PLAN',
             'KBOT_OPS_INSPECTION_FIRE',
             'KBOT_OPS_REPORT',
@@ -102,6 +104,8 @@ BEGIN
             'KBOT_OPS_HITL',
             'KBOT_OPS_APPROVAL_TOKEN',
             'KBOT_OPS_EXECUTION',
+            'KBOT_OPS_INSPECTION_TEMPLATE',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER',
             'KBOT_OPS_INSPECTION_PLAN',
             'KBOT_OPS_INSPECTION_FIRE',
             'KBOT_OPS_REPORT',
@@ -139,7 +143,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 44 项。');
+        dbms_output.put_line('[通过] AIOps 表: 46 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -253,10 +257,18 @@ BEGIN
             'IX_OPS_INPUT_ITEM_SOURCE',
             'IX_OPS_INSP_FIRE_PLAN',
             'IX_OPS_INSP_FIRE_STATUS',
+            'IX_OPS_INSP_FIRE_TEMPLATE',
+            'IX_OPS_INSP_FIRE_TEMPLATE_VER',
             'IX_OPS_INSP_PLAN_AGENT',
             'IX_OPS_INSP_PLAN_DOMAIN',
             'IX_OPS_INSP_PLAN_DUE',
             'IX_OPS_INSP_PLAN_LEASE',
+            'IX_OPS_INSP_PLAN_TEMPLATE',
+            'IX_OPS_INSP_PLAN_TEMPLATE_VER',
+            'IX_OPS_INSP_TEMPLATE_SCOPE',
+            'IX_OPS_INSP_TPL_CURRENT_VER',
+            'IX_OPS_INSP_TPL_VER_DOMAIN',
+            'IX_OPS_INSP_TPL_VER_TEMPLATE',
             'IX_OPS_INV_REV_ASSESS',
             'IX_OPS_INV_REV_FRAME',
             'IX_OPS_INV_REV_PLAN',
@@ -375,17 +387,12 @@ BEGIN
             'UK_OPS_HITL_IDEMP',
             'UK_OPS_INBOX_MESSAGE',
             'UK_OPS_INPUT_ITEM_NO',
-            'UK_OPS_INSP_FIRE',
             'UK_OPS_INV_REV_NO',
             'UK_OPS_NOTIFY_SUB_RECIPIENT',
             'UK_OPS_OUTBOX_IDEMP',
             'UK_OPS_PLAY_INV_ORD',
             'UK_OPS_POLICY_VERSION',
             'UK_OPS_PROPOSAL_VERSION',
-            'UK_OPS_REPORT_TEMPLATE_HASH',
-            'UK_OPS_REPORT_TEMPLATE_NAME',
-            'UK_OPS_REPORT_TEMPLATE_VER',
-            'UK_OPS_REPORT_VERSION',
             'UK_OPS_RUN_DELEGATION',
             'UK_OPS_RUN_IDEMP',
             'UK_OPS_SIG_SOURCE',
@@ -487,10 +494,18 @@ BEGIN
             'IX_OPS_INPUT_ITEM_SOURCE',
             'IX_OPS_INSP_FIRE_PLAN',
             'IX_OPS_INSP_FIRE_STATUS',
+            'IX_OPS_INSP_FIRE_TEMPLATE',
+            'IX_OPS_INSP_FIRE_TEMPLATE_VER',
             'IX_OPS_INSP_PLAN_AGENT',
             'IX_OPS_INSP_PLAN_DOMAIN',
             'IX_OPS_INSP_PLAN_DUE',
             'IX_OPS_INSP_PLAN_LEASE',
+            'IX_OPS_INSP_PLAN_TEMPLATE',
+            'IX_OPS_INSP_PLAN_TEMPLATE_VER',
+            'IX_OPS_INSP_TEMPLATE_SCOPE',
+            'IX_OPS_INSP_TPL_CURRENT_VER',
+            'IX_OPS_INSP_TPL_VER_DOMAIN',
+            'IX_OPS_INSP_TPL_VER_TEMPLATE',
             'IX_OPS_INV_REV_ASSESS',
             'IX_OPS_INV_REV_FRAME',
             'IX_OPS_INV_REV_PLAN',
@@ -609,17 +624,12 @@ BEGIN
             'UK_OPS_HITL_IDEMP',
             'UK_OPS_INBOX_MESSAGE',
             'UK_OPS_INPUT_ITEM_NO',
-            'UK_OPS_INSP_FIRE',
             'UK_OPS_INV_REV_NO',
             'UK_OPS_NOTIFY_SUB_RECIPIENT',
             'UK_OPS_OUTBOX_IDEMP',
             'UK_OPS_PLAY_INV_ORD',
             'UK_OPS_POLICY_VERSION',
             'UK_OPS_PROPOSAL_VERSION',
-            'UK_OPS_REPORT_TEMPLATE_HASH',
-            'UK_OPS_REPORT_TEMPLATE_NAME',
-            'UK_OPS_REPORT_TEMPLATE_VER',
-            'UK_OPS_REPORT_VERSION',
             'UK_OPS_RUN_DELEGATION',
             'UK_OPS_RUN_IDEMP',
             'UK_OPS_SIG_SOURCE',
@@ -659,7 +669,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 215 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 218 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -718,8 +728,16 @@ BEGIN
             'FK_OPS_INPUT_ITEM_SOURCE',
             'FK_OPS_INPUT_ITEM_TURN',
             'FK_OPS_INSP_FIRE_PLAN',
+            'FK_OPS_INSP_FIRE_TEMPLATE',
+            'FK_OPS_INSP_FIRE_TEMPLATE_VER',
             'FK_OPS_INSP_PLAN_AGENT',
             'FK_OPS_INSP_PLAN_DOMAIN',
+            'FK_OPS_INSP_PLAN_TEMPLATE',
+            'FK_OPS_INSP_PLAN_TEMPLATE_VER',
+            'FK_OPS_INSP_TPL_CURRENT_VER',
+            'FK_OPS_INSP_TPL_DOMAIN',
+            'FK_OPS_INSP_TPL_VER_DOMAIN',
+            'FK_OPS_INSP_TPL_VER_TEMPLATE',
             'FK_OPS_INV_REV_ASSESS',
             'FK_OPS_INV_REV_FRAME',
             'FK_OPS_INV_REV_PLAN',
@@ -832,17 +850,12 @@ BEGIN
             'UK_OPS_HITL_IDEMP',
             'UK_OPS_INBOX_MESSAGE',
             'UK_OPS_INPUT_ITEM_NO',
-            'UK_OPS_INSP_FIRE',
             'UK_OPS_INV_REV_NO',
             'UK_OPS_NOTIFY_SUB_RECIPIENT',
             'UK_OPS_OUTBOX_IDEMP',
             'UK_OPS_PLAY_INV_ORD',
             'UK_OPS_POLICY_VERSION',
             'UK_OPS_PROPOSAL_VERSION',
-            'UK_OPS_REPORT_TEMPLATE_HASH',
-            'UK_OPS_REPORT_TEMPLATE_NAME',
-            'UK_OPS_REPORT_TEMPLATE_VER',
-            'UK_OPS_REPORT_VERSION',
             'UK_OPS_RUN_DELEGATION',
             'UK_OPS_RUN_IDEMP',
             'UK_OPS_SIG_SOURCE',
@@ -930,8 +943,16 @@ BEGIN
             'FK_OPS_INPUT_ITEM_SOURCE',
             'FK_OPS_INPUT_ITEM_TURN',
             'FK_OPS_INSP_FIRE_PLAN',
+            'FK_OPS_INSP_FIRE_TEMPLATE',
+            'FK_OPS_INSP_FIRE_TEMPLATE_VER',
             'FK_OPS_INSP_PLAN_AGENT',
             'FK_OPS_INSP_PLAN_DOMAIN',
+            'FK_OPS_INSP_PLAN_TEMPLATE',
+            'FK_OPS_INSP_PLAN_TEMPLATE_VER',
+            'FK_OPS_INSP_TPL_CURRENT_VER',
+            'FK_OPS_INSP_TPL_DOMAIN',
+            'FK_OPS_INSP_TPL_VER_DOMAIN',
+            'FK_OPS_INSP_TPL_VER_TEMPLATE',
             'FK_OPS_INV_REV_ASSESS',
             'FK_OPS_INV_REV_FRAME',
             'FK_OPS_INV_REV_PLAN',
@@ -1044,17 +1065,12 @@ BEGIN
             'UK_OPS_HITL_IDEMP',
             'UK_OPS_INBOX_MESSAGE',
             'UK_OPS_INPUT_ITEM_NO',
-            'UK_OPS_INSP_FIRE',
             'UK_OPS_INV_REV_NO',
             'UK_OPS_NOTIFY_SUB_RECIPIENT',
             'UK_OPS_OUTBOX_IDEMP',
             'UK_OPS_PLAY_INV_ORD',
             'UK_OPS_POLICY_VERSION',
             'UK_OPS_PROPOSAL_VERSION',
-            'UK_OPS_REPORT_TEMPLATE_HASH',
-            'UK_OPS_REPORT_TEMPLATE_NAME',
-            'UK_OPS_REPORT_TEMPLATE_VER',
-            'UK_OPS_REPORT_VERSION',
             'UK_OPS_RUN_DELEGATION',
             'UK_OPS_RUN_IDEMP',
             'UK_OPS_SIG_SOURCE',
@@ -1081,7 +1097,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 193 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 196 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1392,20 +1408,19 @@ BEGIN
             'KBOT_OPS_INSPECTION_FIRE|FAILED_COUNT',
             'KBOT_OPS_INSPECTION_FIRE|INSPECTION_FIRE_ID',
             'KBOT_OPS_INSPECTION_FIRE|INSPECTION_PLAN_ID',
+            'KBOT_OPS_INSPECTION_FIRE|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_FIRE|INSPECTION_TEMPLATE_VERSION_ID',
             'KBOT_OPS_INSPECTION_FIRE|PLAN_ROW_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|PLAN_SNAPSHOT_JSON',
             'KBOT_OPS_INSPECTION_FIRE|RESOLUTION_JSON',
             'KBOT_OPS_INSPECTION_FIRE|ROW_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|RUN_COUNT',
             'KBOT_OPS_INSPECTION_FIRE|SCHEDULED_FOR',
-            'KBOT_OPS_INSPECTION_FIRE|SCHEDULED_FOR_UTC',
             'KBOT_OPS_INSPECTION_FIRE|SCHEDULE_RESOLVER_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|SKIP_REASON',
             'KBOT_OPS_INSPECTION_FIRE|STARTED_AT',
             'KBOT_OPS_INSPECTION_FIRE|STATUS',
             'KBOT_OPS_INSPECTION_FIRE|TARGET_COUNT',
-            'KBOT_OPS_INSPECTION_FIRE|TEMPLATE_ID',
-            'KBOT_OPS_INSPECTION_FIRE|TEMPLATE_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|UPDATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|AGENT_ID',
             'KBOT_OPS_INSPECTION_PLAN|CREATED_AT',
@@ -1414,6 +1429,8 @@ BEGIN
             'KBOT_OPS_INSPECTION_PLAN|DISPLAY_NAME',
             'KBOT_OPS_INSPECTION_PLAN|DOMAIN_ID',
             'KBOT_OPS_INSPECTION_PLAN|INSPECTION_PLAN_ID',
+            'KBOT_OPS_INSPECTION_PLAN|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_PLAN|INSPECTION_TEMPLATE_VERSION_ID',
             'KBOT_OPS_INSPECTION_PLAN|LAST_RUN_AT',
             'KBOT_OPS_INSPECTION_PLAN|LAST_SCHEDULED_FOR',
             'KBOT_OPS_INSPECTION_PLAN|LEASE_OWNER',
@@ -1423,16 +1440,30 @@ BEGIN
             'KBOT_OPS_INSPECTION_PLAN|NEXT_RUN_AT',
             'KBOT_OPS_INSPECTION_PLAN|OVERLAP_POLICY',
             'KBOT_OPS_INSPECTION_PLAN|ROW_VERSION',
-            'KBOT_OPS_INSPECTION_PLAN|SCHEDULE_RESOLVER_VERSION',
             'KBOT_OPS_INSPECTION_PLAN|SCHEDULE_TYPE',
-            'KBOT_OPS_INSPECTION_PLAN|SELECTED_CHECKS_JSON',
             'KBOT_OPS_INSPECTION_PLAN|STATUS',
-            'KBOT_OPS_INSPECTION_PLAN|TEMPLATE_ID',
-            'KBOT_OPS_INSPECTION_PLAN|TEMPLATE_VERSION',
             'KBOT_OPS_INSPECTION_PLAN|TIMEOUT_SECONDS',
             'KBOT_OPS_INSPECTION_PLAN|TIMEZONE',
             'KBOT_OPS_INSPECTION_PLAN|UPDATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|UPDATED_BY',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|CONTENT_HASH',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|CREATED_AT',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|CREATED_BY',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|DEFINITION_JSON',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|DOMAIN_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|INSPECTION_TEMPLATE_VERSION_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|VERSION_NO',
+            'KBOT_OPS_INSPECTION_TEMPLATE|CREATED_AT',
+            'KBOT_OPS_INSPECTION_TEMPLATE|CREATED_BY',
+            'KBOT_OPS_INSPECTION_TEMPLATE|CURRENT_VERSION_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|DISPLAY_NAME',
+            'KBOT_OPS_INSPECTION_TEMPLATE|DOMAIN_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|ROW_VERSION',
+            'KBOT_OPS_INSPECTION_TEMPLATE|STATUS',
+            'KBOT_OPS_INSPECTION_TEMPLATE|UPDATED_AT',
+            'KBOT_OPS_INSPECTION_TEMPLATE|UPDATED_BY',
             'KBOT_OPS_INVESTIGATION_REVISION|ASSESSMENT_ARTIFACT_ID',
             'KBOT_OPS_INVESTIGATION_REVISION|CREATED_AT',
             'KBOT_OPS_INVESTIGATION_REVISION|CREATED_BY',
@@ -2169,20 +2200,19 @@ BEGIN
             'KBOT_OPS_INSPECTION_FIRE|FAILED_COUNT',
             'KBOT_OPS_INSPECTION_FIRE|INSPECTION_FIRE_ID',
             'KBOT_OPS_INSPECTION_FIRE|INSPECTION_PLAN_ID',
+            'KBOT_OPS_INSPECTION_FIRE|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_FIRE|INSPECTION_TEMPLATE_VERSION_ID',
             'KBOT_OPS_INSPECTION_FIRE|PLAN_ROW_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|PLAN_SNAPSHOT_JSON',
             'KBOT_OPS_INSPECTION_FIRE|RESOLUTION_JSON',
             'KBOT_OPS_INSPECTION_FIRE|ROW_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|RUN_COUNT',
             'KBOT_OPS_INSPECTION_FIRE|SCHEDULED_FOR',
-            'KBOT_OPS_INSPECTION_FIRE|SCHEDULED_FOR_UTC',
             'KBOT_OPS_INSPECTION_FIRE|SCHEDULE_RESOLVER_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|SKIP_REASON',
             'KBOT_OPS_INSPECTION_FIRE|STARTED_AT',
             'KBOT_OPS_INSPECTION_FIRE|STATUS',
             'KBOT_OPS_INSPECTION_FIRE|TARGET_COUNT',
-            'KBOT_OPS_INSPECTION_FIRE|TEMPLATE_ID',
-            'KBOT_OPS_INSPECTION_FIRE|TEMPLATE_VERSION',
             'KBOT_OPS_INSPECTION_FIRE|UPDATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|AGENT_ID',
             'KBOT_OPS_INSPECTION_PLAN|CREATED_AT',
@@ -2191,6 +2221,8 @@ BEGIN
             'KBOT_OPS_INSPECTION_PLAN|DISPLAY_NAME',
             'KBOT_OPS_INSPECTION_PLAN|DOMAIN_ID',
             'KBOT_OPS_INSPECTION_PLAN|INSPECTION_PLAN_ID',
+            'KBOT_OPS_INSPECTION_PLAN|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_PLAN|INSPECTION_TEMPLATE_VERSION_ID',
             'KBOT_OPS_INSPECTION_PLAN|LAST_RUN_AT',
             'KBOT_OPS_INSPECTION_PLAN|LAST_SCHEDULED_FOR',
             'KBOT_OPS_INSPECTION_PLAN|LEASE_OWNER',
@@ -2200,16 +2232,30 @@ BEGIN
             'KBOT_OPS_INSPECTION_PLAN|NEXT_RUN_AT',
             'KBOT_OPS_INSPECTION_PLAN|OVERLAP_POLICY',
             'KBOT_OPS_INSPECTION_PLAN|ROW_VERSION',
-            'KBOT_OPS_INSPECTION_PLAN|SCHEDULE_RESOLVER_VERSION',
             'KBOT_OPS_INSPECTION_PLAN|SCHEDULE_TYPE',
-            'KBOT_OPS_INSPECTION_PLAN|SELECTED_CHECKS_JSON',
             'KBOT_OPS_INSPECTION_PLAN|STATUS',
-            'KBOT_OPS_INSPECTION_PLAN|TEMPLATE_ID',
-            'KBOT_OPS_INSPECTION_PLAN|TEMPLATE_VERSION',
             'KBOT_OPS_INSPECTION_PLAN|TIMEOUT_SECONDS',
             'KBOT_OPS_INSPECTION_PLAN|TIMEZONE',
             'KBOT_OPS_INSPECTION_PLAN|UPDATED_AT',
             'KBOT_OPS_INSPECTION_PLAN|UPDATED_BY',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|CONTENT_HASH',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|CREATED_AT',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|CREATED_BY',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|DEFINITION_JSON',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|DOMAIN_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|INSPECTION_TEMPLATE_VERSION_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE_VER|VERSION_NO',
+            'KBOT_OPS_INSPECTION_TEMPLATE|CREATED_AT',
+            'KBOT_OPS_INSPECTION_TEMPLATE|CREATED_BY',
+            'KBOT_OPS_INSPECTION_TEMPLATE|CURRENT_VERSION_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|DISPLAY_NAME',
+            'KBOT_OPS_INSPECTION_TEMPLATE|DOMAIN_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|INSPECTION_TEMPLATE_ID',
+            'KBOT_OPS_INSPECTION_TEMPLATE|ROW_VERSION',
+            'KBOT_OPS_INSPECTION_TEMPLATE|STATUS',
+            'KBOT_OPS_INSPECTION_TEMPLATE|UPDATED_AT',
+            'KBOT_OPS_INSPECTION_TEMPLATE|UPDATED_BY',
             'KBOT_OPS_INVESTIGATION_REVISION|ASSESSMENT_ARTIFACT_ID',
             'KBOT_OPS_INVESTIGATION_REVISION|CREATED_AT',
             'KBOT_OPS_INVESTIGATION_REVISION|CREATED_BY',
@@ -2635,7 +2681,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 760 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 775 项。');
     END IF;
 
     l_issue_count := 0;
@@ -2727,19 +2773,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 29
-           OR l_contract_version <> 'aiops-oracle-v19' THEN
+           OR l_schema_version <> 30
+           OR l_contract_version <> 'aiops-oracle-v20' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '29/aiops-oracle-v19'
+                || '30/aiops-oracle-v20'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/29/'
-                || 'aiops-oracle-v19'
+                '[通过] Schema 合同：AIOPS/30/'
+                || 'aiops-oracle-v20'
             );
         END IF;
     EXCEPTION
@@ -2765,9 +2811,9 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：44 张表、10 个视图、'
-        || '215 个命名索引、193 个命名约束、'
-        || '760 个表列；Schema 与当前规范一致。'
+        '验证通过：46 张表、10 个视图、'
+        || '218 个命名索引、196 个命名约束、'
+        || '775 个表列；Schema 与当前规范一致。'
     );
 END;
 /

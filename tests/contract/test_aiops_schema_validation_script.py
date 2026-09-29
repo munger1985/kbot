@@ -91,17 +91,16 @@ class AIOpsSchemaValidationScriptTest(unittest.TestCase):
         self.assertGreater(len(set(table_columns)), 300)
         self.assertEqual(len(table_columns), len(set(table_columns)) * 2)
 
-    def test_virtual_column_continuation_is_not_treated_as_column(self) -> None:
+    def test_inspection_fire_template_columns_are_discovered(self) -> None:
         _, canonical_sections = _load_canonical_sections()
         columns = _extract_table_columns(
             canonical_sections,
             "KBOT_OPS_INSPECTION_FIRE",
         )
 
-        self.assertIn("SCHEDULED_FOR_UTC", columns)
+        self.assertIn("INSPECTION_TEMPLATE_ID", columns)
+        self.assertIn("INSPECTION_TEMPLATE_VERSION_ID", columns)
         self.assertIn("STATUS", columns)
-        self.assertNotIn("GENERATED", columns)
-        self.assertNotIn("KBOT_OPS_INSPECTION_FIRE|GENERATED", self.sql)
 
 
 if __name__ == "__main__":

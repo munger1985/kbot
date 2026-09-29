@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from aiops_agent.application.errors import validation_failed
-from aiops_agent.config import InspectionTemplateRegistration
 
 
 def _parse_field(expression: str, minimum: int, maximum: int) -> set[int]:
@@ -79,68 +78,3 @@ def next_cron_run(
             return current
         current += timedelta(minutes=1)
     raise validation_failed("Cron 在未来 370 天内没有可计算的触发时间")
-
-
-class InspectionTemplateRegistry:
-    """部署时冻结的巡检模板与覆盖字段白名单。"""
-
-    def __init__(
-        self,
-        registrations: tuple[InspectionTemplateRegistration, ...],
-    ):
-        self._registrations = {
-            (
-                item.template_id,
-                item.template_version,
-                item.schedule_resolver_version,
-            ): item
-            for item in registrations
-        }
-
-    def validate(
-        self,
-        *,
-        template_id: str,
-        template_version: str,
-        schedule_resolver_version: str,
-    ) -> InspectionTemplateRegistration:
-        registration = self._registrations.get(
-            (template_id, template_version, schedule_resolver_version)
-        )
-        if registration is None:
-            raise validation_failed("巡检模板或 Resolver 版本未登记")
-        return registration
-
-    def validate_overrides(
-        self,
-        *,
-        registration: InspectionTemplateRegistration,
-        overrides: dict | None,
-    ) -> None:
-        if overrides is None:
-            return
-        unsupported = set(overrides) - set(registration.allowed_override_keys)
-        if unsupported:
-            raise validation_failed(
-                "模板覆盖包含未允许字段：" + ", ".join(sorted(unsupported))
-            )
-
-    def execution_steps(
-        self,
-        *,
-        template_id: str,
-        template_version: str,
-        schedule_resolver_version: str,
-    ) -> tuple[dict, ...]:
-        """返回已登记模板的固定取证契约，禁止回退为自由规划。"""
-        registration = self.validate(
-            template_id=template_id,
-            template_version=template_version,
-            schedule_resolver_version=schedule_resolver_version,
-        )
-        if not registration.evidence_steps:
-            raise validation_failed("巡检模板未声明固定取证步骤")
-        return tuple(
-            item.model_dump(mode="json")
-            for item in registration.evidence_steps
-        )

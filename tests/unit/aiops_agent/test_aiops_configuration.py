@@ -22,10 +22,7 @@ from aiops_agent.application.configuration.common import (
     parse_etag,
 )
 from aiops_agent.application.configuration.base import ConfigurationServiceBase
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-    next_cron_run,
-)
+from aiops_agent.application.configuration.schedule import next_cron_run
 from aiops_agent.application.configuration.policy_service import (
     PolicyConfigurationMixin,
 )
@@ -37,7 +34,6 @@ from aiops_agent.application.configuration.service import (
     AIOpsConfigurationService,
 )
 from aiops_agent.application.errors import AIOpsApplicationError
-from aiops_agent.config import InspectionTemplateRegistration
 from aiops_agent.entities import DiagnosticSourceEntity, TargetEntity
 from aiops_agent.repositories.monitoring import (
     DiagnosticSourceRepository,
@@ -314,28 +310,6 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(UTC, next_run.tzinfo)
         self.assertEqual(1, next_run.hour)
 
-    def test_template_registry_rejects_unknown_override(self) -> None:
-        registry = InspectionTemplateRegistry(
-            (
-                InspectionTemplateRegistration(
-                    template_id="database_daily",
-                    template_version="1.0.0",
-                    schedule_resolver_version="1.0.0",
-                    allowed_override_keys=("thresholds",),
-                ),
-            )
-        )
-        registration = registry.validate(
-            template_id="database_daily",
-            template_version="1.0.0",
-            schedule_resolver_version="1.0.0",
-        )
-        with self.assertRaises(AIOpsApplicationError):
-            registry.validate_overrides(
-                registration=registration,
-                overrides={"sql": "select * from secret"},
-            )
-
     async def test_managed_secret_adapter_never_returns_value(self) -> None:
         managed = AsyncMock()
         managed.resolve_reference.return_value = {"token": "plain-secret-value"}
@@ -348,8 +322,32 @@ class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
+    def _template(self):
+        template_id = uuid7()
+        version_id = uuid7()
+        template = SimpleNamespace(
+            inspection_template_id=template_id,
+            domain_id=100,
+            display_name="数据库每日巡检",
+            status="ACTIVE",
+            current_version_id=version_id,
+        )
+        version = SimpleNamespace(
+            inspection_template_version_id=version_id,
+            inspection_template_id=template_id,
+            version_no=1,
+            definition_json={
+                "schema_version": "INSPECTION_TEMPLATE.v1",
+                "selected_check_ids": list(
+                    default_selected_check_ids("DAILY")
+                ),
+            },
+        )
+        return template, version
+
     def _plan(self, *, status: str) -> SimpleNamespace:
         now = datetime.now(UTC)
+        template, version = self._template()
         return SimpleNamespace(
             inspection_plan_id=uuid7(),
             domain_id=100,
@@ -358,13 +356,13 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             schedule_type="DAILY",
             cron_expression="0 13 * * *",
             timezone="Asia/Shanghai",
-            template_id="database_daily",
-            template_version="1.0.0",
-            selected_checks_json=list(default_selected_check_ids("DAILY")),
+            inspection_template_id=template.inspection_template_id,
+            inspection_template_version_id=(
+                version.inspection_template_version_id
+            ),
             timeout_seconds=1800,
             overlap_policy="SKIP",
             misfire_policy="SKIP",
-            schedule_resolver_version="1.0.0",
             status=status,
             next_run_at=None,
             row_version=3,
@@ -376,18 +374,18 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
 
     def _command_service(self, entity: SimpleNamespace):
         service = object.__new__(AIOpsConfigurationService)
-        service._template_registry = InspectionTemplateRegistry(
-            (
-                InspectionTemplateRegistration(
-                    template_id="database_daily",
-                    template_version="1.0.0",
-                    schedule_resolver_version="1.0.0",
-                ),
-            )
+        template, version = self._template()
+        template.inspection_template_id = entity.inspection_template_id
+        version.inspection_template_version_id = (
+            entity.inspection_template_version_id
         )
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
                 get_plan_scoped=AsyncMock(return_value=entity),
+                get_inspection_template=AsyncMock(return_value=template),
+                get_inspection_template_version=AsyncMock(
+                    return_value=version
+                ),
             ),
             agents=SimpleNamespace(
                 get_active=AsyncMock(
@@ -415,22 +413,18 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_plan_selects_agent_and_is_active_immediately(self) -> None:
         service = object.__new__(InspectionConfigurationMixin)
-        service._template_registry = InspectionTemplateRegistry(
-            (
-                InspectionTemplateRegistration(
-                    template_id="database_daily",
-                    template_version="1.0.0",
-                    schedule_resolver_version="1.0.0",
-                ),
-            )
-        )
+        template, template_version = self._template()
         agent_id = uuid7()
         agent_version_id = uuid7()
         target_ids = [uuid7(), uuid7()]
         added = []
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
-                add_plan=AsyncMock(side_effect=lambda entity: added.append(entity))
+                add_plan=AsyncMock(side_effect=lambda entity: added.append(entity)),
+                get_inspection_template=AsyncMock(return_value=template),
+                get_inspection_template_version=AsyncMock(
+                    return_value=template_version
+                ),
             ),
             agents=SimpleNamespace(
                 get_active=AsyncMock(
@@ -462,11 +456,8 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
                 schedule_type="DAILY",
                 cron_expression="0 13 * * *",
                 timezone="Asia/Shanghai",
-                template_id="database_daily",
-                template_version="1.0.0",
-                selected_check_ids=default_selected_check_ids("DAILY"),
+                inspection_template_id=template.inspection_template_id,
                 timeout_seconds=1800,
-                schedule_resolver_version="1.0.0",
             ),
             idempotency_key="inspection-create-1",
         )
@@ -476,8 +467,12 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("ACTIVE", added[0].status)
         self.assertIsNotNone(added[0].next_run_at)
         self.assertEqual(
-            list(default_selected_check_ids("DAILY")),
-            added[0].selected_checks_json,
+            template.inspection_template_id,
+            added[0].inspection_template_id,
+        )
+        self.assertEqual(
+            template_version.inspection_template_version_id,
+            added[0].inspection_template_version_id,
         )
         self.assertEqual(
             default_selected_check_ids("DAILY"),

@@ -23,14 +23,8 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
-from aiops_agent.application.configuration.schedule import (
-    InspectionTemplateRegistry,
-    next_cron_run,
-)
-from aiops_agent.application.inspections.check_catalog import (
-    load_check_catalog,
-    normalize_selected_check_ids,
-)
+from aiops_agent.application.configuration.schedule import next_cron_run
+from aiops_agent.application.inspections.check_catalog import load_check_catalog
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -127,15 +121,7 @@ class InspectionConfigurationMixin:
         *,
         cron_expression: str,
         timezone: str,
-        template_id: str,
-        template_version: str,
-        resolver_version: str,
     ) -> datetime:
-        self._template_registry.validate(
-            template_id=template_id,
-            template_version=template_version,
-            schedule_resolver_version=resolver_version,
-        )
         return next_cron_run(
             expression=cron_expression,
             timezone_name=timezone,
@@ -144,11 +130,21 @@ class InspectionConfigurationMixin:
     def get_inspection_check_catalog(self) -> InspectionCheckCatalogView:
         return load_check_catalog()
 
-    def _selected_check_ids(self, check_ids: Any) -> tuple[str, ...]:
-        try:
-            return normalize_selected_check_ids(check_ids)
-        except ValueError as exc:
-            raise validation_failed(str(exc)) from exc
+    async def _inspection_template_version(
+        self, *, uow, domain_id: int, template_id: UUID,
+    ):
+        template = await uow.inspections.get_inspection_template(
+            domain_id=domain_id,
+            inspection_template_id=template_id,
+        )
+        if template is None or template.status != "ACTIVE":
+            raise validation_failed("巡检计划必须选择一个已启用的巡检模板")
+        version = await uow.inspections.get_inspection_template_version(
+            inspection_template_version_id=template.current_version_id
+        )
+        if version is None:
+            raise state_conflict("巡检模板当前版本不存在")
+        return template, version
 
     async def create_inspection_plan(
         self,
@@ -160,9 +156,6 @@ class InspectionConfigurationMixin:
         next_run_at = self._validate_plan_definition(
             cron_expression=request.cron_expression,
             timezone=request.timezone,
-            template_id=request.template_id,
-            template_version=request.template_version,
-            resolver_version=request.schedule_resolver_version,
         )
 
         async def handler(
@@ -175,8 +168,10 @@ class InspectionConfigurationMixin:
                 agent_id=request.agent_id,
             )
             target_count = len(binding.target_ids)
-            selected_check_ids = self._selected_check_ids(
-                request.selected_check_ids
+            template, template_version = await self._inspection_template_version(
+                uow=uow,
+                domain_id=scope.domain_id,
+                template_id=request.inspection_template_id,
             )
             entity = InspectionPlanEntity(
                 inspection_plan_id=uuid7(),
@@ -186,13 +181,13 @@ class InspectionConfigurationMixin:
                 schedule_type=request.schedule_type,
                 cron_expression=request.cron_expression,
                 timezone=request.timezone,
-                template_id=request.template_id,
-                template_version=request.template_version,
-                selected_checks_json=list(selected_check_ids),
+                inspection_template_id=template.inspection_template_id,
+                inspection_template_version_id=(
+                    template_version.inspection_template_version_id
+                ),
                 timeout_seconds=request.timeout_seconds,
                 overlap_policy=request.overlap_policy,
                 misfire_policy=request.misfire_policy,
-                schedule_resolver_version=request.schedule_resolver_version,
                 status="ACTIVE",
                 next_run_at=next_run_at,
                 row_version=1,
@@ -211,7 +206,10 @@ class InspectionConfigurationMixin:
                 row_version=1,
             )
             return _inspection_detail(
-                entity, agent_target_count=target_count
+                entity,
+                agent_target_count=target_count,
+                template=template,
+                template_version=template_version,
             )
 
         return await self._idempotent(
@@ -240,8 +238,22 @@ class InspectionConfigurationMixin:
                 domain_id=scope.domain_id,
                 agent_id=entity.agent_id,
             )
+            template = await uow.inspections.get_inspection_template(
+                domain_id=scope.domain_id,
+                inspection_template_id=entity.inspection_template_id,
+            )
+            template_version = await uow.inspections.get_inspection_template_version(
+                inspection_template_version_id=(
+                    entity.inspection_template_version_id
+                )
+            )
+            if template is None or template_version is None:
+                raise state_conflict("巡检计划引用的模板版本不存在")
             return _inspection_detail(
-                entity, agent_target_count=target_count
+                entity,
+                agent_target_count=target_count,
+                template=template,
+                template_version=template_version,
             )
 
     async def list_inspection_plans(
@@ -284,9 +296,7 @@ class InspectionConfigurationMixin:
                     filters=filters,
                 )
             return InspectionPlanPage(
-                items=tuple(
-                    _inspection_summary(item) for item in page_entities
-                ),
+                items=tuple(_inspection_summary(item) for item in page_entities),
                 next_cursor=next_cursor,
                 has_more=len(entities) > limit,
             )
@@ -311,29 +321,45 @@ class InspectionConfigurationMixin:
             self._check_version(entity.row_version, expected_version)
             fields = request.model_dump(exclude_unset=True, mode="python")
             fields.pop("schema_version", None)
-            selected_provided = "selected_check_ids" in fields
-            selected_check_ids = fields.pop("selected_check_ids", None)
-            if not fields and not selected_provided:
+            if not fields:
                 raise validation_failed("PATCH 至少需要一个可修改字段")
-            definitions = {
-                "cron_expression": fields.get(
+            next_run_at = self._validate_plan_definition(
+                cron_expression=fields.get(
                     "cron_expression", entity.cron_expression
                 ),
-                "timezone": fields.get("timezone", entity.timezone),
-                "template_id": fields.get("template_id", entity.template_id),
-                "template_version": fields.get(
-                    "template_version", entity.template_version
-                ),
-                "resolver_version": fields.get(
-                    "schedule_resolver_version",
-                    entity.schedule_resolver_version,
-                ),
-            }
-            next_run_at = self._validate_plan_definition(**definitions)
-            if selected_provided:
-                entity.selected_checks_json = list(
-                    self._selected_check_ids(selected_check_ids or ())
+                timezone=fields.get("timezone", entity.timezone),
+            )
+            requested_template_id = fields.pop(
+                "inspection_template_id", None
+            )
+            if requested_template_id is not None:
+                template, template_version = (
+                    await self._inspection_template_version(
+                        uow=uow,
+                        domain_id=scope.domain_id,
+                        template_id=requested_template_id,
+                    )
                 )
+                entity.inspection_template_id = (
+                    template.inspection_template_id
+                )
+                entity.inspection_template_version_id = (
+                    template_version.inspection_template_version_id
+                )
+            else:
+                template = await uow.inspections.get_inspection_template(
+                    domain_id=scope.domain_id,
+                    inspection_template_id=entity.inspection_template_id,
+                )
+                template_version = (
+                    await uow.inspections.get_inspection_template_version(
+                        inspection_template_version_id=(
+                            entity.inspection_template_version_id
+                        )
+                    )
+                )
+                if template is None or template_version is None:
+                    raise state_conflict("巡检计划引用的模板版本不存在")
             for name, value in fields.items():
                 setattr(entity, name, value)
             entity.updated_by = scope.actor_id
@@ -358,7 +384,10 @@ class InspectionConfigurationMixin:
                 row_version=int(entity.row_version),
             )
             response = _inspection_detail(
-                entity, agent_target_count=target_count
+                entity,
+                agent_target_count=target_count,
+                template=template,
+                template_version=template_version,
             )
             await uow.commit()
             return response
@@ -407,9 +436,6 @@ class InspectionConfigurationMixin:
                 entity.next_run_at = self._validate_plan_definition(
                     cron_expression=entity.cron_expression,
                     timezone=entity.timezone,
-                    template_id=entity.template_id,
-                    template_version=entity.template_version,
-                    resolver_version=entity.schedule_resolver_version,
                 )
             else:
                 target_count = await self._inspection_agent_target_count(
@@ -418,6 +444,17 @@ class InspectionConfigurationMixin:
                     agent_id=entity.agent_id,
                 )
                 entity.next_run_at = None
+            template = await uow.inspections.get_inspection_template(
+                domain_id=scope.domain_id,
+                inspection_template_id=entity.inspection_template_id,
+            )
+            template_version = await uow.inspections.get_inspection_template_version(
+                inspection_template_version_id=(
+                    entity.inspection_template_version_id
+                )
+            )
+            if template is None or template_version is None:
+                raise state_conflict("巡检计划引用的模板版本不存在")
             entity.status = destination
             entity.updated_by = scope.actor_id
             entity.updated_at = now
@@ -431,7 +468,10 @@ class InspectionConfigurationMixin:
                 row_version=int(entity.row_version),
             )
             return _inspection_detail(
-                entity, agent_target_count=target_count
+                entity,
+                agent_target_count=target_count,
+                template=template,
+                template_version=template_version,
             )
 
         return await self._idempotent(

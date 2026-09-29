@@ -12,6 +12,7 @@ from sqlalchemy import Text
 
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.application.reporting import resolve_system_template
+from aiops_agent.application.report_templates import SessionReportTemplateService
 from aiops_agent.contracts.change import ActionVerification
 from aiops_agent.contracts.report import ComparisonPlan
 from aiops_agent.entities import ReportEntity
@@ -19,6 +20,22 @@ from platform_core.identity import uuid7
 
 
 class InspectionReportPublishingTest(unittest.TestCase):
+    def test_session_template_is_limited_to_chat_and_keeps_required_sections(
+        self,
+    ) -> None:
+        definition, template = SessionReportTemplateService._normalize_definition(
+            display_name="会话复盘",
+            definition={"sections": [{"kind": "FINDINGS"}]},
+        )
+
+        self.assertEqual("SESSION_REPORT_TEMPLATE.v1", definition["schema_version"])
+        self.assertEqual(["CHAT"], definition["applicable_source_kinds"])
+        self.assertEqual(["AD_HOC"], definition["allowed_period_kinds"])
+        self.assertEqual(
+            ("EXECUTIVE_SUMMARY", "FINDINGS", "EVIDENCE_BOUNDARY"),
+            template.sections,
+        )
+
     def test_report_summary_uses_clob_mapping(self) -> None:
         self.assertIsInstance(ReportEntity.__table__.c.summary.type, Text)
 

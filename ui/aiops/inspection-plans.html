@@ -8,7 +8,7 @@
   </main>
   <dialog id="inspection-plan-dialog" class="ops-dialog inspection-plan-dialog">
     <form id="inspection-plan-form">
-      <header class="inspection-plan-head"><div><p class="inspection-plan-kicker">INSPECTION SCHEDULE</p><h2 id="inspection-plan-dialog-title">新增巡检计划</h2><p>Agent 决定 Target、模型、监控源、诊断步骤和报告内容；计划只定义触发时间与报告展示类型。</p></div><button data-close-dialog type="button">关闭</button></header>
+      <header class="inspection-plan-head"><div><p class="inspection-plan-kicker">INSPECTION SCHEDULE</p><h2 id="inspection-plan-dialog-title">新增巡检计划</h2><p>巡检模板固定检查内容；计划只选择 Agent、模板、执行时间和运行策略。</p></div><button data-close-dialog type="button">关闭</button></header>
       <div class="ops-dialog-body inspection-plan-body">
         <section class="inspection-form-section" aria-labelledby="inspection-basic-title">
           <div class="inspection-section-number">01</div>
@@ -17,9 +17,7 @@
             <div class="ops-form">
               <div class="ops-field span-12"><label for="plan-display-name">计划名称</label><input id="plan-display-name" name="display_name" maxlength="256" placeholder="例如：生产数据库每日健康巡检" required></div>
               <div class="ops-field span-12"><label for="plan-agent-id">执行巡检的 DBA Agent</label><select id="plan-agent-id" name="agent_id" required><option value="">正在读取可用 Agent…</option></select><small id="plan-agent-help">计划触发时，将使用该 Agent 当前发布版本关联的全部 Target、模型和策略。</small></div>
-              <div class="ops-field span-6"><label for="plan-template-id">巡检模板</label><input id="plan-template-id" name="template_id" value="database_daily" maxlength="128" required><small>填写部署时登记的模板标识。</small></div>
-              <div class="ops-field span-3"><label for="plan-template-version">模板版本</label><input id="plan-template-version" name="template_version" value="1.0.0" maxlength="64" required></div>
-              <div class="ops-field span-3"><label for="plan-resolver-version">解析器版本</label><input id="plan-resolver-version" name="schedule_resolver_version" value="1.0.0" maxlength="64" required></div>
+              <div class="ops-field span-12"><label for="plan-inspection-template-id">巡检模板</label><select id="plan-inspection-template-id" name="inspection_template_id" required><option value="">正在读取巡检模板…</option></select><small id="plan-template-help">模板版本在计划保存时固定，模板后续更新不会静默改变已有计划。</small></div>
             </div>
           </div>
         </section>
@@ -81,9 +79,8 @@
         <section class="inspection-form-section" aria-labelledby="inspection-checks-title">
           <div class="inspection-section-number">03</div>
           <div class="inspection-section-content">
-            <div class="inspection-section-heading"><div><h3 id="inspection-checks-title">检查项</h3><p>从检查目录勾选本次计划要执行的项，不能手写 SQL。</p></div></div>
-            <div id="inspection-check-catalog" class="inspection-check-groups"></div>
-            <p class="inspection-helper" id="inspection-check-help">日检默认看当前态；周检默认打开趋势项。灰色项为规划中，不能勾选。</p>
+            <div class="inspection-section-heading"><div><h3 id="inspection-checks-title">模板检查内容</h3><p>这里仅预览模板已经冻结的检查项；需要调整时请在“模板管理”中创建新版本。</p></div></div>
+            <div id="inspection-template-preview" class="inspection-check-groups"><p class="inspection-helper">请选择巡检模板。</p></div>
           </div>
         </section>
 

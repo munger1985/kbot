@@ -17,8 +17,8 @@ from aiops_agent.application.inspections.check_catalog import (
     normalize_selected_check_ids,
     selected_check_ids_from_json,
 )
-from platform_core.contracts.aiops import InspectionPlanCreate
-from platform_core.identity import uuid7
+from aiops_agent.application.report_templates import InspectionTemplateService
+from platform_core.contracts.aiops import InspectionTemplateCreate
 
 
 class CheckCatalogLoaderTest(unittest.TestCase):
@@ -98,21 +98,13 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "检查项快照必须是 ID 列表"):
             selected_check_ids_from_json({"ids": list(daily)})
 
-    def test_create_contract_requires_selected_check_ids(self) -> None:
+    def test_template_create_contract_requires_selected_check_ids(self) -> None:
         payload = {
             "display_name": "每日巡检",
-            "agent_id": str(uuid7()),
-            "schedule_type": "DAILY",
-            "cron_expression": "0 13 * * *",
-            "timezone": "Asia/Shanghai",
-            "template_id": "database_daily",
-            "template_version": "1.0.0",
-            "timeout_seconds": 1800,
-            "schedule_resolver_version": "1.0.0",
         }
         with self.assertRaises(ValidationError):
-            InspectionPlanCreate(**payload)
-        created = InspectionPlanCreate(
+            InspectionTemplateCreate(**payload)
+        created = InspectionTemplateCreate(
             **payload,
             selected_check_ids=default_selected_check_ids("DAILY"),
         )
@@ -188,6 +180,22 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         self.assertEqual(
             cron_by_tool["db.storage.capacity"]["measurement_semantics"],
             daily_by_tool["db.storage.capacity"]["measurement_semantics"],
+        )
+
+    def test_template_definition_freezes_catalog_and_evidence_steps(self) -> None:
+        selected = default_selected_check_ids("DAILY")
+
+        definition = InspectionTemplateService._definition(
+            display_name="每日数据库巡检",
+            selected_check_ids=selected,
+        )
+
+        self.assertEqual("INSPECTION_TEMPLATE.v1", definition["schema_version"])
+        self.assertEqual(load_check_catalog().catalog_hash, definition["catalog_hash"])
+        self.assertEqual(list(selected), definition["selected_check_ids"])
+        self.assertEqual(
+            list(compile_selected_check_steps(selected)),
+            definition["evidence_steps"],
         )
 
 

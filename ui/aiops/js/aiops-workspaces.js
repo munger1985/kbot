@@ -1003,7 +1003,9 @@
       const sourceKind = button.dataset.reportSourceKind;
       const periodKind = button.dataset.reportPeriodKind;
       const conversationId = button.dataset.generateReportConversation;
-      const rows = await KBotAIOpsAuth.request(`${api}/report-templates`);
+      const rows = await KBotAIOpsAuth.request(
+        `${api}/${conversationId ? "session-report-templates" : "report-layouts"}`,
+      );
       const templates = values(rows).filter((item) => values(item.applicable_source_kinds).includes(sourceKind)
         && (sourceKind === "INSPECTION" || values(item.allowed_period_kinds).includes(periodKind)));
       if (!templates.length) throw new Error("当前诊断没有可用的报告模板");
@@ -1015,7 +1017,7 @@
       const scopeHint = conversationId
         ? "报告将冻结本次会话全部已完成 Turn 的事实、证据引用和数据缺口。"
         : "报告将冻结当前已验证事实、证据引用和数据缺口。";
-      dialog.innerHTML = `<form method="dialog"><header><h2>生成正式报告</h2><p>${scopeHint}</p></header><div class="ops-dialog-body">${sourceKind === "INSPECTION" ? `<label class="ops-field">报告周期<select name="period_kind">${periods.map((kind) => `<option value="${kind}">${periodLabels[kind]}</option>`).join("")}</select></label>` : ""}<label class="ops-field">报告模板<select name="template_ref"></select></label><p class="ops-connection-result">${conversationId ? "报告范围为当前会话，进行中的 Turn 结束后才可生成。" : "周期报告只汇总最近一个完整自然周期内的巡检结果。"}</p></div><footer><button value="cancel">取消</button><button class="primary" value="confirm">生成报告</button></footer></form>`;
+      dialog.innerHTML = `<form method="dialog"><header><h2>生成正式报告</h2><p>${scopeHint}</p></header><div class="ops-dialog-body">${sourceKind === "INSPECTION" ? `<label class="ops-field">报告周期<select name="period_kind">${periods.map((kind) => `<option value="${kind}">${periodLabels[kind]}</option>`).join("")}</select></label>` : ""}<label class="ops-field">${conversationId ? "会话报告模板" : "系统报告版式"}<select name="template_ref"></select></label><p class="ops-connection-result">${conversationId ? "报告范围为当前会话，进行中的 Turn 结束后才可生成。" : "周期报告只汇总最近一个完整自然周期内的巡检结果。"}</p></div><footer><button value="cancel">取消</button><button class="primary" value="confirm">生成报告</button></footer></form>`;
       document.body.append(dialog);
       const templateSelect = dialog.querySelector('[name="template_ref"]');
       const periodSelect = dialog.querySelector('[name="period_kind"]');

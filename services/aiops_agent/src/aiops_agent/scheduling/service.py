@@ -9,13 +9,13 @@ from datetime import timedelta
 
 from loguru import logger
 
-from aiops_agent.application.inspections.check_catalog import (
-    selected_check_ids_from_json,
-)
 from aiops_agent.entities import InspectionFireEntity, OutboxEntity
 from platform_core.identity import uuid7
 
 from .resolver import resolve_due_schedule
+
+
+_SCHEDULE_RESOLVER_VERSION = "2.0.0"
 
 
 def _hash(value: dict) -> str:
@@ -71,6 +71,19 @@ class AIOpsInspectionScheduler:
                 return False
             if plan.next_run_at is None:
                 return False
+            template = await uow.inspections.get_inspection_template(
+                domain_id=int(plan.domain_id),
+                inspection_template_id=plan.inspection_template_id,
+            )
+            template_version = (
+                await uow.inspections.get_inspection_template_version(
+                    inspection_template_version_id=(
+                        plan.inspection_template_version_id
+                    )
+                )
+            )
+            if template is None or template_version is None:
+                raise RuntimeError("巡检计划引用的模板版本不存在")
             resolution = resolve_due_schedule(
                 cron_expression=plan.cron_expression,
                 timezone_name=plan.timezone,
@@ -79,7 +92,7 @@ class AIOpsInspectionScheduler:
                 now=now,
                 misfire_policy=plan.misfire_policy,
                 misfire_grace_seconds=self._misfire_grace,
-                resolver_version=plan.schedule_resolver_version,
+                resolver_version=_SCHEDULE_RESOLVER_VERSION,
             )
             open_fires = await uow.inspections.list_open_fires(
                 inspection_plan_id=plan.inspection_plan_id,
@@ -111,14 +124,21 @@ class AIOpsInspectionScheduler:
                 "agent_version_id": None,
                 "schedule_type": plan.schedule_type,
                 "timezone": plan.timezone,
-                "template_id": plan.template_id,
-                "template_version": plan.template_version,
-                "selected_check_ids": list(
-                    selected_check_ids_from_json(plan.selected_checks_json)
+                "inspection_template_id": str(
+                    plan.inspection_template_id
                 ),
-                "schedule_resolver_version": (
-                    plan.schedule_resolver_version
+                "inspection_template_version_id": str(
+                    plan.inspection_template_version_id
                 ),
+                "inspection_template_name": template.display_name,
+                "inspection_template_version": int(
+                    template_version.version_no
+                ),
+                "inspection_template_hash": template_version.content_hash,
+                "inspection_template_definition": dict(
+                    template_version.definition_json
+                ),
+                "schedule_resolver_version": _SCHEDULE_RESOLVER_VERSION,
                 "timeout_seconds": int(plan.timeout_seconds),
                 "period_start": resolution.period_start.isoformat(),
                 "period_end": resolution.period_end.isoformat(),
@@ -130,10 +150,14 @@ class AIOpsInspectionScheduler:
                     scheduled_for=resolution.scheduled_for,
                     status=status,
                     plan_row_version=int(plan.row_version),
-                    template_id=plan.template_id,
-                    template_version=plan.template_version,
+                    inspection_template_id=(
+                        plan.inspection_template_id
+                    ),
+                    inspection_template_version_id=(
+                        plan.inspection_template_version_id
+                    ),
                     schedule_resolver_version=(
-                        plan.schedule_resolver_version
+                        _SCHEDULE_RESOLVER_VERSION
                     ),
                     plan_snapshot_json=plan_snapshot,
                     resolution_json=resolution.resolution,
@@ -297,8 +321,24 @@ class AIOpsInspectionScheduler:
             "actor_id": "system:inspection-scheduler",
             "agent_id": snapshot["agent_id"],
             "plan_display_name": snapshot["display_name"],
-            "template_id": snapshot["template_id"],
-            "template_version": snapshot["template_version"],
+            "inspection_template_id": snapshot[
+                "inspection_template_id"
+            ],
+            "inspection_template_version_id": snapshot[
+                "inspection_template_version_id"
+            ],
+            "inspection_template_name": snapshot[
+                "inspection_template_name"
+            ],
+            "inspection_template_version": snapshot[
+                "inspection_template_version"
+            ],
+            "inspection_template_hash": snapshot[
+                "inspection_template_hash"
+            ],
+            "inspection_template_definition": snapshot[
+                "inspection_template_definition"
+            ],
             "schedule_resolver_version": snapshot[
                 "schedule_resolver_version"
             ],
@@ -307,9 +347,6 @@ class AIOpsInspectionScheduler:
             "period_start": snapshot["period_start"],
             "period_end": snapshot["period_end"],
             "timeout_seconds": snapshot["timeout_seconds"],
-            "selected_check_ids": list(
-                snapshot.get("selected_check_ids") or ()
-            ),
             "trace_id": trace_id,
         }
         await uow.outbox.add(

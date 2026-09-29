@@ -6,6 +6,7 @@
   let editing = null;
   let inspectionAgents = [];
   let inspectionCatalog = null;
+  let inspectionTemplates = [];
 
   function showResult(id, message, tone = "bad") {
     const element = document.getElementById(id);
@@ -663,19 +664,25 @@
       agent_id: form.elements.agent_id.value,
       cron_expression: schedule.cron,
       timezone: form.elements.timezone.value,
-      template_id: form.elements.template_id.value.trim(),
-      template_version: form.elements.template_version.value.trim(),
+      inspection_template_id: form.elements.inspection_template_id.value,
       timeout_seconds: Number(form.elements.timeout_seconds.value),
       overlap_policy: form.elements.overlap_policy.value,
       misfire_policy: form.elements.misfire_policy.value,
-      schedule_resolver_version: form.elements.schedule_resolver_version.value.trim(),
     };
     if (create) payload.schedule_type = form.elements.schedule_type.value;
-    payload.selected_check_ids = selectedCheckIds(form);
-    if (!payload.selected_check_ids.length) {
-      throw new Error("至少勾选一个已开放的检查项。");
-    }
     return payload;
+  }
+
+  function renderInspectionTemplatePreview(form) {
+    const selected = inspectionTemplates.find((item) => String(item.inspection_template_id) === String(form.elements.inspection_template_id.value));
+    const preview = document.getElementById("inspection-template-preview");
+    if (!selected) {
+      preview.innerHTML = '<p class="inspection-helper">请选择巡检模板。</p>';
+      return;
+    }
+    const names = new Map();
+    (inspectionCatalog?.groups || []).forEach((group) => (group.checks || []).forEach((check) => names.set(check.check_id, `${group.display_name} · ${check.display_name}`)));
+    preview.innerHTML = `<div class="inspection-template-summary"><strong>${shell.escape(selected.display_name)} · v${shell.escape(selected.version_no)}</strong><small>${shell.escape((selected.selected_check_ids || []).length)} 项检查 · ${shell.escape(shell.short(selected.content_hash))}</small></div><ul>${(selected.selected_check_ids || []).map((checkId) => `<li>${shell.escape(names.get(checkId) || checkId)}</li>`).join("")}</ul>`;
   }
 
   function openPlanCreate() {
@@ -683,10 +690,8 @@
     const form = document.getElementById("inspection-plan-form");
     form.reset();
     resetScheduleBuilder(form);
-    renderCheckCatalog(form, catalogDefaultCheckIds("DAILY"));
-    form.elements.template_id.value = "database_daily";
-    form.elements.template_version.value = "1.0.0";
-    form.elements.schedule_resolver_version.value = "1.0.0";
+    form.elements.inspection_template_id.value = inspectionTemplates[0]?.inspection_template_id || "";
+    renderInspectionTemplatePreview(form);
     form.elements.timeout_seconds.value = 1800;
     document.getElementById("inspection-plan-dialog-title").textContent = "新增巡检计划";
     document.getElementById("save-inspection-plan").textContent = "创建并启用";
@@ -702,7 +707,7 @@
       const form = document.getElementById("inspection-plan-form");
       form.reset();
       Object.entries(planPayloadValues(plan)).forEach(([key, value]) => { form.elements[key].value = value; });
-      renderCheckCatalog(form, plan.selected_check_ids || []);
+      renderInspectionTemplatePreview(form);
       hydrateScheduleBuilder(form, plan);
       document.getElementById("inspection-plan-dialog-title").textContent = "编辑巡检计划";
       document.getElementById("save-inspection-plan").textContent = "保存修改";
@@ -721,12 +726,10 @@
       schedule_type: plan.schedule_type,
       cron_expression: plan.cron_expression,
       timezone: plan.timezone,
-      template_id: plan.template_id,
-      template_version: plan.template_version,
+      inspection_template_id: plan.inspection_template_id,
       timeout_seconds: plan.timeout_seconds,
       overlap_policy: plan.overlap_policy,
       misfire_policy: plan.misfire_policy,
-      schedule_resolver_version: plan.schedule_resolver_version,
     };
   }
 
@@ -814,14 +817,26 @@
       }));
       try {
         inspectionCatalog = await KBotAIOpsAuth.request(`${api}/inspection-check-catalog`);
-        renderCheckCatalog(planForm, catalogDefaultCheckIds("DAILY"));
+        inspectionTemplates = await KBotAIOpsAuth.request(`${api}/inspection-templates`);
+        planForm.elements.inspection_template_id.replaceChildren(
+          new Option("请选择已启用的巡检模板", ""),
+          ...inspectionTemplates.filter((item) => item.status === "ACTIVE").map((item) => new Option(
+            `${item.display_name} · v${item.version_no} · ${item.selected_check_ids?.length || 0} 项`,
+            item.inspection_template_id,
+          )),
+        );
+        document.getElementById("plan-template-help").textContent = inspectionTemplates.length
+          ? "计划保存时固定当前模板版本；升级模板后需显式更新计划。"
+          : "当前没有巡检模板，请先到模板管理中创建。";
       } catch (error) {
         inspectionCatalog = null;
-        renderCheckCatalog(planForm, []);
-        document.getElementById("inspection-check-help").textContent = error.message;
+        inspectionTemplates = [];
+        planForm.elements.inspection_template_id.replaceChildren(new Option("巡检模板读取失败", ""));
+        document.getElementById("plan-template-help").textContent = error.message;
       }
       document.getElementById("create-inspection-plan").addEventListener("click", openPlanCreate);
       planForm.addEventListener("submit", savePlan);
+      planForm.elements.inspection_template_id.addEventListener("change", () => renderInspectionTemplatePreview(planForm));
       planForm.querySelectorAll('input[name="schedule_mode"], input[name="weekdays"], input[type="time"], select[name="month_day"], select[name="interval_preset"], select[name="timezone"]').forEach((control) => {
         control.addEventListener("change", () => renderSchedule(planForm));
       });

@@ -21,7 +21,7 @@
     ["资源配置", [
       ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],
       ["knowledge-core", "Knowledge Core"], ["agents", "AIOps Agent"],
-      ["inspection-plans", "巡检计划"], ["report-templates", "报告模板"],
+      ["inspection-plans", "巡检计划"], ["report-templates", "模板管理"],
       ["api-clients", "API 客户端"],
     ]],
   ];

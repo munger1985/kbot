@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 29
-                              AND contract_version = 'aiops-oracle-v19'
+                              AND schema_version = 30
+                              AND contract_version = 'aiops-oracle-v20'
                             """
                         )
                     )
@@ -89,7 +89,17 @@ class AIOpsProcessRuntime:
                                 OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
                                     AND COLUMN_NAME = 'AGENT_ID')
                                 OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
-                                    AND COLUMN_NAME = 'SELECTED_CHECKS_JSON')
+                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
+                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_VERSION_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_FIRE'
+                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_FIRE'
+                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_VERSION_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_TEMPLATE'
+                                    AND COLUMN_NAME = 'CURRENT_VERSION_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_TEMPLATE_VER'
+                                    AND COLUMN_NAME = 'DEFINITION_JSON')
                                 OR (TABLE_NAME = 'KBOT_OPS_TARGET'
                                     AND COLUMN_NAME = 'IMPORTANCE_LEVEL')
                               )
@@ -135,7 +145,7 @@ class AIOpsProcessRuntime:
                     )
                 ).scalar_one_or_none()
                 integrity_ready = (
-                    required_columns == 10
+                    required_columns == 15
                     and report_summary_column == 1
                     and report_source_table == 1
                     and business_check_constraints == 0
