@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-from aiops_agent.application.investigation import InvestigationReasoner
+from aiops_agent.application.investigation import (
+    InvestigationPlanValidationError,
+    InvestigationReasoner,
+)
 from aiops_agent.contracts.diagnosis import ModelInvocationReceipt
 from aiops_agent.ports.model import StructuredModelResult
 from platform_core.contracts.aiops import (
@@ -355,6 +358,39 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 model_snapshot={},
                 deadline=None,
                 idempotency_key="turn-2",
+            )
+
+    async def test_plan_rejects_more_than_twelve_model_actions(self) -> None:
+        payload = _output()
+        payload["plan"]["actions"] = [
+            {
+                "action_id": f"a{index}",
+                "question": f"执行第 {index} 项模型调查动作",
+                "tool_id": "db.instance.identity",
+                "input": {},
+                "expected_evidence_kind": "DATABASE_STATUS",
+                "measurement_semantics": "CURRENT_ACTIVITY",
+            }
+            for index in range(1, 14)
+        ]
+        reasoner = InvestigationReasoner(_Model(payload), _Prompts())
+
+        with self.assertRaisesRegex(
+            InvestigationPlanValidationError,
+            "最多允许生成 12 个调查动作，实际为 13 个",
+        ):
+            await reasoner.plan(
+                content=({"content_type": "TEXT", "text": "检查数据库"},),
+                conversation_context=(),
+                target_context=TARGET_CONTEXT,
+                prompt_snapshot=PROMPT_SNAPSHOT,
+                available_tools=(
+                    {"tool_id": "db.instance.identity", "version": "1.0.0"},
+                ),
+                available_playbooks=(),
+                model_snapshot={},
+                deadline=None,
+                idempotency_key="turn-model-action-limit",
             )
 
     async def test_replan_rejects_identical_tool_call_without_progress(self) -> None:

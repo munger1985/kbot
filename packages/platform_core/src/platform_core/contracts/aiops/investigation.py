@@ -20,6 +20,7 @@ TASK_FRAME_SCHEMA_VERSION = "aiops.task-frame.v1"
 INVESTIGATION_PLAN_SCHEMA_VERSION = "aiops.investigation-plan.v1"
 INVESTIGATION_ASSESSMENT_SCHEMA_VERSION = "aiops.investigation-assessment.v1"
 COMPACT_PLANNING_SCHEMA_VERSION = "aiops.compact-planning.v3"
+INVESTIGATION_PLAN_ACTION_CAPACITY = 64
 
 
 class InputContentType(StrEnum):
@@ -285,7 +286,9 @@ class InvestigationPlan(AIOpsContract):
     schema_version: str = INVESTIGATION_PLAN_SCHEMA_VERSION
     revision_no: int = Field(ge=1)
     hypotheses: tuple[InvestigationHypothesis, ...] = ()
-    actions: tuple[InvestigationAction, ...] = Field(max_length=12)
+    actions: tuple[InvestigationAction, ...] = Field(
+        max_length=INVESTIGATION_PLAN_ACTION_CAPACITY
+    )
     answer_if_no_more_evidence: bool = False
     stop_reason: str | None = Field(default=None, max_length=2000)
 

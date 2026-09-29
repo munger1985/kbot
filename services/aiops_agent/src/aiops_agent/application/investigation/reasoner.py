@@ -14,6 +14,9 @@ from platform_core.contracts.aiops import InvestigationPlanningOutput
 from platform_core.contracts.aiops import CompactPlanningOutput
 
 
+MODEL_GENERATED_PLAN_ACTION_LIMIT = 12
+
+
 class InvestigationPlanValidationError(ValueError):
     """模型计划引用未知或越界能力。"""
 
@@ -134,6 +137,7 @@ class InvestigationReasoner:
             idempotency_key=idempotency_key,
         )
         output = InvestigationPlanningOutput.model_validate(result.output)
+        validate_model_plan_action_limit(output, planning_kind="调查规划")
         known_tools = {str(item["tool_id"]) for item in available_tools}
         unknown = tuple(
             action.tool_id
@@ -186,6 +190,10 @@ class InvestigationReasoner:
             idempotency_key=idempotency_key,
         )
         proposed = InvestigationPlanningOutput.model_validate(result.output)
+        validate_model_plan_action_limit(
+            proposed,
+            planning_kind="策略修正规划",
+        )
         # 策略修正模型只负责提出替换动作。输入理解、任务框架、Playbook 和
         # Plan 元数据全部由服务端沿用原计划，避免模型无意改写不可变字段后
         # 把本可恢复的参数错误升级为整轮失败。
@@ -252,6 +260,7 @@ class InvestigationReasoner:
             idempotency_key=idempotency_key,
         )
         output = InvestigationPlanningOutput.model_validate(result.output)
+        validate_model_plan_action_limit(output, planning_kind="重规划")
         if output.plan.revision_no != revision_no:
             raise InvestigationPlanValidationError(
                 f"重规划版本必须为 {revision_no}"
@@ -285,6 +294,21 @@ class InvestigationReasoner:
                 + ", ".join(repeated)
             )
         return StructuredModelResult(output=output, receipt=result.receipt)
+
+
+def validate_model_plan_action_limit(
+    output: InvestigationPlanningOutput,
+    *,
+    planning_kind: str,
+) -> None:
+    """限制模型单轮动作数量，固定模板巡检不受该边界影响。"""
+    action_count = len(output.plan.actions)
+    if action_count <= MODEL_GENERATED_PLAN_ACTION_LIMIT:
+        return
+    raise InvestigationPlanValidationError(
+        f"{planning_kind}最多允许生成 "
+        f"{MODEL_GENERATED_PLAN_ACTION_LIMIT} 个调查动作，实际为 {action_count} 个"
+    )
 
 
 def canonical_input(value: dict[str, Any]) -> str:

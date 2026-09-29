@@ -972,11 +972,21 @@ class _RejectedExecutorClient:
 
 
 class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_inspection_uses_frozen_fixed_tools_without_model_planning(
+    async def test_inspection_keeps_all_frozen_steps_without_model_planning(
         self,
     ) -> None:
         uow = _PlanningUow()
         question = "执行数据库日常健康巡检"
+        evidence_steps = [
+            {
+                "title": f"实例性能指标 {index}",
+                "tool_id": "db.instance.performance",
+                "input": {},
+                "expected_evidence_kind": "INSTANCE_PERFORMANCE",
+                "measurement_semantics": "CURRENT_ACTIVITY",
+            }
+            for index in range(1, 14)
+        ]
         uow.message.payload_json = {
             "text": question,
             "content": [{"content_type": "TEXT", "text": question}],
@@ -987,22 +997,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                 "inspection": {
                     "template_id": "database_daily",
                     "template_version": "1.0.0",
-                    "evidence_steps": [
-                        {
-                            "title": "实例性能指标",
-                            "tool_id": "db.instance.performance",
-                            "input": {},
-                            "expected_evidence_kind": "INSTANCE_PERFORMANCE",
-                            "measurement_semantics": "CURRENT_ACTIVITY",
-                        },
-                        {
-                            "title": "会话资源利用率",
-                            "tool_id": "db.resource.session_utilization",
-                            "input": {},
-                            "expected_evidence_kind": "SESSION_UTILIZATION",
-                            "measurement_semantics": "CURRENT_ACTIVITY",
-                        },
-                    ],
+                    "evidence_steps": evidence_steps,
                 }
             }
         }
@@ -1040,11 +1035,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("COLLECTING", result["status"])
         self.assertEqual([], reasoner.compact_calls)
         self.assertEqual(
-            [
-                "db.instance.identity",
-                "db.instance.performance",
-                "db.resource.session_utilization",
-            ],
+            ["db.instance.identity"]
+            + ["db.instance.performance"] * len(evidence_steps),
             [item.tool_id for item in uow.tool_invocations],
         )
         self.assertNotIn(
@@ -1054,7 +1046,20 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             "TEMPLATE_FIXED_INSPECTION",
             uow.run.plan_snapshot_json["planning_route"]["mode"],
         )
-        task_frame = uow.run.plan_snapshot_json["answer_context"]["task_frame"]
+        answer_context = uow.run.plan_snapshot_json["answer_context"]
+        task_frame = answer_context["task_frame"]
+        plan = answer_context["investigation_plan"]
+        self.assertEqual(
+            13,
+            sum(
+                item["tool_id"] == "db.instance.performance"
+                for item in plan["actions"]
+            ),
+        )
+        self.assertEqual(
+            len(plan["actions"]),
+            len({item["action_id"] for item in plan["actions"]}),
+        )
         self.assertEqual(
             "HISTORICAL_AND_FORECAST",
             task_frame["temporal_analysis_mode"],
