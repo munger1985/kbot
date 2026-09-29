@@ -472,6 +472,10 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             normalized.index("L_TEMPLATE_ID RAW(16);"),
             normalized.index("FUNCTION UUID7_RAW"),
         )
+        self.assertIn("FUNCTION CLOB_FINGERPRINT", normalized)
+        self.assertIn("DBMS_LOB.SUBSTR(P_VALUE, 900, L_OFFSET)", normalized)
+        self.assertIn("JSON(L_DEFINITION)", normalized)
+        self.assertNotIn("DBMS_LOB.SUBSTR(L_DEFINITION, 32767", normalized)
         self.assertIn("30 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V20' AS CONTRACT_VERSION", normalized)
 

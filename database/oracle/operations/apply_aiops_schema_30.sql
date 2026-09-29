@@ -210,6 +210,7 @@ DECLARE
     l_created_at TIMESTAMP(6) WITH TIME ZONE;
     l_selected_json CLOB;
     l_selected_column_count PLS_INTEGER;
+    l_content_hash VARCHAR2(64 CHAR);
 
     FUNCTION uuid7_raw RETURN RAW IS
         l_hex VARCHAR2(32 CHAR) := RAWTOHEX(SYS_GUID());
@@ -219,6 +220,25 @@ DECLARE
             || '7' || SUBSTR(l_hex, 14, 3)
             || '8' || SUBSTR(l_hex, 18, 15)
         );
+    END;
+
+    FUNCTION clob_fingerprint(p_value CLOB) RETURN VARCHAR2 IS
+        l_offset PLS_INTEGER := 1;
+        l_chunk VARCHAR2(3600 BYTE);
+        l_chain RAW(32) := HEXTORAW(RPAD('0', 64, '0'));
+    BEGIN
+        LOOP
+            l_chunk := DBMS_LOB.SUBSTR(p_value, 900, l_offset);
+            EXIT WHEN l_chunk IS NULL;
+            SELECT STANDARD_HASH(
+                       RAWTOHEX(l_chain) || ':' || l_chunk,
+                       'SHA256'
+                   )
+              INTO l_chain
+              FROM DUAL;
+            l_offset := l_offset + LENGTH(l_chunk);
+        END LOOP;
+        RETURN LOWER(RAWTOHEX(l_chain));
     END;
 
     FUNCTION build_definition(
@@ -357,6 +377,7 @@ BEGIN
             l_template_name,
             l_selected_json
         );
+        l_content_hash := clob_fingerprint(l_definition);
 
         INSERT INTO KBOT_OPS_INSPECTION_TEMPLATE (
             INSPECTION_TEMPLATE_ID,
@@ -396,11 +417,8 @@ BEGIN
             l_domain_id,
             l_template_id,
             1,
-            l_definition,
-            LOWER(RAWTOHEX(STANDARD_HASH(
-                DBMS_LOB.SUBSTR(l_definition, 32767, 1),
-                'SHA256'
-            ))),
+            JSON(l_definition),
+            l_content_hash,
             'system:schema-30-migration',
             SYSTIMESTAMP
         );
