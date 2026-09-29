@@ -646,6 +646,10 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         self.assertNotIn('<details class="ops-runbook-appendix"', source)
         self.assertNotIn(".ops-runbook-body { max-height:", styles)
         self.assertIn("white-space: pre-wrap", styles)
+        self.assertLess(
+            source.index('${commandGroup("人工确认项", manualItems, true)}'),
+            source.index('${commandGroup("实施命令", implementationCommands)}'),
+        )
 
     def test_partial_runbook_does_not_degrade_to_evidence_request_only(self) -> None:
         handler = DbaAnswerComposeHandler(model_client=None, prompts=None)

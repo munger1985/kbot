@@ -137,6 +137,11 @@ Flowable 绘制，正文具有固定内边距、浅色背景和边框，不允�
 不提供用户下载路由。ZIP 只从当前 Turn 已固化的 `AIOPS_RUNBOOK_ARTIFACT.v1` 组装，自动加入
 `README.md` 使用说明和带 README 摘要的 `00-manifest.json`；没有 Artifact 时返回 404，不生成空包。
 
+当后续命令通过 `artifact_ref` 引用 ZIP 内文件时，Compiler 必须在所有业务阶段前自动插入
+“配套 ZIP 制品部署”阶段。该阶段先要求用户从当前 Turn 下载 ZIP 并传输为确定的服务器暂存文件，
+再给出解压、属主、权限和 SHA-256 校验命令。页面、Markdown 和 PDF 均先显示人工确认项，再显示
+依赖该确认项的实施命令，禁止在未解释文件来源时直接出现 `/var/tmp/kbot-runbooks/...` 命令。
+
 ## 6. 从方案升级到执行
 
 当前实现只交付方案。未来用户选择具体步骤时，执行链必须：

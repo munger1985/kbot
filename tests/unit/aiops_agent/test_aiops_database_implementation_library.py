@@ -193,13 +193,55 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
         ]
         self.assertTrue(commands)
         self.assertTrue(all(step.commands for phase in runbook.phases for step in phase.steps))
-        self.assertNotIn("MANUAL", {item.command_type.value for item in commands})
+        manual_commands = [
+            item.command_id
+            for item in commands
+            if item.command_type.value == "MANUAL"
+        ]
+        self.assertEqual(["artifact.package.transfer"], manual_commands)
         serialized = runbook.model_dump_json()
         self.assertNotIn("按本阶段检查表实施并留存证据", serialized)
         self.assertIn("REPORT NEED BACKUP RECOVERY WINDOW OF 7 DAYS", serialized)
         self.assertIn("RESTORE DATABASE VALIDATE CHECK LOGICAL", serialized)
         self.assertIn("promtool check rules", serialized)
         self.assertIn("df -P /backup/testdb", serialized)
+
+    def test_rac_places_zip_deployment_before_artifact_commands(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RAC_BUILD,
+            evidence=(),
+            context={
+                "implementation_parameters": {
+                    "DATABASE_NAME": "TESTDB",
+                }
+            },
+        )
+
+        self.assertEqual("artifact_package", runbook.phases[0].phase_id)
+        deployment = runbook.phases[0].steps[0]
+        command_by_id = {
+            item.command_id: item
+            for item in deployment.commands
+        }
+        self.assertIn(
+            "/var/tmp/oracle-rac-build.zip",
+            command_by_id["artifact.package.transfer"].content,
+        )
+        self.assertIn(
+            "unzip -oq /var/tmp/oracle-rac-build.zip "
+            "-d /var/tmp/kbot-runbooks",
+            command_by_id["artifact.package.deploy"].content,
+        )
+        self.assertIn(
+            "/var/tmp/kbot-runbooks/oracle-rac-build/"
+            "database/prepare-source.sql",
+            deployment.verification_commands[0].content,
+        )
+        phase_ids = [item.phase_id for item in runbook.phases]
+        self.assertLess(
+            phase_ids.index("artifact_package"),
+            phase_ids.index("source_protection"),
+        )
 
     def test_blocked_steps_do_not_publish_manual_pseudo_commands(self) -> None:
         runbook = compile_implementation_runbook(

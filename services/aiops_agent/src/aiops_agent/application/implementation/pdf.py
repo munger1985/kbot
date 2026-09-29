@@ -403,8 +403,8 @@ def render_implementation_runbook_pdf(payload: dict[str, Any]) -> bytes:
                         }
                     ]
                     groups = (
-                        (label, executable, False),
                         ("人工确认项", manual, True),
+                        (label, executable, False),
                     )
                 for group_label, group_commands, manual_group in groups:
                     if not group_commands:

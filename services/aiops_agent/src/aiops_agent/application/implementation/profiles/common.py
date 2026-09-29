@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any, Iterable
 
 from aiops_agent.application.implementation.artifacts import (
@@ -13,6 +15,7 @@ from aiops_agent.application.implementation.artifacts import (
 from aiops_agent.contracts.implementation import (
     ImplementationRunbook,
     RunbookApplicability,
+    RunbookArtifactDescriptor,
     RunbookCommand,
     RunbookCommandType,
     RunbookExecutor,
@@ -169,6 +172,111 @@ def normal_step(
     )
 
 
+def _artifact_deployment_phase(
+    artifacts: tuple[RunbookArtifactDescriptor, ...],
+) -> RunbookPhase | None:
+    """生成下载、解压、权限设置和摘要校验的统一前置阶段。"""
+    package_roots: set[str] = set()
+    target_roots: set[str] = set()
+    for artifact in artifacts:
+        relative_parts = artifact.relative_path.strip("/").split("/", 1)
+        if len(relative_parts) != 2:
+            return None
+        package_root, artifact_path = relative_parts
+        suffix = "/" + artifact_path
+        if not artifact.target_path.endswith(suffix):
+            return None
+        package_roots.add(package_root)
+        target_roots.add(artifact.target_path[: -len(suffix)] or "/")
+    if len(package_roots) != 1 or len(target_roots) != 1:
+        return None
+
+    package_root = next(iter(package_roots))
+    target_root = next(iter(target_roots))
+    target_parent = str(PurePosixPath(target_root).parent)
+    if PurePosixPath(target_root).name != package_root:
+        return None
+    archive_path = f"/var/tmp/{package_root}.zip"
+    deployment_lines = [
+        "command -v unzip >/dev/null",
+        f"test -f {shlex.quote(archive_path)}",
+        f"install -d -m 0755 {shlex.quote(target_parent)}",
+        (
+            f"unzip -oq {shlex.quote(archive_path)} "
+            f"-d {shlex.quote(target_parent)}"
+        ),
+    ]
+    verification_lines = [f"test -d {shlex.quote(target_root)}"]
+    for artifact in artifacts:
+        target_path = shlex.quote(artifact.target_path)
+        owner = artifact.run_as if artifact.run_as in {"oracle", "grid", "root"} else ""
+        if owner:
+            deployment_lines.append(
+                f"chown {shlex.quote(owner)} {target_path}"
+            )
+        deployment_lines.append(
+            f"chmod {shlex.quote(artifact.file_mode)} {target_path}"
+        )
+        access_test = "-x" if int(artifact.file_mode, 8) & 0o111 else "-r"
+        verification_lines.extend((
+            f"test {access_test} {target_path}",
+            (
+                "printf '%s  %s\\n' "
+                f"{shlex.quote(artifact.sha256)} {target_path} "
+                "| sha256sum --check -"
+            ),
+        ))
+
+    manual = command(
+        "artifact.package.transfer",
+        "下载并传输本轮脚本 ZIP",
+        (
+            "在当前 Agent 回答中点击“下载脚本 ZIP”。将下载文件传输到需要执行本包文件的"
+            f"目标主机，并统一保存为 {archive_path}。下载动作只取得文件，不会自动解压或"
+            f"部署；后续命令要求包内 {package_root}/ 最终位于 {target_root}/。"
+        ),
+        executor=RunbookExecutor.MANUAL,
+        command_type=RunbookCommandType.MANUAL,
+        run_as="DBA",
+        node_scope=("artifact-targets",),
+    )
+    deploy = command(
+        "artifact.package.deploy",
+        "解压配套文件并设置清单权限",
+        "\n".join(deployment_lines),
+        executor=RunbookExecutor.BASH,
+        run_as="root",
+        node_scope=("artifact-targets",),
+        expected=(f"包内文件已部署到 {target_root}。",),
+    )
+    verify = command(
+        "artifact.package.verify",
+        "核对配套文件是否存在且内容未变化",
+        "\n".join(verification_lines),
+        executor=RunbookExecutor.BASH,
+        run_as="root",
+        node_scope=("artifact-targets",),
+        expected=("全部文件权限检查和 SHA-256 校验通过。",),
+    )
+    return RunbookPhase(
+        phase_id="artifact_package",
+        title="配套 ZIP 制品部署",
+        objective="在任何引用脚本路径的命令执行前，先完成下载、传输、解压和完整性校验。",
+        steps=(RunbookStep(
+            step_id="artifact_package.deploy",
+            title="下载并部署本轮配套文件",
+            applicability=RunbookApplicability.REQUIRED,
+            rationale=(
+                "后续 SQL、RMAN、Shell 或配置命令引用本阶段部署的固定路径；"
+                "未完成本阶段时这些路径不存在，不得继续执行。"
+            ),
+            commands=(manual, deploy),
+            verification_commands=(verify,),
+            risks=("必须使用当前 Turn 下载的 ZIP，禁止复用其他数据库或历史 Turn 的脚本包。",),
+        ),),
+    )
+
+
 def compile_profile(
     *,
     spec: ProfileSpec,
@@ -273,4 +381,15 @@ def compile_profile(
             item for item in (identity_ref, fact_ref) if item is not None
         ),
     )
-    return attach_generated_artifacts(runbook, artifacts)
+    runbook = attach_generated_artifacts(runbook, artifacts)
+    referenced_artifacts = {
+        item.artifact_ref
+        for phase_commands in commands_by_phase.values()
+        for item in phase_commands
+        if item.artifact_ref
+    }
+    if referenced_artifacts:
+        deployment_phase = _artifact_deployment_phase(runbook.artifacts)
+        if deployment_phase is not None:
+            runbook.phases = (deployment_phase, *runbook.phases)
+    return runbook

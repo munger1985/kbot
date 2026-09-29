@@ -638,6 +638,10 @@ oracle-rman-backup-build-<turn_id>.zip
 PDF 和 ZIP 的用途、实际制品清单、使用前检查和 Profile 对应的安全执行入口；`00-manifest.json`
 记录 README 的 SHA256，确保说明文件也属于可校验交付物。
 
+只要实施命令引用 ZIP Artifact，Runbook 的第一个阶段必须是“配套 ZIP 制品部署”：明确提示用户从
+当前 Turn 下载脚本包、传输并保存为固定暂存文件，然后提供解压到 `/var/tmp/kbot-runbooks`、恢复清单
+权限以及逐文件 SHA256 校验的真实命令。后续 SQL、RMAN 或 Shell 命令只有在该阶段校验通过后才可执行。
+
 ## 12. 页面设计
 
 实施文档页面继续使用连续正式文档，不使用折叠容器和内部滚动区。新增：

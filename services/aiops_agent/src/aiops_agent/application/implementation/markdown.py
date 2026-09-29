@@ -199,13 +199,13 @@ def render_implementation_runbook_markdown(payload: dict[str, Any]) -> str:
                             str(_mapping(item).get("executor") or "").upper(),
                         }
                     ]
-                    _append_commands(lines, executable, heading=label)
                     _append_commands(
                         lines,
                         manual,
                         heading="人工确认项",
                         manual=True,
                     )
+                    _append_commands(lines, executable, heading=label)
                     continue
                 _append_commands(lines, values, heading=label)
             risks = _items(step.get("risks"))
