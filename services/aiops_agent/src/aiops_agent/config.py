@@ -82,6 +82,7 @@ class AIOpsExecutorConfig(ServiceConfig):
     )
     max_result_columns: int = Field(default=128, ge=1, le=1024)
     max_cell_chars: int = Field(default=32768, ge=1, le=1_000_000)
+    tls_profile_root: str = "/run/secrets/aiops-tls"
     diagnostic_catalog_path: str | None = None
     grant_secret_env: str = "KBOT_AIOPS_DIAGNOSTIC_GRANT_SECRET"
     grant_issuer: str = "kbot-aiops-worker"

@@ -11,7 +11,10 @@ from aiops_agent.application.investigation.discovery_binding import (
     iso_input_from_time_windows,
     parse_time_windows,
 )
-from aiops_agent.diagnostics import DynamicQueryPolicySnapshot
+from aiops_agent.diagnostics import (
+    DynamicQueryPolicySnapshot,
+    PostgreSQLDynamicQueryPolicySnapshot,
+)
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
@@ -146,6 +149,39 @@ def available_tools(
                 "require_bind_parameters": True,
             },
         }
+    if (
+        str(capabilities.database_type) == "POSTGRESQL"
+        and "DB_READONLY" in capabilities.target_capabilities
+    ):
+        dynamic_policy = PostgreSQLDynamicQueryPolicySnapshot()
+        tools[("db.postgresql.readonly_query", "1.0.0")] = {
+            "tool_id": "db.postgresql.readonly_query",
+            "version": "1.0.0",
+            "tool_class": "POSTGRESQL_SQL_DYNAMIC",
+            "description": (
+                "在只读事务中执行一条受AST策略约束的PostgreSQL诊断SELECT；"
+                "仅允许读取pg_catalog、information_schema或策略明确冻结的对象，"
+                "禁止DML、COPY、SELECT INTO、锁定子句和未允许函数；"
+                "只在固定目录工具无法回答长尾问题时使用，结果仍受受控执行上限约束"
+            ),
+            "database_access": {
+                "recommended_roles": ["pg_monitor"],
+                "queryable_schemas": list(dynamic_policy.allowed_schemas),
+                "diagnostic_scopes": ["CURRENT", "CATALOG"],
+            },
+            "input": {
+                "sql": "PostgreSQL只读SELECT或最终为SELECT的只读CTE",
+                "parameters": "与SQL bind名称完全一致的标量对象",
+            },
+            "policy": {
+                "allowed_functions": list(dynamic_policy.allowed_functions),
+                "allowed_schemas": list(dynamic_policy.allowed_schemas),
+                "max_rows": dynamic_policy.max_rows,
+                "max_sql_chars": dynamic_policy.max_sql_chars,
+                "max_bind_count": dynamic_policy.max_bind_count,
+                "require_bind_parameters": True,
+            },
+        }
     return tuple(tools[key] for key in sorted(tools))
 
 
@@ -267,6 +303,7 @@ SPECIAL_PLAN_TOOL_IDS = {
     "monitor.query_range",
     "loki.query_range",
     "db.oracle.readonly_query",
+    "db.postgresql.readonly_query",
     "artifact.search",
 }
 

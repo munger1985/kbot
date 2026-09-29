@@ -54,6 +54,41 @@ class TargetEntity(BaseEntity):
     capabilities_json: Mapped[dict[str, Any] | None] = mapped_column(
         OracleNativeJSON
     )
+    workload_snapshot_policy_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False, default=dict
+    )
+    activity_sampler_policy_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False, default=dict
+    )
+    workload_next_run_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
+    workload_consecutive_failures: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False, default=0
+    )
+    workload_last_collected_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
+    workload_last_error_code: Mapped[str | None] = mapped_column(String(128))
+    activity_next_sample_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
+    activity_sampler_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="DISABLED"
+    )
+    activity_sampler_disabled_reason: Mapped[str | None] = mapped_column(String(128))
+    activity_consecutive_failures: Mapped[int] = mapped_column(
+        Numeric(10, 0), nullable=False, default=0
+    )
+    activity_daily_bucket: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
+    activity_daily_bytes: Mapped[int] = mapped_column(
+        Numeric(19, 0), nullable=False, default=0
+    )
+    activity_last_sampled_at: Mapped[datetime | None] = mapped_column(
+        UniversalTimestamp(timezone=True)
+    )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="DISABLED"
     )

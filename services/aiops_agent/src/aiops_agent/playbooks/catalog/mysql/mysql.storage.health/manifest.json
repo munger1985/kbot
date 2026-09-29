@@ -1,0 +1,32 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "mysql.storage.health",
+  "version": "1.0.0",
+  "database_types": ["MYSQL"],
+  "version_range": {"minimum": "8", "maximum": "10"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["STORAGE_AND_CAPACITY", "INSTANCE_PERFORMANCE"],
+  "subjects": ["STORAGE", "TABLE_CAPACITY"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY", "HOST_METRICS"],
+  "required_target_capabilities": ["DB_READONLY", "information_schema", "performance_schema"],
+  "required_privileges": [],
+  "required_entitlements": [],
+  "input_schema": "mysql.storage.health.input.v1",
+  "defaults": {"limit": 100},
+  "limits": {"max_rows": 1000, "timeout_seconds": 120, "max_attempts": 2, "cost_units": 7},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "capacity", "tool_id": "db.storage.capacity", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "hotspots", "tool_id": "db.mysql.table.hotspots", "tool_version": "1.0.0", "depends_on": ["capacity"], "input": {"limit": 100}},
+    {"step_id": "indexes", "tool_id": "db.index.health", "tool_version": "1.0.0", "depends_on": ["hotspots"], "input": {"limit": 100}}
+  ],
+  "output_schema": "mysql.storage.health.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "mysql.storage.health.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {"max_age_seconds": 300, "requires_observed_at": true}
+}

@@ -2817,8 +2817,17 @@ class TurnPlanningService:
         context: TurnPlanningContext,
     ):
         """在任务编译前冻结所有模型生成的 Tool 输入。"""
+        target_context = getattr(context, "target_context", {}) or {}
         investigation, dynamic_queries = prepare_dynamic_queries(
-            investigation
+            investigation,
+            database_type=str(
+                getattr(
+                    getattr(context, "capabilities", None),
+                    "database_type",
+                    target_context.get("database_type")
+                    or target_context.get("db_type", ""),
+                )
+            ),
         )
         investigation, source_queries = prepare_source_queries(investigation)
         investigation, attachment_searches = prepare_attachment_searches(
@@ -3005,7 +3014,10 @@ class TurnPlanningService:
                         for item in executable_plan_actions(
                             investigation.plan.actions
                         )
-                        if item.tool_id == "db.oracle.readonly_query"
+                        if item.tool_id in {
+                            "db.oracle.readonly_query",
+                            "db.postgresql.readonly_query",
+                        }
                     ),
                     compiled.dynamic_task_keys,
                     strict=True,
@@ -3047,7 +3059,10 @@ class TurnPlanningService:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
-                elif action.tool_id == "db.oracle.readonly_query":
+                elif action.tool_id in {
+                    "db.oracle.readonly_query",
+                    "db.postgresql.readonly_query",
+                }:
                     task_id = dynamic_task_by_action[action.action_id]
                 elif action.tool_id == "artifact.search":
                     task_id = attachment_task_by_action[action.action_id]
@@ -4344,7 +4359,10 @@ class TurnPlanningService:
                         for item in executable_plan_actions(
                             investigation.plan.actions
                         )
-                        if item.tool_id == "db.oracle.readonly_query"
+                        if item.tool_id in {
+                            "db.oracle.readonly_query",
+                            "db.postgresql.readonly_query",
+                        }
                     ),
                     compiled.dynamic_task_keys,
                     strict=True,
@@ -4380,7 +4398,10 @@ class TurnPlanningService:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
-                elif action.tool_id == "db.oracle.readonly_query":
+                elif action.tool_id in {
+                    "db.oracle.readonly_query",
+                    "db.postgresql.readonly_query",
+                }:
                     task_id = dynamic_task_by_action[action.action_id]
                 elif action.tool_id == "artifact.search":
                     task_id = attachment_task_by_action[action.action_id]

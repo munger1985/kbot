@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 import aiohttp
@@ -35,6 +36,10 @@ from aiops_agent.application.agents import AIOpsAgentService
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
+from aiops_agent.application.workload import WorkloadService
+from aiops_agent.application.configuration.connection_test import (
+    test_target_connection,
+)
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from aiops_agent.application.diagnostic_sources import (
     DiagnosticSourceConnectivityCheckService,
@@ -46,6 +51,7 @@ from aiops_agent.diagnostics import (
     create_diagnostic_registry,
 )
 from aiops_agent.playbooks import PlaybookRegistry
+from aiops_agent.executor.tls_profiles import TLSProfileResolver
 from aiops_agent.tools import (
     InvestigationTaskCompiler,
     ToolExecutionSnapshotBuilder,
@@ -59,6 +65,7 @@ from aiops_agent.workers import (
     AIOpsTaskWorker,
     LoggingOutboxSink,
     create_runtime_handler_registry,
+    WorkloadRetentionWorker,
 )
 from platform_core.database.oracle import create_database_runtime
 from platform_core.managed_credentials import ManagedCredentialCipher
@@ -185,6 +192,7 @@ def create_aiops_worker_probe(
             timeout_seconds=resolved.clients.db_executor.timeout_seconds,
             session=client_session,
         )
+        workload_service = WorkloadService(uow_factory=runtime.uow_factory)
         handler_registry = create_runtime_handler_registry(
             diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
@@ -205,6 +213,7 @@ def create_aiops_worker_probe(
                 resolved.management.agent_execution_enabled
             ),
             conversation_upload_store=conversation_upload_store,
+            workload_service=workload_service,
         )
         monitoring_snapshot_builder = MonitoringSnapshotBuilder(
             metric_catalog=metric_catalog,
@@ -266,6 +275,12 @@ def create_aiops_worker_probe(
                 target_connectivity_service=TargetConnectivityCheckService(
                     uow_factory=runtime.uow_factory,
                     managed_credentials=managed_credential_service,
+                    target_connection_tester=partial(
+                        test_target_connection,
+                        tls_profile_resolver=TLSProfileResolver(
+                            Path(resolved.executor.tls_profile_root)
+                        ),
+                    ),
                 ),
                 db_executor_client=db_executor_client,
                 turn_queue_service=turn_queue_service,
@@ -305,6 +320,10 @@ def create_aiops_worker_probe(
             lease_seconds=config.lease_seconds,
             interval_seconds=config.claim_interval_seconds,
         )
+        retention_worker = WorkloadRetentionWorker(
+            workload_service=workload_service
+        )
+        workers.append(retention_worker)
         components = [*workers, reconciler, dispatcher]
         background_tasks = [
             asyncio.create_task(component.run_forever())

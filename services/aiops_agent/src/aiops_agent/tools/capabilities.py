@@ -42,13 +42,9 @@ def build_capability_snapshot(
                 {"CREATE SESSION", "SELECT ANY DICTIONARY"}
             )
         elif db_type == "MYSQL":
-            target_capabilities.update(
-                {
-                    "information_schema",
-                    "sys_schema",
-                    "replication_views",
-                }
-            )
+            # Performance Schema consumer、锁视图和复制视图均可能被关闭或拒绝；
+            # MySQL 能力只能来自连接预检持久化的实际发现结果。
+            pass
     if (
         bool(getattr(target, "controlled_change_enabled", False))
         and getattr(target, "execution_credential_id", None) is not None

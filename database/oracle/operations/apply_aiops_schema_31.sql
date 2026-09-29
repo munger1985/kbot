@@ -1,0 +1,363 @@
+-- AIOps Schema 30 -> 31 原地升级。
+-- 影响范围：增加MySQL/PostgreSQL工作负载采集策略、快照、指标与活动采样表。
+-- 数据保护：不删除既有业务行；新列均提供默认值或允许为空。
+-- 前置条件：当前必须是Schema 30 / aiops-oracle-v20，或已部分升级到Schema 31。
+-- 并发要求：执行前停止AIOps API、Worker、Scheduler和DB Executor。
+
+SET DEFINE OFF;
+SET SERVEROUTPUT ON;
+SET SQLBLANKLINES ON;
+WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK;
+
+ALTER SESSION SET TIME_ZONE = '+00:00';
+ALTER SESSION SET DDL_LOCK_TIMEOUT = 60;
+
+DECLARE
+    l_schema_version NUMBER;
+    l_contract_version VARCHAR2(64 CHAR);
+BEGIN
+    SELECT SCHEMA_VERSION, CONTRACT_VERSION
+      INTO l_schema_version, l_contract_version
+      FROM KBOT_V_OPS_SCHEMA_VERSION
+     WHERE COMPONENT = 'AIOPS';
+
+    IF NOT (
+        (l_schema_version = 30 AND l_contract_version = 'aiops-oracle-v20')
+        OR
+        (l_schema_version = 31 AND l_contract_version = 'aiops-oracle-v21')
+    ) THEN
+        RAISE_APPLICATION_ERROR(
+            -20071,
+            '只允许从AIOPS Schema 30 / aiops-oracle-v20升级，'
+            || '或续跑Schema 31 / aiops-oracle-v21'
+        );
+    END IF;
+END;
+/
+
+DECLARE
+    PROCEDURE add_column_if_missing(
+        p_table_name VARCHAR2,
+        p_column_name VARCHAR2,
+        p_definition VARCHAR2
+    ) IS
+        l_count PLS_INTEGER;
+    BEGIN
+        SELECT COUNT(*) INTO l_count
+          FROM USER_TAB_COLUMNS
+         WHERE TABLE_NAME = p_table_name
+           AND COLUMN_NAME = p_column_name;
+        IF l_count = 0 THEN
+            EXECUTE IMMEDIATE
+                'ALTER TABLE ' || p_table_name || ' ADD ('
+                || p_column_name || ' ' || p_definition || ')';
+        END IF;
+    END;
+BEGIN
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'WORKLOAD_SNAPSHOT_POLICY_JSON',
+        'JSON DEFAULT ''{}'' NOT NULL'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_SAMPLER_POLICY_JSON',
+        'JSON DEFAULT ''{}'' NOT NULL'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'WORKLOAD_NEXT_RUN_AT',
+        'TIMESTAMP(6) WITH TIME ZONE'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'WORKLOAD_CONSECUTIVE_FAILURES',
+        'NUMBER(10) DEFAULT 0 NOT NULL'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'WORKLOAD_LAST_COLLECTED_AT',
+        'TIMESTAMP(6) WITH TIME ZONE'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'WORKLOAD_LAST_ERROR_CODE',
+        'VARCHAR2(128 CHAR)'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_NEXT_SAMPLE_AT',
+        'TIMESTAMP(6) WITH TIME ZONE'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_SAMPLER_STATUS',
+        'VARCHAR2(16 CHAR) DEFAULT ''DISABLED'' NOT NULL'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_SAMPLER_DISABLED_REASON',
+        'VARCHAR2(128 CHAR)'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_CONSECUTIVE_FAILURES',
+        'NUMBER(10) DEFAULT 0 NOT NULL'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_DAILY_BUCKET',
+        'TIMESTAMP(6) WITH TIME ZONE'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_DAILY_BYTES',
+        'NUMBER(19) DEFAULT 0 NOT NULL'
+    );
+    add_column_if_missing(
+        'KBOT_OPS_TARGET', 'ACTIVITY_LAST_SAMPLED_AT',
+        'TIMESTAMP(6) WITH TIME ZONE'
+    );
+END;
+/
+
+DECLARE
+    l_count PLS_INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO l_count FROM USER_TABLES
+     WHERE TABLE_NAME = 'KBOT_OPS_WORKLOAD_SNAPSHOT';
+    IF l_count = 0 THEN
+        EXECUTE IMMEDIATE q'~
+            CREATE TABLE KBOT_OPS_WORKLOAD_SNAPSHOT (
+                WORKLOAD_SNAPSHOT_ID RAW(16) PRIMARY KEY,
+                DOMAIN_ID NUMBER(38) NOT NULL,
+                TARGET_ID RAW(16) NOT NULL,
+                SCHEDULED_FOR TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+                COLLECTED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+                WINDOW_SECONDS NUMBER(10) NOT NULL,
+                DATABASE_TYPE VARCHAR2(16 CHAR) NOT NULL,
+                INSTANCE_IDENTITY_JSON JSON NOT NULL,
+                INSTANCE_STARTED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+                DATABASE_VERSION VARCHAR2(64 CHAR) NOT NULL,
+                CAPABILITY_PROBE_VERSION VARCHAR2(64 CHAR) NOT NULL,
+                CATALOG_VERSION VARCHAR2(64 CHAR) NOT NULL,
+                SCHEMA_VERSION VARCHAR2(64 CHAR) NOT NULL,
+                CONTINUITY_JSON JSON NOT NULL,
+                COVERAGE_JSON JSON NOT NULL,
+                INSTANCE_METRICS_JSON JSON NOT NULL,
+                REPLICATION_METRICS_JSON JSON NOT NULL,
+                STATUS VARCHAR2(16 CHAR) NOT NULL,
+                ERROR_CODE VARCHAR2(128 CHAR),
+                BYTE_SIZE NUMBER(19) NOT NULL,
+                EXPIRES_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+                CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+                CONSTRAINT FK_OPS_WORKLOAD_TARGET FOREIGN KEY (TARGET_ID)
+                    REFERENCES KBOT_OPS_TARGET (TARGET_ID),
+                CONSTRAINT FK_OPS_WORKLOAD_DOMAIN FOREIGN KEY (DOMAIN_ID)
+                    REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID)
+            )~';
+    END IF;
+
+    SELECT COUNT(*) INTO l_count FROM USER_TABLES
+     WHERE TABLE_NAME = 'KBOT_OPS_WORKLOAD_STATEMENT';
+    IF l_count = 0 THEN
+        EXECUTE IMMEDIATE q'~
+            CREATE TABLE KBOT_OPS_WORKLOAD_STATEMENT (
+                WORKLOAD_STATEMENT_ID RAW(16) PRIMARY KEY,
+                WORKLOAD_SNAPSHOT_ID RAW(16) NOT NULL,
+                DOMAIN_ID NUMBER(38) NOT NULL,
+                TARGET_ID RAW(16) NOT NULL,
+                STATEMENT_IDENTITY_TYPE VARCHAR2(32 CHAR) NOT NULL,
+                STATEMENT_IDENTITY_VALUE VARCHAR2(128 CHAR) NOT NULL,
+                DATABASE_NAME VARCHAR2(128 CHAR) DEFAULT '__UNKNOWN__' NOT NULL,
+                USER_IDENTIFIER VARCHAR2(128 CHAR) DEFAULT '__UNKNOWN__' NOT NULL,
+                TOP_LEVEL NUMBER(2) DEFAULT -1 NOT NULL,
+                NORMALIZED_STATEMENT CLOB,
+                EXECUTION_COUNT NUMBER(19) NOT NULL,
+                TOTAL_DURATION_MICROSECONDS NUMBER(19) NOT NULL,
+                MEAN_DURATION_MICROSECONDS NUMBER(19) NOT NULL,
+                MAX_DURATION_MICROSECONDS NUMBER(19) NOT NULL,
+                ROWS_PROCESSED NUMBER(19) NOT NULL,
+                DATABASE_METRICS_JSON JSON NOT NULL,
+                RANK_DIMENSION VARCHAR2(32 CHAR) NOT NULL,
+                RANK_NO NUMBER(10) NOT NULL,
+                QUALITY_STATUS VARCHAR2(16 CHAR) NOT NULL,
+                CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+                CONSTRAINT FK_OPS_WORKLOAD_STMT_SNAPSHOT
+                    FOREIGN KEY (WORKLOAD_SNAPSHOT_ID)
+                    REFERENCES KBOT_OPS_WORKLOAD_SNAPSHOT (WORKLOAD_SNAPSHOT_ID),
+                CONSTRAINT FK_OPS_WORKLOAD_STMT_TARGET FOREIGN KEY (TARGET_ID)
+                    REFERENCES KBOT_OPS_TARGET (TARGET_ID),
+                CONSTRAINT FK_OPS_WORKLOAD_STMT_DOMAIN FOREIGN KEY (DOMAIN_ID)
+                    REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID)
+            )~';
+    END IF;
+
+    SELECT COUNT(*) INTO l_count FROM USER_TABLES
+     WHERE TABLE_NAME = 'KBOT_OPS_WORKLOAD_METRIC';
+    IF l_count = 0 THEN
+        EXECUTE IMMEDIATE q'~
+            CREATE TABLE KBOT_OPS_WORKLOAD_METRIC (
+                WORKLOAD_METRIC_ID RAW(16) PRIMARY KEY,
+                WORKLOAD_SNAPSHOT_ID RAW(16) NOT NULL,
+                DOMAIN_ID NUMBER(38) NOT NULL,
+                TARGET_ID RAW(16) NOT NULL,
+                METRIC_FAMILY VARCHAR2(32 CHAR) NOT NULL,
+                METRIC_CODE VARCHAR2(128 CHAR) NOT NULL,
+                DIMENSION_KEY VARCHAR2(256 CHAR) NOT NULL,
+                DIMENSION_JSON JSON NOT NULL,
+                COUNTER_VALUE NUMBER(30,6),
+                GAUGE_VALUE NUMBER(30,6),
+                UNIT VARCHAR2(32 CHAR) NOT NULL,
+                QUALITY_STATUS VARCHAR2(16 CHAR) NOT NULL,
+                CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+                CONSTRAINT FK_OPS_WL_METRIC_SNAPSHOT
+                    FOREIGN KEY (WORKLOAD_SNAPSHOT_ID)
+                    REFERENCES KBOT_OPS_WORKLOAD_SNAPSHOT (WORKLOAD_SNAPSHOT_ID),
+                CONSTRAINT FK_OPS_WORKLOAD_METRIC_TARGET FOREIGN KEY (TARGET_ID)
+                    REFERENCES KBOT_OPS_TARGET (TARGET_ID),
+                CONSTRAINT FK_OPS_WORKLOAD_METRIC_DOMAIN FOREIGN KEY (DOMAIN_ID)
+                    REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID)
+            )~';
+    END IF;
+
+    SELECT COUNT(*) INTO l_count FROM USER_TABLES
+     WHERE TABLE_NAME = 'KBOT_OPS_ACTIVITY_SAMPLE';
+    IF l_count = 0 THEN
+        EXECUTE IMMEDIATE q'~
+            CREATE TABLE KBOT_OPS_ACTIVITY_SAMPLE (
+                ACTIVITY_SAMPLE_ID RAW(16) PRIMARY KEY,
+                DOMAIN_ID NUMBER(38) NOT NULL,
+                TARGET_ID RAW(16) NOT NULL,
+                DATABASE_TYPE VARCHAR2(16 CHAR) NOT NULL,
+                SAMPLED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+                INSTANCE_IDENTITY_JSON JSON NOT NULL,
+                SESSION_IDENTIFIER VARCHAR2(128 CHAR),
+                WORKER_IDENTIFIER VARCHAR2(128 CHAR),
+                STATEMENT_IDENTITY_TYPE VARCHAR2(32 CHAR),
+                STATEMENT_IDENTITY_VALUE VARCHAR2(128 CHAR),
+                DATABASE_NAME VARCHAR2(128 CHAR),
+                SCHEMA_NAME VARCHAR2(128 CHAR),
+                USERNAME_HASH VARCHAR2(64 CHAR),
+                CLIENT_HASH VARCHAR2(64 CHAR),
+                COMMAND_NAME VARCHAR2(64 CHAR),
+                SESSION_STATE VARCHAR2(256 CHAR),
+                STAGE_NAME VARCHAR2(256 CHAR),
+                WAIT_NAME VARCHAR2(256 CHAR),
+                DATABASE_SAMPLE_JSON JSON NOT NULL,
+                TRANSACTION_ACTIVE NUMBER(1) DEFAULT 0 NOT NULL,
+                LOCK_WAITING NUMBER(1) DEFAULT 0 NOT NULL,
+                SAMPLE_WEIGHT NUMBER(10) DEFAULT 1 NOT NULL,
+                QUALITY_STATUS VARCHAR2(16 CHAR) NOT NULL,
+                BYTE_SIZE NUMBER(19) DEFAULT 0 NOT NULL,
+                EXPIRES_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+                CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+                CONSTRAINT FK_OPS_ACTIVITY_TARGET FOREIGN KEY (TARGET_ID)
+                    REFERENCES KBOT_OPS_TARGET (TARGET_ID),
+                CONSTRAINT FK_OPS_ACTIVITY_DOMAIN FOREIGN KEY (DOMAIN_ID)
+                    REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID)
+            )~';
+    END IF;
+END;
+/
+
+DECLARE
+    PROCEDURE create_index_if_missing(
+        p_index_name VARCHAR2,
+        p_statement VARCHAR2
+    ) IS
+        l_count PLS_INTEGER;
+    BEGIN
+        SELECT COUNT(*) INTO l_count FROM USER_INDEXES
+         WHERE INDEX_NAME = p_index_name;
+        IF l_count = 0 THEN
+            EXECUTE IMMEDIATE p_statement;
+        END IF;
+    END;
+BEGIN
+    create_index_if_missing('IX_OPS_TARGET_WORKLOAD_DUE',
+        'CREATE INDEX IX_OPS_TARGET_WORKLOAD_DUE ON KBOT_OPS_TARGET '
+        || '(WORKLOAD_NEXT_RUN_AT, TARGET_ID)');
+    create_index_if_missing('IX_OPS_TARGET_ACTIVITY_DUE',
+        'CREATE INDEX IX_OPS_TARGET_ACTIVITY_DUE ON KBOT_OPS_TARGET '
+        || '(ACTIVITY_NEXT_SAMPLE_AT, TARGET_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_SCOPE_TIME',
+        'CREATE INDEX IX_OPS_WORKLOAD_SCOPE_TIME ON KBOT_OPS_WORKLOAD_SNAPSHOT '
+        || '(DOMAIN_ID, TARGET_ID, COLLECTED_AT, WORKLOAD_SNAPSHOT_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_EXPIRY',
+        'CREATE INDEX IX_OPS_WORKLOAD_EXPIRY ON KBOT_OPS_WORKLOAD_SNAPSHOT '
+        || '(EXPIRES_AT, WORKLOAD_SNAPSHOT_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_SCHEDULE',
+        'CREATE INDEX IX_OPS_WORKLOAD_SCHEDULE ON KBOT_OPS_WORKLOAD_SNAPSHOT '
+        || '(TARGET_ID, SCHEDULED_FOR)');
+    create_index_if_missing('IX_OPS_WORKLOAD_STMT_SNAPSHOT',
+        'CREATE INDEX IX_OPS_WORKLOAD_STMT_SNAPSHOT ON KBOT_OPS_WORKLOAD_STATEMENT '
+        || '(WORKLOAD_SNAPSHOT_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_STMT_TARGET',
+        'CREATE INDEX IX_OPS_WORKLOAD_STMT_TARGET ON KBOT_OPS_WORKLOAD_STATEMENT '
+        || '(TARGET_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_STMT_SUBJECT',
+        'CREATE INDEX IX_OPS_WORKLOAD_STMT_SUBJECT ON KBOT_OPS_WORKLOAD_STATEMENT '
+        || '(DOMAIN_ID, TARGET_ID, STATEMENT_IDENTITY_TYPE, '
+        || 'STATEMENT_IDENTITY_VALUE, WORKLOAD_STATEMENT_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_METRIC_SNAP',
+        'CREATE INDEX IX_OPS_WORKLOAD_METRIC_SNAP ON KBOT_OPS_WORKLOAD_METRIC '
+        || '(WORKLOAD_SNAPSHOT_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_METRIC_TARGET',
+        'CREATE INDEX IX_OPS_WORKLOAD_METRIC_TARGET ON KBOT_OPS_WORKLOAD_METRIC '
+        || '(TARGET_ID)');
+    create_index_if_missing('IX_OPS_WORKLOAD_METRIC_FAMILY',
+        'CREATE INDEX IX_OPS_WORKLOAD_METRIC_FAMILY ON KBOT_OPS_WORKLOAD_METRIC '
+        || '(DOMAIN_ID, TARGET_ID, METRIC_FAMILY, WORKLOAD_METRIC_ID)');
+    create_index_if_missing('IX_OPS_ACTIVITY_SCOPE_TIME',
+        'CREATE INDEX IX_OPS_ACTIVITY_SCOPE_TIME ON KBOT_OPS_ACTIVITY_SAMPLE '
+        || '(DOMAIN_ID, TARGET_ID, SAMPLED_AT, ACTIVITY_SAMPLE_ID)');
+    create_index_if_missing('IX_OPS_ACTIVITY_EXPIRY',
+        'CREATE INDEX IX_OPS_ACTIVITY_EXPIRY ON KBOT_OPS_ACTIVITY_SAMPLE '
+        || '(EXPIRES_AT, ACTIVITY_SAMPLE_ID)');
+    create_index_if_missing('IX_OPS_ACTIVITY_TARGET',
+        'CREATE INDEX IX_OPS_ACTIVITY_TARGET ON KBOT_OPS_ACTIVITY_SAMPLE '
+        || '(TARGET_ID)');
+END;
+/
+
+CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
+SELECT
+    'AIOPS' AS COMPONENT,
+    31 AS SCHEMA_VERSION,
+    'aiops-oracle-v21' AS CONTRACT_VERSION
+FROM DUAL;
+
+DECLARE
+    l_schema_version NUMBER;
+    l_contract_version VARCHAR2(64 CHAR);
+    l_table_count PLS_INTEGER;
+    l_business_check_count PLS_INTEGER;
+BEGIN
+    SELECT SCHEMA_VERSION, CONTRACT_VERSION
+      INTO l_schema_version, l_contract_version
+      FROM KBOT_V_OPS_SCHEMA_VERSION
+     WHERE COMPONENT = 'AIOPS';
+
+    SELECT COUNT(*) INTO l_table_count
+      FROM USER_TABLES
+     WHERE TABLE_NAME IN (
+         'KBOT_OPS_WORKLOAD_SNAPSHOT',
+         'KBOT_OPS_WORKLOAD_STATEMENT',
+         'KBOT_OPS_WORKLOAD_METRIC',
+         'KBOT_OPS_ACTIVITY_SAMPLE'
+     );
+
+    SELECT COUNT(*) INTO l_business_check_count
+      FROM USER_CONSTRAINTS
+     WHERE TABLE_NAME IN (
+         'KBOT_OPS_WORKLOAD_SNAPSHOT',
+         'KBOT_OPS_WORKLOAD_STATEMENT',
+         'KBOT_OPS_WORKLOAD_METRIC',
+         'KBOT_OPS_ACTIVITY_SAMPLE'
+     )
+       AND CONSTRAINT_TYPE = 'C'
+       AND GENERATED = 'USER NAME';
+
+    IF l_schema_version <> 31
+       OR l_contract_version <> 'aiops-oracle-v21'
+       OR l_table_count <> 4
+       OR l_business_check_count <> 0 THEN
+        RAISE_APPLICATION_ERROR(-20072, 'AIOps Schema 31升级后验证失败');
+    END IF;
+
+    DBMS_OUTPUT.PUT_LINE(
+        'AIOps Schema已升级到31 / aiops-oracle-v21。'
+    );
+END;
+/
+
+COMMIT;

@@ -3,6 +3,7 @@
 import hashlib
 import os
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 import aiohttp
@@ -16,9 +17,14 @@ from aiops_agent.actions import (
     create_mutation_grant_codec,
 )
 from aiops_agent.adapters.secret_store import ConfiguredSecretStore
+from aiops_agent.application.configuration.connection_test import (
+    test_target_connection,
+)
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
+from aiops_agent.application.postgresql_artifacts import PostgreSQLArtifactStore
+from aiops_agent.application.workload import WorkloadService
 from aiops_agent.adapters.diagnostic_sources import (
     DiagnosticSourceAdapterCatalog,
     DiagnosticSourceAdapterRegistry,
@@ -36,6 +42,10 @@ from aiops_agent.api.conversation_starters import (
     router as conversation_starter_router,
 )
 from aiops_agent.api.report_templates import router as report_template_router
+from aiops_agent.api.workload import (
+    artifact_router as workload_artifact_router,
+    router as workload_router,
+)
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
@@ -65,6 +75,7 @@ from aiops_agent.bootstrap.common import (
     create_process_app,
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
+from aiops_agent.executor.tls_profiles import TLSProfileResolver
 from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.orchestration.diagnosis import AIOpsPromptRegistry
@@ -140,6 +151,13 @@ def create_aiops_api(
         )
         app.state.inspection_template_service = InspectionTemplateService(
             uow_factory=runtime.uow_factory
+        )
+        app.state.workload_service = WorkloadService(
+            uow_factory=runtime.uow_factory,
+            postgresql_artifact_store=PostgreSQLArtifactStore(
+                Path(resolved.limits.conversation_upload_store_root)
+                / "postgresql-external-reports"
+            ),
         )
         app.state.session_report_template_service = SessionReportTemplateService(
             uow_factory=runtime.uow_factory
@@ -231,6 +249,12 @@ def create_aiops_api(
             management=resolved.management,
             credential_cipher=credential_cipher,
             managed_credential_service=managed_credential_service,
+            target_connection_tester=partial(
+                test_target_connection,
+                tls_profile_resolver=TLSProfileResolver(
+                    Path(resolved.executor.tls_profile_root)
+                ),
+            ),
             diagnostic_source_catalog=diagnostic_source_catalog,
             diagnostic_source_registry=diagnostic_source_registry,
         )
@@ -374,6 +398,8 @@ def create_aiops_api(
     app.include_router(changes_router)
     app.include_router(executions_router)
     app.include_router(execution_events_router)
+    app.include_router(workload_router)
+    app.include_router(workload_artifact_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

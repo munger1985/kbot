@@ -33,6 +33,7 @@ from platform_core.contracts.aiops.executor import (
     DynamicDiagnosticExecutionGrant,
     DynamicReadDiagnosticRequest,
     OracleDynamicQueryPolicyGrant,
+    PostgreSQLDynamicQueryPolicyGrant,
     ReadDiagnosticRequest,
 )
 from platform_core.identity import uuid7
@@ -351,7 +352,8 @@ class DynamicQueryInvocationHandler:
         )
         database = dict(execution["database"])
         validated = dict(invocation["validated_query"])
-        tool_id = "db.oracle.readonly_query"
+        database_type = str(database["db_type"])
+        tool_id = str(invocation["tool_id"])
         if not database.get("automatic_access_enabled", True):
             return self._finish(
                 context,
@@ -383,6 +385,18 @@ class DynamicQueryInvocationHandler:
                 ),
             )
         parameters = dict(validated["parameters"])
+        if database_type == "ORACLE":
+            policy_snapshot = OracleDynamicQueryPolicyGrant.model_validate(
+                invocation["policy_snapshot"]
+            )
+            variant = "oracle-dynamic-readonly-v1"
+            projected_columns = tuple(validated["projected_columns"])
+        else:
+            policy_snapshot = PostgreSQLDynamicQueryPolicyGrant.model_validate(
+                invocation["policy_snapshot"]
+            )
+            variant = "postgresql-dynamic-readonly-v1"
+            projected_columns = ("*",)
         grant = DynamicDiagnosticExecutionGrant(
             issuer=self._issuer,
             audience=self._audience,
@@ -397,19 +411,20 @@ class DynamicQueryInvocationHandler:
             target_id=UUID(context.target_id),
             domain_id=int(database["domain_id"]),
             target_row_version=int(database["target_row_version"]),
+            db_type=database_type,
             connection_profile=DiagnosticConnectionProfile.model_validate(
                 database["connection_profile"]
             ),
             diagnostic_credential_id=UUID(
                 database["diagnostic_credential_id"]
             ),
+            tool_id=tool_id,
+            variant=variant,
             query_sha256=validated["query_sha256"],
             policy_sha256=validated["policy_sha256"],
-            policy_snapshot=OracleDynamicQueryPolicyGrant.model_validate(
-                invocation["policy_snapshot"]
-            ),
+            policy_snapshot=policy_snapshot,
             parameters_sha256=canonical_sha256(parameters),
-            projected_columns=tuple(validated["projected_columns"]),
+            projected_columns=projected_columns,
             capability_snapshot_hash=execution[
                 "capability_snapshot_hash"
             ],
@@ -532,7 +547,7 @@ class DynamicQueryInvocationHandler:
         succeeded = observation is not None
         return DbaToolResult(
             source_type="TOOL",
-            source_id="db.oracle.readonly_query",
+            source_id=str(invocation["tool_id"]),
             source_version="1.0.0",
             definition_hash=invocation["validated_query"]["policy_sha256"],
             output_schema="DYNAMIC_DATABASE_OBSERVATION.v1",
@@ -542,7 +557,7 @@ class DynamicQueryInvocationHandler:
             tool_outcomes=(
                 ToolOutcome(
                     step_id=invocation["action_id"],
-                    tool_id="db.oracle.readonly_query",
+                    tool_id=str(invocation["tool_id"]),
                     tool_version="1.0.0",
                     status="SUCCEEDED" if succeeded else "GAP",
                     observation=observation,

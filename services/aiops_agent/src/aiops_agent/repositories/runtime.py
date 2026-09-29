@@ -410,6 +410,27 @@ class OpsRunRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_artifact_scoped(
+        self,
+        *,
+        domain_id: int,
+        artifact_id: UUID,
+    ) -> OpsArtifactEntity | None:
+        """按Run所属Domain读取Artifact，禁止跨Domain下载。"""
+        self._check_active()
+        statement = (
+            select(OpsArtifactEntity)
+            .join(
+                OpsRunEntity,
+                OpsRunEntity.ops_run_id == OpsArtifactEntity.ops_run_id,
+            )
+            .where(
+                OpsArtifactEntity.artifact_id == artifact_id,
+                OpsRunEntity.domain_id == domain_id,
+            )
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_event_by_key(
         self, *, ops_run_id: UUID, event_key: str
     ) -> OpsRunEventEntity | None:

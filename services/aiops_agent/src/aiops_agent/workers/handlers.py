@@ -164,10 +164,39 @@ def create_runtime_handler_registry(
     action_registry=None,
     action_execution_enabled: bool = False,
     conversation_upload_store=None,
+    workload_service=None,
 ) -> HandlerRegistry:
     """组合运行内核及各阶段 Handler，版本必须精确匹配。"""
     kernel = create_kernel_handler_registry()
     manifests = list(kernel.manifests)
+    if workload_service is not None:
+        from .workload_collection_handlers import (
+            ActivityCollectionHandler,
+            WorkloadCollectionHandler,
+        )
+
+        manifests.extend(
+            (
+                HandlerManifest(
+                    handler_id="workload.snapshot.collect",
+                    version="1",
+                    output_schema_version="WORKLOAD_COLLECTION_RESULT.v2",
+                    idempotent=True,
+                    implementation=WorkloadCollectionHandler(
+                        workload_service=workload_service
+                    ),
+                ),
+                HandlerManifest(
+                    handler_id="workload.activity.collect",
+                    version="1",
+                    output_schema_version="ACTIVITY_COLLECTION_RESULT.v2",
+                    idempotent=True,
+                    implementation=ActivityCollectionHandler(
+                        workload_service=workload_service
+                    ),
+                ),
+            )
+        )
     if conversation_upload_store is not None:
         from .attachment_handlers import AttachmentSearchHandler
 

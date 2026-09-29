@@ -1,6 +1,7 @@
 """AIOps DB Executor Bootstrap。"""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import aiohttp
 from loguru import logger
@@ -25,6 +26,7 @@ from aiops_agent.executor import (
     DynamicDiagnosticExecutorService,
     MutationExecutorService,
 )
+from aiops_agent.executor.tls_profiles import TLSProfileResolver
 from aiops_agent.executor.drivers import (
     MySQLDiagnosticDriver,
     MySQLMutationDriver,
@@ -57,6 +59,11 @@ def create_aiops_executor(
         action_registry = ActionRegistry.load()
         client_session = aiohttp.ClientSession()
         oracle_driver = OracleDiagnosticDriver()
+        postgresql_driver = PostgreSQLDiagnosticDriver(
+            tls_profile_resolver=TLSProfileResolver(
+                Path(config.tls_profile_root)
+            )
+        )
         diagnostic_executor = DiagnosticExecutorService(
             registry=registry,
             grant_codec=create_diagnostic_grant_codec(resolved),
@@ -70,7 +77,7 @@ def create_aiops_executor(
             drivers=(
                 oracle_driver,
                 MySQLDiagnosticDriver(),
-                PostgreSQLDiagnosticDriver(),
+                postgresql_driver,
             ),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=config.statement_timeout_seconds,
@@ -90,7 +97,7 @@ def create_aiops_executor(
                 timeout_seconds=resolved.clients.aiops_api.timeout_seconds,
                 session=client_session,
             ),
-            oracle_driver=oracle_driver,
+            drivers=(oracle_driver, postgresql_driver),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=config.statement_timeout_seconds,
                 max_result_rows=config.max_result_rows,

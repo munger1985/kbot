@@ -637,6 +637,201 @@ def _prometheus_rules() -> str:
         annotations:
           summary: "Oracle表空间使用率严重不足"
           description: "{{ $labels.target_key }}/{{ $labels.tablespace }}使用率超过95%。"
++
+  - name: kbot-aiops-mysql-recording
+    interval: 15s
+    rules:
+      - record: kbot_mysql_connections_current
+        expr: mysql_global_status_threads_connected{job="mysql"}
+
+      - record: kbot_mysql_connections_max
+        expr: mysql_global_variables_max_connections{job="mysql"}
+
+      - record: kbot_mysql_connection_utilization_percent
+        expr: 100 * mysql_global_status_threads_connected{job="mysql"} / clamp_min(mysql_global_variables_max_connections{job="mysql"}, 1)
+
+      - record: kbot_mysql_threads_running
+        expr: mysql_global_status_threads_running{job="mysql"}
+
+      - record: kbot_mysql_transactions_total
+        expr: sum by (instance, target_key) (mysql_global_status_commands_total{job="mysql",command=~"commit|rollback"})
+
+      - record: kbot_mysql_slow_queries_total
+        expr: mysql_global_status_slow_queries{job="mysql"}
+
+      - record: kbot_mysql_row_lock_waits_total
+        expr: mysql_global_status_innodb_row_lock_waits{job="mysql"}
+
+      - record: kbot_mysql_buffer_pool_hit_percent
+        expr: clamp_min(100 * (1 - rate(mysql_global_status_innodb_buffer_pool_reads{job="mysql"}[5m]) / clamp_min(rate(mysql_global_status_innodb_buffer_pool_read_requests{job="mysql"}[5m]), 0.001)), 0)
+
+      - record: kbot_mysql_temp_disk_table_percent
+        expr: 100 * rate(mysql_global_status_created_tmp_disk_tables{job="mysql"}[5m]) / clamp_min(rate(mysql_global_status_created_tmp_tables{job="mysql"}[5m]), 0.001)
+
+  - name: kbot-aiops-mysql-alerts
+    interval: 15s
+    rules:
+      - alert: MySQLConnectionUtilizationHigh
+        expr: kbot_mysql_connection_utilization_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.connection_pressure
+          database_type: MYSQL
+          metric_code: mysql.connection.utilization
+          diagnostic_window_seconds: "600"
+          recommended_playbook_id: mysql.connection.utilization
+        annotations:
+          summary: "MySQL连接使用率过高"
+          description: "{{ $labels.target_key }}连接使用率连续10分钟超过85%。"
+
+      - alert: MySQLSlowQueriesIncreasing
+        expr: rate(kbot_mysql_slow_queries_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.response_slow
+          database_type: MYSQL
+          metric_code: mysql.sql.slow_query_rate
+          diagnostic_window_seconds: "600"
+          recommended_playbook_id: mysql.sql.top_digest
+        annotations:
+          summary: "MySQL慢查询持续增加"
+          description: "{{ $labels.target_key }}慢查询速率连续10分钟超过0.1次/秒。"
+
+      - alert: MySQLRowLockWaitsIncreasing
+        expr: rate(kbot_mysql_row_lock_waits_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.lock_contention
+          database_type: MYSQL
+          metric_code: mysql.lock.row_wait_rate
+          diagnostic_window_seconds: "600"
+          recommended_playbook_id: mysql.session.blocking_chain
+        annotations:
+          summary: "MySQL行锁等待持续增加"
+          description: "{{ $labels.target_key }}行锁等待速率连续10分钟超过0.1次/秒。"
+
+      - alert: MySQLBufferPoolHitRatioLow
+        expr: kbot_mysql_buffer_pool_hit_percent < 95
+        for: 15m
+        labels:
+          severity: warning
+          event_class: database.io_pressure
+          database_type: MYSQL
+          metric_code: mysql.innodb.buffer_pool_hit_percent
+          diagnostic_window_seconds: "900"
+          recommended_playbook_id: mysql.instance.performance
+        annotations:
+          summary: "MySQL Buffer Pool命中率偏低"
+          description: "{{ $labels.target_key }} Buffer Pool命中率连续15分钟低于95%。"
+
+  - name: kbot-aiops-postgresql-recording
+    interval: 15s
+    rules:
+      - record: kbot_postgresql_active_connections
+        expr: sum by (instance, target_key) (pg_stat_database_numbackends{job="postgres"})
+
+      - record: kbot_postgresql_transactions_total
+        expr: sum by (instance, target_key) (pg_stat_database_xact_commit{job="postgres"}) + sum by (instance, target_key) (pg_stat_database_xact_rollback{job="postgres"})
+
+      - record: kbot_postgresql_replication_lag_bytes
+        expr: max by (instance, target_key) (pg_stat_replication_pg_wal_lsn_diff{job="postgres"})
+
+      - record: kbot_postgresql_slot_retained_bytes
+        expr: max by (instance, target_key) (pg_replication_slots_pg_wal_lsn_diff{job="postgres"})
+
+      - record: kbot_postgresql_database_size_bytes
+        expr: sum by (instance, target_key) (pg_database_size_bytes{job="postgres"})
+
+      - record: kbot_postgresql_connection_utilization_percent
+        expr: 100 * sum by (instance, target_key) (pg_stat_database_numbackends{job="postgres"}) / clamp_min(max by (instance, target_key) (pg_settings_max_connections{job="postgres"}), 1)
+
+      - record: kbot_postgresql_cache_hit_percent
+        expr: 100 * sum by (instance, target_key) (rate(pg_stat_database_blks_hit{job="postgres"}[5m])) / clamp_min(sum by (instance, target_key) (rate(pg_stat_database_blks_hit{job="postgres"}[5m]) + rate(pg_stat_database_blks_read{job="postgres"}[5m])), 0.001) + 100 * (sum by (instance, target_key) (rate(pg_stat_database_blks_hit{job="postgres"}[5m]) + rate(pg_stat_database_blks_read{job="postgres"}[5m])) == bool 0)
+
+      - record: kbot_postgresql_deadlocks_total
+        expr: sum by (instance, target_key) (pg_stat_database_deadlocks{job="postgres"})
+
+      - record: kbot_postgresql_temp_bytes_total
+        expr: sum by (instance, target_key) (pg_stat_database_temp_bytes{job="postgres"})
+
+      - record: kbot_postgresql_locks
+        expr: sum by (instance, target_key, mode) (pg_locks_count{job="postgres"})
+
+  - name: kbot-aiops-postgresql-alerts
+    interval: 15s
+    rules:
+      - alert: PostgreSQLReplicationLagHigh
+        expr: kbot_postgresql_replication_lag_bytes > 1073741824
+        for: 5m
+        labels:
+          severity: warning
+          event_class: database.replication_lag
+          database_type: POSTGRESQL
+          metric_code: postgresql.replication.lag_bytes
+          diagnostic_window_seconds: "300"
+          recommended_playbook_id: postgresql.replication.status
+        annotations:
+          summary: "PostgreSQL复制延迟过高"
+          description: "{{ $labels.target_key }}复制WAL字节延迟连续5分钟超过1GiB。"
+
+      - alert: PostgreSQLReplicationSlotRetentionHigh
+        expr: kbot_postgresql_slot_retained_bytes > 10737418240
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.replication_slot_retention
+          database_type: POSTGRESQL
+          metric_code: postgresql.replication.slot_retained_bytes
+          diagnostic_window_seconds: "600"
+          recommended_playbook_id: postgresql.replication.status
+        annotations:
+          summary: "PostgreSQL复制Slot保留WAL过高"
+          description: "{{ $labels.target_key }}复制Slot保留WAL连续10分钟超过10GiB。"
+
+      - alert: PostgreSQLConnectionUtilizationHigh
+        expr: kbot_postgresql_connection_utilization_percent > 85
+        for: 10m
+        labels:
+          severity: warning
+          event_class: database.connection_pressure
+          database_type: POSTGRESQL
+          metric_code: postgresql.connection.utilization
+          diagnostic_window_seconds: "600"
+          recommended_playbook_id: postgresql.session.active
+        annotations:
+          summary: "PostgreSQL连接使用率过高"
+          description: "{{ $labels.target_key }}连接使用率连续10分钟超过85%。"
+
+      - alert: PostgreSQLDeadlocksIncreasing
+        expr: rate(kbot_postgresql_deadlocks_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          event_class: database.lock_contention
+          database_type: POSTGRESQL
+          metric_code: postgresql.deadlock.rate
+          diagnostic_window_seconds: "300"
+          recommended_playbook_id: postgresql.session.blocking_chain
+        annotations:
+          summary: "PostgreSQL持续出现死锁"
+          description: "{{ $labels.target_key }}最近5分钟持续产生死锁。"
+
+      - alert: PostgreSQLCacheHitRatioLow
+        expr: kbot_postgresql_cache_hit_percent < 95
+        for: 15m
+        labels:
+          severity: warning
+          event_class: database.io_pressure
+          database_type: POSTGRESQL
+          metric_code: postgresql.cache.hit_percent
+          diagnostic_window_seconds: "900"
+          recommended_playbook_id: postgresql.instance.performance
+        annotations:
+          summary: "PostgreSQL缓存命中率偏低"
+          description: "{{ $labels.target_key }}缓存命中率连续15分钟低于95%。"
 """
 
 

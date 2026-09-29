@@ -24,6 +24,15 @@ class ReportContent(BaseModel):
         "INSPECTION_ANNUAL",
         "INSPECTION_CUSTOM",
         "COMPARISON",
+        "MYSQL_WORKLOAD",
+        "MYSQL_WORKLOAD_DIFF",
+        "MYSQL_ACTIVITY",
+        "MYSQL_SQL_HEALTHCHECK",
+        "POSTGRESQL_WORKLOAD",
+        "POSTGRESQL_WORKLOAD_DIFF",
+        "POSTGRESQL_ACTIVITY",
+        "POSTGRESQL_SQL_HEALTHCHECK",
+        "POSTGRESQL_PGBADGER",
     ]
     ops_run_id: str
     target_id: str

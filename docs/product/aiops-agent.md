@@ -50,6 +50,20 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 GRANT EXECUTE ON DBMS_WORKLOAD_REPOSITORY TO kbot_monitor;
 ```
 
+### MySQL 与 PostgreSQL 工作负载报告
+
+MySQL 和 PostgreSQL 使用数据库无关的快照、语句计数器、指标族和活动采样模型，
+生成单窗口 Workload Report、等长窗口 Workload Diff Report 与 Activity Report。
+报告只对实例身份、启动时间和单调计数器均连续的区间计算差值；实例重启、计数器
+回绕、摘要淘汰、采集质量不足和新增维度均作为数据缺口保留，不能用零值补齐。
+MySQL Digest 与 PostgreSQL `query_id` 分别保持各自身份语义，SQL 摘要会再次执行
+字面量清理和长度限制。
+
+PostgreSQL 还支持导入静态 pgBadger JSON、HTML 及其 gzip 文件。导入过程限制文件和
+解压后大小，校验格式、Hash 与主动内容；原文件保持 `EXTERNAL_IMPORTED` 信任级别，
+不会自动提升为数据库直连证据。工作负载原始结果与统一 `REPORT_CONTENT.v1` 正式报告
+分别保存，用户通过受控 Artifact 下载接口取得报告内容。
+
 ### Portal 三入口工作区
 
 Portal 不再把 Run、Report、Proposal 等内部领域对象分别暴露成业务用户必须理解的
@@ -92,9 +106,10 @@ Evidence 和时间线仍是后端权威资源，但在页面中作为当前问�
 显示给业务用户，也不得把用户在聊天里输入的“同意”当作变更审批。截图应先形成受控
 附件 Artifact，再通过 OCR/VLM 提取可引用文本，同时保留原图 Hash 与来源。
 
-本文同时描述已经交付的 4.0 能力和后续目标态。PostgreSQL 公开只读诊断、分能力
-Diagnostic Source SPI、显式规则驱动的跨来源 Situation 关联和受控 Loki 日志查询
-已经进入后台实现；可选 Compose 轻量观测栈和 Oracle Alert Log Collector也已提供
+本文同时描述已经交付的 4.0 能力和后续目标态。PostgreSQL 公开只读诊断、MySQL 与
+PostgreSQL 工作负载报告、活动采样、PostgreSQL pgBadger 导入、分能力 Diagnostic
+Source SPI、显式规则驱动的跨来源 Situation 关联和受控 Loki 日志查询已经进入后台
+实现；可选 Compose 轻量观测栈和 Oracle Alert Log Collector也已提供
 代码与静态验收，但尚未在真实数据库环境部署验证。变更与拓扑数据、托管 Zabbix、
 生产级分布式观测栈及外部主动分享渠道仍是待交付能力。Portal 站内主动分享基线已
 进入后台实现，但尚未完成产品界面和真实环境验证，不得提前宣称 IM、Email、ITSM、

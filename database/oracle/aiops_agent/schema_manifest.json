@@ -1,13 +1,13 @@
 {
   "component": "aiops_agent",
-  "schema_version": 30,
-  "contract_version": "aiops-oracle-v20",
+  "schema_version": 31,
+  "contract_version": "aiops-oracle-v21",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 29,
-      "sha256": "622ca6394887b1e42c4895f0e1ed60e2fb87871467df8f3bfd2bb287402ddf35"
+      "statements": 31,
+      "sha256": "80c62a8efb5d97a553902e65cf4db6175a72066652e492cc862c3d6a8e92a81d"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "038adff74c996e7e19aabe693adb75a95345866faa600ae66fd170f1e1300802"
+      "sha256": "d4a6bc06ea8d4b6fda653e3a2be063a562a7faacc68077a36cde26ea185d7e0a"
     },
     {
       "name": "007_ops_agents.sql",
@@ -43,6 +43,11 @@
       "name": "008_ops_conversations_reports.sql",
       "statements": 83,
       "sha256": "edb4a82e2f83131b2cf394417c9a28fd6ce3369c4f4c2452043090955ef13ba4"
+    },
+    {
+      "name": "009_ops_workload.sql",
+      "statements": 16,
+      "sha256": "952293368ed6105f545fc356d44f880a05645967e1862569ac10c4e973aec89c"
     }
   ],
   "tables": [
@@ -91,7 +96,11 @@
     "KBOT_OPS_ANSWER_CITATION",
     "KBOT_OPS_TURN_EVENT",
     "KBOT_OPS_EVIDENCE_REQUEST",
-    "KBOT_OPS_IMAGE_EVIDENCE"
+    "KBOT_OPS_IMAGE_EVIDENCE",
+    "KBOT_OPS_WORKLOAD_SNAPSHOT",
+    "KBOT_OPS_WORKLOAD_STATEMENT",
+    "KBOT_OPS_WORKLOAD_METRIC",
+    "KBOT_OPS_ACTIVITY_SAMPLE"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",
@@ -672,6 +681,100 @@
       "table": "KBOT_OPS_IMAGE_EVIDENCE",
       "columns": [
         "OUTPUT_ARTIFACT_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_TARGET",
+      "index": "IX_OPS_WORKLOAD_SCHEDULE",
+      "table": "KBOT_OPS_WORKLOAD_SNAPSHOT",
+      "columns": [
+        "TARGET_ID",
+        "SCHEDULED_FOR"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_DOMAIN",
+      "index": "IX_OPS_WORKLOAD_SCOPE_TIME",
+      "table": "KBOT_OPS_WORKLOAD_SNAPSHOT",
+      "columns": [
+        "DOMAIN_ID",
+        "TARGET_ID",
+        "COLLECTED_AT",
+        "WORKLOAD_SNAPSHOT_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_STMT_SNAPSHOT",
+      "index": "IX_OPS_WORKLOAD_STMT_SNAPSHOT",
+      "table": "KBOT_OPS_WORKLOAD_STATEMENT",
+      "columns": [
+        "WORKLOAD_SNAPSHOT_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_STMT_TARGET",
+      "index": "IX_OPS_WORKLOAD_STMT_TARGET",
+      "table": "KBOT_OPS_WORKLOAD_STATEMENT",
+      "columns": [
+        "TARGET_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_STMT_DOMAIN",
+      "index": "IX_OPS_WORKLOAD_STMT_SUBJECT",
+      "table": "KBOT_OPS_WORKLOAD_STATEMENT",
+      "columns": [
+        "DOMAIN_ID",
+        "TARGET_ID",
+        "STATEMENT_IDENTITY_TYPE",
+        "STATEMENT_IDENTITY_VALUE",
+        "WORKLOAD_STATEMENT_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WL_METRIC_SNAPSHOT",
+      "index": "IX_OPS_WORKLOAD_METRIC_SNAP",
+      "table": "KBOT_OPS_WORKLOAD_METRIC",
+      "columns": [
+        "WORKLOAD_SNAPSHOT_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_METRIC_TARGET",
+      "index": "IX_OPS_WORKLOAD_METRIC_TARGET",
+      "table": "KBOT_OPS_WORKLOAD_METRIC",
+      "columns": [
+        "TARGET_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORKLOAD_METRIC_DOMAIN",
+      "index": "IX_OPS_WORKLOAD_METRIC_FAMILY",
+      "table": "KBOT_OPS_WORKLOAD_METRIC",
+      "columns": [
+        "DOMAIN_ID",
+        "TARGET_ID",
+        "METRIC_FAMILY",
+        "WORKLOAD_METRIC_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_ACTIVITY_TARGET",
+      "index": "IX_OPS_ACTIVITY_TARGET",
+      "table": "KBOT_OPS_ACTIVITY_SAMPLE",
+      "columns": [
+        "TARGET_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_ACTIVITY_DOMAIN",
+      "index": "IX_OPS_ACTIVITY_SCOPE_TIME",
+      "table": "KBOT_OPS_ACTIVITY_SAMPLE",
+      "columns": [
+        "DOMAIN_ID",
+        "TARGET_ID",
+        "SAMPLED_AT",
+        "ACTIVITY_SAMPLE_ID"
       ]
     }
   ],

@@ -24,6 +24,7 @@ from aiops_agent.repositories import (
     PolicyRepository,
     TargetRepository,
     TurnRepository,
+    WorkloadRepository,
 )
 from aiops_agent.repositories.platform_notification import PlatformNotificationRepository
 from platform_core.notifications import NotificationOutboxRepository
@@ -63,6 +64,7 @@ class AIOpsUnitOfWork:
         self.notification_outbox: NotificationOutboxRepository | None = None
         self.platform_notifications: PlatformNotificationRepository | None = None
         self.notification_subscriptions: NotificationSubscriptionRepository | None = None
+        self.workloads: WorkloadRepository | None = None
 
     def _require_active(self) -> None:
         if self.state != UnitOfWorkState.ACTIVE:
@@ -95,6 +97,7 @@ class AIOpsUnitOfWork:
         self.notification_subscriptions = NotificationSubscriptionRepository(
             self.session, guard
         )
+        self.workloads = WorkloadRepository(self.session, guard)
         return self
 
     async def commit(self) -> None:
@@ -142,6 +145,7 @@ class AIOpsUnitOfWork:
             self.notification_outbox = None
             self.platform_notifications = None
             self.notification_subscriptions = None
+            self.workloads = None
             self.state = UnitOfWorkState.CLOSED
 
 

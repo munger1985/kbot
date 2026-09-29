@@ -1,0 +1,32 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "mysql.session.blocking_chain",
+  "version": "1.0.0",
+  "database_types": ["MYSQL"],
+  "version_range": {"minimum": "8", "maximum": "10"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE", "CHANGE"],
+  "domains": ["SESSION_AND_LOCK"],
+  "subjects": ["BLOCKING_CHAIN", "LOCK_WAIT"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": [],
+  "required_target_capabilities": ["DB_READONLY", "data_lock_waits", "information_schema", "sys_schema"],
+  "required_privileges": ["PROCESS"],
+  "required_entitlements": [],
+  "input_schema": "mysql.session.blocking-chain.input.v1",
+  "defaults": {"limit": 100},
+  "limits": {"max_rows": 500, "timeout_seconds": 90, "max_attempts": 2, "cost_units": 5},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "blocking", "tool_id": "db.session.blocking_chain", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "locks", "tool_id": "db.mysql.lock.current", "tool_version": "1.0.0", "depends_on": ["blocking"], "input": {"limit": 100}},
+    {"step_id": "transactions", "tool_id": "db.transaction.long_running", "tool_version": "1.0.0", "depends_on": ["blocking"], "input": {"min_seconds": 1}}
+  ],
+  "output_schema": "mysql.session.blocking-chain.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "mysql.session.blocking-chain.manual.v1",
+  "sensitive_fields": ["waiting_statement", "blocking_statement"],
+  "redaction_rules": ["SQL_LITERAL_REDACTION"],
+  "freshness": {"max_age_seconds": 30, "requires_observed_at": true}
+}

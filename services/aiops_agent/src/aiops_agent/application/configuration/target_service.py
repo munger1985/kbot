@@ -23,9 +23,6 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
-from aiops_agent.application.configuration.connection_test import (
-    test_target_connection as run_target_connection_test,
-)
 from aiops_agent.application.targets.facts import (
     create_confirmed_fact,
     list_active_facts,
@@ -129,7 +126,7 @@ class TargetConfigurationMixin:
     ) -> TargetConnectionTestResult:
         """验证数据库连通性；Domain Scope 仅用于授权，不持久化测试数据。"""
         del scope
-        return await run_target_connection_test(request)
+        return await self._target_connection_tester(request)
 
     @staticmethod
     def _diagnostic_credential_payload(credentials) -> dict[str, object]:
@@ -162,11 +159,32 @@ class TargetConfigurationMixin:
         if connected:
             entity.last_connectivity_success_at = checked_at
         entity.last_error_code = result.error_code
+        if result.database_version is not None:
+            entity.version_code = result.database_version
         if result.oracle_container_scope is not None:
             entity.observed_oracle_container_scope = result.oracle_container_scope
             entity.observed_oracle_container_name = result.oracle_container_name
             entity.observed_oracle_container_number = result.oracle_container_number
             entity.observed_oracle_database_name = result.oracle_database_name
+        if result.capability_probe_version is not None:
+            capabilities = dict(entity.capabilities_json or {})
+            capabilities.update(
+                {
+                    "capabilities": list(result.discovered_capabilities),
+                    "privileges": list(result.discovered_privileges),
+                    "capability_probe": {
+                        "version": result.capability_probe_version,
+                        "server_uuid": result.server_uuid,
+                        "server_started_at": (
+                            result.server_started_at.isoformat()
+                            if result.server_started_at is not None
+                            else None
+                        ),
+                        "details": dict(result.capability_details),
+                    },
+                }
+            )
+            entity.capabilities_json = capabilities
 
     async def _check_target_connection_now(
         self,
@@ -187,7 +205,7 @@ class TargetConfigurationMixin:
                 credential_kind="target_diagnostic",
                 external_key=entity.target_id,
             )
-        result = await run_target_connection_test(
+        result = await self._target_connection_tester(
             TargetConnectionTest.model_validate(
                 {
                     "db_type": entity.db_type,
@@ -259,6 +277,29 @@ class TargetConfigurationMixin:
                 importance_level=request.importance_level,
                 security_level=request.security_level,
                 capabilities_json=request.capabilities,
+                workload_snapshot_policy_json=(
+                    request.workload_snapshot_policy.model_dump(mode="json")
+                ),
+                activity_sampler_policy_json=(
+                    request.activity_sampler_policy.model_dump(mode="json")
+                ),
+                workload_next_run_at=(
+                    now if request.workload_snapshot_policy.enabled else None
+                ),
+                workload_consecutive_failures=0,
+                workload_last_collected_at=None,
+                workload_last_error_code=None,
+                activity_next_sample_at=(
+                    now if request.activity_sampler_policy.enabled else None
+                ),
+                activity_sampler_status=(
+                    "READY" if request.activity_sampler_policy.enabled else "DISABLED"
+                ),
+                activity_sampler_disabled_reason=None,
+                activity_consecutive_failures=0,
+                activity_daily_bucket=None,
+                activity_daily_bytes=0,
+                activity_last_sampled_at=None,
                 status="DISABLED",
                 connectivity_status="UNKNOWN",
                 observed_status="UNKNOWN",
@@ -429,6 +470,34 @@ class TargetConfigurationMixin:
                 scope=effective_scope,
                 pdb_name=effective_pdb_name,
             )
+            for policy_name in (
+                "workload_snapshot_policy",
+                "activity_sampler_policy",
+            ):
+                if policy_name not in fields:
+                    continue
+                policy = getattr(request, policy_name)
+                if policy is None:
+                    raise validation_failed("数据库采集策略不能为空")
+                if entity.db_type not in {"MYSQL", "POSTGRESQL"} and policy.enabled:
+                    raise validation_failed(
+                        "只有MySQL或PostgreSQL Target可以启用工作负载快照或活动采样"
+                    )
+                fields[f"{policy_name}_json"] = fields.pop(policy_name)
+            now = datetime.now(UTC)
+            if "workload_snapshot_policy_json" in fields:
+                enabled = bool(fields["workload_snapshot_policy_json"].get("enabled"))
+                entity.workload_next_run_at = now if enabled else None
+                entity.workload_consecutive_failures = 0
+                entity.workload_last_error_code = None
+            if "activity_sampler_policy_json" in fields:
+                enabled = bool(fields["activity_sampler_policy_json"].get("enabled"))
+                entity.activity_next_sample_at = now if enabled else None
+                entity.activity_sampler_status = "READY" if enabled else "DISABLED"
+                entity.activity_sampler_disabled_reason = None
+                entity.activity_consecutive_failures = 0
+                entity.activity_daily_bytes = 0
+                entity.activity_daily_bucket = None
             if "endpoint" in fields:
                 endpoint = request.endpoint
                 if endpoint is None:

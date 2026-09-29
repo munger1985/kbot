@@ -30,7 +30,16 @@ class DiagnosticConnectionProfile(AIOpsContract):
     service: str | None = Field(default=None, min_length=1, max_length=256)
     database: str | None = Field(default=None, min_length=1, max_length=256)
     tls_enabled: bool = True
-    tls_profile_ref: str | None = Field(default=None, max_length=2048)
+    tls_profile_ref: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+    )
+
+    @model_validator(mode="after")
+    def validate_tls_profile(self) -> "DiagnosticConnectionProfile":
+        if self.tls_profile_ref is not None and not self.tls_enabled:
+            raise ValueError("TLS Profile只能在启用TLS时配置")
+        return self
 
 
 class DiagnosticLimits(AIOpsContract):
@@ -86,8 +95,22 @@ class OracleDynamicQueryPolicyGrant(AIOpsContract):
     allow_catalog_object_families: bool
 
 
+class PostgreSQLDynamicQueryPolicyGrant(AIOpsContract):
+    """随 Grant 冻结并由 Executor 重放的 PostgreSQL 动态查询策略。"""
+
+    schema_version: Literal["POSTGRESQL_DYNAMIC_QUERY_POLICY.v1"] = (
+        "POSTGRESQL_DYNAMIC_QUERY_POLICY.v1"
+    )
+    allowed_objects: tuple[str, ...] = ()
+    allowed_functions: tuple[str, ...]
+    allowed_schemas: tuple[str, ...]
+    max_rows: int = Field(ge=1, le=1000)
+    max_sql_chars: int = Field(ge=1, le=100_000)
+    max_bind_count: int = Field(ge=0, le=128)
+
+
 class DynamicDiagnosticExecutionGrant(AIOpsContract):
-    """Oracle 动态只读查询的短期签名执行授权。"""
+    """数据库动态只读查询的短期签名执行授权。"""
 
     schema_version: Literal["dynamic-diagnostic-execution-grant.v1"] = (
         "dynamic-diagnostic-execution-grant.v1"
@@ -103,24 +126,50 @@ class DynamicDiagnosticExecutionGrant(AIOpsContract):
     target_id: UUIDv7
     domain_id: int = Field(ge=1)
     target_row_version: int = Field(ge=1)
-    db_type: Literal["ORACLE"] = "ORACLE"
+    db_type: Literal["ORACLE", "POSTGRESQL"]
     connection_profile: DiagnosticConnectionProfile
     diagnostic_credential_id: UUIDv7
-    tool_id: Literal["db.oracle.readonly_query"] = (
-        "db.oracle.readonly_query"
-    )
+    tool_id: Literal[
+        "db.oracle.readonly_query",
+        "db.postgresql.readonly_query",
+    ]
     tool_version: Literal["1.0.0"] = "1.0.0"
-    variant: Literal["oracle-dynamic-readonly-v1"] = (
-        "oracle-dynamic-readonly-v1"
-    )
+    variant: Literal[
+        "oracle-dynamic-readonly-v1",
+        "postgresql-dynamic-readonly-v1",
+    ]
     query_sha256: Sha256Digest
     policy_sha256: Sha256Digest
-    policy_snapshot: OracleDynamicQueryPolicyGrant
+    policy_snapshot: (
+        OracleDynamicQueryPolicyGrant | PostgreSQLDynamicQueryPolicyGrant
+    )
     parameters_sha256: Sha256Digest
     projected_columns: tuple[str, ...] = Field(min_length=1, max_length=128)
     capability_snapshot_hash: Sha256Digest
     limits: DiagnosticLimits
     trace_id: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_database_contract(self) -> "DynamicDiagnosticExecutionGrant":
+        expected = {
+            "ORACLE": (
+                "db.oracle.readonly_query",
+                "oracle-dynamic-readonly-v1",
+                "ORACLE_DYNAMIC_QUERY_POLICY.v4",
+            ),
+            "POSTGRESQL": (
+                "db.postgresql.readonly_query",
+                "postgresql-dynamic-readonly-v1",
+                "POSTGRESQL_DYNAMIC_QUERY_POLICY.v1",
+            ),
+        }[self.db_type]
+        if (
+            self.tool_id,
+            self.variant,
+            self.policy_snapshot.schema_version,
+        ) != expected:
+            raise ValueError("动态查询 Grant 的数据库、工具和策略不一致")
+        return self
 
 
 class ReadDiagnosticRequest(AIOpsContract):

@@ -481,6 +481,53 @@
         "title": "AIOpsPasswordChangePayload",
         "type": "object"
       },
+      "ActivitySamplerPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "interval_seconds": {
+            "default": 5,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Interval Seconds",
+            "type": "integer"
+          },
+          "max_daily_bytes": {
+            "default": 104857600,
+            "maximum": 10737418240.0,
+            "minimum": 1048576.0,
+            "title": "Max Daily Bytes",
+            "type": "integer"
+          },
+          "max_rows_per_sample": {
+            "default": 200,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Rows Per Sample",
+            "type": "integer"
+          },
+          "query_timeout_seconds": {
+            "default": 2,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Query Timeout Seconds",
+            "type": "integer"
+          },
+          "retention_days": {
+            "default": 7,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          }
+        },
+        "title": "ActivitySamplerPolicy",
+        "type": "object"
+      },
       "AgentActivatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -2505,7 +2552,7 @@
               "additionalProperties": true,
               "type": "object"
             },
-            "maxItems": 8,
+            "maxItems": 24,
             "title": "Input Schema",
             "type": "array"
           },
@@ -9912,6 +9959,87 @@
         "title": "RejectionCommand",
         "type": "object"
       },
+      "ReportArtifactView": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "byte_size": {
+            "minimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "content_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "download_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Download Url",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "format": {
+            "pattern": "^(JSON|HTML|PDF)$",
+            "title": "Format",
+            "type": "string"
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "report_origin": {
+            "$ref": "#/components/schemas/ReportOrigin"
+          },
+          "report_type": {
+            "$ref": "#/components/schemas/WorkloadReportType"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "report_type",
+          "report_origin",
+          "title",
+          "period_start",
+          "period_end",
+          "format",
+          "content_type",
+          "file_name",
+          "byte_size",
+          "content_hash",
+          "download_url"
+        ],
+        "title": "ReportArtifactView",
+        "type": "object"
+      },
       "ReportEdit": {
         "additionalProperties": false,
         "description": "创建一个带人工展示编辑的新报告版本。",
@@ -9978,6 +10106,15 @@
         },
         "title": "ReportGenerationPayload",
         "type": "object"
+      },
+      "ReportOrigin": {
+        "enum": [
+          "ORACLE_NATIVE",
+          "AIOPS_GENERATED",
+          "EXTERNAL_IMPORTED"
+        ],
+        "title": "ReportOrigin",
+        "type": "string"
       },
       "ReportPage": {
         "additionalProperties": false,
@@ -10337,6 +10474,33 @@
           "content_artifact"
         ],
         "title": "ReportView",
+        "type": "object"
+      },
+      "ReportWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "period_start",
+          "period_end"
+        ],
+        "title": "ReportWindow",
         "type": "object"
       },
       "ResultStatus": {
@@ -11883,6 +12047,23 @@
       "TargetConnectionTestResult": {
         "additionalProperties": false,
         "properties": {
+          "capability_details": {
+            "additionalProperties": true,
+            "title": "Capability Details",
+            "type": "object"
+          },
+          "capability_probe_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Probe Version"
+          },
           "database_version": {
             "anyOf": [
               {
@@ -11893,6 +12074,22 @@
               }
             ],
             "title": "Database Version"
+          },
+          "discovered_capabilities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Discovered Capabilities",
+            "type": "array"
+          },
+          "discovered_privileges": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Discovered Privileges",
+            "type": "array"
           },
           "error_code": {
             "anyOf": [
@@ -11959,6 +12156,30 @@
               }
             ],
             "title": "Oracle Database Name"
+          },
+          "server_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Started At"
+          },
+          "server_uuid": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Uuid"
           }
         },
         "required": [
@@ -11970,6 +12191,9 @@
       "TargetCreate": {
         "additionalProperties": false,
         "properties": {
+          "activity_sampler_policy": {
+            "$ref": "#/components/schemas/ActivitySamplerPolicy"
+          },
           "capabilities": {
             "additionalProperties": true,
             "title": "Capabilities",
@@ -12102,6 +12326,9 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_snapshot_policy": {
+            "$ref": "#/components/schemas/WorkloadPolicy"
           }
         },
         "required": [
@@ -12115,6 +12342,63 @@
       "TargetDetail": {
         "additionalProperties": false,
         "properties": {
+          "activity_consecutive_failures": {
+            "minimum": 0.0,
+            "title": "Activity Consecutive Failures",
+            "type": "integer"
+          },
+          "activity_daily_bytes": {
+            "minimum": 0.0,
+            "title": "Activity Daily Bytes",
+            "type": "integer"
+          },
+          "activity_last_sampled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Last Sampled At"
+          },
+          "activity_next_sample_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Next Sample At"
+          },
+          "activity_sampler_disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Sampler Disabled Reason"
+          },
+          "activity_sampler_policy": {
+            "$ref": "#/components/schemas/ActivitySamplerPolicy"
+          },
+          "activity_sampler_status": {
+            "enum": [
+              "DISABLED",
+              "READY",
+              "DEGRADED"
+            ],
+            "title": "Activity Sampler Status",
+            "type": "string"
+          },
           "capabilities": {
             "additionalProperties": true,
             "title": "Capabilities",
@@ -12383,6 +12667,49 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_consecutive_failures": {
+            "minimum": 0.0,
+            "title": "Workload Consecutive Failures",
+            "type": "integer"
+          },
+          "workload_last_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workload Last Collected At"
+          },
+          "workload_last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workload Last Error Code"
+          },
+          "workload_next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workload Next Run At"
+          },
+          "workload_snapshot_policy": {
+            "$ref": "#/components/schemas/WorkloadPolicy"
           }
         },
         "required": [
@@ -12406,6 +12733,12 @@
           "execution_credential",
           "security_level",
           "capabilities",
+          "workload_snapshot_policy",
+          "activity_sampler_policy",
+          "activity_sampler_status",
+          "workload_consecutive_failures",
+          "activity_consecutive_failures",
+          "activity_daily_bytes",
           "connectivity_version",
           "created_at",
           "created_by",
@@ -12460,6 +12793,18 @@
             "default": true,
             "title": "Tls Enabled",
             "type": "boolean"
+          },
+          "tls_profile_ref": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Profile Ref"
           }
         },
         "required": [
@@ -12777,6 +13122,16 @@
       "TargetPatch": {
         "additionalProperties": false,
         "properties": {
+          "activity_sampler_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivitySamplerPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "capabilities": {
             "anyOf": [
               {
@@ -12937,6 +13292,16 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_snapshot_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkloadPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "TargetPatch",
@@ -14115,6 +14480,100 @@
         ],
         "title": "WorkflowKind",
         "type": "string"
+      },
+      "WorkloadDiffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "after_end": {
+            "format": "date-time",
+            "title": "After End",
+            "type": "string"
+          },
+          "after_start": {
+            "format": "date-time",
+            "title": "After Start",
+            "type": "string"
+          },
+          "baseline_end": {
+            "format": "date-time",
+            "title": "Baseline End",
+            "type": "string"
+          },
+          "baseline_start": {
+            "format": "date-time",
+            "title": "Baseline Start",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "baseline_start",
+          "baseline_end",
+          "after_start",
+          "after_end"
+        ],
+        "title": "WorkloadDiffRequest",
+        "type": "object"
+      },
+      "WorkloadPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "interval_minutes": {
+            "default": 5,
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Interval Minutes",
+            "type": "integer"
+          },
+          "retention_days": {
+            "default": 30,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "round_timeout_seconds": {
+            "default": 30,
+            "maximum": 120.0,
+            "minimum": 5.0,
+            "title": "Round Timeout Seconds",
+            "type": "integer"
+          },
+          "top_statement_limit": {
+            "default": 100,
+            "maximum": 500.0,
+            "minimum": 10.0,
+            "title": "Top Statement Limit",
+            "type": "integer"
+          }
+        },
+        "title": "WorkloadPolicy",
+        "type": "object"
+      },
+      "WorkloadReportType": {
+        "enum": [
+          "MYSQL_WORKLOAD",
+          "MYSQL_WORKLOAD_DIFF",
+          "MYSQL_ACTIVITY",
+          "MYSQL_SQL_HEALTHCHECK",
+          "POSTGRESQL_WORKLOAD",
+          "POSTGRESQL_WORKLOAD_DIFF",
+          "POSTGRESQL_ACTIVITY",
+          "POSTGRESQL_SQL_HEALTHCHECK",
+          "POSTGRESQL_PGBADGER"
+        ],
+        "title": "WorkloadReportType",
+        "type": "string"
       }
     }
   },
@@ -14326,6 +14785,47 @@
           }
         },
         "summary": "Update Agent",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/artifacts/{artifact_id}/content": {
+      "get": {
+        "operationId": "download_report_artifact_api_v1_apps_aiops_artifacts__artifact_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Report Artifact",
         "tags": [
           "AIOps App"
         ]
@@ -17497,6 +17997,87 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/postgresql/pgbadger-artifacts": {
+      "post": {
+        "operationId": "import_postgresql_pgbadger_artifact_api_v1_apps_aiops_postgresql_pgbadger_artifacts_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period_start",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Period Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period_end",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Period End",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-File-Name",
+            "required": true,
+            "schema": {
+              "title": "X-File-Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportArtifactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Postgresql Pgbadger Artifact",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/proposals": {
       "get": {
         "operationId": "list_proposals_api_v1_apps_aiops_proposals_get",
@@ -17932,6 +18513,162 @@
         "summary": "List Reports",
         "tags": [
           "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/reports/activity": {
+      "post": {
+        "operationId": "create_activity_report_api_v1_apps_aiops_reports_activity_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportWindow"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportArtifactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Activity Report",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/reports/workload": {
+      "post": {
+        "operationId": "create_workload_report_api_v1_apps_aiops_reports_workload_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportWindow"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportArtifactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workload Report",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/reports/workload-diff": {
+      "post": {
+        "operationId": "create_workload_diff_report_api_v1_apps_aiops_reports_workload_diff_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkloadDiffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportArtifactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workload Diff Report",
+        "tags": [
+          "AIOps App"
         ]
       }
     },

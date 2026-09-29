@@ -310,7 +310,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
             hasattr(AIOpsDelegationClient, "create_delegation")
         )
 
-    def test_aiops_owns_eight_ordered_ddl_scripts(self) -> None:
+    def test_aiops_owns_nine_ordered_ddl_scripts(self) -> None:
         root = Path(__file__).resolve().parents[3]
         sql_files = sorted(
             (root / "database" / "oracle" / "aiops_agent").glob(
@@ -327,6 +327,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 "006_ops_fks_views.sql",
                 "007_ops_agents.sql",
                 "008_ops_conversations_reports.sql",
+                "009_ops_workload.sql",
             ],
             [path.name for path in sql_files],
         )

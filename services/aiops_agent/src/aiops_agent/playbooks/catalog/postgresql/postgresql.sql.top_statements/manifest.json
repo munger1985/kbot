@@ -1,0 +1,31 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "postgresql.sql.top_statements",
+  "version": "1.0.0",
+  "database_types": ["POSTGRESQL"],
+  "version_range": {"minimum": "12", "maximum": "20"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["SQL_PERFORMANCE"],
+  "subjects": ["TOP_SQL", "POSTGRESQL_QUERY_ID"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "pg_stat_statements", "pg_stat_activity"],
+  "required_privileges": ["pg_read_all_stats"],
+  "required_entitlements": [],
+  "input_schema": "postgresql.sql.top-statements.input.v1",
+  "defaults": {"limit": 100},
+  "limits": {"max_rows": 500, "timeout_seconds": 90, "max_attempts": 2, "cost_units": 5},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "statements", "tool_id": "db.postgresql.statement.top", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"limit": 100}},
+    {"step_id": "waits", "tool_id": "db.postgresql.wait.current", "tool_version": "1.0.0", "depends_on": ["statements"], "input": {"limit": 100}}
+  ],
+  "output_schema": "postgresql.sql.top-statements.output.v1",
+  "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+  "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": ["postgresql.sql.top_current"],
+  "manual_evidence_template": "postgresql.sql.top-statements.manual.v1",
+  "sensitive_fields": ["normalized_statement", "query_text"],
+  "redaction_rules": ["SQL_LITERAL_REDACTION"],
+  "freshness": {"max_age_seconds": 120, "requires_observed_at": true}
+}

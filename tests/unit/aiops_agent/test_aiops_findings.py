@@ -645,7 +645,8 @@ class FindingCompilerTest(unittest.TestCase):
                     columns=("channel_name", "lag_seconds"),
                     rows=(("", 45),),
                 ),
-            )
+            ),
+            database_type="MYSQL",
         )
         self.assertEqual(1, len(compilation.findings))
         card = compilation.findings[0]
@@ -671,7 +672,8 @@ class FindingCompilerTest(unittest.TestCase):
                     ),
                     rows=(("public", "orders", 10000, 1200, 10.71, None, None),),
                 ),
-            )
+            ),
+            database_type="POSTGRESQL",
         )
         self.assertEqual((), compilation.findings)
         self.assertEqual(
@@ -722,7 +724,8 @@ class FindingCompilerTest(unittest.TestCase):
                     columns=("schema_name", "table_name", "frozen_xid_age"),
                     rows=(("public", "history", 180000000),),
                 ),
-            )
+            ),
+            database_type="POSTGRESQL",
         )
         types = tuple(card.finding_type for card in compilation.findings)
         self.assertEqual(

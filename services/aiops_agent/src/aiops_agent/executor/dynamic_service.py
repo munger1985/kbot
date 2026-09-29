@@ -1,4 +1,4 @@
-"""Oracle 动态只读查询的独立 Executor 安全边界。"""
+"""数据库动态只读查询的独立 Executor 安全边界。"""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from aiops_agent.diagnostics.dynamic_query import (
     DynamicQueryPolicySnapshot,
     DynamicQueryRejected,
     OracleDynamicQueryPolicy,
+    PostgreSQLDynamicQueryPolicy,
+    PostgreSQLDynamicQueryPolicySnapshot,
 )
 from aiops_agent.diagnostics.grants import (
     DiagnosticGrantCodec,
@@ -59,13 +61,15 @@ class DynamicDiagnosticExecutorService:
         *,
         grant_codec: DiagnosticGrantCodec,
         control_plane: AIOpsExecutionClient,
-        oracle_driver,
+        drivers,
         hard_limits: DiagnosticLimits,
         concurrency: int,
     ) -> None:
         self._grant_codec = grant_codec
         self._control_plane = control_plane
-        self._driver = oracle_driver
+        self._drivers = {driver.db_type: driver for driver in drivers}
+        if set(self._drivers) != {"ORACLE", "POSTGRESQL"}:
+            raise ValueError("动态诊断Executor必须配置Oracle和PostgreSQL Driver")
         self._hard_limits = hard_limits
         self._semaphore = asyncio.Semaphore(concurrency)
 
@@ -79,17 +83,29 @@ class DynamicDiagnosticExecutorService:
                     "PARAMETERS_HASH_MISMATCH",
                     "动态诊断参数与 Grant 不匹配",
                 )
-            snapshot = DynamicQueryPolicySnapshot.model_validate(
-                grant.policy_snapshot.model_dump(mode="json")
-            )
-            validated = OracleDynamicQueryPolicy(snapshot).validate(
-                request.sql, request.parameters
-            )
+            if grant.db_type == "ORACLE":
+                snapshot = DynamicQueryPolicySnapshot.model_validate(
+                    grant.policy_snapshot.model_dump(mode="json")
+                )
+                validated = OracleDynamicQueryPolicy(snapshot).validate(
+                    request.sql, request.parameters
+                )
+            else:
+                snapshot = PostgreSQLDynamicQueryPolicySnapshot.model_validate(
+                    grant.policy_snapshot.model_dump(mode="json")
+                )
+                validated = PostgreSQLDynamicQueryPolicy(snapshot).validate(
+                    request.sql, request.parameters
+                )
             if (
                 validated.normalized_sql != request.sql
                 or validated.query_sha256 != grant.query_sha256
                 or validated.policy_sha256 != grant.policy_sha256
-                or validated.projected_columns != grant.projected_columns
+                or (
+                    grant.db_type == "ORACLE"
+                    and validated.projected_columns
+                    != grant.projected_columns
+                )
             ):
                 raise DiagnosticGrantError(
                     "DYNAMIC_QUERY_BINDING_MISMATCH",
@@ -108,7 +124,7 @@ class DynamicDiagnosticExecutorService:
             )
             started = datetime.now(UTC)
             async with self._semaphore:
-                raw = await self._driver.execute_dynamic(
+                raw = await self._drivers[grant.db_type].execute_dynamic(
                     profile=grant.connection_profile,
                     secret=secret,
                     sql=validated.normalized_sql,
@@ -139,7 +155,7 @@ class DynamicDiagnosticExecutorService:
             raise DiagnosticGrantError(exc.code, str(exc)) from exc
         except DiagnosticDriverError as exc:
             logger.warning(
-                "Oracle 动态只读诊断未取得结果："
+                "数据库动态只读诊断未取得结果："
                 "executor_request_id={} run_id={} task_id={} trace_id={} "
                 "query_sha256={} code={} retryable={}",
                 request.executor_request_id,
@@ -153,7 +169,7 @@ class DynamicDiagnosticExecutorService:
             return self._gap(request, exc.code, retryable=exc.retryable)
         except DynamicOutputValidationError as exc:
             logger.warning(
-                "Oracle 动态只读诊断结果校验失败："
+                "数据库动态只读诊断结果校验失败："
                 "executor_request_id={} run_id={} task_id={} trace_id={} "
                 "query_sha256={} code={} column={} database_type={} "
                 "value_type={}",
@@ -169,7 +185,7 @@ class DynamicDiagnosticExecutorService:
             )
             return self._gap(request, exc.code, retryable=False)
         except ValueError:
-            logger.warning("Oracle 动态只读诊断结果结构无法验证")
+            logger.warning("数据库动态只读诊断结果结构无法验证")
             return self._gap(
                 request, "OUTPUT_SCHEMA_INVALID", retryable=False
             )
@@ -296,7 +312,11 @@ class DynamicDiagnosticExecutorService:
             parameters_sha256=grant.parameters_sha256,
             warnings=("RESULT_TRUNCATED",) if raw.truncated else (),
             provenance={
-                "executor_policy": "oracle-dynamic-readonly.v1",
+                "executor_policy": (
+                    "oracle-dynamic-readonly.v1"
+                    if grant.db_type == "ORACLE"
+                    else "postgresql-dynamic-readonly.v1"
+                ),
                 "policy_sha256": grant.policy_sha256,
                 "query_sha256": grant.query_sha256,
             },

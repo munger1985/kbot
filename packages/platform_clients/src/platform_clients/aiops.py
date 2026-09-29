@@ -243,6 +243,7 @@ class _BaseAIOpsClient:
         media_type: str,
         body,
         max_bytes: int = CONVERSATION_UPLOAD_MAX_BYTES,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -250,6 +251,8 @@ class _BaseAIOpsClient:
             "X-File-Name": quote(file_name, safe=""),
             **self._auth.headers(auth_context),
         }
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
         # 先把有界正文读完再转发。把 ASGI 请求流直接交给 aiohttp
         # 会在大文件（例如 AWR HTML）上形成分块传输死锁，120 秒后超时。
         payload = await _materialize_upload_body(body, max_bytes=max_bytes)
@@ -1155,6 +1158,92 @@ class AIOpsManagementClient(_BaseAIOpsClient):
                 f"{INTERNAL_API_V1}/aiops/reports?"
                 f"{urlencode(query)}"
             ),
+            auth_context=auth_context,
+        )
+
+    async def create_workload_report(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/workload/reports/workload",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def create_workload_diff_report(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/workload/reports/workload-diff",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def create_activity_report(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/workload/reports/activity",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def import_postgresql_pgbadger_artifact(
+        self,
+        *,
+        target_id: UUID,
+        period_start: str,
+        period_end: str,
+        file_name: str,
+        media_type: str,
+        body: bytes,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = urlencode(
+            {
+                "target_id": str(target_id),
+                "period_start": period_start,
+                "period_end": period_end,
+            }
+        )
+        return await self._upload(
+            f"{INTERNAL_API_V1}/aiops/workload/postgresql/"
+            f"pgbadger-artifacts?{query}",
+            auth_context=auth_context,
+            file_name=file_name,
+            media_type=media_type,
+            body=body,
+            idempotency_key=idempotency_key,
+        )
+
+    async def download_report_artifact(
+        self,
+        artifact_id: UUID,
+        *,
+        auth_context: AuthContext,
+    ) -> AIOpsBinaryResponse:
+        return await self._bytes(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/artifacts/{artifact_id}/content",
             auth_context=auth_context,
         )
 

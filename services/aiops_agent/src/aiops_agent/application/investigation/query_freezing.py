@@ -11,6 +11,8 @@ from aiops_agent.diagnostics import (
     DynamicQueryPolicySnapshot,
     DynamicQueryRejected,
     OracleDynamicQueryPolicy,
+    PostgreSQLDynamicQueryPolicy,
+    PostgreSQLDynamicQueryPolicySnapshot,
 )
 from aiops_agent.monitoring import (
     LogQueryPolicy,
@@ -21,16 +23,38 @@ from aiops_agent.monitoring import (
 )
 
 
-def prepare_dynamic_queries(investigation):
+_DYNAMIC_TOOL_IDS = {
+    "ORACLE": "db.oracle.readonly_query",
+    "POSTGRESQL": "db.postgresql.readonly_query",
+}
+
+
+def prepare_dynamic_queries(investigation, *, database_type: str):
     """规划端先验证并规范化动态 SQL，再冻结供 Executor 重放。"""
-    snapshot = DynamicQueryPolicySnapshot()
-    policy = OracleDynamicQueryPolicy(snapshot)
+    normalized_database_type = str(database_type).upper()
+    tool_id = _DYNAMIC_TOOL_IDS.get(normalized_database_type)
+    if normalized_database_type == "ORACLE":
+        snapshot = DynamicQueryPolicySnapshot()
+        policy = OracleDynamicQueryPolicy(snapshot)
+        required_privileges = ["SELECT ANY DICTIONARY"]
+    elif normalized_database_type == "POSTGRESQL":
+        snapshot = PostgreSQLDynamicQueryPolicySnapshot()
+        policy = PostgreSQLDynamicQueryPolicy(snapshot)
+        required_privileges = ["pg_read_all_stats"]
+    else:
+        snapshot = None
+        policy = None
+        required_privileges = []
     actions = []
     frozen = []
     for action in investigation.plan.actions:
-        if action.tool_id != "db.oracle.readonly_query":
+        if action.tool_id not in set(_DYNAMIC_TOOL_IDS.values()):
             actions.append(action)
             continue
+        if action.tool_id != tool_id or snapshot is None or policy is None:
+            raise InvestigationPlanValidationError(
+                "动态查询工具与Target数据库类型不一致"
+            )
         payload = dict(action.input)
         if set(payload) != {"sql", "parameters"}:
             raise InvestigationPlanValidationError(
@@ -63,7 +87,9 @@ def prepare_dynamic_queries(investigation):
                 "action_id": action.action_id,
                 "question": action.question,
                 "measurement_semantics": action.measurement_semantics,
-                "required_privileges": ["SELECT ANY DICTIONARY"],
+                "tool_id": tool_id,
+                "database_type": normalized_database_type,
+                "required_privileges": required_privileges,
                 "policy_snapshot": snapshot.model_dump(mode="json"),
                 "validated_query": validated.model_dump(mode="json"),
                 "limits": {

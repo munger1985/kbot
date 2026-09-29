@@ -16,9 +16,18 @@ from platform_core.contracts.aiops import TargetConnectionTest
 class TargetConnectivityCheckService:
     """消费持久化检查请求，并以版本条件防止旧结果覆盖新配置。"""
 
-    def __init__(self, *, uow_factory, managed_credentials):
+    def __init__(
+        self,
+        *,
+        uow_factory,
+        managed_credentials,
+        target_connection_tester=None,
+    ):
         self._uow_factory = uow_factory
         self._managed_credentials = managed_credentials
+        self._target_connection_tester = (
+            target_connection_tester or test_target_connection
+        )
 
     async def execute(self, payload: dict) -> None:
         target_id = UUID(payload["aggregate_id"])
@@ -43,6 +52,7 @@ class TargetConnectivityCheckService:
                 "credential_id": target.diagnostic_credential_id,
                 "config_version": int(target.row_version),
                 "connectivity_version": int(target.connectivity_version),
+                "capabilities": dict(target.capabilities_json or {}),
             }
 
         result = None
@@ -57,7 +67,7 @@ class TargetConnectivityCheckService:
                     credential_kind="target_diagnostic",
                     external_key=target_id,
                 )
-                result = await test_target_connection(
+                result = await self._target_connection_tester(
                     TargetConnectionTest.model_validate(
                         {
                             "db_type": snapshot["db_type"],
@@ -84,6 +94,7 @@ class TargetConnectivityCheckService:
         }:
             connectivity_status = "MISCONFIGURED"
         oracle_observation = None
+        capability_observation = None
         if result is not None and result.oracle_container_scope is not None:
             oracle_observation = {
                 "observed_oracle_container_scope": result.oracle_container_scope,
@@ -91,6 +102,24 @@ class TargetConnectivityCheckService:
                 "observed_oracle_container_number": result.oracle_container_number,
                 "observed_oracle_database_name": result.oracle_database_name,
             }
+        if result is not None and result.capability_probe_version is not None:
+            capability_observation = dict(snapshot["capabilities"])
+            capability_observation.update(
+                {
+                    "capabilities": list(result.discovered_capabilities),
+                    "privileges": list(result.discovered_privileges),
+                    "capability_probe": {
+                        "version": result.capability_probe_version,
+                        "server_uuid": result.server_uuid,
+                        "server_started_at": (
+                            result.server_started_at.isoformat()
+                            if result.server_started_at is not None
+                            else None
+                        ),
+                        "details": dict(result.capability_details),
+                    },
+                }
+            )
         async with self._uow_factory() as uow:
             now = await uow.runs.database_now()
             changed = await uow.targets.update_connectivity(
@@ -104,6 +133,10 @@ class TargetConnectivityCheckService:
                 checked_at=now,
                 last_error_code=error_code,
                 oracle_observation=oracle_observation,
+                database_version=(
+                    result.database_version if result is not None else None
+                ),
+                capability_observation=capability_observation,
             )
             if changed:
                 await uow.commit()

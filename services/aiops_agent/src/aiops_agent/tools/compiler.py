@@ -138,6 +138,7 @@ class InvestigationTaskCompiler:
                 "monitor.query_range",
                 "loki.query_range",
                 "db.oracle.readonly_query",
+                "db.postgresql.readonly_query",
                 "artifact.search",
             }
         )
@@ -148,7 +149,10 @@ class InvestigationTaskCompiler:
         dynamic_actions = tuple(
             action
             for action in investigation_actions
-            if action.tool_id == "db.oracle.readonly_query"
+            if action.tool_id in {
+                "db.oracle.readonly_query",
+                "db.postgresql.readonly_query",
+            }
         )
         dynamic_key_by_action = {
             action.action_id: f"dynamic:{action.action_id}{suffix}"

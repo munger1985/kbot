@@ -471,6 +471,1316 @@
       "max_bytes": 65536,
       "cost_level": "LOW",
       "template_sha256": "1102015f6003123df6b225b7c5e39c5105515a4c57fff7308b86d32cd703c7cd"
-    }
+    },
+    {
+        "tool_id": "db.instance.performance",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_global_status",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [],
+        "output_columns": [
+          {
+            "name": "server_uuid",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "uptime_seconds",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "questions",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "commits",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "rollbacks",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "threads_connected",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "threads_running",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "temp_disk_tables",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "full_table_scans",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/instance_performance.sql",
+        "template_sha256": "4f2781a4251ce3136aa06e9811e8aa8d3383e8ccae434360e08fb7d1db2bfff6",
+        "timeout_seconds": 20,
+        "max_rows": 1,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.memory.summary",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_performance_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "required": false,
+            "default": 20
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "event_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "current_count_used",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "current_number_of_bytes_used",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "high_count_used",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "high_number_of_bytes_used",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/memory_summary.sql",
+        "template_sha256": "04b9c48461e44dcd018874c81bcc5cebc81aada9cb3147ca80028ba147041884",
+        "timeout_seconds": 20,
+        "max_rows": 200,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.wait.class_summary",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_performance_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "wait_instrumentation"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "required": false,
+            "default": 20
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "wait_class",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "event_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "wait_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "total_wait_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "max_wait_picoseconds",
+            "logical_type": "DECIMAL"
+          }
+        ],
+        "template_ref": "sql/wait_class_summary.sql",
+        "template_sha256": "4ff49fdd56e26affbb70136cc06842f511d47c50c540f3b66468afcdfb48cf93",
+        "timeout_seconds": 20,
+        "max_rows": 100,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.sql.top_current",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_performance_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "statement_history"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [
+          "PROCESS"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "required": false,
+            "default": 20
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "session_id",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "username",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "database_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest_text",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "elapsed_seconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "rows_examined",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "rows_sent",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/sql_top_current.sql",
+        "template_sha256": "b72c25d9a64f8dd9bdda48754ae4b9117567c31a39197e3d7444130812bcf6e3",
+        "timeout_seconds": 20,
+        "max_rows": 200,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.sql.cursor_details",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_digest",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "statement_digest"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "digest",
+            "type": "string",
+            "max_length": 64
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "required": false,
+            "default": 50
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "schema_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest_text",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "execution_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "total_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "average_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "maximum_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "lock_time_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "error_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "warning_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "rows_examined",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "rows_sent",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "temp_disk_tables",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "sort_rows",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/sql_cursor_details.sql",
+        "template_sha256": "ea933e357692614c42b31545ca74eaa61bb86a73155398a39d8bb53b53dacd19",
+        "timeout_seconds": 20,
+        "max_rows": 200,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.sql.object_statistics",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_table_io",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "schema_name",
+            "type": "string",
+            "max_length": 64,
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "object_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "object_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "count_read",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_write",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "read_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "write_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          }
+        ],
+        "template_ref": "sql/sql_object_statistics.sql",
+        "template_sha256": "451b5c05da0dbf091bbc7c2108e9410a4ad090b452dfc9dee7982ac6a53f7a49",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.session.current_sql",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_performance_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "statement_history"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [
+          "PROCESS"
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18446744073709552000
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "session_id",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "username",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "client_host",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "database_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest_text",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "session_state",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "elapsed_seconds",
+            "logical_type": "DECIMAL"
+          }
+        ],
+        "template_ref": "sql/session_current_sql.sql",
+        "template_sha256": "196cdee861f43cc20503f856a48bbdb640f14b2699df8e4ab7dd1a0f22c57095",
+        "timeout_seconds": 20,
+        "max_rows": 1,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.index.health",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_index_usage",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "object_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "object_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "index_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "count_read",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_write",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "read_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "write_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          }
+        ],
+        "template_ref": "sql/index_health.sql",
+        "template_sha256": "01f8fca409e4f4908076a109d5647ef616567c668278824fa81ce11a77a48ff2",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.table.statistics",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_information_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "information_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "schema_name",
+            "type": "string",
+            "max_length": 64,
+            "required": false,
+            "default": ""
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "table_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "table_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "engine",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "table_rows",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "data_length",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "index_length",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "data_free",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "update_time",
+            "logical_type": "DATETIME"
+          }
+        ],
+        "template_ref": "sql/table_statistics.sql",
+        "template_sha256": "f209922e40adb6975b0c58cc2b95fbc8c1a39577469361b550eff0daa1288cdb",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.instance.parameters",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_global_variables",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [],
+        "output_columns": [
+          {
+            "name": "variable_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "variable_value",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          }
+        ],
+        "template_ref": "sql/instance_parameters.sql",
+      "template_sha256": "2edcb8e17a691028f27488cf64df52b6b741b757a54125dcd8cd78cfc6875065",
+      "timeout_seconds": 20,
+      "max_rows": 50,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
+        "tool_id": "db.scheduler.job.status",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_event_scheduler",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "event_scheduler"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "event_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "event_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "status",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "last_executed",
+            "logical_type": "DATETIME"
+          },
+          {
+            "name": "interval_value",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "interval_field",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "starts",
+            "logical_type": "DATETIME"
+          },
+          {
+            "name": "ends",
+            "logical_type": "DATETIME"
+          }
+        ],
+        "template_ref": "sql/scheduler_job_status.sql",
+        "template_sha256": "e637f58894aee1d56910469d8f91e21b2baca86debd99d3bd3e398403c19a193",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.mysql.statement.digest.top",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_digest",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "statement_digest"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "schema_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest_text",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "execution_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "total_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "average_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "maximum_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "lock_time_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "rows_examined",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "rows_sent",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "temp_disk_tables",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/statement_digest_top.sql",
+        "template_sha256": "04cfbd69c3db04e68e36f0ef5db6837e127929dea4f7c73aacb083e9b3b96f38",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.mysql.statement.history",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_history_long",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "statement_history"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [
+          "PROCESS"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "session_id",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "event_id",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "event_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "digest_text",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "elapsed_seconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "rows_examined",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "rows_sent",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "errors",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "warnings",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/statement_history.sql",
+        "template_sha256": "058e405d49e53b5912354d8d48abb5ecd697ada424a58580c444df33e17f4b86",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.mysql.io.summary",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_file_io",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "required": false,
+            "default": 50
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "event_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "count_read",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_write",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "bytes_read",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "bytes_written",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "read_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "write_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          }
+        ],
+        "template_ref": "sql/io_summary.sql",
+        "template_sha256": "9fe467aa9ca83c28f1d2605a2d8ccf345ee445b11f3a2fbde0f635ccb25c6988",
+        "timeout_seconds": 20,
+        "max_rows": 200,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.mysql.lock.current",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_data_locks",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "data_lock_waits"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [
+          "PROCESS"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "requesting_thread_id",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "blocking_thread_id",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "object_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "object_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "index_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "lock_type",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "lock_mode",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "lock_status",
+            "logical_type": "STRING"
+          }
+        ],
+        "template_ref": "sql/lock_current.sql",
+        "template_sha256": "9bdbfa3196117ba299fe1cd7845c1e44ffbf6aee2c6f2f68d3ea19bd1727c31b",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.mysql.table.hotspots",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_table_io",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "object_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "object_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "count_read",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_write",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "read_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "write_latency_picoseconds",
+            "logical_type": "DECIMAL"
+          },
+          {
+            "name": "count_fetch",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_insert",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_update",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "count_delete",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/table_hotspots.sql",
+        "template_sha256": "5c20791e3600ec2835153d68d53ea4c551332f3993ec07d2af08da60145db88b",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      },
+      {
+        "tool_id": "db.mysql.replication.channel_status",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_replication",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "replication_views"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [
+          "REPLICATION CLIENT"
+        ],
+        "parameters": [],
+        "output_columns": [
+          {
+            "name": "channel_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "receiver_state",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "source_uuid",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "received_transaction_set",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "receiver_error_number",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "applier_state",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "applier_error_number",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "last_processed_transaction",
+            "logical_type": "STRING"
+          }
+        ],
+        "template_ref": "sql/replication_channel_status.sql",
+        "template_sha256": "73df4758bd91086e1aa614fefeb5b1993c757564a1e9a0788f80506e026fc881",
+        "timeout_seconds": 20,
+        "max_rows": 64,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.mysql.group_replication.status",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_group_replication",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "group_replication"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [],
+        "output_columns": [
+          {
+            "name": "channel_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "member_id",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "member_host",
+            "logical_type": "STRING",
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "member_port",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "member_state",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "member_role",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "member_version",
+            "logical_type": "STRING"
+          }
+        ],
+        "template_ref": "sql/group_replication_status.sql",
+        "template_sha256": "9e0bd4d07b25963ee96d5f88b9945b2f914c40861708ff5051999398586e4608",
+        "timeout_seconds": 20,
+        "max_rows": 64,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.mysql.activity.sample",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_performance_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "statement_history",
+          "data_lock_waits"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [
+          "PROCESS"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "required": false,
+            "default": 200
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "mysql_connection_number",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "mysql_thread_number",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "digest",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "schema_name",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "username",
+            "logical_type": "STRING",
+            "nullable": true,
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "client",
+            "logical_type": "STRING",
+            "nullable": true,
+            "sensitivity": "MASKED"
+          },
+          {
+            "name": "command_name",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "session_state",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "stage_name",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "wait_name",
+            "logical_type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "transaction_active",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "lock_waiting",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/activity_sample.sql",
+        "template_sha256": "bfd306096c944c478d03c84b11e656499b28807a33a4e3a169a375c4fff495ed",
+        "timeout_seconds": 2,
+        "max_rows": 1000,
+        "max_bytes": 4194304,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.mysql.binlog.status",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_global_variables",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "performance_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [],
+        "output_columns": [
+          {
+            "name": "log_bin",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "binlog_format",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "gtid_mode",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "binlog_expire_logs_seconds",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "sync_binlog",
+            "logical_type": "STRING"
+          }
+        ],
+        "template_ref": "sql/binlog_status.sql",
+        "template_sha256": "83b2ffbab6ebaeeb5afa275f44bd592d39dadb620bebaebc248c1e013d6eaaac",
+        "timeout_seconds": 20,
+        "max_rows": 1,
+        "max_bytes": 1048576,
+        "cost_level": "LOW"
+      },
+      {
+        "tool_id": "db.mysql.statistics.health",
+        "version": "1.0.0",
+        "db_type": "MYSQL",
+        "variant": "mysql_8_information_schema",
+        "supported_version_min": 8,
+        "supported_version_max_exclusive": 10,
+        "required_capabilities": [
+          "information_schema"
+        ],
+        "required_entitlements": [],
+        "required_privileges": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "required": false,
+            "default": 100
+          }
+        ],
+        "output_columns": [
+          {
+            "name": "table_schema",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "table_name",
+            "logical_type": "STRING"
+          },
+          {
+            "name": "table_rows",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "update_time",
+            "logical_type": "DATETIME"
+          },
+          {
+            "name": "index_count",
+            "logical_type": "INTEGER"
+          },
+          {
+            "name": "indexes_without_cardinality",
+            "logical_type": "INTEGER"
+          }
+        ],
+        "template_ref": "sql/statistics_health.sql",
+        "template_sha256": "faed8c4f851498d63849a6c4daa507eabbb0b02a6d4e0421a49a18da4ec83d11",
+        "timeout_seconds": 20,
+        "max_rows": 500,
+        "max_bytes": 1048576,
+        "cost_level": "MEDIUM"
+      }
   ]
 }

@@ -10,12 +10,7 @@ SELECT
         )
     END AS rollback_percent,
     numbackends AS backends,
-    CAST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - stats_reset)) AS bigint) AS sample_seconds,
-    ROUND(
-        (xact_commit + xact_rollback)
-        / NULLIF(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - stats_reset)), 0),
-        3
-    ) AS transactions_per_second
+    stats_reset
 FROM pg_stat_database
 WHERE datname IS NOT NULL
 ORDER BY datname

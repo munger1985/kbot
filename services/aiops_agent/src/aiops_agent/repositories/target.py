@@ -19,6 +19,21 @@ from aiops_agent.repositories._base import AIOpsRepository
 
 
 class TargetRepository(AIOpsRepository):
+    _WORKLOAD_RUNTIME_FIELDS = frozenset(
+        {
+            "workload_next_run_at",
+            "workload_consecutive_failures",
+            "workload_last_collected_at",
+            "workload_last_error_code",
+            "activity_next_sample_at",
+            "activity_sampler_status",
+            "activity_sampler_disabled_reason",
+            "activity_consecutive_failures",
+            "activity_daily_bytes",
+            "activity_daily_bucket",
+            "activity_last_sampled_at",
+        }
+    )
     def __init__(
         self,
         session: AsyncSession,
@@ -204,6 +219,85 @@ class TargetRepository(AIOpsRepository):
         if entity is None:
             raise StateConflictError(f"领取后的 Target 不存在：{claimed_id}")
         return entity
+
+    async def claim_due_workload(self, *, now: datetime) -> TargetEntity | None:
+        """以Oracle服务端游标领取一个到期工作负载Target。"""
+        return await self._claim_due_collection(
+            now=now,
+            due_column="WORKLOAD_NEXT_RUN_AT",
+            activity=False,
+        )
+
+    async def claim_due_activity(self, *, now: datetime) -> TargetEntity | None:
+        """以Oracle服务端游标领取一个到期活动采样Target。"""
+        return await self._claim_due_collection(
+            now=now,
+            due_column="ACTIVITY_NEXT_SAMPLE_AT",
+            activity=True,
+        )
+
+    async def _claim_due_collection(
+        self, *, now: datetime, due_column: str, activity: bool
+    ) -> TargetEntity | None:
+        activity_clause = (
+            "AND ACTIVITY_SAMPLER_STATUS IN ('READY', 'DEGRADED')"
+            if activity
+            else ""
+        )
+        claimed_id = await self._claim_oracle_uuid(
+            plsql=f"""
+                DECLARE
+                    CURSOR c_claim IS
+                        SELECT TARGET_ID
+                        FROM KBOT_OPS_TARGET
+                        WHERE DB_TYPE IN ('MYSQL', 'POSTGRESQL')
+                          AND STATUS = 'ENABLED'
+                          AND READONLY_CONNECTION_ENABLED = 1
+                          AND CONNECTIVITY_STATUS IN ('CONNECTED', 'DEGRADED')
+                          {activity_clause}
+                          AND {due_column} IS NOT NULL
+                          AND {due_column} <= :now
+                        ORDER BY {due_column}, TARGET_ID
+                        FOR UPDATE OF TARGET_ID SKIP LOCKED;
+                BEGIN
+                    :claimed_id := NULL;
+                    OPEN c_claim;
+                    FETCH c_claim INTO :claimed_id;
+                    CLOSE c_claim;
+                END;
+            """,
+            parameters={"now": now},
+        )
+        if claimed_id is None:
+            return None
+        entity = (
+            await self._session.execute(
+                select(TargetEntity).where(TargetEntity.target_id == claimed_id)
+            )
+        ).scalar_one_or_none()
+        if entity is None:
+            raise StateConflictError(f"领取后的 Target 不存在：{claimed_id}")
+        await self._session.flush()
+        return entity
+
+    async def update_workload_runtime_state(
+        self, *, target_id: UUID, values: dict[str, object]
+    ) -> None:
+        """更新采集运行态，不改变用于凭据Grant围栏的Target row_version。"""
+        self._check_active()
+        invalid = set(values) - self._WORKLOAD_RUNTIME_FIELDS
+        if invalid:
+            raise ValueError(
+                f"不允许更新的工作负载采集运行态字段：{', '.join(sorted(invalid))}"
+            )
+        if not values:
+            return
+        await self._session.execute(
+            update(TargetEntity)
+            .where(TargetEntity.target_id == target_id)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
 
     async def update_target(
         self,
@@ -619,6 +713,8 @@ class TargetRepository(AIOpsRepository):
         checked_at: datetime,
         last_error_code: str | None,
         oracle_observation: dict[str, object] | None = None,
+        database_version: str | None = None,
+        capability_observation: dict[str, object] | None = None,
     ) -> bool:
         """仅在配置和检查版本未变化时归并数据库连通性。"""
         self._check_active()
@@ -635,6 +731,10 @@ class TargetRepository(AIOpsRepository):
         }
         if oracle_observation is not None:
             values.update(oracle_observation)
+        if database_version is not None:
+            values["version_code"] = database_version
+        if capability_observation is not None:
+            values["capabilities_json"] = capability_observation
         statement = (
             update(TargetEntity)
             .where(

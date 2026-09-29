@@ -135,6 +135,10 @@ SERVICE_TABLES = {
         "KBOT_OPS_TURN_EVENT",
         "KBOT_OPS_EVIDENCE_REQUEST",
         "KBOT_OPS_IMAGE_EVIDENCE",
+        "KBOT_OPS_WORKLOAD_SNAPSHOT",
+        "KBOT_OPS_WORKLOAD_STATEMENT",
+        "KBOT_OPS_WORKLOAD_METRIC",
+        "KBOT_OPS_ACTIVITY_SAMPLE",
     },
     "knowledge_retrieval_app": {
         "KBOT_KR_AGENT",

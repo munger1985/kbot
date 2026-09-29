@@ -2877,7 +2877,10 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
             MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
             manifest.measurement_semantics,
         )
-        self.assertEqual(
+        playbook_ids = {item.playbook_id for item in registry.manifests()}
+        self.assertEqual(52, len(registry.manifests()))
+        self.assertEqual(48, len(playbook_ids))
+        self.assertTrue(
             {
                 "oracle.sql.top_current",
                 "oracle.sql.healthcheck",
@@ -2907,14 +2910,26 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "mysql.session.idle",
                 "mysql.connection.utilization",
                 "mysql.instance.throughput",
-                "postgresql.replication.lag",
-                "postgresql.session.idle",
-                "postgresql.connection.utilization",
-                "postgresql.instance.throughput",
-                "postgresql.storage.dead_tuples",
                 "postgresql.maintenance.autovacuum",
-            },
-            {item.playbook_id for item in registry.manifests()},
+                "postgresql.replication.status",
+                "postgresql.session.active",
+                "postgresql.session.blocking_chain",
+                "postgresql.sql.healthcheck",
+                "postgresql.sql.top_current",
+                "postgresql.sql.top_statements",
+                "postgresql.storage.health",
+                "postgresql.transaction.long_running",
+                "postgresql.maintenance.freeze",
+                "postgresql.configuration.parameters",
+                "postgresql.wal.archive",
+                "mysql.replication.status",
+                "mysql.session.blocking_chain",
+                "mysql.sql.healthcheck",
+                "mysql.sql.top_digest",
+                "mysql.storage.health",
+                "mysql.maintenance.health",
+                "mysql.instance.performance",
+            }.issubset(playbook_ids)
         )
         self.assertEqual(64, len(registry.catalog_hash))
 
@@ -3622,7 +3637,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         )
         self.assertFalse(snapshot.source_snapshots[0].reachable)
 
-    def test_mysql_readonly_snapshot_grants_schema_capabilities(self) -> None:
+    def test_mysql_readonly_snapshot_does_not_invent_schema_capabilities(self) -> None:
         snapshot = build_capability_snapshot(
             agent_id="agent-1",
             agent_version=SimpleNamespace(agent_version_id="version-1"),
@@ -3642,9 +3657,9 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
             sources=(),
         )
         self.assertIn("DB_READONLY", snapshot.target_capabilities)
-        self.assertIn("information_schema", snapshot.target_capabilities)
-        self.assertIn("sys_schema", snapshot.target_capabilities)
-        self.assertIn("replication_views", snapshot.target_capabilities)
+        self.assertNotIn("information_schema", snapshot.target_capabilities)
+        self.assertNotIn("sys_schema", snapshot.target_capabilities)
+        self.assertNotIn("replication_views", snapshot.target_capabilities)
         diagnostics = DiagnosticRegistry.load()
         registry = PlaybookRegistry.load(
             allowed_tools=frozenset(
@@ -3666,7 +3681,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "db.mysql.connection.utilization",
                 "db.mysql.instance.throughput",
             }
-            <= discovered
+            .isdisjoint(discovered)
         )
 
     def test_registry_hash_is_independent_of_registration_order(self) -> None:

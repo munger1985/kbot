@@ -10,6 +10,7 @@ from .monitoring import SituationRepository, DiagnosticSourceRepository
 from .notification import NotificationSubscriptionRepository
 from .runtime import OpsRunRepository
 from .target import PolicyRepository, TargetRepository
+from .workload import WorkloadRepository
 
 __all__ = [
     "ConversationRepository",
@@ -26,5 +27,6 @@ __all__ = [
     "NotificationSubscriptionRepository",
     "PolicyRepository",
     "TargetRepository",
+    "WorkloadRepository",
 ]
 from .agent import AIOpsAgentRepository, AIOpsAgentExecutionBinding

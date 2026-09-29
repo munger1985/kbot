@@ -34,6 +34,13 @@ def _oracle_identifier(value: object) -> str:
     return f'"{parsed}"'
 
 
+def _mysql_identifier(value: object) -> str:
+    parsed = str(value)
+    if _IDENTIFIER.fullmatch(parsed) is None or len(parsed) > 64:
+        raise ValueError("MySQL标识符格式无效")
+    return f"`{parsed}`"
+
+
 def _database_object_ref(
     value: object, object_types: tuple[str, ...]
 ) -> dict[str, str]:
@@ -239,6 +246,57 @@ def _oracle_user_state_renderer(
     )
 
 
+def _mysql_object_renderer(
+    template: str, parameters: dict[str, Any], definition
+) -> str:
+    del definition
+    reference_name = next(
+        (name for name in ("table_ref", "event_ref") if name in parameters),
+        None,
+    )
+    if reference_name is None:
+        raise ValueError("MySQL对象动作缺少对象引用")
+    ref = dict(parameters[reference_name])
+    qualified_name = (
+        f'{_mysql_identifier(ref["schema"])}.'
+        f'{_mysql_identifier(ref["object_name"])}'
+    )
+    return template.strip().replace(
+        f"{{{{{reference_name}}}}}", qualified_name
+    )
+
+
+def _mysql_set_persist_renderer(
+    template: str, parameters: dict[str, Any], definition
+) -> str:
+    del definition
+    name = str(parameters["parameter_name"])
+    value = int(parameters["parameter_value"])
+    ranges = {
+        "max_connections": (10, 100_000),
+        "innodb_io_capacity": (100, 200_000),
+        "thread_cache_size": (0, 16_384),
+    }
+    limits = ranges.get(name)
+    if limits is None or not limits[0] <= value <= limits[1]:
+        raise ValueError("MySQL持久化参数和值不在动作Allowlist")
+    return (
+        template.strip()
+        .replace("{{parameter_name}}", name)
+        .replace("{{parameter_value}}", str(value))
+    )
+
+
+def _mysql_channel_renderer(
+    template: str, parameters: dict[str, Any], definition
+) -> str:
+    del definition
+    channel_name = str(parameters["channel_name"])
+    if re.fullmatch(r"[A-Za-z0-9_.-]{0,64}", channel_name) is None:
+        raise ValueError("MySQL复制Channel名称无效")
+    return template.strip().replace("{{channel_name}}", channel_name)
+
+
 _RENDERERS: dict[str, Callable[[str, dict[str, Any], Any], str]] = {
     "strict-scalar.v2": _strict_scalar_renderer,
     "oracle-index-rebuild.v1": _oracle_index_rebuild_renderer,
@@ -260,6 +318,9 @@ _RENDERERS: dict[str, Callable[[str, dict[str, Any], Any], str]] = {
     "oracle-scheduler-job-disable.v1": _oracle_scheduler_job_name_renderer,
     "oracle-scheduler-job-stop.v1": _oracle_scheduler_job_name_renderer,
     "oracle-user-state.v1": _oracle_user_state_renderer,
+    "mysql-object.v1": _mysql_object_renderer,
+    "mysql-set-persist.v1": _mysql_set_persist_renderer,
+    "mysql-channel.v1": _mysql_channel_renderer,
 }
 
 

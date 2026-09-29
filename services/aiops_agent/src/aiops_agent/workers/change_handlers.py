@@ -397,6 +397,7 @@ class ChatActionPlanHandler:
         capacity_plan = decide_capacity_actions(
             findings=compile_findings(
                 assessment.evidence,
+                database_type=str(target.get("db_type") or "ORACLE"),
                 target_id=str(context.target_id or "") or None,
             ).findings,
             target_facts=list(context.plan_snapshot.get("target_facts") or []),

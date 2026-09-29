@@ -1,0 +1,32 @@
+SELECT
+    CAST(statements.queryid AS text) AS query_id,
+    statements.dbid AS database_oid,
+    database_name.datname AS database_name,
+    statements.userid AS user_oid,
+    role_name.rolname AS username,
+    statements.query AS normalized_statement,
+    statements.calls AS execution_count,
+    statements.total_time AS total_exec_time_ms,
+    statements.mean_time AS mean_exec_time_ms,
+    statements.max_time AS max_exec_time_ms,
+    statements.rows AS rows_processed,
+    statements.shared_blks_hit,
+    statements.shared_blks_read,
+    statements.shared_blks_dirtied,
+    statements.shared_blks_written,
+    statements.local_blks_hit,
+    statements.local_blks_read,
+    statements.local_blks_dirtied,
+    statements.local_blks_written,
+    statements.temp_blks_read,
+    statements.temp_blks_written,
+    statements.blk_read_time AS block_read_time_ms,
+    statements.blk_write_time AS block_write_time_ms
+FROM pg_stat_statements AS statements
+LEFT JOIN pg_catalog.pg_database AS database_name
+  ON database_name.oid = statements.dbid
+LEFT JOIN pg_catalog.pg_roles AS role_name
+  ON role_name.oid = statements.userid
+WHERE statements.queryid IS NOT NULL
+ORDER BY statements.total_time DESC, statements.queryid DESC
+LIMIT :limit

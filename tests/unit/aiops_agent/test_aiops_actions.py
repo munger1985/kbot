@@ -45,7 +45,7 @@ class ActionCatalogTest(unittest.TestCase):
         self.registry = ActionRegistry.load()
 
     def test_registry_has_exact_oracle_and_mysql_variants(self) -> None:
-        self.assertEqual(len(self.registry.templates), 55)
+        self.assertEqual(len(self.registry.templates), 62)
         modes = {
             item.definition.action_template_id: item.definition.execution_mode
             for item in self.registry.templates

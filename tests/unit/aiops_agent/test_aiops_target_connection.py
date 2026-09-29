@@ -97,7 +97,31 @@ class _PostgreSQLConnection:
 
     async def fetchval(self, _sql):
         self.calls += 1
-        return 1 if self.calls == 1 else "16.4"
+        return 1 if self.calls == 1 else None
+
+    async def fetchrow(self, sql):
+        if "server_version_num" in sql:
+            return {
+                "server_version": "16.4",
+                "server_version_num": "160004",
+                "server_started_at": datetime(2026, 9, 1, tzinfo=UTC),
+                "in_recovery": False,
+                "database_name": "app",
+                "database_oid": 16384,
+            }
+        if "pg_has_role" in sql:
+            return {
+                "pg_monitor": False,
+                "pg_read_all_stats": False,
+                "pg_read_all_settings": False,
+            }
+        return None
+
+    async def fetch(self, _sql, *_parameters):
+        return ()
+
+    async def execute(self, _sql):
+        return "SELECT 0"
 
     async def close(self):
         return None
@@ -122,6 +146,7 @@ class _ConnectivityUow:
             row_version=4,
             connectivity_version=2,
             connectivity_check_request_id=self.request_id,
+            capabilities_json={},
         )
         self.update = None
         self.committed = False
@@ -247,14 +272,6 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_connectivity_check_persists_oracle_container_observation(self):
         uow = _ConnectivityUow()
-        service = TargetConnectivityCheckService(
-            uow_factory=lambda: uow,
-            managed_credentials=SimpleNamespace(
-                read=AsyncMock(
-                    return_value={"username": "diag", "password": "secret"}
-                )
-            ),
-        )
         observed = TargetConnectionTestResult(
             ok=True,
             database_version="19.24.0.0.0",
@@ -263,20 +280,24 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
             oracle_container_number=3,
             oracle_database_name="ORCLCDB",
         )
-        with patch(
-            "aiops_agent.application.targets.connectivity_check."
-            "test_target_connection",
-            AsyncMock(return_value=observed),
-        ):
-            await service.execute(
-                {
-                    "domain_id": str(uow.target.domain_id),
-                    "aggregate_id": str(uow.target_id),
-                    "details": {
-                        "connectivity_check_request_id": str(uow.request_id)
-                    },
-                }
-            )
+        service = TargetConnectivityCheckService(
+            uow_factory=lambda: uow,
+            managed_credentials=SimpleNamespace(
+                read=AsyncMock(
+                    return_value={"username": "diag", "password": "secret"}
+                )
+            ),
+            target_connection_tester=AsyncMock(return_value=observed),
+        )
+        await service.execute(
+            {
+                "domain_id": str(uow.target.domain_id),
+                "aggregate_id": str(uow.target_id),
+                "details": {
+                    "connectivity_check_request_id": str(uow.request_id)
+                },
+            }
+        )
 
         self.assertEqual("CONNECTED", uow.update["connectivity_status"])
         self.assertEqual(
@@ -292,14 +313,6 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_connectivity_check_marks_container_mismatch_misconfigured(self):
         uow = _ConnectivityUow()
-        service = TargetConnectivityCheckService(
-            uow_factory=lambda: uow,
-            managed_credentials=SimpleNamespace(
-                read=AsyncMock(
-                    return_value={"username": "diag", "password": "secret"}
-                )
-            ),
-        )
         mismatch = TargetConnectionTestResult(
             ok=False,
             database_version="19.24.0.0.0",
@@ -309,20 +322,24 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
             oracle_database_name="ORCLCDB",
             error_code="ORACLE_CONTAINER_MISMATCH",
         )
-        with patch(
-            "aiops_agent.application.targets.connectivity_check."
-            "test_target_connection",
-            AsyncMock(return_value=mismatch),
-        ):
-            await service.execute(
-                {
-                    "domain_id": str(uow.target.domain_id),
-                    "aggregate_id": str(uow.target_id),
-                    "details": {
-                        "connectivity_check_request_id": str(uow.request_id)
-                    },
-                }
-            )
+        service = TargetConnectivityCheckService(
+            uow_factory=lambda: uow,
+            managed_credentials=SimpleNamespace(
+                read=AsyncMock(
+                    return_value={"username": "diag", "password": "secret"}
+                )
+            ),
+            target_connection_tester=AsyncMock(return_value=mismatch),
+        )
+        await service.execute(
+            {
+                "domain_id": str(uow.target.domain_id),
+                "aggregate_id": str(uow.target_id),
+                "details": {
+                    "connectivity_check_request_id": str(uow.request_id)
+                },
+            }
+        )
 
         self.assertEqual("MISCONFIGURED", uow.update["connectivity_status"])
         self.assertEqual(

@@ -49,7 +49,7 @@ def execution_action_fingerprints(
             continue
         fingerprints.append(
             action_fingerprint(
-                "db.oracle.readonly_query",
+                str(invocation.get("tool_id") or "db.oracle.readonly_query"),
                 {
                     "sql": validated.get("normalized_sql"),
                     "parameters": dict(validated.get("parameters") or {}),

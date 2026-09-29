@@ -156,6 +156,14 @@ SQL：LLM 只能选择版本化诊断工具和参数，DB Executor 根据数据�
 受控人工 SQL 和审批后变更；PostgreSQL 已进入公开 Target 契约并支持版本化只读
 诊断。Target 创建或连接配置变更后立即探测连通性，凭据只保存统一托管凭据引用。
 
+MySQL/PostgreSQL 的持续性能基线由 `KBOT_OPS_WORKLOAD_SNAPSHOT`、
+`KBOT_OPS_WORKLOAD_STATEMENT`、`KBOT_OPS_WORKLOAD_METRIC` 和
+`KBOT_OPS_ACTIVITY_SAMPLE` 保存。Scheduler 依据 Target 采集策略创建任务，Worker
+通过版本化诊断目录采集，保留期 Worker 按 `EXPIRES_AT` 分批清理。报告计算层只读取
+Domain 隔离的 Repository，不直接访问 SQLAlchemy Session；原始工作负载 Artifact、
+统一正式报告 Artifact 和 Report Source 在同一 UoW 中提交。PostgreSQL pgBadger
+文件由独立受控存储保存，下载时再次校验 Domain 与 Artifact 元数据。
+
 ## 配置资源生命周期与连通性
 
 Target 和 Diagnostic Source 的人工管理状态统一为 `ENABLED`、`DISABLED`，不使用

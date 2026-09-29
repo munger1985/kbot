@@ -1230,6 +1230,14 @@ class DbaAnswerComposeHandler:
         if diagnosis:
             compilation = compile_findings(
                 assessment.evidence,
+                database_type=str(
+                    dict(context.plan_snapshot.get("target") or {}).get(
+                        "db_type",
+                        dict(
+                            context.plan_snapshot.get("capability_snapshot") or {}
+                        ).get("database_type", "ORACLE"),
+                    )
+                ),
                 target_id=str(context.target_id or "") or None,
             )
             prompt = await self._prompts.resolve(
@@ -1511,6 +1519,14 @@ class DbaAnswerComposeHandler:
     ):
         compilation = compile_findings(
             assessment.evidence,
+            database_type=str(
+                dict(context.plan_snapshot.get("target") or {}).get(
+                    "db_type",
+                    dict(
+                        context.plan_snapshot.get("capability_snapshot") or {}
+                    ).get("database_type", "ORACLE"),
+                )
+            ),
             target_id=str(context.target_id or "") or None,
         )
         prompt = await self._prompts.resolve(
@@ -2116,9 +2132,12 @@ class DbaAnswerComposeHandler:
             sql = str(validated.get("normalized_sql") or "").strip()
             if not action_id or not sql:
                 continue
-            tools_by_step[("db.oracle.readonly_query", action_id)] = {
+            tool_id = str(
+                invocation.get("tool_id") or "db.oracle.readonly_query"
+            )
+            tools_by_step[(tool_id, action_id)] = {
                 "step_id": action_id,
-                "tool_id": "db.oracle.readonly_query",
+                "tool_id": tool_id,
                 "manual_sql": sql,
                 "parameters": dict(validated.get("parameters") or {}),
                 "required_privileges": list(

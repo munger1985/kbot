@@ -50,6 +50,11 @@ Schema 30 / `aiops-oracle-v20`。脚本新增独立的巡检模板及不可变�
 约束。执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，等待运行中或排队中
 的巡检 Fire 全部结束，并完成 Schema 备份。脚本不删除业务行。
 
+`apply_aiops_schema_31.sql` 用于将 AIOps Schema 30 / `aiops-oracle-v20` 原地升级到
+Schema 31 / `aiops-oracle-v21`。脚本为 Target 增加工作负载快照与活动采样策略和运行态，
+并新增 MySQL/PostgreSQL 工作负载快照、语句、指标和活动样本表。新表只包含主键、外键
+和列级 `NOT NULL`，不增加业务 `CHECK`、`UNIQUE` 或唯一索引。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、

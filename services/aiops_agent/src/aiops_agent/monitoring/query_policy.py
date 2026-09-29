@@ -87,13 +87,39 @@ class PromQueryPolicy:
         vectors = []
         ranges = []
 
-        def collect(node):
+        def collect(node) -> None:
+            """递归遍历 promql-parser 0.10 暴露的表达式节点。"""
             if isinstance(node, promql_parser.VectorSelector):
                 vectors.append(node)
-            elif isinstance(node, promql_parser.MatrixSelector):
+                return
+            if isinstance(node, promql_parser.MatrixSelector):
                 ranges.append(node.range)
+                collect(node.vector_selector)
+                return
+            if isinstance(node, promql_parser.AggregateExpr):
+                collect(node.expr)
+                if node.param is not None:
+                    collect(node.param)
+                return
+            if isinstance(node, promql_parser.Call):
+                for argument in node.args:
+                    collect(argument)
+                return
+            if isinstance(node, promql_parser.BinaryExpr):
+                collect(node.lhs)
+                collect(node.rhs)
+                return
+            if isinstance(
+                node,
+                (
+                    promql_parser.ParenExpr,
+                    promql_parser.UnaryExpr,
+                    promql_parser.SubqueryExpr,
+                ),
+            ):
+                collect(node.expr)
 
-        promql_parser.walk(expression, pre_visit=collect)
+        collect(expression)
         if not vectors or len(vectors) > self.snapshot.max_vector_selectors:
             raise MonitoringQueryRejected(
                 "PROMQL_SELECTOR_COUNT_INVALID",
@@ -143,7 +169,9 @@ class PromQueryPolicy:
             self.snapshot.min_step_seconds,
             max(1, window // self.snapshot.max_points),
         )
-        normalized = str(expression)
+        # promql-parser 0.10 的 ``str(AST)`` 是调试结构，不是可执行 PromQL。
+        # 语法与作用域已经由 AST 完成验证，冻结时保留去除首尾空白的原查询。
+        normalized = substituted
         normalized = normalized.replace(
             _EXTERNAL_SENTINEL, "${external_target}"
         ).replace(_HOST_SENTINEL, "${host_target}")

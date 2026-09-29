@@ -12,9 +12,11 @@ from aiops_agent.bootstrap.common import (
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
 from aiops_agent.persistence import create_aiops_uow_factory
+from aiops_agent.diagnostics import create_diagnostic_registry
 from aiops_agent.scheduling import (
     AIOpsConnectivityScheduler,
     AIOpsInspectionScheduler,
+    WorkloadCollectionScheduler,
 )
 from platform_core.database.oracle import create_database_runtime
 
@@ -58,9 +60,17 @@ def create_aiops_scheduler_probe(
             jitter_seconds=config.connectivity_check_jitter_seconds,
             scan_interval_seconds=config.scan_interval_seconds,
         )
+        workload_scheduler = WorkloadCollectionScheduler(
+            uow_factory=runtime.uow_factory,
+            diagnostic_registry=create_diagnostic_registry(resolved),
+            scheduler_id=config.scheduler_id,
+            actor_id=str(resolved.runtime.system_aiops_agent_id),
+            interval_seconds=config.scan_interval_seconds,
+        )
         background_tasks = [
             asyncio.create_task(scheduler.run_forever()),
             asyncio.create_task(connectivity_scheduler.run_forever()),
+            asyncio.create_task(workload_scheduler.run_forever()),
         ]
         logger.info("正在启动 AIOps Inspection Scheduler")
         try:
@@ -68,6 +78,7 @@ def create_aiops_scheduler_probe(
         finally:
             scheduler.stop()
             connectivity_scheduler.stop()
+            workload_scheduler.stop()
             await asyncio.gather(
                 *background_tasks, return_exceptions=True
             )

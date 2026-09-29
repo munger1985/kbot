@@ -23,6 +23,7 @@ from platform_core.contracts.aiops import (
 
 
 _CATALOG_PATH = Path(__file__).with_name("finding_catalog.json")
+_DATABASE_TYPES = frozenset({"ORACLE", "MYSQL", "POSTGRESQL"})
 _INTERVAL_DHMS = re.compile(
     r"^[+-]?(\d+)\s+(\d{1,2}):(\d{2}):(\d{2})(?:\.\d+)?$"
 )
@@ -34,23 +35,35 @@ _INTERVAL_HMS = re.compile(
 @lru_cache(maxsize=1)
 def load_finding_catalog() -> tuple[dict[str, Any], ...]:
     payload = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "AIOPS_FINDING_CATALOG.v2":
+        raise ValueError("Finding目录版本必须为AIOPS_FINDING_CATALOG.v2")
     types = tuple(payload.get("types") or ())
     if not types:
         raise ValueError("Finding 目录不能为空")
+    for spec in types:
+        database_types = tuple(spec.get("database_types") or ())
+        if not database_types or set(database_types) - _DATABASE_TYPES:
+            raise ValueError("Finding规则必须声明有效database_types")
     return types
 
 
 def compile_findings(
     evidence: tuple[TurnEvidenceFact, ...],
     *,
+    database_type: str = "ORACLE",
     target_id: str | None = None,
 ) -> FindingCompilation:
     """按目录把本轮证据编译为卡片、空结果说明和缺列缺口。"""
+    normalized_database_type = str(database_type).strip().upper()
+    if normalized_database_type not in _DATABASE_TYPES:
+        raise ValueError(f"Finding编译需要明确数据库类型：{database_type!r}")
     findings: list[FindingCard] = []
     empty_reasons: list[str] = []
     gaps: list[FindingColumnGap] = []
     seen_ids: set[str] = set()
     for spec in load_finding_catalog():
+        if normalized_database_type not in spec["database_types"]:
+            continue
         facts = [
             item
             for item in evidence
@@ -252,6 +265,20 @@ def _apply_parses(
             derived[parsed_field.lower()] = parsed
             values[parsed_field.lower()] = parsed
             continue
+        if parse == "ratio_sum_percent":
+            numerator = str(predicate.get("numerator") or predicate["column"])
+            other = str(predicate["other"])
+            parsed_field = str(predicate.get("parsed_field") or "ratio_percent")
+            number = _as_number(values.get(numerator.lower()))
+            other_number = _as_number(values.get(other.lower()))
+            parsed = None
+            if number is not None and other_number is not None:
+                total = number + other_number
+                if total > 0:
+                    parsed = number * 100 / total
+            derived[parsed_field.lower()] = parsed
+            values[parsed_field.lower()] = parsed
+            continue
         if parse:
             raise ValueError(f"不支持的 Finding 解析：{parse}")
     return derived, tuple(gaps)
@@ -267,7 +294,7 @@ def _predicates_match(spec: dict[str, Any], values: dict[str, Any]) -> bool:
             raw = values.get(parsed_field.lower())
             if raw is None:
                 return False
-        elif parse == "ratio_percent":
+        elif parse in {"ratio_percent", "ratio_sum_percent"}:
             parsed_field = str(predicate.get("parsed_field") or "used_percent")
             raw = values.get(parsed_field.lower())
             if raw is None:
@@ -276,6 +303,24 @@ def _predicates_match(spec: dict[str, Any], values: dict[str, Any]) -> bool:
         if op == "gte":
             number = _as_number(raw)
             if number is None or number < float(predicate["value"]):
+                return False
+        elif op == "lte":
+            number = _as_number(raw)
+            if number is None or number > float(predicate["value"]):
+                return False
+        elif op == "eq":
+            expected = predicate.get("value")
+            if isinstance(expected, bool):
+                if not isinstance(raw, bool) or raw is not expected:
+                    return False
+            elif raw != expected:
+                return False
+        elif op == "not_null":
+            if raw in {None, ""}:
+                return False
+        elif op == "gt_column":
+            other = values.get(str(predicate["other"]).lower())
+            if raw is None or other is None or raw <= other:
                 return False
         elif op == "neq":
             expected = str(predicate["value"])

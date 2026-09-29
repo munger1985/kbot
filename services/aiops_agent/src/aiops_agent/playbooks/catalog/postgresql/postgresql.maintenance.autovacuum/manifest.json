@@ -7,7 +7,7 @@
   ],
   "version_range": {
     "minimum": "12",
-    "maximum": "20"
+    "maximum": "19"
   },
   "supported_intents": [
     "OBSERVE",
@@ -21,17 +21,21 @@
   "required_source_capabilities": [],
   "optional_source_capabilities": [],
   "required_target_capabilities": [
-    "DB_READONLY"
+    "DB_READONLY",
+    "pg_stat_user_tables",
+    "pg_stat_progress_vacuum",
+    "pg_settings"
   ],
   "required_privileges": [
-    "pg_read_all_stats"
+    "pg_read_all_stats",
+    "pg_read_all_settings"
   ],
   "required_entitlements": [],
   "input_schema": "postgresql.maintenance.autovacuum.input.v1",
   "defaults": {},
   "limits": {
-    "max_rows": 200,
-    "timeout_seconds": 20,
+    "max_rows": 3000,
+    "timeout_seconds": 120,
     "max_attempts": 2,
     "cost_units": 3
   },
@@ -51,11 +55,39 @@
         "identity"
       ],
       "input": {}
+    },
+    {
+      "step_id": "parameters",
+      "tool_id": "db.instance.parameters",
+      "tool_version": "1.0.0",
+      "depends_on": ["identity"],
+      "input": {}
+    },
+    {
+      "step_id": "tables",
+      "tool_id": "db.postgresql.table.statistics",
+      "tool_version": "1.0.0",
+      "depends_on": ["collect"],
+      "input": {"limit": 200}
+    },
+    {
+      "step_id": "vacuum_progress",
+      "tool_id": "db.postgresql.vacuum.progress",
+      "tool_version": "1.0.0",
+      "depends_on": ["collect"],
+      "input": {}
+    },
+    {
+      "step_id": "analyze",
+      "tool_id": "db.postgresql.analyze.health",
+      "tool_version": "1.0.0",
+      "depends_on": ["tables"],
+      "input": {"limit": 200}
     }
   ],
   "output_schema": "postgresql.maintenance.autovacuum.output.v1",
-  "measurement_semantics": "CURRENT_ACTIVITY",
-  "presentation_kind": "TABLE",
+  "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+  "presentation_kind": "TABLE_AND_CHART",
   "fallback_playbooks": [],
   "manual_evidence_template": "postgresql.maintenance.autovacuum.manual.v1",
   "sensitive_fields": [],

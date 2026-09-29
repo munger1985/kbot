@@ -1,0 +1,89 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "postgresql.replication.status",
+  "version": "1.0.0",
+  "database_types": ["POSTGRESQL"],
+  "version_range": {"minimum": "12", "maximum": "19"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["REPLICATION", "HIGH_AVAILABILITY", "BACKUP_AND_RECOVERY"],
+  "subjects": ["REPLICATION"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": [
+    "DB_READONLY",
+    "pg_stat_replication",
+    "pg_stat_wal_receiver",
+    "pg_replication_slots",
+    "pg_stat_archiver",
+    "pg_stat_database_conflicts"
+  ],
+  "required_privileges": ["pg_read_all_stats"],
+  "required_entitlements": [],
+  "input_schema": "postgresql.replication.status.input.v1",
+  "defaults": {},
+  "limits": {
+    "max_rows": 800,
+    "timeout_seconds": 90,
+    "max_attempts": 2,
+    "cost_units": 5
+  },
+  "tool_dag": [
+    {
+      "step_id": "identity",
+      "tool_id": "db.instance.identity",
+      "tool_version": "1.0.0",
+      "depends_on": [],
+      "input": {}
+    },
+    {
+      "step_id": "replication_status",
+      "tool_id": "db.replication.status",
+      "tool_version": "1.0.0",
+      "depends_on": ["identity"],
+      "input": {}
+    },
+    {
+      "step_id": "replication_lag",
+      "tool_id": "db.postgresql.replication.lag",
+      "tool_version": "1.0.0",
+      "depends_on": ["replication_status"],
+      "input": {}
+    },
+    {
+      "step_id": "slot_retention",
+      "tool_id": "db.postgresql.replication.slot_retention",
+      "tool_version": "1.0.0",
+      "depends_on": ["identity"],
+      "input": {}
+    },
+    {
+      "step_id": "wal_receiver",
+      "tool_id": "db.postgresql.wal.receiver",
+      "tool_version": "1.0.0",
+      "depends_on": ["identity"],
+      "input": {}
+    },
+    {
+      "step_id": "standby_conflicts",
+      "tool_id": "db.postgresql.standby.conflicts",
+      "tool_version": "1.0.0",
+      "depends_on": ["identity"],
+      "input": {}
+    },
+    {
+      "step_id": "archiver_status",
+      "tool_id": "db.postgresql.archiver.status",
+      "tool_version": "1.0.0",
+      "depends_on": ["identity"],
+      "input": {}
+    }
+  ],
+  "output_schema": "postgresql.replication.status.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "postgresql.replication.status.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {"max_age_seconds": 120, "requires_observed_at": true}
+}

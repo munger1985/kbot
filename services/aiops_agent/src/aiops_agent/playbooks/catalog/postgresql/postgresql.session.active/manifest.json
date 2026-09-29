@@ -1,0 +1,17 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1", "playbook_id": "postgresql.session.active", "version": "1.0.0",
+  "database_types": ["POSTGRESQL"], "version_range": {"minimum": "12", "maximum": "19"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"], "domains": ["SESSION_AND_LOCK", "INSTANCE_PERFORMANCE"], "subjects": ["SESSION", "CURRENT_ACTIVITY"],
+  "required_source_capabilities": [], "optional_source_capabilities": [], "required_target_capabilities": ["DB_READONLY", "pg_stat_activity"],
+  "required_privileges": ["pg_read_all_stats"], "required_entitlements": [], "input_schema": "postgresql.session.active.input.v1", "defaults": {"limit": 100},
+  "limits": {"max_rows": 1000, "timeout_seconds": 60, "max_attempts": 2, "cost_units": 4},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "active", "tool_id": "db.session.active", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "current_sql", "tool_id": "db.session.current_sql", "tool_version": "1.0.0", "depends_on": ["active"], "input": {"limit": 100}},
+    {"step_id": "waits", "tool_id": "db.postgresql.wait.current", "tool_version": "1.0.0", "depends_on": ["active"], "input": {}}
+  ],
+  "output_schema": "postgresql.session.active.output.v1", "measurement_semantics": "CURRENT_ACTIVITY", "presentation_kind": "TABLE",
+  "fallback_playbooks": [], "manual_evidence_template": "postgresql.session.active.manual.v1", "sensitive_fields": ["query_text"], "redaction_rules": ["MASK_QUERY_TEXT"],
+  "freshness": {"max_age_seconds": 60, "requires_observed_at": true}
+}

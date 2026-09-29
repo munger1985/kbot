@@ -78,6 +78,40 @@ _VIRTUAL_COLUMN_SOURCE_VIEWS = frozenset(
     {"ALL_TAB_COLS", "DBA_TAB_COLS", "USER_TAB_COLS", "CDB_TAB_COLS"}
 )
 
+_POSTGRESQL_SAFE_FUNCTIONS = frozenset(
+    {
+        "ABS",
+        "AVG",
+        "CAST",
+        "CEIL",
+        "COALESCE",
+        "COUNT",
+        "CURRENT_DATE",
+        "CURRENT_TIMESTAMP",
+        "DATE_TRUNC",
+        "FLOOR",
+        "GREATEST",
+        "LAG",
+        "LEAD",
+        "LEAST",
+        "LENGTH",
+        "LOWER",
+        "MAX",
+        "MIN",
+        "NULLIF",
+        "PERCENTILE_CONT",
+        "PERCENTILE_DISC",
+        "RANK",
+        "REPLACE",
+        "ROUND",
+        "ROW_NUMBER",
+        "SUBSTRING",
+        "SUM",
+        "TRIM",
+        "UPPER",
+    }
+)
+
 
 class DynamicQueryRejected(ValueError):
     """动态查询未通过确定性策略。"""
@@ -119,6 +153,41 @@ class ValidatedDynamicQuery(BaseModel):
     max_rows: int
     execution_decision: Literal["AUTO_EXECUTE", "APPROVAL_REQUIRED"]
     approval_reason_codes: tuple[str, ...] = ()
+
+
+class PostgreSQLDynamicQueryPolicySnapshot(BaseModel):
+    """PostgreSQL 动态只读查询和安全 EXPLAIN 的冻结边界。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = "POSTGRESQL_DYNAMIC_QUERY_POLICY.v1"
+    allowed_objects: tuple[str, ...] = ()
+    allowed_functions: tuple[str, ...] = tuple(
+        sorted(_POSTGRESQL_SAFE_FUNCTIONS)
+    )
+    allowed_schemas: tuple[str, ...] = (
+        "pg_catalog",
+        "information_schema",
+    )
+    max_rows: int = Field(default=200, ge=1, le=1000)
+    max_sql_chars: int = Field(default=20_000, ge=1, le=100_000)
+    max_bind_count: int = Field(default=32, ge=0, le=128)
+
+
+class ValidatedPostgreSQLQuery(BaseModel):
+    """通过 PostgreSQL AST 策略的动态查询或安全计划语句。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = "POSTGRESQL_VALIDATED_DYNAMIC_QUERY.v1"
+    normalized_sql: str
+    query_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    referenced_objects: tuple[str, ...]
+    bind_names: tuple[str, ...]
+    parameters: dict[str, str | int | float | bool | None]
+    max_rows: int
+    explain: bool = False
 
 
 class OracleDynamicQueryPolicy:
@@ -413,6 +482,196 @@ class OracleDynamicQueryPolicy:
             if value is not None and not isinstance(
                 value, (str, int, float, bool)
             ):
+                raise DynamicQueryRejected(
+                    "DYNAMIC_SQL_PARAMETER_TYPE_INVALID",
+                    f"动态 SQL 参数类型不受支持：{name}",
+                )
+            if isinstance(value, str) and len(value) > 4000:
+                raise DynamicQueryRejected(
+                    "DYNAMIC_SQL_PARAMETER_LENGTH_INVALID",
+                    f"动态 SQL 参数过长：{name}",
+                )
+        return normalized
+
+    @staticmethod
+    def _canonical_object(value: str) -> str:
+        return value.strip().lower()
+
+    @staticmethod
+    def _sha256(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+class PostgreSQLDynamicQueryPolicy:
+    """保守验证 PostgreSQL 单条只读 SELECT/CTE，并可生成无 ANALYZE 的 EXPLAIN。"""
+
+    def __init__(self, snapshot: PostgreSQLDynamicQueryPolicySnapshot) -> None:
+        self.snapshot = snapshot
+        self._allowed_objects = {
+            self._canonical_object(value)
+            for value in snapshot.allowed_objects
+        }
+        self._allowed_functions = {
+            value.upper() for value in snapshot.allowed_functions
+        }
+        self._allowed_schemas = {
+            value.lower() for value in snapshot.allowed_schemas
+        }
+
+    def validate(
+        self,
+        sql: str,
+        parameters: dict[str, Any] | None = None,
+        *,
+        explain: bool = False,
+    ) -> ValidatedPostgreSQLQuery:
+        if not sql.strip() or len(sql) > self.snapshot.max_sql_chars:
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_LENGTH_INVALID",
+                "动态 SQL 为空或超过长度限制",
+            )
+        try:
+            statements = parse(sql, read="postgres")
+        except ParseError as exc:
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_PARSE_FAILED",
+                "动态 SQL 无法按 PostgreSQL 方言解析",
+            ) from exc
+        if len(statements) != 1 or statements[0] is None:
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_MULTIPLE_STATEMENTS",
+                "动态 SQL 必须且只能包含一条语句",
+            )
+        expression = statements[0]
+        if not isinstance(expression, exp.Select):
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_NOT_SELECT",
+                "动态 SQL 只允许单条 SELECT 或最终为 SELECT 的只读 CTE",
+            )
+        self._validate_nodes(expression)
+        referenced_objects = self._referenced_objects(expression)
+        bind_names = self._bind_names(expression)
+        normalized_parameters = self._parameters(
+            bind_names, parameters or {}
+        )
+        normalized_select = expression.sql(
+            dialect="postgres", comments=False
+        )
+        normalized_sql = (
+            "EXPLAIN (FORMAT JSON, COSTS TRUE, SETTINGS TRUE) "
+            + normalized_select
+            if explain
+            else expression.copy().limit(
+                self.snapshot.max_rows, copy=False
+            ).sql(dialect="postgres", comments=False)
+        )
+        policy_payload = json.dumps(
+            self.snapshot.model_dump(mode="json"),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return ValidatedPostgreSQLQuery(
+            normalized_sql=normalized_sql,
+            query_sha256=self._sha256(normalized_sql),
+            policy_sha256=self._sha256(policy_payload),
+            referenced_objects=referenced_objects,
+            bind_names=bind_names,
+            parameters=normalized_parameters,
+            max_rows=1 if explain else self.snapshot.max_rows,
+            explain=explain,
+        )
+
+    def _validate_nodes(self, expression: exp.Select) -> None:
+        forbidden_types = tuple(
+            node_type
+            for node_type in (
+                getattr(exp, "Insert", None),
+                getattr(exp, "Update", None),
+                getattr(exp, "Delete", None),
+                getattr(exp, "Merge", None),
+                getattr(exp, "Copy", None),
+                getattr(exp, "Command", None),
+                getattr(exp, "Into", None),
+                getattr(exp, "Lock", None),
+            )
+            if node_type is not None
+        )
+        if any(expression.find(node_type) is not None for node_type in forbidden_types):
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_SIDE_EFFECT_FORBIDDEN",
+                "动态 SQL 禁止 DML、COPY、SELECT INTO、命令和锁定子句",
+            )
+        for function in expression.find_all(exp.Func):
+            if isinstance(function, (exp.Case, exp.Connector, exp.If)):
+                continue
+            name = function.sql_name().upper()
+            if name == "ANONYMOUS":
+                name = str(getattr(function, "name", "")).upper()
+            if name not in self._allowed_functions:
+                raise DynamicQueryRejected(
+                    "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
+                    f"动态 SQL 函数不在允许清单：{name or 'UNKNOWN'}",
+                )
+
+    def _referenced_objects(self, expression: exp.Select) -> tuple[str, ...]:
+        cte_names = {
+            str(cte.alias_or_name).lower()
+            for cte in expression.find_all(exp.CTE)
+        }
+        objects: set[str] = set()
+        for table in expression.find_all(exp.Table):
+            name = str(table.name or "").lower()
+            if name in cte_names:
+                continue
+            schema = str(table.db or "").lower()
+            canonical = self._canonical_object(
+                f"{schema}.{name}" if schema else name
+            )
+            if schema in self._allowed_schemas or canonical in self._allowed_objects:
+                objects.add(canonical)
+                continue
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_OBJECT_FORBIDDEN",
+                f"动态 SQL 对象不在冻结范围：{canonical}",
+            )
+        if not objects:
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_OBJECT_REQUIRED",
+                "动态 SQL 必须读取至少一个受控对象",
+            )
+        return tuple(sorted(objects))
+
+    def _bind_names(self, expression: exp.Select) -> tuple[str, ...]:
+        names = tuple(
+            sorted(
+                {
+                    str(placeholder.this).lower()
+                    for placeholder in expression.find_all(exp.Placeholder)
+                }
+            )
+        )
+        if len(names) > self.snapshot.max_bind_count or any(
+            _IDENTIFIER.fullmatch(name) is None for name in names
+        ):
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_BINDS_INVALID",
+                "动态 SQL bind 名称或数量不符合策略",
+            )
+        return names
+
+    @staticmethod
+    def _parameters(
+        bind_names: tuple[str, ...], parameters: dict[str, Any]
+    ) -> dict[str, str | int | float | bool | None]:
+        normalized = {str(key).lower(): value for key, value in parameters.items()}
+        if set(normalized) != set(bind_names):
+            raise DynamicQueryRejected(
+                "DYNAMIC_SQL_PARAMETERS_MISMATCH",
+                "动态 SQL bind 与参数不一致",
+            )
+        for name, value in normalized.items():
+            if value is not None and not isinstance(value, (str, int, float, bool)):
                 raise DynamicQueryRejected(
                     "DYNAMIC_SQL_PARAMETER_TYPE_INVALID",
                     f"动态 SQL 参数类型不受支持：{name}",

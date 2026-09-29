@@ -1,0 +1,23 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1", "playbook_id": "postgresql.storage.health", "version": "1.0.0",
+  "database_types": ["POSTGRESQL"], "version_range": {"minimum": "12", "maximum": "19"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"], "domains": ["STORAGE_AND_CAPACITY", "MAINTENANCE"], "subjects": ["STORAGE", "RELATION", "TABLESPACE"],
+  "required_source_capabilities": [], "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "pg_stat_database", "pg_stat_user_tables", "pg_stat_user_indexes", "pg_tablespace_size"],
+  "required_privileges": ["pg_read_all_stats"], "required_entitlements": [], "input_schema": "postgresql.storage.health.input.v1", "defaults": {"limit": 200},
+  "limits": {"max_rows": 4000, "timeout_seconds": 180, "max_attempts": 2, "cost_units": 12},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "database_size", "tool_id": "db.storage.capacity", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "relations", "tool_id": "db.postgresql.relation.size", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"limit": 200}},
+    {"step_id": "tables", "tool_id": "db.postgresql.table.statistics", "tool_version": "1.0.0", "depends_on": ["relations"], "input": {"limit": 200}},
+    {"step_id": "indexes", "tool_id": "db.postgresql.index.statistics", "tool_version": "1.0.0", "depends_on": ["relations"], "input": {"limit": 200}},
+    {"step_id": "tablespaces", "tool_id": "db.postgresql.tablespace.usage", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "temp", "tool_id": "db.postgresql.temp.usage", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "dead_tuples", "tool_id": "db.storage.dead_tuples", "tool_version": "1.0.0", "depends_on": ["tables"], "input": {}},
+    {"step_id": "bloat_candidates", "tool_id": "db.postgresql.bloat.candidates", "tool_version": "1.0.0", "depends_on": ["tables"], "input": {"limit": 200}}
+  ],
+  "output_schema": "postgresql.storage.health.output.v1", "measurement_semantics": "CUMULATIVE_SINCE_LOAD", "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": [], "manual_evidence_template": "postgresql.storage.health.manual.v1", "sensitive_fields": [], "redaction_rules": [],
+  "freshness": {"max_age_seconds": 300, "requires_observed_at": true}
+}

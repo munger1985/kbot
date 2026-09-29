@@ -47,6 +47,41 @@ def _cancel_sql_pattern(*, rendered: bool) -> str:
     return rf"ALTER SYSTEM CANCEL SQL '{values}' IMMEDIATE"
 
 
+def _mysql_query_terminate_pattern(*, rendered: bool) -> str:
+    value = r"[1-9][0-9]*" if rendered else r"\{\{session_id\}\}"
+    return rf"KILL QUERY {value}"
+
+
+def _mysql_object_pattern(
+    *, operation: str, placeholder: str, rendered: bool
+) -> str:
+    if rendered:
+        identifier = r"`[A-Za-z][A-Za-z0-9_$#]{0,63}`"
+        object_ref = rf"{identifier}\.{identifier}"
+    else:
+        object_ref = rf"\{{\{{{placeholder}\}}\}}"
+    return rf"{operation} {object_ref}"
+
+
+def _mysql_set_persist_pattern(*, rendered: bool) -> str:
+    if rendered:
+        return (
+            r"SET PERSIST "
+            r"(?:max_connections|innodb_io_capacity|thread_cache_size) = "
+            r"[0-9]{1,6}"
+        )
+    return r"SET PERSIST \{\{parameter_name\}\} = \{\{parameter_value\}\}"
+
+
+def _mysql_replication_pattern(*, operation: str, rendered: bool) -> str:
+    channel = (
+        r"[A-Za-z0-9_.-]{0,64}"
+        if rendered
+        else r"\{\{channel_name\}\}"
+    )
+    return rf"{operation} REPLICA FOR CHANNEL '{channel}'"
+
+
 def _index_rebuild_pattern(*, rendered: bool) -> str:
     if rendered:
         identifier = r'"[A-Za-z][A-Za-z0-9_$#]{0,127}"'
@@ -261,6 +296,54 @@ def validate_action_template(
             _session_pattern(definition.db_type, rendered=False),
             text,
         )
+    elif definition.validator_id == "mysql-query-terminate.v1":
+        if definition.db_type != "MYSQL":
+            raise ValueError("KILL QUERY Validator仅支持MySQL")
+        _exact(_mysql_query_terminate_pattern(rendered=False), text)
+    elif definition.validator_id == "mysql-table-analyze.v1":
+        _exact(
+            _mysql_object_pattern(
+                operation="ANALYZE TABLE",
+                placeholder="table_ref",
+                rendered=False,
+            ),
+            text,
+        )
+    elif definition.validator_id in {
+        "mysql-event-enable.v1", "mysql-event-disable.v1",
+    }:
+        operation = (
+            "ALTER EVENT"
+        )
+        suffix = (
+            "ENABLE"
+            if definition.validator_id == "mysql-event-enable.v1"
+            else "DISABLE"
+        )
+        _exact(
+            _mysql_object_pattern(
+                operation=operation,
+                placeholder="event_ref",
+                rendered=False,
+            ) + rf" {suffix}",
+            text,
+        )
+    elif definition.validator_id == "mysql-set-persist.v1":
+        _exact(_mysql_set_persist_pattern(rendered=False), text)
+    elif definition.validator_id in {
+        "mysql-replication-start.v1", "mysql-replication-stop.v1",
+    }:
+        _exact(
+            _mysql_replication_pattern(
+                operation=(
+                    "START"
+                    if definition.validator_id == "mysql-replication-start.v1"
+                    else "STOP"
+                ),
+                rendered=False,
+            ),
+            text,
+        )
     elif definition.validator_id == "oracle-session-cancel-sql.v1":
         if definition.db_type != "ORACLE":
             raise ValueError("取消 SQL Validator 仅支持 Oracle")
@@ -393,6 +476,49 @@ def validate_rendered_action(
     if definition.validator_id == "session-control.v1":
         _exact(
             _session_pattern(definition.db_type, rendered=True),
+            command,
+        )
+    elif definition.validator_id == "mysql-query-terminate.v1":
+        _exact(_mysql_query_terminate_pattern(rendered=True), command)
+    elif definition.validator_id == "mysql-table-analyze.v1":
+        _exact(
+            _mysql_object_pattern(
+                operation="ANALYZE TABLE",
+                placeholder="table_ref",
+                rendered=True,
+            ),
+            command,
+        )
+    elif definition.validator_id in {
+        "mysql-event-enable.v1", "mysql-event-disable.v1",
+    }:
+        suffix = (
+            "ENABLE"
+            if definition.validator_id == "mysql-event-enable.v1"
+            else "DISABLE"
+        )
+        _exact(
+            _mysql_object_pattern(
+                operation="ALTER EVENT",
+                placeholder="event_ref",
+                rendered=True,
+            ) + rf" {suffix}",
+            command,
+        )
+    elif definition.validator_id == "mysql-set-persist.v1":
+        _exact(_mysql_set_persist_pattern(rendered=True), command)
+    elif definition.validator_id in {
+        "mysql-replication-start.v1", "mysql-replication-stop.v1",
+    }:
+        _exact(
+            _mysql_replication_pattern(
+                operation=(
+                    "START"
+                    if definition.validator_id == "mysql-replication-start.v1"
+                    else "STOP"
+                ),
+                rendered=True,
+            ),
             command,
         )
     elif definition.validator_id == "oracle-session-cancel-sql.v1":

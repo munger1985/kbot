@@ -1,0 +1,33 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "mysql.replication.status",
+  "version": "1.0.0",
+  "database_types": ["MYSQL"],
+  "version_range": {"minimum": "8", "maximum": "10"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["REPLICATION", "HIGH_AVAILABILITY"],
+  "subjects": ["REPLICATION", "GROUP_REPLICATION"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "group_replication", "performance_schema", "replication_views"],
+  "required_privileges": ["REPLICATION CLIENT"],
+  "required_entitlements": [],
+  "input_schema": "mysql.replication.status.input.v1",
+  "defaults": {},
+  "limits": {"max_rows": 200, "timeout_seconds": 90, "max_attempts": 2, "cost_units": 5},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "channels", "tool_id": "db.mysql.replication.channel_status", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "lag", "tool_id": "db.mysql.replication.lag", "tool_version": "1.0.0", "depends_on": ["channels"], "input": {}},
+    {"step_id": "group", "tool_id": "db.mysql.group_replication.status", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "binlog", "tool_id": "db.mysql.binlog.status", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
+  ],
+  "output_schema": "mysql.replication.status.output.v1",
+  "measurement_semantics": "CURRENT_ACTIVITY",
+  "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "mysql.replication.status.manual.v1",
+  "sensitive_fields": [],
+  "redaction_rules": [],
+  "freshness": {"max_age_seconds": 120, "requires_observed_at": true}
+}

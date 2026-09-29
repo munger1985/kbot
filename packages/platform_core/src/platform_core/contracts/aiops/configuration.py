@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import Field, HttpUrl, model_validator
 
+from .workload import ActivitySamplerPolicy, WorkloadPolicy
 from .types import (
     AIOpsContract,
     CursorPage,
@@ -67,6 +68,16 @@ class TargetEndpoint(AIOpsContract):
     service: str | None = Field(default=None, min_length=1, max_length=256)
     database: str | None = Field(default=None, min_length=1, max_length=256)
     tls_enabled: bool = True
+    tls_profile_ref: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+    )
+
+    @model_validator(mode="after")
+    def validate_tls_profile(self) -> "TargetEndpoint":
+        if self.tls_profile_ref is not None and not self.tls_enabled:
+            raise ValueError("TLS Profile只能在启用TLS时配置")
+        return self
 
 
 class TargetCreate(AIOpsContract):
@@ -86,6 +97,12 @@ class TargetCreate(AIOpsContract):
     importance_level: int = Field(default=3, ge=1, le=5)
     security_level: int = Field(default=1, ge=0, le=999)
     capabilities: JsonObject = Field(default_factory=dict)
+    workload_snapshot_policy: WorkloadPolicy = Field(
+        default_factory=WorkloadPolicy
+    )
+    activity_sampler_policy: ActivitySamplerPolicy = Field(
+        default_factory=ActivitySamplerPolicy
+    )
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetCreate":
@@ -106,21 +123,37 @@ class TargetCreate(AIOpsContract):
             or self.controlled_change_enabled
         ):
             raise ValueError("仅监控 Target 不能携带数据库连接或执行凭据")
+        if self.db_type not in {
+            DatabaseType.MYSQL,
+            DatabaseType.POSTGRESQL,
+        } and (
+            self.workload_snapshot_policy.enabled
+            or self.activity_sampler_policy.enabled
+        ):
+            raise ValueError(
+                "只有MySQL或PostgreSQL Target可以启用工作负载快照或活动采样"
+            )
         if self.endpoint is None:
             if self.oracle_container_scope is not None or self.oracle_pdb_name is not None:
                 raise ValueError("仅 Oracle 直连 Target 可以声明容器范围")
             return self
         if self.db_type == DatabaseType.ORACLE:
+            if self.endpoint.tls_profile_ref is not None:
+                raise ValueError("当前只有PostgreSQL Target支持受控TLS Profile")
             if not self.endpoint.service or self.endpoint.database:
                 raise ValueError("Oracle Endpoint 必须只设置 service")
             _validate_oracle_container_expectation(
                 self.oracle_container_scope,
                 self.oracle_pdb_name,
             )
-        elif self.db_type in {DatabaseType.MYSQL, DatabaseType.POSTGRESQL} and (
-            not self.endpoint.database or self.endpoint.service
-        ):
-            raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
+        elif self.db_type in {DatabaseType.MYSQL, DatabaseType.POSTGRESQL}:
+            if not self.endpoint.database or self.endpoint.service:
+                raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
+            if (
+                self.db_type != DatabaseType.POSTGRESQL
+                and self.endpoint.tls_profile_ref is not None
+            ):
+                raise ValueError("当前只有PostgreSQL Target支持受控TLS Profile")
         elif self.oracle_container_scope is not None or self.oracle_pdb_name is not None:
             raise ValueError("非 Oracle Target 不能声明 Oracle 容器范围")
         return self
@@ -136,6 +169,8 @@ class TargetConnectionTest(AIOpsContract):
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetConnectionTest":
         if self.db_type == DatabaseType.ORACLE:
+            if self.endpoint.tls_profile_ref is not None:
+                raise ValueError("当前只有PostgreSQL Target支持受控TLS Profile")
             if not self.endpoint.service or self.endpoint.database:
                 raise ValueError("Oracle Endpoint 必须只设置 service")
             _validate_oracle_container_expectation(
@@ -144,6 +179,11 @@ class TargetConnectionTest(AIOpsContract):
             )
         elif not self.endpoint.database or self.endpoint.service:
             raise ValueError("MySQL/PostgreSQL Endpoint 必须只设置 database")
+        elif (
+            self.db_type != DatabaseType.POSTGRESQL
+            and self.endpoint.tls_profile_ref is not None
+        ):
+            raise ValueError("当前只有PostgreSQL Target支持受控TLS Profile")
         elif self.oracle_container_scope is not None or self.oracle_pdb_name is not None:
             raise ValueError("非 Oracle Target 不能声明 Oracle 容器范围")
         return self
@@ -152,6 +192,12 @@ class TargetConnectionTest(AIOpsContract):
 class TargetConnectionTestResult(AIOpsContract):
     ok: bool
     database_version: str | None = None
+    server_uuid: str | None = Field(default=None, max_length=128)
+    server_started_at: UtcDatetime | None = None
+    capability_probe_version: str | None = Field(default=None, max_length=64)
+    discovered_capabilities: tuple[str, ...] = ()
+    discovered_privileges: tuple[str, ...] = ()
+    capability_details: JsonObject = Field(default_factory=dict)
     oracle_container_scope: OracleContainerScope | None = None
     oracle_container_name: str | None = None
     oracle_container_number: int | None = Field(default=None, ge=0)
@@ -173,6 +219,8 @@ class TargetPatch(AIOpsContract):
     importance_level: int | None = Field(default=None, ge=1, le=5)
     security_level: int | None = Field(default=None, ge=0, le=999)
     capabilities: JsonObject | None = None
+    workload_snapshot_policy: WorkloadPolicy | None = None
+    activity_sampler_policy: ActivitySamplerPolicy | None = None
 
 
 class TargetSummary(AIOpsContract):
@@ -208,6 +256,18 @@ class TargetDetail(TargetSummary):
     execution_credential: DatabaseCredentialStatus
     security_level: int
     capabilities: JsonObject
+    workload_snapshot_policy: WorkloadPolicy
+    activity_sampler_policy: ActivitySamplerPolicy
+    activity_sampler_status: Literal["DISABLED", "READY", "DEGRADED"]
+    activity_sampler_disabled_reason: str | None = None
+    workload_next_run_at: UtcDatetime | None = None
+    workload_consecutive_failures: int = Field(ge=0)
+    workload_last_collected_at: UtcDatetime | None = None
+    workload_last_error_code: str | None = None
+    activity_next_sample_at: UtcDatetime | None = None
+    activity_consecutive_failures: int = Field(ge=0)
+    activity_daily_bytes: int = Field(ge=0)
+    activity_last_sampled_at: UtcDatetime | None = None
     connectivity_version: int = Field(ge=1)
     last_observed_at: UtcDatetime | None = None
     last_connectivity_check_at: UtcDatetime | None = None

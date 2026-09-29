@@ -401,6 +401,7 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
             target_id=uuid7(),
             domain_id=100,
             target_row_version=2,
+            db_type="ORACLE",
             connection_profile=DiagnosticConnectionProfile(
                 host="db.internal",
                 port=1521,
@@ -408,6 +409,8 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
                 tls_enabled=False,
             ),
             diagnostic_credential_id=uuid7(),
+            tool_id="db.oracle.readonly_query",
+            variant="oracle-dynamic-readonly-v1",
             query_sha256=self.validated.query_sha256,
             policy_sha256=self.validated.policy_sha256,
             policy_snapshot=OracleDynamicQueryPolicyGrant.model_validate(
@@ -439,7 +442,10 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         return DynamicDiagnosticExecutorService(
             grant_codec=self.codec,
             control_plane=control_plane,
-            oracle_driver=driver or FakeDynamicDriver(),
+            drivers=(
+                driver or FakeDynamicDriver(),
+                SimpleNamespace(db_type="POSTGRESQL"),
+            ),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=30,
                 max_result_rows=100,
@@ -643,7 +649,8 @@ class DynamicQueryPlanningTest(unittest.TestCase):
                     "WHERE type = 'USER' "
                     "AND (status = :status OR username IS NOT NULL)"
                 )
-            )
+            ),
+            database_type="ORACLE",
         )
         registry = PlaybookRegistry.load()
         compiled = InvestigationTaskCompiler(registry).compile(
@@ -675,7 +682,8 @@ class DynamicQueryPlanningTest(unittest.TestCase):
                         "SELECT custom_function(sid) AS result "
                         "FROM v$session"
                     )
-                )
+                ),
+                database_type="ORACLE",
             )
         self.assertIn("DYNAMIC_SQL_FUNCTION_FORBIDDEN", str(raised.exception))
         self.assertIn("CUSTOM_FUNCTION", str(raised.exception))
@@ -1940,6 +1948,7 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
                 "investigation_execution": {
                     "capability_snapshot_hash": "c" * 64,
                     "database": {
+                        "db_type": "ORACLE",
                         "domain_id": 100,
                         "target_row_version": 1,
                         "connection_profile": {
@@ -1954,6 +1963,7 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
                     "dynamic_invocations": {
                         "dynamic:a1": {
                             "action_id": "a1",
+                            "tool_id": "db.oracle.readonly_query",
                             "measurement_semantics": "CURRENT_ACTIVITY",
                             "policy_snapshot": policy_snapshot.model_dump(
                                 mode="json"
@@ -2042,6 +2052,7 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
                 "investigation_execution": {
                     "capability_snapshot_hash": "c" * 64,
                     "database": {
+                        "db_type": "ORACLE",
                         "domain_id": 100,
                         "target_row_version": 1,
                         "connection_profile": {
@@ -2056,6 +2067,7 @@ class DynamicQueryInvocationHandlerTest(unittest.IsolatedAsyncioTestCase):
                     "dynamic_invocations": {
                         "dynamic:a1": {
                             "action_id": "a1",
+                            "tool_id": "db.oracle.readonly_query",
                             "measurement_semantics": "CURRENT_ACTIVITY",
                             "policy_snapshot": policy_snapshot.model_dump(
                                 mode="json"

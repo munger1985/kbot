@@ -200,6 +200,93 @@ SYSTEM_REPORT_TEMPLATES = {
             ),
         ),
         _system_template(
+            key="mysql.workload", name="MySQL Workload Report",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("MYSQL_WORKLOAD",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
+                "TREND", "FINDINGS", "RECOMMENDATIONS",
+                "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="mysql.workload_diff", name="MySQL Workload Diff Report",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("MYSQL_WORKLOAD_DIFF",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "TREND", "FINDINGS",
+                "RECOMMENDATIONS", "EVIDENCE_BOUNDARY",
+                "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="mysql.activity", name="MySQL Activity Report",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("MYSQL_ACTIVITY",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
+                "FINDINGS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="mysql.sql_healthcheck", name="MySQL SQL Healthcheck",
+            source_kinds=("CHAT",), periods=("AD_HOC",),
+            report_types=("MYSQL_SQL_HEALTHCHECK",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "ROOT_CAUSE", "FINDINGS",
+                "RECOMMENDATIONS", "ACTIONS", "EVIDENCE_BOUNDARY",
+                "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="postgresql.workload", name="PostgreSQL Workload Report",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("POSTGRESQL_WORKLOAD",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
+                "TREND", "FINDINGS", "RECOMMENDATIONS",
+                "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="postgresql.workload_diff", name="PostgreSQL Workload Diff Report",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("POSTGRESQL_WORKLOAD_DIFF",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "TREND", "FINDINGS",
+                "RECOMMENDATIONS", "EVIDENCE_BOUNDARY",
+                "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="postgresql.activity", name="PostgreSQL Activity Report",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("POSTGRESQL_ACTIVITY",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE",
+                "FINDINGS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="postgresql.sql_healthcheck", name="PostgreSQL SQL Healthcheck",
+            source_kinds=("CHAT",), periods=("AD_HOC",),
+            report_types=("POSTGRESQL_SQL_HEALTHCHECK",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "ROOT_CAUSE", "FINDINGS",
+                "RECOMMENDATIONS", "ACTIONS", "EVIDENCE_BOUNDARY",
+                "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
+            key="postgresql.pgbadger", name="PostgreSQL pgBadger Report",
+            source_kinds=("EXTERNAL_REPORT",), periods=("CUSTOM",),
+            report_types=("POSTGRESQL_PGBADGER",),
+            sections=(
+                "EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS",
+                "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
+            ),
+        ),
+        _system_template(
             key="inspection.daily", name="日常巡检报告",
             source_kinds=("INSPECTION",), periods=("DAILY",),
             report_types=("INSPECTION_DAILY",),

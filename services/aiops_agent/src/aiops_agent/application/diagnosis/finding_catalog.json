@@ -1,8 +1,9 @@
 {
-  "schema_version": "AIOPS_FINDING_CATALOG.v1",
+  "schema_version": "AIOPS_FINDING_CATALOG.v2",
   "types": [
     {
       "finding_type": "LOCK_WAIT",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.session.blocking_chain",
       "playbook_id": "oracle.session.blocking_chain",
       "zero_row_policy": "NO_FINDING",
@@ -68,6 +69,7 @@
     },
     {
       "finding_type": "LONG_SESSION",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.session.active",
       "playbook_id": "oracle.session.active",
       "zero_row_policy": "NO_FINDING",
@@ -123,6 +125,7 @@
     },
     {
       "finding_type": "DG_LAG",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.replication.lag",
       "playbook_id": "oracle.replication.status",
       "zero_row_policy": "NO_FINDING",
@@ -177,6 +180,7 @@
     },
     {
       "finding_type": "WAIT_CLASS",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.wait.class_summary",
       "playbook_id": "oracle.instance.wait_summary",
       "zero_row_policy": "NO_FINDING",
@@ -225,6 +229,7 @@
     },
     {
       "finding_type": "TABLESPACE",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.storage.capacity",
       "playbook_id": "oracle.storage.tablespace",
       "zero_row_policy": "NO_FINDING",
@@ -240,7 +245,8 @@
         "used_percent",
         "free_mb",
         "maximum_headroom_mb",
-        "file_count"
+        "file_count",
+        "storage_type"
       ],
       "field_columns": [
         "tablespace_name",
@@ -250,7 +256,10 @@
         "used_percent",
         "maximum_mb",
         "maximum_headroom_mb",
-        "file_count"
+        "file_count",
+        "storage_type",
+        "asm_diskgroups",
+        "datafile_directories"
       ],
       "object_ref": {
         "object_name": "tablespace_name"
@@ -272,6 +281,7 @@
     },
     {
       "finding_type": "SQL_STATS_STALE",
+      "database_types": ["ORACLE"],
       "source_tool_id": "user.sqlhc.report",
       "playbook_id": "oracle.sql.healthcheck",
       "confirmation": "LIKELY",
@@ -318,6 +328,7 @@
     },
     {
       "finding_type": "EXACHECK_FAIL",
+      "database_types": ["ORACLE"],
       "source_tool_id": "user.exacheck.report",
       "playbook_id": null,
       "confirmation": "LIKELY",
@@ -360,6 +371,7 @@
     },
     {
       "finding_type": "EXACHECK_WARNING",
+      "database_types": ["ORACLE"],
       "source_tool_id": "user.exacheck.report",
       "playbook_id": null,
       "confirmation": "LIKELY",
@@ -402,6 +414,7 @@
     },
     {
       "finding_type": "REPLICATION_LAG",
+      "database_types": ["MYSQL"],
       "source_tool_id": "db.mysql.replication.lag",
       "playbook_id": "mysql.replication.lag",
       "zero_row_policy": "NO_FINDING",
@@ -440,8 +453,9 @@
     },
     {
       "finding_type": "REPLICATION_LAG",
+      "database_types": ["POSTGRESQL"],
       "source_tool_id": "db.postgresql.replication.lag",
-      "playbook_id": "postgresql.replication.lag",
+      "playbook_id": "postgresql.replication.status",
       "zero_row_policy": "NO_FINDING",
       "empty_reason": "当前没有 PostgreSQL 复制延迟指标，不等于未取证。",
       "no_match_reason": "当前 PostgreSQL 复制延迟未达到 30 秒阈值，不等于未取证。",
@@ -479,8 +493,9 @@
     },
     {
       "finding_type": "DEAD_TUPLES",
+      "database_types": ["POSTGRESQL"],
       "source_tool_id": "db.storage.dead_tuples",
-      "playbook_id": "postgresql.storage.dead_tuples",
+      "playbook_id": "postgresql.storage.health",
       "zero_row_policy": "NO_FINDING",
       "empty_reason": "当前没有死元组统计，不等于未取证。",
       "no_match_reason": "当前表死元组占比均未达到 20% 阈值，不等于未取证。",
@@ -525,6 +540,7 @@
     },
     {
       "finding_type": "AUTOVACUUM",
+      "database_types": ["POSTGRESQL"],
       "source_tool_id": "db.maintenance.autovacuum",
       "playbook_id": "postgresql.maintenance.autovacuum",
       "zero_row_policy": "NO_FINDING",
@@ -566,8 +582,9 @@
     },
     {
       "finding_type": "IDLE_SESSION",
+      "database_types": ["MYSQL"],
       "source_tool_id": "db.session.idle",
-      "playbook_id": null,
+      "playbook_id": "mysql.session.idle",
       "zero_row_policy": "NO_FINDING",
       "empty_reason": "当前没有空闲事务会话，不等于未取证。",
       "no_match_reason": "当前空闲事务均未达到 300 秒阈值，不等于未取证。",
@@ -610,7 +627,34 @@
       "impact_template": "会话 {session_id} 已空闲在事务中 {idle_seconds} 秒。"
     },
     {
+      "finding_type": "IDLE_SESSION",
+      "database_types": ["POSTGRESQL"],
+      "source_tool_id": "db.session.idle",
+      "playbook_id": "postgresql.transaction.long_running",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "当前没有空闲事务会话，不等于未取证。",
+      "no_match_reason": "当前空闲事务均未达到 300 秒阈值，不等于未取证。",
+      "severity": "HIGH",
+      "object_kind": "SESSION",
+      "identity_fields": ["session_id", "username"],
+      "required_columns": ["session_id", "idle_seconds", "session_state"],
+      "field_columns": [
+        "session_id", "username", "client_host", "database_name",
+        "session_state", "idle_seconds", "query_text"
+      ],
+      "object_ref": {"object_name": "session_id"},
+      "predicates": [
+        {"op": "gte", "column": "idle_seconds", "value": 300}
+      ],
+      "threshold": {
+        "metric": "idle_seconds", "operator": ">=", "limit": 300,
+        "current_column": "idle_seconds"
+      },
+      "impact_template": "会话 {session_id} 已空闲在事务中 {idle_seconds} 秒。"
+    },
+    {
       "finding_type": "CONNECTION_USAGE",
+      "database_types": ["MYSQL"],
       "source_tool_id": "db.mysql.connection.utilization",
       "playbook_id": "mysql.connection.utilization",
       "zero_row_policy": "NO_FINDING",
@@ -653,8 +697,9 @@
     },
     {
       "finding_type": "CONNECTION_USAGE",
+      "database_types": ["POSTGRESQL"],
       "source_tool_id": "db.postgresql.connection.utilization",
-      "playbook_id": "postgresql.connection.utilization",
+      "playbook_id": "postgresql.instance.performance",
       "zero_row_policy": "NO_FINDING",
       "empty_reason": "当前没有 PostgreSQL 连接使用率数据，不等于未取证。",
       "no_match_reason": "当前 PostgreSQL 连接使用率未达到 85% 阈值，不等于未取证。",
@@ -695,6 +740,7 @@
     },
     {
       "finding_type": "QUERY_RATE",
+      "database_types": ["MYSQL"],
       "source_tool_id": "db.mysql.instance.throughput",
       "playbook_id": "mysql.instance.throughput",
       "zero_row_policy": "NO_FINDING",
@@ -735,8 +781,9 @@
     },
     {
       "finding_type": "QUERY_RATE",
+      "database_types": ["POSTGRESQL"],
       "source_tool_id": "db.postgresql.instance.throughput",
-      "playbook_id": "postgresql.instance.throughput",
+      "playbook_id": "postgresql.instance.performance",
       "zero_row_policy": "NO_FINDING",
       "empty_reason": "当前没有 PostgreSQL 吞吐指标，不等于未取证。",
       "no_match_reason": "当前 PostgreSQL 回滚率未达到 20% 阈值，不等于未取证。",
@@ -755,8 +802,7 @@
         "xact_rollback",
         "rollback_percent",
         "backends",
-        "sample_seconds",
-        "transactions_per_second"
+        "stats_reset"
       ],
       "object_ref": {
         "object_name": "database_name"
@@ -778,6 +824,7 @@
     },
     {
       "finding_type": "INVALID_OBJECT",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.objects.invalid_summary",
       "playbook_id": "oracle.maintenance.health",
       "zero_row_policy": "NO_FINDING",
@@ -830,6 +877,7 @@
     },
     {
       "finding_type": "ARCHIVE_HEADROOM",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.archive.status",
       "playbook_id": "oracle.instance.archive",
       "zero_row_policy": "NO_FINDING",
@@ -881,6 +929,7 @@
     },
     {
       "finding_type": "BACKUP_FAILED",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.backup.recent_jobs",
       "playbook_id": "oracle.maintenance.health",
       "zero_row_policy": "NO_FINDING",
@@ -927,6 +976,7 @@
     },
     {
       "finding_type": "LONG_TRANSACTION",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.transaction.long_running",
       "playbook_id": "oracle.transaction.long_running",
       "zero_row_policy": "NO_FINDING",
@@ -974,6 +1024,7 @@
     },
     {
       "finding_type": "TOP_SQL",
+      "database_types": ["ORACLE"],
       "source_tool_id": "db.sql.top_current",
       "playbook_id": "oracle.sql.top_current",
       "zero_row_policy": "NO_FINDING",
@@ -1018,6 +1069,96 @@
         "current_column": "elapsed_seconds"
       },
       "impact_template": "SQL {sql_id} 已累计耗时 {elapsed_seconds} 秒。"
+    },
+    {
+      "finding_type": "LOCK_WAIT", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.lock.tree", "playbook_id": "postgresql.session.blocking_chain",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前未观察到 PostgreSQL 阻塞树，不等于未取证。", "no_match_reason": "当前未观察到 PostgreSQL 阻塞树，不等于未取证。",
+      "severity": "HIGH", "object_kind": "SESSION_LOCK", "identity_fields": ["waiting_session_id", "blocking_session_id", "chain_depth"],
+      "required_columns": ["waiting_session_id", "blocking_session_id", "chain_depth"],
+      "field_columns": ["waiting_session_id", "waiting_username", "waiting_database", "wait_event_type", "wait_event", "blocking_session_id", "blocking_username", "blocking_database", "blocking_state", "chain_depth"],
+      "object_ref": {"object_name": "waiting_session_id"}, "predicates": [],
+      "impact_template": "会话 {waiting_session_id} 被会话 {blocking_session_id} 阻塞，链深度为 {chain_depth}。"
+    },
+    {
+      "finding_type": "LONG_TRANSACTION", "database_types": ["POSTGRESQL"], "source_tool_id": "db.transaction.long_running", "playbook_id": "postgresql.transaction.long_running",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前没有超过阈值的 PostgreSQL 长事务，不等于未取证。", "no_match_reason": "当前没有超过阈值的 PostgreSQL 长事务，不等于未取证。",
+      "severity": "HIGH", "object_kind": "TRANSACTION", "identity_fields": ["session_id", "transaction_started_at"],
+      "required_columns": ["session_id", "elapsed_seconds", "transaction_started_at"],
+      "field_columns": ["session_id", "username", "database_name", "transaction_started_at", "elapsed_seconds", "transaction_state", "backend_xid", "backend_xmin", "wait_event_type", "wait_event"],
+      "object_ref": {"object_name": "session_id"}, "predicates": [{"op": "gte", "column": "elapsed_seconds", "value": 300}],
+      "threshold": {"metric": "elapsed_seconds", "operator": ">=", "limit": 300, "current_column": "elapsed_seconds"},
+      "impact_template": "会话 {session_id} 的事务已持续 {elapsed_seconds} 秒。"
+    },
+    {
+      "finding_type": "REPLICATION_SLOT", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.replication.slot_retention", "playbook_id": "postgresql.replication.status",
+      "zero_row_policy": "NOT_CONFIGURED", "empty_reason": "当前未配置 PostgreSQL replication slot。", "no_match_reason": "当前 replication slot WAL 保留量未达到 10 GiB 阈值。",
+      "severity": "HIGH", "object_kind": "REPLICATION_SLOT", "identity_fields": ["slot_name"],
+      "required_columns": ["slot_name", "active", "retained_wal_bytes"],
+      "field_columns": ["slot_name", "slot_type", "database_name", "active", "active_pid", "restart_lsn", "confirmed_flush_lsn", "retained_wal_bytes", "xmin", "catalog_xmin"],
+      "object_ref": {"object_name": "slot_name"}, "predicates": [{"op": "gte", "column": "retained_wal_bytes", "value": 10737418240}],
+      "threshold": {"metric": "retained_wal_bytes", "operator": ">=", "limit": 10737418240, "current_column": "retained_wal_bytes"},
+      "impact_template": "Replication slot {slot_name} 已保留 {retained_wal_bytes} 字节 WAL。"
+    },
+    {
+      "finding_type": "REPLICATION_SLOT", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.replication.slot_retention", "playbook_id": "postgresql.replication.status",
+      "zero_row_policy": "NOT_CONFIGURED", "empty_reason": "当前未配置 PostgreSQL replication slot。", "no_match_reason": "当前没有 inactive 且保留 WAL 的 replication slot。",
+      "severity": "MEDIUM", "object_kind": "REPLICATION_SLOT", "identity_fields": ["slot_name", "active"],
+      "required_columns": ["slot_name", "active", "retained_wal_bytes"], "field_columns": ["slot_name", "slot_type", "database_name", "active", "retained_wal_bytes", "xmin", "catalog_xmin"],
+      "object_ref": {"object_name": "slot_name"}, "predicates": [{"op": "eq", "column": "active", "value": false}, {"op": "gte", "column": "retained_wal_bytes", "value": 1}],
+      "impact_template": "Replication slot {slot_name} 当前 inactive，仍保留 {retained_wal_bytes} 字节 WAL。"
+    },
+    {
+      "finding_type": "ARCHIVER_FAILURE", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.archiver.status", "playbook_id": "postgresql.wal.archive",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "未取得 PostgreSQL Archiver 状态。", "no_match_reason": "最近一次归档失败之后已有成功归档，当前无未恢复失败证据。",
+      "severity": "HIGH", "object_kind": "WAL_ARCHIVER", "identity_fields": ["last_failed_wal", "last_failed_time"],
+      "required_columns": ["failed_count", "last_failed_wal", "last_failed_time", "last_archived_time"],
+      "field_columns": ["archived_count", "last_archived_wal", "last_archived_time", "failed_count", "last_failed_wal", "last_failed_time", "stats_reset"],
+      "object_ref": {"object_name": "last_failed_wal"},
+      "predicates": [{"op": "gte", "column": "failed_count", "value": 1}, {"op": "not_null", "column": "last_failed_time"}, {"op": "gt_column", "column": "last_failed_time", "other": "last_archived_time"}],
+      "impact_template": "WAL {last_failed_wal} 在 {last_failed_time} 归档失败，之后尚无成功归档证据。"
+    },
+    {
+      "finding_type": "CHECKPOINT_PRESSURE", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.checkpoint.statistics", "playbook_id": "postgresql.instance.performance",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "未取得 PostgreSQL checkpoint 统计。", "no_match_reason": "请求触发的 checkpoint 比例未达到 20% 阈值。",
+      "severity": "MEDIUM", "object_kind": "CHECKPOINT", "identity_fields": ["stats_reset"],
+      "required_columns": ["checkpoints_timed", "checkpoints_requested", "stats_reset"],
+      "field_columns": ["checkpoints_timed", "checkpoints_requested", "checkpoint_requested_percent", "checkpoint_write_time_ms", "checkpoint_sync_time_ms", "buffers_checkpoint", "stats_reset"],
+      "object_ref": {"object_name": "stats_reset"},
+      "predicates": [{"op": "gte", "column": "checkpoints_requested", "value": 10, "parse": "ratio_sum_percent", "numerator": "checkpoints_requested", "other": "checkpoints_timed", "parsed_field": "checkpoint_requested_percent"}, {"op": "gte", "column": "checkpoint_requested_percent", "value": 20}],
+      "threshold": {"metric": "checkpoint_requested_percent", "operator": ">=", "limit": 20, "current_field": "checkpoint_requested_percent"},
+      "impact_template": "请求触发的 checkpoint 占比为 {checkpoint_requested_percent}%。"
+    },
+    {
+      "finding_type": "ANALYZE_STALE", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.analyze.health", "playbook_id": "postgresql.maintenance.autovacuum",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前没有用户表 Analyze 统计。", "no_match_reason": "当前表变更量未达到统计陈旧候选阈值。",
+      "severity": "MEDIUM", "confirmation": "LIKELY", "object_kind": "TABLE", "identity_fields": ["relation_oid"],
+      "required_columns": ["relation_oid", "schema_name", "table_name", "n_live_tup", "n_mod_since_analyze"],
+      "field_columns": ["relation_oid", "schema_name", "table_name", "n_live_tup", "n_mod_since_analyze", "modified_percent", "last_analyze", "last_autoanalyze"],
+      "object_ref": {"object_name": "table_name"},
+      "predicates": [{"op": "gte", "column": "n_mod_since_analyze", "value": 1000, "parse": "ratio_percent", "numerator": "n_mod_since_analyze", "denominator": "n_live_tup", "parsed_field": "modified_percent"}, {"op": "gte", "column": "modified_percent", "value": 20}],
+      "threshold": {"metric": "modified_percent", "operator": ">=", "limit": 20, "current_field": "modified_percent"},
+      "impact_template": "表 {schema_name}.{table_name} 自上次 Analyze 后约有 {modified_percent}% 行发生变化。"
+    },
+    {
+      "finding_type": "FREEZE_HEADROOM", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.freeze.health", "playbook_id": "postgresql.maintenance.freeze",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前没有用户表 Freeze 统计。", "no_match_reason": "当前 XID Freeze headroom 均高于 10,000,000。",
+      "severity": "HIGH", "object_kind": "TABLE", "identity_fields": ["relation_oid"],
+      "required_columns": ["relation_oid", "schema_name", "table_name", "xid_headroom"],
+      "field_columns": ["relation_oid", "schema_name", "table_name", "xid_age", "xid_stop_limit", "xid_headroom", "multixact_age", "multixact_stop_limit", "multixact_headroom"],
+      "object_ref": {"object_name": "table_name"}, "predicates": [{"op": "lte", "column": "xid_headroom", "value": 10000000}],
+      "threshold": {"metric": "xid_headroom", "operator": "<=", "limit": 10000000, "current_column": "xid_headroom"},
+      "impact_template": "表 {schema_name}.{table_name} 的 XID Freeze headroom 仅剩 {xid_headroom}。"
+    },
+    {
+      "finding_type": "BLOAT_CANDIDATE", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.bloat.candidates", "playbook_id": "postgresql.storage.health",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "当前没有用户表膨胀候选统计。", "no_match_reason": "当前没有同时达到 20% dead tuple 和 100 MiB 的膨胀候选。",
+      "severity": "MEDIUM", "confirmation": "LIKELY", "object_kind": "TABLE", "identity_fields": ["relation_oid"],
+      "required_columns": ["relation_oid", "schema_name", "table_name", "estimated_dead_tuple_percent", "total_bytes"],
+      "field_columns": ["relation_oid", "schema_name", "table_name", "n_live_tup", "n_dead_tup", "estimated_dead_tuple_percent", "total_bytes", "last_vacuum", "last_autovacuum"],
+      "object_ref": {"object_name": "table_name"},
+      "predicates": [{"op": "gte", "column": "estimated_dead_tuple_percent", "value": 20}, {"op": "gte", "column": "total_bytes", "value": 104857600}],
+      "threshold": {"metric": "estimated_dead_tuple_percent", "operator": ">=", "limit": 20, "current_column": "estimated_dead_tuple_percent"},
+      "impact_template": "表 {schema_name}.{table_name} 的 dead tuple 估算比例为 {estimated_dead_tuple_percent}%，仅为候选证据。"
     }
   ]
 }

@@ -156,6 +156,18 @@ def _target_detail(entity: TargetEntity) -> TargetDetail:
         execution_credential=_credential_status(entity.execution_credential_id, entity),
         security_level=int(entity.security_level),
         capabilities=entity.capabilities_json or {},
+        workload_snapshot_policy=entity.workload_snapshot_policy_json or {},
+        activity_sampler_policy=entity.activity_sampler_policy_json or {},
+        activity_sampler_status=entity.activity_sampler_status or "DISABLED",
+        activity_sampler_disabled_reason=entity.activity_sampler_disabled_reason,
+        workload_next_run_at=entity.workload_next_run_at,
+        workload_consecutive_failures=int(entity.workload_consecutive_failures or 0),
+        workload_last_collected_at=entity.workload_last_collected_at,
+        workload_last_error_code=entity.workload_last_error_code,
+        activity_next_sample_at=entity.activity_next_sample_at,
+        activity_consecutive_failures=int(entity.activity_consecutive_failures or 0),
+        activity_daily_bytes=int(entity.activity_daily_bytes or 0),
+        activity_last_sampled_at=entity.activity_last_sampled_at,
         connectivity_version=int(entity.connectivity_version),
         last_observed_at=(
             entity.last_observed_at.astimezone(UTC)

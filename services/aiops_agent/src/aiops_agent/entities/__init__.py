@@ -32,6 +32,12 @@ from .runtime import (
     OpsTaskEntity,
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity, TargetFactEntity
+from .workload import (
+    ActivitySampleEntity,
+    WorkloadMetricEntity,
+    WorkloadSnapshotEntity,
+    WorkloadStatementEntity,
+)
 from .conversation import (
     EvidenceRequestEntity, ImageEvidenceProcessingEntity,
     OpsAnswerBlockEntity, OpsAnswerCitationEntity,
@@ -89,6 +95,10 @@ __all__ = [
     "TargetEntity",
     "TargetFactEntity",
     "TargetSourceBindingEntity",
+    "ActivitySampleEntity",
+    "WorkloadMetricEntity",
+    "WorkloadSnapshotEntity",
+    "WorkloadStatementEntity",
 ]
 from .agent import (
     AIOpsAgentEntity,

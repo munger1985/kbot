@@ -53,7 +53,9 @@
       "variant": "postgresql_pg_stat_activity",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_activity"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -106,7 +108,9 @@
       "variant": "postgresql_blocking_pids",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_activity"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -164,15 +168,10 @@
         {
           "name": "allocated_mb",
           "logical_type": "DECIMAL"
-        },
-        {
-          "name": "table_count",
-          "logical_type": "INTEGER",
-          "nullable": false
         }
       ],
       "template_ref": "sql/storage_capacity.sql",
-      "template_sha256": "ed58ddde9c662327c15217c4e440d7c4868d5271d17ef9b44f0e77c7ec0059cd",
+      "template_sha256": "3e888b9c4382d5d9fac9defaec79207d0d1a836c0de18bb4990b308afa7f076a",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,
@@ -185,7 +184,9 @@
       "variant": "postgresql_pg_stat_activity",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_activity"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -207,6 +208,14 @@
           "nullable": false
         },
         {
+          "name": "username",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "database_name",
+          "logical_type": "STRING"
+        },
+        {
           "name": "transaction_started_at",
           "logical_type": "DATETIME",
           "nullable": false
@@ -218,22 +227,40 @@
         },
         {
           "name": "transaction_state",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "backend_xid",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "backend_xmin",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "wait_event_type",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "wait_event",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "query_started_at",
+          "logical_type": "DATETIME"
+        },
+        {
+          "name": "query_elapsed_seconds",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "query_text",
           "logical_type": "STRING",
-          "nullable": false
-        },
-        {
-          "name": "rows_locked",
-          "logical_type": "INTEGER",
-          "nullable": false
-        },
-        {
-          "name": "rows_modified",
-          "logical_type": "INTEGER",
-          "nullable": false
+          "sensitivity": "MASKED"
         }
       ],
       "template_ref": "sql/transaction_long_running.sql",
-      "template_sha256": "269e34e602df56cf9acbf8b647ddf27fdc53202e5b4c15ab051f056721747386",
+      "template_sha256": "0691d61d8eb98673b0fffc4bcba96000bc5a47924c2a69bbca6f3b487be9d46a",
       "timeout_seconds": 20,
       "max_rows": 200,
       "max_bytes": 1048576,
@@ -246,7 +273,9 @@
       "variant": "postgresql_pg_stat_replication",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_replication"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -264,17 +293,56 @@
           "nullable": false
         },
         {
-          "name": "source_uuid",
+          "name": "client_address",
           "logical_type": "STRING"
         },
         {
-          "name": "last_error_number",
-          "logical_type": "INTEGER",
-          "nullable": false
+          "name": "client_hostname",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "client_port",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "backend_started_at",
+          "logical_type": "DATETIME"
+        },
+        {
+          "name": "sync_state",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sent_lsn",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "write_lsn",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "flush_lsn",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "replay_lsn",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "write_lag_seconds",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "flush_lag_seconds",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "replay_lag_seconds",
+          "logical_type": "DECIMAL"
         }
       ],
       "template_ref": "sql/replication_status.sql",
-      "template_sha256": "32b3c0a542d7eca849a6614f3cfe4389ad2e0c86f5aef970cba76ab59bed16f4",
+      "template_sha256": "f56652abe30a0fe49c0303d4530a37cd2cc2810a4e96cdc7591b01a0c09c5832",
       "timeout_seconds": 20,
       "max_rows": 32,
       "max_bytes": 262144,
@@ -287,7 +355,9 @@
       "variant": "postgresql_pg_stat_replication",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_replication"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -324,7 +394,9 @@
       "variant": "postgresql_idle_in_transaction",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_activity"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -381,7 +453,9 @@
       "variant": "postgresql_pg_stat_activity",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_activity"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -428,7 +502,9 @@
       "variant": "postgresql_pg_stat_database",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_database"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -461,13 +537,8 @@
           "nullable": true
         },
         {
-          "name": "sample_seconds",
-          "logical_type": "INTEGER",
-          "nullable": true
-        },
-        {
-          "name": "transactions_per_second",
-          "logical_type": "DECIMAL",
+          "name": "stats_reset",
+          "logical_type": "DATETIME",
           "nullable": true
         }
       ],
@@ -476,7 +547,7 @@
       "max_rows": 200,
       "max_bytes": 1048576,
       "cost_level": "LOW",
-      "template_sha256": "eb3285266f428ced490b46972470fba6c6aad9fa37da2dbf633ea4c9cded3475"
+      "template_sha256": "cfa5a203a50d90e1663a6770f8830c3a10627ae4167f39c9699f5f5ceb6e5bfd"
     },
     {
       "tool_id": "db.storage.dead_tuples",
@@ -485,7 +556,9 @@
       "variant": "postgresql_pg_stat_user_tables",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_user_tables"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -542,7 +615,9 @@
       "variant": "postgresql_freeze_age",
       "supported_version_min": 12,
       "supported_version_max_exclusive": 20,
-      "required_capabilities": [],
+      "required_capabilities": [
+        "pg_stat_user_tables"
+      ],
       "required_entitlements": [],
       "required_privileges": [
         "pg_read_all_stats"
@@ -571,6 +646,811 @@
       "max_bytes": 1048576,
       "cost_level": "MEDIUM",
       "template_sha256": "e792ca32897333fb1e42f4f1da83a497a15eb10728ec946f0080cfa35c8c77dd"
+    },
+    {
+      "tool_id": "db.postgresql.database.statistics",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_database_12_plus",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_database"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "database_oid", "logical_type": "INTEGER", "nullable": false},
+        {"name": "database_name", "logical_type": "STRING", "nullable": false},
+        {"name": "backends", "logical_type": "INTEGER"},
+        {"name": "xact_commit", "logical_type": "INTEGER"},
+        {"name": "xact_rollback", "logical_type": "INTEGER"},
+        {"name": "blks_read", "logical_type": "INTEGER"},
+        {"name": "blks_hit", "logical_type": "INTEGER"},
+        {"name": "tup_returned", "logical_type": "INTEGER"},
+        {"name": "tup_fetched", "logical_type": "INTEGER"},
+        {"name": "tup_inserted", "logical_type": "INTEGER"},
+        {"name": "tup_updated", "logical_type": "INTEGER"},
+        {"name": "tup_deleted", "logical_type": "INTEGER"},
+        {"name": "conflicts", "logical_type": "INTEGER"},
+        {"name": "temp_files", "logical_type": "INTEGER"},
+        {"name": "temp_bytes", "logical_type": "INTEGER"},
+        {"name": "deadlocks", "logical_type": "INTEGER"},
+        {"name": "checksum_failures", "logical_type": "INTEGER"},
+        {"name": "checksum_last_failure", "logical_type": "DATETIME"},
+        {"name": "stats_reset", "logical_type": "DATETIME"}
+      ],
+      "template_ref": "sql/database_statistics.sql",
+      "template_sha256": "6ac4198dec595053e151aa5d824b673d2b6b5c0ce4879754ad7cefda7be50c73",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.wait.current",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_activity_waits",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "wait_event_type", "logical_type": "STRING", "nullable": false},
+        {"name": "wait_event", "logical_type": "STRING", "nullable": false},
+        {"name": "session_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "maximum_query_seconds", "logical_type": "INTEGER"}
+      ],
+      "template_ref": "sql/wait_current.sql",
+      "template_sha256": "d3a5f0fc466c461fe297dbfe409743f2995a9af37f6f9e2e9b7a77c9557e15aa",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 524288,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.lock.summary",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_locks_summary",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_locks"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "lock_type", "logical_type": "STRING", "nullable": false},
+        {"name": "lock_mode", "logical_type": "STRING", "nullable": false},
+        {"name": "granted", "logical_type": "BOOLEAN", "nullable": false},
+        {"name": "lock_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "session_count", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/lock_summary.sql",
+      "template_sha256": "2364a8e747b5eb2f7361a80a91c478b1f2a525247a2b761f4a2b78a23d621951",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 524288,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.replication.slot_retention",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_replication_slots_12_plus",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_replication_slots"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "slot_name", "logical_type": "STRING", "nullable": false},
+        {"name": "slot_type", "logical_type": "STRING", "nullable": false},
+        {"name": "database_name", "logical_type": "STRING"},
+        {"name": "active", "logical_type": "BOOLEAN", "nullable": false},
+        {"name": "active_pid", "logical_type": "INTEGER"},
+        {"name": "restart_lsn", "logical_type": "STRING"},
+        {"name": "confirmed_flush_lsn", "logical_type": "STRING"},
+        {"name": "retained_wal_bytes", "logical_type": "DECIMAL"},
+        {"name": "xmin", "logical_type": "STRING"},
+        {"name": "catalog_xmin", "logical_type": "STRING"}
+      ],
+      "template_ref": "sql/replication_slot_retention.sql",
+      "template_sha256": "6a094ff2c90625ecbd3c06a54bb64a5e5e8deea3c7d84a3625c4470e42465acc",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.archiver.status",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_archiver_12_plus",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_archiver"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "archived_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "last_archived_wal", "logical_type": "STRING"},
+        {"name": "last_archived_time", "logical_type": "DATETIME"},
+        {"name": "failed_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "last_failed_wal", "logical_type": "STRING"},
+        {"name": "last_failed_time", "logical_type": "DATETIME"},
+        {"name": "stats_reset", "logical_type": "DATETIME"}
+      ],
+      "template_ref": "sql/archiver_status.sql",
+      "template_sha256": "ac4e05e9a3104cc1495142d2a0a62d52af4c86aae3adcb896d18294ce0237be6",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.instance.parameters",
+      "description": "读取 PostgreSQL 诊断相关的非敏感参数、来源和 pending restart 状态。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_settings_diagnostic_allowlist",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_settings"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_settings"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "name", "logical_type": "STRING", "nullable": false},
+        {"name": "setting", "logical_type": "STRING", "nullable": false},
+        {"name": "unit", "logical_type": "STRING"},
+        {"name": "context", "logical_type": "STRING", "nullable": false},
+        {"name": "source", "logical_type": "STRING", "nullable": false},
+        {"name": "pending_restart", "logical_type": "BOOLEAN", "nullable": false}
+      ],
+      "template_ref": "sql/instance_parameters.sql",
+      "template_sha256": "37b816f5e52a88d8e521d886b93328cd3a467438e4419e0f5c222909be22a27b",
+      "timeout_seconds": 20,
+      "max_rows": 64,
+      "max_bytes": 262144,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.wal.statistics",
+      "description": "读取 PG 14 至 17 自统计重置以来的 WAL 累计生成与写入事实。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_wal_14_17",
+      "supported_version_min": 14,
+      "supported_version_max_exclusive": 18,
+      "required_capabilities": ["pg_stat_wal"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "wal_records", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_fpi", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_bytes", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "wal_buffers_full", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_write", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_sync", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_write_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "wal_sync_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/wal_statistics.sql",
+      "template_sha256": "2bbe9a2cd3b70c3b76191e2a26b46b3fb0314cab02a37221726ec4988b591cb3",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.wal.statistics",
+      "description": "读取 PG 18 及以上自统计重置以来的 WAL 累计生成事实；PG 18 已移除写入和同步计数列。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_wal_18_plus",
+      "supported_version_min": 18,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_wal"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "wal_records", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_fpi", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wal_bytes", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "wal_buffers_full", "logical_type": "INTEGER", "nullable": false},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/wal_statistics_pg18_plus.sql",
+      "template_sha256": "95ff6f68fd72a538f53838534fa026ee9a7390559b88428abd1a542ead76e1d4",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.checkpoint.statistics",
+      "description": "读取 PG 12 至 16 的 checkpoint 与 background writer 累计统计。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_bgwriter_12_16",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 17,
+      "required_capabilities": ["pg_stat_bgwriter"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "checkpoints_timed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoints_requested", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoint_write_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "checkpoint_sync_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "buffers_checkpoint", "logical_type": "INTEGER", "nullable": false},
+        {"name": "buffers_clean", "logical_type": "INTEGER", "nullable": false},
+        {"name": "maxwritten_clean", "logical_type": "INTEGER", "nullable": false},
+        {"name": "buffers_backend", "logical_type": "INTEGER", "nullable": false},
+        {"name": "buffers_backend_fsync", "logical_type": "INTEGER", "nullable": false},
+        {"name": "buffers_alloc", "logical_type": "INTEGER", "nullable": false},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/checkpoint_statistics_pg12_16.sql",
+      "template_sha256": "6628d1cb24ef6e6d964793e61efd480bd2d0b0810be347dbba6b17197e747255",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.checkpoint.statistics",
+      "description": "读取 PG 17 checkpointer 与 restartpoint 累计统计。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_checkpointer_17",
+      "supported_version_min": 17,
+      "supported_version_max_exclusive": 18,
+      "required_capabilities": ["pg_stat_checkpointer"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "checkpoints_timed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoints_requested", "logical_type": "INTEGER", "nullable": false},
+        {"name": "restartpoints_timed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "restartpoints_requested", "logical_type": "INTEGER", "nullable": false},
+        {"name": "restartpoints_done", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoint_write_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "checkpoint_sync_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "buffers_checkpoint", "logical_type": "INTEGER", "nullable": false},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/checkpoint_statistics_pg17.sql",
+      "template_sha256": "80c82a1e5c66ef1a9e8b041b86608568c5892ea61a6e7cdc5eb365dfd6d5ad69",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.checkpoint.statistics",
+      "description": "读取 PG 18 及以上 checkpointer、完成数和 SLRU 写入累计统计。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_checkpointer_18_plus",
+      "supported_version_min": 18,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_checkpointer"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "checkpoints_timed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoints_requested", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoints_done", "logical_type": "INTEGER", "nullable": false},
+        {"name": "restartpoints_timed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "restartpoints_requested", "logical_type": "INTEGER", "nullable": false},
+        {"name": "restartpoints_done", "logical_type": "INTEGER", "nullable": false},
+        {"name": "checkpoint_write_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "checkpoint_sync_time_ms", "logical_type": "DECIMAL", "nullable": false},
+        {"name": "buffers_checkpoint", "logical_type": "INTEGER", "nullable": false},
+        {"name": "slru_written", "logical_type": "INTEGER", "nullable": false},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/checkpoint_statistics_pg18_plus.sql",
+      "template_sha256": "36bf6b47726a1eb64cdaa3e9e187b83aacf86dfa5e2bc23c336e3630a9caf368",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 65536,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.io.summary",
+      "description": "按 backend、对象和上下文读取 PG 16 至 17 的累计 I/O 统计。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_io_16_17",
+      "supported_version_min": 16,
+      "supported_version_max_exclusive": 18,
+      "required_capabilities": ["pg_stat_io"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "backend_type", "logical_type": "STRING", "nullable": false},
+        {"name": "object_type", "logical_type": "STRING", "nullable": false},
+        {"name": "io_context", "logical_type": "STRING", "nullable": false},
+        {"name": "reads", "logical_type": "INTEGER"},
+        {"name": "read_bytes", "logical_type": "DECIMAL"},
+        {"name": "read_time_ms", "logical_type": "DECIMAL"},
+        {"name": "writes", "logical_type": "INTEGER"},
+        {"name": "write_bytes", "logical_type": "DECIMAL"},
+        {"name": "write_time_ms", "logical_type": "DECIMAL"},
+        {"name": "writebacks", "logical_type": "INTEGER"},
+        {"name": "writeback_time_ms", "logical_type": "DECIMAL"},
+        {"name": "extends", "logical_type": "INTEGER"},
+        {"name": "extend_bytes", "logical_type": "DECIMAL"},
+        {"name": "extend_time_ms", "logical_type": "DECIMAL"},
+        {"name": "hits", "logical_type": "INTEGER"},
+        {"name": "evictions", "logical_type": "INTEGER"},
+        {"name": "reuses", "logical_type": "INTEGER"},
+        {"name": "fsyncs", "logical_type": "INTEGER"},
+        {"name": "fsync_time_ms", "logical_type": "DECIMAL"},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/io_summary_pg16_17.sql",
+      "template_sha256": "a3b482ffdaacc3124f238df0448bd52b1f1af1a49f9616e982a40060fa6b7566",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.io.summary",
+      "description": "按 backend、对象和上下文读取 PG 18 及以上原生 byte 累计 I/O 统计。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_io_18_plus",
+      "supported_version_min": 18,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_io"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "backend_type", "logical_type": "STRING", "nullable": false},
+        {"name": "object_type", "logical_type": "STRING", "nullable": false},
+        {"name": "io_context", "logical_type": "STRING", "nullable": false},
+        {"name": "reads", "logical_type": "INTEGER"},
+        {"name": "read_bytes", "logical_type": "DECIMAL"},
+        {"name": "read_time_ms", "logical_type": "DECIMAL"},
+        {"name": "writes", "logical_type": "INTEGER"},
+        {"name": "write_bytes", "logical_type": "DECIMAL"},
+        {"name": "write_time_ms", "logical_type": "DECIMAL"},
+        {"name": "writebacks", "logical_type": "INTEGER"},
+        {"name": "writeback_time_ms", "logical_type": "DECIMAL"},
+        {"name": "extends", "logical_type": "INTEGER"},
+        {"name": "extend_bytes", "logical_type": "DECIMAL"},
+        {"name": "extend_time_ms", "logical_type": "DECIMAL"},
+        {"name": "hits", "logical_type": "INTEGER"},
+        {"name": "evictions", "logical_type": "INTEGER"},
+        {"name": "reuses", "logical_type": "INTEGER"},
+        {"name": "fsyncs", "logical_type": "INTEGER"},
+        {"name": "fsync_time_ms", "logical_type": "DECIMAL"},
+        {"name": "stats_reset", "logical_type": "DATETIME", "nullable": false}
+      ],
+      "template_ref": "sql/io_summary_pg18_plus.sql",
+      "template_sha256": "6dc8e008a391b65fd021b90601d60e8cbded900119754a817430ad010c9ff31b",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 1048576,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.wal.receiver",
+      "description": "读取备库 WAL receiver 当前状态、上游地址和接收位置。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_wal_receiver_12_13",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 14,
+      "required_capabilities": ["pg_stat_wal_receiver"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "pid", "logical_type": "INTEGER", "nullable": false},
+        {"name": "status", "logical_type": "STRING", "nullable": false},
+        {"name": "receive_start_lsn", "logical_type": "STRING"},
+        {"name": "receive_start_tli", "logical_type": "INTEGER"},
+        {"name": "received_lsn", "logical_type": "STRING"},
+        {"name": "received_tli", "logical_type": "INTEGER"},
+        {"name": "last_msg_send_time", "logical_type": "DATETIME"},
+        {"name": "last_msg_receipt_time", "logical_type": "DATETIME"},
+        {"name": "latest_end_lsn", "logical_type": "STRING"},
+        {"name": "latest_end_time", "logical_type": "DATETIME"},
+        {"name": "slot_name", "logical_type": "STRING"},
+        {"name": "sender_host", "logical_type": "STRING"},
+        {"name": "sender_port", "logical_type": "INTEGER"}
+      ],
+      "template_ref": "sql/wal_receiver.sql",
+      "template_sha256": "b41b86f70ba6629bcbf27f47b3c79808f79be4fdfef24f200ac4e02794ed469f",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.wal.receiver",
+      "description": "读取备库 WAL receiver 当前状态、上游地址和接收位置。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_wal_receiver_14_plus",
+      "supported_version_min": 14,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_wal_receiver"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "pid", "logical_type": "INTEGER", "nullable": false},
+        {"name": "status", "logical_type": "STRING", "nullable": false},
+        {"name": "receive_start_lsn", "logical_type": "STRING"},
+        {"name": "receive_start_tli", "logical_type": "INTEGER"},
+        {"name": "received_lsn", "logical_type": "STRING"},
+        {"name": "received_tli", "logical_type": "INTEGER"},
+        {"name": "last_msg_send_time", "logical_type": "DATETIME"},
+        {"name": "last_msg_receipt_time", "logical_type": "DATETIME"},
+        {"name": "latest_end_lsn", "logical_type": "STRING"},
+        {"name": "latest_end_time", "logical_type": "DATETIME"},
+        {"name": "slot_name", "logical_type": "STRING"},
+        {"name": "sender_host", "logical_type": "STRING"},
+        {"name": "sender_port", "logical_type": "INTEGER"}
+      ],
+      "template_ref": "sql/wal_receiver_pg14_plus.sql",
+      "template_sha256": "6dcf11aeee72dd516aef811569d32a4d3a96e11eed6f5cd93fb2e5d2efe66916",
+      "timeout_seconds": 20,
+      "max_rows": 1,
+      "max_bytes": 131072,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.standby.conflicts",
+      "description": "读取备库因恢复冲突取消查询的数据库级累计计数。",
+      "version": "1.0.0",
+      "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_database_conflicts_12_plus",
+      "supported_version_min": 12,
+      "supported_version_max_exclusive": 20,
+      "required_capabilities": ["pg_stat_database_conflicts"],
+      "required_entitlements": [],
+      "required_privileges": ["pg_read_all_stats"],
+      "parameters": [],
+      "output_columns": [
+        {"name": "database_oid", "logical_type": "INTEGER", "nullable": false},
+        {"name": "database_name", "logical_type": "STRING", "nullable": false},
+        {"name": "tablespace_conflicts", "logical_type": "INTEGER", "nullable": false},
+        {"name": "lock_conflicts", "logical_type": "INTEGER", "nullable": false},
+        {"name": "snapshot_conflicts", "logical_type": "INTEGER", "nullable": false},
+        {"name": "buffer_pin_conflicts", "logical_type": "INTEGER", "nullable": false},
+        {"name": "deadlock_conflicts", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/standby_conflicts.sql",
+      "template_sha256": "1a2233eb222636e0d89296d40daa3c86d383dab2abe94b2315fcf493124a6546",
+      "timeout_seconds": 20,
+      "max_rows": 200,
+      "max_bytes": 524288,
+      "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.session.current_sql", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_activity_12_13", "supported_version_min": 12,
+      "supported_version_max_exclusive": 14, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 100}],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "database_name", "logical_type": "STRING"},
+        {"name": "username", "logical_type": "STRING"}, {"name": "application_name", "logical_type": "STRING"},
+        {"name": "client_address", "logical_type": "STRING"}, {"name": "session_state", "logical_type": "STRING"},
+        {"name": "wait_event_type", "logical_type": "STRING"}, {"name": "wait_event", "logical_type": "STRING"},
+        {"name": "query_start", "logical_type": "DATETIME"}, {"name": "query_elapsed_seconds", "logical_type": "INTEGER"},
+        {"name": "query_text", "logical_type": "STRING", "sensitivity": "MASKED"}
+      ],
+      "template_ref": "sql/session_current_sql_pg12_13.sql", "template_sha256": "1e0b8284d0f5c283a37c7293c8db6b4fdf7a6cfef3ceb2dff7941b8f9a132d84",
+      "timeout_seconds": 20, "max_rows": 500, "max_bytes": 2097152, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.session.current_sql", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_pg_stat_activity_query_id_14_plus", "supported_version_min": 14,
+      "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 100}],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "database_name", "logical_type": "STRING"},
+        {"name": "username", "logical_type": "STRING"}, {"name": "application_name", "logical_type": "STRING"},
+        {"name": "client_address", "logical_type": "STRING"}, {"name": "session_state", "logical_type": "STRING"},
+        {"name": "wait_event_type", "logical_type": "STRING"}, {"name": "wait_event", "logical_type": "STRING"},
+        {"name": "query_id", "logical_type": "STRING"}, {"name": "query_start", "logical_type": "DATETIME"},
+        {"name": "query_elapsed_seconds", "logical_type": "INTEGER"}, {"name": "query_text", "logical_type": "STRING", "sensitivity": "MASKED"}
+      ],
+      "template_ref": "sql/session_current_sql.sql", "template_sha256": "3abfe4fe1fa96c06339020d57a3662697e15e6c8a71b8632eae1ba2dc7a46e22",
+      "timeout_seconds": 20, "max_rows": 500, "max_bytes": 2097152, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.lock.tree", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_blocking_tree_12_13", "supported_version_min": 12,
+      "supported_version_max_exclusive": 14, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 200}],
+      "output_columns": [
+        {"name": "waiting_session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "waiting_username", "logical_type": "STRING"},
+        {"name": "waiting_database", "logical_type": "STRING"}, {"name": "wait_event_type", "logical_type": "STRING"},
+        {"name": "wait_event", "logical_type": "STRING"}, {"name": "waiting_transaction_started_at", "logical_type": "DATETIME"},
+        {"name": "waiting_query_started_at", "logical_type": "DATETIME"}, {"name": "waiting_query_text", "logical_type": "STRING", "sensitivity": "MASKED"},
+        {"name": "blocking_session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "blocking_username", "logical_type": "STRING"},
+        {"name": "blocking_database", "logical_type": "STRING"}, {"name": "blocking_state", "logical_type": "STRING"},
+        {"name": "blocking_transaction_started_at", "logical_type": "DATETIME"}, {"name": "blocking_query_started_at", "logical_type": "DATETIME"},
+        {"name": "blocking_query_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "chain_depth", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/lock_tree_pg12_13.sql", "template_sha256": "8eee6a8ce62e5ec9294e50428f466ce6cf06e4086bf33c499d2ffcc4bca732cd",
+      "timeout_seconds": 20, "max_rows": 500, "max_bytes": 4194304, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.lock.tree", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_blocking_tree_query_id_14_plus", "supported_version_min": 14,
+      "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 200}],
+      "output_columns": [
+        {"name": "waiting_session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "waiting_username", "logical_type": "STRING"},
+        {"name": "waiting_database", "logical_type": "STRING"}, {"name": "wait_event_type", "logical_type": "STRING"},
+        {"name": "wait_event", "logical_type": "STRING"}, {"name": "waiting_transaction_started_at", "logical_type": "DATETIME"},
+        {"name": "waiting_query_started_at", "logical_type": "DATETIME"}, {"name": "waiting_query_id", "logical_type": "STRING"},
+        {"name": "waiting_query_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "blocking_session_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "blocking_username", "logical_type": "STRING"}, {"name": "blocking_database", "logical_type": "STRING"},
+        {"name": "blocking_state", "logical_type": "STRING"}, {"name": "blocking_transaction_started_at", "logical_type": "DATETIME"},
+        {"name": "blocking_query_started_at", "logical_type": "DATETIME"}, {"name": "blocking_query_id", "logical_type": "STRING"},
+        {"name": "blocking_query_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "chain_depth", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/lock_tree.sql", "template_sha256": "630a8820859a1bd92e2369c40a334f143b6f9536a0c646f735154ba474784487",
+      "timeout_seconds": 20, "max_rows": 500, "max_bytes": 4194304, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.activity.sample", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_activity_sample_12_13", "supported_version_min": 12,
+      "supported_version_max_exclusive": 14, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 2000, "default": 500}],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "backend_type", "logical_type": "STRING"},
+        {"name": "database_oid", "logical_type": "INTEGER"}, {"name": "database_name", "logical_type": "STRING"},
+        {"name": "user_oid", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"},
+        {"name": "application_name", "logical_type": "STRING"}, {"name": "client_address", "logical_type": "STRING"},
+        {"name": "session_state", "logical_type": "STRING"}, {"name": "wait_event_type", "logical_type": "STRING"},
+        {"name": "wait_event", "logical_type": "STRING"}, {"name": "backend_xid", "logical_type": "STRING"},
+        {"name": "backend_xmin", "logical_type": "STRING"}, {"name": "transaction_started_at", "logical_type": "DATETIME"},
+        {"name": "query_started_at", "logical_type": "DATETIME"}, {"name": "state_change", "logical_type": "DATETIME"},
+        {"name": "lock_waiting", "logical_type": "BOOLEAN", "nullable": false}
+      ],
+      "template_ref": "sql/activity_sample_pg12_13.sql", "template_sha256": "ebde93daa87bc71ceda6f10a23ee69f0e175f58e9b76c46643bd77114b1bad3d",
+      "timeout_seconds": 20, "max_rows": 2000, "max_bytes": 4194304, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.activity.sample", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_activity_sample_query_id_14_plus", "supported_version_min": 14,
+      "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 2000, "default": 500}],
+      "output_columns": [
+        {"name": "session_id", "logical_type": "INTEGER", "nullable": false}, {"name": "backend_type", "logical_type": "STRING"},
+        {"name": "database_oid", "logical_type": "INTEGER"}, {"name": "database_name", "logical_type": "STRING"},
+        {"name": "user_oid", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"},
+        {"name": "application_name", "logical_type": "STRING"}, {"name": "client_address", "logical_type": "STRING"},
+        {"name": "session_state", "logical_type": "STRING"}, {"name": "wait_event_type", "logical_type": "STRING"},
+        {"name": "wait_event", "logical_type": "STRING"}, {"name": "backend_xid", "logical_type": "STRING"},
+        {"name": "backend_xmin", "logical_type": "STRING"}, {"name": "query_id", "logical_type": "STRING"},
+        {"name": "transaction_started_at", "logical_type": "DATETIME"}, {"name": "query_started_at", "logical_type": "DATETIME"},
+        {"name": "state_change", "logical_type": "DATETIME"}, {"name": "lock_waiting", "logical_type": "BOOLEAN", "nullable": false}
+      ],
+      "template_ref": "sql/activity_sample.sql", "template_sha256": "c3af5643e1ee6411aee994063c084905fe06194031e83c63073fc25519e69883",
+      "timeout_seconds": 20, "max_rows": 2000, "max_bytes": 4194304, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.sql.top_current", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_active_sql_12_13", "supported_version_min": 12,
+      "supported_version_max_exclusive": 14, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 200, "default": 20}],
+      "output_columns": [
+        {"name": "database_oid", "logical_type": "INTEGER"}, {"name": "database_name", "logical_type": "STRING"},
+        {"name": "user_oid", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"},
+        {"name": "session_count", "logical_type": "INTEGER", "nullable": false}, {"name": "oldest_query_started_at", "logical_type": "DATETIME"},
+        {"name": "maximum_query_seconds", "logical_type": "INTEGER", "nullable": false}, {"name": "wait_event_type", "logical_type": "STRING"},
+        {"name": "wait_event", "logical_type": "STRING"}, {"name": "query_text", "logical_type": "STRING", "sensitivity": "MASKED"}
+      ],
+      "template_ref": "sql/sql_top_current_pg12_13.sql", "template_sha256": "ca491297055fc02dda4402e7d65e63164aba515aec5f8db42ef121826350499d",
+      "timeout_seconds": 20, "max_rows": 200, "max_bytes": 2097152, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.sql.top_current", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_active_sql_query_id_14_plus", "supported_version_min": 14,
+      "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 200, "default": 20}],
+      "output_columns": [
+        {"name": "query_id", "logical_type": "STRING"}, {"name": "database_oid", "logical_type": "INTEGER"},
+        {"name": "database_name", "logical_type": "STRING"}, {"name": "user_oid", "logical_type": "INTEGER"},
+        {"name": "username", "logical_type": "STRING"}, {"name": "session_count", "logical_type": "INTEGER", "nullable": false},
+        {"name": "oldest_query_started_at", "logical_type": "DATETIME"}, {"name": "maximum_query_seconds", "logical_type": "INTEGER", "nullable": false},
+        {"name": "wait_event_type", "logical_type": "STRING"}, {"name": "wait_event", "logical_type": "STRING"},
+        {"name": "query_text", "logical_type": "STRING", "sensitivity": "MASKED"}
+      ],
+      "template_ref": "sql/sql_top_current.sql", "template_sha256": "ac31355ad6d3346f93f72157def70ac75ebdbf77503fc67adc77eb4521cbe102",
+      "timeout_seconds": 20, "max_rows": 200, "max_bytes": 2097152, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.table.statistics", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_user_tables_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_user_tables"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 1000, "default": 200}],
+      "output_columns": [
+        {"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "schema_name", "logical_type": "STRING", "nullable": false}, {"name": "table_name", "logical_type": "STRING", "nullable": false},
+        {"name": "seq_scan", "logical_type": "INTEGER"}, {"name": "seq_tup_read", "logical_type": "INTEGER"}, {"name": "idx_scan", "logical_type": "INTEGER"}, {"name": "idx_tup_fetch", "logical_type": "INTEGER"},
+        {"name": "n_tup_ins", "logical_type": "INTEGER"}, {"name": "n_tup_upd", "logical_type": "INTEGER"}, {"name": "n_tup_del", "logical_type": "INTEGER"}, {"name": "n_tup_hot_upd", "logical_type": "INTEGER"},
+        {"name": "n_live_tup", "logical_type": "INTEGER"}, {"name": "n_dead_tup", "logical_type": "INTEGER"}, {"name": "n_mod_since_analyze", "logical_type": "INTEGER"},
+        {"name": "last_vacuum", "logical_type": "DATETIME"}, {"name": "last_autovacuum", "logical_type": "DATETIME"}, {"name": "last_analyze", "logical_type": "DATETIME"}, {"name": "last_autoanalyze", "logical_type": "DATETIME"},
+        {"name": "vacuum_count", "logical_type": "INTEGER"}, {"name": "autovacuum_count", "logical_type": "INTEGER"}, {"name": "analyze_count", "logical_type": "INTEGER"}, {"name": "autoanalyze_count", "logical_type": "INTEGER"}
+      ],
+      "template_ref": "sql/table_statistics.sql", "template_sha256": "384e2c46e14ddad392094499b96fe33a8a4d3d06da39bb5c64df1594942329b1", "timeout_seconds": 20, "max_rows": 1000, "max_bytes": 4194304, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.index.statistics", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_user_indexes_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_user_indexes"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 1000, "default": 200}],
+      "output_columns": [
+        {"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "index_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "schema_name", "logical_type": "STRING", "nullable": false},
+        {"name": "table_name", "logical_type": "STRING", "nullable": false}, {"name": "index_name", "logical_type": "STRING", "nullable": false}, {"name": "idx_scan", "logical_type": "INTEGER"},
+        {"name": "idx_tup_read", "logical_type": "INTEGER"}, {"name": "idx_tup_fetch", "logical_type": "INTEGER"}, {"name": "index_bytes", "logical_type": "INTEGER", "nullable": false},
+        {"name": "is_unique", "logical_type": "BOOLEAN", "nullable": false}, {"name": "is_valid", "logical_type": "BOOLEAN", "nullable": false}, {"name": "is_ready", "logical_type": "BOOLEAN", "nullable": false}, {"name": "is_live", "logical_type": "BOOLEAN", "nullable": false}
+      ],
+      "template_ref": "sql/index_statistics.sql", "template_sha256": "dd5c4dafd910286999cf3c939f9a26632f84b99052976460af92b65afdaf747a", "timeout_seconds": 20, "max_rows": 1000, "max_bytes": 4194304, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.relation.size", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_relation_size_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_user_tables"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 1000, "default": 200}],
+      "output_columns": [
+        {"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "schema_name", "logical_type": "STRING", "nullable": false}, {"name": "relation_name", "logical_type": "STRING", "nullable": false},
+        {"name": "relation_kind", "logical_type": "STRING", "nullable": false}, {"name": "main_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "index_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "total_bytes", "logical_type": "INTEGER", "nullable": false}
+      ],
+      "template_ref": "sql/relation_size.sql", "template_sha256": "0d8b1fcdc3e0c0d8cc92c74acf1b4e1dde0b52625cf2ce048c4219e32503338d", "timeout_seconds": 30, "max_rows": 1000, "max_bytes": 2097152, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.tablespace.usage", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_tablespace_size_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_tablespace_size"], "required_entitlements": [], "required_privileges": [], "parameters": [],
+      "output_columns": [{"name": "tablespace_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "tablespace_name", "logical_type": "STRING", "nullable": false}, {"name": "allocated_bytes", "logical_type": "INTEGER", "nullable": false}],
+      "template_ref": "sql/tablespace_usage.sql", "template_sha256": "8c52b7ae6be34240d3acd6f9ffc2be36946ae96898b7aab998d0e562ea0fb21f", "timeout_seconds": 30, "max_rows": 200, "max_bytes": 524288, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.temp.usage", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_database_temp_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_database"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [{"name": "database_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_name", "logical_type": "STRING", "nullable": false}, {"name": "temp_files", "logical_type": "INTEGER"}, {"name": "temp_bytes", "logical_type": "INTEGER"}, {"name": "stats_reset", "logical_type": "DATETIME"}],
+      "template_ref": "sql/temp_usage.sql", "template_sha256": "c6b7c185ae07a1516c3e841696ed1ab391fe6fb6ac05060aabeffb5d99382ac0", "timeout_seconds": 20, "max_rows": 200, "max_bytes": 524288, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.vacuum.progress", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_vacuum_progress_12_16",
+      "supported_version_min": 12, "supported_version_max_exclusive": 17, "required_capabilities": ["pg_stat_progress_vacuum"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [{"name": "pid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_name", "logical_type": "STRING"}, {"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "phase", "logical_type": "STRING", "nullable": false}, {"name": "heap_blks_total", "logical_type": "INTEGER", "nullable": false}, {"name": "heap_blks_scanned", "logical_type": "INTEGER", "nullable": false}, {"name": "heap_blks_vacuumed", "logical_type": "INTEGER", "nullable": false}, {"name": "index_vacuum_count", "logical_type": "INTEGER", "nullable": false}, {"name": "max_dead_tuples", "logical_type": "INTEGER", "nullable": false}, {"name": "num_dead_tuples", "logical_type": "INTEGER", "nullable": false}],
+      "template_ref": "sql/vacuum_progress.sql", "template_sha256": "946d088f880c6d0515d9d5f2c64645ad70e5fb9a09e547e71b90d5d1650e5d64", "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.vacuum.progress", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_vacuum_progress_17",
+      "supported_version_min": 17, "supported_version_max_exclusive": 18, "required_capabilities": ["pg_stat_progress_vacuum"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [{"name": "pid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_name", "logical_type": "STRING"}, {"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "phase", "logical_type": "STRING", "nullable": false}, {"name": "heap_blks_total", "logical_type": "INTEGER", "nullable": false}, {"name": "heap_blks_scanned", "logical_type": "INTEGER", "nullable": false}, {"name": "heap_blks_vacuumed", "logical_type": "INTEGER", "nullable": false}, {"name": "index_vacuum_count", "logical_type": "INTEGER", "nullable": false}, {"name": "max_dead_tuple_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "dead_tuple_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "num_dead_item_ids", "logical_type": "INTEGER", "nullable": false}, {"name": "indexes_total", "logical_type": "INTEGER", "nullable": false}, {"name": "indexes_processed", "logical_type": "INTEGER", "nullable": false}],
+      "template_ref": "sql/vacuum_progress_pg17.sql", "template_sha256": "b3f4cfc0015870818a5896e1694eef55b65f22a4011080cae8d1591ae3966344", "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.vacuum.progress", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_vacuum_progress_18_plus",
+      "supported_version_min": 18, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_progress_vacuum"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"], "parameters": [],
+      "output_columns": [{"name": "pid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "database_name", "logical_type": "STRING"}, {"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "phase", "logical_type": "STRING", "nullable": false}, {"name": "heap_blks_total", "logical_type": "INTEGER", "nullable": false}, {"name": "heap_blks_scanned", "logical_type": "INTEGER", "nullable": false}, {"name": "heap_blks_vacuumed", "logical_type": "INTEGER", "nullable": false}, {"name": "index_vacuum_count", "logical_type": "INTEGER", "nullable": false}, {"name": "max_dead_tuple_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "dead_tuple_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "num_dead_item_ids", "logical_type": "INTEGER", "nullable": false}, {"name": "indexes_total", "logical_type": "INTEGER", "nullable": false}, {"name": "indexes_processed", "logical_type": "INTEGER", "nullable": false}, {"name": "delay_time_ms", "logical_type": "DECIMAL", "nullable": false}],
+      "template_ref": "sql/vacuum_progress_pg18_plus.sql", "template_sha256": "a5ac1505431ac67b8b8f9969b28f7ae67539452c3032b3f872e90d5f2af591a1", "timeout_seconds": 20, "max_rows": 200, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.analyze.health", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_analyze_health_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_user_tables"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 1000, "default": 200}],
+      "output_columns": [{"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "schema_name", "logical_type": "STRING", "nullable": false}, {"name": "table_name", "logical_type": "STRING", "nullable": false}, {"name": "n_live_tup", "logical_type": "INTEGER"}, {"name": "n_dead_tup", "logical_type": "INTEGER"}, {"name": "n_mod_since_analyze", "logical_type": "INTEGER"}, {"name": "last_analyze", "logical_type": "DATETIME"}, {"name": "last_autoanalyze", "logical_type": "DATETIME"}, {"name": "analyze_count", "logical_type": "INTEGER"}, {"name": "autoanalyze_count", "logical_type": "INTEGER"}],
+      "template_ref": "sql/analyze_health.sql", "template_sha256": "1ca6c758d727c6fabcec800d2555de90f0a0d258ad1e7b824b07de25db1bf531", "timeout_seconds": 20, "max_rows": 1000, "max_bytes": 2097152, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.postgresql.freeze.health", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_freeze_health_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_user_tables", "pg_settings"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats", "pg_read_all_settings"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 1000, "default": 200}],
+      "output_columns": [{"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "schema_name", "logical_type": "STRING", "nullable": false}, {"name": "table_name", "logical_type": "STRING", "nullable": false}, {"name": "xid_age", "logical_type": "INTEGER", "nullable": false}, {"name": "multixact_age", "logical_type": "INTEGER", "nullable": false}, {"name": "xid_stop_limit", "logical_type": "INTEGER", "nullable": false}, {"name": "multixact_stop_limit", "logical_type": "INTEGER", "nullable": false}, {"name": "xid_headroom", "logical_type": "INTEGER", "nullable": false}, {"name": "multixact_headroom", "logical_type": "INTEGER", "nullable": false}],
+      "template_ref": "sql/freeze_health.sql", "template_sha256": "70e52b8aa48bc51cd3eb5c59c8eb92f12b7eb1ddacbd4b0cb303694c9e2fc40e", "timeout_seconds": 30, "max_rows": 1000, "max_bytes": 2097152, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.bloat.candidates", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_dead_tuple_estimate_12_plus",
+      "supported_version_min": 12, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_user_tables"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 1000, "default": 200}],
+      "output_columns": [{"name": "relation_oid", "logical_type": "INTEGER", "nullable": false}, {"name": "schema_name", "logical_type": "STRING", "nullable": false}, {"name": "table_name", "logical_type": "STRING", "nullable": false}, {"name": "n_live_tup", "logical_type": "INTEGER"}, {"name": "n_dead_tup", "logical_type": "INTEGER"}, {"name": "estimated_dead_tuple_percent", "logical_type": "DECIMAL"}, {"name": "total_bytes", "logical_type": "INTEGER", "nullable": false}, {"name": "last_vacuum", "logical_type": "DATETIME"}, {"name": "last_autovacuum", "logical_type": "DATETIME"}],
+      "template_ref": "sql/bloat_candidates.sql", "template_sha256": "d58a7a240e0d855717f961d6b230f034f9f7ad083675298193e3fc1e43a101fe", "timeout_seconds": 30, "max_rows": 1000, "max_bytes": 2097152, "cost_level": "MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.statement.top", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_statements_12",
+      "supported_version_min": 12, "supported_version_max_exclusive": 13, "required_capabilities": ["pg_stat_statements"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 100}],
+      "output_columns": [
+        {"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"}
+      ],
+      "template_ref":"sql/statement_top_pg12.sql","template_sha256":"97b7b1c81fca3e9ac4bc5c9b5a6a12e10f0eb370907be1b27a2d8b55a56ec06a","timeout_seconds":20,"max_rows":500,"max_bytes":4194304,"cost_level":"MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.statement.top", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_statements_13",
+      "supported_version_min": 13, "supported_version_max_exclusive": 14, "required_capabilities": ["pg_stat_statements"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 100}],
+      "output_columns": [
+        {"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"plan_count","logical_type":"INTEGER"},{"name":"total_plan_time_ms","logical_type":"DECIMAL"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"},{"name":"wal_records","logical_type":"INTEGER"},{"name":"wal_fpi","logical_type":"INTEGER"},{"name":"wal_bytes","logical_type":"DECIMAL"}
+      ],
+      "template_ref":"sql/statement_top_pg13.sql","template_sha256":"be919c5187ed814e29dbe916377c106fa3fc37be40184654bd8177b90e229b37","timeout_seconds":20,"max_rows":500,"max_bytes":4194304,"cost_level":"MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.statement.top", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_statements_14_17",
+      "supported_version_min": 14, "supported_version_max_exclusive": 18, "required_capabilities": ["pg_stat_statements"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 100}],
+      "output_columns": [
+        {"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"top_level","logical_type":"BOOLEAN","nullable":false},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"plan_count","logical_type":"INTEGER"},{"name":"total_plan_time_ms","logical_type":"DECIMAL"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"},{"name":"wal_records","logical_type":"INTEGER"},{"name":"wal_fpi","logical_type":"INTEGER"},{"name":"wal_bytes","logical_type":"DECIMAL"}
+      ],
+      "template_ref":"sql/statement_top_pg14_plus.sql","template_sha256":"d428674ef8f73088ee2663b6beb896cdb6058213284a16ffec6225415202b571","timeout_seconds":20,"max_rows":500,"max_bytes":4194304,"cost_level":"MEDIUM"
+    },
+    {
+      "tool_id": "db.postgresql.statement.top", "version": "1.0.0", "db_type": "POSTGRESQL", "variant": "postgresql_pg_stat_statements_18_plus",
+      "supported_version_min": 18, "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_statements"], "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "required": false, "minimum": 1, "maximum": 500, "default": 100}],
+      "output_columns": [
+        {"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"top_level","logical_type":"BOOLEAN","nullable":false},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"plan_count","logical_type":"INTEGER"},{"name":"total_plan_time_ms","logical_type":"DECIMAL"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"},{"name":"wal_records","logical_type":"INTEGER"},{"name":"wal_fpi","logical_type":"INTEGER"},{"name":"wal_bytes","logical_type":"DECIMAL"}
+      ],
+      "template_ref":"sql/statement_top_pg18_plus.sql","template_sha256":"afeca2589daa83781011afa16fc26d1c8086227543bd8044b4da6bffcdb91fe4","timeout_seconds":20,"max_rows":500,"max_bytes":4194304,"cost_level":"MEDIUM"
+    },
+    {
+      "tool_id":"db.postgresql.statement.details","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_pg_stat_statements_details_12","supported_version_min":12,"supported_version_max_exclusive":13,"required_capabilities":["pg_stat_statements"],"required_entitlements":[],"required_privileges":["pg_read_all_stats"],
+      "parameters":[{"name":"query_id","type":"string","max_length":20},{"name":"database_oid","type":"integer","minimum":1,"maximum":2147483647},{"name":"user_oid","type":"integer","required":false,"minimum":0,"maximum":2147483647,"default":0},{"name":"limit","type":"integer","required":false,"minimum":1,"maximum":100,"default":20}],
+      "output_columns":[{"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"}],
+      "template_ref":"sql/statement_details_pg12.sql","template_sha256":"e115be650873f7607e10ae25d95e6d63c9e3520c8399c5720cefb37d82d3c946","timeout_seconds":20,"max_rows":100,"max_bytes":2097152,"cost_level":"LOW"
+    },
+    {
+      "tool_id":"db.postgresql.statement.details","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_pg_stat_statements_details_13","supported_version_min":13,"supported_version_max_exclusive":14,"required_capabilities":["pg_stat_statements"],"required_entitlements":[],"required_privileges":["pg_read_all_stats"],
+      "parameters":[{"name":"query_id","type":"string","max_length":20},{"name":"database_oid","type":"integer","minimum":1,"maximum":2147483647},{"name":"user_oid","type":"integer","required":false,"minimum":0,"maximum":2147483647,"default":0},{"name":"limit","type":"integer","required":false,"minimum":1,"maximum":100,"default":20}],
+      "output_columns":[{"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"plan_count","logical_type":"INTEGER"},{"name":"total_plan_time_ms","logical_type":"DECIMAL"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"},{"name":"wal_records","logical_type":"INTEGER"},{"name":"wal_fpi","logical_type":"INTEGER"},{"name":"wal_bytes","logical_type":"DECIMAL"}],
+      "template_ref":"sql/statement_details_pg13.sql","template_sha256":"57fb7537bc3e48e23593cc44499d757748d8e48db7468ff385aa81148f6e71a8","timeout_seconds":20,"max_rows":100,"max_bytes":2097152,"cost_level":"LOW"
+    },
+    {
+      "tool_id":"db.postgresql.statement.details","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_pg_stat_statements_details_14_17","supported_version_min":14,"supported_version_max_exclusive":18,"required_capabilities":["pg_stat_statements"],"required_entitlements":[],"required_privileges":["pg_read_all_stats"],
+      "parameters":[{"name":"query_id","type":"string","max_length":20},{"name":"database_oid","type":"integer","minimum":1,"maximum":2147483647},{"name":"user_oid","type":"integer","required":false,"minimum":0,"maximum":2147483647,"default":0},{"name":"top_level","type":"boolean","required":false,"default":true},{"name":"limit","type":"integer","required":false,"minimum":1,"maximum":100,"default":20}],
+      "output_columns":[{"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"top_level","logical_type":"BOOLEAN","nullable":false},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"plan_count","logical_type":"INTEGER"},{"name":"total_plan_time_ms","logical_type":"DECIMAL"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"},{"name":"wal_records","logical_type":"INTEGER"},{"name":"wal_fpi","logical_type":"INTEGER"},{"name":"wal_bytes","logical_type":"DECIMAL"}],
+      "template_ref":"sql/statement_details_pg14_plus.sql","template_sha256":"e7148f10ca66787ccf39cb974a2bff0f047493d984404c2e0e812a96b4fb07fe","timeout_seconds":20,"max_rows":100,"max_bytes":2097152,"cost_level":"LOW"
+    },
+    {
+      "tool_id":"db.postgresql.statement.details","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_pg_stat_statements_details_18_plus","supported_version_min":18,"supported_version_max_exclusive":20,"required_capabilities":["pg_stat_statements"],"required_entitlements":[],"required_privileges":["pg_read_all_stats"],
+      "parameters":[{"name":"query_id","type":"string","max_length":20},{"name":"database_oid","type":"integer","minimum":1,"maximum":2147483647},{"name":"user_oid","type":"integer","required":false,"minimum":0,"maximum":2147483647,"default":0},{"name":"top_level","type":"boolean","required":false,"default":true},{"name":"limit","type":"integer","required":false,"minimum":1,"maximum":100,"default":20}],
+      "output_columns":[{"name":"query_id","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"INTEGER","nullable":false},{"name":"database_name","logical_type":"STRING"},{"name":"user_oid","logical_type":"INTEGER","nullable":false},{"name":"username","logical_type":"STRING"},{"name":"top_level","logical_type":"BOOLEAN","nullable":false},{"name":"normalized_statement","logical_type":"STRING","sensitivity":"MASKED"},{"name":"plan_count","logical_type":"INTEGER"},{"name":"total_plan_time_ms","logical_type":"DECIMAL"},{"name":"execution_count","logical_type":"INTEGER"},{"name":"total_exec_time_ms","logical_type":"DECIMAL"},{"name":"mean_exec_time_ms","logical_type":"DECIMAL"},{"name":"max_exec_time_ms","logical_type":"DECIMAL"},{"name":"rows_processed","logical_type":"INTEGER"},{"name":"shared_blks_hit","logical_type":"INTEGER"},{"name":"shared_blks_read","logical_type":"INTEGER"},{"name":"shared_blks_dirtied","logical_type":"INTEGER"},{"name":"shared_blks_written","logical_type":"INTEGER"},{"name":"local_blks_hit","logical_type":"INTEGER"},{"name":"local_blks_read","logical_type":"INTEGER"},{"name":"local_blks_dirtied","logical_type":"INTEGER"},{"name":"local_blks_written","logical_type":"INTEGER"},{"name":"temp_blks_read","logical_type":"INTEGER"},{"name":"temp_blks_written","logical_type":"INTEGER"},{"name":"block_read_time_ms","logical_type":"DECIMAL"},{"name":"block_write_time_ms","logical_type":"DECIMAL"},{"name":"wal_records","logical_type":"INTEGER"},{"name":"wal_fpi","logical_type":"INTEGER"},{"name":"wal_bytes","logical_type":"DECIMAL"}],
+      "template_ref":"sql/statement_details_pg18_plus.sql","template_sha256":"934044d0414fc817c5da85d5a6184cb9d23bb5877750e1d5c5372e0f32498d9a","timeout_seconds":20,"max_rows":100,"max_bytes":2097152,"cost_level":"LOW"
+    },
+    {
+      "tool_id":"db.sql.object_statistics","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_relation_statistics_12_plus","supported_version_min":12,"supported_version_max_exclusive":20,"required_capabilities":["pg_stat_user_tables"],"required_entitlements":[],"required_privileges":["pg_read_all_stats"],
+      "parameters":[{"name":"schema_name","type":"string","max_length":63,"required":false,"default":""},{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
+      "output_columns":[{"name":"relation_oid","logical_type":"INTEGER","nullable":false},{"name":"schema_name","logical_type":"STRING","nullable":false},{"name":"relation_name","logical_type":"STRING","nullable":false},{"name":"seq_scan","logical_type":"INTEGER"},{"name":"seq_tup_read","logical_type":"INTEGER"},{"name":"idx_scan","logical_type":"INTEGER"},{"name":"idx_tup_fetch","logical_type":"INTEGER"},{"name":"n_live_tup","logical_type":"INTEGER"},{"name":"n_dead_tup","logical_type":"INTEGER"},{"name":"n_mod_since_analyze","logical_type":"INTEGER"},{"name":"last_analyze","logical_type":"DATETIME"},{"name":"last_autoanalyze","logical_type":"DATETIME"},{"name":"total_bytes","logical_type":"INTEGER","nullable":false}],
+      "template_ref":"sql/sql_object_statistics.sql","template_sha256":"426efa066e3e711f29d030bd577925aff1da4a8fdeebfdf44fc40898e583a6bd","timeout_seconds":30,"max_rows":500,"max_bytes":2097152,"cost_level":"MEDIUM"
+    },
+    {
+      "tool_id":"db.postgresql.wait_sampling.profile","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_pg_wait_sampling_profile","supported_version_min":12,"supported_version_max_exclusive":20,"required_capabilities":["pg_wait_sampling"],"required_entitlements":[],"required_privileges":["pg_read_all_stats"],
+      "parameters":[{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
+      "output_columns":[{"name":"wait_event_type","logical_type":"STRING"},{"name":"wait_event","logical_type":"STRING"},{"name":"query_id","logical_type":"STRING"},{"name":"sample_count","logical_type":"INTEGER"}],
+      "template_ref":"sql/wait_sampling_profile.sql","template_sha256":"e19513b8e4d38874bc0bf46fa02e26cffaec687d506f49d64231479d6f0e992a","timeout_seconds":20,"max_rows":500,"max_bytes":1048576,"cost_level":"LOW"
     }
   ]
 }

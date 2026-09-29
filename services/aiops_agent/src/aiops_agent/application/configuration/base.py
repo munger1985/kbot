@@ -73,6 +73,8 @@ from platform_core.contracts.aiops import (
     PolicySummary,
     SecretRefStatus,
     TargetCreate,
+    TargetConnectionTest,
+    TargetConnectionTestResult,
     TargetDetail,
     TargetPage,
     TargetPatch,
@@ -89,6 +91,9 @@ CommandHandler = Callable[
     [AIOpsUnitOfWork, datetime], Awaitable[ResponseModel]
 ]
 ResultTransform = Callable[[dict[str, Any]], dict[str, Any]]
+TargetConnectionTester = Callable[
+    [TargetConnectionTest], Awaitable[TargetConnectionTestResult]
+]
 
 
 class ConfigurationServiceBase:
@@ -102,6 +107,7 @@ class ConfigurationServiceBase:
         management: AIOpsManagementConfig,
         credential_cipher: ManagedCredentialCipher,
         managed_credential_service: AIOpsManagedCredentialService,
+        target_connection_tester: TargetConnectionTester,
         diagnostic_source_catalog: DiagnosticSourceAdapterCatalogPort | None = None,
         diagnostic_source_registry: DiagnosticSourceAdapterRegistryPort | None = None,
     ):
@@ -113,6 +119,7 @@ class ConfigurationServiceBase:
         self._idempotency = IdempotencyGuard()
         self._credential_cipher = credential_cipher
         self._managed_credentials = managed_credential_service
+        self._target_connection_tester = target_connection_tester
         self._diagnostic_source_catalog = diagnostic_source_catalog
         self._diagnostic_source_registry = diagnostic_source_registry
 

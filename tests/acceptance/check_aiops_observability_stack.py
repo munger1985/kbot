@@ -153,7 +153,25 @@ def main() -> int:
         overrides = json.loads(
             (state / "prometheus/kbot-aiops-query-overrides.json").read_text()
         )["prometheus_queries"]
-        if len(overrides) != 15:
+        expected_overrides = {
+            "db.availability",
+            "db.cpu.utilization",
+            "db.connection.active",
+            "db.connection.utilization",
+            "db.transaction.throughput",
+            "db.response.latency",
+            "db.storage.utilization",
+            "db.storage.used_bytes",
+            "db.storage.free_bytes",
+            "db.storage.max_bytes",
+            "db.error.rate",
+            "host.cpu.utilization",
+            "host.memory.utilization",
+            "host.filesystem.utilization",
+            "host.disk.io.utilization",
+            "host.network.throughput",
+        }
+        if set(overrides) != expected_overrides:
             raise RuntimeError("Oracle AIOps指标查询映射不完整")
         if shutil.which("promtool"):
             subprocess.run(
@@ -305,18 +323,41 @@ environment = production
 
     dashboard_dir = STACK / "configuration/grafana/dashboards"
     expected_dashboards = {
-        "oracle-overview.json": ("kbot-oracle-overview", "kbot-prometheus"),
-        "oracle-storage.json": ("kbot-oracle-storage", "kbot-prometheus"),
-        "oracle-alerts.json": ("kbot-oracle-alerts", "kbot-prometheus"),
-        "oracle-alert-log.json": ("kbot-oracle-alert-log", "kbot-loki"),
-        "host-overview.json": ("kbot-host-overview", "kbot-prometheus"),
+        "database-fleet-overview.json": (
+            "kbot-database-fleet", "kbot-prometheus", False,
+        ),
+        "mysql-overview.json": (
+            "kbot-mysql-overview", "kbot-prometheus", True,
+        ),
+        "postgresql-overview.json": (
+            "kbot-postgresql-overview", "kbot-prometheus", True,
+        ),
+        "oracle-overview.json": (
+            "kbot-oracle-overview", "kbot-prometheus", True,
+        ),
+        "oracle-storage.json": (
+            "kbot-oracle-storage", "kbot-prometheus", True,
+        ),
+        "oracle-alerts.json": (
+            "kbot-oracle-alerts", "kbot-prometheus", True,
+        ),
+        "oracle-alert-log.json": (
+            "kbot-oracle-alert-log", "kbot-loki", True,
+        ),
+        "host-overview.json": (
+            "kbot-host-overview", "kbot-prometheus", True,
+        ),
     }
     actual_dashboards = {path.name for path in dashboard_dir.glob("*.json")}
     if actual_dashboards != set(expected_dashboards):
         raise RuntimeError("Grafana受控Dashboard清单与交付契约不一致")
     dashboard_uids: set[str] = set()
     dashboard_promql: list[str] = []
-    for file_name, (expected_uid, datasource_uid) in expected_dashboards.items():
+    for file_name, (
+        expected_uid,
+        datasource_uid,
+        requires_target_key,
+    ) in expected_dashboards.items():
         dashboard_path = dashboard_dir / file_name
         raw_dashboard = dashboard_path.read_text(encoding="utf-8")
         dashboard = json.loads(raw_dashboard)
@@ -330,7 +371,7 @@ environment = production
         variables = {
             item.get("name") for item in dashboard.get("templating", {}).get("list", [])
         }
-        if "target_key" not in variables:
+        if requires_target_key and "target_key" not in variables:
             raise RuntimeError(f"Dashboard缺少target_key目标切换：{file_name}")
         if datasource_uid not in raw_dashboard:
             raise RuntimeError(f"Dashboard没有引用固定数据源：{file_name}")

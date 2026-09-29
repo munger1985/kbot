@@ -1,6 +1,53 @@
 {
   "components": {
     "schemas": {
+      "ActivitySamplerPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "interval_seconds": {
+            "default": 5,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Interval Seconds",
+            "type": "integer"
+          },
+          "max_daily_bytes": {
+            "default": 104857600,
+            "maximum": 10737418240.0,
+            "minimum": 1048576.0,
+            "title": "Max Daily Bytes",
+            "type": "integer"
+          },
+          "max_rows_per_sample": {
+            "default": 200,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Max Rows Per Sample",
+            "type": "integer"
+          },
+          "query_timeout_seconds": {
+            "default": 2,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Query Timeout Seconds",
+            "type": "integer"
+          },
+          "retention_days": {
+            "default": 7,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          }
+        },
+        "title": "ActivitySamplerPolicy",
+        "type": "object"
+      },
       "AgentBindingCreate": {
         "additionalProperties": false,
         "properties": {
@@ -7876,6 +7923,23 @@
       "TargetConnectionTestResult": {
         "additionalProperties": false,
         "properties": {
+          "capability_details": {
+            "additionalProperties": true,
+            "title": "Capability Details",
+            "type": "object"
+          },
+          "capability_probe_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Probe Version"
+          },
           "database_version": {
             "anyOf": [
               {
@@ -7886,6 +7950,22 @@
               }
             ],
             "title": "Database Version"
+          },
+          "discovered_capabilities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Discovered Capabilities",
+            "type": "array"
+          },
+          "discovered_privileges": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Discovered Privileges",
+            "type": "array"
           },
           "error_code": {
             "anyOf": [
@@ -7952,6 +8032,30 @@
               }
             ],
             "title": "Oracle Database Name"
+          },
+          "server_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Started At"
+          },
+          "server_uuid": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Uuid"
           }
         },
         "required": [
@@ -7963,6 +8067,9 @@
       "TargetCreate": {
         "additionalProperties": false,
         "properties": {
+          "activity_sampler_policy": {
+            "$ref": "#/components/schemas/ActivitySamplerPolicy"
+          },
           "capabilities": {
             "additionalProperties": true,
             "title": "Capabilities",
@@ -8095,6 +8202,9 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_snapshot_policy": {
+            "$ref": "#/components/schemas/WorkloadPolicy"
           }
         },
         "required": [
@@ -8108,6 +8218,63 @@
       "TargetDetail": {
         "additionalProperties": false,
         "properties": {
+          "activity_consecutive_failures": {
+            "minimum": 0.0,
+            "title": "Activity Consecutive Failures",
+            "type": "integer"
+          },
+          "activity_daily_bytes": {
+            "minimum": 0.0,
+            "title": "Activity Daily Bytes",
+            "type": "integer"
+          },
+          "activity_last_sampled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Last Sampled At"
+          },
+          "activity_next_sample_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Next Sample At"
+          },
+          "activity_sampler_disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Sampler Disabled Reason"
+          },
+          "activity_sampler_policy": {
+            "$ref": "#/components/schemas/ActivitySamplerPolicy"
+          },
+          "activity_sampler_status": {
+            "enum": [
+              "DISABLED",
+              "READY",
+              "DEGRADED"
+            ],
+            "title": "Activity Sampler Status",
+            "type": "string"
+          },
           "capabilities": {
             "additionalProperties": true,
             "title": "Capabilities",
@@ -8376,6 +8543,49 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_consecutive_failures": {
+            "minimum": 0.0,
+            "title": "Workload Consecutive Failures",
+            "type": "integer"
+          },
+          "workload_last_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workload Last Collected At"
+          },
+          "workload_last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workload Last Error Code"
+          },
+          "workload_next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workload Next Run At"
+          },
+          "workload_snapshot_policy": {
+            "$ref": "#/components/schemas/WorkloadPolicy"
           }
         },
         "required": [
@@ -8399,6 +8609,12 @@
           "execution_credential",
           "security_level",
           "capabilities",
+          "workload_snapshot_policy",
+          "activity_sampler_policy",
+          "activity_sampler_status",
+          "workload_consecutive_failures",
+          "activity_consecutive_failures",
+          "activity_daily_bytes",
           "connectivity_version",
           "created_at",
           "created_by",
@@ -8453,6 +8669,18 @@
             "default": true,
             "title": "Tls Enabled",
             "type": "boolean"
+          },
+          "tls_profile_ref": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Profile Ref"
           }
         },
         "required": [
@@ -8770,6 +8998,16 @@
       "TargetPatch": {
         "additionalProperties": false,
         "properties": {
+          "activity_sampler_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivitySamplerPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "capabilities": {
             "anyOf": [
               {
@@ -8930,6 +9168,16 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_snapshot_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkloadPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "TargetPatch",
@@ -10460,6 +10708,46 @@
         ],
         "title": "WorkflowKind",
         "type": "string"
+      },
+      "WorkloadPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "interval_minutes": {
+            "default": 5,
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Interval Minutes",
+            "type": "integer"
+          },
+          "retention_days": {
+            "default": 30,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "round_timeout_seconds": {
+            "default": 30,
+            "maximum": 120.0,
+            "minimum": 5.0,
+            "title": "Round Timeout Seconds",
+            "type": "integer"
+          },
+          "top_statement_limit": {
+            "default": 100,
+            "maximum": 500.0,
+            "minimum": 10.0,
+            "title": "Top Statement Limit",
+            "type": "integer"
+          }
+        },
+        "title": "WorkloadPolicy",
+        "type": "object"
       }
     }
   },

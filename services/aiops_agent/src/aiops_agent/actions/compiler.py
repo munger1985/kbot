@@ -883,6 +883,178 @@ def _oracle_object_privilege_revoke_from_turn(assessment, db_type: str):
     )
 
 
+def _mysql_query_terminate_from_turn(assessment, db_type: str):
+    if db_type != "MYSQL":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.session.current_sql"
+    ):
+        session_id = row.get("session_id")
+        digest = str(row.get("digest") or "")
+        if session_id is None or not digest:
+            continue
+        return CompiledActionParameters(
+            parameters={"session_id": int(session_id)},
+            fact_refs={"session_id": evidence_ref},
+            rationale=(
+                "目标连接和当前Digest来自本轮MySQL直连可信事实；"
+                "动作只终止当前查询，不选择断开连接"
+            ),
+        )
+    return None
+
+
+def _mysql_table_analyze_from_turn(assessment, db_type: str):
+    if db_type != "MYSQL":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.mysql.statistics.health"
+    ):
+        schema = str(row.get("table_schema") or "")
+        table = str(row.get("table_name") or "")
+        missing_cardinality = int(row.get("indexes_without_cardinality") or 0)
+        if not schema or not table or (
+            row.get("update_time") is not None and missing_cardinality == 0
+        ):
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "table_ref": {
+                    "schema": schema,
+                    "object_type": "TABLE",
+                    "object_name": table,
+                }
+            },
+            fact_refs={"table_ref": evidence_ref},
+            rationale=(
+                "表身份以及统计缺失或索引基数缺失状态来自本轮MySQL直连可信事实"
+            ),
+        )
+    return None
+
+
+def _mysql_event_state_from_turn(
+    assessment, db_type: str, *, desired_status: str
+):
+    if db_type != "MYSQL":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.scheduler.job.status"
+    ):
+        schema = str(row.get("event_schema") or "")
+        name = str(row.get("event_name") or "")
+        status = str(row.get("status") or "").upper()
+        if not schema or not name or status == desired_status:
+            continue
+        if status not in {"ENABLED", "DISABLED", "SLAVESIDE_DISABLED"}:
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "event_ref": {
+                    "schema": schema,
+                    "object_type": "EVENT",
+                    "object_name": name,
+                }
+            },
+            fact_refs={"event_ref": evidence_ref},
+            rationale=(
+                f"Event身份和当前{status}状态来自本轮MySQL直连可信事实，"
+                f"批准目标为{desired_status}"
+            ),
+        )
+    return None
+
+
+def _mysql_event_enable_from_turn(assessment, db_type: str):
+    return _mysql_event_state_from_turn(
+        assessment, db_type, desired_status="ENABLED"
+    )
+
+
+def _mysql_event_disable_from_turn(assessment, db_type: str):
+    return _mysql_event_state_from_turn(
+        assessment, db_type, desired_status="DISABLED"
+    )
+
+
+def _mysql_set_persist_from_turn(assessment, db_type: str):
+    if db_type != "MYSQL":
+        return None
+    allowed = {
+        "max_connections": (10, 100_000),
+        "innodb_io_capacity": (100, 200_000),
+        "thread_cache_size": (0, 16_384),
+    }
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.instance.parameters"
+    ):
+        name = str(row.get("variable_name") or "").lower()
+        requested = row.get("requested_value")
+        if name not in allowed or requested is None:
+            continue
+        try:
+            value = int(requested)
+        except (TypeError, ValueError):
+            continue
+        minimum, maximum = allowed[name]
+        if not minimum <= value <= maximum:
+            continue
+        return CompiledActionParameters(
+            parameters={
+                "parameter_name": name,
+                "parameter_value": value,
+            },
+            fact_refs={
+                "parameter_name": evidence_ref,
+                "parameter_value": evidence_ref,
+            },
+            rationale=(
+                "变量身份、当前值和用户确认的目标值命中MySQL持久化参数严格白名单"
+            ),
+        )
+    return None
+
+
+def _mysql_replication_state_from_turn(
+    assessment, db_type: str, *, start: bool
+):
+    if db_type != "MYSQL":
+        return None
+    for row, evidence_ref in _verified_turn_rows(
+        assessment, "db.mysql.replication.channel_status"
+    ):
+        channel = str(row.get("channel_name") or "")
+        receiver = str(row.get("receiver_state") or "").upper()
+        applier = str(row.get("applier_state") or "").upper()
+        receiver_error = int(row.get("receiver_error_number") or 0)
+        applier_error = int(row.get("applier_error_number") or 0)
+        running = receiver in {"ON", "RUNNING", "CONNECTING"} and applier in {
+            "ON", "RUNNING", "APPLYING_QUEUE",
+        }
+        if running == start or (start and (receiver_error or applier_error)):
+            continue
+        return CompiledActionParameters(
+            parameters={"channel_name": channel},
+            fact_refs={"channel_name": evidence_ref},
+            rationale=(
+                "复制Channel身份、receiver/applier状态和错误码来自本轮MySQL直连可信事实"
+            ),
+        )
+    return None
+
+
+def _mysql_replication_start_from_turn(assessment, db_type: str):
+    return _mysql_replication_state_from_turn(
+        assessment, db_type, start=True
+    )
+
+
+def _mysql_replication_stop_from_turn(assessment, db_type: str):
+    return _mysql_replication_state_from_turn(
+        assessment, db_type, start=False
+    )
+
+
 _TURN_COMPILERS: dict[str, Callable[[Any, str], CompiledActionParameters | None]] = {
     "session-terminate.v1": _session_from_turn,
     "oracle-session-cancel-sql.v1": _oracle_cancel_sql_from_turn,
@@ -928,6 +1100,13 @@ _TURN_COMPILERS: dict[str, Callable[[Any, str], CompiledActionParameters | None]
     "oracle-object-privilege-revoke.v1": (
         _oracle_object_privilege_revoke_from_turn
     ),
+    "mysql-query-terminate.v1": _mysql_query_terminate_from_turn,
+    "mysql-table-analyze.v1": _mysql_table_analyze_from_turn,
+    "mysql-event-enable.v1": _mysql_event_enable_from_turn,
+    "mysql-event-disable.v1": _mysql_event_disable_from_turn,
+    "mysql-set-persist.v1": _mysql_set_persist_from_turn,
+    "mysql-replication-start.v1": _mysql_replication_start_from_turn,
+    "mysql-replication-stop.v1": _mysql_replication_stop_from_turn,
 }
 
 

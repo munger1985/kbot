@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import datetime
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import unquote
 from uuid import UUID
@@ -26,12 +27,16 @@ from platform_core.contracts.aiops import (
     ConversationStarterCatalogView,
     ConversationSummary,
     InputContent,
+    ReportArtifactView,
+    ReportWindow,
     TargetFactConfirmCommand,
     TargetFactView,
     TurnReceipt,
     TurnSummary,
     TurnView,
+    WorkloadDiffRequest,
 )
+from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
 
 
 router = APIRouter(
@@ -523,6 +528,143 @@ async def upload_conversation_input(request: Request):
         media_type=media_type,
         body=request.stream(),
         auth_context=request.state.auth_context,
+    )
+
+
+def _workload_report_view(payload: dict[str, Any]) -> ReportArtifactView:
+    view = ReportArtifactView.model_validate(payload)
+    return view.model_copy(
+        update={
+            "download_url": (
+                f"{PUBLIC_API_V1}/apps/aiops/artifacts/"
+                f"{view.artifact_id}/content"
+            )
+        }
+    )
+
+
+async def _bounded_pgbadger_body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared:
+        try:
+            declared_size = int(declared)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="pgBadger上传Content-Length无效",
+            ) from exc
+        if declared_size < 0:
+            raise HTTPException(400, "pgBadger上传Content-Length无效")
+        if declared_size > PGBADGER_MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "pgBadger上传文件超过20MiB")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > PGBADGER_MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "pgBadger上传文件超过20MiB")
+    return bytes(body)
+
+
+@router.post(
+    "/reports/workload",
+    response_model=ReportArtifactView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workload_report(
+    payload: ReportWindow,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> ReportArtifactView:
+    await _require(request, "aiops:use")
+    result = await _client(request).create_workload_report(
+        payload.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _workload_report_view(result)
+
+
+@router.post(
+    "/reports/workload-diff",
+    response_model=ReportArtifactView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workload_diff_report(
+    payload: WorkloadDiffRequest,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> ReportArtifactView:
+    await _require(request, "aiops:use")
+    result = await _client(request).create_workload_diff_report(
+        payload.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _workload_report_view(result)
+
+
+@router.post(
+    "/reports/activity",
+    response_model=ReportArtifactView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_activity_report(
+    payload: ReportWindow,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> ReportArtifactView:
+    await _require(request, "aiops:use")
+    result = await _client(request).create_activity_report(
+        payload.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _workload_report_view(result)
+
+
+@router.post(
+    "/postgresql/pgbadger-artifacts",
+    response_model=ReportArtifactView,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_postgresql_pgbadger_artifact(
+    request: Request,
+    idempotency_key: IdempotencyKey,
+    target_id: UUID = Query(),
+    period_start: datetime = Query(),
+    period_end: datetime = Query(),
+    file_name: str = Header(alias="X-File-Name"),
+) -> ReportArtifactView:
+    await _require(request, "aiops:use")
+    result = await _client(request).import_postgresql_pgbadger_artifact(
+        target_id=target_id,
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        file_name=unquote(file_name)[:256],
+        media_type=request.headers.get(
+            "content-type", "application/octet-stream"
+        ).split(";", 1)[0],
+        body=await _bounded_pgbadger_body(request),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _workload_report_view(result)
+
+
+@router.get("/artifacts/{artifact_id}/content")
+async def download_report_artifact(
+    artifact_id: UUID,
+    request: Request,
+) -> Response:
+    await _require(request, "aiops:use")
+    result = await _client(request).download_report_artifact(
+        artifact_id,
+        auth_context=request.state.auth_context,
+    )
+    return Response(
+        content=result.body,
+        media_type=result.media_type,
+        headers=result.headers,
     )
 
 

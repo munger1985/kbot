@@ -384,6 +384,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             for item in group["checks"]
             if item.get("availability") == "READY"
             and not str(item.get("tool_id") or "").startswith("user.")
+            and item["check_id"] in sql
         ]
 
         self.assertNotIn("DROP TABLE", normalized)

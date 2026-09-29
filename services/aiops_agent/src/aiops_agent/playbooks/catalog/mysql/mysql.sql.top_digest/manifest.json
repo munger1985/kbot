@@ -1,0 +1,32 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
+  "playbook_id": "mysql.sql.top_digest",
+  "version": "1.0.0",
+  "database_types": ["MYSQL"],
+  "version_range": {"minimum": "8", "maximum": "10"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
+  "domains": ["SQL_PERFORMANCE"],
+  "subjects": ["TOP_SQL", "STATEMENT_DIGEST"],
+  "required_source_capabilities": [],
+  "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "performance_schema", "statement_digest", "wait_instrumentation"],
+  "required_privileges": [],
+  "required_entitlements": [],
+  "input_schema": "mysql.sql.top-digest.input.v1",
+  "defaults": {"limit": 100},
+  "limits": {"max_rows": 500, "timeout_seconds": 90, "max_attempts": 2, "cost_units": 5},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "digests", "tool_id": "db.mysql.statement.digest.top", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"limit": 100}},
+    {"step_id": "waits", "tool_id": "db.wait.class_summary", "tool_version": "1.0.0", "depends_on": ["digests"], "input": {"limit": 20}},
+    {"step_id": "io", "tool_id": "db.mysql.io.summary", "tool_version": "1.0.0", "depends_on": ["digests"], "input": {"limit": 50}}
+  ],
+  "output_schema": "mysql.sql.top-digest.output.v1",
+  "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
+  "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": [],
+  "manual_evidence_template": "mysql.sql.top-digest.manual.v1",
+  "sensitive_fields": ["digest_text"],
+  "redaction_rules": ["SQL_LITERAL_REDACTION"],
+  "freshness": {"max_age_seconds": 120, "requires_observed_at": true}
+}

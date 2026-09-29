@@ -382,14 +382,13 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(88, len(registry.tools))
-        self.assertTrue(
-            all(
-                column.sensitivity == "PUBLIC"
-                for tool in registry.tools
-                for column in tool.definition.output_columns
-            )
-        )
+        self.assertEqual(154, len(registry.tools))
+        sensitivities = {
+            column.sensitivity
+            for tool in registry.tools
+            for column in tool.definition.output_columns
+        }
+        self.assertEqual({"PUBLIC", "MASKED"}, sensitivities)
         pairs = {
             (item.definition.db_type, item.definition.tool_id)
             for item in registry.tools

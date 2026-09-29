@@ -116,8 +116,8 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
-        self.assertIn("schema_version = 30", session.statements[0])
-        self.assertIn("aiops-oracle-v20", session.statements[0])
+        self.assertIn("schema_version = 31", session.statements[0])
+        self.assertIn("aiops-oracle-v21", session.statements[0])
         self.assertIn("GENERATED = 'USER NAME'", session.statements[-1])
 
     async def test_ready_rejects_partial_schema_30_contract(self) -> None:

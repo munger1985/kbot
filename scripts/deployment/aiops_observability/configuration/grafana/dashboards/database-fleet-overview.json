@@ -1,0 +1,280 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Oracle实例详情",
+      "type": "link",
+      "url": "/d/kbot-oracle-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "MySQL实例详情",
+      "type": "link",
+      "url": "/d/kbot-mysql-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "PostgreSQL实例详情",
+      "type": "link",
+      "url": "/d/kbot-postgresql-overview"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Oracle Fleet",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [{"options": {"0": {"color": "red", "text": "不可用"}, "1": {"color": "green", "text": "可用"}}, "type": "value"}],
+          "noValue": "N/A",
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "min by (target_key) (oracledb_up{job=\"oracle\"})", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "可用性",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max by (target_key) (kbot_db_connection_utilization_percent)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "连接压力",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "noValue": "N/A", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (rate(kbot_db_transactions_total[5m]))", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "事务吞吐",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 90}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 1},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max by (target_key) (kbot_db_cpu_utilization_percent)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "CPU使用率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "noValue": "N/A", "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 1},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (kbot_db_storage_used_bytes)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "已用表空间",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 1},
+      "id": 7,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (ALERTS{alertstate=\"firing\",database_type=\"ORACLE\"}) or on(target_key) (0 * max by (target_key) (oracledb_up{job=\"oracle\"}))", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "活动告警",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 6},
+      "id": 8,
+      "panels": [],
+      "title": "MySQL Fleet",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [{"options": {"0": {"color": "red", "text": "不可用"}, "1": {"color": "green", "text": "可用"}}, "type": "value"}], "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 7},
+      "id": 9,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "min by (target_key) (mysql_up{job=\"mysql\"})", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "可用性",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 7},
+      "id": 10,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max by (target_key) (kbot_mysql_connection_utilization_percent)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "连接压力",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "noValue": "N/A", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 7},
+      "id": 11,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (rate(kbot_mysql_transactions_total[5m]))", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "事务吞吐",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 90}, {"color": "green", "value": 95}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 7},
+      "id": 12,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "min by (target_key) (kbot_mysql_buffer_pool_hit_percent)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "Buffer Pool命中率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 10}, {"color": "red", "value": 60}]}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 7},
+      "id": 13,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max by (target_key) (mysql_slave_status_seconds_behind_master{job=\"mysql\"})", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "复制延迟",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 7},
+      "id": 14,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (ALERTS{alertstate=\"firing\",database_type=\"MYSQL\"}) or on(target_key) (0 * max by (target_key) (mysql_up{job=\"mysql\"}))", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "活动告警",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12},
+      "id": 15,
+      "panels": [],
+      "title": "PostgreSQL Fleet",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [{"options": {"0": {"color": "red", "text": "不可用"}, "1": {"color": "green", "text": "可用"}}, "type": "value"}], "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 13},
+      "id": 16,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "min by (target_key) (pg_up{job=\"postgres\"})", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "可用性",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 13},
+      "id": 17,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max by (target_key) (kbot_postgresql_connection_utilization_percent)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "连接压力",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "noValue": "N/A", "unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 13},
+      "id": 18,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (rate(kbot_postgresql_transactions_total[5m]))", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "事务吞吐",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 90}, {"color": "green", "value": 95}]}, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 13},
+      "id": 19,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "min by (target_key) (kbot_postgresql_cache_hit_percent)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "缓存命中率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-GrYlRd"}, "noValue": "N/A", "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 13},
+      "id": 20,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (kbot_postgresql_database_size_bytes)", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "数据库总容量",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "kbot-prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "noValue": "N/A", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 13},
+      "id": 21,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "vertical", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum by (target_key) (ALERTS{alertstate=\"firing\",database_type=\"POSTGRESQL\"}) or on(target_key) (0 * max by (target_key) (pg_up{job=\"postgres\"}))", "instant": true, "legendFormat": "{{target_key}}", "range": false, "refId": "A"}],
+      "title": "活动告警",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["kbot", "aiops", "database", "fleet", "production"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "数据库 Fleet · 生产总览",
+  "uid": "kbot-database-fleet",
+  "version": 1,
+  "weekStart": ""
+}

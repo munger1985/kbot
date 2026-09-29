@@ -1,0 +1,19 @@
+{
+  "schema_version": "DBA_PLAYBOOK_MANIFEST.v1", "playbook_id": "postgresql.wal.archive", "version": "1.0.0",
+  "database_types": ["POSTGRESQL"], "version_range": {"minimum": "14", "maximum": "16"},
+  "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"], "domains": ["BACKUP_AND_RECOVERY", "INSTANCE_PERFORMANCE", "REPLICATION"], "subjects": ["WAL", "ARCHIVE"],
+  "required_source_capabilities": [], "optional_source_capabilities": ["PROMETHEUS_QUERY"],
+  "required_target_capabilities": ["DB_READONLY", "pg_stat_wal", "pg_stat_bgwriter", "pg_stat_archiver", "pg_replication_slots"],
+  "required_privileges": ["pg_read_all_stats"], "required_entitlements": [], "input_schema": "postgresql.wal.archive.input.v1", "defaults": {},
+  "limits": {"max_rows": 800, "timeout_seconds": 90, "max_attempts": 2, "cost_units": 6},
+  "tool_dag": [
+    {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
+    {"step_id": "wal", "tool_id": "db.postgresql.wal.statistics", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}},
+    {"step_id": "checkpoint", "tool_id": "db.postgresql.checkpoint.statistics", "tool_version": "1.0.0", "depends_on": ["wal"], "input": {}},
+    {"step_id": "archiver", "tool_id": "db.postgresql.archiver.status", "tool_version": "1.0.0", "depends_on": ["wal"], "input": {}},
+    {"step_id": "slots", "tool_id": "db.postgresql.replication.slot_retention", "tool_version": "1.0.0", "depends_on": ["wal"], "input": {}}
+  ],
+  "output_schema": "postgresql.wal.archive.output.v1", "measurement_semantics": "CUMULATIVE_SINCE_LOAD", "presentation_kind": "TABLE_AND_CHART",
+  "fallback_playbooks": [], "manual_evidence_template": "postgresql.wal.archive.manual.v1", "sensitive_fields": [], "redaction_rules": [],
+  "freshness": {"max_age_seconds": 120, "requires_observed_at": true}
+}

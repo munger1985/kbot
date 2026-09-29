@@ -688,6 +688,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             "username": "kbot_monitor",
             "password": "secret",
         }
+        self.service._target_connection_tester = AsyncMock()
 
         async def execute_handler(**kwargs):
             return await kwargs["handler"](self.uow, self.now)
@@ -733,16 +734,12 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_create_disables_target_and_checks_connectivity(self) -> None:
-        with patch(
-            "aiops_agent.application.configuration."
-            "target_service.run_target_connection_test",
-            new=AsyncMock(return_value=self._connected_result()),
-        ) as connection_test:
-            result = await self.service.create_target(
-                scope=self.scope,
-                request=self.create_request,
-                idempotency_key="create-target-1",
-            )
+        self.service._target_connection_tester.return_value = self._connected_result()
+        result = await self.service.create_target(
+            scope=self.scope,
+            request=self.create_request,
+            idempotency_key="create-target-1",
+        )
 
         self.assertEqual("DISABLED", result.status)
         self.assertEqual(4, result.importance_level)
@@ -755,28 +752,24 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.connectivity_check_pending)
         self.assertIsNotNone(result.last_connectivity_check_at)
         self.assertIsNotNone(result.last_connectivity_success_at)
-        connection_test.assert_awaited_once()
+        self.service._target_connection_tester.assert_awaited_once()
         self.assertEqual(
             ["TARGET_CREATED"],
             [call.args[0].event_type for call in self.outbox.add.await_args_list],
         )
 
     async def test_create_records_unreachable_connectivity(self) -> None:
-        with patch(
-            "aiops_agent.application.configuration."
-            "target_service.run_target_connection_test",
-            new=AsyncMock(
-                return_value=TargetConnectionTestResult(
-                    ok=False,
-                    error_code="ORACLE_AUTH_FAILED",
-                )
-            ),
-        ):
-            result = await self.service.create_target(
-                scope=self.scope,
-                request=self.create_request,
-                idempotency_key="create-target-2",
+        self.service._target_connection_tester.return_value = (
+            TargetConnectionTestResult(
+                ok=False,
+                error_code="ORACLE_AUTH_FAILED",
             )
+        )
+        result = await self.service.create_target(
+            scope=self.scope,
+            request=self.create_request,
+            idempotency_key="create-target-2",
+        )
 
         self.assertEqual("DISABLED", result.status)
         self.assertEqual("UNREACHABLE", result.connectivity_status)
@@ -833,23 +826,19 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             updated_at=self.now,
         )
         self.targets.get_scoped.return_value = entity
-        with patch(
-            "aiops_agent.application.configuration."
-            "target_service.run_target_connection_test",
-            new=AsyncMock(return_value=self._connected_result()),
-        ) as connection_test:
-            result = await self.service.patch_target(
-                scope=self.scope,
-                target_id=target_id,
-                request=TargetPatch(oracle_pdb_name="PDB02"),
-                expected_version=3,
-            )
+        self.service._target_connection_tester.return_value = self._connected_result()
+        result = await self.service.patch_target(
+            scope=self.scope,
+            target_id=target_id,
+            request=TargetPatch(oracle_pdb_name="PDB02"),
+            expected_version=3,
+        )
 
         self.assertEqual("DISABLED", result.status)
         self.assertEqual("CONNECTED", result.connectivity_status)
         self.assertEqual("PDB02", result.oracle_pdb_name)
         self.assertFalse(result.connectivity_check_pending)
-        connection_test.assert_awaited_once()
+        self.service._target_connection_tester.assert_awaited_once()
         self.assertEqual(
             ["TARGET_UPDATED"],
             [call.args[0].event_type for call in self.outbox.add.await_args_list],
@@ -900,33 +889,29 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             updated_at=self.now,
         )
         self.targets.get_scoped.return_value = entity
-        with patch(
-            "aiops_agent.application.configuration."
-            "target_service.run_target_connection_test",
-            new=AsyncMock(
-                return_value=TargetConnectionTestResult(
-                    ok=False,
-                    error_code="ORACLE_CONTAINER_MISMATCH",
-                    oracle_container_scope="CDB_ROOT",
-                    oracle_container_name="CDB$ROOT",
-                    oracle_container_number=1,
-                    oracle_database_name="ORCL",
-                )
-            ),
-        ) as connection_test:
-            result = await self.service.request_target_connectivity_check(
-                scope=self.scope,
-                target_id=target_id,
-                expected_version=1,
-                idempotency_key="check-target-1",
+        self.service._target_connection_tester.return_value = (
+            TargetConnectionTestResult(
+                ok=False,
+                error_code="ORACLE_CONTAINER_MISMATCH",
+                oracle_container_scope="CDB_ROOT",
+                oracle_container_name="CDB$ROOT",
+                oracle_container_number=1,
+                oracle_database_name="ORCL",
             )
+        )
+        result = await self.service.request_target_connectivity_check(
+            scope=self.scope,
+            target_id=target_id,
+            expected_version=1,
+            idempotency_key="check-target-1",
+        )
 
         self.assertEqual("MISCONFIGURED", result.connectivity_status)
         self.assertEqual("ORACLE_CONTAINER_MISMATCH", result.last_error_code)
         self.assertEqual("CDB_ROOT", result.observed_oracle_container_scope)
         self.assertFalse(result.connectivity_check_pending)
         self.assertEqual(2, result.connectivity_version)
-        connection_test.assert_awaited_once()
+        self.service._target_connection_tester.assert_awaited_once()
         self.service._managed_credentials.read.assert_awaited_once()
 
 
