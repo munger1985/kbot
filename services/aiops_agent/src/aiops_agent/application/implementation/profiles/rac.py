@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from aiops_agent.application.implementation.artifacts import GeneratedRunbookArtifact
@@ -13,6 +14,7 @@ from aiops_agent.application.implementation.profiles.common import (
     value,
 )
 from aiops_agent.contracts.implementation import (
+    RunbookCommandType,
     RunbookExecutor,
     RunbookFactSource,
     RunbookRiskLevel,
@@ -29,14 +31,10 @@ _SPEC = ProfileSpec(
     required_facts=(
         ("DATABASE_NAME", "需要确认源数据库名称。", RunbookFactSource.TARGET_FACT, ("migration", "rac_config")),
         ("ORACLE_HOME", "需要由主机采集确认数据库软件目录。", RunbookFactSource.HOST_COLLECTOR, ("db_home", "migration")),
-        ("GRID_HOME", "需要确认目标 Grid Infrastructure 目录。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("grid_install",)),
-        ("NODE1_HOST", "需要登记第一个 RAC 节点主机名。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("os_prepare", "network", "grid_install", "register")),
-        ("NODE2_HOST", "需要登记第二个 RAC 节点主机名。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("os_prepare", "network", "grid_install", "register")),
-        ("NODE1_VIP", "需要登记第一个节点 VIP 名称或地址。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("network", "grid_install")),
-        ("NODE2_VIP", "需要登记第二个节点 VIP 名称或地址。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("network", "grid_install")),
-        ("SCAN_NAME", "需要登记已完成 DNS 解析的 SCAN 名称。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("network", "grid_install", "services")),
-        ("ASM_DISK_WWIDS", "需要由主机采集确认两节点一致的共享盘 WWID。", RunbookFactSource.HOST_COLLECTOR, ("shared_storage", "asm")),
-        ("PATCH_STAGE_PATH", "需要登记平台批准的 GI/DB Home 介质目录。", RunbookFactSource.POLICY_TEMPLATE, ("grid_install", "db_home")),
+        ("NODE1_HOST", "资源注册前需要确认第一个 RAC 节点主机名。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("register",)),
+        ("NODE2_HOST", "资源注册前需要确认第二个 RAC 节点主机名。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("register",)),
+        ("SCAN_NAME", "业务服务发布前需要确认 GI 已登记的 SCAN。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("services",)),
+        ("PATCH_STAGE_PATH", "数据库 Home 安装前需要确认数据库软件介质目录。", RunbookFactSource.POLICY_TEMPLATE, ("db_home",)),
     ),
     phases=(
         ("scope", "范围与目标拓扑", ("scope",)),
@@ -73,12 +71,19 @@ def compile_rac(
     merged = {**identity, **facts}
     db_name = value(context, merged, "DATABASE_NAME") or value(context, merged, "database_name")
     db_unique = value(context, merged, "DB_UNIQUE_NAME") or db_name
+    version = str(merged.get("version") or merged.get("compatible") or "26ai")
+    major_match = re.match(r"(\d+)", version)
+    major = major_match.group(1) if major_match else "26"
+    release_label = f"{major}ai" if int(major) >= 23 else f"{major}c"
     node1 = value(context, merged, "NODE1_HOST")
     node2 = value(context, merged, "NODE2_HOST")
     scan = value(context, merged, "SCAN_NAME")
-    grid_home = value(context, merged, "GRID_HOME")
+    grid_home = (
+        value(context, merged, "GRID_HOME")
+        or f"/u01/app/{release_label}/grid"
+    )
     oracle_home = value(context, merged, "ORACLE_HOME")
-    patch_stage = value(context, merged, "PATCH_STAGE_PATH")
+    patch_stage = value(context, merged, "PATCH_STAGE_PATH") or "/stage/oracle"
     stage = "/var/tmp/kbot-runbooks/oracle-rac-build"
     commands: dict[str, tuple] = {
         "scope": (command(
@@ -106,6 +111,122 @@ def compile_rac(
             run_as="SYSDBA",
             node_scope=("node1",),
         ),),
+        "os_prepare": (
+            command(
+                "rac.os.prepare",
+                "在两个目标节点安装依赖并创建 Grid 用户和目录",
+                "\n".join((
+                    f"dnf install -y oracle-database-preinstall-{release_label} unzip tar ksh nfs-utils device-mapper-multipath",
+                    "getent group oinstall >/dev/null || groupadd oinstall",
+                    "getent group dba >/dev/null || groupadd dba",
+                    "getent group asmdba >/dev/null || groupadd asmdba",
+                    "getent group asmoper >/dev/null || groupadd asmoper",
+                    "getent group asmadmin >/dev/null || groupadd asmadmin",
+                    "getent group racdba >/dev/null || groupadd racdba",
+                    "id oracle >/dev/null 2>&1 || useradd -g oinstall -G dba,asmdba,racdba oracle",
+                    "id grid >/dev/null 2>&1 || useradd -g oinstall -G asmadmin,asmdba,asmoper,racdba grid",
+                    "usermod -a -G asmdba,racdba oracle",
+                    "install -d -o grid -g oinstall -m 0775 /u01/app/grid",
+                    f"install -d -o grid -g oinstall -m 0775 {grid_home}",
+                    f"install -d -o root -g oinstall -m 0775 {patch_stage}",
+                    "systemctl enable --now chronyd",
+                    "timedatectl status",
+                    "chronyc tracking",
+                )),
+                executor=RunbookExecutor.BASH,
+                run_as="root",
+                node_scope=("node1", "node2"),
+                risk=RunbookRiskLevel.MEDIUM,
+            ),
+            command(
+                "rac.os.extract.grid",
+                "在两个目标节点解压已经下载的 GI 安装包",
+                "\n".join((
+                    f"gi_archive_count=$(find {patch_stage} -maxdepth 1 -type f -iname '*grid*home*.zip' | wc -l)",
+                    "test \"$gi_archive_count\" -eq 1",
+                    f"gi_archive=$(find {patch_stage} -maxdepth 1 -type f -iname '*grid*home*.zip' -print)",
+                    f"unzip -q \"$gi_archive\" -d {grid_home}",
+                    f"chown -R grid:oinstall {grid_home}",
+                    f"rpm -Uvh {grid_home}/cv/rpm/cvuqdisk-*.rpm",
+                    f"test -x {grid_home}/gridSetup.sh",
+                    f"test -x {grid_home}/runcluvfy.sh",
+                )),
+                executor=RunbookExecutor.BASH,
+                run_as="root",
+                node_scope=("node1", "node2"),
+                risk=RunbookRiskLevel.MEDIUM,
+                notes=(f"每个节点的 {patch_stage} 中必须只有一份 GI grid home ZIP。",),
+            ),
+        ),
+        "network": (
+            command(
+                "rac.network.collect",
+                "在两个节点核对主机名、网卡、路由、名称解析和时间同步",
+                "hostnamectl\nhostname -f\nip -br link\nip -br address\nip route\ngetent hosts \"$(hostname -s)\"\ntimedatectl status\nchronyc tracking",
+                executor=RunbookExecutor.BASH,
+                run_as="root",
+                node_scope=("node1", "node2"),
+            ),
+            command(
+                "rac.network.gridsetup",
+                "在 gridSetup.sh 中登记公共网、私网、VIP 和 SCAN",
+                (
+                    "在 Grid 安装器的 Cluster Node Information、Network Interface Usage 和 "
+                    "Grid Naming Service 页面中登记两个节点；使用安装器自带的 SSH Connectivity "
+                    "完成互信，选择 Public/ASM & Private 接口，并录入已在 DNS 或 hosts 中解析的 "
+                    "VIP 与 SCAN。安装器预检查未通过时不得继续。"
+                ),
+                executor=RunbookExecutor.MANUAL,
+                command_type=RunbookCommandType.MANUAL,
+                run_as="grid",
+                node_scope=("node1",),
+            ),
+        ),
+        "shared_storage": (
+            command(
+                "rac.storage.discover",
+                "在两个节点核对 GI 安装器可见的共享磁盘",
+                "lsblk -e7 -o NAME,KNAME,TYPE,SIZE,FSTYPE,MOUNTPOINTS,WWN,SERIAL\nmultipath -ll || true\nfind /dev/mapper -maxdepth 1 -type l -printf '%f -> %l\\n' | sort",
+                executor=RunbookExecutor.BASH,
+                run_as="root",
+                node_scope=("node1", "node2"),
+                expected=("两个节点看到相同的共享设备、WWN、容量和多路径映射。",),
+            ),
+            command(
+                "rac.storage.gridsetup",
+                "由 GI 安装器配置 ASM Filter Driver 和 OCR 磁盘组",
+                (
+                    "在 gridSetup.sh 的 Create ASM Disk Group 页面选择两个节点均可见且未挂载的"
+                    "共享设备，启用安装器支持的 ASM Filter Driver，并创建用于 OCR/Voting 的"
+                    "+DATA 磁盘组；不要选择系统盘、本地盘或已有文件系统的设备。"
+                ),
+                executor=RunbookExecutor.MANUAL,
+                command_type=RunbookCommandType.MANUAL,
+                run_as="grid",
+                node_scope=("node1",),
+                risk=RunbookRiskLevel.CRITICAL,
+            ),
+        ),
+        "asm": (
+            command(
+                "rac.asm.configure",
+                "使用 GI 自带 ASMCA 创建或核对 DATA 与 RECO 磁盘组",
+                f"{grid_home}/bin/asmca",
+                executor=RunbookExecutor.BASH,
+                run_as="grid",
+                node_scope=("node1",),
+                risk=RunbookRiskLevel.CRITICAL,
+                notes=("在 ASMCA 中使用剩余共享磁盘创建 +RECO；+DATA 已存在时只做核验。",),
+            ),
+            command(
+                "rac.asm.verify",
+                "验证 ASM 实例和磁盘组",
+                f"{grid_home}/bin/srvctl status asm -detail\n{grid_home}/bin/asmcmd lsdg",
+                executor=RunbookExecutor.ASMCMD,
+                run_as="grid",
+                node_scope=("node1",),
+            ),
+        ),
     }
     if db_unique:
         commands["handover"] = (command(
@@ -122,9 +243,11 @@ def compile_rac(
         content=(
             "# RAC 固化拓扑摘要\n\n"
             f"- 源数据库：{db_unique or '尚未取得'}\n"
-            f"- 节点一：{node1 or '尚未登记'}\n"
-            f"- 节点二：{node2 or '尚未登记'}\n"
-            f"- SCAN：{scan or '尚未登记'}\n"
+            f"- 节点一：{node1 or '由 gridSetup.sh 交互登记'}\n"
+            f"- 节点二：{node2 or '由 gridSetup.sh 交互登记'}\n"
+            f"- SCAN：{scan or '由 gridSetup.sh 交互登记'}\n"
+            f"- Grid Home：{grid_home}\n"
+            f"- GI 介质目录：{patch_stage}\n"
             "- 数据磁盘组：+DATA\n- 恢复磁盘组：+RECO\n"
         ),
         media_type="text/markdown",
@@ -160,34 +283,68 @@ def compile_rac(
             artifact_ref="rac.prepare.source",
             target_path=f"{stage}/database/prepare-source.sql",
         ),)
-    if all((node1, node2, scan, grid_home, patch_stage)):
-        verify = (
-            f"{grid_home}/bin/olsnodes -n -s -t\n"
-            f"{grid_home}/bin/crsctl check cluster -all\n"
-            f"{grid_home}/bin/srvctl config scan\n"
-            f"getent hosts {scan}\n"
-        )
-        artifacts.append(GeneratedRunbookArtifact(
-            artifact_id="rac.verify.cluster",
-            relative_path="oracle-rac-build/grid/verify-cluster.sh",
-            content="#!/usr/bin/env bash\nset -euo pipefail\n" + verify,
-            media_type="text/x-shellscript",
-            file_mode="0750",
+    verify = (
+        f"{grid_home}/bin/crsctl check cluster -all\n"
+        f"{grid_home}/bin/olsnodes -n -s -t\n"
+        f"{grid_home}/bin/srvctl config scan\n"
+        f"{grid_home}/bin/srvctl status scan\n"
+        f"{grid_home}/bin/cluvfy comp healthcheck -collect cluster -bestpractice -deviations -verbose\n"
+    )
+    artifacts.append(GeneratedRunbookArtifact(
+        artifact_id="rac.verify.cluster",
+        relative_path="oracle-rac-build/grid/verify-cluster.sh",
+        content="#!/usr/bin/env bash\nset -euo pipefail\n" + verify,
+        media_type="text/x-shellscript",
+        file_mode="0750",
+        run_as="grid",
+        target_path=f"{stage}/grid/verify-cluster.sh",
+        description="验证两节点 CRS、SCAN、节点清单和集群健康状态。",
+    ))
+    commands["grid_install"] = (
+        command(
+            "rac.grid.configure",
+            "使用 GI 安装包自带 gridSetup.sh 配置两节点集群",
+            (
+                "通过支持 X11 转发的 grid 会话进入第一个节点；在安装器中选择 Configure "
+                "Oracle Grid Infrastructure for a New Cluster 和 Configure an Oracle "
+                "Standalone Cluster，完成节点、SSH、网络、SCAN、VIP、ASM 与安装前置检查。"
+            ),
+            executor=RunbookExecutor.MANUAL,
+            command_type=RunbookCommandType.MANUAL,
             run_as="grid",
-            target_path=f"{stage}/grid/verify-cluster.sh",
-            description="验证两节点 CRS、SCAN 和节点清单。",
-        ))
-        commands["grid_install"] = (command(
+            node_scope=("node1",),
+            risk=RunbookRiskLevel.CRITICAL,
+        ),
+        command(
             "rac.grid.install",
-            "按响应文件安装并验证 Grid Infrastructure",
-            f"cd {patch_stage}\n{grid_home}/gridSetup.sh -silent -responseFile {stage}/grid/gridsetup.rsp\n{stage}/grid/verify-cluster.sh",
+            "启动 Oracle Grid Infrastructure 图形安装器",
+            f"test -n \"$DISPLAY\"\n{grid_home}/gridSetup.sh",
             executor=RunbookExecutor.BASH,
             run_as="grid",
             node_scope=("node1",),
             risk=RunbookRiskLevel.CRITICAL,
+            notes=("在安装器显示 Execute Configuration Scripts 页面后暂停，按下一条命令执行 root 脚本。",),
+        ),
+        command(
+            "rac.grid.root.scripts",
+            "按安装器提示在两个节点依次执行 root 脚本",
+            f"test -x /u01/app/oraInventory/orainstRoot.sh && /u01/app/oraInventory/orainstRoot.sh\n{grid_home}/root.sh",
+            executor=RunbookExecutor.BASH,
+            run_as="root",
+            node_scope=("node1", "node2"),
+            risk=RunbookRiskLevel.CRITICAL,
+            notes=("严格按照安装器显示的节点顺序逐台执行，前一节点成功后再执行下一节点。",),
+        ),
+        command(
+            "rac.grid.verify",
+            "完成安装器后验证 Clusterware、SCAN 和集群健康",
+            f"{stage}/grid/verify-cluster.sh",
+            executor=RunbookExecutor.BASH,
+            run_as="grid",
+            node_scope=("node1",),
             artifact_ref="rac.verify.cluster",
-            notes=("root.sh 只能在安装程序明确提示后由 root 按节点顺序人工执行。",),
-        ),)
+        ),
+    )
     if db_unique and oracle_home and node1 and node2:
         register = (
             f"{oracle_home}/bin/srvctl add database -db {db_unique} -oraclehome {oracle_home} -spfile +DATA/{db_unique}/PARAMETERFILE/spfile.ora -role PRIMARY -startoption OPEN -stopoption IMMEDIATE -policy AUTOMATIC\n"
@@ -224,6 +381,9 @@ def compile_rac(
         artifacts=tuple(artifacts),
         derived_parameters={
             "POLICY_TEMPLATE_ID": _SPEC.policy_id,
+            "ORACLE_RELEASE": release_label,
+            "GRID_HOME": grid_home,
+            "GI_MEDIA_STAGE": patch_stage,
             "DATA_DISKGROUP": "+DATA",
             "RECO_DISKGROUP": "+RECO",
             "TARGET_INSTANCE_1": f"{db_name}1" if db_name else "待数据库名称确认后派生",

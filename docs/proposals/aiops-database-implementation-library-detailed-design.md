@@ -56,11 +56,11 @@
       ├─ 页面正式文档渲染
       ├─ PDF 下载
       ├─ Markdown 下载
-      ├─ JSON 下载
       └─ Scripts ZIP 下载
 ```
 
-PDF、Markdown 和脚本包都是结构化 Runbook 的派生产物，不重复持久化另一份可漂移的正文。
+结构化 JSON 只作为程序内部唯一真相，不提供用户下载。PDF、Markdown 和脚本包都是结构化
+Runbook 的派生产物，不重复持久化另一份可漂移的正文。
 
 ### 2.3 零聊天补参不等于伪造基础设施
 
@@ -74,6 +74,13 @@ PDF、Markdown 和脚本包都是结构化 Runbook 的派生产物，不重复�
 - 依赖真实基础设施值的步骤标记为 `BLOCKED`；
 - 不在聊天中反复要求用户逐项输入；
 - 在 Target 配置中引导登记部署拓扑，重新生成后转为 `READY`。
+
+RAC 从零建设的 OS、网络检查、共享盘发现、GI 安装和 ASM 初建不适用上述阻断方式。该 Profile
+假设用户已把 Oracle GI grid home ZIP 放入策略约定的 `/stage/oracle`，按源库版本派生标准
+`GRID_HOME`，直接输出两个节点的预安装包、用户组、目录、GI 解压命令，并调用安装包自带的
+`gridSetup.sh`、`root.sh`、`cluvfy`、`crsctl`、`olsnodes`、`srvctl` 和 `asmca`。节点、VIP、SCAN、
+网卡用途和 ASM 设备在 Oracle 安装器的交互及预检查过程中登记，不得因此把这些建设阶段标记为
+`BLOCKED`；只有后续数据库资源注册或业务服务发布确实需要固化值时才允许阻断相应后续步骤。
 
 ### 2.4 文档生成与实际执行继续分离
 

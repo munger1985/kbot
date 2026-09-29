@@ -242,6 +242,30 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             phase_ids.index("artifact_package"),
             phase_ids.index("source_protection"),
         )
+        steps = {
+            step.step_id: step
+            for phase in runbook.phases
+            for step in phase.steps
+        }
+        for step_id in (
+            "os_prepare.execute",
+            "network.execute",
+            "shared_storage.execute",
+            "grid_install.execute",
+            "asm.execute",
+        ):
+            self.assertNotEqual("BLOCKED", steps[step_id].applicability.value)
+            self.assertTrue(steps[step_id].commands)
+        serialized = runbook.model_dump_json()
+        self.assertIn("gridSetup.sh", serialized)
+        self.assertIn("runcluvfy.sh", serialized)
+        self.assertIn("asmca", serialized)
+        self.assertIn("oracle-database-preinstall-26ai", serialized)
+        missing_keys = {item.fact_key for item in runbook.missing_facts}
+        self.assertNotIn("GRID_HOME", missing_keys)
+        self.assertNotIn("NODE1_VIP", missing_keys)
+        self.assertNotIn("NODE2_VIP", missing_keys)
+        self.assertNotIn("ASM_DISK_WWIDS", missing_keys)
 
     def test_blocked_steps_do_not_publish_manual_pseudo_commands(self) -> None:
         runbook = compile_implementation_runbook(
