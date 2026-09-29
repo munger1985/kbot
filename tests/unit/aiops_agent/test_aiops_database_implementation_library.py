@@ -126,6 +126,51 @@ def _datapump_fact(
     )
 
 
+def _migration_fact(*, log_mode: str = "ARCHIVELOG") -> TurnEvidenceFact:
+    names = (
+        "database_name",
+        "db_unique_name",
+        "instance_name",
+        "version",
+        "platform_name",
+        "database_role",
+        "open_mode",
+        "log_mode",
+        "cdb",
+        "compatible",
+        "datafile_bytes",
+        "character_set",
+        "national_character_set",
+    )
+    return TurnEvidenceFact(
+        evidence_ref="evidence:migration-precheck",
+        artifact_id="artifact-migration-precheck",
+        source_id="oracle-source",
+        step_id="precheck",
+        tool_id="db.migration.precheck",
+        measurement_semantics=MeasurementSemantics.CURRENT_ACTIVITY,
+        presentation_kind=PresentationPreference.TABLE,
+        captured_at="2026-09-29T08:00:00Z",
+        columns=tuple({"name": name} for name in names),
+        rows=((
+            "TESTDB",
+            "testdb",
+            "testdb1",
+            "26.0.0.0.0",
+            "Linux x86 64-bit",
+            "PRIMARY",
+            "READ WRITE",
+            log_mode,
+            "YES",
+            "23.0.0",
+            53687091200,
+            "AL32UTF8",
+            "AL16UTF16",
+        ),),
+        row_count=1,
+    )
+
+
 class DatabaseImplementationLibraryTest(unittest.TestCase):
     def test_registry_covers_every_implementation_profile(self) -> None:
         self.assertEqual(
@@ -162,6 +207,7 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
         for profile in registered_implementation_profiles():
             if profile in {
                 ImplementationProfile.ORACLE_ADG_BUILD,
+                ImplementationProfile.ORACLE_DATABASE_MIGRATION,
                 ImplementationProfile.ORACLE_DATAPUMP_MIGRATION,
             }:
                 continue
@@ -291,6 +337,149 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
         }
         self.assertIn("full=yes", generated["datapump.export.par"])
         self.assertNotIn("schemas=", generated["datapump.export.par"])
+
+    def test_database_migration_generates_complete_static_rman_runbook(
+        self,
+    ) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_DATABASE_MIGRATION,
+            evidence=(
+                _database_fact(tool_id="db.instance.identity"),
+                _migration_fact(),
+            ),
+            context={},
+        )
+
+        self.assertEqual(RunbookStatus.READY, runbook.status)
+        self.assertFalse(runbook.missing_facts)
+        self.assertTrue(
+            all(
+                step.applicability.value != "BLOCKED" and step.commands
+                for phase in runbook.phases
+                for step in phase.steps
+            )
+        )
+        serialized = runbook.model_dump_json()
+        for removed_input in (
+            "DESTINATION_REF",
+            "SOURCE_CONNECT_IDENTIFIER",
+            "DESTINATION_CONNECT_IDENTIFIER",
+            "CUTOVER_WINDOW",
+        ):
+            self.assertNotIn(removed_input, serialized)
+        self.assertNotIn("等待必要事实", serialized)
+        self.assertNotIn("/@", serialized)
+        self.assertIn("rman auxiliary /", serialized)
+        self.assertIn("sha256sum -c migration.sha256", serialized)
+
+        parameters = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertEqual(
+            "RMAN_BACKUP_LOCATION_DUPLICATE",
+            parameters["MIGRATION_METHOD"],
+        )
+        self.assertEqual(
+            "/u01/app/oracle/migration/testdb",
+            parameters["MIGRATION_STAGE_PATH"],
+        )
+        self.assertEqual(
+            "LOCAL_SYSDBA",
+            parameters["TARGET_CONNECTION_MODE"],
+        )
+        self.assertEqual(
+            "NEW_HOST_SAME_PLATFORM_RELEASE_TOPOLOGY_AND_FILE_LAYOUT",
+            parameters["TARGET_ENVIRONMENT"],
+        )
+
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertIn(
+            "BACKUP AS COMPRESSED BACKUPSET DATABASE",
+            generated["migration.source_backup"],
+        )
+        self.assertIn(
+            "DUPLICATE DATABASE TO TESTDB",
+            generated["migration.duplicate_target"],
+        )
+        self.assertIn(
+            "BACKUP LOCATION '/u01/app/oracle/migration/testdb'",
+            generated["migration.duplicate_target"],
+        )
+        self.assertIn(
+            "STARTUP FORCE NOMOUNT",
+            generated["migration.start_auxiliary"],
+        )
+        self.assertIn(
+            "CREATE PFILE='/u01/app/oracle/migration/testdb/initTESTDB.ora'",
+            generated["migration.create_pfile"],
+        )
+
+        payload = runbook.model_dump(mode="json")
+        archive_payload = render_runbook_artifact_zip(payload, generated)
+        with zipfile.ZipFile(io.BytesIO(archive_payload)) as archive:
+            names = archive.namelist()
+            self.assertIn("README.md", names)
+            self.assertIn(
+                "oracle-database-migration/rman/backup-source.rman",
+                names,
+            )
+            self.assertIn(
+                "oracle-database-migration/rman/duplicate-target.rman",
+                names,
+            )
+            readme = archive.read("README.md").decode("utf-8")
+            self.assertIn("数据库迁移包使用顺序", readme)
+
+    def test_database_migration_without_live_facts_is_not_input_blocked(
+        self,
+    ) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_DATABASE_MIGRATION,
+            evidence=(),
+            context={},
+        )
+
+        self.assertEqual(RunbookStatus.PARTIAL_EVIDENCE, runbook.status)
+        self.assertFalse(runbook.missing_facts)
+        self.assertTrue(
+            all(
+                step.applicability.value != "BLOCKED" and step.commands
+                for phase in runbook.phases
+                for step in phase.steps
+            )
+        )
+
+    def test_database_migration_handles_noarchivelog_consistent_backup(
+        self,
+    ) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_DATABASE_MIGRATION,
+            evidence=(
+                _database_fact(tool_id="db.instance.identity"),
+                _migration_fact(log_mode="NOARCHIVELOG"),
+            ),
+            context={},
+        )
+
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertNotIn(
+            "BACKUP AS COMPRESSED BACKUPSET ARCHIVELOG ALL",
+            generated["migration.source_backup"],
+        )
+        self.assertIn(
+            "SHUTDOWN IMMEDIATE;\nSTARTUP MOUNT;",
+            generated["migration.post_cutover_backup"],
+        )
+        self.assertNotIn(
+            "PLUS ARCHIVELOG",
+            generated["migration.post_cutover_backup"],
+        )
 
     def test_rman_backup_artifacts_are_hashed_and_zip_is_deterministic(self) -> None:
         runbook = compile_implementation_runbook(

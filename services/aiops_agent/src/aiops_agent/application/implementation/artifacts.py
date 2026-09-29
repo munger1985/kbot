@@ -75,6 +75,24 @@ def _profile_usage(
 
 目标端命令使用本机 OS 认证，不需要在文件中保存 TNS、用户名或密码。
 """
+    if profile == "ORACLE_DATABASE_MIGRATION":
+        stage_root = (
+            target_root
+            or "/var/tmp/kbot-runbooks/oracle-database-migration"
+        )
+        return f"""## 数据库迁移包使用顺序
+
+1. 将本 ZIP 分别部署到源数据库主机和目标数据库主机的 `{stage_root}`。
+2. 阅读参数附录，确认默认方案为新目标主机、同平台同版本同拓扑同文件布局的离线 RMAN 迁移。
+3. 在源端执行 `sql/assess-source.sql`，按结果准备目标 Oracle 软件、文件系统或 ASM Disk Group。
+4. 在正式窗口前执行备份恢复链校验、全库逻辑读校验和目标暂存目录容量检查。
+5. 获批停写后，将源库启动到 MOUNT，执行 `rman/backup-source.rman` 并生成 SHA-256 清单。
+6. 通过批准通道传输备份、PFILE 和摘要清单；目标端校验后执行 `sql/start-target-nomount.sql`。
+7. 在目标端执行 `rman/duplicate-target.rman`，完成后运行 `sql/validate-database.sql` 和业务验收。
+8. 切换成功后执行 `rman/backup-post-cutover.rman`，观察期结束前保留关闭状态的源环境。
+
+源端和目标端都使用本机 OS 认证，不需要把 TNS、用户名或密码写入脚本。
+"""
     if profile != "ORACLE_RMAN_BACKUP_BUILD":
         return (
             "## 本方案的执行方式\n\n"

@@ -576,7 +576,20 @@ FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracl
 4. Schema/PDB 级：Data Pump；
 5. 异构或近零停机：只有已确认 GoldenGate 许可时才选择 GoldenGate。
 
-目标平台、版本、字符集、字节序、停机窗口和许可事实缺失时输出方法比较，不声称已选定可执行路径。
+通用“数据库迁移文档”入口默认面向整库同构迁移。没有登记目标拓扑时，静态文档按以下规则直接
+形成可执行基线，而不是要求用户逐阶段补录事实：
+
+- 目标视为新主机，Oracle 软件版本、平台、拓扑、字符集和数据库文件/ASM 路径按源库复现；
+- 默认方法为批准停机窗口内的 RMAN Backup Location Duplicate；
+- 源端和目标端均使用本机 OS 认证，不要求或猜测 TNS、主机名和凭据；
+- 迁移暂存目录优先采用显式配置，否则按数据库名派生
+  `/u01/app/oracle/migration/<database_name>`，并标记执行前审阅；
+- 文档必须输出源库盘点、目标软件与存储核验、恢复链校验、PFILE、离线一致性备份、SHA-256
+  传输校验、目标 NOMOUNT、Backup Location Duplicate、源目标验证、业务切换和 RESETLOGS 后备份；
+- 切换窗口、停写人和回退决策人属于变更审批条件，不属于文档生成阻断事实。
+
+用户显式选择低停机、跨平台、Schema/PDB 或 GoldenGate 路径时，应进入对应专项档案；不得在同构
+RMAN 文档中伪造这类方案所需的网络、许可或目标基础设施事实。
 
 ### 9.4 `ORACLE_CLONE_REFRESH`
 

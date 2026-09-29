@@ -57,21 +57,6 @@ def _facts(profile: ImplementationProfile):
             phases=(("scope", "升级范围与批准路径", ("scope",)), ("compatibility_phase", "组件、字符集与版本兼容性", ("compatibility",)), ("protection", "保护备份与 Guaranteed Restore Point", ("protection",)), ("analyze_phase", "AutoUpgrade Analyze 与 Fixups", ("analyze",)), ("deploy_phase", "AutoUpgrade Deploy", ("deploy",)), ("post", "Datapatch、组件与无效对象", ("post",)), ("business", "业务验收与性能基线", ("business",)), ("rollback_phase", "回退边界与交接", ("rollback",))),
             stop_conditions=common_stops + ("AutoUpgrade Analyze 或 Fixups 仍存在阻断项。",),
         ),
-        ImplementationProfile.ORACLE_DATABASE_MIGRATION: ProfileSpec(
-            profile=profile,
-            title="Oracle 数据库目标环境迁移与切换实施操作文档",
-            policy_id="oracle.migration.standard.v1",
-            fact_tool_id="db.migration.precheck",
-            required_facts=(
-                ("DESTINATION_REF", "需要引用已授权的目标 Target 或部署拓扑。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("method", "target", "sync", "cutover")),
-                ("MIGRATION_METHOD", "需要按平台、停机窗口、许可和规模确定迁移方法。", RunbookFactSource.POLICY_TEMPLATE, ("method", "sync", "cutover")),
-                ("SOURCE_CONNECT_IDENTIFIER", "需要确认源库安全连接标识。", RunbookFactSource.TARGET_FACT, ("sync",)),
-                ("DESTINATION_CONNECT_IDENTIFIER", "需要确认目标库安全连接标识。", RunbookFactSource.DEPLOYMENT_TOPOLOGY, ("sync", "cutover")),
-                ("CUTOVER_WINDOW", "需要业务批准切换窗口。", RunbookFactSource.EXPLICIT_USER_DECISION, ("cutover",)),
-            ),
-            phases=(("assessment", "源端事实与目标差异", ("assessment",)), ("method_phase", "迁移方法确定与证据", ("method",)), ("target_phase", "目标软件、存储与网络准备", ("target",)), ("protection", "保护备份与回退基线", ("protection",)), ("sync_phase", "全量迁移与增量同步", ("sync",)), ("cutover_phase", "停写、最终同步与切换", ("cutover",)), ("validate", "数据、对象、服务与性能验证", ("validate",)), ("handover", "观察期、回退与交接", ("handover",))),
-            stop_conditions=common_stops + ("目标平台、字符集、字节序或版本兼容性未确认。",),
-        ),
         ImplementationProfile.ORACLE_CLONE_REFRESH: ProfileSpec(
             profile=profile,
             title="Oracle 非生产数据库克隆与刷新实施操作文档",
@@ -555,29 +540,6 @@ def compile_standard(
             ),
             "TARGET_EXECUTION_MODE": "LOCAL_SYSDBA",
         })
-    elif profile == ImplementationProfile.ORACLE_DATABASE_MIGRATION:
-        method = value(context, merged, "MIGRATION_METHOD").upper()
-        source_tns = value(context, merged, "SOURCE_CONNECT_IDENTIFIER")
-        destination_tns = value(context, merged, "DESTINATION_CONNECT_IDENTIFIER")
-        if method == "RMAN_BACKUP_RESTORE" and source_tns and destination_tns:
-            script = (
-                f"CONNECT TARGET /@{source_tns}\n"
-                f"CONNECT AUXILIARY /@{destination_tns}\n"
-                "RUN {\n  ALLOCATE CHANNEL c1 DEVICE TYPE DISK;\n"
-                "  ALLOCATE AUXILIARY CHANNEL a1 DEVICE TYPE DISK;\n"
-                "  DUPLICATE TARGET DATABASE TO AUXILIARY FROM ACTIVE DATABASE NOFILENAMECHECK;\n}\n"
-            )
-            artifacts.append(GeneratedRunbookArtifact(
-                "migration.rman.duplicate", f"{stage_name}/rman/duplicate-to-target.rman",
-                script, "text/x-rman", "0640", "oracle",
-                f"{stage}/rman/duplicate-to-target.rman", "基于已登记连接标识执行 RMAN Active Duplicate。",
-            ))
-            commands["sync"] = (command(
-                "migration.sync.rman", "执行 RMAN Active Duplicate",
-                f"rman cmdfile={stage}/rman/duplicate-to-target.rman",
-                executor=RunbookExecutor.RMAN, run_as="oracle",
-                artifact_ref="migration.rman.duplicate", risk=RunbookRiskLevel.CRITICAL,
-            ),)
     elif profile == ImplementationProfile.ORACLE_CLONE_REFRESH:
         method = value(context, merged, "CLONE_METHOD").upper()
         source_tns = value(context, merged, "SOURCE_CONNECT_IDENTIFIER")
