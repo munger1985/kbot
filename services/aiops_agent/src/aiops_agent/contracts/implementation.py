@@ -25,6 +25,7 @@ class RunbookApplicability(StrEnum):
 
 
 class RunbookParameterStatus(StrEnum):
+    USER_SUPPLIED = "USER_SUPPLIED"
     VERIFIED = "VERIFIED"
     DERIVED = "DERIVED"
 
@@ -85,6 +86,16 @@ class RunbookResolvedParameter(BaseModel):
     value: str = Field(min_length=1, max_length=2048)
     status: RunbookParameterStatus
     source: str = Field(min_length=1, max_length=256)
+
+
+class RunbookGenerationContext(BaseModel):
+    """固化文档生成入口及用户显式覆盖值，供页面重新生成。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    starter_id: str | None = Field(default=None, max_length=128)
+    catalog_version: str | None = Field(default=None, max_length=32)
+    supplied_parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunbookCommand(BaseModel):
@@ -184,6 +195,7 @@ class ImplementationRunbook(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     status: RunbookStatus
     execution_policy: str = Field(min_length=1, max_length=1000)
+    generation: RunbookGenerationContext | None = None
     current_state: tuple[dict[str, Any], ...] = ()
     resolved_parameters: tuple[RunbookResolvedParameter, ...] = ()
     required_inputs: tuple[RunbookRequiredInput, ...] = ()

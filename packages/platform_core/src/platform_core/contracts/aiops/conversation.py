@@ -161,7 +161,7 @@ class ConversationStarterView(AIOpsContract):
     description: str = Field(min_length=1, max_length=1000)
     supported_db_types: tuple[str, ...] = Field(min_length=1, max_length=3)
     execution_mode: Literal["DIAGNOSTIC", "REPORT", "RUNBOOK"]
-    input_schema: tuple[JsonObject, ...] = Field(default=(), max_length=8)
+    input_schema: tuple[JsonObject, ...] = Field(default=(), max_length=24)
     sort_order: int = Field(ge=0)
     status: Literal["AVAILABLE", "LIMITED", "UNAVAILABLE"]
     availability_reason: str | None = Field(default=None, max_length=1000)

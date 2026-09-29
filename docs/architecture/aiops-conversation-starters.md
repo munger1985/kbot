@@ -11,6 +11,9 @@ services/aiops_agent/src/aiops_agent/application/conversation_starters/catalog.j
 目录不新增数据库表。每次选择通过 `starter_id + catalog_version + parameters` 提交，服务端
 重新读取目录并校验，不信任浏览器提交内部 Profile、Tool 或 Playbook。
 
+实施文档入口的 `input_schema` 不在 JSON 中重复维护，而是按 `ImplementationProfile` 从服务端参数
+目录动态生成。这样功能菜单、聊天参数白名单和编译器共享同一字段集合，避免展示字段与可执行字段漂移。
+
 ## API 与冻结链路
 
 ```text
@@ -46,4 +49,8 @@ POST Conversation / Turn {starter: {...}}
 - 浏览器只接收展示字段、输入 Schema 和可用状态，不接收内部 planning 定义；
 - 目录版本变化后旧选择被拒绝，要求用户重新打开菜单；
 - 参数白名单、类型、时间顺序和 AWR 等长窗口由服务端校验；
+- 实施文档参数全部可选，空值不进入冻结快照；解析优先级为用户输入、数据库事实、Target 运维事实、
+  确定性默认值；
+- 生成结果固化入口版本和用户参数；调整参数会创建新 Turn，不修改历史文档；
+- 密码、密钥、Wallet 和自由命令不属于任何入口参数；
 - 实施入口保持 `ActionIntent.NONE`，不会绕过审批进入受控变更。

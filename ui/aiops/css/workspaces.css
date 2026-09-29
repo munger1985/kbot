@@ -62,9 +62,16 @@
 .ops-starter-dialog-shell > header strong { font: 650 19px Georgia, "Songti SC", serif; }
 .ops-starter-dialog-shell > header p { margin: 5px 0 0; color: var(--muted); }
 .ops-starter-dialog-content { padding: 20px; overflow: auto; }
-.ops-starter-parameters { display: grid; gap: 14px; }
+.ops-starter-parameters { display: grid; gap: 20px; }
+.ops-starter-parameter-group { padding: 16px; border: 1px solid #d9dfe9; background: #f8fafc; }
+.ops-starter-parameter-group > header { margin-bottom: 13px; }
+.ops-starter-parameter-group > header h4 { margin: 0; color: #334765; font-size: 14px; }
+.ops-starter-parameter-group > header p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+.ops-starter-parameter-group > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .ops-starter-parameters label { display: grid; gap: 6px; color: #45516a; font-size: 12px; font-weight: 650; }
-.ops-starter-parameters input, .ops-starter-parameters select { min-height: 40px; padding: 8px 10px; border: 1px solid #aeb7c6; }
+.ops-starter-parameters input, .ops-starter-parameters select, .ops-starter-parameters textarea { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #aeb7c6; background: #fff; }
+.ops-starter-parameters textarea { min-height: 82px; resize: vertical; }
+.ops-starter-parameters label small { color: var(--muted); font-size: 10px; font-weight: 500; line-height: 1.45; }
 .ops-starter-form-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
 .ops-context-banner { padding: 11px 14px; border-left: 3px solid var(--accent); background: #eef2fa; color: #47536a; }
 .ops-progress { max-width: 760px; max-height: 320px; margin: 0 0 18px 45px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; color: #47536a; }
@@ -174,8 +181,9 @@
 .ops-runbook-document-header h2 { margin: 0; color: #173f5f; font-size: clamp(22px, 3vw, 32px); line-height: 1.3; }
 .ops-runbook-meta { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
 .ops-runbook-status { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: #dfeafb; color: #264d7d; font-size: 11px; font-weight: 700; }
-.ops-runbook-header-actions { display: flex; align-items: center; gap: 8px; }
+.ops-runbook-header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .ops-runbook-header-actions button { white-space: nowrap; }
+.ops-runbook-adjust { border-color: #7890a4; color: #315b82; background: #f5f8fb; }
 .ops-runbook-downloads { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .ops-runbook-policy { margin: 24px 0 0; padding: 16px 18px; border-left: 4px solid #d9ad52; color: #654914; background: #fff9e9; }
 .ops-runbook-policy h3, .ops-runbook-policy p { margin: 0; }

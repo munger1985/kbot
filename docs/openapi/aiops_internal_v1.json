@@ -1149,7 +1149,7 @@
               "additionalProperties": true,
               "type": "object"
             },
-            "maxItems": 8,
+            "maxItems": 24,
             "title": "Input Schema",
             "type": "array"
           },

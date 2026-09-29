@@ -805,10 +805,13 @@
       const download = turn?.conversation_id && turn?.turn_id
         ? `<div class="ops-runbook-downloads"><button type="button" data-download-implementation-runbook="pdf" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 PDF</button><button type="button" data-download-implementation-runbook="markdown" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载 Markdown</button>${artifactItems ? `<button type="button" data-download-implementation-runbook="zip" data-runbook-profile="${esc(payload.profile || "database-implementation")}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}">下载脚本 ZIP</button>` : ""}</div>`
         : "";
+      const adjustParameters = payload.generation?.starter_id && turn?.turn_id
+        ? `<button type="button" class="ops-runbook-adjust" data-adjust-implementation-runbook="${esc(turn.turn_id)}">调整参数并重新生成</button>`
+        : "";
       const appendix = stateItems || resolvedParameters || requiredInputs || missingFacts || artifactItems
         ? `<section class="ops-runbook-appendix"><h3>附录：当前状态与实施参数</h3>${stateItems ? `<section><h4>当前环境摘要</h4><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<section class="ops-runbook-parameters"><h4>已解析实施参数</h4><ul>${resolvedParameters}</ul></section>` : ""}${missingFacts ? `<section class="ops-runbook-missing-facts"><h4>缺失的必要事实</h4><p>请在对应 Target 的部署拓扑、主机采集或策略配置中补齐，重新生成后解除阻断。</p><ul>${missingFacts}</ul></section>` : ""}${requiredInputs ? `<section class="ops-runbook-inputs"><h4>历史档案所需输入</h4><ul>${requiredInputs}</ul></section>` : ""}${artifactItems ? `<section class="ops-runbook-artifacts"><h4>脚本与配置清单</h4><ul>${artifactItems}</ul></section>` : ""}</section>`
         : "";
-      return `<article class="ops-runbook"><header class="ops-runbook-document-header"><div><p class="ops-runbook-kicker">KBot 智能运维 · 数据库实施操作文档</p><h2>${esc(payload.title || "数据库实施 Runbook")}</h2><p class="ops-runbook-meta">${esc(payload.profile || "")} · ${esc(payload.schema_version || "")}</p></div><div class="ops-runbook-header-actions"><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span>${download}</div></header><section class="ops-runbook-policy"><h3>执行边界</h3><p>${esc(payload.execution_policy || "")}</p></section>${tableOfContents}<div class="ops-runbook-body">${phases}</div>${stopConditions}${appendix}</article>`;
+      return `<article class="ops-runbook"><header class="ops-runbook-document-header"><div><p class="ops-runbook-kicker">KBot 智能运维 · 数据库实施操作文档</p><h2>${esc(payload.title || "数据库实施 Runbook")}</h2><p class="ops-runbook-meta">${esc(payload.profile || "")} · ${esc(payload.schema_version || "")}</p></div><div class="ops-runbook-header-actions"><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span>${adjustParameters}${download}</div></header><section class="ops-runbook-policy"><h3>执行边界</h3><p>${esc(payload.execution_policy || "")}</p></section>${tableOfContents}<div class="ops-runbook-body">${phases}</div>${stopConditions}${appendix}</article>`;
     }
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
@@ -966,6 +969,15 @@
   }
 
   function bindImplementationRunbookActions(root = document) {
+    root.querySelectorAll("[data-adjust-implementation-runbook]").forEach((button) => {
+      button.onclick = () => {
+        const turn = values(state.turns).find((item) => item.turn_id === button.dataset.adjustImplementationRunbook);
+        const block = values(turn?.answer_blocks).find((item) => item.block_type === "IMPLEMENTATION_RUNBOOK");
+        const generation = block?.payload?.generation || {};
+        if (!generation.starter_id) return shell.toast("该历史文档没有可重新生成的功能入口信息");
+        selectStarter(generation.starter_id, generation.supplied_parameters || {});
+      };
+    });
     root.querySelectorAll("[data-download-implementation-runbook]").forEach((button) => {
       button.onclick = async () => {
         button.disabled = true;
@@ -1220,23 +1232,50 @@
     if (!dialog.open) dialog.showModal();
   }
 
-  function starterParameterValue(field) {
+  function starterParameterValue(field, initialParameters = {}) {
+    if (Object.prototype.hasOwnProperty.call(initialParameters, field.name)) return initialParameters[field.name];
     if (field.type === "timezone") return Intl.DateTimeFormat().resolvedOptions().timeZone || field.default || "Asia/Shanghai";
     return field.default ?? "";
   }
 
-  function starterParameterHtml(field) {
+  function starterParameterHtml(field, initialParameters = {}) {
     const type = field.type === "datetime" ? "datetime-local" : field.type === "integer" ? "number" : "text";
+    const value = starterParameterValue(field, initialParameters);
     const attributes = [
       field.required ? "required" : "",
       field.min !== undefined ? `min="${esc(field.min)}"` : "",
       field.max !== undefined ? `max="${esc(field.max)}"` : "",
       field.pattern ? `pattern="${esc(field.pattern)}"` : "",
+      field.placeholder ? `placeholder="${esc(field.placeholder)}"` : "",
     ].filter(Boolean).join(" ");
-    return `<label>${esc(field.label)}<input name="${esc(field.name)}" type="${type}" value="${esc(starterParameterValue(field))}" ${attributes}></label>`;
+    let control = `<input name="${esc(field.name)}" type="${type}" value="${esc(value)}" ${attributes}>`;
+    if (field.type === "select") {
+      const emptyOption = field.required ? "" : `<option value="">自动获取或按默认策略</option>`;
+      control = `<select name="${esc(field.name)}" ${field.required ? "required" : ""}>${emptyOption}${values(field.options).map((option) => `<option value="${esc(option.value)}"${String(option.value) === String(value) ? " selected" : ""}>${esc(option.label || option.value)}</option>`).join("")}</select>`;
+    } else if (field.type === "identifier_list") {
+      control = `<textarea name="${esc(field.name)}" rows="3" ${attributes}>${esc(value)}</textarea>`;
+    }
+    return `<label><span>${esc(field.label)}${field.required ? " *" : ""}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
   }
 
-  function selectStarter(starterId) {
+  function starterParameterGroupsHtml(item, initialParameters = {}) {
+    const groups = new Map();
+    values(item.input_schema).forEach((field) => {
+      const group = field.group || "参数";
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(field);
+    });
+    return [...groups.entries()].map(([group, fields]) => {
+      const help = group === "高级参数"
+        ? "仅在需要覆盖自动识别结果时填写。"
+        : fields.every((field) => !field.required)
+          ? "所有字段均可留空，系统会继续使用数据库事实、Target 运维事实和默认策略。"
+          : "请填写带星号的必填参数后继续。";
+      return `<section class="ops-starter-parameter-group"><header><h4>${esc(group)}</h4><p>${help}</p></header><div>${fields.map((field) => starterParameterHtml(field, initialParameters)).join("")}</div></section>`;
+    }).join("");
+  }
+
+  function selectStarter(starterId, initialParameters = {}) {
     const item = state.starters.find((row) => row.starter_id === starterId);
     if (!item) return shell.toast("功能目录已经更新，请重新打开菜单");
     if (item.status === "UNAVAILABLE") return shell.toast(item.availability_reason || "当前功能不可用");
@@ -1249,14 +1288,20 @@
     document.getElementById("starter-dialog-title").textContent = item.title;
     document.getElementById("starter-dialog-description").textContent = item.description;
     const content = document.getElementById("starter-dialog-content");
-    content.innerHTML = `<div class="ops-starter-parameters">${item.input_schema.map(starterParameterHtml).join("")}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button><button class="primary" type="button" data-starter-submit>开始执行</button></div>`;
+    const isRunbook = item.execution_mode === "RUNBOOK";
+    content.innerHTML = `<div class="ops-starter-parameters">${starterParameterGroupsHtml(item, initialParameters)}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button>${isRunbook ? '<button type="button" data-starter-auto>使用自动配置生成</button>' : ""}<button class="primary" type="button" data-starter-submit>${isRunbook ? "按当前参数生成" : "开始执行"}</button></div>`;
     content.querySelector("[data-starter-back]").onclick = openStarterMenu;
+    if (isRunbook) content.querySelector("[data-starter-auto]").onclick = () => {
+      dialog.close();
+      executeStarter(item, {}).catch((error) => shell.toast(error.message));
+    };
     content.querySelector("[data-starter-submit]").onclick = () => {
       const parameters = {};
       for (const field of item.input_schema) {
         const input = content.querySelector(`[name="${CSS.escape(field.name)}"]`);
         if (!input.reportValidity()) return;
-        let value = input.value;
+        let value = input.value.trim();
+        if (!value && !field.required) continue;
         if (field.type === "datetime") value = new Date(value).toISOString();
         if (field.type === "integer") value = Number(value);
         parameters[field.name] = value;

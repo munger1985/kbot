@@ -51,6 +51,9 @@ from aiops_agent.application.investigation.progress import (
     execution_action_fingerprints,
     plan_action_fingerprints,
 )
+from aiops_agent.application.implementation.inputs import (
+    normalize_implementation_parameters,
+)
 from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
     InvestigationReasoner,
@@ -489,7 +492,14 @@ class TurnPlanningService:
                 diagnostic_profile=DiagnosticProfile.GENERAL,
                 implementation_profile=profile,
                 evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
-                subject_ref={},
+                subject_ref={
+                    "implementation_parameters": parameters,
+                    "implementation_generation": {
+                        "starter_id": starter.get("starter_id"),
+                        "catalog_version": starter.get("catalog_version"),
+                        "supplied_parameters": parameters,
+                    },
+                },
                 problem_statement=f"生成{title}",
                 success_criteria=("生成完整、可下载、可执行的实施操作文档",),
                 public_reasoning_summary=f"已按功能入口固定为 {profile.value} 实施档案",
@@ -1506,6 +1516,21 @@ class TurnPlanningService:
         implementation_profile = ImplementationProfile(
             str(compact.implementation_profile)
         )
+        subject_ref = dict(compact.subject_ref)
+        try:
+            supplied_parameters = normalize_implementation_parameters(
+                implementation_profile,
+                dict(subject_ref.get("implementation_parameters") or {}),
+            )
+        except ValueError as exc:
+            raise InvestigationPlanValidationError(
+                f"实施文档参数不符合 {implementation_profile.value} 白名单：{exc}"
+            ) from exc
+        subject_ref["implementation_parameters"] = supplied_parameters
+        generation = dict(subject_ref.get("implementation_generation") or {})
+        if generation or supplied_parameters:
+            generation["supplied_parameters"] = supplied_parameters
+            subject_ref["implementation_generation"] = generation
         display_name = str(
             target_context.get("display_name")
             or target_context.get("target_id")
@@ -1572,7 +1597,7 @@ class TurnPlanningService:
                 diagnostic_profile=DiagnosticProfile.GENERAL,
                 implementation_profile=implementation_profile,
                 evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
-                subject_ref=dict(compact.subject_ref),
+                subject_ref=subject_ref,
                 requires_change=False,
             ),
             plan=InvestigationPlan(revision_no=1, actions=actions),

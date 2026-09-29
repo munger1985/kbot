@@ -1,8 +1,8 @@
 # AIOps 数据库实施方案 Runbook 技术设计
 
-版本：1.5
+版本：1.6
 状态：首期已实现
-基准日期：2026-09-28
+基准日期：2026-09-29
 
 ## 1. 架构边界
 
@@ -10,7 +10,7 @@ Runbook 是 Conversation Turn 内的独立规划模式，不新增顶层 Workflo
 
 ```text
 用户问题
-  → Compact Planner 语义识别
+  → 功能入口参数表单或 Compact Planner 语义识别
   → IMPLEMENTATION_RUNBOOK + ImplementationProfile
   → 服务端固定展开只读 Tool / Playbook
   → Evidence Assessment
@@ -20,6 +20,11 @@ Runbook 是 Conversation Turn 内的独立规划模式，不新增顶层 Workflo
 
 规划模型只负责识别实施档案，不负责生成最终命令。数据库前置事实来自固定目录 Tool；完整步骤和
 命令由版本控制的编译器生成，避免自由 SQL、命令注入、遗漏整改步骤和不同模型输出漂移。
+
+功能入口可以携带档案级可选参数。所有字段均可留空；服务端冻结参数时按 Profile 白名单执行类型、
+字符集和跨字段校验，并按“用户本轮输入、实时数据库事实、Target 部署拓扑/运维事实、确定性默认值”
+的顺序解析。数据库版本、当前角色等观测事实不允许被任意覆盖，密码、密钥、Wallet 和自由命令不进入
+表单或 `subject_ref.implementation_parameters`。
 
 ## 2. 契约
 
@@ -43,6 +48,7 @@ ADG Runbook 路由必须满足：
 
 - `status`：`READY`、`BLOCKED_BY_REQUIRED_INPUTS`、`PARTIAL_EVIDENCE`；
 - `current_state`、`resolved_parameters` 与 `required_inputs`；
+- `generation`：入口、目录版本和本轮用户显式参数快照；
 - `phases[].steps[]`；
 - 步骤适用性：`REQUIRED`、`ALREADY_SATISFIED`、`CONDITIONAL`、`BLOCKED`；
 - 命令类型：`SQLPLUS`、`RMAN`、`DGMGRL`、`SHELL`、`CONFIG`、`MANUAL`；
@@ -89,7 +95,8 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 - 主库 Data Guard 参数逐项比较，仅为缺失或不一致项生成 `ALTER SYSTEM`；
 - 备库 `DB_UNIQUE_NAME`、SID、主备 TNS Alias 和 Broker 配置名按固定命名规则派生；
 - 目标保护模式沿用当前保护模式，并确定性映射为 `ASYNC NOAFFIRM` 或 `SYNC AFFIRM`；
-- 主库查询值、Target 连接事实、用户确认值和派生值统一进入结构化参数解析表；
+- 主库查询值、Target 连接事实、用户显式值和派生值统一进入结构化参数解析表；用户值标记为
+  `USER_SUPPLIED`；
 - 备库主机按主机名后缀、Oracle Home 按密码文件路径或版本标准目录自动派生；
 - 数据文件、redo、FRA、审计和密码文件目标路径沿用主库布局，目标环境按全新主机从零建设；
 - 主库密码文件内容复制到目标环境，并使用目标 SID 文件名；
@@ -115,6 +122,11 @@ Tool SQL、Manifest、SHA256、输出列和 Playbook 引用一起版本化。目
 宽度内自动换行，但复制按钮始终复制结构化 Block 中保存的原始命令文本。
 只有 SQL、RMAN、DGMGRL、Shell 等真实可执行内容进入“实施命令”；`MANUAL` 内容单独显示为
 “人工确认项”，缺失事实导致的阻断步骤只显示阻断原因和所需事实，不生成中文说明伪命令。
+
+从功能菜单进入实施档案时，页面先展示“常用参数”和“高级参数”表单。用户可以使用全自动配置，
+也可以填写部分参数后生成；空字段不会提交。已生成文档顶部提供“调整参数并重新生成”，回填该 Turn
+固化的 `generation.supplied_parameters` 并创建新 Turn。历史 Turn 的页面、PDF、Markdown 和 ZIP
+继续读取原参数快照，不被后续重新生成改写。
 
 结构化 Runbook JSON 是唯一真相。`application/implementation/markdown.py` 负责无状态、确定性的
 Markdown 投影；页面继续读取结构化 Block 以保留复制按钮和命令类型元数据，PDF 与 Markdown 下载

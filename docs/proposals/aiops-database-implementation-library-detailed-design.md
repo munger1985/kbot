@@ -1,10 +1,10 @@
 # AIOps 数据库实施文档中心详细设计
 
-版本：1.1
+版本：1.2
 状态：已实施
-基准日期：2026-09-28
+基准日期：2026-09-29
 
-实施结果：Runbook v3、Profile Registry、统一校验器、Turn Artifact、JSON/ZIP 下载以及本文定义的
+实施结果：Runbook v3、Profile Registry、统一校验器、Turn Artifact、PDF/Markdown/ZIP 下载以及本文定义的
 九个新增实施档案均已进入代码；历史 v1/v2 ADG 文档继续按固化 Block 展示和导出。
 
 ## 1. 目标与范围
@@ -50,6 +50,7 @@
 
 ```text
 数据库/主机/拓扑/策略事实
+  + 用户本轮可选参数
   → 归一化实施事实
   → 确定性 Runbook Compiler
   → ImplementationRunbook JSON
@@ -62,7 +63,25 @@
 结构化 JSON 只作为程序内部唯一真相，不提供用户下载。PDF、Markdown 和脚本包都是结构化
 Runbook 的派生产物，不重复持久化另一份可漂移的正文。
 
-### 2.3 零聊天补参不等于伪造基础设施
+### 2.3 生成前可选参数与历史快照
+
+每个 `ImplementationProfile` 在服务端代码目录声明独立 `input_schema`。功能菜单只展示非秘密字段，
+所有字段均为可选；前端空值不提交，服务端也会丢弃空字符串。解析优先级固定为：
+
+1. 用户本轮表单或聊天框明确输入；
+2. 实时数据库只读证据；
+3. Target 部署拓扑和运维事实；
+4. 版本化策略模板和确定性默认值。
+
+服务端根据 Profile 白名单校验字段名、类型、枚举、路径、Oracle 标识符、主机名和跨字段关系。
+未知字段、相同 RAC 节点名、同时填写恢复时间与 SCN、危险路径和命令控制字符均被拒绝。密码、密钥、
+Wallet、完整连接串和自由命令没有表单字段，也不能由 Planner 生成。
+
+最终 Runbook 的 `generation` 固化 `starter_id`、`catalog_version` 和 `supplied_parameters`；对应的
+`resolved_parameters` 使用 `USER_SUPPLIED` 状态。页面“调整参数并重新生成”只读取该快照并创建
+新 Turn，旧 Turn 的页面、PDF、Markdown 和 ZIP 保持不变。
+
+### 2.4 零聊天补参不等于伪造基础设施
 
 数据库名称、路径、版本、Oracle Home、实例名等可以从 Target 事实确定或安全派生；IP、VIP、SCAN、
 共享磁盘 WWID 和补丁介质路径不能从数据库参数安全猜测。
@@ -91,7 +110,7 @@ RAC 编译器再按 Target 明确发行标签、`V$INSTANCE.VERSION_FULL`、`V$I
 `GRID_HOME`。如果所有来源都无法确认发行版，OS 准备、GI 安装和 ASM 阶段必须标记为
 `BLOCKED`，且不得生成预安装 RPM、Grid Home 路径或集群验证脚本。
 
-### 2.4 文档生成与实际执行继续分离
+### 2.5 文档生成与实际执行继续分离
 
 Runbook 阶段不创建 Proposal，不执行脚本。用户明确要求执行某一步时，必须重新核验实时状态，并把
 该步骤映射到已登记 Action Template。Restore、Failover、共享磁盘初始化、GI 安装等高风险动作保持
@@ -280,11 +299,11 @@ explicit_options
   → 服务端 Registry 选择固定 Playbook
   → 采集数据库、主机、拓扑和策略事实
   → Fact Normalizer 统一单位、名称和来源
-  → Parameter Resolver 生成 VERIFIED/DERIVED 参数
+  → Parameter Resolver 生成 USER_SUPPLIED/VERIFIED/DERIVED 参数
   → Profile Compiler 生成阶段、步骤、命令、脚本和停止条件
   → Contract Validator 拒绝占位符、秘密和未引用 Artifact
   → 固化 IMPLEMENTATION_RUNBOOK Answer Block 与 Artifact
-  → 页面/PDF/Markdown/JSON/ZIP 投影
+  → 页面/PDF/Markdown/ZIP 投影
 ```
 
 每个 Compiler 必须在证据缺失时仍生成完整阶段，但不能把未知事实描述成已确认，也不能生成包含未知值
@@ -721,6 +740,7 @@ PDF 和 ZIP 的用途、实际制品清单、使用前检查和 Profile 对应�
 - Tool Manifest、SQL Hash 和只读权限测试；
 - 事实缺失、事实冲突和完整事实测试；
 - 参数来源和禁止占位符测试；
+- 可选参数白名单、空值忽略、优先级、回填重新生成和历史快照测试；
 - 当前已满足步骤只保留验证的测试；
 - Script Artifact 文件名、权限、SHA256 和 ZIP 确定性测试；
 - PDF 长命令、跨页、中文和目录测试；
@@ -743,7 +763,7 @@ Golden File 至少包含：
 
 1. 扩展 Profile、Command 和 Artifact 契约；
 2. 建立 Compiler Registry 和模块化目录；
-3. 增加 JSON/ZIP 下载；
+3. 增加 PDF/Markdown/ZIP 下载；
 4. 增加统一 Validator；
 5. 保持 ADG/DGPDB 行为和历史下载不变。
 
@@ -775,7 +795,7 @@ Golden File 至少包含：
 - RAC 和 RMAN 文档基于真实事实生成，不以模型文本作为命令来源；
 - READY 文档没有占位符和未解释参数；
 - ZIP 脚本可解压、可校验、路径和权限明确；
-- PDF、Markdown、JSON 和 ZIP 内容一致；
+- 页面、PDF、Markdown 和 ZIP 使用同一冻结参数快照；
 - 缺少基础设施事实时不伪造值，也不退化成只让用户补充信息；
 - 所有高风险操作仍受现有审批和执行边界约束；
 - 产品、架构、OpenAPI、测试和实施档案文档同步更新。

@@ -416,7 +416,7 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             generated["datapump.export.par"],
         )
         self.assertIn(
-            "sqlfile=kbot_import_preview.sql",
+            "sqlfile=kbot_export_import_preview.sql",
             generated["datapump.import.preview.par"],
         )
         self.assertIn(
@@ -441,6 +441,52 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
                 "oracle-datapump-migration/sql/validate-objects.sql",
                 names,
             )
+
+    def test_datapump_user_parameters_override_defaults_and_are_frozen(self) -> None:
+        supplied = {
+            "DATAPUMP_DIRECTORY_NAME": "APP_DP_DIR",
+            "DATAPUMP_DIRECTORY_PATH": "/backup/datapump/app",
+            "SOURCE_SCHEMAS": "APP_CORE,APP_BI",
+            "DATAPUMP_PARALLEL": 8,
+            "DATAPUMP_DUMP_PREFIX": "app_release",
+        }
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_DATAPUMP_MIGRATION,
+            evidence=(
+                _database_fact(tool_id="db.instance.identity"),
+                _datapump_fact(),
+            ),
+            context={
+                "implementation_parameters": supplied,
+                "implementation_generation": {
+                    "starter_id": "oracle.runbook.datapump",
+                    "catalog_version": "1.1.0",
+                    "supplied_parameters": supplied,
+                },
+            },
+        )
+
+        self.assertEqual(supplied, runbook.generation.supplied_parameters)
+        resolved = {item.key: item for item in runbook.resolved_parameters}
+        for key, value in supplied.items():
+            self.assertEqual(str(value), resolved[key].value)
+            self.assertEqual("USER_SUPPLIED", resolved[key].status.value)
+            self.assertEqual("用户在生成文档时提供", resolved[key].source)
+        serialized = runbook.model_dump_json()
+        self.assertIn("/backup/datapump/app", serialized)
+        self.assertIn("app_release_*.dmp", serialized)
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertIn("schemas=APP_CORE,APP_BI", generated["datapump.export.par"])
+        self.assertIn("parallel=8", generated["datapump.export.par"])
+        self.assertIn("dumpfile=app_release_%U.dmp", generated["datapump.export.par"])
+        self.assertIn("logfile=app_release.log", generated["datapump.export.par"])
+        self.assertIn(
+            "CREATE OR REPLACE DIRECTORY APP_DP_DIR",
+            generated["datapump.directory"],
+        )
 
     def test_datapump_derives_path_and_full_export_when_no_schemas_found(
         self,
@@ -796,6 +842,40 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             "TARGET_CONFIGURATION",
             resolved["ORACLE_RELEASE_SOURCE"],
         )
+
+    def test_rac_user_topology_overrides_are_used_and_marked(self) -> None:
+        supplied = {
+            "NODE1_HOST": "rac-a.example.com",
+            "NODE2_HOST": "rac-b.example.com",
+            "SCAN_NAME": "rac-scan.example.com",
+            "VERSION": "26ai",
+            "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
+        }
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RAC_BUILD,
+            evidence=(_database_fact(tool_id="db.instance.identity"),),
+            context={
+                "implementation_parameters": {
+                    "DATABASE_NAME": "TESTDB",
+                    **supplied,
+                },
+                "implementation_generation": {
+                    "starter_id": "oracle.runbook.rac-build",
+                    "catalog_version": "1.1.0",
+                    "supplied_parameters": supplied,
+                },
+            },
+        )
+
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertIn("-node rac-a.example.com", generated["rac.register.resources"])
+        self.assertIn("-node rac-b.example.com", generated["rac.register.resources"])
+        resolved = {item.key: item for item in runbook.resolved_parameters}
+        for key in ("NODE1_HOST", "NODE2_HOST", "SCAN_NAME", "ORACLE_HOME"):
+            self.assertEqual("USER_SUPPLIED", resolved[key].status.value)
 
     def test_rac_maps_26ai_internal_version_without_using_base_version(self) -> None:
         runbook = compile_implementation_runbook(

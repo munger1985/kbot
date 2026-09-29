@@ -16,7 +16,14 @@ from aiops_agent.application.implementation.profiles.rman_backup import compile_
 from aiops_agent.application.implementation.profiles.rman_recovery import compile_rman_recovery
 from aiops_agent.application.implementation.profiles.upgrade import compile_upgrade
 from aiops_agent.application.implementation.validation import validate_implementation_runbook
-from aiops_agent.contracts.implementation import ImplementationRunbook
+from aiops_agent.application.implementation.inputs import (
+    normalize_implementation_parameters,
+)
+from aiops_agent.contracts.implementation import (
+    ImplementationRunbook,
+    RunbookGenerationContext,
+    RunbookParameterStatus,
+)
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from platform_core.contracts.aiops import ImplementationProfile
 
@@ -52,6 +59,26 @@ def compile_implementation_runbook(
     compiler = _REGISTRY.get(profile)
     if compiler is None:
         raise ValueError(f"不支持的实施方案档案：{profile}")
-    runbook = compiler(evidence, dict(context or {}))
+    compile_context = dict(context or {})
+    runbook = compiler(evidence, compile_context)
+    generation_payload = dict(
+        compile_context.get("implementation_generation") or {}
+    )
+    generation_supplied = normalize_implementation_parameters(
+        profile,
+        dict(generation_payload.get("supplied_parameters") or {}),
+    )
+    if generation_payload or generation_supplied:
+        runbook.generation = RunbookGenerationContext(
+            starter_id=generation_payload.get("starter_id"),
+            catalog_version=generation_payload.get("catalog_version"),
+            supplied_parameters=generation_supplied,
+        )
+    if generation_supplied:
+        for parameter in runbook.resolved_parameters:
+            if parameter.key not in generation_supplied:
+                continue
+            parameter.status = RunbookParameterStatus.USER_SUPPLIED
+            parameter.source = "用户在生成文档时提供"
     validate_implementation_runbook(runbook)
     return runbook

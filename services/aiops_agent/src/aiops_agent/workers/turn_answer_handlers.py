@@ -1897,9 +1897,8 @@ class DbaAnswerComposeHandler:
                 "DATABASE_NAME",
                 database_context["observed_oracle_database_name"],
             )
-        explicit_parameters = (
-            registered_facts
-            | dict(subject_ref.get("implementation_parameters") or {})
+        explicit_parameters = dict(
+            subject_ref.get("implementation_parameters") or {}
         )
         configured_version = str(
             database_snapshot.get("configured_version") or ""
@@ -1934,6 +1933,9 @@ class DbaAnswerComposeHandler:
             "scenario": subject_ref.get("scenario"),
             "recovery_target_time": subject_ref.get("recovery_target_time"),
             "recovery_target_scn": subject_ref.get("recovery_target_scn"),
+            "implementation_generation": dict(
+                subject_ref.get("implementation_generation") or {}
+            ),
         }
         runbook = compile_implementation_runbook(
             profile=profile,

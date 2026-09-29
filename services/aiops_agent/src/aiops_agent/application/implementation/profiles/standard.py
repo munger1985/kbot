@@ -179,10 +179,24 @@ def compile_standard(
                 artifact_ref="upgrade.autoupgrade.config",
             ),)
     elif profile == ImplementationProfile.ORACLE_DATAPUMP_MIGRATION:
-        directory_name = "KBOT_DATAPUMP_DIR"
+        directory_name = (
+            value(context, merged, "DATAPUMP_DIRECTORY_NAME")
+            or "KBOT_DATAPUMP_DIR"
+        ).upper()
+        dump_prefix = (
+            value(context, merged, "DATAPUMP_DUMP_PREFIX")
+            or "kbot_export"
+        )
+        parallel = value(context, merged, "DATAPUMP_PARALLEL") or "4"
         observed_directory_path = value(
             context, merged, "DATAPUMP_DIRECTORY_PATH"
         )
+        supplied_directory_path = str(
+            dict(context.get("implementation_parameters") or {}).get(
+                "DATAPUMP_DIRECTORY_PATH"
+            )
+            or ""
+        ).strip()
         database_key = (
             value(context, merged, "DB_UNIQUE_NAME")
             or value(context, merged, "DATABASE_NAME")
@@ -228,10 +242,10 @@ def compile_standard(
         export_par = (
             f"{export_scope}\n"
             f"directory={directory_name}\n"
-            "dumpfile=kbot_export_%U.dmp\n"
-            "logfile=kbot_export.log\n"
+            f"dumpfile={dump_prefix}_%U.dmp\n"
+            f"logfile={dump_prefix}.log\n"
             "flashback_time=systimestamp\n"
-            "parallel=4\n"
+            f"parallel={parallel}\n"
             "compression=all\n"
             "metrics=yes\n"
             "logtime=all\n"
@@ -239,15 +253,16 @@ def compile_standard(
         import_par = (
             f"{export_scope}\n"
             f"directory={directory_name}\n"
-            "dumpfile=kbot_export_%U.dmp\n"
-            "logfile=kbot_import.log\n"
-            "parallel=4\n"
+            f"dumpfile={dump_prefix}_%U.dmp\n"
+            f"logfile={dump_prefix}_import.log\n"
+            f"parallel={parallel}\n"
             "metrics=yes\n"
             "logtime=all\n"
         )
         preview_par = import_par.replace(
-            "logfile=kbot_import.log\n",
-            "logfile=kbot_import_preview.log\nsqlfile=kbot_import_preview.sql\n",
+            f"logfile={dump_prefix}_import.log\n",
+            f"logfile={dump_prefix}_import_preview.log\n"
+            f"sqlfile={dump_prefix}_import_preview.sql\n",
         )
         assessment_sql = (
             "WHENEVER SQLERROR EXIT SQL.SQLCODE\n"
@@ -385,7 +400,7 @@ def compile_standard(
             command(
                 "datapump.export.precheck", "确认不存在同名历史转储",
                 f"test -z \"$(find {quoted_directory_path} -maxdepth 1 "
-                "-type f -name 'kbot_export_*.dmp' -print -quit)\"",
+                f"-type f -name '{dump_prefix}_*.dmp' -print -quit)\"",
                 executor=RunbookExecutor.BASH, run_as="oracle",
                 node_scope=("source",),
             ),
@@ -401,14 +416,16 @@ def compile_standard(
             command(
                 "datapump.transfer.checksum.source", "在源端生成转储摘要清单",
                 f"cd {quoted_directory_path}\n"
-                "sha256sum kbot_export_*.dmp kbot_export.log > kbot_export.sha256\n"
-                "sha256sum -c kbot_export.sha256",
+                f"sha256sum {dump_prefix}_*.dmp {dump_prefix}.log "
+                f"> {dump_prefix}.sha256\n"
+                f"sha256sum -c {dump_prefix}.sha256",
                 executor=RunbookExecutor.BASH, run_as="oracle",
                 node_scope=("source",),
             ),
             command(
                 "datapump.transfer.approved-channel", "通过批准通道传输转储文件",
-                "将 kbot_export_*.dmp、kbot_export.log 和 kbot_export.sha256 "
+                f"将 {dump_prefix}_*.dmp、{dump_prefix}.log 和 "
+                f"{dump_prefix}.sha256 "
                 f"从源端 {directory_path} 传输到目标端同一路径。"
                 "传输工具、主机地址和网络账号以已批准的运维通道为准；"
                 "本静态文档不伪造目标主机或凭据。",
@@ -417,7 +434,8 @@ def compile_standard(
             ),
             command(
                 "datapump.transfer.checksum.target", "在目标端校验转储摘要",
-                f"cd {quoted_directory_path}\nsha256sum -c kbot_export.sha256",
+                f"cd {quoted_directory_path}\n"
+                f"sha256sum -c {dump_prefix}.sha256",
                 executor=RunbookExecutor.BASH, run_as="oracle",
                 node_scope=("target",),
             ),
@@ -473,8 +491,12 @@ def compile_standard(
         derived_parameters.update({
             "DATAPUMP_DIRECTORY_NAME": directory_name,
             "DATAPUMP_DIRECTORY_PATH": directory_path,
+            "DATAPUMP_PARALLEL": parallel,
+            "DATAPUMP_DUMP_PREFIX": dump_prefix,
             "DATAPUMP_DIRECTORY_SOURCE": (
-                "TARGET_OR_DATABASE_FACT"
+                "USER_SUPPLIED"
+                if supplied_directory_path
+                else "TARGET_OR_DATABASE_FACT"
                 if observed_directory_path.startswith("/")
                 else "DERIVED_STANDARD_PATH"
             ),

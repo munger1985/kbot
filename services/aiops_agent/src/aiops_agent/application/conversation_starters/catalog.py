@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from aiops_agent.application.errors import validation_failed
+from aiops_agent.application.implementation.inputs import (
+    implementation_input_schema,
+    normalize_implementation_parameters,
+)
+from platform_core.contracts.aiops import ImplementationProfile
 
 
 class ConversationStarterCatalog:
@@ -30,6 +35,7 @@ class ConversationStarterCatalog:
             if db_type not in item.get("supported_db_types", ()):
                 continue
             status, reason = self._availability(target)
+            input_schema = self._input_schema(item)
             items.append(
                 {
                     key: item[key]
@@ -40,11 +46,14 @@ class ConversationStarterCatalog:
                         "description",
                         "supported_db_types",
                         "execution_mode",
-                        "input_schema",
                         "sort_order",
                     )
                 }
-                | {"status": status, "availability_reason": reason}
+                | {
+                    "input_schema": input_schema,
+                    "status": status,
+                    "availability_reason": reason,
+                }
             )
         return {
             "catalog_version": self.version,
@@ -64,9 +73,21 @@ class ConversationStarterCatalog:
         status, reason = self._availability(target)
         if status == "UNAVAILABLE":
             raise validation_failed(reason)
-        parameters = self._validate_parameters(
-            item.get("input_schema", ()), dict(selection.parameters)
-        )
+        input_schema = self._input_schema(item)
+        try:
+            if str(dict(item.get("planning") or {}).get("kind") or "") == "IMPLEMENTATION":
+                profile = ImplementationProfile(
+                    str(item["planning"]["implementation_profile"])
+                )
+                parameters = normalize_implementation_parameters(
+                    profile, dict(selection.parameters)
+                )
+            else:
+                parameters = self._validate_parameters(
+                    list(input_schema), dict(selection.parameters)
+                )
+        except ValueError as exc:
+            raise validation_failed(str(exc)) from exc
         return {
             "starter_id": item["starter_id"],
             "catalog_version": self.version,
@@ -75,8 +96,19 @@ class ConversationStarterCatalog:
             "execution_mode": item["execution_mode"],
             "parameters": parameters,
             "planning": dict(item["planning"]),
-            "user_message": self._user_message(item, parameters),
+            "user_message": self._user_message(
+                item, parameters, input_schema=input_schema
+            ),
         }
+
+    @staticmethod
+    def _input_schema(item: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+        """实施档案由代码目录动态提供参数，其他入口继续读取 JSON。"""
+        planning = dict(item.get("planning") or {})
+        if str(planning.get("kind") or "") != "IMPLEMENTATION":
+            return tuple(dict(field) for field in item.get("input_schema", ()))
+        profile = ImplementationProfile(str(planning["implementation_profile"]))
+        return implementation_input_schema(profile)
 
     @staticmethod
     def _availability(target: Any) -> tuple[str, str | None]:
@@ -162,12 +194,17 @@ class ConversationStarterCatalog:
                 raise validation_failed("AWR 对比的两个时间区间必须等长")
 
     @staticmethod
-    def _user_message(item: dict[str, Any], parameters: dict[str, Any]) -> str:
+    def _user_message(
+        item: dict[str, Any],
+        parameters: dict[str, Any],
+        *,
+        input_schema: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None = None,
+    ) -> str:
         if not parameters:
             return f"执行功能：{item['title']}"
         labels = {
             str(field["name"]): str(field["label"])
-            for field in item.get("input_schema", ())
+            for field in (input_schema or item.get("input_schema", ()))
         }
         lines = [f"执行功能：{item['title']}"]
         lines.extend(

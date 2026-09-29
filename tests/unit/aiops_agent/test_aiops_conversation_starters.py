@@ -57,7 +57,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
     def test_awr_diff_requires_equal_time_windows(self) -> None:
         selection = ConversationStarterSelection(
             starter_id="oracle.report.awr-diff",
-            catalog_version="1.0.0",
+            catalog_version="1.1.0",
             parameters={
                 "first_begin_time": "2026-09-28T08:00:00+00:00",
                 "first_end_time": "2026-09-28T09:00:00+00:00",
@@ -73,7 +73,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.adg-build",
-                catalog_version="1.0.0",
+                catalog_version="1.1.0",
             ),
             target=_target(),
         )
@@ -83,6 +83,70 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             frozen["planning"]["implementation_profile"],
         )
         self.assertEqual("执行功能：ADG 部署文档", frozen["user_message"])
+
+    def test_runbook_starters_publish_optional_parameter_schema(self) -> None:
+        payload = self.catalog.list_for_target(_target())
+        datapump = next(
+            item
+            for item in payload["starters"]
+            if item["starter_id"] == "oracle.runbook.datapump"
+        )
+        fields = {item["name"]: item for item in datapump["input_schema"]}
+        self.assertIn("DATAPUMP_DIRECTORY_PATH", fields)
+        self.assertIn("SOURCE_SCHEMAS", fields)
+        self.assertTrue(all(not item["required"] for item in fields.values()))
+
+    def test_datapump_parameters_are_normalized_and_empty_values_ignored(self) -> None:
+        frozen = self.catalog.freeze(
+            selection=ConversationStarterSelection(
+                starter_id="oracle.runbook.datapump",
+                catalog_version="1.1.0",
+                parameters={
+                    "DATAPUMP_DIRECTORY_PATH": "",
+                    "SOURCE_SCHEMAS": "app_core, APP_REPORT\napp_core",
+                    "DATAPUMP_PARALLEL": "8",
+                },
+            ),
+            target=_target(),
+        )
+        self.assertEqual(
+            {"SOURCE_SCHEMAS": "APP_CORE,APP_REPORT", "DATAPUMP_PARALLEL": 8},
+            frozen["parameters"],
+        )
+
+    def test_runbook_parameters_reject_unknown_and_unsafe_values(self) -> None:
+        with self.assertRaisesRegex(Exception, "未知字段"):
+            self.catalog.freeze(
+                selection=ConversationStarterSelection(
+                    starter_id="oracle.runbook.datapump",
+                    catalog_version="1.1.0",
+                    parameters={"PASSWORD": "secret"},
+                ),
+                target=_target(),
+            )
+        with self.assertRaisesRegex(Exception, "安全的绝对路径"):
+            self.catalog.freeze(
+                selection=ConversationStarterSelection(
+                    starter_id="oracle.runbook.datapump",
+                    catalog_version="1.1.0",
+                    parameters={"DATAPUMP_DIRECTORY_PATH": "../../tmp"},
+                ),
+                target=_target(),
+            )
+
+    def test_rac_parameter_validation_rejects_duplicate_nodes(self) -> None:
+        with self.assertRaisesRegex(Exception, "不能相同"):
+            self.catalog.freeze(
+                selection=ConversationStarterSelection(
+                    starter_id="oracle.runbook.rac-build",
+                    catalog_version="1.1.0",
+                    parameters={
+                        "NODE1_HOST": "rac01.example.com",
+                        "NODE2_HOST": "rac01.example.com",
+                    },
+                ),
+                target=_target(),
+            )
 
     def test_awr_diff_compiler_builds_snapshots_reports_and_diff(self) -> None:
         context = SimpleNamespace(
@@ -126,9 +190,9 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
             target_context={"db_type": "ORACLE", "display_name": "TestDB"},
             conversation_starter={
                 "starter_id": "oracle.runbook.adg-build",
-                "catalog_version": "1.0.0",
+                "catalog_version": "1.1.0",
                 "title": "ADG 部署文档",
-                "parameters": {},
+                "parameters": {"STANDBY_HOST": "testdb-dr"},
                 "planning": {
                     "kind": "IMPLEMENTATION",
                     "implementation_profile": "ORACLE_ADG_BUILD",
@@ -150,6 +214,14 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "ORACLE_ADG_BUILD",
             investigation.task_frame.implementation_profile,
+        )
+        self.assertEqual(
+            {"STANDBY_HOST": "testdb-dr"},
+            investigation.task_frame.subject_ref["implementation_parameters"],
+        )
+        self.assertEqual(
+            {"STANDBY_HOST": "testdb-dr"},
+            investigation.task_frame.subject_ref["implementation_generation"]["supplied_parameters"],
         )
         self.assertEqual(
             ("db.instance.identity", "db.ha.adg_precheck"),
