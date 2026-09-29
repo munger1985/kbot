@@ -468,6 +468,10 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("DROP_COLUMN_IF_PRESENT", normalized)
         self.assertIn("UK_OPS_REPORT_TEMPLATE_NAME", normalized)
         self.assertIn("DDL_LOCK_TIMEOUT = 60", normalized)
+        self.assertLess(
+            normalized.index("L_TEMPLATE_ID RAW(16);"),
+            normalized.index("FUNCTION UUID7_RAW"),
+        )
         self.assertIn("30 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V20' AS CONTRACT_VERSION", normalized)
 

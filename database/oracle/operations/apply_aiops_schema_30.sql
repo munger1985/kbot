@@ -198,6 +198,19 @@ END;
 /
 
 DECLARE
+    l_template_id RAW(16);
+    l_version_id RAW(16);
+    l_definition CLOB;
+    l_template_name VARCHAR2(256 CHAR);
+    l_plan_cursor SYS_REFCURSOR;
+    l_plan_id RAW(16);
+    l_domain_id NUMBER(38);
+    l_plan_display_name VARCHAR2(256 CHAR);
+    l_created_by VARCHAR2(256 CHAR);
+    l_created_at TIMESTAMP(6) WITH TIME ZONE;
+    l_selected_json CLOB;
+    l_selected_column_count PLS_INTEGER;
+
     FUNCTION uuid7_raw RETURN RAW IS
         l_hex VARCHAR2(32 CHAR) := RAWTOHEX(SYS_GUID());
     BEGIN
@@ -306,18 +319,6 @@ DECLARE
         RETURN l_definition.to_clob();
     END;
 
-    l_template_id RAW(16);
-    l_version_id RAW(16);
-    l_definition CLOB;
-    l_template_name VARCHAR2(256 CHAR);
-    l_plan_cursor SYS_REFCURSOR;
-    l_plan_id RAW(16);
-    l_domain_id NUMBER(38);
-    l_plan_display_name VARCHAR2(256 CHAR);
-    l_created_by VARCHAR2(256 CHAR);
-    l_created_at TIMESTAMP(6) WITH TIME ZONE;
-    l_selected_json CLOB;
-    l_selected_column_count PLS_INTEGER;
 BEGIN
     SELECT COUNT(*) INTO l_selected_column_count
       FROM USER_TAB_COLUMNS
