@@ -639,7 +639,7 @@ class ImplementationRunbookAnswerTests(unittest.TestCase):
         self.assertIn("data-copy-code", source)
         self.assertIn('data-download-implementation-runbook="pdf"', source)
         self.assertIn('data-download-implementation-runbook="markdown"', source)
-        self.assertIn('data-download-implementation-runbook="json"', source)
+        self.assertNotIn('data-download-implementation-runbook="json"', source)
         self.assertIn("implementation-runbook.${format.extension}", source)
         self.assertIn('class="ops-runbook-toc"', source)
         self.assertNotIn('<details class="ops-runbook-phase"', source)

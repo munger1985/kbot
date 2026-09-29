@@ -122,11 +122,9 @@ Markdown 投影；页面继续读取结构化 Block 以保留复制按钮和命�
 
 - 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
 - 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`；
-- 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.json`；
 - 内部：`GET /internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.zip`；
 - 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.pdf`；
-- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`。
-- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.json`；
+- 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.md`；
 - 公共：`GET /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/implementation-runbook.zip`。
 
 导出服务读取所属 Turn 的活动 `IMPLEMENTATION_RUNBOOK` Answer Block，并从持久化字典直接渲染 PDF，
@@ -135,8 +133,9 @@ Markdown 投影；页面继续读取结构化 Block 以保留复制按钮和命�
 换行，并在空白或 SQL 分隔符处按页面宽度换行，避免越界裁切。PDF 标题栏和正文由同一个可分页
 Flowable 绘制，正文具有固定内边距、浅色背景和边框，不允许标题覆盖首行；长命令跨页时重复带“续”
 标记的标题栏。Markdown 投影使用与命令正文不冲突的动态 fenced code block，完整保留原始命令。
-四类接口复用会话所有者鉴权并禁止缓存。ZIP 只从当前 Turn 已固化的
-`AIOPS_RUNBOOK_ARTIFACT.v1` 组装；没有 Artifact 时返回 404，不生成空包。
+三类下载接口复用会话所有者鉴权并禁止缓存。结构化 Runbook JSON 仅作为程序内部状态保存，
+不提供用户下载路由。ZIP 只从当前 Turn 已固化的 `AIOPS_RUNBOOK_ARTIFACT.v1` 组装，自动加入
+`README.md` 使用说明和带 README 摘要的 `00-manifest.json`；没有 Artifact 时返回 404，不生成空包。
 
 ## 6. 从方案升级到执行
 

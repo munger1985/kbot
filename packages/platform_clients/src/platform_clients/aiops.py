@@ -1613,24 +1613,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             accept="text/markdown",
         )
 
-    async def download_implementation_runbook_json(
-        self,
-        conversation_id: UUID,
-        turn_id: UUID,
-        *,
-        auth_context: AuthContext,
-    ) -> AIOpsBinaryResponse:
-        """下载会话内已固化数据库实施 Runbook JSON。"""
-        return await self._bytes(
-            "GET",
-            (
-                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
-                f"/turns/{turn_id}/implementation-runbook.json"
-            ),
-            auth_context=auth_context,
-            accept="application/json",
-        )
-
     async def download_implementation_runbook_zip(
         self,
         conversation_id: UUID,

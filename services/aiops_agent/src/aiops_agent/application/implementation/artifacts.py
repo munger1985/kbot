@@ -26,6 +26,137 @@ class GeneratedRunbookArtifact:
     description: str
 
 
+def _markdown_text(value: object) -> str:
+    """把制品元数据转换为可放入 Markdown 列表的单行文本。"""
+    return str(value or "").replace("`", "\\`").replace("\n", " ").strip()
+
+
+def _package_layout(descriptors: list[dict]) -> tuple[str, str]:
+    """从相对路径和目标路径解析包目录与服务器暂存目录。"""
+    package_roots: set[str] = set()
+    target_roots: set[str] = set()
+    for descriptor in descriptors:
+        relative_path = str(descriptor.get("relative_path") or "").strip("/")
+        if not relative_path:
+            continue
+        parts = relative_path.split("/", 1)
+        package_roots.add(parts[0])
+        target_path = str(descriptor.get("target_path") or "").rstrip("/")
+        artifact_path = parts[1] if len(parts) == 2 else parts[0]
+        suffix = "/" + artifact_path
+        if target_path.endswith(suffix):
+            target_roots.add(target_path[: -len(suffix)] or "/")
+    package_root = next(iter(package_roots)) if len(package_roots) == 1 else ""
+    target_root = next(iter(target_roots)) if len(target_roots) == 1 else ""
+    return package_root, target_root
+
+
+def _profile_usage(
+    profile: str,
+    *,
+    package_root: str,
+    target_root: str,
+) -> str:
+    """生成不同实施类型的最小、安全使用入口。"""
+    if profile != "ORACLE_RMAN_BACKUP_BUILD":
+        return (
+            "## 本方案的执行方式\n\n"
+            "本包中的文件是实施文档命令所引用的配套制品。请严格按照配套 "
+            "Markdown 或 PDF 文档的阶段顺序执行，不要脱离主文档单独批量运行。"
+            "涉及停库、恢复、补丁、集群或角色切换的命令，必须在对应审批和停止条件"
+            "满足后再执行。\n"
+        )
+
+    source_root = package_root or "oracle-rman-backup"
+    stage_root = target_root or "/var/tmp/kbot-runbooks/oracle-rman-backup"
+    return f"""## RMAN 备份包使用顺序
+
+1. 解压后先核对 `{source_root}/env.conf` 中的实例、备份目录、日志目录、数据库角色和监控目录。
+2. 按 `00-manifest.json` 核对文件摘要、权限、执行用户和目标路径。
+3. 由管理员把 `{source_root}` 目录完整部署到 `{stage_root}`，并按清单设置属主和权限。
+4. 先以 `oracle` 用户应用 RMAN 配置：
+
+```bash
+rman target / cmdfile={stage_root}/rman/configure.rman
+```
+
+5. 首次手工执行 Level 0 备份并检查结果：
+
+```bash
+{stage_root}/bin/run-rman-job.sh level0
+{stage_root}/bin/check-last-backup.sh
+```
+
+6. 确认日志、状态文件和恢复校验均正常后，再由 `root` 安装 Systemd 调度：
+
+```bash
+{stage_root}/bin/install-schedule.sh
+systemctl list-timers 'oracle-rman-*'
+```
+
+支持的手工任务为 `level0`、`level1`、`archivelog`、`controlfile`、`cleanup`、`validate` 和 `restore-validate`。监控目录存在时，还需在数据库主机安装指标采集文件，并在 Prometheus 主机检查和加载告警规则。
+"""
+
+
+def render_runbook_zip_readme(payload: dict) -> str:
+    """为可执行 ZIP 生成随包交付的中文使用说明。"""
+    descriptors = list(payload.get("artifacts") or [])
+    profile = str(payload.get("profile") or "DATABASE_IMPLEMENTATION")
+    title = str(payload.get("title") or "数据库实施操作文档")
+    package_root, target_root = _package_layout(descriptors)
+    file_lines = []
+    for descriptor in sorted(
+        descriptors, key=lambda item: str(item.get("relative_path") or "")
+    ):
+        path = _markdown_text(descriptor.get("relative_path"))
+        description = (
+            _markdown_text(descriptor.get("description")) or "配套实施文件"
+        )
+        run_as = _markdown_text(descriptor.get("run_as")) or "按主文档确认"
+        mode = _markdown_text(descriptor.get("file_mode")) or "按清单确认"
+        file_lines.append(
+            f"- `{path}` — {description}（执行用户：`{run_as}`；权限：`{mode}`）"
+        )
+    files = "\n".join(file_lines)
+    return f"""# {title}：ZIP 可执行包说明
+
+本 README 随 ZIP 一起交付，用于说明包内文件和安全使用顺序。ZIP 是实施文档的配套可执行材料，不是可以跳过审核后一键运行的安装包。
+
+## 下载格式的定位
+
+- Markdown：便于阅读、评审和修改的实施文档。
+- PDF：用于审批、签字和归档的固定版实施文档。
+- ZIP：实际部署到目标服务器的脚本、配置、调度和监控文件。
+
+结构化 Runbook JSON 仅供程序内部处理，不作为用户下载文件提供。
+
+## 包内基础文件
+
+- `README.md`：当前使用说明。
+- `00-manifest.json`：Profile、文件清单、SHA-256、目标路径、权限和执行用户。
+- `{package_root or '方案制品目录'}/`：本次 Runbook 生成的实际实施文件。
+
+## 本次制品清单
+
+Profile：`{profile}`
+
+{files}
+
+## 使用前检查
+
+1. 先阅读配套 Markdown 或 PDF，确认实施范围、阶段顺序、停止条件、验证和回退要求。
+2. 核对 `00-manifest.json` 中每个文件的 SHA-256；摘要不一致时不要执行。
+3. 核对所有目标路径、挂载容量、数据库角色、Oracle 环境、执行用户和文件权限。
+4. 先手工执行低风险检查和首次任务，验证日志及退出码后再启用自动调度。
+5. 不要把测试环境生成的包直接用于其他数据库；实际事实变化后应重新生成 Runbook 和 ZIP。
+
+{_profile_usage(profile, package_root=package_root, target_root=target_root)}
+## 安全边界
+
+涉及停库、归档模式切换、数据恢复、清理、补丁、集群资源或主备角色切换的步骤，必须遵守主文档中的风险等级、审批窗口和停止条件。执行结果应连同日志、状态文件和验证证据一起留存。
+"""
+
+
 def attach_generated_artifacts(
     runbook: ImplementationRunbook,
     artifacts: tuple[GeneratedRunbookArtifact, ...],
@@ -76,10 +207,12 @@ def render_runbook_artifact_zip(
     payload: dict,
     artifact_contents: dict[str, str],
 ) -> bytes:
-    """按固定顺序和时间戳生成可复现脚本包。"""
+    """按固定顺序和时间戳生成含 README 的可复现脚本包。"""
     descriptors = list(payload.get("artifacts") or [])
     if not descriptors:
         raise ValueError("当前实施文档没有可下载脚本")
+    readme = render_runbook_zip_readme(payload).rstrip() + "\n"
+    readme_digest = hashlib.sha256(readme.encode("utf-8")).hexdigest()
     buffer = io.BytesIO()
     with zipfile.ZipFile(
         buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
@@ -88,11 +221,18 @@ def render_runbook_artifact_zip(
             "schema_version": payload.get("schema_version"),
             "profile": payload.get("profile"),
             "title": payload.get("title"),
+            "package_files": [{
+                "relative_path": "README.md",
+                "media_type": "text/markdown",
+                "sha256": readme_digest,
+                "file_mode": "0644",
+                "description": "ZIP 可执行包内容、安全检查和使用顺序说明。",
+            }],
             "artifacts": descriptors,
         }
         entries = [("00-manifest.json", json.dumps(
             manifest, ensure_ascii=False, indent=2, sort_keys=True
-        ) + "\n", "0644")]
+        ) + "\n", "0644"), ("README.md", readme, "0644")]
         for descriptor in sorted(
             descriptors, key=lambda item: str(item.get("relative_path") or "")
         ):

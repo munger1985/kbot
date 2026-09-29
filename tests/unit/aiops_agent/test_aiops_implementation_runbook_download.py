@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
+import zipfile
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.implementation.pdf import (
@@ -209,14 +211,6 @@ class ImplementationRunbookPdfTest(unittest.TestCase):
         self.assertTrue(markdown.startswith(b"# "))
         self.assertIn(b"```sql", markdown)
 
-        structured = asyncio.run(service.get_implementation_runbook_json(
-            domain_id=1,
-            conversation_id=conversation_id,
-            turn_id=turn_id,
-            actor_id="user-1",
-        ))
-        self.assertIn(b'"schema_version": "AIOPS_IMPLEMENTATION_RUNBOOK.v1"', structured)
-
     def test_service_downloads_materialized_script_zip(self) -> None:
         conversation_id, turn_id, run_id = uuid7(), uuid7(), uuid7()
         runbook = compile_implementation_runbook(
@@ -270,6 +264,11 @@ class ImplementationRunbookPdfTest(unittest.TestCase):
         ))
 
         self.assertTrue(content.startswith(b"PK"))
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            self.assertIn("README.md", archive.namelist())
+            readme = archive.read("README.md").decode("utf-8")
+            self.assertIn("ZIP 可执行包说明", readme)
+            self.assertIn("bin/check-last-backup.sh", readme)
 
     def test_service_rejects_foreign_conversation_and_missing_runbook(self) -> None:
         conversation_id, turn_id = uuid7(), uuid7()

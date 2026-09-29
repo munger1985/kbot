@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import unittest
 import zipfile
 from types import SimpleNamespace
@@ -146,6 +147,7 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(first)) as archive:
             names = archive.namelist()
             self.assertEqual("00-manifest.json", names[0])
+            self.assertEqual("README.md", names[1])
             self.assertIn(
                 "oracle-rman-backup/rman/backup_level0.rman",
                 names,
@@ -153,6 +155,22 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             self.assertIn(
                 "oracle-rman-backup/bin/run-rman-job.sh",
                 names,
+            )
+            readme = archive.read("README.md").decode("utf-8")
+            self.assertIn("下载格式的定位", readme)
+            self.assertIn("RMAN 备份包使用顺序", readme)
+            self.assertIn(
+                "/var/tmp/kbot-runbooks/oracle-rman-backup/"
+                "bin/run-rman-job.sh level0",
+                readme,
+            )
+            self.assertNotIn("JSON：", readme)
+            manifest = json.loads(
+                archive.read("00-manifest.json").decode("utf-8")
+            )
+            self.assertEqual(
+                hashlib.sha256(readme.encode("utf-8")).hexdigest(),
+                manifest["package_files"][0]["sha256"],
             )
 
     def test_rman_backup_uses_real_commands_for_every_ready_phase(self) -> None:

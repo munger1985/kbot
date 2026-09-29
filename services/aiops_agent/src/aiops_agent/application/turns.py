@@ -945,31 +945,6 @@ class ConversationTurnService:
         )
         return render_implementation_runbook_markdown(payload).encode("utf-8")
 
-    async def get_implementation_runbook_json(
-        self,
-        *,
-        domain_id: int,
-        conversation_id: UUID,
-        turn_id: UUID,
-        actor_id: str,
-    ) -> bytes:
-        """导出结构化 Runbook 唯一真相，不重新运行编译器。"""
-        payload = await self._get_implementation_runbook_payload(
-            domain_id=domain_id,
-            conversation_id=conversation_id,
-            turn_id=turn_id,
-            actor_id=actor_id,
-        )
-        return (
-            json.dumps(
-                payload,
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n"
-        ).encode("utf-8")
-
     async def get_implementation_runbook_zip(
         self,
         *,

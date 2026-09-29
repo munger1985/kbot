@@ -129,7 +129,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('commandGroup("人工确认项", manualItems, true)', workspace)
         self.assertIn('"application/pdf"', workspace)
         self.assertIn('"text/markdown"', workspace)
-        self.assertIn('"application/json"', workspace)
+        self.assertNotIn('data-download-implementation-runbook="json"', workspace)
         self.assertIn('"application/zip"', workspace)
         self.assertIn("bindImplementationRunbookActions(panel)", workspace)
 

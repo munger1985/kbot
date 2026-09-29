@@ -623,12 +623,6 @@ ADG 现有行为迁入 `profiles/adg.py`，不保留两套编译入口。公共 
 ```text
 GET .../implementation-runbook.pdf
 GET .../implementation-runbook.md
-```
-
-新增：
-
-```text
-GET .../implementation-runbook.json
 GET .../implementation-runbook.zip
 ```
 
@@ -640,6 +634,10 @@ oracle-rac-build-<turn_id>.pdf
 oracle-rman-backup-build-<turn_id>.zip
 ```
 
+结构化 Runbook JSON 是程序内部合同，不提供用户下载路由。ZIP 自动加入 `README.md`，说明 Markdown、
+PDF 和 ZIP 的用途、实际制品清单、使用前检查和 Profile 对应的安全执行入口；`00-manifest.json`
+记录 README 的 SHA256，确保说明文件也属于可校验交付物。
+
 ## 12. 页面设计
 
 实施文档页面继续使用连续正式文档，不使用折叠容器和内部滚动区。新增：
@@ -648,7 +646,7 @@ oracle-rman-backup-build-<turn_id>.zip
 - 证据状态：已验证、策略派生、缺失阻断；
 - 执行身份、节点和容器标签；
 - 脚本清单、目标路径、文件权限和 SHA256；
-- PDF、Markdown、JSON 和脚本 ZIP 下载；
+- PDF、Markdown 和脚本 ZIP 下载；
 - `BLOCKED` 步骤明确指向 Target 拓扑配置，不在聊天正文要求用户复制大量参数；
 - 历史 Turn 永远下载当时固化版本，不按新 Compiler 重新生成。
 
