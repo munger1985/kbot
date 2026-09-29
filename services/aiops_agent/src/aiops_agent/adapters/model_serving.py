@@ -95,87 +95,118 @@ class AIOpsStructuredModelClient:
             "返回对象必须严格满足以下 JSON Schema：\n"
             f"{json.dumps(output_schema, ensure_ascii=False, separators=(',', ':'))}"
         )
-        request_payload = {
-            "served_model_name": technical_name,
-            "messages": [
-                {"role": "system", "content": structured_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        input_payload,
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                        default=str,
-                    ),
-                },
-            ],
-            "stream": False,
-            "temperature": 0,
-            # OpenAI 兼容厂商对 json_schema 的支持并不一致。统一使用
-            # JSON Mode，并在本服务内执行同一份 Schema 的严格校验。
-            "response_format": {"type": "json_object"},
-        }
-        timeout = self._timeout_seconds
-        if deadline is not None:
-            remaining = int(
-                (deadline.astimezone(UTC) - datetime.now(UTC)).total_seconds()
-            )
-            if remaining <= 1:
-                raise AIOpsModelError("MODEL_DEADLINE_EXCEEDED")
-            timeout = min(timeout, remaining)
+        messages = [
+            {"role": "system", "content": structured_prompt},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    input_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            },
+        ]
         started = time.monotonic()
         headers = build_internal_auth_headers(
             audience=self._audience,
             caller_service=self._caller,
         )
-        try:
-            async with self._session.post(
-                self._url,
-                headers=headers,
-                json=request_payload,
-                timeout=aiohttp.ClientTimeout(total=timeout),
-            ) as response:
-                if response.status != 200:
-                    response_text = (await response.text())[:1000]
-                    logger.error(
-                        "AIOps 结构化模型调用失败：purpose={} model={} "
-                        "status={} response={}",
-                        purpose,
-                        technical_name,
-                        response.status,
-                        response_text,
-                    )
-                    raise AIOpsModelError(
-                        "MODEL_SERVICE_UNAVAILABLE",
-                        f"模型服务返回 HTTP {response.status}",
-                    )
-                envelope = await response.json()
-        except AIOpsModelError:
-            raise
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-            raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE") from exc
-        try:
-            choice = envelope["choices"][0]
-            content = choice["message"]["content"]
-            raw_output = json.loads(content)
-            output = output_model.model_validate(raw_output)
-        except (
-            KeyError,
-            IndexError,
-            TypeError,
-            json.JSONDecodeError,
-            ValidationError,
-        ) as exc:
-            logger.warning(
-                "AIOps 模型结构化输出校验失败：purpose={} model={} "
-                "schema={} error={}",
-                purpose,
-                technical_name,
-                output_model.__name__,
-                str(exc),
-            )
-            raise AIOpsModelError("MODEL_OUTPUT_INVALID", str(exc)) from exc
-        usage = envelope.get("usage") or {}
+        prompt_tokens = 0
+        completion_tokens = 0
+        for attempt in range(2):
+            request_payload = {
+                "served_model_name": technical_name,
+                "messages": messages,
+                "stream": False,
+                "temperature": 0,
+                # OpenAI 兼容厂商对 json_schema 的支持并不一致。统一使用
+                # JSON Mode，并在本服务内执行同一份 Schema 的严格校验。
+                "response_format": {"type": "json_object"},
+            }
+            timeout = self._timeout_seconds
+            if deadline is not None:
+                remaining = int(
+                    (
+                        deadline.astimezone(UTC) - datetime.now(UTC)
+                    ).total_seconds()
+                )
+                if remaining <= 1:
+                    raise AIOpsModelError("MODEL_DEADLINE_EXCEEDED")
+                timeout = min(timeout, remaining)
+            try:
+                async with self._session.post(
+                    self._url,
+                    headers=headers,
+                    json=request_payload,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as response:
+                    if response.status != 200:
+                        response_text = (await response.text())[:1000]
+                        logger.error(
+                            "AIOps 结构化模型调用失败：purpose={} model={} "
+                            "status={} response={}",
+                            purpose,
+                            technical_name,
+                            response.status,
+                            response_text,
+                        )
+                        raise AIOpsModelError(
+                            "MODEL_SERVICE_UNAVAILABLE",
+                            f"模型服务返回 HTTP {response.status}",
+                        )
+                    envelope = await response.json()
+            except AIOpsModelError:
+                raise
+            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE") from exc
+            usage = envelope.get("usage") or {}
+            prompt_tokens += int(usage.get("prompt_tokens", 0))
+            completion_tokens += int(usage.get("completion_tokens", 0))
+            content = ""
+            try:
+                choice = envelope["choices"][0]
+                content = choice["message"]["content"]
+                raw_output = json.loads(content)
+                output = output_model.model_validate(raw_output)
+            except (
+                KeyError,
+                IndexError,
+                TypeError,
+                json.JSONDecodeError,
+                ValidationError,
+            ) as exc:
+                logger.warning(
+                    "AIOps 模型结构化输出校验失败：purpose={} model={} "
+                    "schema={} attempt={}/2 error={}",
+                    purpose,
+                    technical_name,
+                    output_model.__name__,
+                    attempt + 1,
+                    str(exc),
+                )
+                if attempt == 0:
+                    messages = [
+                        *messages,
+                        {
+                            "role": "assistant",
+                            "content": str(content)[:20000],
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "上一份 JSON 未通过既定输出合同。请保持原任务"
+                                "和事实不变，只依据以下校验错误修正 JSON，并重新"
+                                "返回满足同一 JSON Schema 的完整对象：\n"
+                                + str(exc)[:6000]
+                            ),
+                        },
+                    ]
+                    continue
+                raise AIOpsModelError(
+                    "MODEL_OUTPUT_INVALID", str(exc)
+                ) from exc
+            break
         duration_ms = int((time.monotonic() - started) * 1000)
         receipt = ModelInvocationReceipt(
             purpose=purpose,
@@ -190,8 +221,8 @@ class AIOpsStructuredModelClient:
             input_sha256=_canonical_hash(input_payload),
             output_sha256=_canonical_hash(raw_output),
             provider_request_id=envelope.get("id"),
-            prompt_tokens=int(usage.get("prompt_tokens", 0)),
-            completion_tokens=int(usage.get("completion_tokens", 0)),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             duration_ms=duration_ms,
             finish_reason=choice.get("finish_reason"),
         )

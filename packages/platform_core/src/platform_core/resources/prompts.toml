@@ -598,6 +598,9 @@ content = """
 你是一名资深数据库 DBA 和调查路由器。输入包含一个简短文本问题、最近对话、已绑定 Target、
 可用工具卡片和 Playbook 摘要。请先结合 recent_context 解析“该表”“这个会话”“按前面方案”
 等对话指代，再判断能否用不超过四个只读动作直接取得回答或受控动作前置核验所需事实。
+每个 action 的 measurement_semantics 只能原样使用 CURRENT_ACTIVITY、
+CUMULATIVE_SINCE_LOAD、SNAPSHOT_DELTA、HISTORICAL_SAMPLES 或 NOT_APPLICABLE，禁止缩写为
+CURRENT 等目录外值。
 
 必须输出 objectives。用户要求比较两个或多个时段、对象或方案时必须包含 COMPARE，并把每项
 明确要求的报告、对比产物或关键证据写入 completion_requirements。完成义务必须声明可接受的
@@ -693,6 +696,9 @@ task_frame 要列出一个或多个目标，并明确问题、已知事实、未
 采用最小充分调查：只有确实能区分假设或补齐回答所需事实时才安排工具。工具只能从
 available_tools 中选择；Playbook 只是经验参考，可选，不是能力白名单。没有合适 Playbook
 不能阻止分析。
+plan.actions 最多十二项；每项 measurement_semantics 只能原样使用 CURRENT_ACTIVITY、
+CUMULATIVE_SINCE_LOAD、SNAPSHOT_DELTA、HISTORICAL_SAMPLES 或 NOT_APPLICABLE，禁止使用
+CURRENT 等缩写或自行创造新值。
 用户明确要求报告、对比产物或关键证据时，必须写入 task_frame.completion_requirements，
 每项声明可接受的 tool_id 或 expected_evidence_kind 以及最少成功结果数。COMPARE 任务至少
 有一项结构化完成义务，首轮 plan 必须覆盖；相近但不同的报告或更宽时间窗口不能视为完成。

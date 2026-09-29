@@ -11,6 +11,9 @@ from unittest.mock import AsyncMock, patch
 from aiops_agent.application.investigation.discovery import (
     catalog_direct_actions,
 )
+from aiops_agent.application.investigation.reasoner import (
+    InvestigationPlanValidationError,
+)
 from aiops_agent.application.investigation.discovery_binding import (
     PRODUCT_TIMEZONE,
     bind_discovery_parameters,
@@ -417,6 +420,44 @@ class DiscoveryBindingTest(unittest.TestCase):
             },
             prepared.plan.actions[1].input,
         )
+
+    def test_prepare_converts_missing_tool_variant_to_plan_error(self) -> None:
+        investigation = InvestigationPlanningOutput.model_validate({
+            "input_envelope": _envelope(),
+            "task_frame": {
+                "objectives": ["DIAGNOSE"],
+                "problem_statement": "诊断数据库告警",
+                "success_criteria": ["取得告警证据"],
+            },
+            "plan": _plan(_action(
+                action_id="a1",
+                tool_id="db.instance.identity",
+                question="核对数据库身份",
+                expected_evidence_kind="DATABASE_IDENTITY",
+                measurement_semantics="CURRENT_ACTIVITY",
+                input={},
+            )).model_dump(mode="json"),
+        })
+
+        class _MissingVariantBuilder:
+            @staticmethod
+            def validate_direct_actions(**_):
+                raise LookupError("诊断工具无法按当前能力唯一解析")
+
+        service = object.__new__(TurnPlanningService)
+        service._tool_snapshot_builder = _MissingVariantBuilder()
+        context = SimpleNamespace(
+            resolved_uploads=(),
+            capabilities=SimpleNamespace(),
+        )
+
+        with self.assertRaises(InvestigationPlanValidationError) as raised:
+            service._prepare_query_inputs(
+                investigation=investigation,
+                context=context,
+            )
+
+        self.assertIn("固定诊断工具输入未通过目录约束", str(raised.exception))
 
     def test_wall_clock_binds_utc_tagged_oracle_timestamps(self) -> None:
         plan = _plan(

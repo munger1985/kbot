@@ -23,6 +23,30 @@ def _context(uow):
 
 
 class AIOpsRunResultTest(unittest.TestCase):
+    def test_run_summary_exposes_safe_terminal_error(self) -> None:
+        now = datetime.now(UTC)
+        run = SimpleNamespace(
+            ops_run_id=uuid7(),
+            agent_id=uuid7(),
+            target_id=uuid7(),
+            trigger_type="ALERT",
+            interaction_mode="AUTONOMOUS",
+            workflow_kind="ALERT_DIAGNOSIS",
+            status="FAILED",
+            source_proposal_id=None,
+            source_result_artifact_id=None,
+            error_code="AIOPS_INVESTIGATION_PLAN_INVALID",
+            error_message="本轮输入未能形成通过安全校验的调查计划。",
+            row_version=2,
+            created_at=now,
+            completed_at=now,
+        )
+
+        summary = AIOpsRuntimeService._run_summary(run)
+
+        self.assertEqual(run.error_code, summary.error_code)
+        self.assertEqual(run.error_message, summary.error_message)
+
     def test_chat_diagnosis_has_natural_streaming_markdown_projection(self) -> None:
         content = _diagnosis_answer_markdown(
             {

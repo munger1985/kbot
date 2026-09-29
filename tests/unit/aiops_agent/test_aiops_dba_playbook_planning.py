@@ -2115,7 +2115,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         result = await service.fail_terminal(
             {"domain_id": 7, "turn_id": str(uow.turn.turn_id)},
             error_code="AIOPS_INVESTIGATION_PLAN_INVALID",
-            error_message="调查计划未通过安全校验",
+            error_message="内部 Variant 解析异常，不得直接展示",
         )
 
         self.assertEqual("FAILED", result["status"])
@@ -2125,6 +2125,12 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             "AIOPS_INVESTIGATION_PLAN_INVALID", uow.turn.error_code
         )
         self.assertEqual("FAILED", uow.run.status)
+        self.assertEqual(
+            "本轮输入未能形成通过安全校验的调查计划。"
+            "系统没有执行越界工具，请重试或补充问题范围。",
+            uow.run.error_message,
+        )
+        self.assertNotIn("Variant", uow.run.error_message)
         self.assertIsNotNone(uow.turn.completed_at)
         self.assertIsNotNone(uow.run.completed_at)
         self.assertEqual("turn.status", uow.events[-1].event_type)
@@ -2537,6 +2543,61 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
             "db.sql.top_current",
             invocation["tool"]["tool_id"],
         )
+
+    def test_direct_action_uses_discovered_catalog_version(self) -> None:
+        diagnostics = DiagnosticRegistry.load()
+        registry = PlaybookRegistry.load(
+            allowed_tools=frozenset(
+                (item.definition.tool_id, item.definition.version)
+                for item in diagnostics.tools
+            )
+        )
+        capabilities = _capabilities().model_copy(update={
+            "target_capabilities": (
+                "DB_READONLY",
+                "dynamic_performance_views",
+            ),
+            "privileges": (
+                "V_$INSTANCE",
+                "V_$DATABASE",
+                "GV_$SESSION",
+            ),
+        })
+        action = InvestigationAction(
+            action_id="a1",
+            question="查询当前活动会话",
+            tool_id="db.session.active",
+            input={},
+            expected_evidence_kind="ACTIVE_SESSIONS",
+            measurement_semantics="CURRENT_ACTIVITY",
+        )
+        plan = build_playbook_plan(registry)
+        compiled = InvestigationTaskCompiler(registry).compile(
+            plan,
+            investigation_actions=(action,),
+        )
+        builder = ToolExecutionSnapshotBuilder(
+            playbook_registry=registry,
+            diagnostic_registry=diagnostics,
+        )
+
+        normalized = builder.validate_direct_actions(
+            actions=(action,),
+            capabilities=capabilities,
+        )
+        snapshot = builder.build(
+            plan=plan,
+            compiled=compiled,
+            capabilities=capabilities,
+            database_execution={"automatic_access_enabled": True},
+            direct_actions=(action,),
+        )
+
+        self.assertEqual({}, normalized["a1"])
+        invocation = snapshot["direct_invocations"][
+            compiled.diagnostic_task_keys[0]
+        ]
+        self.assertEqual("1.1.0", invocation["tool"]["tool_version"])
 
     def test_disabled_target_keeps_diagnostic_plan_with_access_gap(self) -> None:
         """Target 停用时保留诊断计划，但禁止自动数据库直连。"""

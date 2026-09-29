@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from aiops_agent.diagnostics import DiagnosticRegistry
+from aiops_agent.diagnostics import DiagnosticRegistry, ResolvedDiagnosticTool
 from aiops_agent.playbooks import (
     PlaybookCatalogError,
     PlaybookRegistry,
@@ -150,13 +150,9 @@ class ToolExecutionSnapshotBuilder:
         """在编译前校验模型选择的固定目录 Tool 参数并补齐默认值。"""
         normalized = {}
         for action in actions:
-            resolved = self._tools.resolve(
-                tool_id=action.tool_id,
-                tool_version="1.0.0",
-                db_type=str(capabilities.database_type),
-                db_version=capabilities.database_version or "",
-                capabilities=set(capabilities.target_capabilities),
-                entitlements=set(capabilities.entitlements),
+            resolved = self._resolve_direct_action(
+                action=action,
+                capabilities=capabilities,
             )
             try:
                 parameters = self._tools.validate_parameters(
@@ -168,6 +164,31 @@ class ToolExecutionSnapshotBuilder:
                 ) from exc
             normalized[action.action_id] = parameters
         return normalized
+
+    def _resolve_direct_action(
+        self,
+        *,
+        action: object,
+        capabilities: DbaCapabilitySnapshot,
+    ) -> ResolvedDiagnosticTool:
+        """按当前能力发现结果冻结模型动作的真实 Tool 版本。"""
+        matches = tuple(
+            item
+            for item in self.discover_tools(capabilities)
+            if item["tool_id"] == action.tool_id
+        )
+        if len(matches) != 1:
+            raise LookupError(
+                f"诊断工具无法按当前能力唯一解析：{action.tool_id}"
+            )
+        return self._tools.resolve(
+            tool_id=action.tool_id,
+            tool_version=str(matches[0]["version"]),
+            db_type=str(capabilities.database_type),
+            db_version=capabilities.database_version or "",
+            capabilities=set(capabilities.target_capabilities),
+            entitlements=set(capabilities.entitlements),
+        )
 
     def build(
         self,
@@ -302,13 +323,9 @@ class ToolExecutionSnapshotBuilder:
         for action, task_key in zip(
             direct_actions, compiled.diagnostic_task_keys, strict=True
         ):
-            resolved = self._tools.resolve(
-                tool_id=action.tool_id,
-                tool_version="1.0.0",
-                db_type=str(capabilities.database_type),
-                db_version=capabilities.database_version or "",
-                capabilities=set(capabilities.target_capabilities),
-                entitlements=set(capabilities.entitlements),
+            resolved = self._resolve_direct_action(
+                action=action,
+                capabilities=capabilities,
             )
             definition = resolved.definition
             direct_invocations[task_key] = {

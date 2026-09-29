@@ -2808,7 +2808,7 @@ class TurnPlanningService:
                 actions=direct_actions,
                 capabilities=context.capabilities,
             )
-        except ValueError as exc:
+        except (LookupError, ValueError) as exc:
             raise InvestigationPlanValidationError(
                 f"固定诊断工具输入未通过目录约束：{exc}"
             ) from exc
@@ -3234,7 +3234,8 @@ class TurnPlanningService:
             }:
                 run.status = "FAILED"
                 run.error_code = error_code
-                run.error_message = error_message[:2000]
+                # Run 详情属于用户可见合同，只保存稳定的安全摘要；原始异常已写日志。
+                run.error_message = public_summary[:2000]
                 run.completed_at = now
             await self._append_event(
                 uow,

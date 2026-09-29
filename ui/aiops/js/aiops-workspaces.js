@@ -1689,7 +1689,13 @@
       } else if (run && !terminalRunStatuses.has(run.status)) {
         diagnosis = `<div class="ops-empty">Agent 正在诊断，当前状态：${esc(run.status)}。页面会自动更新结果。</div>`;
       } else if (run) {
-        diagnosis = `<div class="ops-empty">本次自动诊断已结束但未形成可展示结果，最终状态：${esc(run.status)}。</div>`;
+        const errorCode = run.error_code
+          ? `<div><strong>错误码：</strong><code>${esc(run.error_code)}</code></div>`
+          : "";
+        const errorMessage = run.error_message
+          ? `<div>${esc(run.error_message)}</div>`
+          : '<div>本次自动诊断未形成可展示结果，请依据运行状态重试或联系管理员。</div>';
+        diagnosis = `<div class="ops-error"><div><strong>自动诊断状态：</strong>${esc(run.status)}</div>${errorCode}${errorMessage}</div>`;
       } else {
         diagnosis = '<div class="ops-empty">告警已接收，正在等待 Agent 自动诊断任务启动。</div>';
       }

@@ -7177,7 +7177,10 @@ class AIOpsRuntimeService:
             workflow_kind=run.workflow_kind, status=run.status,
             source_proposal_id=getattr(run, "source_proposal_id", None),
             source_result_artifact_id=getattr(run, "source_result_artifact_id", None),
-            final_artifact=final_artifact, row_version=int(run.row_version),
+            final_artifact=final_artifact,
+            error_code=getattr(run, "error_code", None),
+            error_message=getattr(run, "error_message", None),
+            row_version=int(run.row_version),
             created_at=run.created_at, completed_at=run.completed_at,
         )
 

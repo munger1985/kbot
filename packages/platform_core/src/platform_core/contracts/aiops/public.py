@@ -142,6 +142,8 @@ class OpsRunSummary(AIOpsContract):
     source_proposal_id: UUIDv7 | None = None
     source_result_artifact_id: UUIDv7 | None = None
     final_artifact: ArtifactRef | None = None
+    error_code: str | None = None
+    error_message: str | None = None
     row_version: int = Field(ge=1)
     created_at: UtcDatetime
     completed_at: UtcDatetime | None = None
