@@ -107,6 +107,27 @@
     return `## ${payload.title || "巡检报告"}\n\n${body}\n\n### 发现\n${inspectionBullets(checks.length ? checks : payload.facts, emptyFindings)}\n\n### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}\n\n### 数据缺口\n${inspectionBullets(payload.gaps, emptyGaps)}`;
   }
 
+  function inspectionReportHtml(result) {
+    const payload = result?.payload || {};
+    const facts = values(payload.facts);
+    const checks = facts.filter((item) => item?.kind === "inspection_check");
+    const findings = checks.flatMap((item) => values(item?.findings));
+    const checksWithoutFindings = checks.filter((item) => !values(item?.findings).length);
+    const healthyRecommendation = "继续按既定周期执行该巡检模板并关注趋势变化。";
+    const emptyFindings = "本期未发现达到规则阈值的异常。";
+    const emptyGaps = "未发现数据缺口，全部检查已形成可验证观测。";
+    const summary = payload.summary || "本期巡检已完成。";
+    const heading = markdown.render(`## ${payload.title || "巡检报告"}\n\n${summary}`);
+    const findingCards = findingCardsHtml({
+      findings,
+      empty_reasons: findings.length ? [] : [emptyFindings],
+    });
+    const checksMarkdown = `### 其他检查结果\n${inspectionBullets(checksWithoutFindings, "全部检查结果已在发现卡片中展示。")}`;
+    const recommendationsMarkdown = `### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}`;
+    const gapsMarkdown = `### 数据缺口\n${inspectionBullets(payload.gaps, emptyGaps)}`;
+    return `${heading}${findingCards}${markdown.render(`${checksMarkdown}\n\n${recommendationsMarkdown}\n\n${gapsMarkdown}`)}`;
+  }
+
   function inspectionAnswerHtml(result, turn) {
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
@@ -115,6 +136,9 @@
       );
       return narrative.map((block) => answerBlockHtml(block, turn)).join("")
         || markdown.render("本次巡检已完成，但未生成可展示的巡检结论。");
+    }
+    if (schemaVersion === "REPORT_CONTENT.v1") {
+      return inspectionReportHtml(result);
     }
     return markdown.render(inspectionMarkdown(result));
   }

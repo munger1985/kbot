@@ -584,6 +584,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("inspectionMarkdown", workspace)
         self.assertIn("inspectionAnswerHtml", workspace)
         self.assertIn("markdown.render(inspectionMarkdown(result))", workspace)
+        self.assertIn("inspectionReportHtml", workspace)
+        self.assertIn(
+            "const findings = checks.flatMap((item) => values(item?.findings))",
+            workspace,
+        )
+        self.assertIn(
+            "empty_reasons: findings.length ? [] : [emptyFindings]",
+            workspace,
+        )
+        self.assertIn('schemaVersion === "REPORT_CONTENT.v1"', workspace)
         self.assertIn('block.block_type === "FINDING_CARDS"', workspace)
         self.assertIn("conversationAnswerHtml(result)", workspace)
         self.assertIn("bindWorkloadReportActions(panel)", workspace)
