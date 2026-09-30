@@ -79,7 +79,7 @@
     const payload = result?.payload || {};
     const schemaVersion = result?.final_artifact?.schema_version;
     if (!result?.final_artifact) {
-      return `### 诊断尚未形成最终结论\n\n当前状态：${result?.status || "处理中"}`;
+      return `### 巡检尚未形成最终报告\n\n当前状态：${result?.status || "处理中"}`;
     }
     const healthyRecommendation = "继续按既定周期执行该巡检模板并关注趋势变化。";
     const emptyFindings = "本期检查均已完成，未发现异常。";
@@ -105,6 +105,18 @@
     const summary = payload.summary || conclusion || "本期巡检已完成，所有计划检查均已形成可追溯观测。";
     const body = conclusion && payload.summary ? `${summary}\n\n${conclusion}` : summary;
     return `## ${payload.title || "巡检报告"}\n\n${body}\n\n### 发现\n${inspectionBullets(checks.length ? checks : payload.facts, emptyFindings)}\n\n### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}\n\n### 数据缺口\n${inspectionBullets(payload.gaps, emptyGaps)}`;
+  }
+
+  function inspectionAnswerHtml(result, turn) {
+    const schemaVersion = result?.final_artifact?.schema_version;
+    if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
+      const narrative = values(result?.payload?.blocks).filter(
+        (block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type),
+      );
+      return narrative.map((block) => answerBlockHtml(block, turn)).join("")
+        || markdown.render("本次巡检已完成，但未生成可展示的巡检结论。");
+    }
+    return markdown.render(inspectionMarkdown(result));
   }
 
   function conversationAnswerMarkdown(result) {
@@ -1796,7 +1808,7 @@
     const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
       ? ""
       : reportAction({ runId: run?.ops_run_id, sourceKind: "INSPECTION", periodKind: "DAILY" });
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${conversationAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
     if (source) await bindContinue(source);
     bindReportActions(panel);
     bindWorkloadReportActions(panel);

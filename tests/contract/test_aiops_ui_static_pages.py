@@ -582,7 +582,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('block.block_type === "EVIDENCE_REFERENCES"', workspace)
         self.assertNotIn("tablespaceChartHtml", workspace)
         self.assertIn("inspectionMarkdown", workspace)
-        self.assertNotIn("markdown.render(inspectionMarkdown(result))", workspace)
+        self.assertIn("inspectionAnswerHtml", workspace)
+        self.assertIn("markdown.render(inspectionMarkdown(result))", workspace)
         self.assertIn('block.block_type === "FINDING_CARDS"', workspace)
         self.assertIn("conversationAnswerHtml(result)", workspace)
         self.assertIn("bindWorkloadReportActions(panel)", workspace)
@@ -608,6 +609,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("原始取证结果", workspace)
         self.assertNotIn("answerBlocks.map(answerBlockHtml).join", workspace)
         self.assertIn("investigationPlanHtml", workspace)
+        inspection_workspace = workspace.split(
+            "async function showInspection", 1
+        )[1].split("async function initCases", 1)[0]
+        self.assertIn("inspectionAnswerHtml(result)", inspection_workspace)
+        self.assertNotIn(
+            "conversationAnswerHtml(result)", inspection_workspace
+        )
+        self.assertIn(
+            "本次巡检已完成，但未生成可展示的巡检结论。",
+            workspace,
+        )
+        self.assertIn("巡检尚未形成最终报告", workspace)
         self.assertIn("showInvestigationPlan", workspace)
         self.assertIn("调查计划与判断依据", workspace)
         progress_rule = css.split(".ops-progress {", 1)[1].split("}", 1)[0]
