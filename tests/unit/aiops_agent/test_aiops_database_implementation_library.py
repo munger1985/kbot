@@ -1065,7 +1065,6 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
                 "implementation_parameters": {
                     "RECOVERY_SCENARIO": "PITR",
                     "BACKUP_CHAIN_STATUS": "AVAILABLE",
-                    "ORACLE_HOME": "/u01/app/oracle/product/26ai/dbhome_1",
                     "INSTANCE_NAME": "TESTDB",
                 }
             },
@@ -1079,6 +1078,48 @@ class DatabaseImplementationLibraryTest(unittest.TestCase):
             {item.fact_key for item in runbook.missing_facts},
         )
         self.assertNotIn("SET UNTIL", runbook.model_dump_json())
+
+    def test_rman_recovery_does_not_require_oracle_home(self) -> None:
+        runbook = compile_implementation_runbook(
+            profile=ImplementationProfile.ORACLE_RMAN_RECOVERY,
+            evidence=(),
+            context={
+                "implementation_parameters": {
+                    "RECOVERY_SCENARIO": "DATABASE_PITR",
+                    "RECOVERY_TARGET_TIME": "2026-09-29 17:00:00",
+                    "BACKUP_CHAIN_STATUS": "AVAILABLE",
+                    "INSTANCE_NAME": "TESTDB",
+                }
+            },
+        )
+
+        self.assertNotIn(
+            "ORACLE_HOME",
+            {item.fact_key for item in runbook.missing_facts},
+        )
+        environment_phase = next(
+            phase
+            for phase in runbook.phases
+            if phase.phase_id == "environment_phase"
+        )
+        self.assertTrue(environment_phase.steps[0].commands)
+        serialized = runbook.model_dump_json()
+        self.assertIn("load-oracle-env.sh", serialized)
+        self.assertIn("rman target / cmdfile=", serialized)
+        self.assertNotIn("/bin/rman target / cmdfile=", serialized)
+        parameters = {
+            item.key: item.value for item in runbook.resolved_parameters
+        }
+        self.assertEqual(
+            "EXPLICIT_THEN_ORAENV_THEN_PMON",
+            parameters["ORACLE_HOME_RESOLUTION"],
+        )
+        generated = {
+            item["artifact_id"]: item["content"]
+            for item in generated_artifact_payloads(runbook)
+        }
+        self.assertIn("oraenv", generated["recovery.oracle.env"])
+        self.assertIn("ora_pmon_", generated["recovery.oracle.env"])
 
     def test_external_fact_cannot_inject_shell_content(self) -> None:
         runbook = compile_implementation_runbook(

@@ -121,8 +121,9 @@ Broker 配置名、保护模式和 Redo 传输方式等可安全派生的值直�
 新增档案必须复用同一 `ImplementationRunbook` 契约、命令类型、安全边界和执行升级规则，不能
 为每类方案另建一套自由文本功能。
 
-RMAN 备份档案不要求用户补充 `ORACLE_HOME`，运行脚本通过 `ORACLE_SID + oraenv` 自动初始化环境，
-必要时从对应 PMON 进程解析 Home。
+RMAN 备份和恢复档案都不要求用户补充 `ORACLE_HOME`，运行脚本通过 `ORACLE_SID + oraenv`
+自动初始化环境，必要时从对应 PMON 进程解析 Home。用户填写的恢复环境 Oracle Home 只作为可选
+覆盖提示；自动解析失败或本机 OS 认证不可用属于执行停止条件，不会把静态文档降为“等待必要事实”。
 `BACKUP_DEST` 优先读取现有 RMAN Disk Channel 或文件系统 FRA；没有现有配置时按数据库唯一名派生
 标准路径，并在正式配置前输出创建目录、容量核验和 RMAN Channel FORMAT 命令，提醒用户按实际挂载点调整。
 

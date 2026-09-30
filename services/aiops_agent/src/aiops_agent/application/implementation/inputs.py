@@ -72,7 +72,7 @@ _INPUT_SCHEMAS: dict[ImplementationProfile, tuple[dict[str, Any], ...]] = {
         _field("RECOVERY_SCENARIO", "恢复场景", field_type="select", help_text="选择本次文档的主要恢复场景。", options=(("FULL_DATABASE", "全库恢复"), ("DATABASE_PITR", "数据库时间点恢复"), ("DATAFILE", "数据文件恢复"), ("CONTROLFILE", "控制文件恢复"), ("PDB", "PDB 恢复"))),
         _field("RECOVERY_TARGET_TIME", "恢复目标时间", field_type="oracle_datetime", help_text="使用日期时间选择器填写，仅用于时间点恢复；提交后统一保存为 YYYY-MM-DD HH24:MI:SS。"),
         _field("RECOVERY_TARGET_SCN", "恢复目标 SCN", field_type="integer", help_text="与目标时间二选一。", minimum=1),
-        _field("ORACLE_HOME", "恢复环境 Oracle Home", field_type="path", help_text="留空时从数据库和主机事实获取。", group="高级参数"),
+        _field("ORACLE_HOME", "恢复环境 Oracle Home", field_type="path", help_text="可选覆盖值；留空时由脚本通过 oraenv 或对应 PMON 进程自动解析，不阻塞文档生成。", group="高级参数"),
     ),
     ImplementationProfile.ORACLE_RU_PATCH: (
         _field("APPROVED_RU_ID", "已批准 RU 编号", field_type="digits", help_text="留空时由暂存目录中的唯一 RU 结合 Inventory 识别。"),
