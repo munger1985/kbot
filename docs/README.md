@@ -10,7 +10,9 @@ Git 历史保存，不再作为有效文档。
 - [Agent Runtime](architecture/agent-runtime.md)：Execution Spec、Skill、记忆、Artifact 和 SSE。
 - [AIOps Agent](architecture/aiops-agent.md)：监控、诊断、HITL、审批执行和报告。
 - [AIOps Agent 专业 DBA 对话诊断详细设计](architecture/aiops-agent-chat-diagnosis.md)：Turn、Skill、证据、表结构、API 与 SSE。
+- [AIOps 智能运维功能入口技术设计](architecture/aiops-conversation-starters.md)：新会话功能菜单、参数表单和自由提问入口。
 - [AIOps 数据库实施方案 Runbook 技术设计](architecture/aiops-implementation-runbooks.md)：当前 ADG/DGPDB 契约、编译和导出边界。
+- [核心授权策略](architecture/core-authorization-policy.md)：公开和内部资源的统一授权规则。
 - [Model Serving](architecture/model-serving.md)：模型注册、托管进程和功能模型绑定。
 - [身份与 API](architecture/security-and-api.md)：Domain、用户 Token、App API Key 和内部 AuthContext。
 - [App API Key 安全设计](architecture/app-api-key-security.md)：App 绑定、Scope、Agent 白名单、轮换与撤销。
@@ -22,9 +24,11 @@ Git 历史保存，不再作为有效文档。
 - [知识入库、解析与检索](product/knowledge-lifecycle.md)
 - [AIOps Agent 产品能力](product/aiops-agent.md)
 - [AIOps Agent 专业 DBA 对话诊断设计](product/aiops-agent-chat-diagnosis.md)
+- [智能运维新会话功能引导](product/aiops-conversation-starters.md)
 - [AIOps 数据库实施方案 Runbook](product/aiops-implementation-runbooks.md)
+- [AIOps 正式报告与导出设计](product/aiops-reporting.md)
+- [AIOps 产品路线图](product/aiops-roadmap.md)
 - [AIOps 功能介绍与 PPT 生成说明](product/aiops-ppt-brief.md)
-- [KBot 4.0 功能分享幻灯片](product/kbot4-function-share/README.md)
 - [Slack 集成](product/slack-integration.md)
 
 这些文档面向产品演示和 PPT 编写；精确接口仍以 OpenAPI 快照为准。
@@ -32,6 +36,7 @@ Git 历史保存，不再作为有效文档。
 ## 部署与运维
 
 - [部署指南](operations/deployment.md)
+- [AIOps 网络边界](operations/aiops-network-boundary.md)
 - [AIOps观测栈生产自动化部署](operations/aiops-observability-production-deployment.md)
 - [AIOps Oracle观测栈人工安装与运维](operations/aiops-observability-manual-deployment.md)
 - [配置指南](../configuration/README.md)
