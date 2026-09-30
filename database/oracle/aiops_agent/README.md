@@ -1,6 +1,6 @@
 # AIOps Agent Oracle Schema
 
-本目录当前拥有 AIOps 服务的50张表和10个只读视图，按以下顺序在空Schema
+本目录当前拥有 AIOps 服务的56张表和10个只读视图，按以下顺序在空Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -12,29 +12,30 @@
 7. `007_ops_agents.sql`：私有 Agent、版本和资源绑定；
 8. `008_ops_conversations_reports.sql`：Turn、Skill调用、证据、回答块、对话和报告模板；
 9. `009_ops_workload.sql`：MySQL/PostgreSQL工作负载快照、指标和活动采样。
+10. `010_ops_knowledge.sql`：运维知识资产、版本、适用范围、来源、索引引用和审核记录。
 
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
 需要保留的数据，然后用 KBot Schema 所有者执行
 `../generated/aiops_agent/rebuild_aiops_schema.sql`。它会
-直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述九份规范 DDL，避免
+直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述十份规范 DDL，避免
 维护第二份建表定义。
 
 在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用
 Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建文件已经内嵌
-全部八段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
+全部十段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 31 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 32 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
-权限/角色/成员关系和 `operations-manuals` KC Collection 位于共享平台/KC 表，
+权限/角色/成员关系以及 `operations-manuals`、`diagnosis-cases` 两个固定 KC Collection 位于共享平台/KC 表，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 31 / aiops-oracle-v21`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 32 / aiops-oracle-v22`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 31 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 32 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
 
 升级失败但必须保留已配置的监控源和运维目标时，改用

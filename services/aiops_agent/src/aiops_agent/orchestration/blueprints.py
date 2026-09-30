@@ -657,8 +657,8 @@ def build_multi_round_diagnosis_blueprint(
     knowledge_task = TaskSpec(
         task_key="diagnosis:knowledge",
         task_type="DIAGNOSE",
-        handler_id="diagnosis.knowledge-citation",
-        handler_version="1",
+        handler_id="ops.knowledge.search",
+        handler_version="1.0.0",
         input_schema_version="DIAGNOSIS_SCOPE.v1",
         output_schema_version="KNOWLEDGE_CITATION_PACK.v1",
         depends_on=("scope",),

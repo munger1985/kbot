@@ -55,6 +55,12 @@ Schema 31 / `aiops-oracle-v21`。脚本为 Target 增加工作负载快照与活
 并新增 MySQL/PostgreSQL 工作负载快照、语句、指标和活动样本表。新表只包含主键、外键
 和列级 `NOT NULL`，不增加业务 `CHECK`、`UNIQUE` 或唯一索引。
 
+`apply_aiops_schema_32.sql` 用于将 AIOps Schema 31 / `aiops-oracle-v21` 原地升级到
+Schema 32 / `aiops-oracle-v22`。脚本新增运维知识资产、不可变版本、适用范围、来源、
+KC 索引引用和审核记录六张表，并更新 Schema 版本视图；不删除或改写既有业务行，
+不增加业务 `CHECK`、`UNIQUE` 或唯一索引。脚本可在部分升级后续跑，执行前必须停止
+AIOps API、Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、

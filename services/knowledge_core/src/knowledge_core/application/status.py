@@ -15,6 +15,7 @@ class KnowledgeObjectNotFoundError(Exception):
 @dataclass(frozen=True)
 class MemberStatus:
     external_document_id: str
+    document_version_id: UUID | None
     declared_name: str | None
     document_role: str
     member_status: str
@@ -192,6 +193,7 @@ class KnowledgeCoreStatusService:
                 entities = await uow.members.list_by_revision(bundle_revision_id=bundle_revision_id)
                 members = [MemberStatus(
                     external_document_id=item.external_document_id,
+                    document_version_id=item.document_version_id,
                     declared_name=item.declared_name,
                     document_role=item.document_role,
                     member_status=item.member_status,

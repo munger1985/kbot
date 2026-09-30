@@ -7,7 +7,7 @@
     "target-detail": "aiops:target_manage",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
-    "knowledge-core": "aiops:knowledge_manage", agents: "aiops:agent_manage",
+    "operations-knowledge": "aiops:knowledge_manage", agents: "aiops:agent_manage",
     "inspection-plans": "aiops:plan_manage",
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
@@ -20,7 +20,7 @@
     ]],
     ["资源配置", [
       ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],
-      ["knowledge-core", "Knowledge Core"], ["agents", "AIOps Agent"],
+      ["operations-knowledge", "运维知识库"], ["agents", "AIOps Agent"],
       ["inspection-plans", "巡检计划"], ["report-templates", "模板管理"],
       ["api-clients", "API 客户端"],
     ]],

@@ -1,6 +1,6 @@
 -- 由 scripts/db/initialize_aiops.py 调用的 AIOps 首次使用数据资产。
 -- 本资产只写基础数据，不创建或修改 Schema 对象。
--- 固定资源：aiops_portal Domain、operations-manuals KC Collection、aiopsadmin。
+-- 固定资源：aiops_portal Domain、operations-manuals 与 diagnosis-cases KC Collection、aiopsadmin。
 -- 初始密码：AIOpsAdmin@2026!；重复执行会恢复该密码。
 
 SET SERVEROUTPUT ON
@@ -45,53 +45,75 @@ WHEN NOT MATCHED THEN INSERT (
 
 DECLARE
     l_domain_id NUMBER(38);
-    l_collection_count PLS_INTEGER;
     l_embedding_model_id RAW(16);
     l_embedding_uuid VARCHAR2(36 CHAR);
+    PROCEDURE ensure_collection(
+        p_collection_id VARCHAR2,
+        p_display_name VARCHAR2,
+        p_description VARCHAR2,
+        p_content_kind VARCHAR2
+    ) IS
+        l_collection_count PLS_INTEGER;
+    BEGIN
+        SELECT COUNT(*) INTO l_collection_count FROM KBOT_KC_COLLECTION
+         WHERE DOMAIN_ID = l_domain_id AND DISPLAY_NAME = p_display_name;
+        IF l_collection_count > 1 THEN
+            raise_application_error(-20002, 'aiops_portal 固定 Collection 重复：' || p_display_name);
+        END IF;
+        IF l_collection_count = 0 THEN
+            INSERT INTO KBOT_KC_COLLECTION (
+                COLLECTION_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION, MODELS_JSON,
+                PARSE_POLICY_JSON, STATUS, DEFAULT_SECURITY_LEVEL, METADATA_JSON,
+                ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
+            ) VALUES (
+                HEXTORAW(REPLACE(p_collection_id, '-', '')),
+                l_domain_id, p_display_name, p_description,
+                '{"embedding":"' || l_embedding_uuid || '"}',
+                '{"parse_strategy":"AUTO","do_ocr":true,"ocr_engine":"tesseract","image_scale":2.0,"extract_page_images":true,"extract_picture_images":true,"detect_table_structure":true}',
+                'ACTIVE', 1,
+                '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
+                1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
+                SYSTIMESTAMP, SYSTIMESTAMP
+            );
+        ELSE
+            UPDATE KBOT_KC_COLLECTION SET STATUS = 'ACTIVE',
+                DESCRIPTION = p_description,
+                METADATA_JSON = '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
+                UPDATED_BY = 'bootstrap:aiops_initial_admin', UPDATED_AT = SYSTIMESTAMP
+             WHERE DOMAIN_ID = l_domain_id AND DISPLAY_NAME = p_display_name;
+        END IF;
+    END;
 BEGIN
     SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
      WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE';
-    SELECT COUNT(*) INTO l_collection_count FROM KBOT_KC_COLLECTION
-     WHERE DOMAIN_ID = l_domain_id AND DISPLAY_NAME = 'operations-manuals';
-    IF l_collection_count > 1 THEN
-        raise_application_error(-20002, 'aiops_portal 存在多个 operations-manuals Collection。');
-    END IF;
-    IF l_collection_count = 0 THEN
-        BEGIN
-            SELECT MODEL_ID INTO l_embedding_model_id FROM (
-                SELECT MODEL_ID FROM KBOT_AI_MODEL
-                 WHERE CATEGORY = 2 AND STATUS = 1
-                 ORDER BY UPDATED_AT DESC, CREATED_AT DESC
-            ) WHERE ROWNUM = 1;
-        EXCEPTION WHEN NO_DATA_FOUND THEN
-            raise_application_error(-20003, '缺少启用的文本 Embedding 模型。');
-        END;
-        l_embedding_uuid := LOWER(
-            SUBSTR(RAWTOHEX(l_embedding_model_id), 1, 8) || '-' ||
-            SUBSTR(RAWTOHEX(l_embedding_model_id), 9, 4) || '-' ||
-            SUBSTR(RAWTOHEX(l_embedding_model_id), 13, 4) || '-' ||
-            SUBSTR(RAWTOHEX(l_embedding_model_id), 17, 4) || '-' ||
-            SUBSTR(RAWTOHEX(l_embedding_model_id), 21, 12)
-        );
-        INSERT INTO KBOT_KC_COLLECTION (
-            COLLECTION_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION, MODELS_JSON,
-            PARSE_POLICY_JSON, STATUS, DEFAULT_SECURITY_LEVEL, METADATA_JSON,
-            ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
-        ) VALUES (
-            HEXTORAW(REPLACE('019ffff0-0000-7000-8000-000000000001', '-', '')),
-            l_domain_id, 'operations-manuals', 'AIOps 固定数据库运维手册 Collection',
-            '{"embedding":"' || l_embedding_uuid || '"}',
-            '{"parse_strategy":"AUTO","do_ocr":true,"ocr_engine":"tesseract","image_scale":2.0,"extract_page_images":true,"extract_picture_images":true,"detect_table_structure":true}',
-            'ACTIVE', 1, '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"operations_manual"}',
-            1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
-            SYSTIMESTAMP, SYSTIMESTAMP
-        );
-    ELSE
-        UPDATE KBOT_KC_COLLECTION SET STATUS = 'ACTIVE',
-            DESCRIPTION = 'AIOps 固定数据库运维手册 Collection',
-            UPDATED_BY = 'bootstrap:aiops_initial_admin', UPDATED_AT = SYSTIMESTAMP
-         WHERE DOMAIN_ID = l_domain_id AND DISPLAY_NAME = 'operations-manuals';
-    END IF;
+    BEGIN
+        SELECT MODEL_ID INTO l_embedding_model_id FROM (
+            SELECT MODEL_ID FROM KBOT_AI_MODEL
+             WHERE CATEGORY = 2 AND STATUS = 1
+             ORDER BY UPDATED_AT DESC, CREATED_AT DESC
+        ) WHERE ROWNUM = 1;
+    EXCEPTION WHEN NO_DATA_FOUND THEN
+        raise_application_error(-20003, '缺少启用的文本 Embedding 模型。');
+    END;
+    l_embedding_uuid := LOWER(
+        SUBSTR(RAWTOHEX(l_embedding_model_id), 1, 8) || '-' ||
+        SUBSTR(RAWTOHEX(l_embedding_model_id), 9, 4) || '-' ||
+        SUBSTR(RAWTOHEX(l_embedding_model_id), 13, 4) || '-' ||
+        SUBSTR(RAWTOHEX(l_embedding_model_id), 17, 4) || '-' ||
+        SUBSTR(RAWTOHEX(l_embedding_model_id), 21, 12)
+    );
+    ensure_collection(
+        '019ffff0-0000-7000-8000-000000000001',
+        'operations-manuals',
+        'AIOps 固定数据库运维手册 Collection',
+        'operations_manual'
+    );
+    ensure_collection(
+        '019ffff0-0000-7000-8000-000000000002',
+        'diagnosis-cases',
+        'AIOps 固定历史诊断案例 Collection',
+        'diagnosis_case'
+    );
 END;
 /
 
@@ -105,7 +127,7 @@ USING (
     SELECT 'aiops:policy_manage', 'aiops', '管理诊断策略' FROM DUAL UNION ALL
     SELECT 'aiops:plan_manage', 'aiops', '管理巡检计划' FROM DUAL UNION ALL
     SELECT 'aiops:agent_manage', 'aiops', '管理 AIOps Agent' FROM DUAL UNION ALL
-    SELECT 'aiops:knowledge_manage', 'aiops', '管理 AIOps Knowledge Core' FROM DUAL UNION ALL
+    SELECT 'aiops:knowledge_manage', 'aiops', '管理 AIOps 运维知识库' FROM DUAL UNION ALL
     SELECT 'aiops:api_key_manage', 'aiops', '管理 AIOps API Client' FROM DUAL UNION ALL
     SELECT 'aiops:proposal:approve', 'aiops', '审批执行提案' FROM DUAL
 ) source ON (target.PERMISSION_CODE = source.PERMISSION_CODE)

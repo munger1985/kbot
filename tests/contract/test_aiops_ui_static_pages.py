@@ -26,7 +26,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
         "chat", "situations", "dashboard", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
-        "diagnostic-sources", "diagnostic-source-detail", "knowledge-core",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -177,6 +177,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn('data-download-implementation-runbook="json"', workspace)
         self.assertIn('"application/zip"', workspace)
         self.assertIn("bindImplementationRunbookActions(panel)", workspace)
+        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(encoding="utf-8")
+        self.assertIn("data-extract-case", pages)
+        self.assertIn("/operations-knowledge/reports/", pages)
 
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(
@@ -190,17 +193,20 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("client_file_id: crypto.randomUUID()", source)
         self.assertIn("KBotAIOpsAuth.uuid()", source)
 
-    def test_knowledge_core_page_uses_fixed_public_bff(self):
-        page = (AIOPS_ROOT / "knowledge-core.html").read_text(encoding="utf-8")
-        script = (AIOPS_ROOT / "js" / "aiops-knowledge-core.js").read_text(
+    def test_operations_knowledge_page_uses_business_registry(self):
+        page = (AIOPS_ROOT / "operations-knowledge.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-operations-knowledge.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('id="model-form"', page)
         self.assertIn('id="manual-form"', page)
-        self.assertIn("/knowledge-core/models", script)
-        self.assertIn("/knowledge-core/manuals", script)
-        self.assertIn("embedding_change_allowed", script)
-        self.assertIn("visual_embedding_change_allowed", script)
+        self.assertIn('id="search-form"', page)
+        self.assertIn("/operations-knowledge", script)
+        self.assertIn("/search-preview", script)
+        self.assertIn("X-Expected-Asset-Row-Version", script)
+        self.assertIn('data-review="publish"', script)
+        self.assertNotIn("Knowledge Core", page)
+        self.assertNotIn("Collection", page)
+        self.assertNotIn("Embedding", page)
         self.assertNotIn("/api/v1/knowledge", script)
 
     def test_login_uses_fixed_aiops_domain_contract(self):

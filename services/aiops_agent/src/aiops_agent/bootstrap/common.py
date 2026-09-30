@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 31
-                              AND contract_version = 'aiops-oracle-v21'
+                              AND schema_version = 32
+                              AND contract_version = 'aiops-oracle-v22'
                             """
                         )
                     )
@@ -102,6 +102,10 @@ class AIOpsProcessRuntime:
                                     AND COLUMN_NAME = 'DEFINITION_JSON')
                                 OR (TABLE_NAME = 'KBOT_OPS_TARGET'
                                     AND COLUMN_NAME = 'IMPORTANCE_LEVEL')
+                                OR (TABLE_NAME = 'KBOT_OPS_KNOWLEDGE_ASSET'
+                                    AND COLUMN_NAME = 'ASSET_KIND')
+                                OR (TABLE_NAME = 'KBOT_OPS_KNOWLEDGE_VERSION'
+                                    AND COLUMN_NAME = 'SOURCE_HASH')
                               )
                             """
                         )
@@ -145,7 +149,7 @@ class AIOpsProcessRuntime:
                     )
                 ).scalar_one_or_none()
                 integrity_ready = (
-                    required_columns == 15
+                    required_columns == 17
                     and report_summary_column == 1
                     and report_source_table == 1
                     and business_check_constraints == 0

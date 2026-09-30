@@ -8,6 +8,7 @@ from .inspection import InspectionRepository
 from .messaging import InboxRepository, OutboxRepository
 from .monitoring import SituationRepository, DiagnosticSourceRepository
 from .notification import NotificationSubscriptionRepository
+from .knowledge import OperationsKnowledgeRepository
 from .runtime import OpsRunRepository
 from .target import PolicyRepository, TargetRepository
 from .workload import WorkloadRepository
@@ -25,6 +26,7 @@ __all__ = [
     "OpsRunRepository",
     "OutboxRepository",
     "NotificationSubscriptionRepository",
+    "OperationsKnowledgeRepository",
     "PolicyRepository",
     "TargetRepository",
     "WorkloadRepository",

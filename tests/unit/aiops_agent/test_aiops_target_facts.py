@@ -453,7 +453,7 @@ class TargetFactSchemaContractTest(unittest.TestCase):
         rebuild = REBUILD_SCRIPT.read_text(encoding="utf-8")
         roots = (SCHEMA_DIR / "001_ops_roots.sql").read_text(encoding="utf-8")
         self.assertEqual(31, manifest["schema_version"])
-        self.assertEqual("aiops-oracle-v21", manifest["contract_version"])
+        self.assertEqual("aiops-oracle-v22", manifest["contract_version"])
         self.assertIn("KBOT_OPS_TARGET_FACT", manifest["tables"])
         self.assertIn("UX_OPS_TARGET_FACT_ACTIVE", manifest["function_unique_indexes"])
         self.assertIn("CREATE TABLE KBOT_OPS_TARGET_FACT", rebuild)

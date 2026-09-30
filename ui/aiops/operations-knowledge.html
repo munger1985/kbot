@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AIOps 运维知识库</title>
+  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/aiops-knowledge.css">
+</head>
+<body data-page="operations-knowledge">
+  <main class="ops-main">
+    <header class="ops-head">
+      <div>
+        <h1>运维知识库</h1>
+        <p>统一管理正式运维手册和经过审核的历史诊断案例。未发布内容不会进入智能运维检索。</p>
+      </div>
+      <button id="open-upload" class="primary" type="button">上传运维手册</button>
+    </header>
+
+    <section id="knowledge-overview" class="ops-grid knowledge-overview" aria-label="知识库总览">
+      <div class="ops-metric span-3"><span>已发布手册</span><strong data-metric="published_manuals">—</strong><small>正式原文与提炼导航</small></div>
+      <div class="ops-metric span-3"><span>已发布案例</span><strong data-metric="published_cases">—</strong><small>诊断参考与已验证处置</small></div>
+      <div class="ops-metric span-3"><span>待审核</span><strong data-metric="review_required">—</strong><small>草稿、冲突和案例候选</small></div>
+      <div class="ops-metric span-3"><span>处理异常</span><strong data-metric="abnormal">—</strong><small>提炼失败或索引异常</small></div>
+    </section>
+
+    <section class="ops-panel knowledge-workspace">
+      <header class="ops-panel-head">
+        <div><h2>知识资产</h2><p>页面只展示业务资产；解析和向量索引细节仅保留在管理员诊断信息中。</p></div>
+        <div class="knowledge-tabs" role="tablist">
+          <button data-kind="" class="active" type="button">全部</button>
+          <button data-kind="MANUAL" type="button">运维手册</button>
+          <button data-kind="DIAGNOSIS_CASE" type="button">诊断案例</button>
+          <button data-status="DRAFT,REVIEW_REQUIRED" type="button">待审核</button>
+        </div>
+      </header>
+      <div class="ops-panel-body">
+        <div id="knowledge-assets" class="knowledge-cards"><p class="ops-empty">正在读取运维知识资产…</p></div>
+      </div>
+    </section>
+
+    <section class="ops-grid knowledge-lower">
+      <article class="ops-panel span-7">
+        <header class="ops-panel-head"><div><h2>检索测试</h2><p>按当前问题和模拟环境验证候选范围与正文引用。</p></div></header>
+        <div class="ops-panel-body">
+          <form id="search-form" class="ops-form">
+            <div class="ops-field span-12"><label for="search-query">运维问题或操作主题</label><textarea id="search-query" required placeholder="例如：Oracle 19c 归档目的地满了如何排查"></textarea></div>
+            <div class="ops-field"><label for="search-db">数据库类型</label><select id="search-db"><option value="">未指定</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select></div>
+            <div class="ops-field"><label for="search-version">主版本</label><input id="search-version" placeholder="例如 19"></div>
+            <div class="ops-field"><label for="search-topology">拓扑</label><input id="search-topology" placeholder="例如 CDB_RAC"></div>
+            <div class="ops-filter-actions"><button class="primary" type="submit">测试检索</button></div>
+          </form>
+          <div id="search-results" class="knowledge-search-results"></div>
+        </div>
+      </article>
+      <article class="ops-panel span-5">
+        <header class="ops-panel-head"><div><h2>最近审核记录</h2><p>发布、拒绝、退役和重试均保留不可变记录。</p></div></header>
+        <div id="knowledge-reviews" class="ops-panel-body"><p class="ops-empty">正在读取审核记录…</p></div>
+      </article>
+    </section>
+  </main>
+
+  <dialog id="upload-dialog" class="knowledge-dialog">
+    <form id="manual-form" method="dialog">
+      <header><div><h2 id="upload-title">上传运维手册</h2><p id="upload-subtitle">用户填写值优先；与原文冲突时进入人工审核。</p></div><button type="button" data-close>关闭</button></header>
+      <div class="knowledge-dialog-body ops-form">
+        <div class="ops-field span-12"><label for="manual-file">原始文件</label><input id="manual-file" type="file" accept=".md,.txt,.pdf,.doc,.docx" required></div>
+        <div class="ops-field span-6"><label for="manual-name">显示名称</label><input id="manual-name" maxlength="256" required></div>
+        <div class="ops-field span-6"><label for="manual-publisher">来源或维护组织</label><input id="manual-publisher" maxlength="256"></div>
+        <div class="ops-field"><label for="manual-version">文档版本</label><input id="manual-version" maxlength="128"></div>
+        <div class="ops-field"><label for="manual-db">数据库类型</label><select id="manual-db"><option value="">未指定</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select></div>
+        <div class="ops-field"><label for="manual-db-version">数据库版本</label><input id="manual-db-version" placeholder="例如 19c"></div>
+        <div class="ops-field span-6"><label for="manual-topology">拓扑（逗号分隔）</label><input id="manual-topology" placeholder="CDB,RAC"></div>
+        <div class="ops-field span-6"><label for="manual-topics">主题（逗号分隔）</label><input id="manual-topics" placeholder="DATA_GUARD,SWITCHOVER"></div>
+        <div class="ops-field span-12"><label for="manual-notes">备注</label><textarea id="manual-notes"></textarea></div>
+        <p id="manual-result" class="knowledge-status span-12" role="status"></p>
+      </div>
+      <footer><button type="button" data-close>取消</button><button class="primary" type="submit">上传并进入处理</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="detail-dialog" class="knowledge-dialog wide">
+    <header><div><h2 id="detail-title">知识详情</h2><p id="detail-subtitle"></p></div><button type="button" data-close>关闭</button></header>
+    <div id="detail-body" class="knowledge-dialog-body"></div>
+    <footer id="detail-actions"></footer>
+  </dialog>
+
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-operations-knowledge.js"></script>
+</body>
+</html>

@@ -21,6 +21,7 @@ from aiops_agent.repositories import (
     OpsRunRepository,
     OutboxRepository,
     NotificationSubscriptionRepository,
+    OperationsKnowledgeRepository,
     PolicyRepository,
     TargetRepository,
     TurnRepository,
@@ -65,6 +66,7 @@ class AIOpsUnitOfWork:
         self.platform_notifications: PlatformNotificationRepository | None = None
         self.notification_subscriptions: NotificationSubscriptionRepository | None = None
         self.workloads: WorkloadRepository | None = None
+        self.operations_knowledge: OperationsKnowledgeRepository | None = None
 
     def _require_active(self) -> None:
         if self.state != UnitOfWorkState.ACTIVE:
@@ -98,6 +100,7 @@ class AIOpsUnitOfWork:
             self.session, guard
         )
         self.workloads = WorkloadRepository(self.session, guard)
+        self.operations_knowledge = OperationsKnowledgeRepository(self.session, guard)
         return self
 
     async def commit(self) -> None:
@@ -146,6 +149,7 @@ class AIOpsUnitOfWork:
             self.platform_notifications = None
             self.notification_subscriptions = None
             self.workloads = None
+            self.operations_knowledge = None
             self.state = UnitOfWorkState.CLOSED
 
 

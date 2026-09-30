@@ -26,7 +26,14 @@ Collection、Bundle、Embedding 等 KC 技术概念。
 - 新增业务表只使用主键、外键和列级 `NOT NULL`。状态、枚举、版本号、去重和字段组合
   关系全部由应用合同、领域服务和事务处理负责，不增加 `CHECK`、`UNIQUE` 或唯一索引。
 
-本文是目标态详细设计，不表示相关表、API、页面或检索链路已经实施。
+本文同时作为当前实现合同。Schema 32 已落地 Registry 六张表，产品入口已经切换为“运维知识库”，
+手册和诊断案例通过 AIOps 业务 API 登记、对账、审核和发布；Agent 使用
+`ops.knowledge.search@1.0.0` 先做结构化候选筛选，再调用 KC 正文检索。KC 仍是内部基础设施，
+旧 AIOps `knowledge-core` 产品页面和专用路由不再保留。既有手册可以在同一资产下上传新版本，
+新版本使用稳定 Bundle 身份形成 KC Revision，只有索引、当前 Revision、Availability 和行版本
+全部复核通过后才能发布；发布切换前上一版本继续参与检索。正式报告提炼直接读取冻结的
+`REPORT_CONTENT.v1`、ReportSource 和 Target 事实，报告发布更正版时，旧报告关联案例立即转为
+`REVIEW_REQUIRED` 并退出新检索。
 
 ## 2. 当前实现与问题
 
@@ -265,6 +272,8 @@ UPLOADING → PROCESSING → DRAFT ───────────────
 
 新文件替换现有手册时创建新版本。新版本发布成功后，应用事务把它设置为当前发布版本，
 再将旧版本退出候选集合；不得先停用旧版本后等待新版本索引，避免检索空窗。
+KC 返回成员失败、Revision 失败或 Publication 失败时，Registry 必须记录稳定错误码和摘要并将
+版本置为 `FAILED`；重试会先请求 KC 重处理原 Revision，再重新执行完整对账，不能只重置本地状态。
 
 ## 7. 诊断报告案例提炼
 
@@ -730,6 +739,7 @@ POST   /api/v1/apps/aiops/operations-knowledge/search-preview
 
 ```text
 POST /internal/v1/aiops/operations-knowledge/manuals:ingest
+POST /internal/v1/aiops/operations-knowledge/assets/{asset_id}/versions:ingest
 POST /internal/v1/aiops/operations-knowledge/reports/{report_id}:extract-case
 POST /internal/v1/aiops/operations-knowledge:search
 POST /internal/v1/aiops/operations-knowledge/index-reconciliation:run
@@ -946,3 +956,6 @@ KC Revision `READY` 不是唯一条件。发布前必须同时确认：
 13. KC Revision、Bundle 当前版本、Availability 和行版本不一致时禁止发布。
 14. 新增 DDL 不包含业务 `CHECK`、`UNIQUE` 或唯一索引。
 15. 旧 AIOps `knowledge-core` 产品接口在切换后删除，不存在双读或双写路径。
+16. 同一手册上传新版本不会造成已发布版本检索空窗，并使用资产行版本阻止并发覆盖。
+17. 来源报告被更正后，旧案例在同一事务内进入 `REVIEW_REQUIRED`，不会继续参与新检索。
+18. KC 成员、Revision 或发布失败会落为可重试的 `FAILED`，不会无限停留在 `PROCESSING`。

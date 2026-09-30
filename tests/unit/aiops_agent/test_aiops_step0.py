@@ -328,6 +328,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 "007_ops_agents.sql",
                 "008_ops_conversations_reports.sql",
                 "009_ops_workload.sql",
+                "010_ops_knowledge.sql",
             ],
             [path.name for path in sql_files],
         )

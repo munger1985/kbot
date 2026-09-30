@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 31,
-  "contract_version": "aiops-oracle-v21",
+  "schema_version": 32,
+  "contract_version": "aiops-oracle-v22",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "d4a6bc06ea8d4b6fda653e3a2be063a562a7faacc68077a36cde26ea185d7e0a"
+      "sha256": "99174b615b2ee78144663ee78a1b957a0f4aa2177e02040292712f70782ca224"
     },
     {
       "name": "007_ops_agents.sql",
@@ -48,6 +48,11 @@
       "name": "009_ops_workload.sql",
       "statements": 16,
       "sha256": "952293368ed6105f545fc356d44f880a05645967e1862569ac10c4e973aec89c"
+    },
+    {
+      "name": "010_ops_knowledge.sql",
+      "statements": 20,
+      "sha256": "9f103aeffa0705acf619d2c7b8dd1a42700315725fcee3fbc034f5010ef8a2b3"
     }
   ],
   "tables": [
@@ -100,7 +105,13 @@
     "KBOT_OPS_WORKLOAD_SNAPSHOT",
     "KBOT_OPS_WORKLOAD_STATEMENT",
     "KBOT_OPS_WORKLOAD_METRIC",
-    "KBOT_OPS_ACTIVITY_SAMPLE"
+    "KBOT_OPS_ACTIVITY_SAMPLE",
+    "KBOT_OPS_KNOWLEDGE_ASSET",
+    "KBOT_OPS_KNOWLEDGE_VERSION",
+    "KBOT_OPS_KNOWLEDGE_SCOPE",
+    "KBOT_OPS_KNOWLEDGE_SOURCE",
+    "KBOT_OPS_KNOWLEDGE_INDEX",
+    "KBOT_OPS_KNOWLEDGE_REVIEW"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",

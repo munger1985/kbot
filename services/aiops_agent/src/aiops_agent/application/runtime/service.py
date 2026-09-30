@@ -1309,17 +1309,6 @@ class AIOpsRuntimeService:
             if enabled is True
         )
         rules = dict(policy_snapshot.get("rules", {}))
-        collection_ids = rules.get("aiops_collection_ids", [])
-        if not isinstance(collection_ids, list):
-            raise validation_failed("策略中的 AIOps Collection 范围无效")
-        try:
-            normalized_collection_ids = tuple(
-                str(UUID(str(item))) for item in collection_ids
-            )
-        except (TypeError, ValueError):
-            raise validation_failed(
-                "策略中的 AIOps Collection ID 无效"
-            ) from None
         question = command.input.strip()
         if source_context is not None:
             question = (
@@ -1339,9 +1328,7 @@ class AIOpsRuntimeService:
             "question_summary": question[:2000],
             "source_context": dict(source_context or {}),
             "target_capabilities": capability_names,
-            "allowed_collection_ids": tuple(
-                normalized_collection_ids
-            ),
+            "allowed_collection_ids": (),
             "policy_snapshot_hash": sha256_json(policy_snapshot),
             "model": {
                 "enabled": bool(model_snapshot),
@@ -6648,6 +6635,12 @@ class AIOpsRuntimeService:
                 trace_id=trace_id,
                 now=now,
             )
+            knowledge_repository = getattr(uow, "operations_knowledge", None)
+            if knowledge_repository is not None:
+                await knowledge_repository.mark_cases_for_report_review(
+                    report_id=report.report_id,
+                    reviewer_id=actor_id,
+                )
             await uow.commit()
             return self._report_view(saved, report_artifact)
 

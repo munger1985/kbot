@@ -160,6 +160,7 @@ def create_runtime_handler_registry(
     diagnosis_prompt_registry=None,
     diagnostic_registry=None,
     knowledge_core_client=None,
+    operations_knowledge_service=None,
     diagnosis_caller_service: str | None = None,
     action_registry=None,
     action_execution_enabled: bool = False,
@@ -376,7 +377,7 @@ def create_runtime_handler_registry(
         and diagnosis_prompt_registry is not None
         and diagnostic_registry is not None
         and database_diagnostic_handler is not None
-        and knowledge_core_client is not None
+        and operations_knowledge_service is not None
     ):
         from .diagnosis_handlers import (
             BuildEvidenceIndexHandler,
@@ -409,12 +410,12 @@ def create_runtime_handler_registry(
                     implementation=BuildEvidenceIndexHandler(),
                 ),
                 HandlerManifest(
-                    handler_id="diagnosis.knowledge-citation",
-                    version="1",
+                    handler_id="ops.knowledge.search",
+                    version="1.0.0",
                     output_schema_version="KNOWLEDGE_CITATION_PACK.v1",
                     idempotent=True,
                     implementation=KnowledgeCitationHandler(
-                        knowledge_client=knowledge_core_client,
+                        knowledge_service=operations_knowledge_service,
                         caller_service=diagnosis_caller_service or "",
                     ),
                 ),

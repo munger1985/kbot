@@ -1,4 +1,4 @@
-"""幂等初始化 AIOps 管理员、固定 Domain、KC Collection 和运维手册。"""
+"""幂等初始化 AIOps 管理员、固定 Domain、内部知识集合和运维手册。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from urllib.parse import quote
 
 import aiohttp
 
@@ -43,9 +44,9 @@ MANUAL_PATH = (
 )
 DOMAIN_NAME = "aiops_portal"
 COLLECTION_NAME = "operations-manuals"
+CASE_COLLECTION_NAME = "diagnosis-cases"
 ADMIN_USER = "aiopsadmin"
 INITIAL_PASSWORD = "AIOpsAdmin@2026!"
-MANUAL_SOURCE_ID = "aiops-database-operations-manual"
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class AIOpsInitializationResult:
     schema_name: str
     domain_id: int
     collection_id: str
+    case_collection_id: str
     permission_count: int
     manual_status: str | None
 
@@ -134,7 +136,22 @@ async def _validate(connection) -> AIOpsInitializationResult:
            AND collection.STATUS='ACTIVE' AND collection.MODELS_JSON IS NOT NULL
     """))).one_or_none()
     if resource is None:
-        raise RuntimeError("aiopsadmin、aiops_portal 或固定 KC 初始化不完整")
+        raise RuntimeError("aiopsadmin、aiops_portal 或固定运维手册集合初始化不完整")
+    case_collection_id = (await connection.execute(text("""
+        SELECT LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID),1,8)||'-'||
+                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),9,4)||'-'||
+                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),13,4)||'-'||
+                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),17,4)||'-'||
+                     SUBSTR(RAWTOHEX(collection.COLLECTION_ID),21,12))
+          FROM KBOT_KC_COLLECTION collection
+         WHERE collection.DOMAIN_ID=:domain_id
+           AND collection.DISPLAY_NAME='diagnosis-cases'
+           AND collection.STATUS='ACTIVE'
+           AND JSON_VALUE(collection.METADATA_JSON, '$.owner_app_id')='aiops'
+           AND JSON_VALUE(collection.METADATA_JSON, '$.fixed_resource')='true'
+    """), {"domain_id": int(resource[0])})).scalar_one_or_none()
+    if case_collection_id is None:
+        raise RuntimeError("固定诊断案例集合初始化不完整")
     missing = (await connection.execute(text("""
         SELECT PERMISSION_CODE FROM KBOT_PERMISSION WHERE APP_ID='aiops'
         MINUS
@@ -154,15 +171,15 @@ async def _validate(connection) -> AIOpsInitializationResult:
          WHERE bundle.COLLECTION_ID=HEXTORAW(REPLACE(:collection_id,'-',''))
            AND bundle.SOURCE_SYSTEM='kbot'
            AND bundle.SOURCE_TYPE='USER_UPLOAD'
-           AND bundle.SOURCE_ID=:source_id
          ORDER BY revision.REVISION_NO DESC
          FETCH FIRST 1 ROWS ONLY
     """), {
-        "collection_id": str(resource[1]), "source_id": MANUAL_SOURCE_ID,
+        "collection_id": str(resource[1]),
     })).scalar_one_or_none()
     return AIOpsInitializationResult(
         pdb_name=str(target[0]), schema_name=str(target[1]),
         domain_id=int(resource[0]), collection_id=str(resource[1]),
+        case_collection_id=str(case_collection_id),
         permission_count=permission_count,
         manual_status=str(manual_status) if manual_status else None,
     )
@@ -183,17 +200,6 @@ async def _upload_manual(*, base_url: str) -> None:
     content = MANUAL_PATH.read_bytes()
     digest = hashlib.sha256(content).hexdigest()
     idempotency_key = f"aiops-manual:{digest}"
-    declaration = [{
-        "part_name": "manual",
-        "client_file_id": MANUAL_SOURCE_ID,
-        "display_name": "KBot AIOps 数据库运维手册",
-        "declared_mime_type": "text/markdown",
-        "byte_size": len(content),
-        "content_sha256": digest,
-        "ordinal": 0,
-        "role": "CONTENT",
-        "required_flag": True,
-    }]
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as session:
         async with session.post(
             f"{base_url}/api/v1/apps/aiops/auth/login",
@@ -203,33 +209,31 @@ async def _upload_manual(*, base_url: str) -> None:
             if response.status != 200:
                 raise RuntimeError(f"AIOps 初始化用户登录失败：HTTP {response.status} {login}")
         token = str(login["access_token"])
-        form = aiohttp.FormData()
-        form.add_field("grouping_mode", "EACH_FILE")
-        form.add_field("files", json.dumps(declaration, ensure_ascii=False))
-        form.add_field(
-            "manual", content, filename=MANUAL_PATH.name,
-            content_type="text/markdown",
-        )
-        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": idempotency_key}
+        metadata = {
+            "display_name": "KBot AIOps 数据库运维手册",
+            "publisher": "KBot",
+            "document_version": "4.0",
+            "security_level": 1,
+            "scopes": [],
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": idempotency_key,
+            "Content-Type": "text/markdown",
+            "X-File-Name": MANUAL_PATH.name,
+            "X-Content-SHA256": digest,
+            "X-Upload-Metadata": quote(
+                json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+                safe="",
+            ),
+        }
         async with session.post(
-            f"{base_url}/api/v1/apps/aiops/knowledge-core/manuals",
-            data=form, headers=headers,
+            f"{base_url}/api/v1/apps/aiops/operations-knowledge/manuals",
+            data=content, headers=headers,
         ) as response:
             payload = await response.json()
             if response.status != 202:
                 raise RuntimeError(f"AIOps 运维手册入库失败：HTTP {response.status} {payload}")
-        items = payload.get("items") or []
-        if not items or items[0].get("status") == "REJECTED":
-            raise RuntimeError(f"AIOps 运维手册未被 KC 受理：{payload}")
-        revision_id = items[0].get("bundle_revision_id")
-        async with session.post(
-            f"{base_url}/api/v1/apps/aiops/knowledge-core/manuals/{revision_id}/approve",
-            json={"comment": "AIOps 初始化脚本批准固定运维手册"},
-            headers={"Authorization": f"Bearer {token}"},
-        ) as response:
-            approval = await response.json()
-            if response.status != 200:
-                raise RuntimeError(f"AIOps 运维手册审批失败：HTTP {response.status} {approval}")
 
 
 async def initialize_aiops(
@@ -283,6 +287,7 @@ def main() -> int:
         f"AIOps {action}：PDB={result.pdb_name}，Schema={result.schema_name}，"
         f"Domain={DOMAIN_NAME}({result.domain_id})，"
         f"Collection={COLLECTION_NAME}({result.collection_id})，"
+        f"CaseCollection={CASE_COLLECTION_NAME}({result.case_collection_id})，"
         f"权限={result.permission_count}，用户={ADMIN_USER}，"
         f"运维手册={result.manual_status or '未上传'}"
     )

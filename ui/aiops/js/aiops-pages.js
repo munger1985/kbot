@@ -514,6 +514,7 @@
   }
 
   const protectedReportSections = new Set(["EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"]);
+  let canManageOperationsKnowledge = false;
 
   function leadershipBriefingHtml(briefing) {
     if (!briefing || typeof briefing !== "object") return "";
@@ -527,7 +528,7 @@
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
-    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
   }
 
   function beginReportEdit(panel, data, report, versions) {
@@ -580,6 +581,20 @@
     ).catch((error) => shell.toast(error.message));
     const editButton = panel.querySelector("[data-edit-report]");
     if (editButton) editButton.onclick = () => beginReportEdit(panel, data, report, versions);
+    const extractButton = panel.querySelector("[data-extract-case]");
+    if (extractButton) extractButton.onclick = async () => {
+      extractButton.disabled = true;
+      try {
+        await KBotAIOpsAuth.request(
+          appApi + `/operations-knowledge/reports/${encodedId}:extract-case`,
+          { method: "POST" },
+        );
+        shell.toast("诊断案例候选已创建，完成索引后请到运维知识库审核发布");
+      } catch (error) {
+        shell.toast(error.message);
+        extractButton.disabled = false;
+      }
+    };
     panel.querySelector("[data-report-version]").onchange = (event) => {
       const selected = event.currentTarget.value;
       if (selected && selected !== String(report.report_id)) {
@@ -613,7 +628,8 @@
     try { panel.innerHTML = `<pre class="ops-code">${shell.escape(JSON.stringify(await KBotAIOpsAuth.request(paths[page]), null, 2))}</pre>`; }
     catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
-  shell.ready.then(() => {
+  shell.ready.then((access) => {
+    canManageOperationsKnowledge = new Set(access?.permissions || []).has("aiops:knowledge_manage");
     document.querySelectorAll("header.ops-head button:not([onclick]):not([data-write-ready])").forEach((button) => {
       button.disabled = true;
       button.title = "该写操作将在对应配置表单接入后开放";

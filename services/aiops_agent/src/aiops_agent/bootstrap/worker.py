@@ -37,6 +37,7 @@ from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
 from aiops_agent.application.workload import WorkloadService
+from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.application.configuration.connection_test import (
     test_target_connection,
 )
@@ -184,6 +185,10 @@ def create_aiops_worker_probe(
             timeout_seconds=resolved.clients.knowledge_core.timeout_seconds,
             session=client_session,
         )
+        operations_knowledge_service = OperationsKnowledgeService(
+            uow_factory=runtime.uow_factory,
+            knowledge_core=knowledge_core_client,
+        )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(
             base_url=resolved.clients.db_executor.base_url,
@@ -207,6 +212,7 @@ def create_aiops_worker_probe(
             diagnosis_prompt_registry=diagnosis_prompts,
             diagnostic_registry=diagnostic_registry,
             knowledge_core_client=knowledge_core_client,
+            operations_knowledge_service=operations_knowledge_service,
             diagnosis_caller_service=config.service_name,
             action_registry=action_registry,
             action_execution_enabled=(
@@ -261,6 +267,8 @@ def create_aiops_worker_probe(
             runtime_service=runtime_service,
             interval_seconds=config.claim_interval_seconds,
             turn_queue_service=turn_queue_service,
+            operations_knowledge_service=operations_knowledge_service,
+            caller_service=config.service_name,
         )
         dispatcher = AIOpsOutboxDispatcher(
             uow_factory=runtime.uow_factory,

@@ -11,14 +11,12 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from main_api.api.models import ModelCatalogItem, load_model_catalog
 from main_api.application import (
     UserAuthService,
     authorize_app_request,
     require_app_api_agent,
 )
 from platform_core.authorization import can_read_agent, filter_readable_agents
-from platform_clients import KnowledgeCoreClient
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
 from platform_core.contracts.aiops import (
@@ -44,7 +42,6 @@ router = APIRouter(
     tags=["AIOps App"],
 )
 AIOPS_PORTAL_DOMAIN_NAME = "aiops_portal"
-AIOPS_MANUAL_COLLECTION_NAME = "operations-manuals"
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key")]
 
 
@@ -74,19 +71,26 @@ class AIOpsPasswordChangePayload(_Payload):
         return value
 
 
-class AIOpsCollectionModelsPayload(_Payload):
-    parser_vlm: UUID | None = None
-    embedding: UUID
-    visual_embedding: UUID | None = None
+class OperationsKnowledgeReviewPayload(_Payload):
     expected_row_version: int = Field(ge=1)
+    comment: str | None = Field(default=None, max_length=2000)
 
 
-class AIOpsCollectionStatusPayload(_Payload):
-    status: Literal["ACTIVE", "DISABLED"]
-
-
-class AIOpsManualApprovalPayload(_Payload):
-    comment: str | None = Field(default=None, max_length=1000)
+class OperationsKnowledgeSearchPayload(_Payload):
+    query: str = Field(min_length=1, max_length=4000)
+    purpose: Literal["DIAGNOSE", "EXPLAIN", "PLAN", "CHANGE", "VERIFY"] = "DIAGNOSE"
+    problem_class: str | None = Field(default=None, max_length=128)
+    components: tuple[str, ...] = Field(default=(), max_length=16)
+    error_codes: tuple[str, ...] = Field(default=(), max_length=16)
+    signal_names: tuple[str, ...] = Field(default=(), max_length=16)
+    database_type: str | None = Field(default=None, max_length=32)
+    database_major_version: str | None = Field(default=None, max_length=32)
+    topology: str | None = Field(default=None, max_length=64)
+    source_kinds: tuple[Literal["MANUAL", "DIAGNOSIS_CASE"], ...] = (
+        "MANUAL", "DIAGNOSIS_CASE"
+    )
+    max_results: int = Field(default=8, ge=1, le=20)
+    max_security_level: int = Field(default=3, ge=1, le=5)
 
 
 class AIOpsAgentCreatePayload(_Payload):
@@ -186,77 +190,6 @@ def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
 
 
-def _knowledge_client(request: Request) -> KnowledgeCoreClient:
-    return cast(KnowledgeCoreClient, request.app.state.knowledge_core_client)
-
-
-async def _fixed_manual_collection(
-    request: Request, *, domain_id: int, require_active: bool = False
-) -> tuple[int, dict[str, Any]]:
-    """取得当前 AIOps Domain 唯一的固定运维手册 Collection。"""
-    catalog = await _knowledge_client(request).list_collections(
-        domain_id=domain_id,
-        auth_context=request.state.auth_context,
-    )
-    matches = [
-        item for item in catalog.get("collections", [])
-        if item.get("display_name") == AIOPS_MANUAL_COLLECTION_NAME
-    ]
-    if len(matches) != 1:
-        code = "AIOPS_KC_DUPLICATED" if matches else "AIOPS_KC_UNAVAILABLE"
-        message = (
-            "AIOps 固定运维手册 Collection 存在重复"
-            if matches else "AIOps 固定运维手册 Collection 尚未初始化"
-        )
-        raise HTTPException(
-            status.HTTP_409_CONFLICT if matches else status.HTTP_503_SERVICE_UNAVAILABLE,
-            {"code": code, "message": message},
-        )
-    collection = matches[0]
-    metadata = collection.get("metadata") or {}
-    if (
-        metadata.get("owner_app_id") != "aiops"
-        or metadata.get("fixed_resource") is not True
-    ):
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            {
-                "code": "AIOPS_KC_SCOPE_INVALID",
-                "message": "AIOps 运维手册 Collection 的固定资源标识无效",
-            },
-        )
-    if require_active and collection.get("status") != "ACTIVE":
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            {"code": "AIOPS_KC_DISABLED", "message": "AIOps 固定运维手册 Collection 未启用"},
-        )
-    return domain_id, collection
-
-
-async def _validated_aiops_models(
-    request: Request, *, parser_vlm: UUID | None,
-    embedding: UUID, visual_embedding: UUID | None,
-) -> dict[str, str]:
-    """按平台模型目录校验 AIOps KC 模型类别。"""
-    rows = await load_model_catalog(request)
-    by_id = {str(item.get("model_id")): item for item in rows}
-    requested = {"embedding": (embedding, 2)}
-    if parser_vlm is not None:
-        requested["parser_vlm"] = (parser_vlm, 5)
-    if visual_embedding is not None:
-        requested["visual_embedding"] = (visual_embedding, 3)
-    result: dict[str, str] = {}
-    for role, (model_id, category) in requested.items():
-        row = by_id.get(str(model_id))
-        if row is None or int(row.get("category") or 0) != category:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                {"code": "AIOPS_KC_MODEL_INVALID", "message": f"模型角色 {role} 不可用或类别不正确"},
-            )
-        result[role] = str(model_id)
-    return result
-
-
 async def _require(request: Request, permission: str):
     return await authorize_app_request(
         request,
@@ -310,110 +243,187 @@ async def change_password(payload: AIOpsPasswordChangePayload, request: Request)
     )
 
 
-@router.get("/model-catalog", response_model=list[ModelCatalogItem])
-async def list_aiops_model_catalog(request: Request):
+@router.get("/operations-knowledge/overview")
+async def operations_knowledge_overview(request: Request):
     await _require(request, "aiops:knowledge_manage")
-    return await load_model_catalog(request)
-
-
-@router.get("/knowledge-core")
-async def get_aiops_knowledge_core(request: Request):
-    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(
-        request, domain_id=domain_id
+    return await _client(request).get_operations_knowledge_overview(
+        auth_context=request.state.auth_context
     )
-    policy = await _knowledge_client(request).get_collection_model_policy(
-        domain_id=domain_id,
-        collection_id=UUID(str(collection["collection_id"])),
+
+
+@router.get("/operations-knowledge/assets")
+async def list_operations_knowledge_assets(
+    request: Request,
+    asset_kind: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).list_operations_knowledge_assets(
+        asset_kind=asset_kind, status=status_filter, limit=limit,
         auth_context=request.state.auth_context,
     )
-    return {
-        "collection_name": AIOPS_MANUAL_COLLECTION_NAME,
-        "collection": collection,
-        "model_policy": policy,
+
+
+@router.get("/operations-knowledge/assets/{asset_id}")
+async def get_operations_knowledge_asset(asset_id: UUID, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).get_operations_knowledge_asset(
+        asset_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get("/operations-knowledge/versions/{asset_version_id}")
+async def get_operations_knowledge_version(asset_version_id: UUID, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).get_operations_knowledge_version(
+        asset_version_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get("/operations-knowledge/versions/{asset_version_id}/source")
+async def download_operations_knowledge_source(asset_version_id: UUID, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    result = await _client(request).download_operations_knowledge_source(
+        asset_version_id, auth_context=request.state.auth_context
+    )
+    return Response(
+        content=result.body,
+        media_type=result.media_type,
+        headers=result.headers,
+    )
+
+
+@router.post("/operations-knowledge/manuals", status_code=status.HTTP_202_ACCEPTED)
+async def upload_operations_manual(request: Request):
+    """把原始手册有界转发到 AIOps，由业务服务登记资产并驱动 KC。"""
+    await _require(request, "aiops:knowledge_manage")
+    required = {
+        "file_name": request.headers.get("X-File-Name", "").strip(),
+        "metadata": request.headers.get("X-Upload-Metadata", "").strip(),
+        "sha256": request.headers.get("X-Content-SHA256", "").strip(),
+        "idempotency": request.headers.get("Idempotency-Key", "").strip(),
     }
-
-
-@router.put("/knowledge-core/models")
-async def update_aiops_knowledge_core_models(
-    payload: AIOpsCollectionModelsPayload, request: Request,
-):
-    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(
-        request, domain_id=domain_id
-    )
-    models = await _validated_aiops_models(
-        request, parser_vlm=payload.parser_vlm,
-        embedding=payload.embedding,
-        visual_embedding=payload.visual_embedding,
-    )
-    return await _knowledge_client(request).update_collection_models(
-        domain_id=domain_id,
-        collection_id=UUID(str(collection["collection_id"])),
-        payload={"models": models, "expected_row_version": payload.expected_row_version},
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.patch("/knowledge-core/status")
-async def change_aiops_knowledge_core_status(
-    payload: AIOpsCollectionStatusPayload, request: Request,
-):
-    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(
-        request, domain_id=domain_id
-    )
-    return await _knowledge_client(request).change_collection_status(
-        domain_id=domain_id,
-        collection_id=UUID(str(collection["collection_id"])),
-        status=payload.status,
-        auth_context=request.state.auth_context,
-    )
-
-
-@router.post("/knowledge-core/manuals", status_code=status.HTTP_202_ACCEPTED)
-async def upload_aiops_manual(request: Request):
-    """把运维手册流式送入固定 KC，不在 Main API 落盘。"""
-    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(
-        request, domain_id=domain_id, require_active=True
-    )
-    content_type = request.headers.get("Content-Type", "")
-    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
-    if not content_type.lower().startswith("multipart/form-data") or not idempotency_key:
+    if not all(required.values()):
         raise HTTPException(
             status.HTTP_428_PRECONDITION_REQUIRED,
-            {
-                "code": "AIOPS_KC_UPLOAD_HEADERS_REQUIRED",
-                "message": "缺少 multipart Content-Type 或 Idempotency-Key",
-            },
+            {"code": "AIOPS_KNOWLEDGE_UPLOAD_HEADERS_REQUIRED", "message": "缺少运维手册上传头"},
         )
-    upstream = await _knowledge_client(request).ingest_multipart(
-        domain_id=domain_id,
-        collection_id=UUID(str(collection["collection_id"])),
-        intake_kind="user-files", content_type=content_type,
-        body=request.stream(), idempotency_key=idempotency_key,
+    metadata = json.loads(unquote(required["metadata"]))
+    return await _client(request).upload_operations_manual(
+        file_name=unquote(required["file_name"]),
+        media_type=request.headers.get("Content-Type", "application/octet-stream"),
+        body=request.stream(), metadata=metadata,
+        content_sha256=required["sha256"],
+        idempotency_key=required["idempotency"],
         auth_context=request.state.auth_context,
     )
-    return JSONResponse(status_code=upstream.status_code, content=upstream.payload)
 
 
-@router.post("/knowledge-core/manuals/{bundle_revision_id}/approve")
-async def approve_aiops_manual(
-    bundle_revision_id: UUID,
-    payload: AIOpsManualApprovalPayload,
-    request: Request,
+@router.post(
+    "/operations-knowledge/assets/{asset_id}/versions",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_operations_manual_version(asset_id: UUID, request: Request):
+    """给既有手册资产登记新版本，发布前保留上一版本继续检索。"""
+    await _require(request, "aiops:knowledge_manage")
+    required = {
+        "file_name": request.headers.get("X-File-Name", "").strip(),
+        "metadata": request.headers.get("X-Upload-Metadata", "").strip(),
+        "sha256": request.headers.get("X-Content-SHA256", "").strip(),
+        "idempotency": request.headers.get("Idempotency-Key", "").strip(),
+        "row_version": request.headers.get(
+            "X-Expected-Asset-Row-Version", ""
+        ).strip(),
+    }
+    if not all(required.values()):
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED,
+            {"code": "AIOPS_KNOWLEDGE_UPLOAD_HEADERS_REQUIRED", "message": "缺少手册版本上传头"},
+        )
+    try:
+        expected_row_version = int(required["row_version"])
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            {"code": "AIOPS_KNOWLEDGE_VERSION_CONFLICT", "message": "资产版本号无效"},
+        ) from exc
+    metadata = json.loads(unquote(required["metadata"]))
+    return await _client(request).upload_operations_manual_version(
+        asset_id=asset_id,
+        expected_asset_row_version=expected_row_version,
+        file_name=unquote(required["file_name"]),
+        media_type=request.headers.get("Content-Type", "application/octet-stream"),
+        body=request.stream(),
+        metadata=metadata,
+        content_sha256=required["sha256"],
+        idempotency_key=required["idempotency"],
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/operations-knowledge/reports/{report_id}:extract-case", status_code=202)
+async def extract_operations_diagnosis_case(report_id: UUID, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).extract_operations_diagnosis_case(
+        report_id, auth_context=request.state.auth_context
+    )
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:reconcile")
+async def reconcile_operations_knowledge_version(asset_version_id: UUID, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).reconcile_operations_knowledge_version(
+        asset_version_id, auth_context=request.state.auth_context
+    )
+
+
+async def _review_operations_knowledge(
+    *, asset_version_id: UUID, decision: str,
+    payload: OperationsKnowledgeReviewPayload, request: Request,
 ):
-    domain_id, _, _ = await _require(request, "aiops:knowledge_manage")
-    domain_id, collection = await _fixed_manual_collection(
-        request, domain_id=domain_id
-    )
-    return await _knowledge_client(request).review_user_intake(
-        domain_id=domain_id,
-        collection_id=UUID(str(collection["collection_id"])),
-        bundle_revision_id=bundle_revision_id,
-        decision="APPROVE", comment=payload.comment,
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).review_operations_knowledge_version(
+        asset_version_id, decision=decision,
+        expected_row_version=payload.expected_row_version,
+        comment=payload.comment,
         auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:publish")
+async def publish_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+    return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="publish", payload=payload, request=request)
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:reject")
+async def reject_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+    return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="reject", payload=payload, request=request)
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:retire")
+async def retire_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+    return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="retire", payload=payload, request=request)
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:retry")
+async def retry_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+    return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="retry", payload=payload, request=request)
+
+
+@router.get("/operations-knowledge/reviews")
+async def list_operations_knowledge_reviews(request: Request, limit: int = Query(100, ge=1, le=500)):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).list_operations_knowledge_reviews(
+        limit=limit, auth_context=request.state.auth_context
+    )
+
+
+@router.post("/operations-knowledge/search-preview")
+async def preview_operations_knowledge_search(payload: OperationsKnowledgeSearchPayload, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).search_operations_knowledge(
+        payload.model_dump(mode="json"), auth_context=request.state.auth_context
     )
 
 

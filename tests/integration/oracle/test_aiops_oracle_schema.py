@@ -77,8 +77,11 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
                 rf"\bCREATE\s+INDEX\s+{definition['index']}\s+"
                 rf"ON\s+{definition['table']}\s*\(\s*{columns}\s*\)",
             )
-        self.assertIn("STATUS = 'RUNNING' AND LEASE_OWNER IS NOT NULL", self.upper_sql)
-        self.assertIn(
+        self.assertNotIn(
+            "STATUS = 'RUNNING' AND LEASE_OWNER IS NOT NULL",
+            self.upper_sql,
+        )
+        self.assertNotIn(
             "STATUS = 'PUBLISHING' AND LEASE_OWNER IS NOT NULL",
             self.upper_sql,
         )
@@ -108,12 +111,20 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
     def test_oracle_26ai_physical_adaptations_are_explicit(self) -> None:
         self.assertNotRegex(self.upper_sql, r"\bMODE\s+VARCHAR2\b")
         self.assertIn("EXECUTION_KIND VARCHAR2(16 CHAR)", self.upper_sql)
-        self.assertIn(
+        self.assertNotIn(
             "SYS_EXTRACT_UTC(SCHEDULED_FOR)",
             self.upper_sql,
         )
-        self.assertIn(
+        self.assertNotIn(
             "UNIQUE (INSPECTION_PLAN_ID, SCHEDULED_FOR_UTC)",
+            self.upper_sql,
+        )
+        self.assertIn(
+            "REFERENCES KBOT_OPS_RUN (OPS_RUN_ID)",
+            self.upper_sql,
+        )
+        self.assertNotIn(
+            "REFERENCES KBOT_OPS_RUN (RUN_ID)",
             self.upper_sql,
         )
 

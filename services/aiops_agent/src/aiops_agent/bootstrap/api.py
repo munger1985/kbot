@@ -42,6 +42,7 @@ from aiops_agent.api.conversation_starters import (
     router as conversation_starter_router,
 )
 from aiops_agent.api.report_templates import router as report_template_router
+from aiops_agent.api.operations_knowledge import router as operations_knowledge_router
 from aiops_agent.api.workload import (
     artifact_router as workload_artifact_router,
     router as workload_router,
@@ -55,6 +56,7 @@ from aiops_agent.application.report_templates import (
     InspectionTemplateService,
     SessionReportTemplateService,
 )
+from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
 from aiops_agent.api.changes import router as changes_router
@@ -272,6 +274,10 @@ def create_aiops_api(
             timeout_seconds=resolved.clients.knowledge_core.timeout_seconds,
             session=client_session,
         )
+        app.state.operations_knowledge_service = OperationsKnowledgeService(
+            uow_factory=runtime.uow_factory,
+            knowledge_core=knowledge_core_client,
+        )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         app.state.managed_credential_service = managed_credential_service
         app.state.diagnostic_grant_codec = diagnostic_grant_codec
@@ -297,6 +303,7 @@ def create_aiops_api(
             diagnosis_prompt_registry=diagnosis_prompts,
             diagnostic_registry=diagnostic_registry,
             knowledge_core_client=knowledge_core_client,
+            operations_knowledge_service=app.state.operations_knowledge_service,
             diagnosis_caller_service=config.service_name,
             action_registry=action_registry,
             action_execution_enabled=(
@@ -393,6 +400,7 @@ def create_aiops_api(
     app.include_router(conversation_starter_router)
     app.include_router(conversation_router)
     app.include_router(report_template_router)
+    app.include_router(operations_knowledge_router)
     app.include_router(runtime_router)
     app.include_router(intake_router)
     app.include_router(changes_router)

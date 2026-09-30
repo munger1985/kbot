@@ -316,69 +316,6 @@
         "title": "AIOpsAgentUpdatePayload",
         "type": "object"
       },
-      "AIOpsCollectionModelsPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "embedding": {
-            "format": "uuid",
-            "title": "Embedding",
-            "type": "string"
-          },
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
-          },
-          "parser_vlm": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parser Vlm"
-          },
-          "visual_embedding": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Visual Embedding"
-          }
-        },
-        "required": [
-          "embedding",
-          "expected_row_version"
-        ],
-        "title": "AIOpsCollectionModelsPayload",
-        "type": "object"
-      },
-      "AIOpsCollectionStatusPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "AIOpsCollectionStatusPayload",
-        "type": "object"
-      },
       "AIOpsConversationTurnPayload": {
         "additionalProperties": false,
         "properties": {
@@ -437,25 +374,6 @@
           "password"
         ],
         "title": "AIOpsLoginPayload",
-        "type": "object"
-      },
-      "AIOpsManualApprovalPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "comment": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment"
-          }
-        },
-        "title": "AIOpsManualApprovalPayload",
         "type": "object"
       },
       "AIOpsPasswordChangePayload": {
@@ -8428,6 +8346,165 @@
           }
         },
         "title": "OperationWatchUpdate",
+        "type": "object"
+      },
+      "OperationsKnowledgeReviewPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "OperationsKnowledgeReviewPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeSearchPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Components",
+            "type": "array"
+          },
+          "database_major_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Major Version"
+          },
+          "database_type": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Type"
+          },
+          "error_codes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Error Codes",
+            "type": "array"
+          },
+          "max_results": {
+            "default": 8,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "max_security_level": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Max Security Level",
+            "type": "integer"
+          },
+          "problem_class": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Class"
+          },
+          "purpose": {
+            "default": "DIAGNOSE",
+            "enum": [
+              "DIAGNOSE",
+              "EXPLAIN",
+              "PLAN",
+              "CHANGE",
+              "VERIFY"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "query": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "signal_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Signal Names",
+            "type": "array"
+          },
+          "source_kinds": {
+            "default": [
+              "MANUAL",
+              "DIAGNOSIS_CASE"
+            ],
+            "items": {
+              "enum": [
+                "MANUAL",
+                "DIAGNOSIS_CASE"
+              ],
+              "type": "string"
+            },
+            "title": "Source Kinds",
+            "type": "array"
+          },
+          "topology": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topology"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "OperationsKnowledgeSearchPayload",
         "type": "object"
       },
       "OpsDashboard": {
@@ -17412,199 +17489,6 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/knowledge-core": {
-      "get": {
-        "operationId": "get_aiops_knowledge_core_api_v1_apps_aiops_knowledge_core_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Aiops Knowledge Core",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/knowledge-core/manuals": {
-      "post": {
-        "description": "把运维手册流式送入固定 KC，不在 Main API 落盘。",
-        "operationId": "upload_aiops_manual_api_v1_apps_aiops_knowledge_core_manuals_post",
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Upload Aiops Manual",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/knowledge-core/manuals/{bundle_revision_id}/approve": {
-      "post": {
-        "operationId": "approve_aiops_manual_api_v1_apps_aiops_knowledge_core_manuals__bundle_revision_id__approve_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "bundle_revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Bundle Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIOpsManualApprovalPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Approve Aiops Manual",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/knowledge-core/models": {
-      "put": {
-        "operationId": "update_aiops_knowledge_core_models_api_v1_apps_aiops_knowledge_core_models_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIOpsCollectionModelsPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Aiops Knowledge Core Models",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/knowledge-core/status": {
-      "patch": {
-        "operationId": "change_aiops_knowledge_core_status_api_v1_apps_aiops_knowledge_core_status_patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIOpsCollectionStatusPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Change Aiops Knowledge Core Status",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/model-catalog": {
-      "get": {
-        "operationId": "list_aiops_model_catalog_api_v1_apps_aiops_model_catalog_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ModelCatalogItem"
-                  },
-                  "title": "Response List Aiops Model Catalog Api V1 Apps Aiops Model Catalog Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Aiops Model Catalog",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
     "/api/v1/apps/aiops/notification-subscriptions": {
       "get": {
         "operationId": "list_notification_subscriptions_api_v1_apps_aiops_notification_subscriptions_get",
@@ -17742,6 +17626,653 @@
         "summary": "Upsert Notification Subscription",
         "tags": [
           "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/assets": {
+      "get": {
+        "operationId": "list_operations_knowledge_assets_api_v1_apps_aiops_operations_knowledge_assets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "asset_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asset Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Assets",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/assets/{asset_id}": {
+      "get": {
+        "operationId": "get_operations_knowledge_asset_api_v1_apps_aiops_operations_knowledge_assets__asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Asset",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/assets/{asset_id}/versions": {
+      "post": {
+        "description": "给既有手册资产登记新版本，发布前保留上一版本继续检索。",
+        "operationId": "upload_operations_manual_version_api_v1_apps_aiops_operations_knowledge_assets__asset_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Operations Manual Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/manuals": {
+      "post": {
+        "description": "把原始手册有界转发到 AIOps，由业务服务登记资产并驱动 KC。",
+        "operationId": "upload_operations_manual_api_v1_apps_aiops_operations_knowledge_manuals_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Upload Operations Manual",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/overview": {
+      "get": {
+        "operationId": "operations_knowledge_overview_api_v1_apps_aiops_operations_knowledge_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Operations Knowledge Overview",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/reports/{report_id}:extract-case": {
+      "post": {
+        "operationId": "extract_operations_diagnosis_case_api_v1_apps_aiops_operations_knowledge_reports__report_id__extract_case_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract Operations Diagnosis Case",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/reviews": {
+      "get": {
+        "operationId": "list_operations_knowledge_reviews_api_v1_apps_aiops_operations_knowledge_reviews_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Reviews",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/search-preview": {
+      "post": {
+        "operationId": "preview_operations_knowledge_search_api_v1_apps_aiops_operations_knowledge_search_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeSearchPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Operations Knowledge Search",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}": {
+      "get": {
+        "operationId": "get_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}/source": {
+      "get": {
+        "operationId": "download_operations_knowledge_source_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Operations Knowledge Source",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:publish": {
+      "post": {
+        "operationId": "publish_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:reconcile": {
+      "post": {
+        "operationId": "reconcile_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reconcile Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:reject": {
+      "post": {
+        "operationId": "reject_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:retire": {
+      "post": {
+        "operationId": "retire_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:retry": {
+      "post": {
+        "operationId": "retry_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
         ]
       }
     },

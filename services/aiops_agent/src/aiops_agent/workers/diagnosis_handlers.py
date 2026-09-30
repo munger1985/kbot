@@ -33,6 +33,7 @@ from aiops_agent.contracts.hitl import (
     InputSuspension,
     ManualSqlRequest,
 )
+from aiops_agent.contracts.knowledge import KnowledgeSearchRequest
 from aiops_agent.domain.diagnosis import (
     EvidenceRequestBudget,
     assess_root_cause,
@@ -161,72 +162,54 @@ class BuildEvidenceIndexHandler:
 
 
 class KnowledgeCitationHandler:
-    def __init__(self, *, knowledge_client, caller_service: str):
-        self._client = knowledge_client
+    def __init__(self, *, knowledge_service, caller_service: str):
+        self._knowledge = knowledge_service
         self._caller = caller_service
 
     async def execute(
         self, context: TaskExecutionContext
     ) -> KnowledgeCitationPack:
         diagnosis = context.plan_snapshot["diagnosis"]
-        collection_ids = tuple(
-            UUID(item) for item in diagnosis["allowed_collection_ids"]
-        )
         query = diagnosis["question_summary"] or "数据库故障诊断"
-        if not collection_ids:
-            # Collection 是可选的经验增强源；空范围表示仅依赖当前状态证据和模型。
-            return KnowledgeCitationPack(query=query)
         auth_context = create_service_auth_context(
             caller_service=self._caller,
             request_id=context.task_id,
             trace_id=context.trace_id,
         )
         domain_id = int(context.plan_snapshot["target"]["domain_id"])
+        target = context.plan_snapshot["target"]
         try:
-            discovery = await self._client.discover(
-                query=query,
-                collection_ids=collection_ids,
+            result = await self._knowledge.search(
                 domain_id=domain_id,
                 agent_id=context.agent_id,
-                auth_context=auth_context,
-                max_security_level=min(
-                    3,
-                    int(
-                        context.plan_snapshot["target"][
-                            "security_level"
-                        ]
-                    ),
+                context=auth_context,
+                target_id=context.target_id,
+                request=KnowledgeSearchRequest(
+                    query=query,
+                    purpose="DIAGNOSE",
+                    problem_class=(diagnosis.get("problem_class") or None),
+                    error_codes=tuple(diagnosis.get("symptom_codes", ())),
+                    signal_names=tuple(diagnosis.get("symptom_codes", ())),
+                    database_type=target.get("db_type"),
+                    database_major_version=(target.get("version_code") or None),
+                    topology=(target.get("topology") or target.get("deployment_type")),
+                    max_security_level=min(3, int(target["security_level"])),
+                    max_results=8,
                 ),
-                per_collection_limit=8,
             )
-            candidates = discovery.get("candidates", [])
-            if not candidates:
-                return KnowledgeCitationPack(query=query)
-            evidence = await self._client.retrieve_evidence(
-                query=query,
-                candidates=candidates[:16],
-                domain_id=domain_id,
-                agent_id=context.agent_id,
-                auth_context=auth_context,
-                max_security_level=min(
-                    3,
-                    int(
-                        context.plan_snapshot["target"][
-                            "security_level"
-                        ]
-                    ),
-                ),
-                max_evidence=8,
-                context_limit=3,
+            citations = tuple(
+                citation
+                for item in result.get("results", ())
+                for citation in item.get("citation_pack", ())
             )
             return KnowledgeCitationPack(
                 query=query,
-                citations=tuple(evidence.get("citations", ())),
+                citations=citations,
             )
         except Exception:
             return KnowledgeCitationPack(
                 query=query,
-                gap_code="KNOWLEDGE_CORE_UNAVAILABLE",
+                gap_code="OPERATIONS_KNOWLEDGE_UNAVAILABLE",
             )
 
 

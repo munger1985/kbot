@@ -1,15 +1,16 @@
 # AIOps 首次初始化
 
-AIOps 使用独立的固定业务范围，不复用 KM 的 Domain、账号或 Knowledge Core Collection：
+AIOps 使用独立的固定业务范围，不复用 KM 的 Domain、账号或产品知识资产：
 
 - Domain：`aiops_portal`
 - 初始管理员：`aiopsadmin`
-- 固定 Collection：`operations-manuals`
+- 内部手册索引集合：`operations-manuals`
+- 内部诊断案例索引集合：`diagnosis-cases`
 - 固定手册：`services/aiops_agent/resources/knowledge/database-operations-manual.md`
 
-当前实现仍只有上述手册 Collection。目标态运维知识库还会初始化内部
-`diagnosis-cases` Collection，并由 AIOps 保存资产、版本、审核和索引引用；该目标态尚未实施，
-详见 [AIOps 运维知识库详细设计](../proposals/aiops-operations-knowledge-base-detailed-design.md)。
+AIOps 在自身 Schema 中保存运维知识资产、不可变版本、适用范围、来源、索引引用和审核记录。
+两个内部集合只承担 KC 解析和索引，不作为普通用户直接管理的产品对象。详细合同见
+[AIOps 运维知识库详细设计](../proposals/aiops-operations-knowledge-base-detailed-design.md)。
 
 初始化前必须完成平台、模型目录、Knowledge Core、Main API 和 AIOps Agent 的 Schema
 及服务部署，并至少启用一个 `CATEGORY=2` 的文本向量模型。脚本不会伪造数据库目标、
@@ -36,9 +37,9 @@ python3 scripts/db/initialize_aiops.py
 ```
 
 脚本先在同一 Oracle 事务范围内幂等补齐 App、Domain、用户、角色、权限和固定
-Collection，再以 `aiopsadmin` 登录 Main API，通过 KC 的正式 `user-files` ingestion
-上传手册并批准对应 revision。文件会进入 KC 的解析、切片和索引流程，不会写入
-Main API 本地目录。
+索引集合，再以 `aiopsadmin` 登录 Main API，通过“运维知识库”业务接口上传内置手册。
+AIOps 先登记资产版本，再驱动 KC 的正式 `user-files` ingestion；KC 批准只允许解析和索引，
+不会把版本自动发布为 Agent 可检索知识。文件不会写入 Main API 本地目录。
 
 如 Main API 地址与 `kbot.toml` 的 `[ui].main_api_base_url` 不同，可显式覆盖：
 
@@ -62,7 +63,7 @@ python3 scripts/db/initialize_aiops.py --skip-manual-upload
 初始密码由脚本在终端输出。初始化脚本重复执行会恢复固定初始密码，因此生产环境完成
 初始化并修改密码后，不应把它当作日常健康检查使用；日常检查使用 `--check-only`。
 
-当前 AIOps 页面中的 “Knowledge Core” 提供模型目录选择、KC 模型变更策略提示和运维手册
-上传。目标态将该页面替换为“运维知识库”，普通用户不再直接管理 Collection 或 Embedding；
-模型变更和索引诊断进入管理员配置。文本向量或视觉向量模型在已有解析活动后是否允许更换，
-仍由 Knowledge Core 服务端策略决定，前端和 Main API 都不通过硬编码绕过该约束。
+当前 AIOps 页面统一使用“运维知识库”，提供手册上传、诊断案例候选、版本审核、发布、退役、
+索引状态和检索测试。普通用户不会看到 Collection、Bundle 或 Embedding；内部索引异常只以
+业务可理解的处理状态呈现。Agent 只通过 `ops.knowledge.search@1.0.0` 检索已发布版本，
+未发布、失败、退役或索引失效的版本不会进入诊断上下文。

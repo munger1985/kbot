@@ -18,6 +18,14 @@ from .inspection import (
 )
 from .messaging import InboxEntity, OutboxEntity
 from .notification import NotificationSubscriptionEntity
+from .knowledge import (
+    OperationsKnowledgeAssetEntity,
+    OperationsKnowledgeIndexEntity,
+    OperationsKnowledgeReviewEntity,
+    OperationsKnowledgeScopeEntity,
+    OperationsKnowledgeSourceEntity,
+    OperationsKnowledgeVersionEntity,
+)
 from .monitoring import (
     DiagnosticSourceEntity,
     SituationEntity,
@@ -86,6 +94,12 @@ __all__ = [
     "OpsTaskEntity",
     "OutboxEntity",
     "NotificationSubscriptionEntity",
+    "OperationsKnowledgeAssetEntity",
+    "OperationsKnowledgeIndexEntity",
+    "OperationsKnowledgeReviewEntity",
+    "OperationsKnowledgeScopeEntity",
+    "OperationsKnowledgeSourceEntity",
+    "OperationsKnowledgeVersionEntity",
     "PolicyEntity",
     "ReportEntity",
     "ReportSourceEntity",

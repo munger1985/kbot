@@ -244,6 +244,7 @@ class _BaseAIOpsClient:
         body,
         max_bytes: int = CONVERSATION_UPLOAD_MAX_BYTES,
         idempotency_key: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -253,6 +254,8 @@ class _BaseAIOpsClient:
         }
         if idempotency_key is not None:
             headers["Idempotency-Key"] = idempotency_key
+        if extra_headers:
+            headers.update(extra_headers)
         # 先把有界正文读完再转发。把 ASGI 请求流直接交给 aiohttp
         # 会在大文件（例如 AWR HTML）上形成分块传输死锁，120 秒后超时。
         payload = await _materialize_upload_body(body, max_bytes=max_bytes)
@@ -321,6 +324,144 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     """Main API 的管理、用户命令和 Direct Run Client。"""
 
     _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
+
+    async def get_operations_knowledge_overview(
+        self, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/overview",
+            auth_context=auth_context,
+        )
+
+    async def list_operations_knowledge_assets(
+        self, *, asset_kind: str | None, status: str | None, limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = {"limit": str(limit)}
+        if asset_kind:
+            query["asset_kind"] = asset_kind
+        if status:
+            query["status"] = status
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/assets?{urlencode(query)}",
+            auth_context=auth_context,
+        )
+
+    async def get_operations_knowledge_asset(
+        self, asset_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/assets/{asset_id}",
+            auth_context=auth_context,
+        )
+
+    async def get_operations_knowledge_version(
+        self, asset_version_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}",
+            auth_context=auth_context,
+        )
+
+    async def download_operations_knowledge_source(
+        self, asset_version_id: UUID, *, auth_context: AuthContext
+    ) -> AIOpsBinaryResponse:
+        return await self._bytes(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}/source",
+            auth_context=auth_context,
+            accept="*/*",
+        )
+
+    async def upload_operations_manual(
+        self, *, file_name: str, media_type: str, body, metadata: dict[str, Any],
+        content_sha256: str, idempotency_key: str, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._upload(
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/manuals:ingest",
+            auth_context=auth_context,
+            file_name=file_name,
+            media_type=media_type,
+            body=body,
+            idempotency_key=idempotency_key,
+            extra_headers={
+                "X-Upload-Metadata": quote(
+                    json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+                    safe="",
+                ),
+                "X-Content-SHA256": content_sha256,
+            },
+        )
+
+    async def upload_operations_manual_version(
+        self, *, asset_id: UUID, expected_asset_row_version: int,
+        file_name: str, media_type: str, body, metadata: dict[str, Any],
+        content_sha256: str, idempotency_key: str, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._upload(
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/assets/{asset_id}/versions:ingest",
+            auth_context=auth_context,
+            file_name=file_name,
+            media_type=media_type,
+            body=body,
+            idempotency_key=idempotency_key,
+            extra_headers={
+                "X-Upload-Metadata": quote(
+                    json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+                    safe="",
+                ),
+                "X-Content-SHA256": content_sha256,
+                "X-Expected-Asset-Row-Version": str(expected_asset_row_version),
+            },
+        )
+
+    async def extract_operations_diagnosis_case(
+        self, report_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/reports/{report_id}:extract-case",
+            auth_context=auth_context,
+        )
+
+    async def reconcile_operations_knowledge_version(
+        self, asset_version_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}:reconcile",
+            auth_context=auth_context,
+        )
+
+    async def review_operations_knowledge_version(
+        self, asset_version_id: UUID, *, decision: str,
+        expected_row_version: int, comment: str | None,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}:{decision.lower()}",
+            payload={"expected_row_version": expected_row_version, "comment": comment},
+            auth_context=auth_context,
+        )
+
+    async def list_operations_knowledge_reviews(
+        self, *, limit: int, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/reviews?limit={limit}",
+            auth_context=auth_context,
+        )
+
+    async def search_operations_knowledge(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/operations-knowledge:search",
+            payload=payload, auth_context=auth_context,
+        )
 
     async def list_notification_subscriptions(
         self, *, auth_context: AuthContext

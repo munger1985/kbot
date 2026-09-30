@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any
 from uuid import UUID
 
@@ -525,6 +527,171 @@ class KnowledgeCoreClient:
             path,
             headers=headers,
             data=body,
+        )
+
+    async def ingest_user_file(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        file_name: str,
+        display_name: str,
+        media_type: str,
+        body: bytes,
+        content_sha256: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+        client_bundle_id: str | None = None,
+        source_revision: str | None = None,
+        security_level: int = 1,
+    ) -> KnowledgeCoreResponse:
+        """由业务服务构造单文件 Intake，避免向产品层暴露 KC Multipart 合同。"""
+        part_name = "manual"
+        declaration = [{
+            "part_name": part_name,
+            "client_file_id": str(UUID(bytes=bytes.fromhex(content_sha256[:32]))),
+            "display_name": display_name,
+            "declared_mime_type": media_type,
+            "byte_size": len(body),
+            "content_sha256": content_sha256,
+            "ordinal": 0,
+            "role": "CONTENT",
+            "required_flag": True,
+        }]
+        form = aiohttp.FormData()
+        if client_bundle_id:
+            form.add_field("grouping_mode", "SINGLE_BUNDLE")
+            form.add_field(
+                "bundle",
+                json.dumps(
+                    {
+                        "client_bundle_id": client_bundle_id,
+                        "title": display_name,
+                        "source_revision": source_revision or idempotency_key,
+                        "security_level": security_level,
+                        "metadata": {"owner_app_id": "aiops"},
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            )
+        else:
+            form.add_field("grouping_mode", "EACH_FILE")
+        form.add_field(
+            "files",
+            json.dumps(declaration, ensure_ascii=False, separators=(",", ":")),
+        )
+        form.add_field(
+            part_name,
+            body,
+            filename=file_name,
+            content_type=media_type,
+        )
+        return await self._raw(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/ingestions/user-files"
+            ),
+            headers={
+                "Accept": "application/json",
+                "Idempotency-Key": idempotency_key,
+                **self._headers(auth_context),
+            },
+            data=form,
+        )
+
+    async def ingest_user_bundle(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        client_bundle_id: str,
+        source_revision: str,
+        title: str,
+        security_level: int,
+        documents: Sequence[dict[str, Any]],
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> KnowledgeCoreResponse:
+        """写入一个显式 Bundle Revision，用于原文和提炼补充文档原子切换。"""
+        form = aiohttp.FormData()
+        form.add_field("grouping_mode", "SINGLE_BUNDLE")
+        form.add_field(
+            "bundle",
+            json.dumps(
+                {
+                    "client_bundle_id": client_bundle_id,
+                    "title": title,
+                    "source_revision": source_revision,
+                    "security_level": security_level,
+                    "metadata": {"owner_app_id": "aiops"},
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+        declarations = []
+        for ordinal, document in enumerate(documents):
+            body = bytes(document["body"])
+            digest = str(document.get("content_sha256") or "")
+            if not digest:
+                digest = hashlib.sha256(body).hexdigest()
+            part_name = f"document_{ordinal}"
+            declarations.append({
+                "part_name": part_name,
+                "client_file_id": str(UUID(bytes=bytes.fromhex(digest[:32]))),
+                "display_name": str(document["file_name"]),
+                "declared_mime_type": str(document["media_type"]),
+                "byte_size": len(body),
+                "content_sha256": digest,
+                "ordinal": ordinal,
+                "role": str(document["role"]),
+                "required_flag": bool(document.get("required_flag", True)),
+            })
+            form.add_field(
+                part_name,
+                body,
+                filename=str(document["file_name"]),
+                content_type=str(document["media_type"]),
+            )
+        form.add_field(
+            "files",
+            json.dumps(declarations, ensure_ascii=False, separators=(",", ":")),
+        )
+        return await self._raw(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/ingestions/user-files"
+            ),
+            headers={
+                "Accept": "application/json",
+                "Idempotency-Key": idempotency_key,
+                **self._headers(auth_context),
+            },
+            data=form,
+        )
+
+    async def list_file_evidence(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        document_version_id: UUID,
+        page: int,
+        page_size: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        """分页读取 KC 已解析的原文证据，供手册提炼保留定位引用。"""
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/catalog/files/{document_version_id}/evidence"
+                f"?collection_id={collection_id}&page={page}&page_size={page_size}"
+            ),
+            auth_context=auth_context,
         )
 
     async def discover(

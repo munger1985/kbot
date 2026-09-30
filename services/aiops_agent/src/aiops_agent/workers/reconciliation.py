@@ -16,9 +16,13 @@ class AIOpsReconciler:
         runtime_service,
         interval_seconds: float,
         turn_queue_service=None,
+        operations_knowledge_service=None,
+        caller_service: str = "kbot-aiops-worker",
     ):
         self._service = runtime_service
         self._turn_queue_service = turn_queue_service
+        self._operations_knowledge_service = operations_knowledge_service
+        self._caller_service = caller_service
         self._interval = interval_seconds
         self._stop = asyncio.Event()
 
@@ -48,6 +52,20 @@ class AIOpsReconciler:
                 except Exception as exc:
                     logger.exception(
                         "AIOps Conversation Turn 排队提升失败：type={} error={}",
+                        type(exc).__name__,
+                        str(exc),
+                    )
+            if self._operations_knowledge_service is not None:
+                try:
+                    worked = (
+                        await self._operations_knowledge_service.reconcile_next(
+                            caller_service=self._caller_service
+                        )
+                        or worked
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "AIOps 运维知识索引对账失败：type={} error={}",
                         type(exc).__name__,
                         str(exc),
                     )
