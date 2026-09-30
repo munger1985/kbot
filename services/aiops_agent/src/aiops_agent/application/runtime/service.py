@@ -33,6 +33,7 @@ from aiops_agent.application.runtime.dashboard import (
     project_ops_dashboard,
 )
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
+from aiops_agent.application.diagnosis.findings import compile_findings
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
     TASK_TYPE_TO_RUN_PHASE,
@@ -3075,11 +3076,15 @@ class AIOpsRuntimeService:
         markdown = "\n\n".join(
             str(block.payload.get("markdown") or "").strip()
             for block in source.blocks
-            if str(block.block_type) == "MARKDOWN"
+            if str(block.block_type)
+            in {"MARKDOWN", "ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN"}
         ).strip()
         facts, gaps, coverage_summary = self._inspection_report_projection(
             inspection=inspection,
             source=source,
+            database_type=str(
+                dict(plan.get("target") or {}).get("db_type") or "ORACLE"
+            ),
             action_tool_ids={
                 str(item.get("action_id") or ""): str(
                     item.get("tool_id") or ""
@@ -3264,8 +3269,61 @@ class AIOpsRuntimeService:
             )
         return (
             f"{title}：检查已完成，采集 {row_count} 条可验证观测，"
-            f"需按 Finding 评估。{suffix}"
+            f"未生成需关注项。{suffix}"
         )
+
+    @staticmethod
+    def _inspection_finding_summary(
+        *, title: str, findings: tuple[Any, ...]
+    ) -> str:
+        """把确定性 Finding 压缩成巡检检查项结论。"""
+        severity_order = {
+            "CRITICAL": 5,
+            "HIGH": 4,
+            "MEDIUM": 3,
+            "LOW": 2,
+            "INFO": 1,
+        }
+        severity_labels = {
+            "CRITICAL": "严重",
+            "HIGH": "高",
+            "MEDIUM": "中",
+            "LOW": "低",
+            "INFO": "提示",
+        }
+        highest = max(
+            (str(item.severity) for item in findings),
+            key=lambda value: severity_order.get(value, 0),
+        )
+        impacts = tuple(
+            dict.fromkeys(
+                str(item.impact).strip()
+                for item in findings
+                if str(item.impact).strip()
+            )
+        )
+        detail = "；".join(impacts[:3])
+        suffix = f"：{detail}" if detail else "。"
+        return (
+            f"{title}：发现 {len(findings)} 项需关注项，最高级别为"
+            f"{severity_labels.get(highest, highest)}{suffix}"
+        )
+
+    @staticmethod
+    def _inspection_gap_summary(
+        gap: dict[str, Any], *, title_by_tool: dict[str, str]
+    ) -> str:
+        """将内部步骤标识替换为巡检检查项名称。"""
+        detail = str(gap.get("detail") or gap.get("code") or "证据不完整")
+        for tool_id, title in sorted(
+            title_by_tool.items(), key=lambda item: len(item[0]), reverse=True
+        ):
+            detail = detail.replace(tool_id, title)
+        step_id = str(gap.get("step_id") or "")
+        title = title_by_tool.get(step_id)
+        if title and not detail.startswith(title):
+            return f"{title}：{detail}"
+        return detail
 
     @staticmethod
     def _inspection_report_projection(
@@ -3273,6 +3331,7 @@ class AIOpsRuntimeService:
         inspection: dict[str, Any],
         source: AIOpsTurnResult,
         action_tool_ids: dict[str, str],
+        database_type: str = "ORACLE",
     ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], str]:
         """把冻结模板的每项检查投影为报告条目，不能因正常零行而省略。"""
         steps = tuple(
@@ -3283,17 +3342,24 @@ class AIOpsRuntimeService:
         evidence_by_tool: dict[str, list] = {}
         for item in source.evidence:
             evidence_by_tool.setdefault(item.tool_id, []).append(item)
+        title_by_tool = {
+            str(item["tool_id"]): str(item.get("title") or item["tool_id"])
+            for item in steps
+        }
         gaps = [item.model_dump(mode="json") for item in source.evidence_gaps]
         gaps_by_step: dict[str, list[dict[str, Any]]] = {}
         for item in gaps:
             step_id = str(item.get("step_id") or "")
-            gaps_by_step.setdefault(
-                action_tool_ids.get(step_id, step_id), []
-            ).append(item)
+            tool_id = action_tool_ids.get(step_id, step_id)
+            item["step_id"] = tool_id
+            item["summary"] = AIOpsRuntimeService._inspection_gap_summary(
+                item,
+                title_by_tool=title_by_tool,
+            )
+            gaps_by_step.setdefault(tool_id, []).append(item)
 
         facts: list[dict[str, Any]] = []
         covered_count = 0
-        step_tool_ids = {str(item["tool_id"]) for item in steps}
         for step in steps:
             tool_id = str(step["tool_id"])
             title = str(step.get("title") or tool_id)
@@ -3303,18 +3369,63 @@ class AIOpsRuntimeService:
                 covered_count += 1
                 row_count = sum(item.row_count for item in observations)
                 truncated = any(item.truncated for item in observations)
+                compilation = compile_findings(
+                    tuple(observations),
+                    database_type=database_type,
+                )
+                for finding_gap in compilation.gaps:
+                    gap = {
+                        "source_id": "finding.compiler",
+                        "step_id": tool_id,
+                        "code": finding_gap.code,
+                        "detail": finding_gap.detail,
+                        "retryable": False,
+                    }
+                    gap["summary"] = (
+                        AIOpsRuntimeService._inspection_gap_summary(
+                            gap,
+                            title_by_tool=title_by_tool,
+                        )
+                    )
+                    if not any(
+                        item.get("code") == gap["code"]
+                        and item.get("step_id") == tool_id
+                        and item.get("detail") == gap["detail"]
+                        for item in gaps
+                    ):
+                        gaps.append(gap)
+                        step_gaps.append(gap)
+                if step_gaps:
+                    gap_summary = str(step_gaps[0]["summary"])
+                    if gap_summary.startswith(f"{title}："):
+                        gap_summary = gap_summary[len(title) + 1:]
+                    summary = (
+                        f"{title}：已取得 {row_count} 条观测，但证据仍不完整："
+                        f"{gap_summary}"
+                    )
+                    check_status = "PARTIAL"
+                elif compilation.findings:
+                    summary = AIOpsRuntimeService._inspection_finding_summary(
+                        title=title,
+                        findings=compilation.findings,
+                    )
+                    check_status = "FINDING"
+                elif compilation.empty_reasons:
+                    summary = f"{title}：{compilation.empty_reasons[0]}"
+                    check_status = "CLEAR"
+                else:
+                    summary = AIOpsRuntimeService._inspection_observed_summary(
+                        title=title,
+                        row_count=row_count,
+                        truncated=truncated,
+                    )
+                    check_status = "OBSERVED"
                 facts.append(
                     {
                         "kind": "inspection_check",
                         "title": title,
-                        "summary": (
-                            AIOpsRuntimeService._inspection_observed_summary(
-                                title=title,
-                                row_count=row_count,
-                                truncated=truncated,
-                            )
-                        ),
-                        "check_status": "OBSERVED",
+                        "summary": summary,
+                        "check_status": check_status,
                         "tool_id": tool_id,
                         "expected_evidence_kind": str(
                             step.get("expected_evidence_kind") or ""
@@ -3322,11 +3433,19 @@ class AIOpsRuntimeService:
                         "evidence_refs": [
                             item.evidence_ref for item in observations
                         ],
+                        "findings": [
+                            item.model_dump(mode="json")
+                            for item in compilation.findings
+                        ],
                     }
                 )
                 continue
             if step_gaps:
-                detail = str(step_gaps[0].get("detail") or "未取得有效观测")
+                detail = str(
+                    step_gaps[0].get("summary") or "未取得有效观测"
+                )
+                if detail.startswith(f"{title}："):
+                    detail = detail[len(title) + 1:]
                 facts.append(
                     {
                         "kind": "inspection_check",
@@ -3344,6 +3463,7 @@ class AIOpsRuntimeService:
                 "detail": f"模板检查项未形成可验证观测：{title}",
                 "retryable": False,
             }
+            missing_gap["summary"] = missing_gap["detail"]
             gaps.append(missing_gap)
             facts.append(
                 {
@@ -3352,35 +3472,6 @@ class AIOpsRuntimeService:
                     "summary": f"{title}：未形成可验证观测，已列入数据缺口",
                     "check_status": "MISSING",
                     "tool_id": tool_id,
-                }
-            )
-
-        for tool_id, observations in evidence_by_tool.items():
-            if tool_id in step_tool_ids:
-                continue
-            row_count = sum(item.row_count for item in observations)
-            truncated = any(item.truncated for item in observations)
-            title = (
-                "监控历史趋势与容量预测"
-                if tool_id == "metric.query_range"
-                else tool_id
-            )
-            facts.append(
-                {
-                    "kind": "inspection_evidence",
-                    "title": title,
-                    "summary": (
-                        AIOpsRuntimeService._inspection_observed_summary(
-                            title=title,
-                            row_count=row_count,
-                            truncated=truncated,
-                        )
-                    ),
-                    "check_status": "OBSERVED",
-                    "tool_id": tool_id,
-                    "evidence_refs": [
-                        item.evidence_ref for item in observations
-                    ],
                 }
             )
 
@@ -3419,11 +3510,11 @@ class AIOpsRuntimeService:
                 }
             )
         coverage_summary = (
-            f"本期按勾选检查项完成 {covered_count}/{len(steps)} 项检查"
+            f"本期按模板取得 {covered_count}/{len(steps)} 个取证步骤的观测"
             + (
-                "，所有计划检查均已形成可追溯观测。"
+                "，所有模板检查均已形成完整证据。"
                 if steps and covered_count == len(steps) and not gaps
-                else f"，其中 {len(gaps)} 项存在数据缺口或未完成。"
+                else f"；仍有 {len(gaps)} 条证据缺口，报告为部分完成。"
             )
         )
         return tuple(facts), tuple(gaps), coverage_summary
@@ -3435,9 +3526,11 @@ class AIOpsRuntimeService:
         """依据表空间历史趋势预测生成可执行的巡检容量建议。"""
         recommendations: list[str] = []
         forecast_found = False
+        metric_evidence_found = False
         for evidence in source.evidence:
             if evidence.tool_id != "metric.query_range":
                 continue
+            metric_evidence_found = True
             indexes = {
                 str(column.get("name")): index
                 for index, column in enumerate(evidence.columns)
@@ -3529,14 +3622,7 @@ class AIOpsRuntimeService:
                         f"{projected_percent:.2f}%，建议本巡检周期内制定 AUTOEXTEND 或"
                         f" RESIZE 计划并提高复核频率。{confidence_suffix}"
                     )
-                else:
-                    recommendations.append(
-                        f"表空间 {tablespace} {confidence_prefix}未来{horizon_days:g}天"
-                        "使用率约为"
-                        f"{projected_percent:.2f}%，当前只需观察，建议继续按历史"
-                        f"增速监控并在增长模式变化时重新评估。{confidence_suffix}"
-                    )
-        if not forecast_found:
+        if metric_evidence_found and not forecast_found:
             recommendations.append(
                 "本次巡检未形成可靠的表空间未来容量预测，不能只依据当前使用率"
                 "判断容量方案；应补齐历史监控采样后重新评估。"

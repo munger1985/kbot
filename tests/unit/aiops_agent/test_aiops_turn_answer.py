@@ -991,6 +991,36 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         self.assertTrue(result.gaps[-1].retryable)
 
+    def test_scheduled_inspection_uses_deterministic_sufficiency_only(
+        self,
+    ) -> None:
+        model = AsyncMock()
+        context = _context(
+            artifacts=(_tool_artifact(semantics="CURRENT_ACTIVITY"),)
+        )
+        context = replace(
+            context,
+            trigger_type="SCHEDULE",
+            plan_snapshot={
+                **context.plan_snapshot,
+                "answer_context": {
+                    **context.plan_snapshot["answer_context"],
+                    "workflow_kind": "INSPECTION",
+                },
+            },
+        )
+
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler(
+                model_client=model,
+                prompts=_TestPrompts(),
+            ).execute(context)
+        )
+
+        self.assertEqual(SufficiencyStatus.ANSWERABLE, result.status)
+        self.assertIsNone(result.investigation)
+        model.generate_structured.assert_not_awaited()
+
     def test_assessment_status_is_a_closed_contract_enum(self) -> None:
         payload = {
             "round_no": 1,

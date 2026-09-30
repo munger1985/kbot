@@ -618,7 +618,8 @@ class InspectionCapacityRecommendationTest(unittest.TestCase):
         )
         joined = "\n".join(texts)
         self.assertIn("AUTOEXTEND 或 RESIZE", joined)
-        self.assertIn("只需观察", joined)
+        self.assertNotIn("只需观察", joined)
+        self.assertEqual(2, len(texts))
         self.assertNotIn("ADD DATAFILE", joined)
         self.assertNotIn("扩容", joined)
 

@@ -668,6 +668,14 @@ class DbaEvidenceAssessmentHandler:
             gaps=tuple(gaps),
             reasons=tuple(reasons),
         )
+        if (
+            context.trigger_type == "SCHEDULE"
+            and str(answer_context.get("workflow_kind") or "")
+            == "INSPECTION"
+        ):
+            # 巡检按冻结模板和确定性规则评估覆盖率。通用问题评估模型会
+            # 把补证设想追加成新的巡检缺口，导致报告重复并偏离模板范围。
+            return deterministic
         if self._model is None or self._prompts is None:
             return deterministic
         model_snapshot = dict(answer_context.get("model") or {})

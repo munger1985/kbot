@@ -351,7 +351,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             payload["facts"][1]["summary"],
         )
         self.assertIn("2/2", payload["summary"])
-        self.assertTrue(payload["recommendations"])
+        self.assertEqual([], payload["recommendations"])
         report = uow.inspections.publish_report.await_args.args[0]
         self.assertEqual("system:inspection.daily", report.template_id)
         self.assertEqual("1", report.template_version)
@@ -398,12 +398,18 @@ class InspectionReportPublishingTest(unittest.TestCase):
                     row_count=0,
                     truncated=False,
                     evidence_ref="artifact:test#alerts",
+                    columns=(),
+                    rows=(),
+                    trust_level="SOURCE_VERIFIED",
                 ),
                 SimpleNamespace(
                     tool_id="db.instance.performance",
                     row_count=9,
                     truncated=False,
                     evidence_ref="artifact:test#performance",
+                    columns=(),
+                    rows=(),
+                    trust_level="SOURCE_VERIFIED",
                 ),
             ],
             evidence_gaps=(),
@@ -427,15 +433,153 @@ class InspectionReportPublishingTest(unittest.TestCase):
             action_tool_ids={},
         )
         self.assertEqual([], list(gaps))
-        self.assertIn("所有计划检查均已形成可追溯观测", summary)
+        self.assertIn("所有模板检查均已形成完整证据", summary)
         self.assertEqual(
             "近期告警日志：检查已完成，本期没有需要报告的记录。",
             facts[0]["summary"],
         )
         self.assertEqual(
-            "实例性能指标：检查已完成，采集 9 条可验证观测，需按 Finding 评估。",
+            "实例性能指标：检查已完成，采集 9 条可验证观测，未生成需关注项。",
             facts[1]["summary"],
         )
+
+    def test_inspection_projection_keeps_template_findings_only(self) -> None:
+        source = SimpleNamespace(
+            evidence=[
+                SimpleNamespace(
+                    tool_id="db.objects.invalid_summary",
+                    row_count=1,
+                    truncated=False,
+                    evidence_ref="artifact:test#invalid-objects",
+                    trust_level="SOURCE_VERIFIED",
+                    columns=tuple(
+                        {"name": name}
+                        for name in (
+                            "owner",
+                            "object_type",
+                            "status",
+                            "object_count",
+                        )
+                    ),
+                    rows=(("APP", "VIEW", "INVALID", 2),),
+                ),
+                SimpleNamespace(
+                    tool_id="loki.query_range",
+                    row_count=200,
+                    truncated=False,
+                    evidence_ref="artifact:test#loki",
+                    trust_level="SOURCE_VERIFIED",
+                    columns=(),
+                    rows=(),
+                ),
+                SimpleNamespace(
+                    tool_id="db.instance.identity",
+                    row_count=1,
+                    truncated=False,
+                    evidence_ref="artifact:test#identity",
+                    trust_level="SOURCE_VERIFIED",
+                    columns=(),
+                    rows=(),
+                ),
+            ],
+            evidence_gaps=(),
+        )
+
+        facts, gaps, summary = AIOpsRuntimeService._inspection_report_projection(
+            inspection={
+                "evidence_steps": [
+                    {
+                        "title": "无效对象",
+                        "tool_id": "db.objects.invalid_summary",
+                        "expected_evidence_kind": "INVALID_OBJECT",
+                    }
+                ]
+            },
+            source=source,
+            action_tool_ids={},
+        )
+
+        self.assertEqual([], list(gaps))
+        self.assertEqual(1, len(facts))
+        self.assertEqual("FINDING", facts[0]["check_status"])
+        self.assertIn("发现 1 项需关注项", facts[0]["summary"])
+        self.assertNotIn("loki.query_range", str(facts))
+        self.assertNotIn("db.instance.identity", str(facts))
+        self.assertIn("1/1 个取证步骤", summary)
+
+    def test_zero_row_backup_result_is_not_reported_as_normal(self) -> None:
+        source = SimpleNamespace(
+            evidence=[
+                SimpleNamespace(
+                    tool_id="db.backup.recent_jobs",
+                    row_count=0,
+                    truncated=False,
+                    evidence_ref="artifact:test#backup-jobs",
+                    trust_level="SOURCE_VERIFIED",
+                    columns=(),
+                    rows=(),
+                )
+            ],
+            evidence_gaps=(),
+        )
+
+        facts, gaps, _ = AIOpsRuntimeService._inspection_report_projection(
+            inspection={
+                "evidence_steps": [
+                    {
+                        "title": "RMAN 备份量、占用空间、最近成功/失败",
+                        "tool_id": "db.backup.recent_jobs",
+                        "expected_evidence_kind": "BACKUP_FAILED",
+                    }
+                ]
+            },
+            source=source,
+            action_tool_ids={},
+        )
+
+        self.assertEqual([], list(gaps))
+        self.assertIn("当前没有备份任务记录", facts[0]["summary"])
+        self.assertNotIn("结果正常", facts[0]["summary"])
+        self.assertNotIn("本期没有需要报告的记录", facts[0]["summary"])
+
+    def test_low_utilization_forecast_does_not_create_recommendation(
+        self,
+    ) -> None:
+        columns = tuple(
+            {"name": name}
+            for name in (
+                "metric_code",
+                "dimensions",
+                "forecast_horizon_days",
+                "forecast_utilization_percent",
+                "estimated_days_to_limit",
+                "forecast_confidence",
+                "history_elapsed_days",
+            )
+        )
+        source = SimpleNamespace(
+            evidence=(
+                SimpleNamespace(
+                    tool_id="metric.query_range",
+                    columns=columns,
+                    rows=((
+                        "db.storage.used_bytes",
+                        "instance=oracle-1, tablespace=SYSTEM",
+                        30.0,
+                        1.47,
+                        None,
+                        "LOW",
+                        7.0,
+                    ),),
+                ),
+            )
+        )
+
+        recommendations = (
+            AIOpsRuntimeService._inspection_capacity_recommendations(source)
+        )
+
+        self.assertEqual((), recommendations)
 
     def test_weekly_inspection_projection_uses_server_trend_fields(self) -> None:
         source = SimpleNamespace(
