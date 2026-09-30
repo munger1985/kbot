@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from platform_core.contracts.aiops import ImplementationProfile
@@ -69,7 +70,7 @@ _INPUT_SCHEMAS: dict[ImplementationProfile, tuple[dict[str, Any], ...]] = {
     ),
     ImplementationProfile.ORACLE_RMAN_RECOVERY: (
         _field("RECOVERY_SCENARIO", "恢复场景", field_type="select", help_text="选择本次文档的主要恢复场景。", options=(("FULL_DATABASE", "全库恢复"), ("DATABASE_PITR", "数据库时间点恢复"), ("DATAFILE", "数据文件恢复"), ("CONTROLFILE", "控制文件恢复"), ("PDB", "PDB 恢复"))),
-        _field("RECOVERY_TARGET_TIME", "恢复目标时间", field_type="oracle_datetime", help_text="格式 YYYY-MM-DD HH24:MI:SS，仅用于时间点恢复。", placeholder="例如 2026-09-29 21:30:00"),
+        _field("RECOVERY_TARGET_TIME", "恢复目标时间", field_type="oracle_datetime", help_text="使用日期时间选择器填写，仅用于时间点恢复；提交后统一保存为 YYYY-MM-DD HH24:MI:SS。"),
         _field("RECOVERY_TARGET_SCN", "恢复目标 SCN", field_type="integer", help_text="与目标时间二选一。", minimum=1),
         _field("ORACLE_HOME", "恢复环境 Oracle Home", field_type="path", help_text="留空时从数据库和主机事实获取。", group="高级参数"),
     ),
@@ -180,8 +181,15 @@ def normalize_implementation_parameters(
             if not value.isdigit():
                 raise ValueError(f"{field['label']}只能包含数字")
         elif kind == "oracle_datetime":
-            if not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", value):
+            candidate = value.replace("T", " ", 1)
+            try:
+                parsed = datetime.strptime(
+                    candidate,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+            except ValueError as exc:
                 raise ValueError(f"{field['label']}格式应为 YYYY-MM-DD HH24:MI:SS")
+            value = parsed.strftime("%Y-%m-%d %H:%M:%S")
         elif kind == "file_prefix":
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", value):
                 raise ValueError(f"{field['label']}只能包含安全的文件名前缀字符")

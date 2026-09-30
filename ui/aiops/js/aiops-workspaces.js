@@ -1233,18 +1233,23 @@
   }
 
   function starterParameterValue(field, initialParameters = {}) {
-    if (Object.prototype.hasOwnProperty.call(initialParameters, field.name)) return initialParameters[field.name];
-    if (field.type === "timezone") return Intl.DateTimeFormat().resolvedOptions().timeZone || field.default || "Asia/Shanghai";
-    return field.default ?? "";
+    let value;
+    if (Object.prototype.hasOwnProperty.call(initialParameters, field.name)) value = initialParameters[field.name];
+    else if (field.type === "timezone") value = Intl.DateTimeFormat().resolvedOptions().timeZone || field.default || "Asia/Shanghai";
+    else value = field.default ?? "";
+    if (field.type === "oracle_datetime" && value) return String(value).replace(" ", "T");
+    return value;
   }
 
   function starterParameterHtml(field, initialParameters = {}) {
-    const type = field.type === "datetime" ? "datetime-local" : field.type === "integer" ? "number" : "text";
+    const isDateTime = field.type === "datetime" || field.type === "oracle_datetime";
+    const type = isDateTime ? "datetime-local" : field.type === "integer" ? "number" : "text";
     const value = starterParameterValue(field, initialParameters);
     const attributes = [
       field.required ? "required" : "",
       field.min !== undefined ? `min="${esc(field.min)}"` : "",
       field.max !== undefined ? `max="${esc(field.max)}"` : "",
+      isDateTime ? 'step="1"' : "",
       field.pattern ? `pattern="${esc(field.pattern)}"` : "",
       field.placeholder ? `placeholder="${esc(field.placeholder)}"` : "",
     ].filter(Boolean).join(" ");
@@ -1303,6 +1308,10 @@
         let value = input.value.trim();
         if (!value && !field.required) continue;
         if (field.type === "datetime") value = new Date(value).toISOString();
+        if (field.type === "oracle_datetime") {
+          if (value.length === 16) value += ":00";
+          value = value.replace("T", " ");
+        }
         if (field.type === "integer") value = Number(value);
         parameters[field.name] = value;
       }

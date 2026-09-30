@@ -77,6 +77,10 @@ Runbook 的派生产物，不重复持久化另一份可漂移的正文。
 未知字段、相同 RAC 节点名、同时填写恢复时间与 SCN、危险路径和命令控制字符均被拒绝。密码、密钥、
 Wallet、完整连接串和自由命令没有表单字段，也不能由 Planner 生成。
 
+`RECOVERY_TARGET_TIME` 使用 `datetime-local` 日期时间选择器，浏览器提交本地墙钟时间；服务端不做
+时区换算，校验真实日历日期后规范化为 Oracle `YYYY-MM-DD HH24:MI:SS`，避免合法的单数字月日因
+展示格式差异被拒绝，也避免将不存在的日期写入 RMAN `SET UNTIL TIME`。
+
 最终 Runbook 的 `generation` 固化 `starter_id`、`catalog_version` 和 `supplied_parameters`；对应的
 `resolved_parameters` 使用 `USER_SUPPLIED` 状态。页面“调整参数并重新生成”只读取该快照并创建
 新 Turn，旧 Turn 的页面、PDF、Markdown 和 ZIP 保持不变。

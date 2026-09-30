@@ -129,6 +129,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("starterCatalogVersion", workspace)
         self.assertIn("executeStarter", workspace)
         self.assertIn("datetime-local", workspace)
+        self.assertIn('field.type === "oracle_datetime"', workspace)
+        self.assertIn('value.replace("T", " ")', workspace)
         self.assertNotIn("includes(\"ADG\")", workspace)
 
     def test_chat_reloads_images_through_authenticated_api(self):

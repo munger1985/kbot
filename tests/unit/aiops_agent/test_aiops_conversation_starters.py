@@ -114,6 +114,48 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             frozen["parameters"],
         )
 
+    def test_rman_recovery_time_is_normalized_for_oracle(self) -> None:
+        payload = self.catalog.list_for_target(_target())
+        recovery = next(
+            item
+            for item in payload["starters"]
+            if item["starter_id"] == "oracle.runbook.rman-recovery"
+        )
+        fields = {item["name"]: item for item in recovery["input_schema"]}
+        self.assertEqual(
+            "oracle_datetime",
+            fields["RECOVERY_TARGET_TIME"]["type"],
+        )
+
+        frozen = self.catalog.freeze(
+            selection=ConversationStarterSelection(
+                starter_id="oracle.runbook.rman-recovery",
+                catalog_version="1.1.0",
+                parameters={
+                    "RECOVERY_SCENARIO": "DATABASE_PITR",
+                    "RECOVERY_TARGET_TIME": "2026-9-29 17:00:00",
+                },
+            ),
+            target=_target(),
+        )
+        self.assertEqual(
+            "2026-09-29 17:00:00",
+            frozen["parameters"]["RECOVERY_TARGET_TIME"],
+        )
+
+    def test_rman_recovery_time_rejects_invalid_calendar_date(self) -> None:
+        with self.assertRaisesRegex(Exception, "YYYY-MM-DD HH24:MI:SS"):
+            self.catalog.freeze(
+                selection=ConversationStarterSelection(
+                    starter_id="oracle.runbook.rman-recovery",
+                    catalog_version="1.1.0",
+                    parameters={
+                        "RECOVERY_TARGET_TIME": "2026-02-30 17:00:00",
+                    },
+                ),
+                target=_target(),
+            )
+
     def test_runbook_parameters_reject_unknown_and_unsafe_values(self) -> None:
         with self.assertRaisesRegex(Exception, "未知字段"):
             self.catalog.freeze(
