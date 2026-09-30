@@ -244,6 +244,8 @@ Finding、Report 和审批模型。
 | `ActionExecution` | 经过策略校验和审批的受控操作 |
 | `Verification` | 处理前后使用同一口径形成的效果判断 |
 | `DiagnosisReport` | 故障、性能、巡检或对比报告 |
+| `OperationsKnowledgeAsset` | 用户手册或历史诊断案例的稳定知识资产身份 |
+| `OperationsKnowledgeVersion` | 带适用范围、来源、审核和 KC 索引引用的不可变知识版本 |
 | `NotificationSubscription` | Target、订阅者、最低严重级别和站内分享阶段 |
 | `NotificationDelivery` | 主动分享对象、渠道、内容版本和投递状态 |
 
@@ -274,7 +276,8 @@ Prometheus、Zabbix、OEM 和可选数据库连接，对 Oracle、MySQL 的性�
 | 目标管理 | Oracle/MySQL/PostgreSQL Target、环境、版本、能力和托管凭据引用 |
 | 监控接入 | Prometheus、Zabbix、OEM；同一 Target 可绑定多个来源 |
 | 触发入口 | Chat、Critical Alert Webhook、定时巡检、内部 API |
-| 诊断数据 | 指标、告警、Loki 日志、只读数据库诊断、用户回贴结果、KC SOP |
+| 诊断数据 | 指标、告警、Loki 日志、只读数据库诊断、用户回贴结果 |
+| 运维知识 | 用户手册原文与结构化导航、经过审核的历史诊断案例 |
 | 根因分析 | 假设、支持证据、反证、数据缺口和根因等级 |
 | 人机协作 | Chat 中请求用户执行只读 SQL 并回贴，可多轮恢复 |
 | 解决方案 | 缓解建议、长期修复、验证和回滚方案 |
@@ -301,7 +304,8 @@ flowchart LR
     API --> OPS
     INTAKE --> OPS
     OPS --> MON[Monitor Adapters]
-    OPS --> KC[Knowledge Core SOP]
+    OPS --> OKB[运维知识库]
+    OKB --> KC[Knowledge Core 内部索引]
     OPS --> EXR[Read-only DB Executor]
     OPS --> POL[Policy + HITL]
     POL --> EXM[Mutation DB Executor]
@@ -311,6 +315,13 @@ flowchart LR
 AIOps Agent 拥有 `KBOT_OPS_*` 表和 Ops Run/Task/Artifact；DB Executor
 持有目标连接并再次校验命令。Agent 不接收数据库密码，不直接创建目标数据库
 Session，也不执行自由 SQL。
+
+运维知识库在产品层归属 AIOps。用户上传手册保留原文，并提取适用范围、前置条件、操作步骤、
+验证和回退导航；正式诊断报告只有在根因、来源和验证满足条件后才提炼为历史案例。KC 只负责
+内部解析、索引和 Citation Pack，普通用户不需要理解 Collection 或 Embedding。Agent 先按当前
+Target 的数据库类型、版本、拓扑和问题指纹筛选候选，再在限定 Bundle 内检索正文；手册和案例
+只提供知识引用，不提升为当前环境事实。完整设计见
+[AIOps 运维知识库详细设计](../proposals/aiops-operations-knowledge-base-detailed-design.md)。
 
 ## 三种主要触发流程
 
@@ -507,6 +518,9 @@ Diagnosis
 
 报告正文是不可变 Artifact，`KBOT_OPS_REPORT` 保存便于 APEX 查询的当前版本
 投影。更正报告创建新版本，不覆盖历史。
+
+正式报告不会自动成为运维知识。报告结束后可以进入案例资格判断和提炼流程，只有经过审核的
+诊断参考或已验证解决案例才进入 Agent 检索；原始报告和 ReportSource 始终保留为来源事实。
 
 ## AIOps SSE 与前端交互
 

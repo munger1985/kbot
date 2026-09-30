@@ -125,6 +125,20 @@ GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 投影中的 `OPS_RUN_ID` 仅是用户发起生成时的锚点。PDF 依据冻结内容同步生成，不保存
 正文副本。所有规范 DDL、实体、Repository、OpenAPI 和测试同步更新，不保留兼容读写。
 
+## 报告与诊断案例
+
+正式报告是一次诊断的冻结记录，不自动成为 Agent 可复用知识。报告发布后，AIOps 可以异步执行
+案例资格判断：只有 Target 和版本明确、Finding 或 Root Cause 有证据引用、来源 Hash 可复核，
+并且能够区分建议与实际执行结果时，才生成案例草稿。
+
+案例分为“诊断参考”和“已验证解决案例”。前者只复用排查路径，后者还要求已经执行处置并形成
+`RESOLVED` 或 `IMPROVED` 的处理后验证。所有案例默认需要审核后发布；失败报告、纯数据缺口、
+不利执行结果和被后续报告推翻的结论不得进入正式检索。案例只保存可复用的问题特征、根因、
+动作、验证和适用条件，完整报告仍由 Report/Artifact 体系保存。
+
+详细状态、表结构、提炼合同和检索规则见
+[AIOps 运维知识库详细设计](../proposals/aiops-operations-knowledge-base-detailed-design.md)。
+
 ## 验收
 
 1. 三入口均调用同一个报告生成器和文档渲染器。

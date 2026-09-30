@@ -7,6 +7,10 @@ AIOps 使用独立的固定业务范围，不复用 KM 的 Domain、账号或 Kn
 - 固定 Collection：`operations-manuals`
 - 固定手册：`services/aiops_agent/resources/knowledge/database-operations-manual.md`
 
+当前实现仍只有上述手册 Collection。目标态运维知识库还会初始化内部
+`diagnosis-cases` Collection，并由 AIOps 保存资产、版本、审核和索引引用；该目标态尚未实施，
+详见 [AIOps 运维知识库详细设计](../proposals/aiops-operations-knowledge-base-detailed-design.md)。
+
 初始化前必须完成平台、模型目录、Knowledge Core、Main API 和 AIOps Agent 的 Schema
 及服务部署，并至少启用一个 `CATEGORY=2` 的文本向量模型。脚本不会伪造数据库目标、
 诊断源、Target、巡检计划或 Agent，这些资源必须根据实际环境配置。执行策略不再
@@ -58,6 +62,7 @@ python3 scripts/db/initialize_aiops.py --skip-manual-upload
 初始密码由脚本在终端输出。初始化脚本重复执行会恢复固定初始密码，因此生产环境完成
 初始化并修改密码后，不应把它当作日常健康检查使用；日常检查使用 `--check-only`。
 
-AIOps 页面中的 “Knowledge Core” 提供模型目录选择、KC 模型变更策略提示和运维手册
-上传。文本向量或视觉向量模型在已有解析活动后是否允许更换，由 Knowledge Core 服务端
-策略决定，前端和 Main API 都不通过硬编码绕过该约束。
+当前 AIOps 页面中的 “Knowledge Core” 提供模型目录选择、KC 模型变更策略提示和运维手册
+上传。目标态将该页面替换为“运维知识库”，普通用户不再直接管理 Collection 或 Embedding；
+模型变更和索引诊断进入管理员配置。文本向量或视觉向量模型在已有解析活动后是否允许更换，
+仍由 Knowledge Core 服务端策略决定，前端和 Main API 都不通过硬编码绕过该约束。
