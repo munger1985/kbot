@@ -170,6 +170,9 @@ db.storage.capacity 当前快照
 折线图默认采用 small multiples，避免大表空间把小表空间的变化压平。数据文件自动扩展等事件只有在
 本轮存在带时间戳的来源证据时才作为 annotation 加入，禁止根据曲线台阶猜测事件。容量图以最大容量
 为 100% 显示三段，同时在行内给出“当前已分配使用率”，明确当前分配告警与硬上限风险的区别。
+功能入口必须通过 `task_frame.subject_ref` 限定图表指标域；“空间变化趋势”只允许
+`db.storage.used_bytes`、`db.storage.utilization`、`db.storage.max_bytes` 出图。存储历史指标缺失时
+展示数据缺口，不得用可用性、CPU 或连接数等基线指标代替空间趋势。
 
 ### 4.2 Finding Card
 

@@ -92,6 +92,14 @@ def _fact_trust_level(value: object) -> str:
 class DbaEvidenceAssessmentHandler:
     """归一真实Evidence，并让模型评估假设、证据需求和下一步。"""
 
+    _storage_trend_metric_codes = frozenset(
+        {
+            "db.storage.used_bytes",
+            "db.storage.utilization",
+            "db.storage.max_bytes",
+        }
+    )
+
     def __init__(self, *, model_client=None, prompts=None) -> None:
         self._model = model_client
         self._prompts = prompts
@@ -106,6 +114,7 @@ class DbaEvidenceAssessmentHandler:
         monitoring_gap_found = False
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         task_frame = dict(answer_context.get("task_frame", {}))
+        chart_metric_codes = self._chart_metric_codes(task_frame)
         forecast_horizon_seconds = task_frame.get(
             "forecast_horizon_seconds"
         )
@@ -220,6 +229,7 @@ class DbaEvidenceAssessmentHandler:
                     artifact_id=str(artifact["artifact_id"]),
                     result=result,
                     forecast_horizon_days=forecast_horizon_days,
+                    chart_metric_codes=chart_metric_codes,
                 )
                 if fact is not None:
                     facts.append(fact)
@@ -905,6 +915,7 @@ class DbaEvidenceAssessmentHandler:
         artifact_id: str,
         result: ObservationSet,
         forecast_horizon_days: float | None = None,
+        chart_metric_codes: frozenset[str] | None = None,
     ) -> TurnEvidenceFact | None:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
         rows: list[tuple[Any, ...]] = []
@@ -1170,6 +1181,7 @@ class DbaEvidenceAssessmentHandler:
         visualizations = DbaEvidenceAssessmentHandler._monitoring_charts(
             artifact_id=artifact_id,
             result=result,
+            allowed_metric_codes=chart_metric_codes,
         )
         return TurnEvidenceFact(
             evidence_ref=f"artifact:{artifact_id}#prometheus",
@@ -1192,7 +1204,10 @@ class DbaEvidenceAssessmentHandler:
 
     @staticmethod
     def _monitoring_charts(
-        *, artifact_id: str, result: ObservationSet
+        *,
+        artifact_id: str,
+        result: ObservationSet,
+        allowed_metric_codes: frozenset[str] | None = None,
     ) -> tuple[ChartSpec, ...]:
         """把原始监控点交给共享 Chart Skill，不从摘要值反推曲线。"""
         titles = {
@@ -1201,10 +1216,14 @@ class DbaEvidenceAssessmentHandler:
             "db.storage.max_bytes": "表空间最大容量趋势",
         }
         charts: list[ChartSpec] = []
-        metric_codes = {
-            item.metric_code for item in result.observations
-        }
-        for observation in result.observations:
+        observations = tuple(
+            item
+            for item in result.observations
+            if allowed_metric_codes is None
+            or item.metric_code in allowed_metric_codes
+        )
+        metric_codes = {item.metric_code for item in observations}
+        for observation in observations:
             if (
                 "db.storage.used_bytes" in metric_codes
                 and observation.metric_code
@@ -1270,6 +1289,19 @@ class DbaEvidenceAssessmentHandler:
                 )
             )
         return tuple(charts[:4])
+
+    @classmethod
+    def _chart_metric_codes(
+        cls, task_frame: dict[str, Any]
+    ) -> frozenset[str] | None:
+        """按结构化功能入口约束图表语义，禁止无关指标占位。"""
+        subject_ref = dict(task_frame.get("subject_ref") or {})
+        if (
+            subject_ref.get("conversation_starter")
+            == "database.storage.trend"
+        ):
+            return cls._storage_trend_metric_codes
+        return None
 
 
 _HTML_REPORT_TOOLS = {

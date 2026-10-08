@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -1339,6 +1340,73 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(1, len(fact.visualizations))
         self.assertEqual("LINE", fact.visualizations[0].chart_type)
         self.assertEqual("OVERLAY", fact.visualizations[0].layout)
+
+    def test_storage_trend_charts_exclude_unrelated_baseline_metrics(
+        self,
+    ) -> None:
+        artifact = _monitoring_artifact()
+        baseline = artifact["payload"]["observations"][0]
+        unrelated_codes = (
+            "db.availability",
+            "db.cpu.utilization",
+            "db.connection.active",
+            "db.connection.utilization",
+        )
+        observations = []
+        for metric_code in unrelated_codes:
+            observation = deepcopy(baseline)
+            observation["metric_code"] = metric_code
+            observations.append(observation)
+        storage = deepcopy(baseline)
+        storage["metric_code"] = "db.storage.used_bytes"
+        storage["unit"] = "bytes"
+        storage["series"][0]["dimensions"] = {
+            "target_key": "oracle-dev-190",
+            "tablespace_name": "SYSAUX",
+        }
+        observations.append(storage)
+        artifact["payload"]["observations"] = observations
+
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(artifact,),
+                    task_frame_overrides={
+                        "subject_ref": {
+                            "conversation_starter": "database.storage.trend"
+                        }
+                    },
+                )
+            )
+        )
+
+        fact = result.evidence[0]
+        self.assertEqual(1, len(fact.visualizations))
+        self.assertEqual(
+            "db.storage.used_bytes",
+            fact.visualizations[0].metadata["metric_code"],
+        )
+        self.assertEqual("SYSAUX", fact.visualizations[0].series[0].name)
+
+    def test_storage_trend_does_not_chart_unrelated_metrics_as_fallback(
+        self,
+    ) -> None:
+        result = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(_monitoring_artifact(),),
+                    task_frame_overrides={
+                        "subject_ref": {
+                            "conversation_starter": "database.storage.trend"
+                        }
+                    },
+                )
+            )
+        )
+
+        fact = result.evidence[0]
+        self.assertEqual("TABLE", fact.presentation_kind)
+        self.assertEqual((), fact.visualizations)
 
     def test_monitoring_low_coverage_requests_database_fallback(self) -> None:
         artifact = _monitoring_artifact()
