@@ -352,6 +352,26 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             (AIOPS_ROOT / "notification-subscriptions.html").exists()
         )
 
+    def test_target_detail_uses_business_overview_instead_of_raw_payload(self):
+        page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        overview = script.split("function targetOverviewHtml", 1)[1].split(
+            "function reportPresentationHtml", 1
+        )[0]
+        self.assertIn('id="ops-detail" class="ops-panel span-12"', page)
+        self.assertIn("targetOverviewHtml(data)", script)
+        self.assertIn("数据库范围", overview)
+        self.assertIn("连接状态", overview)
+        self.assertIn("凭据与变更", overview)
+        self.assertIn("观测与采集", overview)
+        for internal_field in (
+            "schema_version", "target_id", "created_at", "created_by", "updated_by"
+        ):
+            self.assertNotIn(internal_field, overview)
+        self.assertNotIn("JSON.stringify", overview)
+
     def test_recovery_drills_use_independent_operations_workspace(self):
         target_page = (AIOPS_ROOT / "target-detail.html").read_text(
             encoding="utf-8"

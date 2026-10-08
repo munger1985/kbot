@@ -582,6 +582,25 @@
     return `<section class="ops-panel ops-leadership-briefing" data-leadership-briefing><div class="ops-panel-head"><div><h3>领导简报</h3><p>只保留影响、风险和建议，不展开 SID 或 SQL。</p></div><span class="ops-badge ${tone}">${shell.escape(risk)}</span></div><div class="ops-panel-body ops-leadership-grid"><article><h4>影响</h4>${list(briefing.business_impact)}</article><article><h4>风险</h4>${list(briefing.risks)}</article><article><h4>建议</h4>${list(briefing.recommendations)}</article></div></section>`;
   }
 
+  function targetOverviewHtml(target) {
+    const environment = { PROD: "生产", STG: "测试 / 预发布", DEV: "开发" }[target.environment] || target.environment || "—";
+    const role = { PRIMARY: "主库", STANDBY: "备库", UNKNOWN: "未知角色" }[target.db_role] || target.db_role || "—";
+    const endpoint = target.endpoint
+      ? `${target.endpoint.host}:${target.endpoint.port}${target.endpoint.service ? ` / ${target.endpoint.service}` : target.endpoint.database ? ` / ${target.endpoint.database}` : ""}`
+      : "未配置（仅监控模式）";
+    const credential = (value) => value?.configured
+      ? `已配置${value.updated_at ? ` · ${shell.fmt(value.updated_at)}` : ""}`
+      : "未配置";
+    const importance = { 1: "可按需忽略", 2: "较低", 3: "普通", 4: "重要", 5: "最重要" }[target.importance_level] || "未知";
+    const oracleScope = [
+      target.observed_oracle_database_name || target.oracle_pdb_name,
+      target.observed_oracle_container_scope || target.oracle_container_scope,
+      target.observed_oracle_container_name,
+    ].filter(Boolean).join(" · ");
+    const row = (label, value) => `<dt>${shell.escape(label)}</dt><dd>${shell.escape(value ?? "—")}</dd>`;
+    return `<div class="ops-panel-head target-overview-head"><div><p>${shell.escape(target.db_type)}${target.version_code ? ` · ${shell.escape(target.version_code)}` : ""}</p><h2>${shell.escape(target.display_name)}</h2><small>${shell.escape(environment)} · ${shell.escape(role)} · L${shell.escape(target.importance_level)} ${shell.escape(importance)}</small></div><div class="ops-actions">${shell.badge(target.status)}${shell.badge(target.connectivity_check_pending ? "CHECKING" : target.connectivity_status)}${shell.badge(target.observed_status)}</div></div><div class="ops-panel-body target-overview-grid"><section><h3>数据库范围</h3><dl class="ops-detail">${row("数据库类型", target.db_type)}${row("环境", environment)}${row("数据库角色", role)}${target.db_type === "ORACLE" ? row("Oracle 范围", oracleScope || "尚未确认") : ""}${row("重要程度", `L${target.importance_level} · ${importance}`)}</dl></section><section><h3>连接状态</h3><dl class="ops-detail">${row("诊断模式", target.readonly_connection_enabled ? "数据库只读直连" : "仅监控数据")}${row("Endpoint", endpoint)}${row("TLS", target.endpoint ? (target.endpoint.tls_enabled ? "已启用" : "未启用") : "不适用")}${row("最近检查", shell.fmt(target.last_connectivity_check_at))}${row("最近成功", shell.fmt(target.last_connectivity_success_at))}${target.last_error_code ? row("最近错误", target.last_error_code) : ""}</dl></section><section><h3>凭据与变更</h3><dl class="ops-detail">${row("诊断凭据", credential(target.diagnostic_credential))}${row("受控变更", target.controlled_change_enabled ? "允许人工审批后执行" : "未启用")}${row("执行凭据", target.controlled_change_enabled ? credential(target.execution_credential) : "不适用")}</dl></section><section><h3>观测与采集</h3><dl class="ops-detail">${row("观测状态", target.observed_status)}${row("最近观测", shell.fmt(target.last_observed_at))}${row("负载快照", target.workload_last_collected_at ? `最近采集 ${shell.fmt(target.workload_last_collected_at)}` : "尚无采集记录")}${row("活动采样", target.activity_sampler_status)}${row("最近采样", shell.fmt(target.activity_last_sampled_at))}</dl></section></div>`;
+  }
+
   function reportPresentationHtml(data, report, versions) {
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
@@ -672,7 +691,9 @@
         return;
       }
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));
-      panel.innerHTML = `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
+      panel.innerHTML = page === "target-detail"
+        ? targetOverviewHtml(data)
+        : `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
       if (page === "target-detail") {
         await initializeTargetSubscription(id, data);
         await initializeTargetRecovery(id);

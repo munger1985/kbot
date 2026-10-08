@@ -205,6 +205,14 @@
 
 /* Target 详情中的按需通知设置。 */
 .target-detail-grid{align-items:start}
+.target-overview-head{align-items:flex-start;padding:20px 22px}
+.target-overview-head h2{margin:2px 0 4px;font-size:24px}
+.target-overview-head p,.target-overview-head small{margin:0;color:var(--muted)}
+.target-overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.target-overview-grid section{min-width:0}
+.target-overview-grid h3{margin:0 0 8px;font:650 15px Georgia,"Songti SC",serif}
+.target-overview-grid .ops-detail{grid-template-columns:120px minmax(0,1fr)}
+.target-overview-grid .ops-detail dd{overflow-wrap:anywhere}
 .target-subscription-dialog{width:min(640px,calc(100vw - 32px))}
 .target-subscription-dialog header>div{display:grid;gap:3px}
 .target-subscription-dialog header p{margin:0;color:var(--muted);font-size:12px}
@@ -222,6 +230,7 @@
 .target-stage-fieldset input{margin:3px 0 0;accent-color:var(--accent)}
 .target-stage-fieldset strong,.target-stage-fieldset small{display:block}
 .target-stage-fieldset small{margin-top:2px;color:var(--muted);font-size:11px;font-weight:400}
+@media(max-width:900px){.target-overview-grid{grid-template-columns:1fr}}
 
 /* Target 详情中的运维记忆。 */
 .target-facts-list{margin-bottom:16px}
