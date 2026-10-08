@@ -390,6 +390,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="recovery-drill-form"', drill_page)
         self.assertIn('id="recovery-drill-history"', drill_page)
         self.assertIn("/recovery-drills", drill_script)
+        self.assertNotIn("Oracle SCN", drill_page)
+        self.assertNotIn("Resetlogs ID", drill_page)
+        self.assertNotIn("Incarnation", drill_page)
+        self.assertNotIn('name="evidence_kind"', drill_page)
+        self.assertNotIn('name="evidence_reference"', drill_page)
+        self.assertNotIn('name="evidence_hash"', drill_page)
+        self.assertIn("recovery_marker: { kind: currentTarget.db_type }", drill_script)
+        self.assertIn("evidence: []", drill_script)
+        self.assertIn("数据时间不能晚于模拟故障时间", drill_script)
+        self.assertIn("验证完成时间不能早于模拟故障时间", drill_script)
         self.assertIn('["recovery-drills", "恢复演练"]', shell)
 
     def test_target_detail_and_chat_own_target_fact_confirmation(self):

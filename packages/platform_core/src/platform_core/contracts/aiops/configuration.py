@@ -396,11 +396,11 @@ class RecoveryDrillCreate(AIOpsContract):
     recovered_through_at: UtcDatetime | None = None
     service_validated_at: UtcDatetime | None = None
     recovery_marker: RecoveryMarker
-    evidence: tuple[RecoveryDrillEvidence, ...] = Field(max_length=32)
+    evidence: tuple[RecoveryDrillEvidence, ...] = Field(default=(), max_length=32)
     notes: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
-    def validate_drill_evidence(self) -> "RecoveryDrillCreate":
+    def validate_drill_semantics(self) -> "RecoveryDrillCreate":
         source_db_type = {
             "ORACLE_RMAN": "ORACLE",
             "POSTGRESQL_BASEBACKUP": "POSTGRESQL",
@@ -413,8 +413,6 @@ class RecoveryDrillCreate(AIOpsContract):
         }.get(self.backup_source_type)
         if source_db_type is not None and source_db_type != self.recovery_marker.kind:
             raise ValueError("恢复坐标与备份来源数据库类型不匹配")
-        if self.result == "PASS" and not self.evidence:
-            raise ValueError("成功演练必须提供带内容哈希的证据")
         if self.result == "PASS" and self.assurance_level in {
             "DATABASE_OPEN",
             "APPLICATION_VALIDATED",

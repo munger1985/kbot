@@ -581,7 +581,10 @@ FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracl
 中退役旧版本。Wire 一律使用秒，界面可以分钟或小时录入。恢复目标还包含演练周期、最低保证等级、
 RTO 计时口径和来源说明。
 
-`KBOT_OPS_RECOVERY_DRILL` 保存人工演练的结构化记录、目标版本快照、外部证据引用及内容 SHA-256。
+`KBOT_OPS_RECOVERY_DRILL` 保存人工演练的结构化记录、目标版本快照，以及 Provider/受控工具可选补充的
+外部证据引用和内容 SHA-256。人工登记只填写场景、验证范围、结果、环境、备份来源、时间和说明；
+SCN、Timeline/LSN、GTID/Binlog 与证据哈希均不得要求用户手工抄录。未接入可信采集源时对应结构保留
+为空，记录继续标记为 `USER_PROVIDED`，不能伪造成系统直采证据。
 登记、审核和历史记录属于运维活动，统一放在独立“恢复演练”工作区；Target 详情只显示状态摘要和入口，
 不承载演练表单。
 等级从低到高为 `BACKUP_METADATA`、`RESTORE_VALIDATE`、`DATABASE_OPEN`、

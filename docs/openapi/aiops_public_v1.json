@@ -4122,6 +4122,7 @@
             "type": "string"
           },
           "evidence": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/RecoveryDrillEvidence"
             },
@@ -4226,8 +4227,7 @@
           "environment",
           "result",
           "simulated_failure_at",
-          "recovery_marker",
-          "evidence"
+          "recovery_marker"
         ],
         "title": "RecoveryDrillCreate",
         "type": "object"
@@ -4423,6 +4423,7 @@
             "type": "string"
           },
           "evidence": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/RecoveryDrillEvidence"
             },
@@ -4622,7 +4623,6 @@
           "result",
           "simulated_failure_at",
           "recovery_marker",
-          "evidence",
           "drill_id",
           "target_id",
           "db_type",

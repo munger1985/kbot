@@ -9,21 +9,6 @@
   };
   let currentTarget = null;
 
-  function markerHtml(dbType) {
-    const field = (name, label, attrs = "") => `<div class="ops-field"><label>${label}</label><input name="${name}" ${attrs}></div>`;
-    if (dbType === "ORACLE") return field("scn", "Oracle SCN", 'type="number" min="0"') + field("resetlogs_id", "Resetlogs ID", 'type="number" min="0"') + field("incarnation", "Incarnation", 'type="number" min="0"');
-    if (dbType === "POSTGRESQL") return field("timeline_id", "Timeline ID", 'type="number" min="1"') + field("lsn", "LSN", 'placeholder="16/B374D848" pattern="[0-9A-Fa-f]+/[0-9A-Fa-f]+"');
-    return field("gtid_executed", "GTID", 'maxlength="4000"') + field("binlog_file", "Binlog 文件", 'maxlength="256" placeholder="mysql-bin.000123"') + field("binlog_position", "Binlog 位置", 'type="number" min="0"');
-  }
-
-  function markerPayload(form, dbType) {
-    const value = (name) => String(form.elements[name]?.value || "").trim();
-    const number = (name) => value(name) === "" ? null : Number(value(name));
-    if (dbType === "ORACLE") return { kind: "ORACLE", scn: number("scn"), resetlogs_id: number("resetlogs_id"), incarnation: number("incarnation") };
-    if (dbType === "POSTGRESQL") return { kind: "POSTGRESQL", timeline_id: number("timeline_id"), lsn: value("lsn") || null };
-    return { kind: "MYSQL", gtid_executed: value("gtid_executed") || null, binlog_file: value("binlog_file") || null, binlog_position: number("binlog_position") };
-  }
-
   function renderProfile(profile, target) {
     const panel = document.getElementById("recovery-profile-summary");
     const state = document.getElementById("recovery-workspace-state");
@@ -52,7 +37,6 @@
     renderHistory(drills?.items || []);
     document.getElementById("recovery-target-detail-link").href = `./target-detail.html?id=${encodeURIComponent(targetId)}`;
     document.getElementById("recovery-backup-source").innerHTML = (sourceOptions[target.db_type] || []).map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
-    document.getElementById("recovery-marker-fields").innerHTML = markerHtml(target.db_type);
     document.getElementById("submit-recovery-drill").disabled = false;
   }
 
@@ -81,8 +65,28 @@
     const button = document.getElementById("submit-recovery-drill");
     const result = document.getElementById("recovery-drill-result");
     const iso = (name) => form.elements[name].value ? new Date(form.elements[name].value).toISOString() : null;
-    const reference = String(form.evidence_reference.value || "").trim();
-    const hash = String(form.evidence_hash.value || "").trim().toLowerCase();
+    const failureAt = new Date(form.simulated_failure_at.value);
+    const recoveredThrough = form.recovered_through_at.value ? new Date(form.recovered_through_at.value) : null;
+    const validatedAt = form.service_validated_at.value ? new Date(form.service_validated_at.value) : null;
+    if (recoveredThrough && recoveredThrough > failureAt) {
+      result.textContent = "实际恢复到的数据时间不能晚于模拟故障时间。";
+      result.dataset.tone = "bad";
+      return;
+    }
+    if (validatedAt && validatedAt < failureAt) {
+      result.textContent = "验证完成时间不能早于模拟故障时间。";
+      result.dataset.tone = "bad";
+      return;
+    }
+    if (
+      form.result.value === "PASS"
+      && ["DATABASE_OPEN", "APPLICATION_VALIDATED"].includes(form.assurance_level.value)
+      && !form.service_validated_at.value
+    ) {
+      result.textContent = "验证范围为数据库启动或业务可用性且结果为通过，请填写验证完成时间。";
+      result.dataset.tone = "bad";
+      return;
+    }
     button.disabled = true;
     try {
       await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(currentTarget.target_id)}/recovery-drills`, {
@@ -97,8 +101,8 @@
           simulated_failure_at: iso("simulated_failure_at"),
           recovered_through_at: iso("recovered_through_at"),
           service_validated_at: iso("service_validated_at"),
-          recovery_marker: markerPayload(form, currentTarget.db_type),
-          evidence: reference && hash ? [{ evidence_kind: form.evidence_kind.value, reference, content_hash: hash }] : [],
+          recovery_marker: { kind: currentTarget.db_type },
+          evidence: [],
           notes: String(form.notes.value || "").trim() || null,
         }),
       });

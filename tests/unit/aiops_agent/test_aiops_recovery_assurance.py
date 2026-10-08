@@ -71,7 +71,7 @@ class RecoveryContractTest(unittest.TestCase):
                 )
                 self.assertEqual(marker["kind"], request.recovery_marker.kind)
 
-    def test_marker_source_mismatch_and_pass_without_evidence_are_rejected(self) -> None:
+    def test_marker_source_mismatch_is_rejected_and_manual_pass_can_omit_evidence(self) -> None:
         with self.assertRaisesRegex(ValidationError, "数据库类型不匹配"):
             RecoveryDrillCreate.model_validate(
                 _drill_request(
@@ -79,14 +79,14 @@ class RecoveryContractTest(unittest.TestCase):
                     source="ORACLE_RMAN",
                 )
             )
-        with self.assertRaisesRegex(ValidationError, "成功演练必须提供"):
-            RecoveryDrillCreate.model_validate(
-                _drill_request(
-                    marker={"kind": "ORACLE", "scn": 1},
-                    source="ORACLE_RMAN",
-                    evidence=False,
-                )
+        request = RecoveryDrillCreate.model_validate(
+            _drill_request(
+                marker={"kind": "ORACLE"},
+                source="ORACLE_RMAN",
+                evidence=False,
             )
+        )
+        self.assertEqual((), request.evidence)
 
     def test_schema_and_ui_include_recovery_contract(self) -> None:
         root = Path(__file__).resolve().parents[3]
@@ -103,6 +103,11 @@ class RecoveryContractTest(unittest.TestCase):
         self.assertNotIn('id="target-recovery-drill-form"', target_page)
         self.assertIn('id="recovery-drill-form"', drill_page)
         self.assertIn("recovery-drills", drill_script)
+        self.assertNotIn("Oracle SCN", drill_page)
+        self.assertNotIn("Resetlogs ID", drill_page)
+        self.assertNotIn('name="evidence_hash"', drill_page)
+        self.assertIn("recovery_marker: { kind: currentTarget.db_type }", drill_script)
+        self.assertIn("evidence: []", drill_script)
         public_openapi = json.loads(
             (root / "docs/openapi/aiops_public_v1.json").read_text()
         )
