@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -234,6 +235,7 @@ class InspectionTemplateService:
             await uow.inspections.add_inspection_template_version(version)
             row.current_version_id = version.inspection_template_version_id
             row.updated_by = actor_id
+            row.updated_at = datetime.now(UTC)
             await uow.commit()
             return self._summary(row, version)
 
@@ -379,6 +381,7 @@ class SessionReportTemplateService:
             await uow.inspections.add_session_report_template_version(version)
             row.current_version_id = version.template_version_id
             row.updated_by = actor_id
+            row.updated_at = datetime.now(UTC)
             await uow.commit()
             return {
                 **self._view(row), "definition": definition,
