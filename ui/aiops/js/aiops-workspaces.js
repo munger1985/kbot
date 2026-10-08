@@ -797,9 +797,14 @@
       return `<section class="ops-line-series"><header><strong>${esc(series.name || series.series_key || "序列")}</strong><span>${esc(latest.display_value || chartNumber(latest.y, series.unit))}</span></header><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(series.name || "趋势")}"><line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" class="ops-chart-axis"></line><path d="${path}" class="ops-chart-line"></path><circle cx="${width - padding.right}" cy="${plotY(points[points.length - 1].y).toFixed(2)}" r="3" class="ops-chart-last"></circle><text x="${padding.left}" y="${height - 3}" text-anchor="start">${esc(chartTimeLabel(points[0].raw.x))}</text><text x="${width - padding.right}" y="${height - 3}" text-anchor="end">${esc(chartTimeLabel(latest.x))}</text><text x="${padding.left}" y="10">${esc(chartNumber(maxY, series.unit))}</text></svg><footer><span>最低 ${esc(chartNumber(minY, series.unit))}</span><span>最高 ${esc(chartNumber(maxY, series.unit))}</span></footer></section>`;
     }).join("");
     const coverage = Number(payload.metadata?.coverage_ratio);
-    const meta = Number.isFinite(coverage)
-      ? `<small>监控采样覆盖率 ${(coverage * 100).toFixed(1)}%</small>`
-      : "";
+    const metaItems = [];
+    if (Number.isFinite(coverage)) {
+      metaItems.push(`<small>监控采样覆盖率 ${(coverage * 100).toFixed(1)}%</small>`);
+    }
+    if (payload.metadata?.coverage_warning) {
+      metaItems.push(`<small class="ops-chart-warning">${esc(payload.metadata.coverage_warning)}</small>`);
+    }
+    const meta = metaItems.length ? `<span class="ops-chart-meta">${metaItems.join("")}</span>` : "";
     return `<figure class="ops-evidence-chart ops-line-chart"><figcaption><span>${esc(payload.title || "趋势")}</span>${meta}</figcaption><div class="ops-line-grid">${seriesHtml}</div></figure>`;
   }
 

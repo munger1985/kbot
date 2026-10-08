@@ -149,6 +149,8 @@
 .ops-evidence-chart { margin: 16px 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .ops-evidence-chart figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 11px; font-size: 12px; font-weight: 700; }
 .ops-evidence-chart figcaption small { color: var(--muted); font-weight: 500; }
+.ops-chart-meta { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.ops-evidence-chart figcaption .ops-chart-warning { color: #9a5a00; }
 .ops-chart-rows { display: grid; gap: 8px; }
 .ops-chart-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(120px, 1fr) 62px; align-items: center; gap: 10px; font-size: 12px; }
 .ops-chart-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

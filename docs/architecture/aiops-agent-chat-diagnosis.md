@@ -192,6 +192,13 @@ Safety Profile、执行限制和Evidence Kind。
 - `chart`：跨 App 共用的只读图表 Skill，把已经批准的结构化证据编译为
   `CHART_SPEC.v1`。它不产生诊断事实，也不允许从图形重算趋势、预测或根因。
 
+AIOps 在调用共用 Chart Skill 前必须先应用服务端版本化图表 Profile。Profile 写入类型化
+`TaskFrame.visualization_profile_id`，同时给出独立的 `visualization_window_seconds`；监控快照只查询
+Profile 指标与 Target-Source Binding 授权指标的交集。健康检查默认展示 1 小时 CPU、连接等关键
+趋势，当前性能默认展示 15 分钟 CPU、吞吐、延迟、连接趋势，空间趋势只接受存储指标和用户选择
+的天数。可用性持续不变、最大容量持续不变时不占图位；采样覆盖率低于 80% 时图表必须警告。
+禁止对全量 `ObservationSet` 按返回顺序取前四张图。
+
 Tool Invocation是语义审计对象，Ops Task继续负责租约和执行状态。Tool不要求隶属于Playbook。
 
 现有Skill Manifest转为`DBA_PLAYBOOK_MANIFEST.v1`，保存适用问题描述、标签、推荐Evidence、

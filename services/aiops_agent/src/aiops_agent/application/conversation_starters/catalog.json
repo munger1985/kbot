@@ -1,5 +1,5 @@
 {
-  "catalog_version": "1.1.0",
+  "catalog_version": "1.2.0",
   "starters": [
     {
       "starter_id": "database.health.overview",
@@ -9,7 +9,7 @@
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.session.active", "db.session.blocking_chain", "db.storage.capacity", "db.transaction.long_running", "db.replication.status"]},
+      "planning": {"kind": "TOOLS", "visualization_profile_id": "health.overview", "tool_ids": ["db.instance.identity", "db.session.active", "db.session.blocking_chain", "db.storage.capacity", "db.transaction.long_running", "db.replication.status"]},
       "sort_order": 10
     },
     {
@@ -20,7 +20,7 @@
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "CURRENT_PERFORMANCE"},
+      "planning": {"kind": "CURRENT_PERFORMANCE", "visualization_profile_id": "performance.current"},
       "sort_order": 20
     },
     {
@@ -42,7 +42,7 @@
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [{"name": "days", "label": "统计天数", "type": "integer", "required": true, "default": 7, "min": 1, "max": 30}],
-      "planning": {"kind": "STORAGE_TREND", "tool_ids": ["db.instance.identity", "db.storage.capacity"]},
+      "planning": {"kind": "STORAGE_TREND", "visualization_profile_id": "storage.trend", "tool_ids": ["db.instance.identity", "db.storage.capacity"]},
       "sort_order": 40
     },
     {

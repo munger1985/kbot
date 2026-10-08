@@ -1,8 +1,8 @@
 # AIOps 诊断内核与后续能力详细设计
 
-版本：1.3
+版本：1.4
 状态：部分落地（P0/P1 主链已实施）
-基准日期：2026-09-20
+基准日期：2026-10-08
 依据：
 
 - 产品 Roadmap [`docs/product/aiops-roadmap.md`](../product/aiops-roadmap.md) v1.6
@@ -26,6 +26,8 @@ EICC 与 ADG 演练不在本期设计范围。
   PLANNED 检查项 UI 标「规划中」且不可勾选。归档 Finding 只挂 FRA 余量，不假装有归档生成量。
 - 本轮补齐：跨 App `chart` Skill、`CHART_SPEC.v1`、监控原始点趋势图、表空间容量构成图，
   以及趋势、当前容量和根因强度的分层表达。
+- 本轮补齐：AIOps 场景化图表 Profile。健康、当前性能、空间趋势和周巡检先确定语义指标域，
+  再收窄监控查询和调用 Chart Skill；禁止将全量基线指标按返回顺序截成前四张图。
 - 未做：飞书、ADG 切换演练、Host Runner、真实审批联调。
 
 ## 1. 目标
@@ -146,7 +148,10 @@ UI 按上表语义顺序渲染，不允许 CSS 视觉重排。图表直接显示
 趋势分析不再由模型描述一段文字后附通用柱图，而是由服务端按同一证据生成正文输入、表格和图表：
 
 ```text
-OBSERVATION_SET.v1 原始监控点
+TaskFrame.visualization_profile_id + visualization_window_seconds
+  → Profile 指标候选集 ∩ Target-Source Binding 授权指标
+  → OBSERVATION_SET.v1 原始监控点
+  → AIOps Chart Selection Policy（槽位优先级、回退、抑制、张数上限）
   → Chart Skill（单位归一、按序列保留极值降采样）
   → CHART_SPEC.v1 / LINE / SMALL_MULTIPLES
   → AIOPS_CHART_BLOCK.v1
@@ -166,11 +171,27 @@ db.storage.capacity 当前快照
 4. 单位：监控 bytes 和容量快照统一展示为 MiB/GiB；不在同一结果混写 MB 与 MiB。
 5. 特殊空间：TEMP、UNDO 以峰值、P95或波动区间解释；期初期末相同不能证明窗口内没有风险。
 6. 根因强度：新增对象或分区只能证明活动，不能证明主要空间来源；没有对象级占用时最多标“可能”。
+7. 图表质量：每条序列至少有两个 `GOOD` 数值点；采样覆盖率低于 80% 时仍可展示，
+   但必须标记“仅供观察”，且正文不得据此升级结论强度。
+
+首批版本化 Profile：
+
+| Profile | 默认窗口 | 有序指标槽位 | 上限与抑制 |
+| --- | --- | --- | --- |
+| `health.overview` | 1 小时 | 可用性变化、数据库/主机 CPU 回退、连接使用率、活跃连接、吞吐、延迟 | 最多 4 张；可用性持续不变时不画 |
+| `performance.current` | 15 分钟 | 数据库/主机 CPU 回退、吞吐、延迟、连接使用率、活跃连接 | 最多 4 张；不接受存储指标占位 |
+| `storage.trend` | 用户选择的 1–30 天 | 使用量优先、使用率回退、最大容量变化 | 最多 2 张；最大容量不变时不画 |
+| `inspection.weekly` | 7 天 | CPU、连接使用率、活跃连接、空间使用量 | 最多 4 张；第一阶段按周检 Profile，后续由检查项目录声明指标进一步收窄 |
+
+Profile 由服务端 Conversation Starter 或巡检计划选择，浏览器不能提交自由 Profile。
+`visualization_window_seconds` 只控制图表历史观察窗口，不把健康检查和当前性能诊断改写成
+历史诊断；整体时间语义继续由 `temporal_analysis_mode` 决定。每个槽位只能选择一个候选指标，
+因此数据库 CPU 存在时不重复展示主机 CPU，空间使用量存在时不再同时展示同义使用率图。
 
 折线图默认采用 small multiples，避免大表空间把小表空间的变化压平。数据文件自动扩展等事件只有在
 本轮存在带时间戳的来源证据时才作为 annotation 加入，禁止根据曲线台阶猜测事件。容量图以最大容量
 为 100% 显示三段，同时在行内给出“当前已分配使用率”，明确当前分配告警与硬上限风险的区别。
-功能入口必须通过 `task_frame.subject_ref` 限定图表指标域；“空间变化趋势”只允许
+功能入口必须通过类型化 `task_frame.visualization_profile_id` 限定图表指标域；“空间变化趋势”只允许
 `db.storage.used_bytes`、`db.storage.utilization`、`db.storage.max_bytes` 出图。存储历史指标缺失时
 展示数据缺口，不得用可用性、CPU 或连接数等基线指标代替空间趋势。
 
@@ -292,7 +313,9 @@ Finding Compiler 用新列映射 `LOCK_WAIT`。字段缺失则卡片仍出，值
 | `ui/aiops/js/aiops-workspaces.js` | 卡片组件；分析/方案分区；Proposal 只跟在方案后；巡检结果复用同一渲染 |
 | `platform_core.visualization.ChartSkill` | 跨 App 的受控图表编译；不调用模型，不生成前端代码 |
 | `agent_runtime.specialists.visualization.ChartSkill` | 把 `QUERY_RESULT` 适配成 `CHART_SPEC.v1` |
-| `turn_answer_handlers.py` | 从监控原始点和容量快照调用同一 Chart Skill，禁止从摘要反推曲线 |
+| `aiops_agent.application.visualization` | 保存版本化 Profile，并按诊断场景选择指标槽位、质量门槛和图表顺序 |
+| `monitoring_snapshot.py` | 将 Profile 指标集合与 Binding 授权范围取交集，不查询无关基线指标 |
+| `turn_answer_handlers.py` | 从监控原始点和容量快照调用 AIOps 策略与同一 Chart Skill，禁止从摘要反推曲线 |
 | `ui/aiops/js/aiops-workspaces.js` | 渲染 LINE small multiples、规范化容量条和普通比较条 |
 | 自动 Run | 告警/巡检创建时 `action_intent=NONE`，不跑 change handler |
 
@@ -330,7 +353,10 @@ InspectionPlan 引用固定模板版本，Fire 冻结并执行对应调查 DAG
 同一套 Finding Compiler + 四段输出
 ```
 
-日检默认当前态；`schedule_type=WEEKLY` 自动打开趋势窗口，复用现有监控趋势字段（first/latest/change_per_day 等），不让模型重算。
+日检默认当前态；`schedule_type=WEEKLY` 自动打开 `inspection.weekly` 的 7 天趋势窗口，复用现有
+监控趋势字段（first/latest/change_per_day 等），不让模型重算。第一阶段按周检 Profile 请求
+CPU、连接和空间关键趋势；下一阶段由 Check Catalog 为检查项声明 `monitoring_metric_codes`，
+计划只取所选检查项指标并集，禁止通过中文标题或关键字猜测指标。
 
 客户点名的 Oracle 项按 Roadmap 第 6.2.H 分组进入 Catalog。页面从 Catalog 勾选，禁止手填 Tool SQL。
 

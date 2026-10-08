@@ -1316,7 +1316,12 @@ class DbaTurnAnswerTest(unittest.TestCase):
     def test_prometheus_observation_is_aggregated_as_one_fact(self) -> None:
         result = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(
-                _context(artifacts=(_monitoring_artifact(),))
+                _context(
+                    artifacts=(_monitoring_artifact(),),
+                    task_frame_overrides={
+                        "visualization_profile_id": "health.overview"
+                    },
+                )
             )
         )
 
@@ -1372,9 +1377,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 _context(
                     artifacts=(artifact,),
                     task_frame_overrides={
-                        "subject_ref": {
-                            "conversation_starter": "database.storage.trend"
-                        }
+                        "visualization_profile_id": "storage.trend"
                     },
                 )
             )
@@ -1396,9 +1399,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 _context(
                     artifacts=(_monitoring_artifact(),),
                     task_frame_overrides={
-                        "subject_ref": {
-                            "conversation_starter": "database.storage.trend"
-                        }
+                        "visualization_profile_id": "storage.trend"
                     },
                 )
             )

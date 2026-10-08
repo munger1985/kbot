@@ -133,6 +133,23 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('value.replace("T", " ")', workspace)
         self.assertNotIn("includes(\"ADG\")", workspace)
 
+    def test_trend_charts_warn_when_monitoring_coverage_is_low(self):
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        stylesheet = (AIOPS_ROOT / "css" / "workspaces.css").read_text(
+            encoding="utf-8"
+        )
+        for page_name in ("chat", "situations", "inspections"):
+            page = (AIOPS_ROOT / f"{page_name}.html").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("workspaces.css?v=20261008_2", page)
+            self.assertIn("aiops-workspaces.js?v=20261008_2", page)
+        self.assertIn("coverage_warning", workspace)
+        self.assertIn("ops-chart-warning", workspace)
+        self.assertIn(".ops-chart-warning", stylesheet)
+
     def test_chat_reloads_images_through_authenticated_api(self):
         auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(
             encoding="utf-8"

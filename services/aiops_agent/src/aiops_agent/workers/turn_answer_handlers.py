@@ -46,6 +46,7 @@ from aiops_agent.application.sqlhc_report import (
     SQLHC_FACT_TOOL_ID,
     SQLHC_REPORT_KIND,
 )
+from aiops_agent.application.visualization import AIOpsChartSelectionPolicy
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
     DbaAnswerDraft,
@@ -92,14 +93,6 @@ def _fact_trust_level(value: object) -> str:
 class DbaEvidenceAssessmentHandler:
     """归一真实Evidence，并让模型评估假设、证据需求和下一步。"""
 
-    _storage_trend_metric_codes = frozenset(
-        {
-            "db.storage.used_bytes",
-            "db.storage.utilization",
-            "db.storage.max_bytes",
-        }
-    )
-
     def __init__(self, *, model_client=None, prompts=None) -> None:
         self._model = model_client
         self._prompts = prompts
@@ -114,7 +107,9 @@ class DbaEvidenceAssessmentHandler:
         monitoring_gap_found = False
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
         task_frame = dict(answer_context.get("task_frame", {}))
-        chart_metric_codes = self._chart_metric_codes(task_frame)
+        visualization_profile_id = str(
+            task_frame.get("visualization_profile_id") or ""
+        ).strip() or None
         forecast_horizon_seconds = task_frame.get(
             "forecast_horizon_seconds"
         )
@@ -229,7 +224,7 @@ class DbaEvidenceAssessmentHandler:
                     artifact_id=str(artifact["artifact_id"]),
                     result=result,
                     forecast_horizon_days=forecast_horizon_days,
-                    chart_metric_codes=chart_metric_codes,
+                    visualization_profile_id=visualization_profile_id,
                 )
                 if fact is not None:
                     facts.append(fact)
@@ -915,7 +910,7 @@ class DbaEvidenceAssessmentHandler:
         artifact_id: str,
         result: ObservationSet,
         forecast_horizon_days: float | None = None,
-        chart_metric_codes: frozenset[str] | None = None,
+        visualization_profile_id: str | None = None,
     ) -> TurnEvidenceFact | None:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
         rows: list[tuple[Any, ...]] = []
@@ -1178,10 +1173,10 @@ class DbaEvidenceAssessmentHandler:
                 "logical_type": "DECIMAL",
             },
         )
-        visualizations = DbaEvidenceAssessmentHandler._monitoring_charts(
+        visualizations = AIOpsChartSelectionPolicy.compile(
+            profile_id=visualization_profile_id,
             artifact_id=artifact_id,
             result=result,
-            allowed_metric_codes=chart_metric_codes,
         )
         return TurnEvidenceFact(
             evidence_ref=f"artifact:{artifact_id}#prometheus",
@@ -1201,108 +1196,6 @@ class DbaEvidenceAssessmentHandler:
             warnings=tuple(dict.fromkeys(warnings)),
             visualizations=visualizations,
         )
-
-    @staticmethod
-    def _monitoring_charts(
-        *,
-        artifact_id: str,
-        result: ObservationSet,
-        allowed_metric_codes: frozenset[str] | None = None,
-    ) -> tuple[ChartSpec, ...]:
-        """把原始监控点交给共享 Chart Skill，不从摘要值反推曲线。"""
-        titles = {
-            "db.storage.used_bytes": "表空间使用量趋势",
-            "db.storage.utilization": "表空间使用率趋势",
-            "db.storage.max_bytes": "表空间最大容量趋势",
-        }
-        charts: list[ChartSpec] = []
-        observations = tuple(
-            item
-            for item in result.observations
-            if allowed_metric_codes is None
-            or item.metric_code in allowed_metric_codes
-        )
-        metric_codes = {item.metric_code for item in observations}
-        for observation in observations:
-            if (
-                "db.storage.used_bytes" in metric_codes
-                and observation.metric_code
-                in {"db.storage.utilization", "db.storage.max_bytes"}
-            ):
-                continue
-            series = []
-            for index, item in enumerate(observation.series):
-                points = [
-                    {"x": point.observed_at.isoformat(), "y": point.value}
-                    for point in item.points
-                    if point.quality == "GOOD"
-                    and isinstance(point.value, (int, float))
-                    and not isinstance(point.value, bool)
-                ]
-                if len(points) < 2:
-                    continue
-                dimensions = {
-                    key: value
-                    for key, value in item.dimensions.items()
-                    if key not in {"target_key", "instance"}
-                }
-                name = str(
-                    dimensions.get("tablespace")
-                    or dimensions.get("tablespace_name")
-                    or ", ".join(
-                        f"{key}={value}"
-                        for key, value in sorted(dimensions.items())
-                    )
-                    or f"序列 {index + 1}"
-                )
-                series.append(
-                    {
-                        "series_key": ",".join(
-                            f"{key}={value}"
-                            for key, value in sorted(item.dimensions.items())
-                        )
-                        or f"series-{index + 1}",
-                        "name": name,
-                        "points": points,
-                    }
-                )
-            if not series:
-                continue
-            charts.append(
-                ChartSkill.time_series(
-                    title=titles.get(
-                        observation.metric_code,
-                        f"{observation.metric_code} 趋势",
-                    ),
-                    unit=observation.unit,
-                    series=series,
-                    source_ids=(f"artifact:{artifact_id}#prometheus",),
-                    metadata={
-                        "metric_code": observation.metric_code,
-                        "window_start": observation.window_start.isoformat(),
-                        "window_end": observation.window_end.isoformat(),
-                        "coverage_ratio": round(
-                            observation.coverage_ratio, 4
-                        ),
-                        "sample_count": observation.actual_points,
-                    },
-                )
-            )
-        return tuple(charts[:4])
-
-    @classmethod
-    def _chart_metric_codes(
-        cls, task_frame: dict[str, Any]
-    ) -> frozenset[str] | None:
-        """按结构化功能入口约束图表语义，禁止无关指标占位。"""
-        subject_ref = dict(task_frame.get("subject_ref") or {})
-        if (
-            subject_ref.get("conversation_starter")
-            == "database.storage.trend"
-        ):
-            return cls._storage_trend_metric_codes
-        return None
-
 
 _HTML_REPORT_TOOLS = {
     "db.oracle.awr.report",

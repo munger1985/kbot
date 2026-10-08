@@ -1,0 +1,120 @@
+{
+  "schema_version": "AIOPS_CHART_PROFILE_CATALOG.v1",
+  "profiles": [
+    {
+      "profile_id": "health.overview",
+      "default_window_seconds": 3600,
+      "max_charts": 4,
+      "slots": [
+        {
+          "slot_id": "availability",
+          "title": "数据库可用性变化",
+          "candidate_metric_codes": ["db.availability"],
+          "suppress_when_flat": true
+        },
+        {
+          "slot_id": "cpu",
+          "title": "CPU 使用率趋势",
+          "candidate_metric_codes": ["db.cpu.utilization", "host.cpu.utilization"]
+        },
+        {
+          "slot_id": "connection_utilization",
+          "title": "连接使用率趋势",
+          "candidate_metric_codes": ["db.connection.utilization"]
+        },
+        {
+          "slot_id": "active_connections",
+          "title": "活跃连接数趋势",
+          "candidate_metric_codes": ["db.connection.active"]
+        },
+        {
+          "slot_id": "throughput",
+          "title": "事务吞吐趋势",
+          "candidate_metric_codes": ["db.transaction.throughput"]
+        },
+        {
+          "slot_id": "latency",
+          "title": "数据库响应延迟趋势",
+          "candidate_metric_codes": ["db.response.latency"]
+        }
+      ]
+    },
+    {
+      "profile_id": "performance.current",
+      "default_window_seconds": 900,
+      "max_charts": 4,
+      "slots": [
+        {
+          "slot_id": "cpu",
+          "title": "CPU 使用率趋势",
+          "candidate_metric_codes": ["db.cpu.utilization", "host.cpu.utilization"]
+        },
+        {
+          "slot_id": "throughput",
+          "title": "事务吞吐趋势",
+          "candidate_metric_codes": ["db.transaction.throughput"]
+        },
+        {
+          "slot_id": "latency",
+          "title": "数据库响应延迟趋势",
+          "candidate_metric_codes": ["db.response.latency"]
+        },
+        {
+          "slot_id": "connection_utilization",
+          "title": "连接使用率趋势",
+          "candidate_metric_codes": ["db.connection.utilization"]
+        },
+        {
+          "slot_id": "active_connections",
+          "title": "活跃连接数趋势",
+          "candidate_metric_codes": ["db.connection.active"]
+        }
+      ]
+    },
+    {
+      "profile_id": "storage.trend",
+      "default_window_seconds": 604800,
+      "max_charts": 2,
+      "slots": [
+        {
+          "slot_id": "used_space",
+          "title": "表空间使用量趋势",
+          "candidate_metric_codes": ["db.storage.used_bytes", "db.storage.utilization"]
+        },
+        {
+          "slot_id": "maximum_space",
+          "title": "表空间最大容量变化",
+          "candidate_metric_codes": ["db.storage.max_bytes"],
+          "suppress_when_flat": true
+        }
+      ]
+    },
+    {
+      "profile_id": "inspection.weekly",
+      "default_window_seconds": 604800,
+      "max_charts": 4,
+      "slots": [
+        {
+          "slot_id": "cpu",
+          "title": "CPU 使用率趋势",
+          "candidate_metric_codes": ["db.cpu.utilization", "host.cpu.utilization"]
+        },
+        {
+          "slot_id": "connection_utilization",
+          "title": "连接使用率趋势",
+          "candidate_metric_codes": ["db.connection.utilization"]
+        },
+        {
+          "slot_id": "active_connections",
+          "title": "活跃连接数趋势",
+          "candidate_metric_codes": ["db.connection.active"]
+        },
+        {
+          "slot_id": "used_space",
+          "title": "表空间使用量趋势",
+          "candidate_metric_codes": ["db.storage.used_bytes", "db.storage.utilization"]
+        }
+      ]
+    }
+  ]
+}

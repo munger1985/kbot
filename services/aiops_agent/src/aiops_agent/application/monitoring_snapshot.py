@@ -42,6 +42,7 @@ class MonitoringSnapshotBuilder:
         allowed_source_ids: tuple[UUID, ...] | None = None,
         window_start: datetime | None = None,
         window_end: datetime | None = None,
+        requested_metric_codes: tuple[str, ...] | None = None,
     ) -> dict:
         if (window_start is None) != (window_end is None):
             raise validation_failed("观测窗口起止时间必须同时提供")
@@ -87,17 +88,34 @@ class MonitoringSnapshotBuilder:
                 continue
             # 健康状态只是上一轮探测快照。已启用且已授权的Source仍允许
             # 在本Turn预算内真实尝试一次，由执行结果形成Evidence Gap。
-            requested = (monitor.capability_scope_json or {}).get(
+            configured = (monitor.capability_scope_json or {}).get(
                 "metric_codes", DEFAULT_BASELINE_METRICS
             )
             if (
-                not isinstance(requested, (list, tuple))
-                or not requested
-                or len(requested) > 64
-                or not all(isinstance(item, str) and item for item in requested)
+                not isinstance(configured, (list, tuple))
+                or not configured
+                or len(configured) > 64
+                or not all(isinstance(item, str) and item for item in configured)
             ):
                 raise validation_failed("监控绑定的 metric_codes 格式无效")
-            requested_codes = tuple(dict.fromkeys(requested))
+            configured_codes = tuple(dict.fromkeys(configured))
+            if requested_metric_codes is None:
+                requested_codes = configured_codes
+            else:
+                configured_set = set(configured_codes)
+                requested_codes = tuple(
+                    metric_code
+                    for metric_code in dict.fromkeys(requested_metric_codes)
+                    if metric_code in configured_set
+                )
+                if not requested_codes:
+                    initial_gaps.append(
+                        self._gap(
+                            monitor,
+                            "VISUALIZATION_METRICS_UNAVAILABLE",
+                            "当前监控绑定未授权图表档案要求的指标",
+                        )
+                    )
             try:
                 selected = self._metric_catalog.select(
                     requested_codes, db_type=target.db_type
@@ -127,8 +145,12 @@ class MonitoringSnapshotBuilder:
             else:
                 effective = declared
             binding_id = str(monitor.target_source_binding_id)
-            if effective.intersection(
-                {CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_EVENT_QUERY}
+            if (
+                CAPABILITY_EVENT_QUERY in effective
+                or (
+                    CAPABILITY_METRIC_QUERY_RANGE in effective
+                    and bool(requested_codes)
+                )
             ):
                 observation_binding_ids.append(binding_id)
             if CAPABILITY_LOG_QUERY in effective:

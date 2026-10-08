@@ -193,6 +193,17 @@ class TaskFrame(AIOpsContract):
             "使用Prometheus最大保留范围2592000秒，其他情况为空。"
         ),
     )
+    visualization_profile_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-z][a-z0-9_.-]{2,63}$",
+        description="由服务端选择的版本化图表语义档案，不接受浏览器自由文本。",
+    )
+    visualization_window_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=31_536_000,
+        description="图表档案要求的历史观察窗口，不改变诊断的当前态语义。",
+    )
     temporal_analysis_mode: TemporalAnalysisMode = (
         TemporalAnalysisMode.CURRENT
     )

@@ -57,7 +57,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
     def test_awr_diff_requires_equal_time_windows(self) -> None:
         selection = ConversationStarterSelection(
             starter_id="oracle.report.awr-diff",
-            catalog_version="1.1.0",
+            catalog_version="1.2.0",
             parameters={
                 "first_begin_time": "2026-09-28T08:00:00+00:00",
                 "first_end_time": "2026-09-28T09:00:00+00:00",
@@ -73,7 +73,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.adg-build",
-                catalog_version="1.1.0",
+                catalog_version="1.2.0",
             ),
             target=_target(),
         )
@@ -100,7 +100,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.datapump",
-                catalog_version="1.1.0",
+                catalog_version="1.2.0",
                 parameters={
                     "DATAPUMP_DIRECTORY_PATH": "",
                     "SOURCE_SCHEMAS": "app_core, APP_REPORT\napp_core",
@@ -130,7 +130,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.rman-recovery",
-                catalog_version="1.1.0",
+                catalog_version="1.2.0",
                 parameters={
                     "RECOVERY_SCENARIO": "DATABASE_PITR",
                     "RECOVERY_TARGET_TIME": "2026-9-29 17:00:00",
@@ -148,7 +148,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rman-recovery",
-                    catalog_version="1.1.0",
+                    catalog_version="1.2.0",
                     parameters={
                         "RECOVERY_TARGET_TIME": "2026-02-30 17:00:00",
                     },
@@ -161,7 +161,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
-                    catalog_version="1.1.0",
+                    catalog_version="1.2.0",
                     parameters={"PASSWORD": "secret"},
                 ),
                 target=_target(),
@@ -170,7 +170,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
-                    catalog_version="1.1.0",
+                    catalog_version="1.2.0",
                     parameters={"DATAPUMP_DIRECTORY_PATH": "../../tmp"},
                 ),
                 target=_target(),
@@ -181,7 +181,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rac-build",
-                    catalog_version="1.1.0",
+                    catalog_version="1.2.0",
                     parameters={
                         "NODE1_HOST": "rac01.example.com",
                         "NODE2_HOST": "rac01.example.com",
@@ -224,6 +224,93 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
 
 class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
+    def _diagnostic_output(
+        self,
+        *,
+        starter_id: str,
+        kind: str,
+        visualization_profile_id: str,
+        parameters: dict | None = None,
+    ):
+        service = object.__new__(TurnPlanningService)
+        context = SimpleNamespace(
+            question="执行功能",
+            target_context={"db_type": "ORACLE", "display_name": "TestDB"},
+            conversation_starter={"starter_id": starter_id},
+        )
+        output, _ = service._starter_diagnostic_output(
+            context=context,
+            kind=kind,
+            planning={
+                "visualization_profile_id": visualization_profile_id,
+                "tool_ids": ["db.instance.identity"],
+            },
+            parameters=parameters or {},
+            title="测试功能",
+        )
+        return output
+
+    async def test_health_starter_adds_one_hour_monitoring_profile(self) -> None:
+        output = self._diagnostic_output(
+            starter_id="database.health.overview",
+            kind="TOOLS",
+            visualization_profile_id="health.overview",
+        )
+
+        self.assertEqual(
+            "health.overview", output.task_frame.visualization_profile_id
+        )
+        self.assertEqual(3600, output.task_frame.visualization_window_seconds)
+        self.assertEqual(
+            "COMBINED", output.task_frame.evidence_source_strategy
+        )
+        self.assertTrue(
+            TurnPlanningService._requires_monitoring_snapshot(
+                investigation=output,
+                inspection=False,
+                alert_diagnosis=False,
+            )
+        )
+
+    async def test_performance_starter_adds_fifteen_minute_profile(
+        self,
+    ) -> None:
+        output = self._diagnostic_output(
+            starter_id="database.performance.current",
+            kind="CURRENT_PERFORMANCE",
+            visualization_profile_id="performance.current",
+        )
+
+        self.assertEqual(
+            "performance.current", output.task_frame.visualization_profile_id
+        )
+        self.assertEqual(900, output.task_frame.visualization_window_seconds)
+        self.assertEqual(
+            "COMBINED", output.task_frame.evidence_source_strategy
+        )
+
+    async def test_storage_starter_uses_requested_days_for_chart_window(
+        self,
+    ) -> None:
+        output = self._diagnostic_output(
+            starter_id="database.storage.trend",
+            kind="STORAGE_TREND",
+            visualization_profile_id="storage.trend",
+            parameters={"days": 7},
+        )
+
+        self.assertEqual(
+            "storage.trend", output.task_frame.visualization_profile_id
+        )
+        self.assertEqual(604_800, output.task_frame.requested_window_seconds)
+        self.assertEqual(
+            604_800, output.task_frame.visualization_window_seconds
+        )
+        self.assertEqual(
+            "MONITORING_FIRST",
+            output.task_frame.evidence_source_strategy,
+        )
+
     async def test_adg_starter_maps_directly_to_implementation_profile(self) -> None:
         service = object.__new__(TurnPlanningService)
         service._record_planning_route = AsyncMock()
@@ -232,7 +319,7 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
             target_context={"db_type": "ORACLE", "display_name": "TestDB"},
             conversation_starter={
                 "starter_id": "oracle.runbook.adg-build",
-                "catalog_version": "1.1.0",
+                "catalog_version": "1.2.0",
                 "title": "ADG 部署文档",
                 "parameters": {"STANDBY_HOST": "testdb-dr"},
                 "planning": {

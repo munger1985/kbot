@@ -58,6 +58,10 @@ from aiops_agent.application.investigation.reasoner import (
     InvestigationPlanValidationError,
     InvestigationReasoner,
 )
+from aiops_agent.application.visualization import (
+    chart_profile_metric_codes,
+    chart_profile_window_seconds,
+)
 from aiops_agent.entities import (
     OpsArtifactEntity,
     OpsInvestigationRevisionEntity,
@@ -392,7 +396,14 @@ class TurnPlanningService:
             await self._prepare_monitoring(
                 context,
                 requested_window_seconds=(
-                    investigation.task_frame.requested_window_seconds
+                    investigation.task_frame.visualization_window_seconds
+                    or investigation.task_frame.requested_window_seconds
+                ),
+                requested_metric_codes=(
+                    chart_profile_metric_codes(
+                        investigation.task_frame.visualization_profile_id
+                    )
+                    or None
                 ),
             )
             if monitoring_requested
@@ -404,12 +415,7 @@ class TurnPlanningService:
                 **source_queries,
             }
         monitoring_binding_ids = (
-            tuple(
-                item["binding_id"]
-                for item in monitoring_execution.get("bindings", ())
-                if CAPABILITY_METRIC_QUERY_RANGE
-                in item.get("effective_capabilities", ())
-            )
+            tuple(monitoring_execution.get("observation_binding_ids", ()))
             if monitoring_requested
             else ()
         )
@@ -596,6 +602,12 @@ class TurnPlanningService:
         completion_requirements: tuple[CompletionRequirement, ...] = ()
         strategy = EvidenceSourceStrategy.DATABASE_FIRST
         requested_window_seconds = None
+        visualization_profile_id = str(
+            planning.get("visualization_profile_id") or ""
+        ).strip() or None
+        visualization_window_seconds = chart_profile_window_seconds(
+            visualization_profile_id
+        )
         temporal_mode = TemporalAnalysisMode.CURRENT
         if kind == "CURRENT_PERFORMANCE":
             tool_ids = {
@@ -636,6 +648,7 @@ class TurnPlanningService:
         elif kind == "STORAGE_TREND":
             days = int(parameters.get("days") or 7)
             requested_window_seconds = days * 86_400
+            visualization_window_seconds = requested_window_seconds
             temporal_mode = TemporalAnalysisMode.HISTORICAL
             strategy = EvidenceSourceStrategy.MONITORING_FIRST
         elif kind == "AWR_REPORT":
@@ -689,6 +702,11 @@ class TurnPlanningService:
                     minimum_successful_results=1,
                 ),
             )
+        if (
+            visualization_profile_id
+            and strategy == EvidenceSourceStrategy.DATABASE_FIRST
+        ):
+            strategy = EvidenceSourceStrategy.COMBINED
         actions: list[InvestigationAction] = []
         if kind == "AWR_DIFF":
             actions = [
@@ -799,6 +817,8 @@ class TurnPlanningService:
                 problem_statement=f"执行功能入口“{title}”并给出直接结论",
                 database_context=dict(context.target_context),
                 requested_window_seconds=requested_window_seconds,
+                visualization_profile_id=visualization_profile_id,
+                visualization_window_seconds=visualization_window_seconds,
                 temporal_analysis_mode=temporal_mode,
                 known_facts=(f"用户明确选择功能入口：{title}",),
                 unknowns=(),
@@ -917,6 +937,12 @@ class TurnPlanningService:
             ),
             forecast_scope="未来30天",
             forecast_horizon_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
+            visualization_profile_id=(
+                "inspection.weekly" if weekly_trend else None
+            ),
+            visualization_window_seconds=(
+                DEFAULT_MONITORING_LOOKBACK_SECONDS if weekly_trend else None
+            ),
             known_facts=tuple(known_facts),
             unknowns=tuple(
                 ["勾选检查项的健康证据是否存在异常"]
@@ -2080,15 +2106,23 @@ class TurnPlanningService:
             context.source_run_evidence
             and context.source_run_evidence.get("source_kind") == "SITUATION"
         )
-        monitoring_requested = alert_diagnosis or any(
-            action.tool_id in {"monitor.query_range", "loki.query_range"}
-            for action in investigation.plan.actions
+        monitoring_requested = self._requires_monitoring_snapshot(
+            investigation=investigation,
+            inspection=bool(context.inspection),
+            alert_diagnosis=alert_diagnosis,
         )
         monitoring_execution = (
             await self._prepare_monitoring(
                 context,
                 requested_window_seconds=(
-                    investigation.task_frame.requested_window_seconds
+                    investigation.task_frame.visualization_window_seconds
+                    or investigation.task_frame.requested_window_seconds
+                ),
+                requested_metric_codes=(
+                    chart_profile_metric_codes(
+                        investigation.task_frame.visualization_profile_id
+                    )
+                    or None
                 ),
             )
             if monitoring_requested
@@ -2100,10 +2134,7 @@ class TurnPlanningService:
                 **source_queries,
             }
         monitoring_binding_ids = tuple(
-            item["binding_id"]
-            for item in monitoring_execution.get("bindings", ())
-            if CAPABILITY_METRIC_QUERY_RANGE
-            in item.get("effective_capabilities", ())
+            monitoring_execution.get("observation_binding_ids", ())
         )
         log_binding_ids = tuple(
             monitoring_execution.get("log_binding_ids", ())
@@ -2446,6 +2477,7 @@ class TurnPlanningService:
         return (
             alert_diagnosis
             or inspection
+            or bool(investigation.task_frame.visualization_profile_id)
             or investigation.task_frame.evidence_source_strategy
             == EvidenceSourceStrategy.MONITORING_FIRST
             or investigation.task_frame.temporal_analysis_mode
@@ -3807,6 +3839,7 @@ class TurnPlanningService:
         context: TurnPlanningContext,
         *,
         requested_window_seconds: int | None = None,
+        requested_metric_codes: tuple[str, ...] | None = None,
     ) -> dict:
         if self._monitoring_snapshot_builder is None:
             return {}
@@ -3840,6 +3873,7 @@ class TurnPlanningService:
                 window_end=(
                     now if monitor_window_seconds is not None else None
                 ),
+                requested_metric_codes=requested_metric_codes,
             )
             if not any(
                 CAPABILITY_METRIC_QUERY_RANGE
