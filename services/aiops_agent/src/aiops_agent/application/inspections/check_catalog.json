@@ -16,7 +16,8 @@
             "DAILY",
             "WEEKLY"
           ],
-          "trend_required": true
+          "trend_required": true,
+          "supported_db_types": ["ORACLE"]
         },
         {
           "check_id": "oracle.backup.space_usage",
@@ -29,7 +30,8 @@
             "DAILY",
             "WEEKLY"
           ],
-          "trend_required": true
+          "trend_required": true,
+          "supported_db_types": ["ORACLE"]
         },
         {
           "check_id": "oracle.backup.recent_jobs",
@@ -44,7 +46,41 @@
             "DAILY",
             "WEEKLY"
           ],
-          "trend_required": true
+          "trend_required": true,
+          "supported_db_types": ["ORACLE"]
+        },
+        {
+          "check_id": "postgresql.backup.archive_chain",
+          "display_name": "PostgreSQL WAL 归档链",
+          "availability": "READY",
+          "tool_id": "db.postgresql.archiver.status",
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": ["DAILY", "WEEKLY"],
+          "trend_required": false,
+          "supported_db_types": ["POSTGRESQL"]
+        },
+        {
+          "check_id": "postgresql.backup.wal_statistics",
+          "display_name": "PostgreSQL WAL 统计",
+          "availability": "READY",
+          "tool_id": "db.postgresql.wal.statistics",
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": ["DAILY", "WEEKLY"],
+          "trend_required": true,
+          "supported_db_types": ["POSTGRESQL"]
+        },
+        {
+          "check_id": "mysql.backup.binlog_chain",
+          "display_name": "MySQL Binlog 链",
+          "availability": "READY",
+          "tool_id": "db.mysql.binlog.status",
+          "playbook_id": null,
+          "finding_types": [],
+          "default_for": ["DAILY", "WEEKLY"],
+          "trend_required": false,
+          "supported_db_types": ["MYSQL"]
         }
       ]
     },

@@ -1,5 +1,5 @@
 {
-  "catalog_version": "1.2.0",
+  "catalog_version": "1.3.0",
   "starters": [
     {
       "starter_id": "database.health.overview",
@@ -90,14 +90,14 @@
       "sort_order": 80
     },
     {
-      "starter_id": "oracle.backup.status",
+      "starter_id": "database.backup-recovery.status",
       "category": "DIAGNOSTIC",
       "title": "备份与恢复检查",
-      "description": "检查近期备份作业、RMAN 配置和恢复能力。",
-      "supported_db_types": ["ORACLE"],
+      "description": "检查数据库原生备份日志链、Target 恢复目标和已记录的恢复演练；未接入外部备份平台时明确标记数据缺口。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
       "input_schema": [],
-      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.backup.recent_jobs", "db.backup.rman_configuration", "db.recovery.capabilities"]},
+      "planning": {"kind": "BACKUP_RECOVERY"},
       "sort_order": 90
     },
     {

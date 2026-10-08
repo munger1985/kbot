@@ -57,7 +57,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
     def test_awr_diff_requires_equal_time_windows(self) -> None:
         selection = ConversationStarterSelection(
             starter_id="oracle.report.awr-diff",
-            catalog_version="1.2.0",
+            catalog_version="1.3.0",
             parameters={
                 "first_begin_time": "2026-09-28T08:00:00+00:00",
                 "first_end_time": "2026-09-28T09:00:00+00:00",
@@ -73,7 +73,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.adg-build",
-                catalog_version="1.2.0",
+                catalog_version="1.3.0",
             ),
             target=_target(),
         )
@@ -100,7 +100,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.datapump",
-                catalog_version="1.2.0",
+                catalog_version="1.3.0",
                 parameters={
                     "DATAPUMP_DIRECTORY_PATH": "",
                     "SOURCE_SCHEMAS": "app_core, APP_REPORT\napp_core",
@@ -130,7 +130,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self.catalog.freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.rman-recovery",
-                catalog_version="1.2.0",
+                catalog_version="1.3.0",
                 parameters={
                     "RECOVERY_SCENARIO": "DATABASE_PITR",
                     "RECOVERY_TARGET_TIME": "2026-9-29 17:00:00",
@@ -148,7 +148,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rman-recovery",
-                    catalog_version="1.2.0",
+                    catalog_version="1.3.0",
                     parameters={
                         "RECOVERY_TARGET_TIME": "2026-02-30 17:00:00",
                     },
@@ -161,7 +161,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
-                    catalog_version="1.2.0",
+                    catalog_version="1.3.0",
                     parameters={"PASSWORD": "secret"},
                 ),
                 target=_target(),
@@ -170,7 +170,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
-                    catalog_version="1.2.0",
+                    catalog_version="1.3.0",
                     parameters={"DATAPUMP_DIRECTORY_PATH": "../../tmp"},
                 ),
                 target=_target(),
@@ -181,7 +181,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self.catalog.freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rac-build",
-                    catalog_version="1.2.0",
+                    catalog_version="1.3.0",
                     parameters={
                         "NODE1_HOST": "rac01.example.com",
                         "NODE2_HOST": "rac01.example.com",
@@ -221,6 +221,29 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         )
         self.assertIn("db.oracle.awr.diff_report", tool_ids)
         self.assertEqual(1, len(output.task_frame.completion_requirements))
+
+    def test_backup_recovery_starter_selects_native_tools_for_three_databases(self) -> None:
+        expected = {
+            "ORACLE": "db.backup.rman_configuration",
+            "POSTGRESQL": "db.postgresql.archiver.status",
+            "MYSQL": "db.mysql.binlog.status",
+        }
+        service = object.__new__(TurnPlanningService)
+        for db_type, required_tool in expected.items():
+            with self.subTest(db_type=db_type):
+                context = SimpleNamespace(
+                    question="执行备份与恢复检查",
+                    target_context={"db_type": db_type, "display_name": "TestDB"},
+                    conversation_starter={"starter_id": "database.backup-recovery.status"},
+                )
+                _output, tool_ids = service._starter_diagnostic_output(
+                    context=context,
+                    kind="BACKUP_RECOVERY",
+                    planning={},
+                    parameters={},
+                    title="备份与恢复检查",
+                )
+                self.assertIn(required_tool, tool_ids)
 
 
 class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
@@ -319,7 +342,7 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
             target_context={"db_type": "ORACLE", "display_name": "TestDB"},
             conversation_starter={
                 "starter_id": "oracle.runbook.adg-build",
-                "catalog_version": "1.2.0",
+                "catalog_version": "1.3.0",
                 "title": "ADG 部署文档",
                 "parameters": {"STANDBY_HOST": "testdb-dr"},
                 "planning": {

@@ -54,6 +54,12 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
+    TargetRecoveryProfileUpsert,
+    TargetRecoveryProfileView,
+    RecoveryDrillCreate,
+    RecoveryDrillReview,
+    RecoveryDrillView,
+    RecoveryDrillPage,
     TargetPage,
     TargetPatch,
     WebhookKeyRotation,
@@ -370,6 +376,97 @@ async def retire_target_fact(
         scope=scope,
         target_id=target_id,
         fact_id=fact_id,
+        expected_version=parse_etag(if_match),
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, result.row_version)
+    return result
+
+
+@router.get(
+    "/targets/{target_id}/recovery-profile",
+    response_model=TargetRecoveryProfileView | None,
+)
+async def get_recovery_profile(
+    target_id: UUID, service: Service, scope: Scope
+) -> TargetRecoveryProfileView | None:
+    return await service.get_recovery_profile(scope=scope, target_id=target_id)
+
+
+@router.put(
+    "/targets/{target_id}/recovery-profile",
+    response_model=TargetRecoveryProfileView,
+)
+async def upsert_recovery_profile(
+    target_id: UUID,
+    body: TargetRecoveryProfileUpsert,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+) -> TargetRecoveryProfileView:
+    result = await service.upsert_recovery_profile(
+        scope=scope,
+        target_id=target_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, result.row_version)
+    return result
+
+
+@router.get(
+    "/targets/{target_id}/recovery-drills",
+    response_model=RecoveryDrillPage,
+)
+async def list_recovery_drills(
+    target_id: UUID, service: Service, scope: Scope
+) -> RecoveryDrillPage:
+    return await service.list_recovery_drills(scope=scope, target_id=target_id)
+
+
+@router.post(
+    "/targets/{target_id}/recovery-drills",
+    response_model=RecoveryDrillView,
+    status_code=201,
+)
+async def create_recovery_drill(
+    target_id: UUID,
+    body: RecoveryDrillCreate,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+) -> RecoveryDrillView:
+    result = await service.create_recovery_drill(
+        scope=scope,
+        target_id=target_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post(
+    "/targets/{target_id}/recovery-drills/{drill_id}:review",
+    response_model=RecoveryDrillView,
+)
+async def review_recovery_drill(
+    target_id: UUID,
+    drill_id: UUID,
+    body: RecoveryDrillReview,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> RecoveryDrillView:
+    result = await service.review_recovery_drill(
+        scope=scope,
+        target_id=target_id,
+        drill_id=drill_id,
+        request=body,
         expected_version=parse_etag(if_match),
         idempotency_key=idempotency_key,
     )

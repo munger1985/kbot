@@ -100,8 +100,8 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    async def test_ready_requires_schema_32_contract_integrity(self) -> None:
-        session = _SchemaSession((1, 17, 1, 1, 0))
+    async def test_ready_requires_schema_33_contract_integrity(self) -> None:
+        session = _SchemaSession((1, 23, 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -116,12 +116,12 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
             checks,
         )
-        self.assertIn("schema_version = 32", session.statements[0])
-        self.assertIn("aiops-oracle-v22", session.statements[0])
+        self.assertIn("schema_version = 33", session.statements[0])
+        self.assertIn("aiops-oracle-v23", session.statements[0])
         self.assertIn("GENERATED = 'USER NAME'", session.statements[-1])
 
-    async def test_ready_rejects_partial_schema_32_contract(self) -> None:
-        session = _SchemaSession((1, 16, 1, 1, 0))
+    async def test_ready_rejects_partial_schema_33_contract(self) -> None:
+        session = _SchemaSession((1, 22, 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -140,7 +140,7 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
     async def test_ready_rejects_business_check_constraint(
         self,
     ) -> None:
-        session = _SchemaSession((1, 17, 1, 1, 1))
+        session = _SchemaSession((1, 23, 1, 1, 1))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",

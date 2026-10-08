@@ -11,6 +11,7 @@ from .notification import NotificationSubscriptionRepository
 from .knowledge import OperationsKnowledgeRepository
 from .runtime import OpsRunRepository
 from .target import PolicyRepository, TargetRepository
+from .recovery import RecoveryRepository
 from .workload import WorkloadRepository
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "OperationsKnowledgeRepository",
     "PolicyRepository",
     "TargetRepository",
+    "RecoveryRepository",
     "WorkloadRepository",
 ]
 from .agent import AIOpsAgentRepository, AIOpsAgentExecutionBinding

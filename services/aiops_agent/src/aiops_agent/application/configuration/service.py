@@ -7,9 +7,11 @@ from .notification_service import NotificationConfigurationMixin
 from .diagnostic_source_service import DiagnosticSourceConfigurationMixin
 from .policy_service import PolicyConfigurationMixin
 from .target_service import TargetConfigurationMixin
+from .recovery_service import RecoveryConfigurationMixin
 
 
 class AIOpsConfigurationService(
+    RecoveryConfigurationMixin,
     TargetConfigurationMixin,
     DiagnosticSourceConfigurationMixin,
     PolicyConfigurationMixin,

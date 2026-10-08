@@ -62,6 +62,9 @@ from aiops_agent.application.visualization import (
     chart_profile_metric_codes,
     chart_profile_window_seconds,
 )
+from aiops_agent.application.recovery_assurance import (
+    build_recovery_assurance_snapshot,
+)
 from aiops_agent.entities import (
     OpsArtifactEntity,
     OpsInvestigationRevisionEntity,
@@ -645,6 +648,26 @@ class TurnPlanningService:
                 )
                 if value
             )
+        elif kind == "BACKUP_RECOVERY":
+            tool_ids = {
+                "ORACLE": (
+                    "db.instance.identity",
+                    "db.backup.recent_jobs",
+                    "db.backup.rman_configuration",
+                    "db.recovery.capabilities",
+                ),
+                "POSTGRESQL": (
+                    "db.instance.identity",
+                    "db.postgresql.archiver.status",
+                    "db.postgresql.wal.statistics",
+                    "db.postgresql.wal.receiver",
+                ),
+                "MYSQL": (
+                    "db.instance.identity",
+                    "db.mysql.binlog.status",
+                    "db.mysql.replication.channel_status",
+                ),
+            }.get(db_type, ("db.instance.identity",))
         elif kind == "STORAGE_TREND":
             days = int(parameters.get("days") or 7)
             requested_window_seconds = days * 86_400
@@ -872,6 +895,11 @@ class TurnPlanningService:
                 raise InvestigationPlanValidationError("巡检模板步骤格式无效")
             tool_id = str(step.get("tool_id") or "")
             title = str(step.get("title") or tool_id)
+            supported_db_types = tuple(
+                str(value) for value in step.get("supported_db_types", ("ORACLE",))
+            )
+            if str(context.target_context.get("db_type") or "") not in supported_db_types:
+                continue
             if tool_id not in tool_index:
                 unavailable.append(title)
                 continue
@@ -1676,6 +1704,7 @@ class TurnPlanningService:
                 if context.source_run_evidence is not None
                 else ()
             ),
+            *(("target-recovery-assurance:1",) if getattr(context, "recovery_assurance", {}) else ()),
         )
 
     @staticmethod
@@ -3695,6 +3724,11 @@ class TurnPlanningService:
                     existing_prompt_snapshot or None
                 )
             )
+            assert uow.recovery is not None
+            recovery_assurance = await build_recovery_assurance_snapshot(
+                recovery_repository=uow.recovery,
+                target=target,
+            )
             return TurnPlanningContext(
                 domain_id=domain_id,
                 turn_id=turn_id,
@@ -3831,6 +3865,7 @@ class TurnPlanningService:
                         "client_metadata", {}
                     ).get("conversation_starter", {})
                 ),
+                recovery_assurance=recovery_assurance,
                 source_run_evidence=source_run_evidence,
             )
 
@@ -4225,12 +4260,26 @@ class TurnPlanningService:
                 if context.source_run_evidence is not None
                 else None
             )
+            recovery_assurance_artifact = (
+                self._artifact(
+                    ops_run_id=run.ops_run_id,
+                    artifact_key="target-recovery-assurance:1",
+                    artifact_type="TARGET_RECOVERY_ASSURANCE",
+                    schema_version="TARGET_RECOVERY_ASSURANCE.v1",
+                    payload=context.recovery_assurance,
+                    producer="aiops.recovery-assurance",
+                    trust_level="USER_PROVIDED",
+                )
+                if context.recovery_assurance
+                else None
+            )
             for artifact in (
                 input_analysis_artifact,
                 task_frame_artifact,
                 plan_artifact,
                 playbook_artifact,
                 source_run_artifact,
+                recovery_assurance_artifact,
             ):
                 if artifact is not None:
                     await uow.runs.add_artifact(artifact)
@@ -4302,6 +4351,22 @@ class TurnPlanningService:
                         freshness_status="UNKNOWN",
                         usage_reason="从告警或巡检来源Run继承的已持久化诊断结果",
                         linked_by="aiops.source-run-linker",
+                    )
+                )
+            if recovery_assurance_artifact is not None:
+                await uow.turns.add_evidence(
+                    OpsTurnEvidenceEntity(
+                        turn_evidence_id=uuid7(),
+                        turn_id=turn.turn_id,
+                        artifact_id=recovery_assurance_artifact.artifact_id,
+                        source_kind="TARGET_CONFIGURATION",
+                        evidence_kind="RECOVERY_ASSURANCE",
+                        confidence=1,
+                        evidence_role="CONTEXT",
+                        measurement_semantics="NOT_APPLICABLE",
+                        freshness_status="CURRENT",
+                        usage_reason="Target恢复目标及人工恢复演练冻结快照",
+                        linked_by="aiops.recovery-assurance",
                     )
                 )
 

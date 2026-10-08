@@ -58,6 +58,55 @@
         </div>
       </section>
 
+      <section id="target-recovery" class="ops-panel span-12" aria-labelledby="target-recovery-title">
+        <div class="ops-panel-head">
+          <div>
+            <h2 id="target-recovery-title">恢复保障</h2>
+            <p>按 Target 管理版本化 RPO/RTO，并记录隔离环境中的恢复演练。人工审核不会把证据提升为系统直采。</p>
+          </div>
+          <span id="target-recovery-state" class="ops-badge">读取中</span>
+        </div>
+        <div class="ops-panel-body target-recovery-layout">
+          <form id="target-recovery-profile-form" class="ops-form target-recovery-form">
+            <h3>业务恢复目标</h3>
+            <div class="ops-field"><label>RPO（分钟）</label><input name="rpo_minutes" type="number" min="0" max="525600" required></div>
+            <div class="ops-field"><label>RTO（分钟）</label><input name="rto_minutes" type="number" min="1" max="525600" required></div>
+            <div class="ops-field"><label>演练周期（天）</label><input name="required_drill_interval_days" type="number" min="1" max="3650" required value="90"></div>
+            <div class="ops-field"><label>最低演练等级</label><select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN" selected>数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
+            <div class="ops-field span-12"><label>目标来源说明</label><input name="source_note" maxlength="1000" placeholder="例如：生产系统灾备规范 2026-Q3"></div>
+            <div class="ops-filter-actions"><button class="primary" type="submit">保存为新版本</button></div>
+            <p id="target-recovery-profile-result" class="ops-connection-result" role="status"></p>
+          </form>
+
+          <div class="target-recovery-summary">
+            <h3>演练状态</h3>
+            <div id="target-recovery-summary">正在加载…</div>
+          </div>
+
+          <form id="target-recovery-drill-form" class="ops-form target-recovery-form span-12">
+            <h3>登记恢复演练</h3>
+            <p class="target-recovery-note">本期不上传二进制文件；请填写外部证据引用和对应内容的 SHA-256。Restore Validate 只能证明介质可读，不能等同于数据库已实际恢复。</p>
+            <div class="ops-field"><label>场景</label><select name="scenario"><option value="FULL_INSTANCE">完整实例</option><option value="POINT_IN_TIME">时间点恢复</option><option value="DATABASE_OR_PDB">数据库/PDB</option><option value="DATAFILE">数据文件</option><option value="CONTROLFILE_OR_SYSTEM">控制文件/System</option><option value="LOGICAL_RESTORE">逻辑恢复</option></select></div>
+            <div class="ops-field"><label>演练等级</label><select name="assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN">数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
+            <div class="ops-field"><label>结果</label><select name="result"><option value="PASS">通过</option><option value="FAIL">失败</option><option value="INCONCLUSIVE">无法确认</option></select></div>
+            <div class="ops-field"><label>环境</label><select name="environment"><option value="ISOLATED">隔离环境</option><option value="STG">预发布</option><option value="DEV">开发</option><option value="PROD">生产</option></select></div>
+            <div class="ops-field"><label>备份来源</label><select name="backup_source_type" id="recovery-backup-source"></select></div>
+            <div class="ops-field"><label>模拟故障时间</label><input name="simulated_failure_at" type="datetime-local" required></div>
+            <div class="ops-field"><label>恢复到时间</label><input name="recovered_through_at" type="datetime-local"></div>
+            <div class="ops-field"><label>验证完成时间</label><input name="service_validated_at" type="datetime-local"></div>
+            <div id="recovery-marker-fields" class="target-recovery-marker span-12"></div>
+            <div class="ops-field"><label>证据类型</label><select name="evidence_kind"><option value="RMAN_LOG">RMAN 日志</option><option value="DATABASE_LOG">数据库日志</option><option value="BACKUP_TOOL_LOG">备份工具日志</option><option value="IDENTITY_CHECK">身份核对</option><option value="DATABASE_CHECK">数据库检查</option><option value="APPLICATION_CHECK">应用检查</option><option value="EXTERNAL_REPORT">外部报告</option></select></div>
+            <div class="ops-field span-6"><label>证据引用</label><input name="evidence_reference" maxlength="2048" placeholder="工单、对象存储 URI 或报告编号"></div>
+            <div class="ops-field span-6"><label>内容 SHA-256</label><input name="evidence_hash" pattern="[a-f0-9]{64}" maxlength="64" placeholder="64 位小写十六进制"></div>
+            <div class="ops-field span-12"><label>说明</label><textarea name="notes" maxlength="4000"></textarea></div>
+            <div class="ops-filter-actions"><button class="primary" type="submit">提交待审核记录</button></div>
+            <p id="target-recovery-drill-result" class="ops-connection-result" role="status"></p>
+          </form>
+
+          <div id="target-recovery-drills" class="span-12">正在加载…</div>
+        </div>
+      </section>
+
       <section id="target-facts" class="ops-panel span-12" aria-labelledby="target-facts-title">
         <div class="ops-panel-head">
           <div>

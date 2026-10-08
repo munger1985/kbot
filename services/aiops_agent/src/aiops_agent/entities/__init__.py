@@ -40,6 +40,7 @@ from .runtime import (
     OpsTaskEntity,
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity, TargetFactEntity
+from .recovery import RecoveryDrillEntity, RecoveryProfileEntity
 from .workload import (
     ActivitySampleEntity,
     WorkloadMetricEntity,
@@ -108,6 +109,8 @@ __all__ = [
     "TargetBindingEntity",
     "TargetEntity",
     "TargetFactEntity",
+    "RecoveryDrillEntity",
+    "RecoveryProfileEntity",
     "TargetSourceBindingEntity",
     "ActivitySampleEntity",
     "WorkloadMetricEntity",

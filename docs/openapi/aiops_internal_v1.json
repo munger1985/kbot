@@ -3935,6 +3935,16 @@
             ],
             "title": "Playbook Id"
           },
+          "supported_db_types": {
+            "default": [
+              "ORACLE"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DatabaseType"
+            },
+            "title": "Supported Db Types",
+            "type": "array"
+          },
           "tool_id": {
             "anyOf": [
               {
@@ -4924,6 +4934,55 @@
         "title": "MutationClaimRequest",
         "type": "object"
       },
+      "MySQLRecoveryMarker": {
+        "additionalProperties": false,
+        "properties": {
+          "binlog_file": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog File"
+          },
+          "binlog_position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Position"
+          },
+          "gtid_executed": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gtid Executed"
+          },
+          "kind": {
+            "const": "MYSQL",
+            "default": "MYSQL",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "MySQLRecoveryMarker",
+        "type": "object"
+      },
       "NotificationSubscriptionList": {
         "additionalProperties": false,
         "properties": {
@@ -5588,6 +5647,55 @@
         "title": "OpsRunSummary",
         "type": "object"
       },
+      "OracleRecoveryMarker": {
+        "additionalProperties": false,
+        "properties": {
+          "incarnation": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incarnation"
+          },
+          "kind": {
+            "const": "ORACLE",
+            "default": "ORACLE",
+            "title": "Kind",
+            "type": "string"
+          },
+          "resetlogs_id": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resetlogs Id"
+          },
+          "scn": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scn"
+          }
+        },
+        "title": "OracleRecoveryMarker",
+        "type": "object"
+      },
       "PendingInputView": {
         "additionalProperties": false,
         "properties": {
@@ -5894,6 +6002,43 @@
         "title": "PolicySummary",
         "type": "object"
       },
+      "PostgreSQLRecoveryMarker": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "POSTGRESQL",
+            "default": "POSTGRESQL",
+            "title": "Kind",
+            "type": "string"
+          },
+          "lsn": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9A-Fa-f]+/[0-9A-Fa-f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lsn"
+          },
+          "timeline_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline Id"
+          }
+        },
+        "title": "PostgreSQLRecoveryMarker",
+        "type": "object"
+      },
       "ProposalPage": {
         "additionalProperties": false,
         "properties": {
@@ -6176,6 +6321,563 @@
           "result"
         ],
         "title": "RecordManualResultCommand",
+        "type": "object"
+      },
+      "RecoveryDrillCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "assurance_level": {
+            "enum": [
+              "BACKUP_METADATA",
+              "RESTORE_VALIDATE",
+              "DATABASE_OPEN",
+              "APPLICATION_VALIDATED"
+            ],
+            "title": "Assurance Level",
+            "type": "string"
+          },
+          "backup_source_type": {
+            "enum": [
+              "ORACLE_RMAN",
+              "POSTGRESQL_BASEBACKUP",
+              "POSTGRESQL_PGBACKREST",
+              "POSTGRESQL_BARMAN",
+              "POSTGRESQL_WALG",
+              "MYSQL_XTRABACKUP",
+              "MYSQL_ENTERPRISE_BACKUP",
+              "MYSQL_LOGICAL_DUMP",
+              "FILESYSTEM_SNAPSHOT",
+              "STORAGE_SNAPSHOT",
+              "CLOUD_MANAGED_BACKUP",
+              "THIRD_PARTY_BACKUP"
+            ],
+            "title": "Backup Source Type",
+            "type": "string"
+          },
+          "environment": {
+            "enum": [
+              "ISOLATED",
+              "STG",
+              "DEV",
+              "PROD"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/RecoveryDrillEvidence"
+            },
+            "maxItems": 32,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "recovered_through_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovered Through At"
+          },
+          "recovery_marker": {
+            "discriminator": {
+              "mapping": {
+                "MYSQL": "#/components/schemas/MySQLRecoveryMarker",
+                "ORACLE": "#/components/schemas/OracleRecoveryMarker",
+                "POSTGRESQL": "#/components/schemas/PostgreSQLRecoveryMarker"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OracleRecoveryMarker"
+              },
+              {
+                "$ref": "#/components/schemas/PostgreSQLRecoveryMarker"
+              },
+              {
+                "$ref": "#/components/schemas/MySQLRecoveryMarker"
+              }
+            ],
+            "title": "Recovery Marker"
+          },
+          "result": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "INCONCLUSIVE"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "scenario": {
+            "enum": [
+              "FULL_INSTANCE",
+              "POINT_IN_TIME",
+              "DATABASE_OR_PDB",
+              "DATAFILE",
+              "CONTROLFILE_OR_SYSTEM",
+              "LOGICAL_RESTORE"
+            ],
+            "title": "Scenario",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "service_validated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Validated At"
+          },
+          "simulated_failure_at": {
+            "format": "date-time",
+            "title": "Simulated Failure At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "assurance_level",
+          "backup_source_type",
+          "environment",
+          "result",
+          "simulated_failure_at",
+          "recovery_marker",
+          "evidence"
+        ],
+        "title": "RecoveryDrillCreate",
+        "type": "object"
+      },
+      "RecoveryDrillEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "content_hash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "evidence_kind": {
+            "enum": [
+              "RMAN_LOG",
+              "DATABASE_LOG",
+              "BACKUP_TOOL_LOG",
+              "IDENTITY_CHECK",
+              "DATABASE_CHECK",
+              "APPLICATION_CHECK",
+              "EXTERNAL_REPORT"
+            ],
+            "title": "Evidence Kind",
+            "type": "string"
+          },
+          "reference": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_kind",
+          "reference",
+          "content_hash"
+        ],
+        "title": "RecoveryDrillEvidence",
+        "type": "object"
+      },
+      "RecoveryDrillPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RecoveryDrillView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "RecoveryDrillPage",
+        "type": "object"
+      },
+      "RecoveryDrillReview": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "VERIFY",
+              "REJECT"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "RecoveryDrillReview",
+        "type": "object"
+      },
+      "RecoveryDrillView": {
+        "additionalProperties": false,
+        "properties": {
+          "achieved_rpo_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Achieved Rpo Seconds"
+          },
+          "achieved_rto_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Achieved Rto Seconds"
+          },
+          "assurance_level": {
+            "enum": [
+              "BACKUP_METADATA",
+              "RESTORE_VALIDATE",
+              "DATABASE_OPEN",
+              "APPLICATION_VALIDATED"
+            ],
+            "title": "Assurance Level",
+            "type": "string"
+          },
+          "backup_source_type": {
+            "enum": [
+              "ORACLE_RMAN",
+              "POSTGRESQL_BASEBACKUP",
+              "POSTGRESQL_PGBACKREST",
+              "POSTGRESQL_BARMAN",
+              "POSTGRESQL_WALG",
+              "MYSQL_XTRABACKUP",
+              "MYSQL_ENTERPRISE_BACKUP",
+              "MYSQL_LOGICAL_DUMP",
+              "FILESYSTEM_SNAPSHOT",
+              "STORAGE_SNAPSHOT",
+              "CLOUD_MANAGED_BACKUP",
+              "THIRD_PARTY_BACKUP"
+            ],
+            "title": "Backup Source Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "drill_id": {
+            "format": "uuid",
+            "title": "Drill Id",
+            "type": "string"
+          },
+          "environment": {
+            "enum": [
+              "ISOLATED",
+              "STG",
+              "DEV",
+              "PROD"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/RecoveryDrillEvidence"
+            },
+            "maxItems": 32,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "recovered_through_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovered Through At"
+          },
+          "recovery_marker": {
+            "discriminator": {
+              "mapping": {
+                "MYSQL": "#/components/schemas/MySQLRecoveryMarker",
+                "ORACLE": "#/components/schemas/OracleRecoveryMarker",
+                "POSTGRESQL": "#/components/schemas/PostgreSQLRecoveryMarker"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OracleRecoveryMarker"
+              },
+              {
+                "$ref": "#/components/schemas/PostgreSQLRecoveryMarker"
+              },
+              {
+                "$ref": "#/components/schemas/MySQLRecoveryMarker"
+              }
+            ],
+            "title": "Recovery Marker"
+          },
+          "recovery_profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Profile Id"
+          },
+          "recovery_profile_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Profile Version"
+          },
+          "result": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "INCONCLUSIVE"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "scenario": {
+            "enum": [
+              "FULL_INSTANCE",
+              "POINT_IN_TIME",
+              "DATABASE_OR_PDB",
+              "DATAFILE",
+              "CONTROLFILE_OR_SYSTEM",
+              "LOGICAL_RESTORE"
+            ],
+            "title": "Scenario",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "service_validated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Validated At"
+          },
+          "simulated_failure_at": {
+            "format": "date-time",
+            "title": "Simulated Failure At",
+            "type": "string"
+          },
+          "source_trust_level": {
+            "enum": [
+              "USER_PROVIDED",
+              "SOURCE_VERIFIED"
+            ],
+            "title": "Source Trust Level",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "SUBMITTED",
+              "VERIFIED",
+              "REJECTED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "assurance_level",
+          "backup_source_type",
+          "environment",
+          "result",
+          "simulated_failure_at",
+          "recovery_marker",
+          "evidence",
+          "drill_id",
+          "target_id",
+          "db_type",
+          "status",
+          "source_trust_level",
+          "row_version",
+          "created_at",
+          "created_by",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "RecoveryDrillView",
         "type": "object"
       },
       "RejectProposalCommand": {
@@ -9181,6 +9883,202 @@
           }
         },
         "title": "TargetPatch",
+        "type": "object"
+      },
+      "TargetRecoveryProfileUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "required_assurance_level": {
+            "enum": [
+              "BACKUP_METADATA",
+              "RESTORE_VALIDATE",
+              "DATABASE_OPEN",
+              "APPLICATION_VALIDATED"
+            ],
+            "title": "Required Assurance Level",
+            "type": "string"
+          },
+          "required_drill_interval_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Required Drill Interval Days",
+            "type": "integer"
+          },
+          "rpo_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 0.0,
+            "title": "Rpo Seconds",
+            "type": "integer"
+          },
+          "rto_clock_basis": {
+            "const": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "default": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "title": "Rto Clock Basis",
+            "type": "string"
+          },
+          "rto_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Rto Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Note"
+          }
+        },
+        "required": [
+          "rpo_seconds",
+          "rto_seconds",
+          "required_drill_interval_days",
+          "required_assurance_level"
+        ],
+        "title": "TargetRecoveryProfileUpsert",
+        "type": "object"
+      },
+      "TargetRecoveryProfileView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed_by": {
+            "title": "Confirmed By",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "recovery_profile_id": {
+            "format": "uuid",
+            "title": "Recovery Profile Id",
+            "type": "string"
+          },
+          "required_assurance_level": {
+            "enum": [
+              "BACKUP_METADATA",
+              "RESTORE_VALIDATE",
+              "DATABASE_OPEN",
+              "APPLICATION_VALIDATED"
+            ],
+            "title": "Required Assurance Level",
+            "type": "string"
+          },
+          "required_drill_interval_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Required Drill Interval Days",
+            "type": "integer"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "rpo_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 0.0,
+            "title": "Rpo Seconds",
+            "type": "integer"
+          },
+          "rto_clock_basis": {
+            "const": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "default": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "title": "Rto Clock Basis",
+            "type": "string"
+          },
+          "rto_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Rto Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Note"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "RETIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version_no": {
+            "minimum": 1.0,
+            "title": "Version No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rpo_seconds",
+          "rto_seconds",
+          "required_drill_interval_days",
+          "required_assurance_level",
+          "recovery_profile_id",
+          "target_id",
+          "version_no",
+          "status",
+          "effective_at",
+          "confirmed_by",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TargetRecoveryProfileView",
         "type": "object"
       },
       "TargetSummary": {
@@ -13442,6 +14340,308 @@
           }
         },
         "summary": "Retire Target Fact",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/targets/{target_id}/recovery-drills": {
+      "get": {
+        "operationId": "list_recovery_drills_internal_v1_aiops_config_targets__target_id__recovery_drills_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryDrillPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Recovery Drills",
+        "tags": [
+          "AIOps Config"
+        ]
+      },
+      "post": {
+        "operationId": "create_recovery_drill_internal_v1_aiops_config_targets__target_id__recovery_drills_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryDrillCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryDrillView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Recovery Drill",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/targets/{target_id}/recovery-drills/{drill_id}:review": {
+      "post": {
+        "operationId": "review_recovery_drill_internal_v1_aiops_config_targets__target_id__recovery_drills__drill_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "drill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Drill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryDrillReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryDrillView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Recovery Drill",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/targets/{target_id}/recovery-profile": {
+      "get": {
+        "operationId": "get_recovery_profile_internal_v1_aiops_config_targets__target_id__recovery_profile_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/TargetRecoveryProfileView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Recovery Profile Internal V1 Aiops Config Targets  Target Id  Recovery Profile Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Recovery Profile",
+        "tags": [
+          "AIOps Config"
+        ]
+      },
+      "put": {
+        "operationId": "upsert_recovery_profile_internal_v1_aiops_config_targets__target_id__recovery_profile_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetRecoveryProfileUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetRecoveryProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Recovery Profile",
         "tags": [
           "AIOps Config"
         ]

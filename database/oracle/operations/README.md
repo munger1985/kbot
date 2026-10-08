@@ -61,6 +61,11 @@ KC 索引引用和审核记录六张表，并更新 Schema 版本视图；不删
 不增加业务 `CHECK`、`UNIQUE` 或唯一索引。脚本可在部分升级后续跑，执行前必须停止
 AIOps API、Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
 
+`apply_aiops_schema_33.sql` 用于将 AIOps Schema 32 / `aiops-oracle-v22` 原地升级到
+Schema 33 / `aiops-oracle-v23`。脚本新增 Target 恢复目标和恢复演练两张表，保留现有业务行，
+不增加业务 `CHECK`、`UNIQUE` 或唯一索引。脚本可在部分升级后续跑；执行前必须停止 AIOps API、
+Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、

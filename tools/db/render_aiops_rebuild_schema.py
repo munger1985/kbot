@@ -32,6 +32,7 @@ PRESERVED_TABLES = (
     ("KBOT_OPS_TARGET", "KBOT_KEEP_AIOPS_TARGET"),
     ("KBOT_OPS_DIAGNOSTIC_SOURCE", "KBOT_KEEP_AIOPS_SOURCE"),
     ("KBOT_OPS_TARGET_FACT", "KBOT_KEEP_AIOPS_TARGET_FACT"),
+    ("KBOT_OPS_RECOVERY_PROFILE", "KBOT_KEEP_AIOPS_REC_PROFILE"),
     ("KBOT_OPS_TARGET_SOURCE_BINDING", "KBOT_KEEP_AIOPS_TSRC_BIND"),
 )
 
@@ -281,6 +282,18 @@ BEGIN
              AND column_name = 'ASSET_KIND')
          OR (table_name = 'KBOT_OPS_KNOWLEDGE_VERSION'
              AND column_name = 'SOURCE_HASH')
+         OR (table_name = 'KBOT_OPS_RECOVERY_PROFILE'
+             AND column_name = 'RPO_SECONDS')
+         OR (table_name = 'KBOT_OPS_RECOVERY_PROFILE'
+             AND column_name = 'RTO_SECONDS')
+         OR (table_name = 'KBOT_OPS_RECOVERY_PROFILE'
+             AND column_name = 'REQUIRED_ASSURANCE_LEVEL')
+         OR (table_name = 'KBOT_OPS_RECOVERY_DRILL'
+             AND column_name = 'RECOVERY_MARKER_JSON')
+         OR (table_name = 'KBOT_OPS_RECOVERY_DRILL'
+             AND column_name = 'EVIDENCE_JSON')
+         OR (table_name = 'KBOT_OPS_RECOVERY_DRILL'
+             AND column_name = 'SOURCE_TRUST_LEVEL')
        );
 
     SELECT COUNT(*)
@@ -326,7 +339,7 @@ BEGIN
     IF l_workflow_kind_count <> 1 THEN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
-    IF l_required_column_count <> 24 THEN
+    IF l_required_column_count <> 30 THEN
         raise_application_error(-20008, 'Schema {schema_version} 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
@@ -564,7 +577,7 @@ def _render_preserving_header(
     return f"""-- KBot 4.0 AIOps 保留配置数据的全量重建脚本。
 -- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工修改内嵌 DDL。
 -- 使用 KBot Schema 所有者在 SQL Developer 中以 Run Script（F5）执行。
--- 仅保留运维目标、目标事实、监控源以及目标与监控源绑定；其他 AIOps 数据全部清空。
+-- 仅保留运维目标、目标事实、恢复目标、监控源以及目标与监控源绑定；其他 AIOps 数据全部清空。
 -- Managed Credential、平台用户、Domain、权限、角色和 KC Collection 位于共享表，不会删除。
 -- 执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并完成数据库备份。
 -- Oracle DDL 会自动提交；中途失败时 KBOT_KEEP_AIOPS_% 备份表会保留，请勿直接删除。

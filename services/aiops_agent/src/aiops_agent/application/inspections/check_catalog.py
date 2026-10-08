@@ -72,6 +72,9 @@ def load_check_catalog() -> InspectionCheckCatalogView:
                 finding_types=tuple(item_payload.get("finding_types") or ()),
                 default_for=tuple(item_payload.get("default_for") or ()),
                 trend_required=bool(item_payload.get("trend_required")),
+                supported_db_types=tuple(
+                    item_payload.get("supported_db_types") or ("ORACLE",)
+                ),
             )
             if item.check_id in seen_ids:
                 raise ValueError(f"Check Catalog 检查项重复：{item.check_id}")
@@ -214,6 +217,7 @@ def compile_selected_check_steps(
                 "optional": False,
                 "check_ids": [check_id],
                 "trend_required": trend_required,
+                "supported_db_types": list(item.supported_db_types),
             }
         )
     if not steps:

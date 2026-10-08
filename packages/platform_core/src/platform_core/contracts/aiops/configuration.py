@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, HttpUrl, model_validator
 
@@ -286,6 +286,182 @@ class TargetPage(CursorPage):
 TargetFactType = Literal["ASM_DISKGROUP", "DATAFILE_PATH", "TABLESPACE_PLACEMENT"]
 TargetFactSource = Literal["MANUAL_CONFIRMED", "DISCOVERED"]
 TargetFactStatus = Literal["ACTIVE", "RETIRED"]
+RecoveryAssuranceLevel = Literal[
+    "BACKUP_METADATA",
+    "RESTORE_VALIDATE",
+    "DATABASE_OPEN",
+    "APPLICATION_VALIDATED",
+]
+RecoveryDrillResult = Literal["PASS", "FAIL", "INCONCLUSIVE"]
+RecoveryDrillStatus = Literal["SUBMITTED", "VERIFIED", "REJECTED"]
+RecoveryBackupSourceType = Literal[
+    "ORACLE_RMAN",
+    "POSTGRESQL_BASEBACKUP",
+    "POSTGRESQL_PGBACKREST",
+    "POSTGRESQL_BARMAN",
+    "POSTGRESQL_WALG",
+    "MYSQL_XTRABACKUP",
+    "MYSQL_ENTERPRISE_BACKUP",
+    "MYSQL_LOGICAL_DUMP",
+    "FILESYSTEM_SNAPSHOT",
+    "STORAGE_SNAPSHOT",
+    "CLOUD_MANAGED_BACKUP",
+    "THIRD_PARTY_BACKUP",
+]
+
+
+class OracleRecoveryMarker(AIOpsContract):
+    kind: Literal["ORACLE"] = "ORACLE"
+    scn: int | None = Field(default=None, ge=0)
+    resetlogs_id: int | None = Field(default=None, ge=0)
+    incarnation: int | None = Field(default=None, ge=0)
+
+
+class PostgreSQLRecoveryMarker(AIOpsContract):
+    kind: Literal["POSTGRESQL"] = "POSTGRESQL"
+    timeline_id: int | None = Field(default=None, ge=1)
+    lsn: str | None = Field(
+        default=None,
+        pattern=r"^[0-9A-Fa-f]+/[0-9A-Fa-f]+$",
+    )
+
+
+class MySQLRecoveryMarker(AIOpsContract):
+    kind: Literal["MYSQL"] = "MYSQL"
+    gtid_executed: str | None = Field(default=None, max_length=4000)
+    binlog_file: str | None = Field(default=None, max_length=256)
+    binlog_position: int | None = Field(default=None, ge=0)
+
+
+RecoveryMarker = Annotated[
+    OracleRecoveryMarker | PostgreSQLRecoveryMarker | MySQLRecoveryMarker,
+    Field(discriminator="kind"),
+]
+
+
+class TargetRecoveryProfileUpsert(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    rpo_seconds: int = Field(ge=0, le=31_536_000)
+    rto_seconds: int = Field(ge=60, le=31_536_000)
+    required_drill_interval_days: int = Field(ge=1, le=3650)
+    required_assurance_level: RecoveryAssuranceLevel
+    rto_clock_basis: Literal["SERVICE_UNAVAILABLE_TO_VALIDATED"] = (
+        "SERVICE_UNAVAILABLE_TO_VALIDATED"
+    )
+    source_note: str | None = Field(default=None, max_length=1000)
+
+
+class TargetRecoveryProfileView(TargetRecoveryProfileUpsert):
+    recovery_profile_id: UUIDv7
+    target_id: UUIDv7
+    version_no: int = Field(ge=1)
+    status: Literal["ACTIVE", "RETIRED"]
+    effective_at: UtcDatetime
+    retired_at: UtcDatetime | None = None
+    confirmed_by: str
+    row_version: int = Field(ge=1)
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class RecoveryDrillEvidence(AIOpsContract):
+    evidence_kind: Literal[
+        "RMAN_LOG",
+        "DATABASE_LOG",
+        "BACKUP_TOOL_LOG",
+        "IDENTITY_CHECK",
+        "DATABASE_CHECK",
+        "APPLICATION_CHECK",
+        "EXTERNAL_REPORT",
+    ]
+    reference: str = Field(min_length=1, max_length=2048)
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class RecoveryDrillCreate(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    scenario: Literal[
+        "FULL_INSTANCE",
+        "POINT_IN_TIME",
+        "DATABASE_OR_PDB",
+        "DATAFILE",
+        "CONTROLFILE_OR_SYSTEM",
+        "LOGICAL_RESTORE",
+    ]
+    assurance_level: RecoveryAssuranceLevel
+    backup_source_type: RecoveryBackupSourceType
+    environment: Literal["ISOLATED", "STG", "DEV", "PROD"]
+    result: RecoveryDrillResult
+    simulated_failure_at: UtcDatetime
+    recovered_through_at: UtcDatetime | None = None
+    service_validated_at: UtcDatetime | None = None
+    recovery_marker: RecoveryMarker
+    evidence: tuple[RecoveryDrillEvidence, ...] = Field(max_length=32)
+    notes: str | None = Field(default=None, max_length=4000)
+
+    @model_validator(mode="after")
+    def validate_drill_evidence(self) -> "RecoveryDrillCreate":
+        source_db_type = {
+            "ORACLE_RMAN": "ORACLE",
+            "POSTGRESQL_BASEBACKUP": "POSTGRESQL",
+            "POSTGRESQL_PGBACKREST": "POSTGRESQL",
+            "POSTGRESQL_BARMAN": "POSTGRESQL",
+            "POSTGRESQL_WALG": "POSTGRESQL",
+            "MYSQL_XTRABACKUP": "MYSQL",
+            "MYSQL_ENTERPRISE_BACKUP": "MYSQL",
+            "MYSQL_LOGICAL_DUMP": "MYSQL",
+        }.get(self.backup_source_type)
+        if source_db_type is not None and source_db_type != self.recovery_marker.kind:
+            raise ValueError("恢复坐标与备份来源数据库类型不匹配")
+        if self.result == "PASS" and not self.evidence:
+            raise ValueError("成功演练必须提供带内容哈希的证据")
+        if self.result == "PASS" and self.assurance_level in {
+            "DATABASE_OPEN",
+            "APPLICATION_VALIDATED",
+        } and self.service_validated_at is None:
+            raise ValueError("数据库已恢复或业务已验证时必须填写验证完成时间")
+        if (
+            self.recovered_through_at is not None
+            and self.recovered_through_at > self.simulated_failure_at
+        ):
+            raise ValueError("恢复数据时间不能晚于模拟故障时间")
+        if (
+            self.service_validated_at is not None
+            and self.service_validated_at < self.simulated_failure_at
+        ):
+            raise ValueError("服务验证时间不能早于模拟故障时间")
+        return self
+
+
+class RecoveryDrillReview(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    decision: Literal["VERIFY", "REJECT"]
+    review_note: str | None = Field(default=None, max_length=2000)
+
+
+class RecoveryDrillView(RecoveryDrillCreate):
+    drill_id: UUIDv7
+    target_id: UUIDv7
+    recovery_profile_id: UUIDv7 | None = None
+    recovery_profile_version: int | None = Field(default=None, ge=1)
+    db_type: DatabaseType
+    status: RecoveryDrillStatus
+    achieved_rpo_seconds: int | None = Field(default=None, ge=0)
+    achieved_rto_seconds: int | None = Field(default=None, ge=0)
+    source_trust_level: Literal["USER_PROVIDED", "SOURCE_VERIFIED"]
+    reviewed_by: str | None = None
+    reviewed_at: UtcDatetime | None = None
+    review_note: str | None = None
+    row_version: int = Field(ge=1)
+    created_at: UtcDatetime
+    created_by: str
+    updated_at: UtcDatetime
+    updated_by: str
+
+
+class RecoveryDrillPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[RecoveryDrillView, ...] = ()
 
 
 class TargetFactCreate(AIOpsContract):
@@ -598,6 +774,7 @@ class InspectionCheckCatalogItem(AIOpsContract):
     finding_types: tuple[str, ...] = ()
     default_for: tuple[Literal["DAILY", "WEEKLY"], ...] = Field(min_length=1)
     trend_required: bool
+    supported_db_types: tuple[DatabaseType, ...] = ("ORACLE",)
 
 
 class InspectionCheckCatalogGroup(AIOpsContract):

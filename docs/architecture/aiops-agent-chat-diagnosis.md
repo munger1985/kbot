@@ -2,7 +2,7 @@
 
 版本：2.0
 状态：已批准，实施中
-目标数据库契约：Schema 16 / `aiops-oracle-v6`
+目标数据库契约：Schema 33 / `aiops-oracle-v23`
 
 ## 1. 范围和替换原则
 
@@ -24,6 +24,12 @@ RAC、RMAN、补丁、升级和迁移等扩展档案的契约、事实和脚本�
 [AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。
 新会话结构化功能目录、选择冻结和确定性规划分支见
 [智能运维功能入口技术设计](aiops-conversation-starters.md)。
+
+备份与恢复诊断额外消费 Target 级 `TARGET_RECOVERY_ASSURANCE.v1` 冻结证据。恢复目标来自版本化配置，
+人工演练事实保持 `USER_PROVIDED`；同一快照分别保留“最新尝试”和“最近审核成功”，避免旧成功覆盖新失败。
+Oracle、PostgreSQL、MySQL 分别使用 SCN、Timeline/LSN、GTID/Binlog 类型化坐标。未配置外部备份平台
+时必须保留数据缺口，不能由 WAL、Binlog 或 RMAN 元数据推断实际可恢复。恢复命令仍为
+`MANUAL_ONLY`，不进入 DB Executor。
 
 ## 2. 当前实现问题
 

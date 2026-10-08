@@ -199,6 +199,68 @@ def normalize_evidence_artifacts(
                 for item in payload.get("facts", [])
             )
             gaps.extend(payload.get("gaps", []))
+        elif schema == "TARGET_RECOVERY_ASSURANCE.v1":
+            source_group = f"recovery-assurance:{artifact_id}"
+            profile = payload.get("profile")
+            if profile:
+                for name, unit in (
+                    ("rpo_seconds", "s"),
+                    ("rto_seconds", "s"),
+                    ("required_drill_interval_days", "d"),
+                    ("required_assurance_level", None),
+                ):
+                    value = profile.get(name)
+                    facts.append(
+                        _fact(
+                            artifact_id=artifact_id,
+                            pointer=f"/profile/{name}",
+                            source_type="DATABASE_OBSERVATION",
+                            source_group_id=source_group,
+                            target_id=target_id,
+                            fact_type=f"recovery.objective.{name}",
+                            value=value,
+                            unit=unit,
+                            captured_at=payload.get("captured_at"),
+                            summary=f"恢复目标 {name}={value}",
+                            trust_level="SOURCE_VERIFIED",
+                        )
+                    )
+            for field_name, fact_type in (
+                ("latest_attempt", "recovery.drill.latest_attempt"),
+                ("latest_verified_success", "recovery.drill.latest_verified_success"),
+            ):
+                drill = payload.get(field_name)
+                if not drill:
+                    continue
+                facts.append(
+                    _fact(
+                        artifact_id=artifact_id,
+                        pointer=f"/{field_name}",
+                        source_type="USER_RESULT",
+                        source_group_id=source_group,
+                        target_id=target_id,
+                        fact_type=fact_type,
+                        value=drill,
+                        captured_at=payload.get("captured_at"),
+                        quality_flags=("USER_PROVIDED",),
+                        summary=(
+                            f"恢复演练 {drill.get('result')} / {drill.get('status')}，"
+                            f"等级 {drill.get('assurance_level')}"
+                        ),
+                        trust_level=str(
+                            drill.get("source_trust_level") or "USER_PROVIDED"
+                        ),
+                    )
+                )
+            gaps.extend(
+                {
+                    "code": str(item.get("code")),
+                    "detail": str(item.get("detail") or "恢复保障证据不完整"),
+                    "retryable": False,
+                }
+                for item in payload.get("gaps", [])
+                if item.get("code")
+            )
         elif schema == "OBSERVATION_SET.v1":
             source_group = f"monitor:{artifact_id}"
             for metric_index, metric in enumerate(

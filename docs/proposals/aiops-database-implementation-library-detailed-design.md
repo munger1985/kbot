@@ -574,6 +574,40 @@ FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracl
 `ORACLE_SID + oraenv`，最后从对应 PMON 进程解析 Home。三种方式均失败或本机 OS 认证失败时，
 在“恢复环境、目录和认证准备”阶段停止执行，而不是要求用户先补参数才能生成完整文档。
 
+### 8.1 跨数据库恢复保障记录
+
+业务 RPO/RTO 不属于数据库自动观测策略，也不是 Target Fact。Portal 在 Target 详情的“恢复保障”
+区域维护独立的版本化聚合 `KBOT_OPS_RECOVERY_PROFILE`：每次保存生成新 `ACTIVE` 版本，并在同一事务
+中退役旧版本。Wire 一律使用秒，界面可以分钟或小时录入。恢复目标还包含演练周期、最低保证等级、
+RTO 计时口径和来源说明。
+
+`KBOT_OPS_RECOVERY_DRILL` 保存人工演练的结构化记录、目标版本快照、外部证据引用及内容 SHA-256。
+等级从低到高为 `BACKUP_METADATA`、`RESTORE_VALIDATE`、`DATABASE_OPEN`、
+`APPLICATION_VALIDATED`。前两级不能证明数据库已经成功恢复；数据库可恢复结论至少需要已审核的
+`DATABASE_OPEN`，业务可用结论必须达到 `APPLICATION_VALIDATED`。记录流程为
+`SUBMITTED -> VERIFIED | REJECTED`。人工审核只确认记录完整性，`source_trust_level` 仍为
+`USER_PROVIDED`；未来备份平台或受控执行器直采才可产生 `SOURCE_VERIFIED`。
+
+恢复坐标使用数据库类型判别联合，禁止自由 JSON 和跨库套用 Oracle SCN：
+
+| 数据库 | 结构化恢复坐标 |
+|---|---|
+| Oracle | SCN、Resetlogs ID、Incarnation |
+| PostgreSQL | Timeline ID、LSN |
+| MySQL | GTID、Binlog File、Binlog Position |
+
+“备份与恢复检查”是三库公共入口 `database.backup-recovery.status`。Oracle 读取 RMAN 作业、配置和
+恢复能力；PostgreSQL 读取 Archiver、WAL 统计和 WAL Receiver；MySQL 读取 Binlog 与复制 Channel。
+WAL/Binlog 连续只能证明恢复日志链的局部状态，不能写成“备份可恢复”。未接入 pgBackRest、Barman、
+WAL-G、XtraBackup、MEB 或云备份平台时，报告必须输出
+`EXTERNAL_BACKUP_PROVIDER_NOT_CONFIGURED` 数据缺口；Oracle 同样不能以 RMAN 元数据替代文件系统快照、
+存储快照或第三方平台外部副本的接入与验证。
+
+每轮调查冻结 `TARGET_RECOVERY_ASSURANCE.v1`：同时返回最新一次演练尝试和满足当前最低等级的最近一次
+审核成功记录，并计算 `RESTORE_NOT_VERIFIED`、`DRILL_STALE`、
+`POLICY_CHANGED_SINCE_DRILL` 等缺口。最新失败不得被更早的成功记录掩盖。Restore/Recover 仍只生成
+人工、隔离环境操作文档，永不编译进自动 Executor。
+
 ## 9. 其他常用档案详细边界
 
 ### 9.1 `ORACLE_RU_PATCH`

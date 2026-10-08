@@ -41,6 +41,9 @@ POST Conversation / Turn {starter: {...}}
 - AWR/AWR Diff 使用现有 snapshots discovery binding 完成时间到快照的绑定；
 - 通用诊断按目录编译固定 Tool DAG；
 - 空间趋势固定历史窗口并请求监控快照。
+- 备份与恢复使用公共 `database.backup-recovery.status`：按 Target 数据库类型选择 Oracle RMAN、
+  PostgreSQL WAL/Archiver 或 MySQL Binlog/Replication 工具，并同时消费
+  `TARGET_RECOVERY_ASSURANCE.v1` 中的 RPO/RTO 与演练证据。
 
 该分支不调用模型做意图分类。模型只在后续基于真实证据组织诊断结论或文档内容。
 
@@ -54,3 +57,4 @@ POST Conversation / Turn {starter: {...}}
 - 生成结果固化入口版本和用户参数；调整参数会创建新 Turn，不修改历史文档；
 - 密码、密钥、Wallet 和自由命令不属于任何入口参数；
 - 实施入口保持 `ActionIntent.NONE`，不会绕过审批进入受控变更。
+- WAL、Binlog 或备份元数据不能单独证明实际可恢复；外部备份 Provider 未接入时必须输出数据缺口。

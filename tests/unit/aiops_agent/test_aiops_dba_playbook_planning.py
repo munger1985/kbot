@@ -350,6 +350,10 @@ class _PlanningUow:
             get_situation_scoped=self._get_situation,
             list_events_for_situation=self._list_situation_events,
         )
+        self.recovery = SimpleNamespace(
+            get_active_profile=self._get_recovery_profile,
+            list_recent_drills=self._list_recovery_drills,
+        )
 
     async def __aenter__(self):
         self._uow_active = True
@@ -457,6 +461,12 @@ class _PlanningUow:
 
     async def _get_source(self, **_):
         return None
+
+    async def _get_recovery_profile(self, **_):
+        return None
+
+    async def _list_recovery_drills(self, **_):
+        return []
 
     async def _get_situation(self, *, situation_id, domain_id):
         if situation_id == self.situation.situation_id and domain_id == 7:
@@ -1958,7 +1968,11 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("connection_profile", reasoner.target_context)
         self.assertNotIn("diagnostic_credential_id", reasoner.target_context)
         self.assertEqual("ORACLE_ALERT_LOG", uow.input_items[0].detected_kind)
-        self.assertEqual(1, len(uow.evidence))
+        self.assertEqual(2, len(uow.evidence))
+        self.assertEqual(
+            {"USER_PROVIDED", "RECOVERY_ASSURANCE"},
+            {row.evidence_kind for row in uow.evidence},
+        )
         self.assertEqual("USER_PROVIDED", uow.evidence[0].evidence_role)
         self.assertEqual([], uow.invocations)
         self.assertEqual([], uow.tool_invocations)
@@ -1968,7 +1982,11 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("READY", uow.tasks[0].status)
         self.assertEqual(
-            ("turn-user-input:1", "turn-input-analysis:1"),
+            (
+                "turn-user-input:1",
+                "turn-input-analysis:1",
+                "target-recovery-assurance:1",
+            ),
             tuple(uow.tasks[0].input_artifacts_json),
         )
         self.assertEqual(1, len(uow.revisions))

@@ -679,6 +679,75 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_recovery_profile(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any] | None:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/targets/{target_id}/recovery-profile",
+            auth_context=auth_context,
+        )
+
+    async def upsert_recovery_profile(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT",
+            f"{self._CONFIG}/targets/{target_id}/recovery-profile",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def list_recovery_drills(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/targets/{target_id}/recovery-drills",
+            auth_context=auth_context,
+        )
+
+    async def create_recovery_drill(
+        self,
+        target_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/recovery-drills",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
+    async def review_recovery_drill(
+        self,
+        target_id: UUID,
+        drill_id: UUID,
+        payload: dict[str, Any],
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/targets/{target_id}/recovery-drills/{drill_id}:review",
+            payload=payload,
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def list_agent_bindings(
         self, target_id: UUID, *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:

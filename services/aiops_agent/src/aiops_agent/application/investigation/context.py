@@ -37,6 +37,7 @@ class TurnPlanningContext:
     workflow_kind: str = "CHAT_TURN"
     inspection: dict = field(default_factory=dict)
     conversation_starter: dict = field(default_factory=dict)
+    recovery_assurance: dict = field(default_factory=dict)
     source_run_evidence: dict | None = None
     raw_uploads: tuple[ConversationUploadSource, ...] = ()
     resolved_uploads: tuple[ResolvedConversationUpload, ...] = ()

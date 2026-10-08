@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 32,
-  "contract_version": "aiops-oracle-v22",
+  "schema_version": 33,
+  "contract_version": "aiops-oracle-v23",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "99174b615b2ee78144663ee78a1b957a0f4aa2177e02040292712f70782ca224"
+      "sha256": "8bca8d265af12015ac6528c65e55ee7636e8c930c264b6521660f4989b822932"
     },
     {
       "name": "007_ops_agents.sql",
@@ -53,6 +53,11 @@
       "name": "010_ops_knowledge.sql",
       "statements": 20,
       "sha256": "9f103aeffa0705acf619d2c7b8dd1a42700315725fcee3fbc034f5010ef8a2b3"
+    },
+    {
+      "name": "011_ops_recovery.sql",
+      "statements": 8,
+      "sha256": "9be2d779442cb16a5c722954d6e002cd7e8dc7ef332941db01afd3670f203ca2"
     }
   ],
   "tables": [
@@ -111,7 +116,9 @@
     "KBOT_OPS_KNOWLEDGE_SCOPE",
     "KBOT_OPS_KNOWLEDGE_SOURCE",
     "KBOT_OPS_KNOWLEDGE_INDEX",
-    "KBOT_OPS_KNOWLEDGE_REVIEW"
+    "KBOT_OPS_KNOWLEDGE_REVIEW",
+    "KBOT_OPS_RECOVERY_PROFILE",
+    "KBOT_OPS_RECOVERY_DRILL"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",

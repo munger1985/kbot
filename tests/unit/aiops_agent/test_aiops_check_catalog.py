@@ -30,8 +30,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         planned = [item for item in items if item.availability == "PLANNED"]
 
         self.assertEqual(8, len(catalog.groups))
-        self.assertEqual(33, len(items))
-        self.assertEqual(28, len(ready))
+        self.assertEqual(36, len(items))
+        self.assertEqual(31, len(ready))
         self.assertEqual(5, len(planned))
         self.assertEqual(
             hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest(),

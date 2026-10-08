@@ -24,6 +24,7 @@ from aiops_agent.repositories import (
     OperationsKnowledgeRepository,
     PolicyRepository,
     TargetRepository,
+    RecoveryRepository,
     TurnRepository,
     WorkloadRepository,
 )
@@ -50,6 +51,7 @@ class AIOpsUnitOfWork:
         self.state = UnitOfWorkState.NEW
 
         self.targets: TargetRepository | None = None
+        self.recovery: RecoveryRepository | None = None
         self.managed_credentials: ManagedCredentialRepository | None = None
         self.diagnostic_sources: DiagnosticSourceRepository | None = None
         self.policies: PolicyRepository | None = None
@@ -82,6 +84,7 @@ class AIOpsUnitOfWork:
         self.state = UnitOfWorkState.ACTIVE
         guard = self._require_active
         self.targets = TargetRepository(self.session, guard)
+        self.recovery = RecoveryRepository(self.session, guard)
         self.managed_credentials = ManagedCredentialRepository(self.session)
         self.diagnostic_sources = DiagnosticSourceRepository(self.session, guard)
         self.policies = PolicyRepository(self.session, guard)
@@ -133,6 +136,7 @@ class AIOpsUnitOfWork:
             self._transaction = None
             self.session = None
             self.targets = None
+            self.recovery = None
             self.managed_credentials = None
             self.diagnostic_sources = None
             self.policies = None

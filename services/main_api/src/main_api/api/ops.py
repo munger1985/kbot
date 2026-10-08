@@ -82,6 +82,12 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
+    TargetRecoveryProfileUpsert,
+    TargetRecoveryProfileView,
+    RecoveryDrillCreate,
+    RecoveryDrillReview,
+    RecoveryDrillView,
+    RecoveryDrillPage,
     TargetPage,
     TargetPatch,
     WebhookKeyRotation,
@@ -122,6 +128,9 @@ def _route_permissions() -> dict[str, str]:
             "remove_diagnostic_credential", "delete_target", "enable_target",
             "disable_target", "request_target_connectivity_check",
             "list_target_facts", "create_target_fact", "retire_target_fact",
+            "get_recovery_profile", "upsert_recovery_profile",
+            "list_recovery_drills", "create_recovery_drill",
+            "review_recovery_drill",
             "list_agent_bindings", "create_agent_binding",
             "patch_agent_binding", "command_agent_binding",
         },
@@ -1063,6 +1072,101 @@ async def retire_target_fact(
         auth_context=request.state.auth_context,
     )
     return _validated(TargetFactView, payload, response)
+
+
+@router.get(
+    "/targets/{target_id}/recovery-profile",
+    response_model=TargetRecoveryProfileView | None,
+)
+async def get_recovery_profile(
+    target_id: UUID, request: Request
+) -> TargetRecoveryProfileView | None:
+    payload = await _client(request).get_recovery_profile(
+        target_id, auth_context=request.state.auth_context
+    )
+    return (
+        TargetRecoveryProfileView.model_validate(payload)
+        if payload is not None
+        else None
+    )
+
+
+@router.put(
+    "/targets/{target_id}/recovery-profile",
+    response_model=TargetRecoveryProfileView,
+)
+async def upsert_recovery_profile(
+    target_id: UUID,
+    body: TargetRecoveryProfileUpsert,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> TargetRecoveryProfileView:
+    payload = await _client(request).upsert_recovery_profile(
+        target_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(TargetRecoveryProfileView, payload, response)
+
+
+@router.get(
+    "/targets/{target_id}/recovery-drills",
+    response_model=RecoveryDrillPage,
+)
+async def list_recovery_drills(
+    target_id: UUID, request: Request
+) -> RecoveryDrillPage:
+    payload = await _client(request).list_recovery_drills(
+        target_id, auth_context=request.state.auth_context
+    )
+    return RecoveryDrillPage.model_validate(payload)
+
+
+@router.post(
+    "/targets/{target_id}/recovery-drills",
+    response_model=RecoveryDrillView,
+    status_code=201,
+)
+async def create_recovery_drill(
+    target_id: UUID,
+    body: RecoveryDrillCreate,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey,
+) -> RecoveryDrillView:
+    payload = await _client(request).create_recovery_drill(
+        target_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(RecoveryDrillView, payload, response)
+
+
+@router.post(
+    "/targets/{target_id}/recovery-drills/{drill_id}:review",
+    response_model=RecoveryDrillView,
+)
+async def review_recovery_drill(
+    target_id: UUID,
+    drill_id: UUID,
+    body: RecoveryDrillReview,
+    request: Request,
+    response: Response,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> RecoveryDrillView:
+    payload = await _client(request).review_recovery_drill(
+        target_id,
+        drill_id,
+        body.model_dump(mode="json"),
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return _validated(RecoveryDrillView, payload, response)
 
 
 @router.get(
