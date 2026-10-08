@@ -43,9 +43,10 @@ Agent 能思考的问题边界。
 RAC、RMAN、升级、迁移和其他常用实施文档的目标态见
 [AIOps 数据库实施文档中心详细设计](../proposals/aiops-database-implementation-library-detailed-design.md)。
 
-Target 详情提供“恢复保障”：管理员设置业务 RPO、RTO、演练周期和最低演练等级，并登记隔离环境恢复
-演练的证据引用与 SHA-256。系统会区分“最近一次尝试”和“最近一次审核成功”；最近失败不会被历史成功
-隐藏。`RESTORE_VALIDATE` 只代表备份介质校验，至少完成 `DATABASE_OPEN` 才能说明数据库实际恢复，
+Target 详情的“恢复保障”只维护业务 RPO、RTO、演练周期和最低演练等级，并展示演练状态摘要。
+隔离环境恢复演练的登记、审核、证据引用与 SHA-256 统一进入独立“恢复演练”工作区，不与 Target
+连接配置混放。系统会区分“最近一次尝试”和“最近一次审核成功”；最近失败不会被历史成功隐藏。
+`RESTORE_VALIDATE` 只代表备份介质校验，至少完成 `DATABASE_OPEN` 才能说明数据库实际恢复，
 `APPLICATION_VALIDATED` 才能说明业务检查通过。人工审核不等于系统直采证据。
 
 “备份与恢复检查”支持 Oracle、PostgreSQL 和 MySQL。PostgreSQL WAL、MySQL Binlog 正常只说明日志链

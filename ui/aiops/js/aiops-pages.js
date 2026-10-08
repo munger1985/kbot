@@ -371,6 +371,7 @@
       await loadTargetSubscription(targetId);
       renderTargetSubscription(target);
       shell.toast(following ? "已更新该目标的通知关注" : "已取消关注该目标");
+      document.getElementById("target-subscription-dialog")?.close();
     } catch (error) {
       elements.result.textContent = error.message;
       elements.result.dataset.tone = "bad";
@@ -487,6 +488,16 @@
   async function initializeTargetSubscription(targetId, target) {
     const elements = subscriptionElements();
     if (!elements) return;
+    const dialog = document.getElementById("target-subscription-dialog");
+    const openButton = document.getElementById("open-target-subscription");
+    openButton?.addEventListener("click", () => {
+      renderTargetSubscription(target);
+      if (!dialog.open) dialog.showModal();
+    });
+    dialog?.querySelectorAll("[data-close-target-subscription]").forEach((button) => {
+      button.addEventListener("click", () => dialog.close());
+    });
+    dialog?.addEventListener("close", () => renderTargetSubscription(target));
     elements.follow.addEventListener("change", () => {
       const enabled = elements.follow.checked;
       elements.settings.classList.toggle("target-subscription-disabled", !enabled);
@@ -513,27 +524,6 @@
     }
   }
 
-  const recoverySourceOptions = {
-    ORACLE: [["ORACLE_RMAN", "Oracle RMAN"], ["FILESYSTEM_SNAPSHOT", "文件系统快照"], ["STORAGE_SNAPSHOT", "存储快照"], ["CLOUD_MANAGED_BACKUP", "云托管备份"], ["THIRD_PARTY_BACKUP", "第三方备份"]],
-    POSTGRESQL: [["POSTGRESQL_BASEBACKUP", "pg_basebackup"], ["POSTGRESQL_PGBACKREST", "pgBackRest"], ["POSTGRESQL_BARMAN", "Barman"], ["POSTGRESQL_WALG", "WAL-G"], ["FILESYSTEM_SNAPSHOT", "文件系统快照"], ["STORAGE_SNAPSHOT", "存储快照"], ["CLOUD_MANAGED_BACKUP", "云托管备份"], ["THIRD_PARTY_BACKUP", "第三方备份"]],
-    MYSQL: [["MYSQL_XTRABACKUP", "Percona XtraBackup"], ["MYSQL_ENTERPRISE_BACKUP", "MySQL Enterprise Backup"], ["MYSQL_LOGICAL_DUMP", "逻辑导出"], ["FILESYSTEM_SNAPSHOT", "文件系统快照"], ["STORAGE_SNAPSHOT", "存储快照"], ["CLOUD_MANAGED_BACKUP", "云托管备份"], ["THIRD_PARTY_BACKUP", "第三方备份"]],
-  };
-
-  function recoveryMarkerHtml(dbType) {
-    const field = (name, label, attrs = "") => `<div class="ops-field"><label>${label}</label><input name="${name}" ${attrs}></div>`;
-    if (dbType === "ORACLE") return field("scn", "Oracle SCN", 'type="number" min="0"') + field("resetlogs_id", "Resetlogs ID", 'type="number" min="0"') + field("incarnation", "Incarnation", 'type="number" min="0"');
-    if (dbType === "POSTGRESQL") return field("timeline_id", "Timeline ID", 'type="number" min="1"') + field("lsn", "LSN", 'placeholder="16/B374D848" pattern="[0-9A-Fa-f]+/[0-9A-Fa-f]+"');
-    return field("gtid_executed", "GTID", 'maxlength="4000"') + field("binlog_file", "Binlog 文件", 'maxlength="256" placeholder="mysql-bin.000123"') + field("binlog_position", "Binlog 位置", 'type="number" min="0"');
-  }
-
-  function recoveryMarkerPayload(form, dbType) {
-    const value = (name) => String(form.elements[name]?.value || "").trim();
-    const number = (name) => value(name) === "" ? null : Number(value(name));
-    if (dbType === "ORACLE") return { kind: "ORACLE", scn: number("scn"), resetlogs_id: number("resetlogs_id"), incarnation: number("incarnation") };
-    if (dbType === "POSTGRESQL") return { kind: "POSTGRESQL", timeline_id: number("timeline_id"), lsn: value("lsn") || null };
-    return { kind: "MYSQL", gtid_executed: value("gtid_executed") || null, binlog_file: value("binlog_file") || null, binlog_position: number("binlog_position") };
-  }
-
   function renderRecoverySummary(profile, drills) {
     const state = document.getElementById("target-recovery-state");
     const summary = document.getElementById("target-recovery-summary");
@@ -546,29 +536,13 @@
     summary.innerHTML = `<dl class="ops-detail"><dt>当前 RPO</dt><dd>${profile ? `${profile.rpo_seconds / 60} 分钟` : "未配置"}</dd><dt>当前 RTO</dt><dd>${profile ? `${profile.rto_seconds / 60} 分钟` : "未配置"}</dd><dt>最新尝试</dt><dd>${latest ? `${shell.escape(latest.result)} · ${shell.escape(shell.fmt(latest.simulated_failure_at))}` : "无记录"}</dd><dt>最新审核成功</dt><dd>${success ? `${shell.escape(success.assurance_level)} · ${shell.escape(shell.fmt(success.simulated_failure_at))}` : "无记录"}</dd></dl>${latest && latest.result !== "PASS" && success ? '<p class="ops-connection-result" data-tone="bad">最新尝试未通过；下方旧成功记录仅作历史证据，不能掩盖本次失败。</p>' : ""}`;
   }
 
-  function renderRecoveryDrills(targetId, items) {
-    const panel = document.getElementById("target-recovery-drills");
-    if (!items.length) { panel.innerHTML = '<p class="ops-empty">尚未登记恢复演练。</p>'; return; }
-    panel.innerHTML = `<table class="ops-table"><thead><tr><th>时间</th><th>等级</th><th>结果</th><th>审核</th><th>来源/信任</th><th>RPO/RTO</th><th></th></tr></thead><tbody>${items.map((item) => `<tr><td>${shell.escape(shell.fmt(item.simulated_failure_at))}</td><td>${shell.escape(item.assurance_level)}</td><td>${shell.escape(item.result)}</td><td>${shell.escape(item.status)}</td><td>${shell.escape(item.backup_source_type)}<br><small>${shell.escape(item.source_trust_level)}</small></td><td>${item.achieved_rpo_seconds ?? "—"}s / ${item.achieved_rto_seconds ?? "—"}s</td><td>${item.status === "SUBMITTED" ? `<button type="button" data-review-drill="${shell.escape(item.drill_id)}" data-version="${shell.escape(item.row_version)}" data-decision="VERIFY">通过审核</button> <button type="button" data-review-drill="${shell.escape(item.drill_id)}" data-version="${shell.escape(item.row_version)}" data-decision="REJECT">拒绝</button>` : ""}</td></tr>`).join("")}</tbody></table>`;
-    panel.querySelectorAll("[data-review-drill]").forEach((button) => button.addEventListener("click", async () => {
-      const verb = button.dataset.decision === "VERIFY" ? "通过" : "拒绝";
-      if (!confirm(`确认${verb}这条演练记录吗？审核不会把人工证据提升为系统直采证据。`)) return;
-      button.disabled = true;
-      try {
-        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-drills/${encodeURIComponent(button.dataset.reviewDrill)}:review`, { method: "POST", headers: { "If-Match": `"rv-${button.dataset.version}"`, "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ decision: button.dataset.decision, review_note: null }) });
-        await loadTargetRecovery(targetId, null, false);
-      } catch (error) { shell.toast(error.message); button.disabled = false; }
-    }));
-  }
-
-  async function loadTargetRecovery(targetId, target, populateProfile = true) {
+  async function loadTargetRecovery(targetId, populateProfile = true) {
     const [profile, drillsPayload] = await Promise.all([
       KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`),
       KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-drills`),
     ]);
     const drills = drillsPayload?.items || [];
     renderRecoverySummary(profile, drills);
-    renderRecoveryDrills(targetId, drills);
     if (profile && populateProfile) {
       const form = document.getElementById("target-recovery-profile-form");
       form.rpo_minutes.value = profile.rpo_seconds / 60;
@@ -577,40 +551,23 @@
       form.required_assurance_level.value = profile.required_assurance_level;
       form.source_note.value = profile.source_note || "";
     }
-    return { profile, drills, target };
+    return { profile, drills };
   }
 
-  async function initializeTargetRecovery(targetId, target) {
+  async function initializeTargetRecovery(targetId) {
     const profileForm = document.getElementById("target-recovery-profile-form");
-    const drillForm = document.getElementById("target-recovery-drill-form");
-    const marker = document.getElementById("recovery-marker-fields");
-    const source = document.getElementById("recovery-backup-source");
-    if (!profileForm || !drillForm) return;
-    source.innerHTML = (recoverySourceOptions[target.db_type] || []).map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
-    marker.innerHTML = recoveryMarkerHtml(target.db_type);
+    if (!profileForm) return;
+    document.getElementById("target-recovery-drills-link").href = `./recovery-drills.html?target_id=${encodeURIComponent(targetId)}`;
     profileForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const result = document.getElementById("target-recovery-profile-result");
       try {
         await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
         result.textContent = "已保存为新的生效版本。"; result.dataset.tone = "good";
-        await loadTargetRecovery(targetId, target, true);
+        await loadTargetRecovery(targetId, true);
       } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
     });
-    drillForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const result = document.getElementById("target-recovery-drill-result");
-      const iso = (name) => drillForm.elements[name].value ? new Date(drillForm.elements[name].value).toISOString() : null;
-      const reference = String(drillForm.evidence_reference.value || "").trim();
-      const hash = String(drillForm.evidence_hash.value || "").trim().toLowerCase();
-      try {
-        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-drills`, { method: "POST", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ scenario: drillForm.scenario.value, assurance_level: drillForm.assurance_level.value, backup_source_type: drillForm.backup_source_type.value, environment: drillForm.environment.value, result: drillForm.result.value, simulated_failure_at: iso("simulated_failure_at"), recovered_through_at: iso("recovered_through_at"), service_validated_at: iso("service_validated_at"), recovery_marker: recoveryMarkerPayload(drillForm, target.db_type), evidence: reference && hash ? [{ evidence_kind: drillForm.evidence_kind.value, reference, content_hash: hash }] : [], notes: String(drillForm.notes.value || "").trim() || null }) });
-        drillForm.reset(); source.innerHTML = (recoverySourceOptions[target.db_type] || []).map(([value, label]) => `<option value="${value}">${label}</option>`).join(""); marker.innerHTML = recoveryMarkerHtml(target.db_type);
-        result.textContent = "演练记录已提交，等待人工审核。"; result.dataset.tone = "good";
-        await loadTargetRecovery(targetId, target, false);
-      } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
-    });
-    try { await loadTargetRecovery(targetId, target, true); }
+    try { await loadTargetRecovery(targetId, true); }
     catch (error) { document.getElementById("target-recovery-summary").innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
 
@@ -718,7 +675,7 @@
       panel.innerHTML = `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
       if (page === "target-detail") {
         await initializeTargetSubscription(id, data);
-        await initializeTargetRecovery(id, data);
+        await initializeTargetRecovery(id);
         await initializeTargetFacts(id);
       }
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }

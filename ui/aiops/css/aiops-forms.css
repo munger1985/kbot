@@ -203,10 +203,12 @@
   .agent-result{margin:0 14px 14px}
 }
 
-/* Target 详情中的当前用户通知关注。 */
+/* Target 详情中的按需通知设置。 */
 .target-detail-grid{align-items:start}
-.target-subscription-panel{position:sticky;top:88px}
-.target-subscription-panel .ops-panel-head{align-items:flex-start}
+.target-subscription-dialog{width:min(640px,calc(100vw - 32px))}
+.target-subscription-dialog header>div{display:grid;gap:3px}
+.target-subscription-dialog header p{margin:0;color:var(--muted);font-size:12px}
+.target-subscription-dialog-state{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;color:var(--muted)}
 .target-follow-switch{display:flex;align-items:flex-start;gap:11px;padding:14px;border:1px solid #cfd6e4;background:#f7f8fb;cursor:pointer}
 .target-follow-switch input{width:17px;height:17px;margin:3px 0 0;accent-color:var(--accent)}
 .target-follow-switch strong,.target-follow-switch small{display:block}
@@ -220,15 +222,13 @@
 .target-stage-fieldset input{margin:3px 0 0;accent-color:var(--accent)}
 .target-stage-fieldset strong,.target-stage-fieldset small{display:block}
 .target-stage-fieldset small{margin-top:2px;color:var(--muted);font-size:11px;font-weight:400}
-.target-subscription-actions{display:flex;justify-content:flex-end;margin-top:14px}
-@media(max-width:1000px){.target-subscription-panel{position:static}.target-detail-grid>.span-7,.target-detail-grid>.span-5{grid-column:span 12}}
 
 /* Target 详情中的运维记忆。 */
 .target-facts-list{margin-bottom:16px}
 .target-facts-form{display:grid;gap:14px;margin-top:8px}
 .target-facts-form .ops-filter-actions{justify-content:flex-start}
 
-/* Target 恢复目标与演练记录。 */
+/* Target 恢复目标与独立恢复演练工作区。 */
 .target-recovery-layout{display:grid;grid-template-columns:repeat(12,1fr);gap:22px}
 .target-recovery-form{grid-column:span 8;display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
 .target-recovery-form.span-12{grid-column:span 12}
@@ -242,3 +242,7 @@
 .target-recovery-marker{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .target-recovery-marker .ops-field{grid-column:span 1}
 @media(max-width:900px){.target-recovery-form,.target-recovery-summary{grid-column:span 12}.target-recovery-summary{border-left:0;border-top:1px solid var(--line);padding:18px 0 0}.target-recovery-form .ops-field,.target-recovery-form .ops-field.span-6{grid-column:span 12}.target-recovery-marker{grid-template-columns:1fr}}
+.recovery-drill-context,.recovery-drill-entry{margin-bottom:16px}
+.recovery-drill-context-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px;align-items:start}
+.recovery-profile-summary .ops-detail{grid-template-columns:120px 1fr}
+.recovery-drill-form .ops-connection-result{margin:0}

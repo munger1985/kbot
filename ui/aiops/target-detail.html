@@ -11,60 +11,25 @@
   <main class="ops-main">
     <header class="ops-head">
       <div><h1>运维目标详情</h1><p>查看目标连接、凭据状态、诊断源绑定与运行概况。</p></div>
-      <button onclick="history.back()">返回</button>
+      <div class="ops-actions">
+        <button id="open-target-subscription" type="button" data-write-ready>通知设置</button>
+        <button onclick="history.back()">返回</button>
+      </div>
     </header>
 
     <div class="ops-grid target-detail-grid">
-      <section id="ops-detail" class="ops-panel span-7"><div class="ops-panel-body">正在加载…</div></section>
-
-      <section id="target-subscription" class="ops-panel span-5 target-subscription-panel" aria-labelledby="target-subscription-title">
-        <div class="ops-panel-head">
-          <div>
-            <h2 id="target-subscription-title">关注与通知</h2>
-            <p>只配置当前用户是否接收这个 Target 的站内通知。</p>
-          </div>
-          <span id="target-subscription-state" class="ops-badge">读取中</span>
-        </div>
-        <div class="ops-panel-body">
-          <form id="target-subscription-form">
-            <label class="target-follow-switch">
-              <input name="follow_target" type="checkbox">
-              <span><strong>关注该目标</strong><small>符合条件的故障和诊断进展将进入通知中心。</small></span>
-            </label>
-
-            <div id="target-subscription-settings" class="target-subscription-settings">
-              <div class="ops-field">
-                <label for="target-subscription-severity">最低严重级别</label>
-                <select id="target-subscription-severity" name="minimum_severity">
-                  <option value="INFO">INFO · 全部事件</option>
-                  <option value="WARNING">WARNING · 警告及以上</option>
-                  <option value="HIGH" selected>HIGH · 高风险及以上</option>
-                  <option value="CRITICAL">CRITICAL · 仅严重故障</option>
-                </select>
-              </div>
-
-              <fieldset class="target-stage-fieldset">
-                <legend>通知阶段</legend>
-                <label><input type="checkbox" name="stages" value="SITUATION_DETECTED" checked><span><strong>发现故障</strong><small>确认异常情境首次建立</small></span></label>
-                <label><input type="checkbox" name="stages" value="DIAGNOSIS_STARTED" checked><span><strong>开始诊断</strong><small>自动根因诊断已经启动</small></span></label>
-                <label><input type="checkbox" name="stages" value="REPORT_READY" checked><span><strong>报告生成</strong><small>诊断或验证报告可以查看</small></span></label>
-                <label><input type="checkbox" name="stages" value="SITUATION_RECOVERED" checked><span><strong>故障恢复</strong><small>相关异常信号已经全部恢复</small></span></label>
-              </fieldset>
-            </div>
-
-            <p id="target-subscription-result" class="ops-connection-result" role="status"></p>
-            <div class="target-subscription-actions"><button id="save-target-subscription" class="primary" type="submit">保存通知设置</button></div>
-          </form>
-        </div>
-      </section>
+      <section id="ops-detail" class="ops-panel span-12"><div class="ops-panel-body">正在加载…</div></section>
 
       <section id="target-recovery" class="ops-panel span-12" aria-labelledby="target-recovery-title">
         <div class="ops-panel-head">
           <div>
             <h2 id="target-recovery-title">恢复保障</h2>
-            <p>按 Target 管理版本化 RPO/RTO，并记录隔离环境中的恢复演练。人工审核不会把证据提升为系统直采。</p>
+            <p>这里只维护 Target 的业务 RPO/RTO 和演练要求；演练登记、审核与历史记录在独立工作区处理。</p>
           </div>
-          <span id="target-recovery-state" class="ops-badge">读取中</span>
+          <div class="ops-actions">
+            <a id="target-recovery-drills-link" class="ops-button" href="./recovery-drills.html">恢复演练</a>
+            <span id="target-recovery-state" class="ops-badge">读取中</span>
+          </div>
         </div>
         <div class="ops-panel-body target-recovery-layout">
           <form id="target-recovery-profile-form" class="ops-form target-recovery-form">
@@ -82,28 +47,6 @@
             <h3>演练状态</h3>
             <div id="target-recovery-summary">正在加载…</div>
           </div>
-
-          <form id="target-recovery-drill-form" class="ops-form target-recovery-form span-12">
-            <h3>登记恢复演练</h3>
-            <p class="target-recovery-note">本期不上传二进制文件；请填写外部证据引用和对应内容的 SHA-256。Restore Validate 只能证明介质可读，不能等同于数据库已实际恢复。</p>
-            <div class="ops-field"><label>场景</label><select name="scenario"><option value="FULL_INSTANCE">完整实例</option><option value="POINT_IN_TIME">时间点恢复</option><option value="DATABASE_OR_PDB">数据库/PDB</option><option value="DATAFILE">数据文件</option><option value="CONTROLFILE_OR_SYSTEM">控制文件/System</option><option value="LOGICAL_RESTORE">逻辑恢复</option></select></div>
-            <div class="ops-field"><label>演练等级</label><select name="assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN">数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
-            <div class="ops-field"><label>结果</label><select name="result"><option value="PASS">通过</option><option value="FAIL">失败</option><option value="INCONCLUSIVE">无法确认</option></select></div>
-            <div class="ops-field"><label>环境</label><select name="environment"><option value="ISOLATED">隔离环境</option><option value="STG">预发布</option><option value="DEV">开发</option><option value="PROD">生产</option></select></div>
-            <div class="ops-field"><label>备份来源</label><select name="backup_source_type" id="recovery-backup-source"></select></div>
-            <div class="ops-field"><label>模拟故障时间</label><input name="simulated_failure_at" type="datetime-local" required></div>
-            <div class="ops-field"><label>恢复到时间</label><input name="recovered_through_at" type="datetime-local"></div>
-            <div class="ops-field"><label>验证完成时间</label><input name="service_validated_at" type="datetime-local"></div>
-            <div id="recovery-marker-fields" class="target-recovery-marker span-12"></div>
-            <div class="ops-field"><label>证据类型</label><select name="evidence_kind"><option value="RMAN_LOG">RMAN 日志</option><option value="DATABASE_LOG">数据库日志</option><option value="BACKUP_TOOL_LOG">备份工具日志</option><option value="IDENTITY_CHECK">身份核对</option><option value="DATABASE_CHECK">数据库检查</option><option value="APPLICATION_CHECK">应用检查</option><option value="EXTERNAL_REPORT">外部报告</option></select></div>
-            <div class="ops-field span-6"><label>证据引用</label><input name="evidence_reference" maxlength="2048" placeholder="工单、对象存储 URI 或报告编号"></div>
-            <div class="ops-field span-6"><label>内容 SHA-256</label><input name="evidence_hash" pattern="[a-f0-9]{64}" maxlength="64" placeholder="64 位小写十六进制"></div>
-            <div class="ops-field span-12"><label>说明</label><textarea name="notes" maxlength="4000"></textarea></div>
-            <div class="ops-filter-actions"><button class="primary" type="submit">提交待审核记录</button></div>
-            <p id="target-recovery-drill-result" class="ops-connection-result" role="status"></p>
-          </form>
-
-          <div id="target-recovery-drills" class="span-12">正在加载…</div>
         </div>
       </section>
 
@@ -138,6 +81,42 @@
       </section>
     </div>
   </main>
+
+  <dialog id="target-subscription-dialog" class="ops-dialog target-subscription-dialog" aria-labelledby="target-subscription-title">
+    <form id="target-subscription-form">
+      <header>
+        <div><h2 id="target-subscription-title">关注与通知</h2><p>只配置当前用户是否接收这个 Target 的站内通知。</p></div>
+        <button type="button" data-close-target-subscription>关闭</button>
+      </header>
+      <div class="ops-dialog-body">
+        <div class="target-subscription-dialog-state"><span>当前状态</span><span id="target-subscription-state" class="ops-badge">读取中</span></div>
+        <label class="target-follow-switch">
+          <input name="follow_target" type="checkbox">
+          <span><strong>关注该目标</strong><small>符合条件的故障和诊断进展将进入通知中心。</small></span>
+        </label>
+        <div id="target-subscription-settings" class="target-subscription-settings">
+          <div class="ops-field">
+            <label for="target-subscription-severity">最低严重级别</label>
+            <select id="target-subscription-severity" name="minimum_severity">
+              <option value="INFO">INFO · 全部事件</option>
+              <option value="WARNING">WARNING · 警告及以上</option>
+              <option value="HIGH" selected>HIGH · 高风险及以上</option>
+              <option value="CRITICAL">CRITICAL · 仅严重故障</option>
+            </select>
+          </div>
+          <fieldset class="target-stage-fieldset">
+            <legend>通知阶段</legend>
+            <label><input type="checkbox" name="stages" value="SITUATION_DETECTED" checked><span><strong>发现故障</strong><small>确认异常情境首次建立</small></span></label>
+            <label><input type="checkbox" name="stages" value="DIAGNOSIS_STARTED" checked><span><strong>开始诊断</strong><small>自动根因诊断已经启动</small></span></label>
+            <label><input type="checkbox" name="stages" value="REPORT_READY" checked><span><strong>报告生成</strong><small>诊断或验证报告可以查看</small></span></label>
+            <label><input type="checkbox" name="stages" value="SITUATION_RECOVERED" checked><span><strong>故障恢复</strong><small>相关异常信号已经全部恢复</small></span></label>
+          </fieldset>
+        </div>
+        <p id="target-subscription-result" class="ops-connection-result" role="status"></p>
+      </div>
+      <footer><button type="button" data-close-target-subscription>取消</button><button id="save-target-subscription" class="primary" type="submit">保存通知设置</button></footer>
+    </form>
+  </dialog>
 
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>

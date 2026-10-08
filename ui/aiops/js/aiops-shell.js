@@ -5,6 +5,7 @@
     reports: "aiops:use", "report-detail": "aiops:use",
     "run-detail": "aiops:use", targets: "aiops:target_manage",
     "target-detail": "aiops:target_manage",
+    "recovery-drills": "aiops:target_manage",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
     "operations-knowledge": "aiops:knowledge_manage", agents: "aiops:agent_manage",
@@ -16,7 +17,7 @@
   const sections = [
     ["业务工作区", [
       ["dashboard", "Dashboard"], ["chat", "智能运维"], ["situations", "告警诊断"],
-      ["inspections", "日常巡检"], ["reports", "报告中心"],
+      ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "报告中心"],
     ]],
     ["资源配置", [
       ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>恢复演练</title>
+  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/aiops-forms.css">
+</head>
+<body data-page="recovery-drills">
+  <main class="ops-main">
+    <header class="ops-head">
+      <div>
+        <h1>恢复演练</h1>
+        <p>登记隔离环境恢复结果、审核证据并查看历史。这里记录运维活动，不修改 Target 连接配置。</p>
+      </div>
+      <a id="recovery-target-detail-link" class="ops-button" href="./targets.html">查看 Target</a>
+    </header>
+
+    <section class="ops-panel recovery-drill-context">
+      <div class="ops-panel-head"><div><h2>演练对象</h2><p>选择数据库 Target 后加载其恢复目标与历史演练。</p></div><span id="recovery-workspace-state" class="ops-badge">请选择</span></div>
+      <div class="ops-panel-body recovery-drill-context-grid">
+        <label class="ops-field span-6">Target<select id="recovery-target-select"><option value="">请选择 Target</option></select></label>
+        <div id="recovery-profile-summary" class="recovery-profile-summary span-6"><p class="ops-empty">尚未选择 Target。</p></div>
+      </div>
+    </section>
+
+    <section class="ops-panel recovery-drill-entry">
+      <div class="ops-panel-head"><div><h2>登记恢复演练</h2><p>记录已经实际完成的演练，不在此页面执行 Restore 或 Recover。</p></div></div>
+      <div class="ops-panel-body">
+        <form id="recovery-drill-form" class="ops-form recovery-drill-form">
+          <p class="target-recovery-note span-12">本期不上传二进制文件；请填写外部证据引用及内容 SHA-256。Restore Validate 只能证明介质可读，不能等同于数据库已实际恢复。</p>
+          <div class="ops-field"><label>场景</label><select name="scenario"><option value="FULL_INSTANCE">完整实例</option><option value="POINT_IN_TIME">时间点恢复</option><option value="DATABASE_OR_PDB">数据库/PDB</option><option value="DATAFILE">数据文件</option><option value="CONTROLFILE_OR_SYSTEM">控制文件/System</option><option value="LOGICAL_RESTORE">逻辑恢复</option></select></div>
+          <div class="ops-field"><label>演练等级</label><select name="assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN">数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
+          <div class="ops-field"><label>结果</label><select name="result"><option value="PASS">通过</option><option value="FAIL">失败</option><option value="INCONCLUSIVE">无法确认</option></select></div>
+          <div class="ops-field"><label>环境</label><select name="environment"><option value="ISOLATED">隔离环境</option><option value="STG">预发布</option><option value="DEV">开发</option><option value="PROD">生产</option></select></div>
+          <div class="ops-field"><label>备份来源</label><select name="backup_source_type" id="recovery-backup-source"></select></div>
+          <div class="ops-field"><label>模拟故障时间</label><input name="simulated_failure_at" type="datetime-local" required></div>
+          <div class="ops-field"><label>恢复到时间</label><input name="recovered_through_at" type="datetime-local"></div>
+          <div class="ops-field"><label>验证完成时间</label><input name="service_validated_at" type="datetime-local"></div>
+          <div id="recovery-marker-fields" class="target-recovery-marker span-12"></div>
+          <div class="ops-field"><label>证据类型</label><select name="evidence_kind"><option value="RMAN_LOG">RMAN 日志</option><option value="DATABASE_LOG">数据库日志</option><option value="BACKUP_TOOL_LOG">备份工具日志</option><option value="IDENTITY_CHECK">身份核对</option><option value="DATABASE_CHECK">数据库检查</option><option value="APPLICATION_CHECK">应用检查</option><option value="EXTERNAL_REPORT">外部报告</option></select></div>
+          <div class="ops-field span-6"><label>证据引用</label><input name="evidence_reference" maxlength="2048" placeholder="工单、对象存储 URI 或报告编号"></div>
+          <div class="ops-field span-6"><label>内容 SHA-256</label><input name="evidence_hash" pattern="[a-f0-9]{64}" maxlength="64" placeholder="64 位小写十六进制"></div>
+          <div class="ops-field span-12"><label>说明</label><textarea name="notes" maxlength="4000"></textarea></div>
+          <div class="ops-filter-actions"><button id="submit-recovery-drill" class="primary" type="submit" disabled>提交待审核记录</button></div>
+          <p id="recovery-drill-result" class="ops-connection-result span-12" role="status"></p>
+        </form>
+      </div>
+    </section>
+
+    <section class="ops-panel">
+      <div class="ops-panel-head"><div><h2>演练历史</h2><p>最新失败与无法确认记录始终保留，不会被更早的成功记录覆盖。</p></div></div>
+      <div id="recovery-drill-history" class="ops-table-wrap"><p class="ops-empty">请选择 Target。</p></div>
+    </section>
+  </main>
+
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-recovery-drills.js"></script>
+</body>
+</html>

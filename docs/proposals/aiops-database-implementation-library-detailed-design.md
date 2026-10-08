@@ -577,11 +577,13 @@ FRA 的顺序复用；均不存在时按 `DB_UNIQUE_NAME` 派生 `/u01/app/oracl
 ### 8.1 跨数据库恢复保障记录
 
 业务 RPO/RTO 不属于数据库自动观测策略，也不是 Target Fact。Portal 在 Target 详情的“恢复保障”
-区域维护独立的版本化聚合 `KBOT_OPS_RECOVERY_PROFILE`：每次保存生成新 `ACTIVE` 版本，并在同一事务
+区域只维护独立的版本化聚合 `KBOT_OPS_RECOVERY_PROFILE`：每次保存生成新 `ACTIVE` 版本，并在同一事务
 中退役旧版本。Wire 一律使用秒，界面可以分钟或小时录入。恢复目标还包含演练周期、最低保证等级、
 RTO 计时口径和来源说明。
 
 `KBOT_OPS_RECOVERY_DRILL` 保存人工演练的结构化记录、目标版本快照、外部证据引用及内容 SHA-256。
+登记、审核和历史记录属于运维活动，统一放在独立“恢复演练”工作区；Target 详情只显示状态摘要和入口，
+不承载演练表单。
 等级从低到高为 `BACKUP_METADATA`、`RESTORE_VALIDATE`、`DATABASE_OPEN`、
 `APPLICATION_VALIDATED`。前两级不能证明数据库已经成功恢复；数据库可恢复结论至少需要已审核的
 `DATABASE_OPEN`，业务可用结论必须达到 `APPLICATION_VALIDATED`。记录流程为

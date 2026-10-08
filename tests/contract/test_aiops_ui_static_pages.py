@@ -26,6 +26,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
         "chat", "situations", "dashboard", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
+        "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
         "agents",
         "inspection-plans", "inspection-plan-detail",
@@ -49,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(10, len(scripts))
+        self.assertEqual(11, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -324,10 +325,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
+        forms = (AIOPS_ROOT / "css" / "aiops-forms.css").read_text(
+            encoding="utf-8"
+        )
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('id="target-subscription-form"', page)
+        self.assertIn('id="target-subscription-dialog"', page)
+        self.assertIn('id="open-target-subscription"', page)
+        self.assertIn("data-close-target-subscription", page)
         self.assertIn('name="follow_target"', page)
         self.assertIn('name="minimum_severity"', page)
         self.assertIn('value="SITUATION_DETECTED"', page)
@@ -336,10 +343,34 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('value="SITUATION_RECOVERED"', page)
         self.assertIn("initializeTargetSubscription", script)
         self.assertIn("/notification-subscriptions/targets/", script)
+        self.assertIn("dialog.showModal()", script)
+        self.assertIn("dialog.close()", script)
+        self.assertNotIn("target-subscription-panel", page)
+        self.assertNotIn(".target-subscription-panel{position:sticky", forms)
         self.assertNotIn('["notification-subscriptions", "主动分享"]', shell)
         self.assertFalse(
             (AIOPS_ROOT / "notification-subscriptions.html").exists()
         )
+
+    def test_recovery_drills_use_independent_operations_workspace(self):
+        target_page = (AIOPS_ROOT / "target-detail.html").read_text(
+            encoding="utf-8"
+        )
+        drill_page = (AIOPS_ROOT / "recovery-drills.html").read_text(
+            encoding="utf-8"
+        )
+        drill_script = (AIOPS_ROOT / "js" / "aiops-recovery-drills.js").read_text(
+            encoding="utf-8"
+        )
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('id="target-recovery-drill-form"', target_page)
+        self.assertIn('id="target-recovery-drills-link"', target_page)
+        self.assertIn('id="recovery-drill-form"', drill_page)
+        self.assertIn('id="recovery-drill-history"', drill_page)
+        self.assertIn("/recovery-drills", drill_script)
+        self.assertIn('["recovery-drills", "恢复演练"]', shell)
 
     def test_target_detail_and_chat_own_target_fact_confirmation(self):
         page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
