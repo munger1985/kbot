@@ -146,14 +146,38 @@
 .ops-evidence-gaps { padding-top: 10px; border-top: 1px solid #e6e9ef; font-size: 12px; }
 .ops-evidence-gaps ul { margin: 7px 0 0; padding-left: 20px; }
 .ops-evidence-empty { margin: 10px 0; color: var(--muted); }
-.ops-tablespace-chart { margin: 16px 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.ops-tablespace-chart figcaption { margin-bottom: 11px; font-size: 12px; font-weight: 700; }
+.ops-evidence-chart { margin: 16px 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.ops-evidence-chart figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 11px; font-size: 12px; font-weight: 700; }
+.ops-evidence-chart figcaption small { color: var(--muted); font-weight: 500; }
 .ops-chart-rows { display: grid; gap: 8px; }
 .ops-chart-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(120px, 1fr) 62px; align-items: center; gap: 10px; font-size: 12px; }
 .ops-chart-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ops-chart-row > strong { text-align: right; font-variant-numeric: tabular-nums; }
 .ops-chart-track { height: 8px; overflow: hidden; background: #e5e9f0; }
 .ops-chart-track i { display: block; height: 100%; background: var(--accent); }
+.ops-line-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.ops-line-series { min-width: 0; padding: 10px 11px 7px; border: 1px solid #e1e5ec; background: #fff; }
+.ops-line-series header, .ops-line-series footer { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
+.ops-line-series header span { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ops-line-series footer { color: var(--muted); font-size: 10px; }
+.ops-line-series svg { display: block; width: 100%; height: auto; margin: 5px 0 3px; overflow: visible; color: var(--muted); }
+.ops-line-series svg text { fill: currentColor; font-size: 9px; }
+.ops-chart-axis { stroke: #d8dee8; stroke-width: 1; }
+.ops-chart-line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ops-chart-last { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ops-chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 10px; }
+.ops-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ops-chart-legend i { width: 12px; height: 6px; background: #315b82; }
+.ops-chart-legend .is-current_free i { background: #95a9bc; }
+.ops-chart-legend .is-expandable i { background: #dce3ea; }
+.ops-capacity-rows { display: grid; gap: 10px; }
+.ops-capacity-row { display: grid; grid-template-columns: minmax(72px, 110px) 1fr; gap: 12px; align-items: start; }
+.ops-capacity-row > strong { overflow: hidden; padding-top: 1px; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.ops-capacity-track { display: flex; height: 10px; overflow: hidden; background: #eef1f5; }
+.ops-capacity-track i { display: block; height: 100%; background: #315b82; }
+.ops-capacity-track .is-current_free { background: #95a9bc; }
+.ops-capacity-track .is-expandable { background: #dce3ea; }
+.ops-capacity-main small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
 .ops-proposal { margin: 18px 0 4px; padding: 16px; border: 1px solid #d9c48d; background: #fffaf0; }
 .ops-proposal header strong, .ops-proposal header small { display: block; }
 .ops-proposal header small { margin-top: 3px; color: var(--warn); font-size: 11px; }

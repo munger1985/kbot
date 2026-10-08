@@ -13,6 +13,7 @@ from platform_core.contracts.aiops import (
     InvestigationAssessment,
 )
 from platform_core.contracts.aiops.playbooks import PresentationPreference
+from platform_core.contracts.visualization import ChartSpec
 
 
 class TurnEvidenceFact(BaseModel):
@@ -36,6 +37,7 @@ class TurnEvidenceFact(BaseModel):
     row_count: int = Field(ge=0)
     truncated: bool = False
     warnings: tuple[str, ...] = ()
+    visualizations: tuple[ChartSpec, ...] = ()
 
 
 class TurnEvidenceGap(BaseModel):

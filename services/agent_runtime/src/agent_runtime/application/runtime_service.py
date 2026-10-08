@@ -1076,11 +1076,14 @@ class AgentRuntimeService:
                         ),
                     },
                 )
-            elif artifact.artifact_type == "ECHARTS_CONFIG":
+            elif artifact.artifact_type == "CHART_SPEC":
                 chart_payload = (
                     artifact.payload_json
                     if isinstance(artifact.payload_json, dict)
                     else {}
+                )
+                chart_source_ids = list(
+                    chart_payload.get("source_ids") or []
                 )
                 await self._append_event(
                     uow,
@@ -1097,11 +1100,13 @@ class AgentRuntimeService:
                     artifact=artifact,
                     payload={
                         "chart_type": chart_payload.get("chart_type"),
-                        "query_result_id": chart_payload.get(
-                            "query_result_id"
+                        "query_result_id": (
+                            chart_source_ids[0]
+                            if chart_source_ids
+                            else None
                         ),
                         "visualization": chart_payload,
-                        "public_summary": "ECharts 图表配置已生成",
+                        "public_summary": "语义图表已生成",
                     },
                 )
             elif artifact.artifact_type == "GROUNDED_ANSWER":

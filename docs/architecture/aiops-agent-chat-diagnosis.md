@@ -189,6 +189,8 @@ Safety Profile、执行限制和Evidence Kind。
 - `host.*`：CPU、内存、磁盘、网络、重启、OOM和服务；
 - `knowledge.*`：KC运行手册、历史案例和产品文档；
 - `analysis.*`：时间关联、单位归一、差异比较和趋势。
+- `chart`：跨 App 共用的只读图表 Skill，把已经批准的结构化证据编译为
+  `CHART_SPEC.v1`。它不产生诊断事实，也不允许从图形重算趋势、预测或根因。
 
 Tool Invocation是语义审计对象，Ops Task继续负责租约和执行状态。Tool不要求隶属于Playbook。
 

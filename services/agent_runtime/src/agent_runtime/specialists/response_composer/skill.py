@@ -22,7 +22,7 @@ from agent_runtime.specialists.document.contracts import (
     DocumentRetrievalResult,
 )
 from agent_runtime.specialists.data_query.contracts import QueryResult
-from agent_runtime.specialists.visualization import EChartsResult
+from agent_runtime.specialists.visualization import ChartSpec
 from platform_core.prompts import StrictPromptRenderer
 
 from .contracts import (
@@ -1137,11 +1137,11 @@ class ResponseComposerSkill:
         context: ExecutionContext,
     ) -> tuple[dict[str, Any], ...]:
         return tuple(
-            EChartsResult.model_validate(item.payload).model_dump(
+            ChartSpec.model_validate(item.payload).model_dump(
                 mode="json"
             )
             for item in context.input_artifacts
-            if item.artifact_type == "ECHARTS_CONFIG"
+            if item.artifact_type == "CHART_SPEC"
         )
 
     @staticmethod

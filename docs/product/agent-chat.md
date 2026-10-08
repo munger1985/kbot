@@ -110,21 +110,22 @@ context-rewrite
 回答只能引用 `CITATION_PACK` 中实际使用的 Evidence。若证据不足，返回
 `INSUFFICIENT_EVIDENCE`，不能由模型补写无来源结论。
 
-### Data Query 与 ECharts
+### Data Query 与图表 Skill
 
 ```text
 context-rewrite
   → data-query（MCP 或 Semantic）
   → QUERY_RESULT
-  → [echarts，仅用户要求图表时]
+  → [chart，仅用户要求图表时]
   → response-composer
   → GROUNDED_ANSWER + query_result_id + visualization
 ```
 
 MCP 模式调用配置的外部问数 Provider；Semantic 模式通过 Data Query 服务执行冻结的
 数据源、语义模型、策略与 Agent Binding。两种模式都输出相同的 `QUERY_RESULT`
-Artifact。它有独立 UUID，不伪装成文档引用；ECharts Skill 只输出安全 JSON，拒绝
-函数、JavaScript URL 和原型污染字段。
+Artifact。它有独立 UUID，不伪装成文档引用；Chart Skill 输出渲染器无关的
+`CHART_SPEC.v1` 安全 JSON，只包含受控坐标轴、序列和数据点，不包含函数、HTML、URL
+或特定前端库配置。相同 Skill 可由 AIOps 和其他 App Agent 复用，页面只负责按自身设计系统渲染。
 
 ### Hybrid
 
@@ -164,7 +165,7 @@ Response Composer 只使用已完成且可追溯的 Citation Pack 或 Query Resu
 | `query.rewritten` | 是否歧义、改写状态，不暴露完整内部 Prompt |
 | `retrieval.completed` | 候选 Bundle 数、Citation 数、图片处理状态 |
 | `data.query.completed` | `query_result_id`、列名、最多 20 行预览、截断状态 |
-| `chart.completed` | `query_result_id` 和完整安全 ECharts 配置 |
+| `chart.completed` | `query_result_id` 和完整安全 `CHART_SPEC.v1` |
 | `thinking.delta` | “选择了什么能力、正在检索什么”等公开过程摘要 |
 | `answer.delta` | 最终回答正文增量 |
 | `answer.completed` | 回答状态和引用数量 |
@@ -196,7 +197,7 @@ data: {
 - `status`：`READY / CLARIFICATION_REQUIRED / INSUFFICIENT_EVIDENCE`；
 - `references`：实际使用的文档 Evidence 或 Query Result；
 - `query_results`：完整问数结果；
-- `visualizations`：ECharts 配置；
+- `visualizations`：受控语义图表；
 - `warnings`：截断、模型能力缺失等降级说明。
 
 文档引用可以回到 Collection、Bundle Revision、Document Version、Evidence、

@@ -1,6 +1,6 @@
 # AIOps 诊断内核与后续能力详细设计
 
-版本：1.2
+版本：1.3
 状态：部分落地（P0/P1 主链已实施）
 基准日期：2026-09-20
 依据：
@@ -24,6 +24,8 @@ EICC 与 ADG 演练不在本期设计范围。
 - 本轮补齐：Cube 告警/巡检/运行详情只读渲染四段 blocks；P1 Finding
   `INVALID_OBJECT` / `ARCHIVE_HEADROOM` / `BACKUP_FAILED` / `LONG_TRANSACTION` / `TOP_SQL`；
   PLANNED 检查项 UI 标「规划中」且不可勾选。归档 Finding 只挂 FRA 余量，不假装有归档生成量。
+- 本轮补齐：跨 App `chart` Skill、`CHART_SPEC.v1`、监控原始点趋势图、表空间容量构成图，
+  以及趋势、当前容量和根因强度的分层表达。
 - 未做：飞书、ADG 切换演练、Host Runner、真实审批联调。
 
 ## 1. 目标
@@ -112,10 +114,11 @@ Finding Card → 指标/趋势/根因分析 → 解决方案 → 可选逐条动
    DiagnosisCompose
      1. FINDING_CARDS
      2. ANALYSIS_MARKDOWN     （模型只写这一段和方案段）
-     3. SOLUTION_MARKDOWN
-     4. PROPOSAL_SUMMARY      （仅当前一条，且仅允许动手时）
-     5. HTML_REPORT_LINKS     （AWR / SQL Monitor 等原生报告）
-     6. EVIDENCE_REFERENCES   （折叠）
+     3. CHART                 （存在可视化证据时，紧邻分析展示）
+     4. SOLUTION_MARKDOWN
+     5. PROPOSAL_SUMMARY      （仅当前一条，且仅允许动手时）
+     6. HTML_REPORT_LINKS     （AWR / SQL Monitor 等原生报告）
+     7. EVIDENCE_REFERENCES   （折叠）
 ```
 
 模型不再负责“先出什么”。它只能在已经编译好的 Finding 和批准证据上写分析与方案，
@@ -129,12 +132,44 @@ Finding Card → 指标/趋势/根因分析 → 解决方案 → 可选逐条动
 | --- | --- | --- | --- |
 | `FINDING_CARDS` | `AIOPS_FINDING_CARDS_BLOCK.v1` | Finding Compiler | 诊断 Turn 必有；零 Finding 也要出空集合和原因 |
 | `ANALYSIS_MARKDOWN` | `AIOPS_ANALYSIS_BLOCK.v1` | 模型草稿 + 服务端校验引用 | 诊断 Turn 必有 |
+| `CHART` | `AIOPS_CHART_BLOCK.v1`，载荷为 `CHART_SPEC.v1` | 平台 Chart Skill | 可信数据满足图表形态时出现，紧邻分析展示 |
 | `SOLUTION_MARKDOWN` | `AIOPS_SOLUTION_BLOCK.v1` | 模型草稿 + 服务端校验 | 诊断 Turn 必有 |
+| `PROPOSAL_SUMMARY` | 现有 `AIOPS_PROPOSAL_SUMMARY_BLOCK.v1` | 现有 Compiler | 仅第 5 段 |
 | `HTML_REPORT_LINKS` | `AIOPS_HTML_REPORT_LINKS_BLOCK.v1` | 运行时从 Tool 结果投影 | 本轮生成了原生 HTML 才有 |
-| `PROPOSAL_SUMMARY` | 现有 `AIOPS_PROPOSAL_SUMMARY_BLOCK.v1` | 现有 Compiler | 仅第 4 段 |
 | `MARKDOWN` | 现有 | 模型 | 仅非诊断 Turn |
 
-UI 顺序写死为上表 1→2→3→4→5，不允许 CSS/前端重排。调查计划、原始表、图表继续放在可折叠“诊断依据”。
+UI 按上表语义顺序渲染，不允许 CSS 视觉重排。图表直接显示在分析与方案之间；原始表格、调查计划
+和证据引用继续放在可折叠“诊断依据”。
+
+### 4.1.1 趋势与容量的表达合同
+
+趋势分析不再由模型描述一段文字后附通用柱图，而是由服务端按同一证据生成正文输入、表格和图表：
+
+```text
+OBSERVATION_SET.v1 原始监控点
+  → Chart Skill（单位归一、按序列保留极值降采样）
+  → CHART_SPEC.v1 / LINE / SMALL_MULTIPLES
+  → AIOPS_CHART_BLOCK.v1
+
+db.storage.capacity 当前快照
+  → Chart Skill（已用 / 当前已分配余量 / 可扩展余量）
+  → CHART_SPEC.v1 / STACKED_BAR / NORMALIZED
+  → AIOPS_CHART_BLOCK.v1
+```
+
+产品表达遵循以下顺序：
+
+1. 数据口径：历史窗口、时区、监控采样覆盖率、容量快照时间；覆盖率只表示采样完整性。
+2. 风险分层：硬容量接近上限、持续增长、当前已分配空间占用高分别排序，不合并成单一“最高风险”。
+3. 趋势统计：`change_per_day` 称“首末日均变化”，`trend_slope_per_day` 称“稳健趋势斜率”；
+   两者可以不同，不能都写成日均增长。
+4. 单位：监控 bytes 和容量快照统一展示为 MiB/GiB；不在同一结果混写 MB 与 MiB。
+5. 特殊空间：TEMP、UNDO 以峰值、P95或波动区间解释；期初期末相同不能证明窗口内没有风险。
+6. 根因强度：新增对象或分区只能证明活动，不能证明主要空间来源；没有对象级占用时最多标“可能”。
+
+折线图默认采用 small multiples，避免大表空间把小表空间的变化压平。数据文件自动扩展等事件只有在
+本轮存在带时间戳的来源证据时才作为 annotation 加入，禁止根据曲线台阶猜测事件。容量图以最大容量
+为 100% 显示三段，同时在行内给出“当前已分配使用率”，明确当前分配告警与硬上限风险的区别。
 
 ### 4.2 Finding Card
 
@@ -252,6 +287,10 @@ Finding Compiler 用新列映射 `LOCK_WAIT`。字段缺失则卡片仍出，值
 | `turn_answer_handlers.py` | 先编译 Finding，再调模型，再按固定顺序组 block；Proposal 插到方案之后 |
 | `aiops_agent.answer_compose` / `answer_stream` | 诊断 Turn 取消“不要套模板”；改为“必须基于给定 Finding 写分析和方案，不得改字段” |
 | `ui/aiops/js/aiops-workspaces.js` | 卡片组件；分析/方案分区；Proposal 只跟在方案后；巡检结果复用同一渲染 |
+| `platform_core.visualization.ChartSkill` | 跨 App 的受控图表编译；不调用模型，不生成前端代码 |
+| `agent_runtime.specialists.visualization.ChartSkill` | 把 `QUERY_RESULT` 适配成 `CHART_SPEC.v1` |
+| `turn_answer_handlers.py` | 从监控原始点和容量快照调用同一 Chart Skill，禁止从摘要反推曲线 |
+| `ui/aiops/js/aiops-workspaces.js` | 渲染 LINE small multiples、规范化容量条和普通比较条 |
 | 自动 Run | 告警/巡检创建时 `action_intent=NONE`，不跑 change handler |
 
 非诊断 Turn 仍用现有单段 Markdown，避免把“什么是 enqueue”做成空巡检报告。

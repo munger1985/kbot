@@ -56,7 +56,10 @@ from aiops_agent.contracts.turn_answer import (
     TurnEvidenceFact,
     TurnEvidenceGap,
 )
-from aiops_agent.domain.evidence import extract_metric_trend_rows, summarize_numeric_trend
+from aiops_agent.domain.evidence import (
+    extract_metric_trend_rows,
+    summarize_numeric_trend,
+)
 from platform_core.contracts.aiops import (
     AnswerBlockType,
     ImplementationProfile,
@@ -64,6 +67,8 @@ from platform_core.contracts.aiops import (
     MeasurementSemantics,
     SufficiencyStatus,
 )
+from platform_core.contracts.visualization import ChartSpec
+from platform_core.visualization import ChartSkill
 
 from .handlers import TaskExecutionContext
 
@@ -1162,6 +1167,10 @@ class DbaEvidenceAssessmentHandler:
                 "logical_type": "DECIMAL",
             },
         )
+        visualizations = DbaEvidenceAssessmentHandler._monitoring_charts(
+            artifact_id=artifact_id,
+            result=result,
+        )
         return TurnEvidenceFact(
             evidence_ref=f"artifact:{artifact_id}#prometheus",
             artifact_id=artifact_id,
@@ -1169,14 +1178,98 @@ class DbaEvidenceAssessmentHandler:
             step_id="prometheus",
             tool_id="metric.query_range",
             measurement_semantics=MeasurementSemantics.HISTORICAL_SAMPLES,
-            presentation_kind="TABLE",
+            presentation_kind=(
+                "TABLE_AND_CHART" if visualizations else "TABLE"
+            ),
             captured_at=result.collected_at.isoformat(),
             columns=columns,
             rows=tuple(rows),
             row_count=len(rows),
             truncated=any(item.truncated for item in result.observations),
             warnings=tuple(dict.fromkeys(warnings)),
+            visualizations=visualizations,
         )
+
+    @staticmethod
+    def _monitoring_charts(
+        *, artifact_id: str, result: ObservationSet
+    ) -> tuple[ChartSpec, ...]:
+        """把原始监控点交给共享 Chart Skill，不从摘要值反推曲线。"""
+        titles = {
+            "db.storage.used_bytes": "表空间使用量趋势",
+            "db.storage.utilization": "表空间使用率趋势",
+            "db.storage.max_bytes": "表空间最大容量趋势",
+        }
+        charts: list[ChartSpec] = []
+        metric_codes = {
+            item.metric_code for item in result.observations
+        }
+        for observation in result.observations:
+            if (
+                "db.storage.used_bytes" in metric_codes
+                and observation.metric_code
+                in {"db.storage.utilization", "db.storage.max_bytes"}
+            ):
+                continue
+            series = []
+            for index, item in enumerate(observation.series):
+                points = [
+                    {"x": point.observed_at.isoformat(), "y": point.value}
+                    for point in item.points
+                    if point.quality == "GOOD"
+                    and isinstance(point.value, (int, float))
+                    and not isinstance(point.value, bool)
+                ]
+                if len(points) < 2:
+                    continue
+                dimensions = {
+                    key: value
+                    for key, value in item.dimensions.items()
+                    if key not in {"target_key", "instance"}
+                }
+                name = str(
+                    dimensions.get("tablespace")
+                    or dimensions.get("tablespace_name")
+                    or ", ".join(
+                        f"{key}={value}"
+                        for key, value in sorted(dimensions.items())
+                    )
+                    or f"序列 {index + 1}"
+                )
+                series.append(
+                    {
+                        "series_key": ",".join(
+                            f"{key}={value}"
+                            for key, value in sorted(item.dimensions.items())
+                        )
+                        or f"series-{index + 1}",
+                        "name": name,
+                        "points": points,
+                    }
+                )
+            if not series:
+                continue
+            charts.append(
+                ChartSkill.time_series(
+                    title=titles.get(
+                        observation.metric_code,
+                        f"{observation.metric_code} 趋势",
+                    ),
+                    unit=observation.unit,
+                    series=series,
+                    source_ids=(f"artifact:{artifact_id}#prometheus",),
+                    metadata={
+                        "metric_code": observation.metric_code,
+                        "window_start": observation.window_start.isoformat(),
+                        "window_end": observation.window_end.isoformat(),
+                        "coverage_ratio": round(
+                            observation.coverage_ratio, 4
+                        ),
+                        "sample_count": observation.actual_points,
+                    },
+                )
+            )
+        return tuple(charts[:4])
 
 
 _HTML_REPORT_TOOLS = {
@@ -1308,7 +1401,7 @@ class DbaAnswerComposeHandler:
                     answer_context.get("input_envelope", {})
                 ),
                 "task_frame": dict(answer_context.get("task_frame", {})),
-                "sufficiency": assessment.model_dump(mode="json"),
+                "sufficiency": self._model_assessment_payload(assessment),
                 "proposal_summary": proposal_summary,
             },
             deadline=self._deadline(context.deadline_at),
@@ -1414,7 +1507,12 @@ class DbaAnswerComposeHandler:
             strict=True,
         ):
             evidence_payload.append(
-                {"label": label, **fact.model_dump(mode="json")}
+                {
+                    "label": label,
+                    **fact.model_dump(
+                        mode="json", exclude={"visualizations"}
+                    ),
+                }
             )
         yield DbaAnswerProgress(
             event_type="thinking.delta",
@@ -1676,7 +1774,22 @@ class DbaAnswerComposeHandler:
         html_block = self._html_report_links_block(assessment.evidence)
         if html_block is not None:
             blocks.append(html_block)
-        blocks.extend(self._data_blocks(assessment.evidence))
+        data_blocks = list(self._data_blocks(assessment.evidence))
+        if diagnosis:
+            chart_blocks = [
+                item
+                for item in data_blocks
+                if item.block_type == AnswerBlockType.CHART
+            ]
+            table_blocks = [
+                item
+                for item in data_blocks
+                if item.block_type == AnswerBlockType.TABLE
+            ]
+            blocks[2:2] = chart_blocks
+            blocks.extend(table_blocks)
+        else:
+            blocks.extend(data_blocks)
         evidence_request = (
             None
             if self._is_implementation_runbook(context)
@@ -1695,11 +1808,7 @@ class DbaAnswerComposeHandler:
         proposal_summary: dict[str, Any] | None,
     ) -> dict[str, Any]:
         answer_context = dict(context.plan_snapshot.get("answer_context", {}))
-        sufficiency = assessment.model_dump(mode="json")
-        sufficiency["evidence"] = [
-            self._compose_evidence_payload(fact)
-            for fact in assessment.evidence
-        ]
+        sufficiency = self._model_assessment_payload(assessment)
         task_frame = dict(answer_context.get("task_frame", {}))
         payload = {
             "question": str(answer_context.get("question", "")),
@@ -1729,10 +1838,21 @@ class DbaAnswerComposeHandler:
 
     @staticmethod
     def _compose_evidence_payload(fact: TurnEvidenceFact) -> dict[str, Any]:
-        payload = fact.model_dump(mode="json")
+        payload = fact.model_dump(mode="json", exclude={"visualizations"})
         if fact.tool_id in _HTML_REPORT_TOOLS:
             payload["rows"] = []
             payload["columns"] = []
+        return payload
+
+    @classmethod
+    def _model_assessment_payload(
+        cls, assessment: DbaSufficiencyAssessment
+    ) -> dict[str, Any]:
+        payload = assessment.model_dump(mode="json", exclude={"evidence"})
+        payload["evidence"] = [
+            cls._compose_evidence_payload(fact)
+            for fact in assessment.evidence
+        ]
         return payload
 
     @staticmethod
@@ -2347,23 +2467,45 @@ class DbaAnswerComposeHandler:
                         evidence_refs=(fact.evidence_ref,),
                     )
                 )
-            chart = DbaAnswerComposeHandler._chart_payload(fact)
-            if (
-                chart is not None
-                and fact.presentation_kind in {"CHART", "TABLE_AND_CHART"}
-            ):
+            charts = list(fact.visualizations)
+            if not charts:
+                chart = DbaAnswerComposeHandler._chart_payload(fact)
+                if chart is not None:
+                    charts.append(chart)
+            if fact.presentation_kind not in {"CHART", "TABLE_AND_CHART"}:
+                charts = []
+            for chart in charts:
                 blocks.append(
                     TurnAnswerBlock(
                         block_type=AnswerBlockType.CHART,
                         schema_version="AIOPS_CHART_BLOCK.v1",
-                        payload=chart,
+                        payload=chart.model_dump(mode="json"),
                         evidence_refs=(fact.evidence_ref,),
                     )
                 )
         return tuple(blocks)
 
     @staticmethod
-    def _chart_payload(fact: TurnEvidenceFact) -> dict[str, Any] | None:
+    def _chart_payload(fact: TurnEvidenceFact) -> ChartSpec | None:
+        column_names = [str(item.get("name") or "") for item in fact.columns]
+        rows = [
+            {
+                name: row[index]
+                for index, name in enumerate(column_names)
+                if name and index < len(row)
+            }
+            for row in fact.rows
+        ]
+        if fact.tool_id == "db.storage.capacity":
+            try:
+                return ChartSkill.capacity(
+                    title="表空间当前容量与最大扩展余量",
+                    rows=rows,
+                    source_ids=(fact.evidence_ref,),
+                    metadata={"captured_at": fact.captured_at},
+                )
+            except ValueError:
+                return None
         dimension = next(
             (
                 index
@@ -2382,16 +2524,15 @@ class DbaAnswerComposeHandler:
         )
         if dimension is None or metric is None or not fact.rows:
             return None
-        return {
-            "title": fact.tool_id,
-            "chart_type": "BAR",
-            "category": fact.columns[dimension]["name"],
-            "metric": fact.columns[metric]["name"],
-            "categories": [row[dimension] for row in fact.rows[:50]],
-            "series": [row[metric] for row in fact.rows[:50]],
-            "captured_at": fact.captured_at,
-            "measurement_semantics": fact.measurement_semantics,
-        }
+        try:
+            return ChartSkill.tabular(
+                title=fact.tool_id,
+                columns=fact.columns,
+                rows=rows[:50],
+                source_ids=(fact.evidence_ref,),
+            )
+        except ValueError:
+            return None
 
     @staticmethod
     def _deadline(value: str | None) -> datetime | None:

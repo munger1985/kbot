@@ -11,7 +11,7 @@ Execution Spec 声明能力、指令、检索范围、问数绑定和功能模�
 不同成本和能力的模型；运行时使用冻结的模型身份和调用配置。
 
 Skill 是 Runtime 内的版本化执行单元。知识检索 Agent 链路包括上下文改写、
-知识检索、Data Query、Hybrid、回答组合和 ECharts。问数 Skill 可按冻结配置调用
+知识检索、Data Query、Hybrid、回答组合和 Chart。问数 Skill 可按冻结配置调用
 MCP 或 Semantic Data Query。AIOps Agent 使用独立的 AIOps Run、Worker 和状态机，
 不进入知识检索 Root Planner。
 
@@ -27,8 +27,18 @@ Heartbeat、重试次数和幂等键执行；Worker 崩溃后只接管未完成 
 可变全局 Context，而是读取声明的输入 Artifact 并产生一个版本化输出 Artifact。
 
 主要 Artifact 包括 `CONTEXT_REWRITE`、`CITATION_PACK`、`QUERY_RESULT`、
-`ECHARTS_CONFIG` 和 `GROUNDED_ANSWER`。Response Composer 只能使用已完成 Artifact；
+`CHART_SPEC` 和 `GROUNDED_ANSWER`。Response Composer 只能使用已完成 Artifact；
 没有 Citation 时必须返回证据不足，不能调用模型补写无来源内容。
+
+Chart 是独立、跨 App 的只读 Skill。输入只能来自已经完成的结构化 Artifact，输出
+`CHART_SPEC.v1`，描述图表意图、坐标轴、序列、数据点、单位、布局和来源，不包含 ECharts
+option、HTML、formatter 或任何可执行代码。常见问数由 `QUERY_RESULT` 确定性生成比较图或
+时间序列图；AIOps 独立状态机复用同一平台 Chart Skill，从监控原始点和数据库容量快照生成
+趋势图与容量图，不进入知识检索 Root Planner。
+
+`CHART_SPEC.v1` 是呈现合同，不是新证据：Skill 不得从图形重算趋势、根因或预测；所有数据点
+必须能回溯到 `source_ids`。时间序列每条最多保留 240 个展示点，采用保留分桶极值的确定性
+降采样，原始证据 Artifact 不被替换。前端按 App 设计系统实现渲染，不能让模型生成页面代码。
 
 ## Conversation 与记忆
 

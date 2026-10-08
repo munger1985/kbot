@@ -1335,6 +1335,10 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertIsNotNone(
             fact.rows[0][columns["trend_slope_per_day"]]
         )
+        self.assertEqual("TABLE_AND_CHART", fact.presentation_kind)
+        self.assertEqual(1, len(fact.visualizations))
+        self.assertEqual("LINE", fact.visualizations[0].chart_type)
+        self.assertEqual("OVERLAY", fact.visualizations[0].layout)
 
     def test_monitoring_low_coverage_requests_database_fallback(self) -> None:
         artifact = _monitoring_artifact()
@@ -2176,6 +2180,11 @@ class DbaTurnAnswerTest(unittest.TestCase):
         )
         self.assertNotIn(evidence_ref, result.blocks[0].payload["markdown"])
         self.assertEqual((evidence_ref,), result.blocks[0].evidence_refs)
+        model_payload = handler._model.calls[0]["input_payload"]
+        self.assertNotIn(
+            "visualizations",
+            model_payload["sufficiency"]["evidence"][0],
+        )
 
     def test_answer_model_receives_registered_proposal_summary(self) -> None:
         assessment = asyncio.run(
@@ -2211,10 +2220,9 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("ADVISORY_READY", proposal["status"])
         self.assertIn("DBMS_STATS", proposal["command_preview"])
         block_types = [item.block_type for item in result.blocks]
-        self.assertEqual(
-            AnswerBlockType.PROPOSAL_SUMMARY,
-            block_types[3],
-        )
+        self.assertEqual(AnswerBlockType.CHART, block_types[2])
+        self.assertEqual(AnswerBlockType.SOLUTION_MARKDOWN, block_types[3])
+        self.assertEqual(AnswerBlockType.PROPOSAL_SUMMARY, block_types[4])
         self.assertNotEqual(
             AnswerBlockType.PROPOSAL_SUMMARY,
             result.blocks[-1].block_type,

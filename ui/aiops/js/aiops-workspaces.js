@@ -132,7 +132,7 @@
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
       const narrative = values(result?.payload?.blocks).filter(
-        (block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type),
+        (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type),
       );
       return narrative.map((block) => answerBlockHtml(block, turn)).join("")
         || markdown.render("本次巡检已完成，但未生成可展示的巡检结论。");
@@ -167,7 +167,7 @@
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
       const narrative = values(result?.payload?.blocks).filter(
-        (block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type),
+        (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type),
       );
       return narrative.map((block) => answerBlockHtml(block, turn)).join("")
         || markdown.render("Agent 已完成诊断，但本轮没有生成可展示的文字结论。");
@@ -754,6 +754,86 @@
     );
   }
 
+  function chartNumber(value, unit) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "-";
+    const digits = Math.abs(number) >= 100 ? 1 : 2;
+    return `${number.toLocaleString(undefined, { maximumFractionDigits: digits })}${unit ? ` ${unit}` : ""}`;
+  }
+
+  function chartTimeLabel(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value || "-");
+    return new Intl.DateTimeFormat(undefined, {
+      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    }).format(date);
+  }
+
+  function lineChartHtml(payload) {
+    const width = 640;
+    const height = 116;
+    const padding = { left: 8, right: 8, top: 12, bottom: 18 };
+    const seriesHtml = values(payload.series).map((series) => {
+      const points = values(series.points).map((point) => ({
+        x: new Date(point.x).getTime(), y: Number(point.y), raw: point,
+      })).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+      if (!points.length) return "";
+      const minX = Math.min(...points.map((point) => point.x));
+      const maxX = Math.max(...points.map((point) => point.x));
+      const minY = Math.min(...points.map((point) => point.y));
+      const maxY = Math.max(...points.map((point) => point.y));
+      const xSpan = Math.max(1, maxX - minX);
+      const ySpan = maxY - minY;
+      const plotHeight = height - padding.top - padding.bottom;
+      const plotY = (value) => ySpan === 0
+        ? padding.top + plotHeight / 2
+        : padding.top + (maxY - value) / ySpan * plotHeight;
+      const path = points.map((point, index) => {
+        const x = padding.left + (point.x - minX) / xSpan * (width - padding.left - padding.right);
+        const y = plotY(point.y);
+        return `${index ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`;
+      }).join(" ");
+      const latest = points[points.length - 1].raw;
+      return `<section class="ops-line-series"><header><strong>${esc(series.name || series.series_key || "序列")}</strong><span>${esc(latest.display_value || chartNumber(latest.y, series.unit))}</span></header><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(series.name || "趋势")}"><line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" class="ops-chart-axis"></line><path d="${path}" class="ops-chart-line"></path><circle cx="${width - padding.right}" cy="${plotY(points[points.length - 1].y).toFixed(2)}" r="3" class="ops-chart-last"></circle><text x="${padding.left}" y="${height - 3}" text-anchor="start">${esc(chartTimeLabel(points[0].raw.x))}</text><text x="${width - padding.right}" y="${height - 3}" text-anchor="end">${esc(chartTimeLabel(latest.x))}</text><text x="${padding.left}" y="10">${esc(chartNumber(maxY, series.unit))}</text></svg><footer><span>最低 ${esc(chartNumber(minY, series.unit))}</span><span>最高 ${esc(chartNumber(maxY, series.unit))}</span></footer></section>`;
+    }).join("");
+    const coverage = Number(payload.metadata?.coverage_ratio);
+    const meta = Number.isFinite(coverage)
+      ? `<small>监控采样覆盖率 ${(coverage * 100).toFixed(1)}%</small>`
+      : "";
+    return `<figure class="ops-evidence-chart ops-line-chart"><figcaption><span>${esc(payload.title || "趋势")}</span>${meta}</figcaption><div class="ops-line-grid">${seriesHtml}</div></figure>`;
+  }
+
+  function stackedChartHtml(payload) {
+    const series = values(payload.series);
+    const categories = values(series[0]?.points).map((point) => point.x);
+    const legend = series.map((item) => `<span class="is-${esc(item.series_key || "value")}"><i></i>${esc(item.name || item.series_key)}</span>`).join("");
+    const rows = categories.map((category) => {
+      const segments = series.map((item) => values(item.points).find((point) => point.x === category) || { y: 0 });
+      const metadata = segments[0]?.metadata || {};
+      const bars = segments.map((point, index) => {
+        const value = Math.max(0, Math.min(100, Number(point.y) || 0));
+        return `<i class="is-${esc(series[index]?.series_key || "value")}" style="width:${value}%" title="${esc(`${series[index]?.name || ""} ${point.display_value || chartNumber(point.y, "%")}`)}"></i>`;
+      }).join("");
+      const label = metadata.allocated_used_percent != null
+        ? `已分配使用率 ${chartNumber(metadata.allocated_used_percent, "%")}`
+        : "";
+      return `<div class="ops-capacity-row"><strong>${esc(category)}</strong><div class="ops-capacity-main"><div class="ops-capacity-track">${bars}</div><small>${esc(label)}${metadata.maximum_mib != null ? ` · 最大 ${esc(chartNumber(metadata.maximum_mib, "MiB"))}` : ""}</small></div></div>`;
+    }).join("");
+    return `<figure class="ops-evidence-chart ops-capacity-chart"><figcaption><span>${esc(payload.title || "容量")}</span></figcaption><div class="ops-chart-legend">${legend}</div><div class="ops-capacity-rows">${rows}</div></figure>`;
+  }
+
+  function barChartHtml(payload) {
+    const series = values(payload.series);
+    const maximum = Math.max(0, ...series.flatMap((item) => values(item.points)).map((point) => Number(point.y)).filter(Number.isFinite));
+    const rows = series.flatMap((item) => values(item.points).map((point) => {
+      const raw = Number(point.y);
+      const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0;
+      const label = series.length > 1 ? `${point.x ?? "-"} · ${item.name || item.series_key}` : point.x ?? "-";
+      return `<div class="ops-chart-row"><span>${esc(label)}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(point.display_value || chartNumber(raw, item.unit))}</strong></div>`;
+    })).join("");
+    return `<figure class="ops-evidence-chart"><figcaption><span>${esc(payload.title || "指标对比")}</span></figcaption><div class="ops-chart-rows">${rows}</div></figure>`;
+  }
+
   function htmlReportLinksHtml(payload, turn) {
     const reports = values(payload.reports);
     if (!reports.length) return "";
@@ -857,13 +937,9 @@
       return `<div class="ops-table-wrap"><table><thead><tr>${columns.map((column) => `<th>${esc(column.label || column.name || column.key || column)}</th>`).join("")}</tr></thead><tbody>${values(payload.rows).map((row) => `<tr>${columns.map((column, index) => `<td>${esc(cell(row, column, index) ?? "-")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     }
     if (block.block_type === "CHART") {
-      const categories = values(payload.categories);
-      const sourceSeries = values(payload.series);
-      const series = sourceSeries.map((item, index) => typeof item === "object"
-        ? item
-        : { label: categories[index] ?? "-", value: item });
-      const maximum = Math.max(0, ...series.map((item) => Number(item.value)).filter(Number.isFinite));
-      return `<figure class="ops-tablespace-chart"><figcaption>${esc(payload.title || "指标对比")}</figcaption><div class="ops-chart-rows">${series.map((item) => { const raw = Number(item.value); const width = Number.isFinite(raw) && maximum > 0 ? Math.max(0, Math.min(100, raw / maximum * 100)) : 0; return `<div class="ops-chart-row"><span>${esc(item.label || item.name || "-")}</span><div class="ops-chart-track"><i style="width:${width}%"></i></div><strong>${esc(item.display_value ?? item.value ?? "-")}</strong></div>`; }).join("")}</div></figure>`;
+      if (payload.chart_type === "LINE") return lineChartHtml(payload);
+      if (payload.chart_type === "STACKED_BAR") return stackedChartHtml(payload);
+      return barChartHtml(payload);
     }
     if (block.block_type === "PROPOSAL_SUMMARY") {
       const parameters = Object.entries(payload.parameters || {}).map(([key, value]) => `<li><code>${esc(key)}</code><span>${esc(typeof value === "object" ? JSON.stringify(value) : value)}</span></li>`).join("");
@@ -886,7 +962,7 @@
 
   function turnEvidenceHtml(blocks, gaps = []) {
     const evidence = new Map();
-    const dataBlocks = blocks.filter((block) => ["TABLE", "CHART"].includes(block.block_type));
+    const dataBlocks = blocks.filter((block) => block.block_type === "TABLE");
     const add = (key, label, meta) => {
       const normalizedLabel = String(label || "诊断证据").trim();
       const normalizedKey = String(key || normalizedLabel.toLowerCase());
@@ -1109,7 +1185,7 @@
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
     const answerBlocks = values(turn.answer_blocks);
-    const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "CHART", "EVIDENCE_REFERENCES"].includes(block.block_type));
+    const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type));
     const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps);
     const plan = investigationPlanHtml(turn.investigation_plan);

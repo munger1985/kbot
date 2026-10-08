@@ -71,6 +71,13 @@ from .model import (
     is_grok_provider_model_name,
 )
 from . import data_query
+from .visualization import (
+    ChartAnnotation,
+    ChartAxis,
+    ChartPoint,
+    ChartSeries,
+    ChartSpec,
+)
 
 __all__ = [
     "AgentExecutionSpec",
@@ -118,6 +125,11 @@ __all__ = [
     "ResearchRequest",
     "ResearchResult",
     "IdentityEntryKind",
+    "ChartAnnotation",
+    "ChartAxis",
+    "ChartPoint",
+    "ChartSeries",
+    "ChartSpec",
     "ServiceIdentity",
     "SlackWebhookEnvelope",
     "SlackWebhookReceipt",

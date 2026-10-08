@@ -618,9 +618,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("turnEvidenceHtml", workspace)
         self.assertIn(
             'const dataBlocks = blocks.filter((block) => '
-            '["TABLE", "CHART"].includes(block.block_type))',
+            'block.block_type === "TABLE")',
             workspace,
         )
+        self.assertIn('payload.chart_type === "LINE"', workspace)
+        self.assertIn('payload.chart_type === "STACKED_BAR"', workspace)
         self.assertIn('const narrativeBlocks = answerBlocks.filter', workspace)
         self.assertIn("原始取证结果", workspace)
         self.assertNotIn("answerBlocks.map(answerBlockHtml).join", workspace)

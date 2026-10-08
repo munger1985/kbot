@@ -24,7 +24,7 @@ from agent_runtime.specialists.km_asset import (
     KmAssetResponseComposerSkill as ResponseComposerSkill,
     KmAssetSemanticDataQueryExecutor as SemanticDataQueryExecutor,
 )
-from agent_runtime.specialists.visualization import EChartsSkill
+from agent_runtime.specialists.visualization import ChartSkill
 from agent_runtime.specialists.root import (
     RootAgentPlanner,
     RouteType,
@@ -1562,7 +1562,7 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             [
                 "context_rewrite",
                 "data_query",
-                "echarts",
+                "chart",
                 "response_compose",
             ],
         )
@@ -2205,45 +2205,36 @@ class AgentChatCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("文档还是业务数据", result.artifact.payload["answer"])
 
-    async def test_echarts_rejects_executable_formatter(self):
-        skill = EChartsSkill(
-            model_client=_ModelClient(
-                response={
-                    "chart_type": "bar",
-                    "title": "销售",
-                    "option": {
-                        "tooltip": {
-                            "formatter": "function(x){return x.value}"
-                        }
-                    },
-                }
-            ),
-            prompt_resolver=_PromptResolver(),
-        )
+    async def test_chart_skill_builds_renderer_independent_spec(self):
+        skill = ChartSkill()
         query = {
             "schema": "QUERY_RESULT.v1",
             "query_result_id": str(uuid7()),
             "provider": "MCP",
-            "columns": [{"name": "sales"}],
-            "rows": [{"sales": 10}],
-            "row_count": 1,
+            "columns": [
+                {"name": "region"},
+                {"name": "sales"},
+            ],
+            "rows": [
+                {"region": "华东", "sales": 10},
+                {"region": "华南", "sales": 8},
+            ],
+            "row_count": 2,
             "truncated": False,
             "warnings": [],
             "provenance": {"profile": "SALES_PROFILE"},
         }
-        with self.assertRaisesRegex(ValueError, "可执行脚本"):
-            await skill.execute(
-                _context(
-                    agent={
-                        "models": {
-                            "composer_llm": {
-                                "served_model_name": "chart-model"
-                            }
-                        }
-                    },
-                    artifacts=(_artifact("QUERY_RESULT", query),),
-                )
+        result = await skill.execute(
+            _context(
+                agent={},
+                artifacts=(_artifact("QUERY_RESULT", query),),
             )
+        )
+
+        self.assertEqual("CHART_SPEC", result.artifact.artifact_type)
+        self.assertEqual("CHART_SPEC.v1", result.artifact.schema_version)
+        self.assertEqual("BAR", result.artifact.payload["chart_type"])
+        self.assertEqual("华东", result.artifact.payload["series"][0]["points"][0]["x"])
 
     def test_dify_records_use_document_evidence(self):
         bundle_id = uuid7()

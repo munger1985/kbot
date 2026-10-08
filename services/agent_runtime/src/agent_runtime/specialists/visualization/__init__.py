@@ -1,6 +1,6 @@
-"""受控可视化 Specialist。"""
+"""受控图表 Specialist。"""
 
-from .contracts import EChartsResult
-from .skill import EChartsSkill
+from .contracts import ChartSpec
+from .skill import ChartSkill
 
-__all__ = ["EChartsResult", "EChartsSkill"]
+__all__ = ["ChartSpec", "ChartSkill"]

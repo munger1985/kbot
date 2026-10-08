@@ -572,21 +572,6 @@ operation=LIST 时只输出逐项清单；operation=COUNT 或 GROUP 时只输出
 """
 
 [[prompts]]
-prompt_key = "agent_runtime.generate_echarts"
-owner_service = "agent_runtime"
-version = "1.0.0"
-active = true
-purpose = "根据 QueryResult 生成前端可直接渲染的 ECharts option"
-input_variables = []
-output_schema = "EChartsResultDraft.v1"
-content = """
-你是 ECharts 配置生成器。只能使用输入 QueryResult 中存在的字段和值。
-选择最适合用户要求和数据形态的图表；不得生成 JavaScript 函数、formatter 函数字符串、
-HTML、外部 URL 或可执行代码。option 必须是纯 JSON 对象。
-输出 JSON 字段必须为 chart_type、title、option，不要输出其他文本。
-"""
-
-[[prompts]]
 prompt_key = "aiops_agent.compact_planner"
 owner_service = "aiops_agent"
 version = "1.0.0"
@@ -948,6 +933,12 @@ content = """
 11. task_frame.implementation_profile 不为 NONE 时，只摘要当前前置条件和方案状态；完整命令、
     验证、风险和回退由服务端 IMPLEMENTATION_RUNBOOK 区块展示。不得把缺少备库地址或路径写成
     拒绝生成方案的理由，也不得在正文另行编造命令。
+12. 趋势与当前容量同时出现时，先说明两类证据各自的采集时间和口径；按“硬容量接近上限、
+    持续增长、当前已分配空间占用高”分别排序，不把三者合并成一个含混的最高风险。
+13. change_per_day 是首末变化除以真实窗口，trend_slope_per_day 是稳健趋势斜率；同时使用时必须
+    分别命名，禁止都写成“日均增长”。coverage_ratio 只称为监控采样覆盖率，不能说成根因证据完整度。
+14. 单位必须统一。bytes 转换后的二进制容量使用 MiB/GiB，不得在同一回答混写 MB 与 MiB。
+    TEMP、UNDO 等波动型空间优先说明峰值和波动，不以首末相同证明期间没有风险。
 """
 
 [[prompts]]
@@ -990,6 +981,10 @@ history_elapsed_days明确说明低置信度及复核要求，不得表述为“
 task_frame.implementation_profile 不为 NONE 时，只输出当前前置状态和 Runbook 交付摘要；完整
 步骤由服务端结构化区块展示。缺少备库地址、路径或保护模式时说明方案内已有显式占位符，不得
 要求用户先补齐后才生成，也不得自行编造额外命令。
+趋势与当前容量同时出现时先声明两类证据的时间与口径，并分别表达硬容量风险、持续增长风险和
+当前已分配空间占用告警。change_per_day 是首末日均变化，trend_slope_per_day 是稳健趋势斜率，
+不得混称；coverage_ratio 只能称监控采样覆盖率。容量单位统一使用 MiB/GiB。TEMP、UNDO 等
+波动型空间优先说明峰值和波动，不能仅凭期初期末相同下结论。
 """
 
 [[prompts]]
@@ -1014,6 +1009,12 @@ Finding 字段由服务端编译，你不得新增、删除或改写任何 Findi
 5. 零行证据表示当前没有匹配对象，不等于未取证；只能把 findings.gaps 或 sufficiency.gaps 中明确存在的项目声明为缺失。
 6. 累计值不能表述成最近若干分钟的增量或实时速率。
 7. 原始表格、图表和 HTML 报告由服务端单独展示，分析只提炼结论。
+8. 有历史与当前容量两类证据时，分析开头先说明窗口、时区、监控采样覆盖率、容量快照时间和
+   口径差异；随后分别给出硬容量风险、持续增长风险和当前已分配空间占用告警，避免含混总排名。
+9. change_per_day 是首末日均变化，trend_slope_per_day 是稳健趋势斜率；两者必须分别命名。
+   使用 MiB/GiB 统一容量单位。TEMP、UNDO 等波动型空间使用峰值和波动语义。
+10. 根因等级必须与证据强度匹配。对象创建、分区新增等活动证据不能替代对象级空间占用证据，
+    不能据此把某对象升级为已确认或很可能的主要增长来源。
 
 方案段规则：
 1. 只给可执行路径：缓解、修复、回滚、验证，或明确不做的理由。
@@ -1040,6 +1041,10 @@ content = """
 分析段解释每张卡片为什么成立或为什么还不能下结论；根因只用已确认 / 很可能 / 可能 / 无法判断，
 并引用 Finding 或 evidence_refs。零行表示当前没有匹配对象，不等于未取证。未确认快照号或 sql_id 时
 禁止猜测。原始表、图表和 HTML 报告由服务端展示。
+有历史与当前容量两类证据时，先说明窗口、时区、监控采样覆盖率、容量快照时间和口径差异，
+再分别表达硬容量风险、持续增长风险和当前已分配空间占用告警。change_per_day 与
+trend_slope_per_day 必须分别命名；容量统一使用 MiB/GiB。TEMP、UNDO 使用峰值和波动语义。
+对象活动证据不能替代对象级空间占用证据，不能据此升级主要增长来源的根因等级。
 
 方案段只给缓解、修复、回滚、验证或不做的理由。没有 Finding 时允许继续观察。
 不得自行编造 SQL；proposal_summary 若存在才是权威语句。不得承诺执行未经审批的变更。

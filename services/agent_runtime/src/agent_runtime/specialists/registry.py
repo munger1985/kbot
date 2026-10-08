@@ -17,7 +17,7 @@ from .data_query import (
     MCPDataQueryExecutor,
     SemanticDataQueryExecutor,
 )
-from .visualization import EChartsSkill
+from .visualization import ChartSkill
 from .hybrid import DataConstraintExtractSkill, DocumentScopeExtractSkill
 from .response_composer import ResponseComposerSkill
 from .km_asset import (
@@ -145,26 +145,26 @@ DATA_QUERY_MANIFEST = SkillManifest(
     external_dependencies=("selectai_aireport", "data_query_api"),
 )
 
-ECHARTS_MANIFEST = SkillManifest(
-    skill_id="echarts",
+CHART_MANIFEST = SkillManifest(
+    skill_id="chart",
     version="1.0.0",
     owner="agent-runtime",
     specialist="visualization",
-    description="将 QUERY_RESULT 转换为前端可直接渲染的 ECharts option",
-    input_schema="EChartsInput.v1",
+    description="将可信结构化数据编译为跨 App 可渲染的语义图表",
+    input_schema="ChartInput.v1",
     output_artifacts=(
         ArtifactDeclaration(
-            artifact_type="ECHARTS_CONFIG",
-            schema_version="EChartsResult.v1",
+            artifact_type="CHART_SPEC",
+            schema_version="CHART_SPEC.v1",
         ),
     ),
     permissions=(),
     execution_mode=ExecutionMode.READ_ONLY,
     idempotent=True,
-    timeout_seconds=120,
-    max_retries=1,
+    timeout_seconds=30,
+    max_retries=0,
     data_classification=DataClassification.CONFIDENTIAL,
-    external_dependencies=("llm_service", "prompt_registry"),
+    external_dependencies=(),
 )
 
 DATA_CONSTRAINT_EXTRACT_MANIFEST = SkillManifest(
@@ -302,11 +302,8 @@ def register_builtin_skills(
         ),
     )
     registry.register(
-        ECHARTS_MANIFEST,
-        EChartsSkill(
-            model_client=model_client,
-            prompt_resolver=prompt_resolver,
-        ),
+        CHART_MANIFEST,
+        ChartSkill(),
     )
     registry.register(
         DATA_CONSTRAINT_EXTRACT_MANIFEST,
@@ -340,7 +337,7 @@ def register_builtin_manifests(registry: SkillRegistry) -> SkillRegistry:
     registry.register(RESPONSE_COMPOSER_MANIFEST, None)
     registry.register(CONVERSATION_RESPONSE_MANIFEST, None)
     registry.register(DATA_QUERY_MANIFEST, None)
-    registry.register(ECHARTS_MANIFEST, None)
+    registry.register(CHART_MANIFEST, None)
     registry.register(DATA_CONSTRAINT_EXTRACT_MANIFEST, None)
     registry.register(DOCUMENT_SCOPE_EXTRACT_MANIFEST, None)
     return registry

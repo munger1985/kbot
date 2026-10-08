@@ -47,7 +47,7 @@ class PacketType(str, Enum):
     METRIC_RESULTS = "metric_results" # 数据库指标查询结果
     MONITOR_RESULTS = "monitor_results" # Prometheus 指标查询结果
     CALL = "call"             # 工具调用状态
-    ECHARTS = "echarts"       # 图表数据展示
+    CHART = "chart"           # 受控语义图表
     ERROR = "error"           # 错误信息
     DONE = "done"             # 结束信号
     WARNING = "warning"       # 警告信息（运维Agent使用）

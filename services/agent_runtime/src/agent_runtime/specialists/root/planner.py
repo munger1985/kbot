@@ -304,7 +304,7 @@ class RootAgentPlanner:
                 "柱状图",
                 "饼图",
                 "散点图",
-                "echarts",
+                "chart",
                 " chart",
                 "plot ",
                 "visualize",
@@ -510,22 +510,22 @@ class RootAgentPlanner:
         if requires_chart:
             tasks.append(
                 TaskSpec(
-                    task_key="echarts",
+                    task_key="chart",
                     task_type="VISUALIZE",
                     execution_kind=ExecutionKind.LOCAL_SKILL,
                     specialist="visualization",
-                    skill_id="echarts",
+                    skill_id="chart",
                     skill_version="1.0.0",
                     depends_on=("data_query",),
                     input_refs=("task_output:data_query",),
-                    expected_outputs=("ECHARTS_CONFIG",),
-                    timeout_seconds=120,
-                    max_retries=1,
+                    expected_outputs=("CHART_SPEC",),
+                    timeout_seconds=30,
+                    max_retries=0,
                     execution_mode=ExecutionMode.READ_ONLY,
                 )
             )
-            compose_dependencies.append("echarts")
-            compose_inputs.append("task_output:echarts")
+            compose_dependencies.append("chart")
+            compose_inputs.append("task_output:chart")
         tasks.append(
             TaskSpec(
                 task_key="response_compose",
