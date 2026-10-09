@@ -91,6 +91,36 @@ class ReleaseToolingTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("absolute_redirect off;", template)
 
+    def test_version_labels_follow_expensive_image_layers(self) -> None:
+        python_dockerfile = (
+            ROOT / "installation/common/docker/Dockerfile.python"
+        ).read_text(encoding="utf-8")
+        python_label = python_dockerfile.index(
+            'LABEL org.opencontainers.image.title="KBot 4.0"'
+        )
+        self.assertGreater(
+            python_label,
+            python_dockerfile.index("python -m pip install --find-links"),
+        )
+        self.assertGreater(
+            python_label,
+            python_dockerfile.index(
+                "COPY installation/common/docker/python-entrypoint.sh"
+            ),
+        )
+
+        ui_dockerfile = (
+            ROOT / "installation/common/docker/Dockerfile.ui"
+        ).read_text(encoding="utf-8")
+        self.assertGreater(
+            ui_dockerfile.index(
+                'LABEL org.opencontainers.image.title="KBot UI"'
+            ),
+            ui_dockerfile.index(
+                "COPY installation/common/docker/nginx.conf.template"
+            ),
+        )
+
     def test_every_process_has_one_compose_service(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_compose(

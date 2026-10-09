@@ -19,8 +19,6 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
 
 FROM ${PYTHON_IMAGE} AS runtime
 USER root
-ARG VERSION=dev
-ARG REVISION=unknown
 ARG SERVICE_PACKAGES
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG INSTALL_OS_PACKAGES=true
@@ -28,9 +26,6 @@ ARG INSTALL_CPU_TORCH=false
 ARG TORCH_VERSION=2.11.0+cpu
 ARG TORCHVISION_VERSION=0.26.0+cpu
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-LABEL org.opencontainers.image.title="KBot 4.0" \
-      org.opencontainers.image.version=${VERSION} \
-      org.opencontainers.image.revision=${REVISION}
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/var/lib/kbot \
@@ -66,6 +61,11 @@ RUN chmod 0555 /usr/local/bin/kbot-entrypoint && \
     mkdir -p /var/lib/kbot /var/log/kbot /etc/kbot && \
     chown -R 10001:10001 /var/lib/kbot /var/log/kbot
 WORKDIR /opt/kbot
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="KBot 4.0" \
+      org.opencontainers.image.version=${VERSION} \
+      org.opencontainers.image.revision=${REVISION}
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/kbot-entrypoint"]
 CMD ["python", "-m", "main_api.entrypoints.api"]
