@@ -27,6 +27,7 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "aiops-agent.md",
                 "aiops-agent-chat-diagnosis.md",
                 "aiops-conversation-starters.md",
+                "aiops-cross-project-alignment.md",
                 "aiops-implementation-runbooks.md",
                 "app-api-key-security.md",
                 "core-authorization-policy.md",
