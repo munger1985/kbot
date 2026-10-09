@@ -5,7 +5,7 @@
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
   const configs = {
-    targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
+    targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
@@ -26,6 +26,7 @@
     if (type === "target-actions") {
       const checking = item.connectivity_check_pending;
       const detailButton = '<button type="button" data-target-action="detail">详情</button>';
+      const editButton = '<button type="button" data-target-action="edit">编辑</button>';
       const checkButton = item.readonly_connection_enabled
         ? `<button type="button" data-target-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`
         : "";
@@ -34,7 +35,16 @@
         : (!item.readonly_connection_enabled || ["CONNECTED", "DEGRADED"].includes(item.connectivity_status))
           ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
           : [];
-      return `<div class="ops-actions">${detailButton}${checkButton}${buttons.join("")}</div>`;
+      return `<div class="ops-actions">${detailButton}${editButton}${checkButton}${buttons.join("")}</div>`;
+    }
+    if (type === "target-access") {
+      const mode = item.controlled_change_enabled
+        ? "允许受控变更"
+        : item.readonly_connection_enabled ? "只读直连" : "仅监控";
+      const detail = item.controlled_change_enabled
+        ? "独立执行凭据 · 逐条审批"
+        : item.readonly_connection_enabled ? "不允许数据库写操作" : "不连接数据库";
+      return `<strong>${mode}</strong><small>${detail}</small>`;
     }
     if (type === "inspection-actions") {
       const action = item.status === "ACTIVE"
@@ -140,6 +150,10 @@
     const targetId = encodeURIComponent(item.target_id);
     if (action === "detail") {
       location.href = `target-detail.html?id=${targetId}`;
+      return;
+    }
+    if (action === "edit") {
+      globalThis.KBotAIOpsTargets?.openEdit(item.target_id);
       return;
     }
     const path = action === "connectivity"
@@ -695,6 +709,10 @@
         ? targetOverviewHtml(data)
         : `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
       if (page === "target-detail") {
+        const editTargetAccess = document.getElementById("edit-target-access");
+        if (editTargetAccess) {
+          editTargetAccess.href = `targets.html?edit=${encodeURIComponent(id)}`;
+        }
         await initializeTargetSubscription(id, data);
         await initializeTargetRecovery(id);
         await initializeTargetFacts(id);

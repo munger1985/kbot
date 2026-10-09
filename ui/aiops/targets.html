@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>运维目标</title>
   <link rel="stylesheet" href="./css/aiops.css">
-  <link rel="stylesheet" href="./css/aiops-forms.css">
+  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261009-4">
 </head>
 <body data-page="targets">
   <main class="ops-main">
     <header class="ops-head">
       <div>
         <h1>运维目标</h1>
-        <p>管理 Oracle、MySQL、PostgreSQL 等数据库目标及只读诊断凭据。</p>
+        <p>管理数据库目标的监控、只读诊断和人工审批后受控变更边界。</p>
       </div>
       <button id="create-target" class="primary" type="button" data-write-ready>新增目标</button>
     </header>
@@ -34,14 +34,22 @@
       </header>
       <div class="ops-dialog-body">
         <div class="ops-form">
-          <div class="ops-field span-12">
-            <label><input id="target-readonly-enabled" name="readonly_connection_enabled" type="checkbox"> 启用数据库只读连接</label>
-            <small>关闭时该 Target 仍可通过 Prometheus、Loki、告警和用户材料诊断，主机、端口和凭据均无需填写。</small>
-          </div>
-          <div class="ops-field span-12">
-            <label><input id="target-change-enabled" name="controlled_change_enabled" type="checkbox"> 允许人工审批后的受控变更</label>
-            <small>需要数据库连接和独立执行凭据；每次变更仍必须通过审批。</small>
-          </div>
+          <section class="target-access-policy span-12" aria-labelledby="target-access-policy-title">
+            <div class="target-access-policy-head">
+              <div><h3 id="target-access-policy-title">数据库访问与变更边界</h3><p>Target 默认仅使用监控证据；数据库写操作必须在这里显式开启。</p></div>
+              <span id="target-access-summary">仅监控</span>
+            </div>
+            <div class="target-access-options">
+              <label class="target-access-option">
+                <input id="target-readonly-enabled" name="readonly_connection_enabled" type="checkbox">
+                <span><strong>启用数据库只读直连</strong><small>允许 Agent 使用诊断凭据执行受控只读查询。</small></span>
+              </label>
+              <label class="target-access-option">
+                <input id="target-change-enabled" name="controlled_change_enabled" type="checkbox">
+                <span><strong>允许人工审批后的受控变更</strong><small>需要独立执行凭据；每个动作仍需 Agent 授权范围和逐条审批。</small></span>
+              </label>
+            </div>
+          </section>
           <div class="ops-field span-6">
             <label for="target-display-name">目标名称</label>
             <input id="target-display-name" name="display_name" maxlength="256" required>
@@ -130,11 +138,11 @@
             <input id="target-diagnostic-password" name="diagnostic_password" type="password" maxlength="4096" required autocomplete="new-password">
           </div>
           <div class="ops-field span-6 target-change-field">
-            <label for="target-execution-username">变更执行用户名（可选）</label>
+            <label for="target-execution-username">变更执行用户名</label>
             <input id="target-execution-username" name="execution_username" maxlength="256" autocomplete="off" placeholder="仅在允许人工审批后执行变更时配置">
           </div>
           <div class="ops-field span-6 target-change-field">
-            <label for="target-execution-password">变更执行密码（可选）</label>
+            <label for="target-execution-password">变更执行密码</label>
             <input id="target-execution-password" name="execution_password" type="password" maxlength="4096" autocomplete="new-password" placeholder="用户名和密码必须同时填写">
           </div>
           <div class="ops-field span-12 target-connection-field">
@@ -155,7 +163,7 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-targets.js"></script>
+  <script src="./js/aiops-pages.js?v=20261009-4"></script>
+  <script src="./js/aiops-targets.js?v=20261009-4"></script>
 </body>
 </html>

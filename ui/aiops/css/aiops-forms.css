@@ -11,6 +11,18 @@
 .ops-connection-result{min-height:22px;margin:12px 0 0;color:var(--muted)}
 .ops-connection-result[data-tone="good"]{color:var(--good)}
 .ops-connection-result[data-tone="bad"]{color:var(--bad)}
+.target-access-policy{padding:16px;border:1px solid #cfd6e4;background:#f8faff}
+.target-access-policy-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:12px}
+.target-access-policy-head h3{margin:0;font:650 16px Georgia,"Songti SC",serif}
+.target-access-policy-head p{margin:4px 0 0;color:var(--muted);font-size:11px}
+.target-access-policy-head>span{flex:0 0 auto;padding:4px 8px;background:#e7ebf2;color:#526075;font-size:10px;font-weight:700}
+.target-access-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.target-access-option{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid var(--line);background:#fff;cursor:pointer}
+.target-access-option:has(input:checked){border-color:#8fa0c2;background:#edf2fa}
+.target-access-option:has(input:disabled){cursor:not-allowed;opacity:.5}
+.target-access-option input{width:16px!important;height:16px;margin:2px 0 0!important;accent-color:var(--accent)}
+.target-access-option strong,.target-access-option small{display:block}
+.target-access-option small{margin-top:4px;color:var(--muted);font-size:10px;line-height:1.45}
 .ops-field-label{display:block;margin-bottom:7px;font-weight:650;color:var(--ink)}
 .ops-field small{display:block;margin-top:7px;color:var(--muted);line-height:1.45}
 .ops-capability-list{display:flex;flex-wrap:wrap;gap:8px;min-height:32px;align-items:center}
@@ -37,6 +49,7 @@
 .source-webhook-onboarding small{display:block;margin-top:12px;color:var(--muted)}
 @media(max-width:600px){.ops-dialog{max-height:calc(100vh - 20px)}.ops-dialog header,.ops-dialog footer,.ops-dialog-body{padding:16px}}
 @media(max-width:600px){.ops-choice-list{grid-template-columns:1fr}}
+@media(max-width:600px){.target-access-policy-head{flex-direction:column}.target-access-options{grid-template-columns:1fr}}
 @media(max-width:600px){.source-webhook-key{grid-template-columns:1fr}.source-webhook-key>button{justify-self:start}.source-webhook-key-result>div,.source-webhook-secret-input,.source-webhook-onboarding>div{grid-template-columns:1fr}}
 
 /* 巡检计划：把底层调度规则转换为可理解的业务周期。 */

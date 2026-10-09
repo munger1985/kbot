@@ -23,6 +23,7 @@
   const submit = document.getElementById("save-target");
   const readonlyEnabled = document.getElementById("target-readonly-enabled");
   const changeEnabled = document.getElementById("target-change-enabled");
+  const accessSummary = document.getElementById("target-access-summary");
   let editingTarget = null;
 
   function clearResult() {
@@ -63,28 +64,38 @@
     });
     form.elements.host.required = readonly;
     port.required = readonly;
-    username.required = readonly && !editingTarget;
-    password.required = readonly && !editingTarget;
-    executionUsername.required = changeEnabled.checked && !editingTarget;
-    executionPassword.required = changeEnabled.checked && !editingTarget;
+    const diagnosticCredentialRequired = readonly && !credentialConfigured("diagnostic");
+    const executionCredentialRequired = changeEnabled.checked && !credentialConfigured("execution");
+    username.required = diagnosticCredentialRequired;
+    password.required = diagnosticCredentialRequired;
+    executionUsername.required = executionCredentialRequired;
+    executionPassword.required = executionCredentialRequired;
     configureEndpoint(false);
     document.getElementById("test-target-connection").hidden = !readonly;
+    accessSummary.textContent = changeEnabled.checked
+      ? "允许受控变更"
+      : readonly ? "只读直连" : "仅监控";
+    setCredentialMode();
   }
 
-  function setCredentialMode(required) {
-    username.required = required;
-    password.required = required;
-    username.placeholder = required ? "" : "留空则不更换现有凭据";
-    password.placeholder = required ? "" : "留空则不更换现有凭据";
-    executionUsername.placeholder = required
-      ? "可选；仅用于人工审批后的受控变更"
-      : "留空则不更换现有执行凭据";
-    executionPassword.placeholder = required
-      ? "用户名和密码必须同时填写"
-      : "留空则不更换现有执行凭据";
-    document.getElementById("target-credential-note").textContent = required
-      ? "诊断凭据将写入 AIOps 加密凭据存储，列表和详情不会返回密码明文。"
-      : "已保存的凭据不会回显；对应用户名和密码都留空表示保持不变，同时填写才会轮换。";
+  function credentialConfigured(kind) {
+    const status = editingTarget?.[`${kind}_credential`];
+    return Boolean(
+      status?.configured
+      || editingTarget?.[`${kind}_credential_configured`]
+    );
+  }
+
+  function setCredentialMode() {
+    const diagnosticStored = credentialConfigured("diagnostic");
+    const executionStored = credentialConfigured("execution");
+    username.placeholder = diagnosticStored ? "留空则不更换现有凭据" : "请输入只读诊断用户名";
+    password.placeholder = diagnosticStored ? "留空则不更换现有凭据" : "请输入只读诊断密码";
+    executionUsername.placeholder = executionStored ? "留空则不更换现有执行凭据" : "启用受控变更时必须配置";
+    executionPassword.placeholder = executionStored ? "留空则不更换现有执行凭据" : "用户名和密码必须同时填写";
+    document.getElementById("target-credential-note").textContent = editingTarget
+      ? "已保存的凭据不会回显；对应用户名和密码都留空表示保持不变，同时填写才会轮换。"
+      : "凭据将写入 AIOps 加密凭据存储，列表和详情不会返回密码明文。";
   }
 
   function openCreate() {
@@ -96,7 +107,7 @@
     configureEndpoint();
     readonlyEnabled.checked = false;
     changeEnabled.checked = false;
-    setCredentialMode(false);
+    setCredentialMode();
     toggleAccessFields();
     document.getElementById("target-dialog-title").textContent = "新增运维目标";
     submit.textContent = "创建目标";
@@ -128,7 +139,7 @@
       oracleScope.value = target.oracle_container_scope || "";
       oraclePdbName.value = target.oracle_pdb_name || "";
       dbType.disabled = true;
-      setCredentialMode(false);
+      setCredentialMode();
       toggleAccessFields();
       document.getElementById("target-dialog-title").textContent = "编辑运维目标";
       submit.textContent = "保存修改";
@@ -345,5 +356,7 @@
     changeEnabled.addEventListener("change", toggleAccessFields);
     form.addEventListener("input", clearResult);
     form.addEventListener("submit", saveTarget);
+    const editTargetId = new URLSearchParams(location.search).get("edit");
+    if (editTargetId) void openEdit(editTargetId);
   });
 })();

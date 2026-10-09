@@ -314,10 +314,26 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("execution-credential:rotate", script)
         self.assertIn('name="execution_username"', page)
         self.assertIn('name="execution_password"', page)
+        self.assertIn('name="controlled_change_enabled"', page)
+        self.assertIn("数据库访问与变更边界", page)
+        self.assertIn("数据库写操作必须在这里显式开启", page)
+        self.assertIn('id="target-access-summary"', page)
         self.assertIn('name="importance_level"', page)
         self.assertIn("importance_level: Number", script)
         self.assertIn("openEdit", script)
+        self.assertIn('get("edit")', script)
+        self.assertIn('credentialConfigured("execution")', script)
         self.assertIn("db_type", script)
+        pages_script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        detail_page = (AIOPS_ROOT / "target-detail.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('["_access", "访问模式", "target-access"]', pages_script)
+        self.assertIn('data-target-action="edit"', pages_script)
+        self.assertIn('id="edit-target-access"', detail_page)
+        self.assertIn("targets.html?edit=", pages_script)
         self.assertNotIn("engine_type", script)
 
     def test_target_detail_owns_current_user_notification_subscription(self):
