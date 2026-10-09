@@ -172,13 +172,21 @@ class ApprovalServiceTest(unittest.TestCase):
             status="ENABLED",
             connectivity_status="CONNECTED",
             domain_id=200,
+            readonly_connection_enabled=True,
+            controlled_change_enabled=True,
+            diagnostic_credential_id=uuid7(),
             execution_credential_id=uuid7(),
             row_version=3,
             db_type="ORACLE",
             version_code="19.0.0",
-            capabilities_json={"session_management": True},
+            capabilities_json={"capabilities": []},
             environment="PROD",
             security_level=3,
+            endpoint_json={
+                "host": "oracle.internal",
+                "port": 1521,
+                "service": "PDB1",
+            },
         )
         binding = SimpleNamespace(
             status="ACTIVE",

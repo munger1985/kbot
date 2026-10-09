@@ -1,6 +1,6 @@
 """调查 Tool 发现、计划编译和执行快照。"""
 
-from .capabilities import build_capability_snapshot
+from .capabilities import build_capability_snapshot, target_capability_names
 from .compiler import (
     CompiledInvestigationPlan,
     InvestigationCatalogChangedError,
@@ -14,4 +14,5 @@ __all__ = [
     "InvestigationTaskCompiler",
     "ToolExecutionSnapshotBuilder",
     "build_capability_snapshot",
+    "target_capability_names",
 ]

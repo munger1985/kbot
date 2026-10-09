@@ -34,6 +34,7 @@ from aiops_agent.entities import (
     OpsArtifactEntity,
     OutboxEntity,
 )
+from aiops_agent.tools.capabilities import target_capability_names
 from platform_core.contracts.aiops.public import (
     ApprovalCommand,
     ApprovalReceipt,
@@ -385,13 +386,7 @@ class AIOpsChangeService:
                 or frozen_policy.get("policy_hash") != policy.policy_hash
             ):
                 raise state_conflict("当前 Policy 不再允许该动作")
-            capabilities = {
-                name
-                for name, enabled in dict(
-                    target.capabilities_json or {}
-                ).items()
-                if enabled is True
-            }
+            capabilities = set(target_capability_names(target))
             try:
                 template = self._action_registry.resolve(
                     action_template_id=proposal.action_template_id,
@@ -931,13 +926,7 @@ class AIOpsChangeService:
                 != proposal.policy_decision_hash
             ):
                 raise state_conflict("Policy 已不允许该 Execution")
-            capabilities = {
-                name
-                for name, enabled in dict(
-                    target.capabilities_json or {}
-                ).items()
-                if enabled is True
-            }
+            capabilities = set(target_capability_names(target))
             try:
                 template = self._action_registry.resolve(
                     action_template_id=proposal.action_template_id,

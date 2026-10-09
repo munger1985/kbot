@@ -201,6 +201,51 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             catalog["scope_options"]["dynamic_parameters"],
         )
 
+    async def test_oracle_action_catalog_uses_configured_access_policy(self):
+        source_id = uuid7()
+        target = SimpleNamespace(
+            target_id=uuid7(),
+            display_name="Oracle Test DB",
+            db_type="ORACLE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
+            controlled_change_enabled=True,
+            diagnostic_credential_id=uuid7(),
+            execution_credential_id=uuid7(),
+            endpoint_json={
+                "host": "db.internal",
+                "port": 1521,
+                "service": "PDB1",
+            },
+            importance_level=5,
+            version_code="19c",
+            environment="DEV",
+            capabilities_json={
+                "capabilities": [],
+                "capability_probe": {
+                    "version": "oracle-controlled-options.v1",
+                    "details": {},
+                },
+            },
+        )
+        service = AIOpsAgentService(
+            uow_factory=lambda: _UnitOfWork(
+                _AgentRepository(), source_id, target=target
+            ),
+            action_registry=ActionRegistry.load(),
+        )
+
+        catalog = await service.action_catalog(
+            domain_id=100, target_id=target.target_id
+        )
+
+        actions = {item["action_id"]: item for item in catalog["actions"]}
+        self.assertIn("db.session.terminate", actions)
+        self.assertIn("db.parameter.set", actions)
+        self.assertIn("db.index.rebuild", actions)
+        self.assertTrue(actions["db.session.terminate"]["currently_executable"])
+
     async def test_auto_alert_target_level_requires_one_to_five(self):
         with self.assertRaises(ValidationError):
             CreateAIOpsAgentCommand(
@@ -422,11 +467,17 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             connectivity_status="CONNECTED",
             readonly_connection_enabled=True,
             controlled_change_enabled=True,
+            diagnostic_credential_id=uuid7(),
             execution_credential_id=uuid7(),
+            endpoint_json={
+                "host": "db.internal",
+                "port": 1521,
+                "service": "PDB1",
+            },
             importance_level=5,
             version_code="19c",
             environment="DEV",
-            capabilities_json={"session_management": True},
+            capabilities_json={"capabilities": []},
         )
         unit_of_work = _UnitOfWork(
             _AgentRepository(), source_id, target=target
@@ -458,11 +509,17 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             connectivity_status="CONNECTED",
             readonly_connection_enabled=True,
             controlled_change_enabled=True,
+            diagnostic_credential_id=uuid7(),
             execution_credential_id=uuid7(),
+            endpoint_json={
+                "host": "db.internal",
+                "port": 1521,
+                "service": "PDB1",
+            },
             importance_level=5,
             version_code="19c",
             environment="DEV",
-            capabilities_json={"session_management": True},
+            capabilities_json={"capabilities": []},
         )
         unit_of_work = _UnitOfWork(
             _AgentRepository(), source_id, target=target

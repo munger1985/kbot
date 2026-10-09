@@ -19,37 +19,13 @@ def build_capability_snapshot(
 ) -> DbaCapabilitySnapshot:
     """只根据已持久化且可审计的配置生成规划快照。"""
     target_payload = dict(getattr(target, "capabilities_json", None) or {})
-    target_capabilities = set(_capability_names(target_payload))
+    target_capabilities = set(target_capability_names(target))
     privileges = set(_string_values(target_payload.get("privileges")))
     if (
-        bool(getattr(target, "readonly_connection_enabled", False))
-        and
-        getattr(target, "diagnostic_credential_id", None) is not None
-        and bool(getattr(target, "endpoint_json", None))
+        "DB_READONLY" in target_capabilities
+        and str(getattr(target, "db_type", "")) == "ORACLE"
     ):
-        target_capabilities.add("DB_READONLY")
-        db_type = str(getattr(target, "db_type", ""))
-        if db_type == "ORACLE":
-            # 能力表示允许尝试受控只读 Tool；具体对象授权仍由数据库执行结果确认。
-            target_capabilities.update(
-                {
-                    "dynamic_performance_views",
-                    "dba_catalog_views",
-                    "replication_views",
-                }
-            )
-            privileges.update(
-                {"CREATE SESSION", "SELECT ANY DICTIONARY"}
-            )
-        elif db_type == "MYSQL":
-            # Performance Schema consumer、锁视图和复制视图均可能被关闭或拒绝；
-            # MySQL 能力只能来自连接预检持久化的实际发现结果。
-            pass
-    if (
-        bool(getattr(target, "controlled_change_enabled", False))
-        and getattr(target, "execution_credential_id", None) is not None
-    ):
-        target_capabilities.add("DB_MUTATION_CREDENTIAL")
+        privileges.update({"CREATE SESSION", "SELECT ANY DICTIONARY"})
 
     source_snapshots = tuple(
         SourceCapabilitySnapshot(
@@ -102,6 +78,43 @@ def build_capability_snapshot(
         ),
         source_snapshots=source_snapshots,
     )
+
+
+def target_capability_names(target: object) -> tuple[str, ...]:
+    """统一解析 Target 声明、探测和配置所确定的数据库能力。"""
+    payload = dict(getattr(target, "capabilities_json", None) or {})
+    capabilities = set(_capability_names(payload))
+    db_type = str(getattr(target, "db_type", ""))
+    readonly_ready = (
+        bool(getattr(target, "readonly_connection_enabled", False))
+        and getattr(target, "diagnostic_credential_id", None) is not None
+        and bool(getattr(target, "endpoint_json", None))
+    )
+    if readonly_ready:
+        capabilities.add("DB_READONLY")
+        if db_type == "ORACLE":
+            # 能力表示已配置 Oracle 只读路径；具体对象访问权仍以数据库结果为准。
+            capabilities.update(
+                {
+                    "dynamic_performance_views",
+                    "dba_catalog_views",
+                    "replication_views",
+                }
+            )
+        elif db_type == "MYSQL":
+            # Performance Schema consumer、锁视图和复制视图均可能被关闭或拒绝；
+            # MySQL 能力只能来自连接预检持久化的实际发现结果。
+            pass
+    mutation_ready = (
+        bool(getattr(target, "controlled_change_enabled", False))
+        and getattr(target, "execution_credential_id", None) is not None
+    )
+    if mutation_ready:
+        capabilities.add("DB_MUTATION_CREDENTIAL")
+        if db_type == "ORACLE":
+            # Oracle 支持会话控制和索引维护；执行账号权限仍由数据库鉴权。
+            capabilities.update({"session_management", "index_maintenance"})
+    return tuple(sorted(capabilities))
 
 
 def _capability_names(payload: object) -> tuple[str, ...]:

@@ -16,6 +16,7 @@ from aiops_agent.entities import (
     PolicyEntity,
 )
 from aiops_agent.application.configuration.common import sha256_json
+from aiops_agent.tools.capabilities import target_capability_names
 from platform_core.identity import uuid7
 
 
@@ -361,14 +362,7 @@ class AIOpsAgentService:
             )
             if target is None:
                 self._not_found()
-            capabilities = {
-                key
-                for key, enabled in dict(target.capabilities_json or {}).items()
-                if enabled is True
-            }
-            features = dict(target.capabilities_json or {}).get("features", [])
-            if isinstance(features, list):
-                capabilities.update(str(item) for item in features if item)
+            capabilities = set(target_capability_names(target))
             templates = self._action_registry.compatible(
                 db_type=target.db_type,
                 db_version=target.version_code or "UNKNOWN",
@@ -829,14 +823,7 @@ class AIOpsAgentService:
         if match is None:
             return []
         major = int(match.group())
-        capabilities = {
-            key
-            for key, enabled in dict(target.capabilities_json or {}).items()
-            if enabled is True
-        }
-        features = dict(target.capabilities_json or {}).get("features", [])
-        if isinstance(features, list):
-            capabilities.update(str(item) for item in features if item)
+        capabilities = set(target_capability_names(target))
         return sorted(
             {
                 template.definition.action_template_id
