@@ -85,6 +85,12 @@ class ReleaseToolingTest(unittest.TestCase):
         self.assertIn('      - "8080:8080"', rendered)
         self.assertNotIn("network_mode: host", rendered)
 
+    def test_ui_root_redirect_preserves_external_port_mapping(self) -> None:
+        template = (
+            ROOT / "installation/common/docker/nginx.conf.template"
+        ).read_text(encoding="utf-8")
+        self.assertIn("absolute_redirect off;", template)
+
     def test_every_process_has_one_compose_service(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_compose(
