@@ -18,6 +18,67 @@
 同一配置单的 `[observability.*]` 段选择 Prometheus、Loki、Grafana 和 Exporter。
 确认配置后使用无参数 `installation/dev/kbot-deploy`，不要分别手工拼接 Compose 命令。
 
+## 单机容器部署的 Oracle Secret
+
+新建 Oracle Schema 后，用户名写入部署配置，密码不写入 INI、镜像、Git 或命令行。
+先在部署机的仓库根目录创建配置单并限制权限：
+
+```bash
+cp installation/dev/deployment.ini.example installation/dev/deployment.ini
+chmod 600 installation/dev/deployment.ini
+```
+
+填写 Oracle 地址和 Schema 用户名：
+
+```ini
+[database]
+host = 10.0.0.20
+port = 1521
+service_name = KBOTPDB
+username = kbot_prod
+
+[secrets]
+oracle_password_file = secrets/oracle_password
+master_key_file = secrets/master_key
+```
+
+然后由发布工具一次完成 Secret 文件准备：
+
+```bash
+installation/dev/kbot-release prepare-secrets \
+  --config installation/dev/deployment.ini
+```
+
+命令会在终端无回显地要求输入并再次确认 Oracle Schema 密码，并在首次部署时随机生成
+KBot 主密钥。两个路径都从配置单 `[secrets]` 读取，文件权限自动设置为 `0600`；命令
+不会输出 Secret 内容。再次执行时默认保留两个已有文件，因此可安全用于升级前检查。
+
+Oracle Schema 密码完成数据库侧轮换后，显式更新密码文件：
+
+```bash
+installation/dev/kbot-release prepare-secrets \
+  --config installation/dev/deployment.ini \
+  --replace-oracle-password
+```
+
+该参数只更新 Oracle 密码，不轮换 KBot 主密钥。主密钥用于平台加密和密钥派生，首次生成后
+必须随生产 Secret 一起安全备份，并在升级、回滚和服务器迁移时恢复同一个文件；丢失或
+重新生成会导致已有加密凭据无法解密。不得把 `installation/dev/secrets/` 加入发布包或
+源码备份，也不要使用 `printf`、Shell 历史或聊天消息传递数据库密码。
+
+准备完成后先校验配置，再执行无参数部署入口：
+
+```bash
+installation/dev/kbot-release validate \
+  --deployment-config installation/dev/deployment.ini
+installation/dev/kbot-deploy
+```
+
+渲染后的 Compose 将 Oracle 密码挂载为 `/run/secrets/kbot_oracle_password`，容器入口只在
+进程内设置 `KBOT_ORACLE_PASSWORD`；KBot 主密钥使用同样的 Secret 注入方式。后文
+`KBOT_ORACLE_PASSWORD`、`KBOT_MASTER_KEY` 环境变量示例适用于源码、systemd 或其他非
+Compose 编排，不需要与此容器 Secret 方式重复配置。
+
 ## 空白环境一键部署
 
 先准备 `configuration/kbot.toml` 和 Secret。目标必须是没有任何 `KBOT_%` 表或
