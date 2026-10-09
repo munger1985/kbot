@@ -69,6 +69,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(llm_id),
                         "served_model_name": "chat-prod",
+                        "provider_model_name": "chat-prod",
                         "display_name": "Chat Prod",
                         "category": 1,
                         "provider": "api_qwen",
@@ -77,6 +78,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(uuid7()),
                         "served_model_name": "chat-disabled",
+                        "provider_model_name": "chat-disabled",
                         "display_name": "Chat Disabled",
                         "category": 1,
                         "provider": "api_qwen",
@@ -89,6 +91,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(embedding_id),
                         "served_model_name": "embed-prod",
+                        "provider_model_name": "embed-prod",
                         "display_name": "Embedding Prod",
                         "category": 2,
                         "provider": "local_qwen",
@@ -102,6 +105,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(ocr_id),
                         "served_model_name": "ocr-prod",
+                        "provider_model_name": "ocr-prod",
                         "display_name": "OCR Prod",
                         "category": 6,
                         "provider": "local_tesseract",
@@ -110,6 +114,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(uuid7()),
                         "served_model_name": "ocr-draft",
+                        "provider_model_name": "ocr-draft",
                         "display_name": "OCR Draft",
                         "category": 6,
                         "provider": "local_tesseract",
@@ -140,6 +145,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(text_id),
                         "served_model_name": "embed-prod",
+                        "provider_model_name": "embed-prod",
                         "display_name": "文本向量",
                         "category": Decimal("2"),
                         "provider": "local_qwen",
@@ -148,6 +154,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(uuid7()),
                         "served_model_name": "embed-draft",
+                        "provider_model_name": "embed-draft",
                         "display_name": "草稿向量",
                         "category": "TXT_EMBEDDING",
                         "provider": "local_qwen",
@@ -160,6 +167,7 @@ class MainApiModelCatalogTest(unittest.TestCase):
                     {
                         "model_id": str(visual_id),
                         "served_model_name": "visual-prod",
+                        "provider_model_name": "visual-prod",
                         "display_name": "视觉向量",
                         "category": "VISUAL_EMBEDDING",
                         "provider": "local_qwen",

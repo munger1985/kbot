@@ -87,6 +87,41 @@ class _FakeKnowledgeCoreClient:
         self.last_domain_id = domain_id
         return {"collections": [{"collection_id": str(TEST_COLLECTION_ID)}]}
 
+    async def get_collection(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        self.last_context = auth_context
+        self.last_domain_id = domain_id
+        self.last_collection_id = collection_id
+        return {
+            "collection_id": str(collection_id),
+            "display_name": "测试 Knowledge Core",
+            "status": "ACTIVE",
+        }
+
+    async def bind_collection(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        collection_id: UUID,
+        note: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        del note
+        self.last_context = auth_context
+        self.last_domain_id = domain_id
+        self.last_agent_id = agent_id
+        self.last_collection_id = collection_id
+        return {
+            "agent_id": str(agent_id),
+            "collection_id": str(collection_id),
+        }
+
     async def ingest_multipart(
         self,
         *,
@@ -281,6 +316,7 @@ class _FakeAgentRuntimeClient:
     def _agent(self):
         return {
             "agent_id": str(self.agent_id),
+            "agent_version_id": "019f8eae-2c25-7d48-b044-350ec3f5a015",
             "domain_id": 100,
             "display_name": "文档助手",
             "description": None,
@@ -599,6 +635,7 @@ class _FakeAccessControlService:
             "knowledge_retrieval:knowledge_manage",
             "knowledge_retrieval:agent_manage",
             "knowledge_retrieval:data_manage",
+            "knowledge_retrieval:knowledge_chat",
             "knowledge_retrieval:member_manage",
             "knowledge_retrieval:role_manage",
             "knowledge_retrieval:api_key_manage",
@@ -776,7 +813,10 @@ class _FakeKnowledgeRetrievalAppClient:
             "enabled_capabilities": agent["enabled_capabilities"],
             "models": agent["models"],
             "instruction": None,
-            "resource_context": self.resource_context,
+            "resource_context": {
+                "collection_ids": [str(TEST_COLLECTION_ID)],
+                **self.resource_context,
+            },
             "runtime_policy": {},
         }
 
@@ -803,7 +843,11 @@ class _FakeDataQueryClient:
         self.last_resource: str | None = None
         self.last_payload: dict[str, Any] | None = None
         self.last_context: AuthContext | None = None
-        self.active_binding = True
+        self.last_agent_binding_sync: dict[str, Any] | None = None
+
+    async def management_sync_agent_bindings(self, **values):
+        self.last_agent_binding_sync = values
+        self.last_context = values["auth_context"]
 
     async def management_create(self, *, resource, payload, auth_context):
         self.last_resource = resource
@@ -815,10 +859,6 @@ class _FakeDataQueryClient:
             "status": "ACTIVE",
             "row_version": 1,
         }
-
-    async def management_has_active_agent_binding(self, **_):
-        return self.active_binding
-
 
 class _FakeDomainRepository:
     async def exists_active(self, *, domain_id: int) -> bool:
@@ -976,6 +1016,7 @@ class MainApiTest(unittest.TestCase):
                 return [{
                     "model_id": "019f8eae-2c25-7d48-b044-350ec3f5a019",
                     "served_model_name": "km-test-llm",
+                    "provider_model_name": "km-test-llm",
                     "display_name": "KM 测试模型",
                     "category": 1,
                     "provider": "test",
@@ -998,6 +1039,7 @@ class MainApiTest(unittest.TestCase):
                 return [{
                     "model_id": "019f8eae-2c25-7d48-b044-350ec3f5a019",
                     "served_model_name": "km-user-token-llm",
+                    "provider_model_name": "km-user-token-llm",
                     "display_name": "KM 用户模型",
                     "category": 1,
                     "provider": "test",
@@ -1051,33 +1093,28 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(422, response.status_code)
         self.assertEqual("POLICY_SUBJECT_REQUIRED", response.json()["code"])
 
-    def test_semantic_data_query_agent_must_be_created_as_draft(self) -> None:
+    def test_active_agent_requires_knowledge_core(self) -> None:
         response = self.client.post(
             "/api/v1/apps/knowledge-retrieval/agents",
             headers=self._headers(),
             json={
                 "display_name": "问数助手",
-                "enabled_capabilities": ["conversation", "data_query"],
                 "models": {},
-                "config": {"data_query_mode": "SEMANTIC"},
                 "status": "ACTIVE",
             },
         )
         self.assertEqual(422, response.status_code, response.text)
         self.assertEqual(
-            "APP_AGENT_QUERY_BINDING_REQUIRED",
+            "AGENT_KNOWLEDGE_CORE_REQUIRED",
             response.json()["code"],
         )
 
-    def test_semantic_data_query_agent_activation_requires_active_binding(self) -> None:
+    def test_agent_activation_requires_knowledge_core(self) -> None:
         original_agent = self.agent_runtime._agent
         self.agent_runtime._agent = lambda: {
             **original_agent(),
             "status": "DRAFT",
-            "enabled_capabilities": ["conversation", "data_query"],
-            "config": {"data_query_mode": "SEMANTIC"},
         }
-        self.data_query.active_binding = False
         response = self.client.patch(
             f"/api/v1/apps/knowledge-retrieval/agents/{self.agent_runtime.agent_id}",
             headers=self._headers(),
@@ -1085,7 +1122,7 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(422, response.status_code, response.text)
         self.assertEqual(
-            "APP_AGENT_QUERY_BINDING_REQUIRED",
+            "AGENT_KNOWLEDGE_CORE_REQUIRED",
             response.json()["code"],
         )
 
@@ -1432,7 +1469,7 @@ class MainApiTest(unittest.TestCase):
             headers=self._headers(),
             json={
                 "display_name": "文档助手",
-                "enabled_capabilities": ["document"],
+                "knowledge_core_id": str(TEST_COLLECTION_ID),
                 "models": {
                     "context_llm": "019f8eae-2c25-7d48-b044-350ec3f5a011",
                     "composer_llm": "019f8eae-2c25-7d48-b044-350ec3f5a012",
@@ -1443,6 +1480,14 @@ class MainApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(201, agent.status_code)
+        self.assertEqual(
+            self.agent_runtime.agent_id,
+            self.data_query.last_agent_binding_sync["agent_id"],
+        )
+        self.assertEqual(
+            set(),
+            self.data_query.last_agent_binding_sync["semantic_model_ids"],
+        )
         bindings = self.client.get(
             (
                 "/api/v1/apps/knowledge-retrieval/knowledge/agents/"
@@ -1667,9 +1712,12 @@ class MainApiTest(unittest.TestCase):
         self.assertTrue(response.json()["asset_content_available"])
         self.assertEqual([], response.json()["attachments"])
 
-    def test_regular_user_with_use_permission_can_use_active_agent(self) -> None:
+    def test_regular_user_with_chat_permission_can_use_active_agent(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(
-            {"knowledge_retrieval:use"}
+            {
+                "knowledge_retrieval:use",
+                "knowledge_retrieval:knowledge_chat",
+            }
         )
 
         agents = self.client.get(

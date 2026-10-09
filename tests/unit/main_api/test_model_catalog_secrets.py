@@ -11,6 +11,7 @@ class _Client:
         return [{
             "model_id": "01900000-0000-7000-8000-000000000001",
             "served_model_name": "oci-model",
+            "provider_model_name": "oci-model",
             "display_name": "OCI 模型",
             "category": 1,
             "provider": "oci",
