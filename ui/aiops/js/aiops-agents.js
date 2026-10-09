@@ -585,7 +585,7 @@
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/diagnostic-sources?status=ENABLED&limit=200`),
       KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
-      KBotAIOpsAuth.request(`${api}/model-catalog`),
+      KBotAIOpsAuth.request("/api/v1/model-catalog"),
     ]);
     agents = Array.isArray(agentRows) ? agentRows : [];
     sources = sourcePage.items || [];
