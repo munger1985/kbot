@@ -123,13 +123,43 @@ class FormalReportingTest(unittest.TestCase):
                 "period_end": "2026-09-01T01:00:00+00:00",
                 "scope": {"root_cause_grade": "PROBABLE"},
                 "facts": [{"summary": "锁等待持续升高"}],
-                "gaps": [{"code": "MISSING_ASH"}],
+                "gaps": [
+                    {"code": "MISSING_ASH"},
+                    {"code": "MISSING_FINAL_RESULT", "turn_no": 3},
+                ],
                 "recommendations": ["确认阻塞会话"],
                 "evidence_refs": [{"artifact_id": "evidence-1", "content_hash": "a" * 64}],
             },
         )
-        kinds = [item["kind"] for item in presentation["sections"]]
+        sections = {
+            item["kind"]: item for item in presentation["sections"]
+        }
+        kinds = list(sections)
         self.assertIn("EVIDENCE_BOUNDARY", kinds)
+        self.assertEqual("部分完成", presentation["status_display"])
+        self.assertEqual(
+            "证据边界", sections["EVIDENCE_BOUNDARY"]["display_name"]
+        )
+        self.assertEqual(
+            ["缺少 ASH 历史会话数据", "第 3 轮：缺少最终诊断结果"],
+            sections["EVIDENCE_BOUNDARY"]["items"],
+        )
+        self.assertIn(
+            "根因评估等级：很可能",
+            sections["ROOT_CAUSE"]["items"],
+        )
+        visible_text = str([
+            (item["display_name"], item["items"])
+            for item in presentation["sections"]
+        ])
+        for internal_code in (
+            "PROBABLE",
+            "MISSING_ASH",
+            "MISSING_FINAL_RESULT",
+            "EVIDENCE_BOUNDARY",
+            "EVIDENCE_APPENDIX",
+        ):
+            self.assertNotIn(internal_code, visible_text)
         pdf = render_pdf(presentation)
         self.assertTrue(pdf.startswith(b"%PDF-"))
         # 标准生成器必须嵌入字体和 Unicode 映射，不能依赖阅读器安装中文字体。
@@ -158,12 +188,41 @@ class FormalReportingTest(unittest.TestCase):
         findings = next(item for item in presentation["sections"] if item["kind"] == "FINDINGS")
         self.assertEqual(
             [
-                "对比结论：RESOLVED",
-                "target_absent：True",
-                "blocking_absent：True",
-                "判定依据：TARGET_ABSENT、BLOCKING_ABSENT",
+                "对比结论：已解决",
+                "目标对象已消失：是",
+                "阻塞关系已消失：是",
+                "判定依据：目标对象已消失、阻塞关系已消失",
             ],
             findings["items"],
+        )
+
+    def test_presentation_translates_inconclusive_missing_turns(self) -> None:
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
+            payload={
+                "status": "PARTIAL",
+                "summary": "部分诊断轮次尚未形成最终结果。",
+                "scope": {"root_cause_grade": "INCONCLUSIVE"},
+                "gaps": [
+                    {"code": "MISSING_FINAL_RESULT", "turn_no": 2},
+                    {"code": "MISSING_FINAL_RESULT", "turn_no": 4},
+                ],
+            },
+        )
+
+        sections = {
+            item["kind"]: item for item in presentation["sections"]
+        }
+        self.assertEqual(
+            [
+                "第 2 轮：缺少最终诊断结果",
+                "第 4 轮：缺少最终诊断结果",
+            ],
+            sections["EVIDENCE_BOUNDARY"]["items"],
+        )
+        self.assertIn(
+            "根因评估等级：证据不足，无法定论",
+            sections["ROOT_CAUSE"]["items"],
         )
 
     def test_inspection_markdown_facts_are_not_serialized_as_dicts(self) -> None:

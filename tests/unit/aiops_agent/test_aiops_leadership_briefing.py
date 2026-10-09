@@ -179,7 +179,7 @@ class AIOpsLeadershipBriefingTest(unittest.TestCase):
         summary = next(
             item for item in presentation["sections"] if item["kind"] == "EXECUTIVE_SUMMARY"
         )
-        self.assertEqual(["根因等级：PROBABLE。锁等待持续升高。"], summary["items"])
+        self.assertEqual(["根因等级：很可能。锁等待持续升高。"], summary["items"])
         briefing = presentation["leadership_briefing"]
         self.assertEqual("LEADERSHIP_BRIEFING.v1", briefing["schema_version"])
         self.assertEqual("HIGH", briefing["risk_level"])

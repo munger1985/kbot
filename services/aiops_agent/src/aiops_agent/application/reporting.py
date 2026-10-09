@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -60,6 +61,123 @@ _ALLOWED_SECTIONS = frozenset(
     }
 )
 
+_REPORT_DISPLAY_NAMES = {
+    "EXECUTIVE_SUMMARY": "执行摘要",
+    "SCOPE": "报告范围",
+    "ALERT_TIMELINE": "告警时间线",
+    "INSPECTION_COVERAGE": "巡检覆盖情况",
+    "RISK_OVERVIEW": "风险概览",
+    "TREND": "趋势分析",
+    "FINDINGS": "核验发现",
+    "ROOT_CAUSE": "根因分析",
+    "RECOMMENDATIONS": "处置建议",
+    "ACTIONS": "已执行动作",
+    "EVIDENCE_BOUNDARY": "证据边界",
+    "EVIDENCE_APPENDIX": "证据附录",
+    "CONFIRMED": "已确认",
+    "PROBABLE": "很可能",
+    "POSSIBLE": "可能",
+    "INCONCLUSIVE": "证据不足，无法定论",
+    "GENERATING": "生成中",
+    "READY": "已完成",
+    "PARTIAL": "部分完成",
+    "FAILED": "失败",
+    "CRITICAL": "严重",
+    "HIGH": "高",
+    "MEDIUM": "中",
+    "LOW": "低",
+    "INFO": "提示",
+    "RESOLVED": "已解决",
+    "IMPROVED": "已改善",
+    "UNCHANGED": "未改善",
+    "DEGRADED": "已恶化",
+    "MISSING_ASH": "缺少 ASH 历史会话数据",
+    "MISSING_PRIMARY_RUN": "缺少主诊断运行记录",
+    "MISSING_FINAL_RESULT": "缺少最终诊断结果",
+    "UNREPORTABLE_FINAL_RESULT": "最终结果暂不支持生成报告",
+    "MISSING_FINAL_ARTIFACT": "缺少最终报告产物",
+    "USER_RESULT_UNAVAILABLE": "用户提供的结果不可用",
+    "EVIDENCE_FACT_LIMIT_REACHED": "已达到证据事实数量上限",
+    "VERIFICATION_EVIDENCE_MISSING": "缺少处置验证证据",
+    "ACTION_VERIFIER_UNAVAILABLE": "动作验证器不可用",
+    "EVIDENCE_NOT_COMPARABLE": "处理前后证据不可比较",
+    "VERIFICATION_STATE_UNSUPPORTED": "当前验证状态不受支持",
+    "SOURCE_AUTH_FAILED": "诊断源认证失败",
+    "SOURCE_UNREACHABLE": "诊断源不可达",
+    "DIAGNOSTIC_POLICY_DENIED": "诊断策略不允许数据库直连",
+    "DB_DIRECT_NOT_CONFIGURED": "未配置数据库直连",
+    "TARGET_INACTIVE": "Target 未启用",
+    "DIAGNOSTIC_SECRET_MISSING": "缺少诊断凭据",
+    "TARGET_ENDPOINT_MISSING": "缺少 Target 连接地址",
+    "TARGET_CONNECTIVITY_UNAVAILABLE": "Target 当前不可连接",
+    "VERSION_UNSUPPORTED": "数据库版本不受支持",
+    "CAPABILITY_UNAVAILABLE": "所需诊断能力不可用",
+    "INSPECTION_OBSERVATION_MISSING": "缺少巡检观测结果",
+    "INSPECTION_TEMPLATE_STEPS_MISSING": "巡检模板缺少检查步骤",
+    "METRIC_SOURCE_UNAVAILABLE": "指标源不可用",
+    "ACTION_TEMPLATE_UNAVAILABLE": "动作模板不可用",
+    "EXECUTION_SECRET_MISSING": "缺少执行凭据",
+    "EXECUTION_UNAVAILABLE_ADVISORY_PROVIDED": "无法自动执行，已提供人工建议",
+    "MUTATION_EXECUTION_UNAVAILABLE": "受控变更执行不可用",
+    "OPERATIONS_KNOWLEDGE_UNAVAILABLE": "运维知识不可用",
+    "OPS_DELEGATION_RESULT_NOT_READY": "委派结果尚未就绪",
+    "POLICY_MISSING": "缺少执行策略",
+    "SECRET_UNAVAILABLE": "凭据不可用",
+    "VERIFIED_ACTION_PARAMETERS_UNAVAILABLE": "缺少已验证的动作参数",
+    "EXTERNAL_SOURCE_NOT_SOURCE_VERIFIED": "外部数据源未通过来源验证",
+    "DISCONTINUITY": "数据采样不连续",
+    "METRIC_COUNTER_RESET": "指标计数器已重置",
+    "SAMPLING_BOUNDARY": "采样边界限制",
+    "RPO_NOT_CONFIGURED": "未配置业务 RPO",
+    "RTO_NOT_CONFIGURED": "未配置业务 RTO",
+    "RESTORE_NOT_VERIFIED": "恢复能力尚未验证",
+    "DRILL_STALE": "最近成功演练已超过要求周期",
+    "POLICY_CHANGED_SINCE_DRILL": "演练后恢复策略已变更",
+    "EXTERNAL_BACKUP_PROVIDER_NOT_CONFIGURED": "未配置外部备份提供方",
+    "VERIFICATION_ADVERSE": "验证发现不利变化",
+    "ACTION_EFFECT_VERIFIED": "已验证动作达到预期效果",
+    "EXPECTED_DIRECT_EFFECT_NOT_OBSERVED": "未观测到预期直接效果",
+    "TARGET_ABSENT": "目标对象已消失",
+    "BLOCKING_ABSENT": "阻塞关系已消失",
+}
+_REPORT_CODE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,}")
+
+
+def _report_display_text(value: object) -> str:
+    """仅替换已登记的报告枚举，未知技术文本保持原样。"""
+    return _REPORT_CODE_PATTERN.sub(
+        lambda match: _REPORT_DISPLAY_NAMES.get(
+            match.group(0), match.group(0)
+        ),
+        str(value),
+    )
+
+
+def _report_gap_item(value: object) -> str:
+    """把证据缺口代码及其上下文转换为可读说明。"""
+    if not isinstance(value, dict):
+        return _report_display_text(value)
+    label = _report_display_text(value.get("code") or "未知证据缺口")
+    turn_no = value.get("turn_no")
+    detail = str(value.get("detail") or "").strip()
+    if turn_no is not None:
+        label = f"第 {turn_no} 轮：{label}"
+    if detail and detail not in label:
+        label = f"{label}：{_report_display_text(detail)}"
+    return label
+
+
+def _report_briefing_display(briefing: dict[str, Any]) -> dict[str, Any]:
+    """翻译领导简报正文中的稳定枚举，保留原始等级合同。"""
+    if not briefing:
+        return {}
+    result = dict(briefing)
+    for key in ("business_impact", "risks", "recommendations"):
+        result[key] = [
+            _report_display_text(item) for item in briefing.get(key) or ()
+        ]
+    return result
+
 
 def _markdown_report_items(value: str) -> list[str]:
     """将巡检 Markdown 归一为报告章节可展示的段落项。"""
@@ -104,10 +222,14 @@ def _comparison_report_items(fact: dict[str, Any]) -> list[str]:
     items = [f"对比结论：{fact.get('result') or 'INCONCLUSIVE'}"]
     signals = fact.get("primary_signals")
     if isinstance(signals, dict):
+        signal_names = {
+            "target_absent": "目标对象已消失",
+            "blocking_absent": "阻塞关系已消失",
+        }
         items.extend(
-            f"{key}：{value}"
+            f"{signal_names.get(key, key)}："
+            f"{('是' if value else '否') if value is not None else '未知'}"
             for key, value in signals.items()
-            if value is not None
         )
     rationale = [
         str(item) for item in list(fact.get("rationale_codes") or ()) if item
@@ -553,7 +675,9 @@ def report_presentation(
         elif kind == "ACTIONS":
             body = [str(item) for item in list(scope.get("actions") or ())] or ["当前没有已记录的处置或验证动作。"]
         elif kind == "EVIDENCE_BOUNDARY":
-            body = [str(item.get("code") or item) for item in gaps] or ["未发现额外的数据缺口。"]
+            body = [_report_gap_item(item) for item in gaps] or [
+                "未发现额外的数据缺口。"
+            ]
         else:
             body = [
                 f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
@@ -563,21 +687,27 @@ def report_presentation(
             edited = overrides.get(kind)
             if isinstance(edited, (list, tuple)) and edited:
                 body = [str(item) for item in edited]
+        body = [_report_display_text(item) for item in body]
         section_data.append({
             "kind": kind,
+            "display_name": _REPORT_DISPLAY_NAMES.get(kind, kind),
             "items": body,
             "human_edited": kind in overrides,
         })
+    briefing = project_leadership_briefing(
+        payload=payload, findings=findings,
+    )
     return {
         "schema_version": "REPORT_PRESENTATION.v1",
         "title": payload.get("title") or template.display_name,
         "status": payload.get("status"),
+        "status_display": _report_display_text(
+            payload.get("status") or "UNKNOWN"
+        ),
         "template": {**template_summary(template), "definition": template.definition},
         "report": payload,
         "sections": section_data,
-        "leadership_briefing": project_leadership_briefing(
-            payload=payload, findings=findings,
-        ),
+        "leadership_briefing": _report_briefing_display(briefing),
     }
 
 
@@ -595,22 +725,6 @@ def _pdf_report_font_name() -> str:
         with as_file(resource) as path:
             pdfmetrics.registerFont(TTFont(font_name, str(path), subfontIndex=0))
     return font_name
-
-
-_REPORT_SECTION_NAMES = {
-    "EXECUTIVE_SUMMARY": "执行摘要",
-    "SCOPE": "报告范围",
-    "ALERT_TIMELINE": "告警时间线",
-    "INSPECTION_COVERAGE": "巡检覆盖情况",
-    "RISK_OVERVIEW": "风险概览",
-    "TREND": "趋势分析",
-    "FINDINGS": "核验发现",
-    "ROOT_CAUSE": "根因分析",
-    "RECOMMENDATIONS": "处置建议",
-    "ACTIONS": "已执行动作",
-    "EVIDENCE_BOUNDARY": "证据边界",
-    "EVIDENCE_APPENDIX": "证据附录",
-}
 
 
 def _pdf_paragraph(value: object) -> str:
@@ -668,7 +782,10 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     story.append(Paragraph(_pdf_paragraph(template.get("display_name") or "系统诊断报告"), cover_subtitle))
     report = dict(presentation.get("report") or {})
     metadata = [
-        ["报告状态", _pdf_paragraph(presentation.get("status") or "UNKNOWN")],
+        ["报告状态", _pdf_paragraph(
+            presentation.get("status_display")
+            or _report_display_text(presentation.get("status") or "UNKNOWN")
+        )],
         ["报告周期", _pdf_paragraph(f"{report.get('period_start') or '未提供'} 至 {report.get('period_end') or '未提供'}")],
         ["报告模板", _pdf_paragraph(template.get("template_ref") or "未提供")],
     ]
@@ -689,8 +806,11 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     briefing = dict(presentation.get("leadership_briefing") or {})
     if briefing:
         story.append(Paragraph("领导简报", section))
+        risk_display = briefing.get(
+            "risk_level_display"
+        ) or _report_display_text(briefing.get("risk_level") or "LOW")
         story.append(Paragraph(
-            _pdf_paragraph(f"风险等级：{briefing.get('risk_level') or 'LOW'}"),
+            _pdf_paragraph(f"风险等级：{risk_display}"),
             body,
         ))
         for label, key in (
@@ -715,7 +835,9 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
             continue
         if kind == "EVIDENCE_APPENDIX":
             story.append(PageBreak())
-        label = _REPORT_SECTION_NAMES.get(kind, kind)
+        label = item.get("display_name") or _REPORT_DISPLAY_NAMES.get(
+            kind, kind
+        )
         story.append(Paragraph(_pdf_paragraph(label), section))
         for detail in item.get("items") or ():
             if str(detail).startswith("【") and str(detail).endswith("】"):

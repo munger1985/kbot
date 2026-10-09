@@ -388,6 +388,23 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             self.assertNotIn(internal_field, overview)
         self.assertNotIn("JSON.stringify", overview)
 
+    def test_report_center_translates_backend_dictionary_values(self):
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("function reportDisplayText", script)
+        self.assertIn('EVIDENCE_BOUNDARY: "证据边界"', script)
+        self.assertIn('INCONCLUSIVE: "证据不足，无法定论"', script)
+        self.assertIn(
+            'MISSING_FINAL_RESULT: "缺少最终诊断结果"', script
+        )
+        self.assertIn(
+            "section.display_name || reportDisplayText(section.kind", script
+        )
+        self.assertIn(
+            "data.status_display || reportDisplayText(data.status", script
+        )
+
     def test_recovery_drills_use_independent_operations_workspace(self):
         target_page = (AIOPS_ROOT / "target-detail.html").read_text(
             encoding="utf-8"

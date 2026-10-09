@@ -87,12 +87,32 @@
       COMPARISON: "处置验证",
     }[value] || value || "正式报告";
   }
+  const reportDisplayNames = {
+    EXECUTIVE_SUMMARY: "执行摘要", SCOPE: "报告范围", ALERT_TIMELINE: "告警时间线",
+    INSPECTION_COVERAGE: "巡检覆盖情况", RISK_OVERVIEW: "风险概览", TREND: "趋势分析",
+    FINDINGS: "核验发现", ROOT_CAUSE: "根因分析", RECOMMENDATIONS: "处置建议",
+    ACTIONS: "已执行动作", EVIDENCE_BOUNDARY: "证据边界", EVIDENCE_APPENDIX: "证据附录",
+    CONFIRMED: "已确认", PROBABLE: "很可能", POSSIBLE: "可能",
+    INCONCLUSIVE: "证据不足，无法定论", GENERATING: "生成中", READY: "已完成",
+    PARTIAL: "部分完成", FAILED: "失败", CRITICAL: "严重", HIGH: "高",
+    MEDIUM: "中", LOW: "低", INFO: "提示", MISSING_FINAL_RESULT: "缺少最终诊断结果",
+    MISSING_PRIMARY_RUN: "缺少主诊断运行记录", MISSING_FINAL_ARTIFACT: "缺少最终报告产物",
+    UNREPORTABLE_FINAL_RESULT: "最终结果暂不支持生成报告",
+  };
+  function reportDisplayText(value) {
+    return String(value ?? "").replace(/[A-Z][A-Z0-9_]{2,}/g, (code) => reportDisplayNames[code] || code);
+  }
+  function reportStatusBadge(value, displayValue) {
+    const status = String(value || "UNKNOWN").toUpperCase();
+    const tone = status === "READY" ? "good" : status === "FAILED" ? "bad" : "warn";
+    return `<span class="ops-badge ${tone}">${shell.escape(displayValue || reportDisplayText(status))}</span>`;
+  }
   function reportRow(item, detail) {
     const publishedAt = item.published_at || item.created_at;
     const period = item.period_start && item.period_end
       ? `${shell.fmt(item.period_start)} 至 ${shell.fmt(item.period_end)}`
       : "未标注报告周期";
-    return `<a class="ops-report-row" href="${detail}${encodeURIComponent(item.report_id)}"><div class="ops-report-primary"><div class="ops-report-kicker"><span>${shell.escape(reportTypeLabel(item.report_type))}</span><span>v${shell.escape(item.report_version)}</span></div><strong>${shell.escape(item.title || "正式报告")}</strong><p>${shell.escape(item.summary || "报告未提供摘要")}</p></div><div class="ops-report-meta"><small>实际发布</small><time>${shell.escape(shell.fmt(publishedAt))}</time></div><div class="ops-report-meta ops-report-period"><small>覆盖周期</small><time>${shell.escape(period)}</time></div><div class="ops-report-state">${shell.badge(item.status)}<span>查看报告</span></div></a>`;
+    return `<a class="ops-report-row" href="${detail}${encodeURIComponent(item.report_id)}"><div class="ops-report-primary"><div class="ops-report-kicker"><span>${shell.escape(reportTypeLabel(item.report_type))}</span><span>v${shell.escape(item.report_version)}</span></div><strong>${shell.escape(item.title || "正式报告")}</strong><p>${shell.escape(reportDisplayText(item.summary || "报告未提供摘要"))}</p></div><div class="ops-report-meta"><small>实际发布</small><time>${shell.escape(shell.fmt(publishedAt))}</time></div><div class="ops-report-meta ops-report-period"><small>覆盖周期</small><time>${shell.escape(period)}</time></div><div class="ops-report-state">${reportStatusBadge(item.status)}<span>查看报告</span></div></a>`;
   }
   async function renderReportList(cfg) {
     const list = document.getElementById("ops-report-list");
@@ -590,10 +610,10 @@
 
   function leadershipBriefingHtml(briefing) {
     if (!briefing || typeof briefing !== "object") return "";
-    const list = (items) => `<ul>${(Array.isArray(items) ? items : []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul>`;
+    const list = (items) => `<ul>${(Array.isArray(items) ? items : []).map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("")}</ul>`;
     const risk = String(briefing.risk_level || "LOW");
     const tone = { CRITICAL: "bad", HIGH: "bad", MEDIUM: "warn", LOW: "good", INFO: "good" }[risk] || "";
-    return `<section class="ops-panel ops-leadership-briefing" data-leadership-briefing><div class="ops-panel-head"><div><h3>领导简报</h3><p>只保留影响、风险和建议，不展开 SID 或 SQL。</p></div><span class="ops-badge ${tone}">${shell.escape(risk)}</span></div><div class="ops-panel-body ops-leadership-grid"><article><h4>影响</h4>${list(briefing.business_impact)}</article><article><h4>风险</h4>${list(briefing.risks)}</article><article><h4>建议</h4>${list(briefing.recommendations)}</article></div></section>`;
+    return `<section class="ops-panel ops-leadership-briefing" data-leadership-briefing><div class="ops-panel-head"><div><h3>领导简报</h3><p>只保留影响、风险和建议，不展开 SID 或 SQL。</p></div><span class="ops-badge ${tone}">${shell.escape(briefing.risk_level_display || reportDisplayText(risk))}</span></div><div class="ops-panel-body ops-leadership-grid"><article><h4>影响</h4>${list(briefing.business_impact)}</article><article><h4>风险</h4>${list(briefing.risks)}</article><article><h4>建议</h4>${list(briefing.recommendations)}</article></div></section>`;
   }
 
   function targetOverviewHtml(target) {
@@ -619,13 +639,13 @@
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
-    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status || "UNKNOWN")} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(item)}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(data.status_display || reportDisplayText(data.status || "UNKNOWN"))} · v${shell.escape(report.report_version)}</p></div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.display_name || reportDisplayText(section.kind || "章节"))}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
   }
 
   function beginReportEdit(panel, data, report, versions) {
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const editableSections = sections.filter((section) => !protectedReportSections.has(section.kind));
-    panel.innerHTML = `<article class="ops-report-presentation"><header class="ops-head"><div><label>报告标题 <input data-report-title-input maxlength="512" value="${shell.escape(data.title || report.title || "")}"></label><p>人工编辑仅修改展示文字，已冻结的证据边界和证据索引不会变化。</p></div><div class="ops-actions"><button type="button" data-write-ready data-cancel-report-edit>取消</button><button class="primary" type="button" data-write-ready data-save-report-edit>保存为新版本</button></div></header>${editableSections.map((section) => `<section class="ops-panel"><div class="ops-panel-head"><h3>${shell.escape(section.kind || "章节")}</h3></div><div class="ops-panel-body"><textarea data-report-edit-section="${shell.escape(section.kind)}" rows="6">${shell.escape((section.items || []).join("\n"))}</textarea></div></section>`).join("")}</article>`;
+    panel.innerHTML = `<article class="ops-report-presentation"><header class="ops-head"><div><label>报告标题 <input data-report-title-input maxlength="512" value="${shell.escape(data.title || report.title || "")}"></label><p>人工编辑仅修改展示文字，已冻结的证据边界和证据索引不会变化。</p></div><div class="ops-actions"><button type="button" data-write-ready data-cancel-report-edit>取消</button><button class="primary" type="button" data-write-ready data-save-report-edit>保存为新版本</button></div></header>${editableSections.map((section) => `<section class="ops-panel"><div class="ops-panel-head"><h3>${shell.escape(section.display_name || reportDisplayText(section.kind || "章节"))}</h3></div><div class="ops-panel-body"><textarea data-report-edit-section="${shell.escape(section.kind)}" rows="6">${shell.escape((section.items || []).join("\n"))}</textarea></div></section>`).join("")}</article>`;
     panel.querySelector("[data-cancel-report-edit]").onclick = () => {
       void renderReportDetail(report.report_id);
     };
