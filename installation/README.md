@@ -32,13 +32,16 @@ KBot 与 AIOps 观测栈保持两个独立 Compose Project，避免混淆业务�
 ```bash
 cp installation/dev/release.ini.example installation/dev/release.ini
 cp installation/dev/deployment.ini.example installation/dev/deployment.ini
-mkdir -p installation/dev/secrets
-printf '%s\n' 'Oracle密码' > installation/dev/secrets/oracle_password
-python3 installation/release.py generate-master-key \
-  --output installation/dev/secrets/master_key
-chmod 600 installation/dev/secrets/oracle_password
 chmod 600 installation/dev/deployment.ini
+installation/dev/kbot-release prepare-secrets \
+  --config installation/dev/deployment.ini
 ```
+
+`prepare-secrets` 会从配置单的 `[secrets]` 自动确定文件位置，在终端无回显地要求输入
+并确认 Oracle Schema 密码，同时首次生成 KBot 主密钥。两个文件权限均设置为 `0600`。
+再次执行默认保留已有文件；数据库密码确需轮换时增加
+`--replace-oracle-password`。主密钥不会被该命令轮换，升级和重新部署必须保留原文件，
+否则平台内已有加密凭据将无法解密。密码不要作为命令参数输入。
 
 在 `deployment.ini` 中填写外部 Oracle 地址、`[apps]` 开关和需要启用的观测组件，
 并保持 AIOps 变更 Kill Switch 默认关闭。观测组件仍复用

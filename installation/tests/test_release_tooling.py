@@ -171,6 +171,111 @@ class ReleaseToolingTest(unittest.TestCase):
             with self.assertRaisesRegex(release.ReleaseError, "0600"):
                 release.deployment_values(config, self.catalog)
 
+    def test_prepare_secrets_prompts_for_password_and_generates_master_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "deployment.ini"
+            config.write_text(
+                "[secrets]\n"
+                "oracle_password_file = secrets/oracle_password\n"
+                "master_key_file = secrets/master_key\n",
+                encoding="utf-8",
+            )
+            config.chmod(0o600)
+            with (
+                patch.object(
+                    release.getpass,
+                    "getpass",
+                    side_effect=["oracle-secret", "oracle-secret"],
+                ),
+                patch("builtins.print"),
+            ):
+                oracle_secret, master_secret = release.prepare_secrets(config)
+            self.assertEqual("oracle-secret\n", oracle_secret.read_text())
+            self.assertGreaterEqual(
+                len(master_secret.read_text().strip().encode("utf-8")), 32
+            )
+            self.assertEqual(0o600, stat.S_IMODE(oracle_secret.stat().st_mode))
+            self.assertEqual(0o600, stat.S_IMODE(master_secret.stat().st_mode))
+
+    def test_prepare_secrets_preserves_existing_files_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            secret_dir = root / "secrets"
+            secret_dir.mkdir()
+            oracle_secret = secret_dir / "oracle_password"
+            master_secret = secret_dir / "master_key"
+            oracle_secret.write_text("existing-oracle\n", encoding="utf-8")
+            master_secret.write_text("m" * 40 + "\n", encoding="utf-8")
+            config = root / "deployment.ini"
+            config.write_text(
+                "[secrets]\n"
+                "oracle_password_file = secrets/oracle_password\n"
+                "master_key_file = secrets/master_key\n",
+                encoding="utf-8",
+            )
+            config.chmod(0o600)
+            with (
+                patch.object(release.getpass, "getpass") as password_reader,
+                patch("builtins.print"),
+            ):
+                release.prepare_secrets(config)
+            password_reader.assert_not_called()
+            self.assertEqual("existing-oracle\n", oracle_secret.read_text())
+            self.assertEqual("m" * 40 + "\n", master_secret.read_text())
+
+    def test_prepare_secrets_does_not_write_mismatched_password(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "deployment.ini"
+            config.write_text(
+                "[secrets]\n"
+                "oracle_password_file = secrets/oracle_password\n"
+                "master_key_file = secrets/master_key\n",
+                encoding="utf-8",
+            )
+            config.chmod(0o600)
+            with patch.object(
+                release.getpass,
+                "getpass",
+                side_effect=["first", "second"],
+            ):
+                with self.assertRaisesRegex(release.ReleaseError, "不一致"):
+                    release.prepare_secrets(config)
+            self.assertFalse((root / "secrets/oracle_password").exists())
+            self.assertFalse((root / "secrets/master_key").exists())
+
+    def test_prepare_secrets_replaces_only_oracle_password(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            secret_dir = root / "secrets"
+            secret_dir.mkdir()
+            oracle_secret = secret_dir / "oracle_password"
+            master_secret = secret_dir / "master_key"
+            oracle_secret.write_text("old-oracle\n", encoding="utf-8")
+            master_secret.write_text("m" * 40 + "\n", encoding="utf-8")
+            config = root / "deployment.ini"
+            config.write_text(
+                "[secrets]\n"
+                "oracle_password_file = secrets/oracle_password\n"
+                "master_key_file = secrets/master_key\n",
+                encoding="utf-8",
+            )
+            config.chmod(0o600)
+            with (
+                patch.object(
+                    release.getpass,
+                    "getpass",
+                    side_effect=["new-oracle", "new-oracle"],
+                ),
+                patch("builtins.print"),
+            ):
+                release.prepare_secrets(
+                    config, replace_oracle_password=True
+                )
+            self.assertEqual("new-oracle\n", oracle_secret.read_text())
+            self.assertEqual("m" * 40 + "\n", master_secret.read_text())
+
     def test_render_deployment_writes_private_secret_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
