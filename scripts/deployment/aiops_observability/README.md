@@ -7,6 +7,11 @@
 - 生产部署说明：`docs/operations/aiops-observability-production-deployment.md`
 - 人工安装与运维：`docs/operations/aiops-observability-manual-deployment.md`
 
+KBot 容器整机交付时，人工只填写 `installation/dev/deployment.ini`；发布器将其中
+`[observability.*]` 配置转换为生成目录下权限为 `0600` 的 `aiops-stack.ini`，再通过
+`KBOT_AIOPS_STACK_CONFIG_FILE` 调用同一个零参数入口。该环境变量属于整机编排器接口，
+不用于维护第二份人工配置。独立部署 Central 或 Collector 时仍使用上述 `var/` 配置。
+
 `compose.yaml`只定义稳定的中心组件和主机采集组件。数据库Exporter、Oracle Alert
 Collector、逐目标Secret、Volume和KBot Webhook签名桥由入口脚本生成到
 `var/aiops-stack/generated/compose.generated.yaml`。不要手工维护生成文件，也不要从

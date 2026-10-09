@@ -10,11 +10,17 @@ OCI Container Registry（OCIR）的统一入口。开发机阶段不需要 OCI �
 - 9 个业务镜像对应 9 个 Python 服务包，同一服务的 API、Worker、Scheduler 复用同一镜像；
 - Model Serving、Knowledge Core 和 Installer 显式安装固定版本的 CPU Torch/TorchVision，
   不会从普通 PyPI 意外带入 CUDA 运行时；
-- `resources/topology.toml` 中 25 个进程分别作为 Compose Service 运行；
+- `deployment.ini` 的 `[apps]` 开关决定实际部署哪些 App，发布器只渲染这些 App
+  及其共享依赖进程；全选时覆盖 `resources/topology.toml` 中全部 25 个进程；
 - 内部 HTTP 端点使用 Compose DNS，不使用 Host 网络，也不发布内部端口；
 - Oracle 是外部受管数据库，不在 Compose 中创建；
 - `kbot-installer` 仅在 `tools` Profile 下按需运行数据库初始化或校验工具；
 - Oracle 密码和 KBot 主密钥从 Docker Secret 文件注入，生成目录内的副本固定为 `0600`。
+- 选择 AIOps App 后可在同一配置单启用 Prometheus、Alertmanager、Loki、Alloy、
+  Grafana、Node Exporter 及数据库 Exporter；OEM 仍只在 AIOps App 内配置。
+
+KBot 与 AIOps 观测栈保持两个独立 Compose Project，避免混淆业务生命周期和监控
+生命周期；统一配置单和 `kbot-deploy` 会在变更容器前完成两套配置校验，再按顺序应用。
 
 当前镜像平台固定为 `linux/amd64`。在完成 ARM 依赖矩阵验证前，不将 OCI Ampere
 实例作为正式目标。
@@ -31,9 +37,12 @@ printf '%s\n' 'Oracle密码' > installation/dev/secrets/oracle_password
 python3 installation/release.py generate-master-key \
   --output installation/dev/secrets/master_key
 chmod 600 installation/dev/secrets/oracle_password
+chmod 600 installation/dev/deployment.ini
 ```
 
-在 `deployment.ini` 中填写外部 Oracle 地址，并保持 AIOps 变更 Kill Switch 默认关闭。
+在 `deployment.ini` 中填写外部 Oracle 地址、`[apps]` 开关和需要启用的观测组件，
+并保持 AIOps 变更 Kill Switch 默认关闭。观测组件仍复用
+`scripts/deployment/aiops_observability/` 的规范资源和逐服务 Secret 规则，不维护第二套实现。
 校验并渲染构建定义：
 
 ```bash
@@ -59,11 +68,23 @@ installation/dev/kbot-release build --mode load --target main_api
 
 ## 渲染与运行
 
+只渲染和检查，不启动容器：
+
 ```bash
 installation/dev/kbot-release render-deployment
-docker compose -f installation/generated/deployment/compose.yaml config
-docker compose -f installation/generated/deployment/compose.yaml up -d
+docker compose --project-directory installation/generated/deployment \
+  -f installation/generated/deployment/compose.yaml config
 ```
+
+确认配置单后，用无参数入口执行真正部署：
+
+```bash
+installation/dev/kbot-deploy
+```
+
+它先重新渲染并校验，再启动所选 App；若 `[observability] enabled = true`，随后调用
+既有零参数 `scripts/aiops-stack` 入口应用观测组件。任一配置在预检阶段不合法时不会启动
+KBot 容器。生成的 `installation-input.json` 会记录 App、服务和观测组件的最终选择。
 
 生成的 Compose 使用执行发布工具的用户 UID/GID 运行 Python 容器，使 `0600` Secret
 保持可读，同时让数据和日志目录不需要开放给其他本机用户。生成目录已被 Git 忽略。
@@ -79,6 +100,8 @@ docker compose -f installation/generated/deployment/compose.yaml \
 
 实际初始化参数仍以 `scripts/db/apply_oracle_schema.py` 和
 `scripts/deployment/bootstrap_kbot.sh` 的规范流程为准，不能对已有 Schema 直接重放空库脚本。
+Installer 默认读取部署器按 App 选择生成的 `oracle_schema_services.ini`，不会为未选 App
+创建业务表。
 
 ## OCI 阶段边界
 

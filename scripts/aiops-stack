@@ -21,7 +21,10 @@ COMPOSE_FILE = STACK_ROOT / "compose.yaml"
 ACCESS_FILE = STACK_ROOT / "compose.access.yaml"
 GENERATED_COMPOSE_FILE_NAME = "compose.generated.yaml"
 IMAGES_FILE = STACK_ROOT / "images.env"
-CONFIG_FILE = REPO_ROOT / "var/aiops-stack/aiops-stack.ini"
+DEFAULT_CONFIG_FILE = REPO_ROOT / "var/aiops-stack/aiops-stack.ini"
+CONFIG_FILE = Path(
+    os.getenv("KBOT_AIOPS_STACK_CONFIG_FILE") or DEFAULT_CONFIG_FILE
+).expanduser().resolve()
 
 MODULE_PROFILES = {
     "metrics": "metrics",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import stat
 import tempfile
@@ -81,6 +82,22 @@ class ReleaseToolingTest(unittest.TestCase):
                 ),
             )
 
+    def test_app_selection_limits_processes_and_schema(self) -> None:
+        values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
+        values["enabled_apps"] = ["aiops"]
+        rendered = release.render_compose(
+            self.catalog, self.topology, values
+        )
+        self.assertIn("  aiops-api:\n", rendered)
+        self.assertIn("  knowledge-core-api:\n", rendered)
+        self.assertNotIn("  media-studio-app-api:\n", rendered)
+        self.assertNotIn("  km-asset-app-api:\n", rendered)
+        self.assertNotIn("  knowledge-retrieval-app-api:\n", rendered)
+        schema = release.render_schema_services(self.catalog, values)
+        self.assertIn("aiops_agent = true", schema)
+        self.assertIn("media_studio_app = false", schema)
+        self.assertIn("km_asset_app = false", schema)
+
     def test_rendered_secrets_are_private(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -94,6 +111,14 @@ class ReleaseToolingTest(unittest.TestCase):
                 stat.S_IMODE(target.stat().st_mode),
             )
 
+    def test_deployment_form_must_be_private(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "deployment.ini"
+            config.write_text("[deployment]\n", encoding="utf-8")
+            config.chmod(0o644)
+            with self.assertRaisesRegex(release.ReleaseError, "0600"):
+                release.deployment_values(config, self.catalog)
+
     def test_render_deployment_writes_private_secret_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -105,6 +130,7 @@ class ReleaseToolingTest(unittest.TestCase):
             config.write_text(
                 self._deployment_ini(root), encoding="utf-8"
             )
+            config.chmod(0o600)
             generated = root / "generated"
             with patch.object(release, "deployment_directory", return_value=generated):
                 release.render_deployment(config)
@@ -113,6 +139,75 @@ class ReleaseToolingTest(unittest.TestCase):
                 self.assertEqual(0o600, stat.S_IMODE(path.stat().st_mode))
             env_text = (generated / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KBOT_UID={os.getuid()}", env_text)
+
+    def test_observability_is_rendered_from_the_same_form(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            secret_dir = root / "input-secrets"
+            secret_dir.mkdir()
+            (secret_dir / "oracle").write_text("oracle-secret\n", encoding="utf-8")
+            (secret_dir / "master").write_text("m" * 40 + "\n", encoding="utf-8")
+            config = root / "deployment.ini"
+            config.write_text(
+                self._deployment_ini(root)
+                + """
+[observability]
+enabled = true
+deployment_id = test-observability
+role = all-in-one
+local_access = false
+minimum_free_gb = 1
+
+[observability.metrics]
+enabled = true
+prometheus_retention = 7d
+alertmanager_retention = 24h
+""",
+                encoding="utf-8",
+            )
+            config.chmod(0o600)
+            generated = root / "generated"
+            with patch.object(release, "deployment_directory", return_value=generated):
+                release.render_deployment(config)
+            observability = generated / "observability"
+            self.assertEqual(
+                0o600,
+                stat.S_IMODE((observability / "aiops-stack.ini").stat().st_mode),
+            )
+            self.assertTrue(
+                (observability / "generated/prometheus/prometheus.yml").is_file()
+            )
+            manifest = json.loads(
+                (generated / "installation-input.json").read_text()
+            )
+            self.assertEqual(
+                ["alertmanager", "prometheus"],
+                manifest["observability"]["services"],
+            )
+
+    def test_aiops_stack_accepts_generated_config_via_environment(self) -> None:
+        expected = "/tmp/kbot-generated-aiops-stack.ini"
+        with patch.dict(
+            os.environ, {"KBOT_AIOPS_STACK_CONFIG_FILE": expected}
+        ):
+            module = release.load_aiops_stack_module()
+        self.assertEqual(Path(expected), module.CONFIG_FILE)
+
+    def test_deploy_validates_compose_before_starting_services(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+            with (
+                patch.object(release, "render_deployment", return_value=output),
+                patch.object(release.subprocess, "run") as runner,
+                patch("builtins.print"),
+            ):
+                release.deploy(Path("deployment.ini"))
+            commands = [call.args[0] for call in runner.call_args_list]
+            self.assertEqual(["config", "--quiet"], commands[0][-2:])
+            self.assertEqual(
+                ["up", "--detach", "--remove-orphans"], commands[1][-3:]
+            )
 
     @staticmethod
     def _values(oracle_secret: Path, master_secret: Path) -> dict[str, object]:
@@ -127,8 +222,16 @@ class ReleaseToolingTest(unittest.TestCase):
             "database_service_name": "kbot4",
             "database_username": "kbot",
             "embedding_dimension": 2048,
+            "enabled_apps": [
+                "knowledge_retrieval",
+                "media_studio",
+                "km_asset",
+                "aiops",
+            ],
             "aiops_agent_execution_enabled": False,
             "aiops_mutation_enabled": False,
+            "observability_enabled": False,
+            "observability_sections": {},
             "oracle_password_file": oracle_secret,
             "master_key_file": master_secret,
             "data_dir": Path("/tmp/kbot-data"),
@@ -144,6 +247,12 @@ image_version = 4.0.0-test
 ui_port = 8080
 public_base_url = http://127.0.0.1:8080
 embedding_dimension = 2048
+
+[apps]
+knowledge_retrieval = true
+media_studio = true
+km_asset = true
+aiops = true
 
 [database]
 host = oracle.test

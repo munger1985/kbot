@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import importlib.util
+import io
 import json
 import os
 import re
@@ -12,6 +14,9 @@ import secrets
 import shutil
 import stat
 import subprocess
+import sys
+import tempfile
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -103,6 +108,19 @@ def validate_catalog() -> tuple[dict[str, Any], dict[str, Any]]:
     if "" in image_names or len(image_names) != len(set(image_names)):
         raise ReleaseError("catalog.toml 的镜像名称为空或重复")
     image_by_id = {str(item["id"]): item for item in images}
+    service_configs = set(image_by_id)
+    base_configs = set((catalog.get("base_pack") or {}).get("service_configs") or [])
+    if not base_configs or not base_configs.issubset(service_configs):
+        raise ReleaseError("catalog.toml 的 base_pack 引用了未知服务镜像")
+    app_packs = catalog.get("app_packs") or {}
+    if not app_packs:
+        raise ReleaseError("catalog.toml 没有定义可部署 App")
+    for app_id, pack in app_packs.items():
+        selected = set(pack.get("service_configs") or [])
+        if not selected or not selected.issubset(service_configs):
+            raise ReleaseError(f"App {app_id} 引用了未知服务镜像")
+        if not str(pack.get("entry_path") or "").startswith("/ui/"):
+            raise ReleaseError(f"App {app_id} 缺少合法 UI 入口")
 
     processes = topology.get("processes") or []
     process_keys = [str(item.get("process_key") or "") for item in processes]
@@ -325,7 +343,13 @@ def build_images(config_path: Path, mode: str, target: str) -> None:
     subprocess.run(command, cwd=ROOT, check=True)
 
 
-def deployment_values(path: Path) -> dict[str, Any]:
+def deployment_values(
+    path: Path, catalog: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    if path.stat().st_mode & 0o077:
+        raise ReleaseError(f"部署配置权限必须为 0600：chmod 600 {path}")
+    if catalog is None:
+        catalog, _ = validate_catalog()
     parser = load_ini(path)
     base = path.parent
     version = required(parser, "deployment", "image_version")
@@ -380,6 +404,34 @@ def deployment_values(path: Path) -> dict[str, Any]:
     project_name = required(parser, "deployment", "project_name")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project_name):
         raise ReleaseError("[deployment] project_name 只能包含小写字母、数字、_ 和 -")
+    known_apps = set(catalog["app_packs"])
+    if not parser.has_section("apps"):
+        raise ReleaseError("部署配置缺少 [apps] App 选择段")
+    unknown_apps = sorted(set(parser["apps"]) - known_apps)
+    if unknown_apps:
+        raise ReleaseError(
+            "[apps] 包含未知 App：" + ", ".join(unknown_apps)
+        )
+    try:
+        enabled_apps = [
+            app_id
+            for app_id in catalog["app_packs"]
+            if parser.getboolean("apps", app_id, fallback=False)
+        ]
+    except ValueError as error:
+        raise ReleaseError("[apps] 的 App 选择必须是 true 或 false") from error
+    if not enabled_apps:
+        raise ReleaseError("[apps] 至少选择一个 App")
+    observability_enabled = parser.getboolean(
+        "observability", "enabled", fallback=False
+    )
+    if observability_enabled and "aiops" not in enabled_apps:
+        raise ReleaseError("启用 AIOps 观测栈前必须在 [apps] 中选择 aiops")
+    observability_sections = {
+        section: dict(parser.items(section))
+        for section in parser.sections()
+        if section == "observability" or section.startswith("observability.")
+    }
     return {
         "project_name": project_name,
         "version": version,
@@ -391,6 +443,9 @@ def deployment_values(path: Path) -> dict[str, Any]:
         "database_service_name": required(parser, "database", "service_name"),
         "database_username": required(parser, "database", "username"),
         "embedding_dimension": embedding_dimension,
+        "enabled_apps": enabled_apps,
+        "observability_enabled": observability_enabled,
+        "observability_sections": observability_sections,
         "aiops_agent_execution_enabled": parser.getboolean(
             "aiops", "agent_execution_enabled", fallback=False
         ),
@@ -410,6 +465,45 @@ def toml_string(value: str) -> str:
 
 def compose_name(process_key: str) -> str:
     return process_key.replace("_", "-")
+
+
+def selected_service_configs(
+    catalog: dict[str, Any], values: dict[str, Any]
+) -> set[str]:
+    """返回基础运行层与所选 App 的服务镜像并集。"""
+
+    selected = set(catalog["base_pack"]["service_configs"])
+    for app_id in values["enabled_apps"]:
+        selected.update(catalog["app_packs"][app_id]["service_configs"])
+    return selected
+
+
+def render_schema_services(
+    catalog: dict[str, Any], values: dict[str, Any]
+) -> str:
+    selected = selected_service_configs(catalog, values)
+    lines = [
+        "; 由 KBot 部署配置生成；platform_core 始终由初始化器自动加入。",
+        "[services]",
+    ]
+    for image in catalog["images"]:
+        service_config = str(image["id"])
+        lines.append(
+            f"{service_config} = {str(service_config in selected).lower()}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def render_ui_runtime_config(values: dict[str, Any]) -> str:
+    payload = {
+        "mainApiBaseUrl": "",
+        "enabledApps": values["enabled_apps"],
+    }
+    return (
+        "globalThis.KBOT_UI_CONFIG = Object.freeze("
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        + ");\n"
+    )
 
 
 def render_runtime_toml(topology: dict[str, Any], values: dict[str, Any]) -> str:
@@ -454,8 +548,11 @@ def render_compose(
     catalog: dict[str, Any], topology: dict[str, Any], values: dict[str, Any]
 ) -> str:
     image_by_id = {str(item["id"]): item for item in catalog["images"]}
+    selected_configs = selected_service_configs(catalog, values)
     lines = [f"name: {yaml_string(values['project_name'])}", "services:"]
     for process in topology["processes"]:
+        if str(process["service_config"]) not in selected_configs:
+            continue
         process_key = str(process["process_key"])
         service = compose_name(process_key)
         image = image_by_id[str(process["service_config"])]
@@ -493,8 +590,15 @@ def render_compose(
             "    restart: unless-stopped",
             "    environment:",
             '      MAIN_API_UPSTREAM: "main-api:18099"',
+            "      UI_ENTRY_PATH: "
+            + yaml_string(
+                catalog["app_packs"][values["enabled_apps"][0]]["entry_path"]
+            ),
             "    ports:",
             f"      - {yaml_string(str(values['ui_port']) + ':8080')}",
+            "    volumes:",
+            '      - "./config/runtime-config.js:'
+            '/usr/share/nginx/html/ui/runtime-config.js:ro"',
             "    depends_on:",
             "      - main-api",
             "    networks:",
@@ -515,6 +619,8 @@ def render_compose(
             '      KBOT_RESOURCE_DIR: "/opt/kbot/resources"',
             "    volumes:",
             '      - "./config/kbot.toml:/etc/kbot/kbot.toml:ro"',
+            '      - "./config/oracle_schema_services.ini:'
+            '/opt/kbot/configuration/oracle_schema_services.ini:ro"',
             f"      - {yaml_string(str(values['data_dir']) + ':/var/lib/kbot')}",
             f"      - {yaml_string(str(values['log_dir']) + ':/var/log/kbot')}",
             "    secrets:",
@@ -541,9 +647,105 @@ def private_copy(source: Path, destination: Path) -> None:
     destination.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
+def load_aiops_stack_module() -> Any:
+    """加载无扩展名的既有 AIOps 观测栈发布器。"""
+
+    module_name = "kbot_installation_aiops_stack"
+    loader = SourceFileLoader(module_name, str(ROOT / "scripts" / "aiops-stack"))
+    specification = importlib.util.spec_from_loader(module_name, loader)
+    if specification is None or specification.loader is None:
+        raise ReleaseError("无法加载 AIOps 观测栈发布器")
+    module = importlib.util.module_from_spec(specification)
+    sys.modules[module_name] = module
+    specification.loader.exec_module(module)
+    return module
+
+
+def observability_config_text(values: dict[str, Any]) -> str:
+    """将统一配置单中的观测段转换为既有观测栈配置。"""
+
+    sections = values["observability_sections"]
+    root_values = sections.get("observability") or {}
+    allowed_root = {
+        "enabled",
+        "deployment_id",
+        "role",
+        "local_access",
+        "minimum_free_gb",
+    }
+    unknown_root = sorted(set(root_values) - allowed_root)
+    if unknown_root:
+        raise ReleaseError(
+            "[observability] 包含未知字段：" + ", ".join(unknown_root)
+        )
+    parser = configparser.ConfigParser(interpolation=None)
+    parser["deployment"] = {
+        "deployment_id": root_values.get(
+            "deployment_id", f"{values['project_name']}-observability"
+        ),
+        "role": root_values.get("role", "all-in-one"),
+        "local_access": root_values.get("local_access", "false"),
+        "minimum_free_gb": root_values.get("minimum_free_gb", "10"),
+    }
+    for source_section, section_values in sections.items():
+        if not source_section.startswith("observability."):
+            continue
+        target_section = source_section.removeprefix("observability.")
+        if not (
+            target_section in {"metrics", "logs", "dashboard", "host"}
+            or re.fullmatch(
+                r"(?:oracle|mysql|postgres|prometheus_target):"
+                r"[a-z0-9][a-z0-9_-]*",
+                target_section,
+            )
+        ):
+            raise ReleaseError(f"未知观测组件配置段：[{source_section}]")
+        parser[target_section] = section_values
+    buffer = io.StringIO()
+    parser.write(buffer)
+    return buffer.getvalue()
+
+
+def validate_observability(values: dict[str, Any]) -> None:
+    if not values["observability_enabled"]:
+        return
+    with tempfile.TemporaryDirectory(
+        prefix="kbot-observability-validate-"
+    ) as temporary:
+        config_path = Path(temporary) / "aiops-stack.ini"
+        config_path.write_text(observability_config_text(values), encoding="utf-8")
+        config_path.chmod(0o600)
+        module = load_aiops_stack_module()
+        module._load_settings(config_path)
+
+
+def render_observability(
+    output: Path, values: dict[str, Any]
+) -> dict[str, Any] | None:
+    """把统一配置单映射给既有 AIOps 观测栈并执行只读渲染。"""
+
+    if not values["observability_enabled"]:
+        return None
+    config_path = output / "observability" / "aiops-stack.ini"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(observability_config_text(values), encoding="utf-8")
+    config_path.chmod(0o600)
+
+    module = load_aiops_stack_module()
+    settings = module._load_settings(config_path)
+    module._prepare_runtime(settings)
+    return {
+        "role": settings.role,
+        "profiles": list(settings.profiles),
+        "services": module._selected_services(settings),
+        "config_file": str(config_path),
+    }
+
+
 def render_deployment(config_path: Path) -> Path:
     catalog, topology = validate_catalog()
-    values = deployment_values(config_path)
+    values = deployment_values(config_path, catalog)
+    validate_observability(values)
     output = deployment_directory()
     if output.exists():
         shutil.rmtree(output)
@@ -555,6 +757,12 @@ def render_deployment(config_path: Path) -> Path:
         render_runtime_toml(topology, values), encoding="utf-8"
     )
     (output / "config" / "kbot.toml").chmod(0o640)
+    (output / "config" / "runtime-config.js").write_text(
+        render_ui_runtime_config(values), encoding="utf-8"
+    )
+    (output / "config" / "oracle_schema_services.ini").write_text(
+        render_schema_services(catalog, values), encoding="utf-8"
+    )
     private_copy(
         values["oracle_password_file"], output / "secrets" / "oracle_password"
     )
@@ -565,7 +773,65 @@ def render_deployment(config_path: Path) -> Path:
     (output / ".env").write_text(
         f"KBOT_UID={os.getuid()}\nKBOT_GID={os.getgid()}\n", encoding="utf-8"
     )
+    observability = render_observability(output, values)
+    (output / "installation-input.json").write_text(
+        json.dumps(
+            {
+                "schema": "kbot-installation-input.v1",
+                "project_name": values["project_name"],
+                "image_version": values["version"],
+                "enabled_apps": values["enabled_apps"],
+                "service_configs": sorted(
+                    selected_service_configs(catalog, values)
+                ),
+                "observability": observability,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return output
+
+
+def deploy(config_path: Path) -> None:
+    """先渲染并校验全部配置，再应用 KBot 与可选观测栈。"""
+
+    output = render_deployment(config_path)
+    compose = [
+        "docker",
+        "compose",
+        "--project-directory",
+        str(output),
+        "-f",
+        str(output / "compose.yaml"),
+    ]
+    observability_config = output / "observability" / "aiops-stack.ini"
+    if observability_config.is_file():
+        module = load_aiops_stack_module()
+        settings = module._load_settings(observability_config)
+        module._preflight(settings)
+        subprocess.run(
+            [*module._compose_command(settings), "config", "--quiet"],
+            check=True,
+        )
+    subprocess.run([*compose, "config", "--quiet"], check=True)
+    subprocess.run(
+        [*compose, "up", "--detach", "--remove-orphans"], check=True
+    )
+    if observability_config.is_file():
+        environment = os.environ.copy()
+        environment["KBOT_AIOPS_STACK_CONFIG_FILE"] = str(
+            observability_config
+        )
+        subprocess.run(
+            [str(ROOT / "scripts" / "aiops-stack")],
+            cwd=ROOT,
+            env=environment,
+            check=True,
+        )
+    print(f"KBot 部署已应用：{output}")
 
 
 def validate_command(
@@ -575,7 +841,9 @@ def validate_command(
     if release_config:
         release_values(release_config)
     if deployment_config:
-        deployment_values(deployment_config)
+        catalog, _ = validate_catalog()
+        values = deployment_values(deployment_config, catalog)
+        validate_observability(values)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -592,6 +860,10 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--target", default="default")
     deployment = commands.add_parser("render-deployment")
     deployment.add_argument(
+        "--config", type=Path, default=DEFAULT_DEPLOYMENT_CONFIG
+    )
+    deploy_command = commands.add_parser("deploy")
+    deploy_command.add_argument(
         "--config", type=Path, default=DEFAULT_DEPLOYMENT_CONFIG
     )
     secret = commands.add_parser("generate-master-key")
@@ -611,6 +883,8 @@ def main() -> None:
             build_images(arguments.config, arguments.mode, arguments.target)
         elif arguments.command == "render-deployment":
             print(render_deployment(arguments.config))
+        elif arguments.command == "deploy":
+            deploy(arguments.config)
         elif arguments.command == "generate-master-key":
             arguments.output.parent.mkdir(parents=True, exist_ok=True)
             arguments.output.write_text(

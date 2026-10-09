@@ -6,6 +6,13 @@ ui_port = 8080
 public_base_url = http://127.0.0.1:8080
 embedding_dimension = 2048
 
+# 物理部署选择；至少选择一个 App，共享依赖会自动加入。
+[apps]
+knowledge_retrieval = true
+media_studio = true
+km_asset = true
+aiops = true
+
 [database]
 host = oracle.example.internal
 port = 1521
@@ -23,3 +30,77 @@ master_key_file = secrets/master_key
 [aiops]
 agent_execution_enabled = false
 mutation_enabled = false
+
+# AIOps 观测组件只在选择 aiops App 后启用。OEM 仍在 AIOps App 内接入，
+# 不属于 Docker 部署组件。
+[observability]
+enabled = false
+deployment_id = kbot4-observability
+role = all-in-one
+local_access = false
+minimum_free_gb = 10
+
+[observability.metrics]
+# enabled = true
+prometheus_retention = 30d
+alertmanager_retention = 120h
+prometheus_port = 9090
+alertmanager_port = 9093
+# 三项同时填写后，Alertmanager 才向 KBot 发起签名告警回调。
+# kbot_webhook_url = http://127.0.0.1:8080
+# kbot_webhook_key = 从AIOps监控接入页面创建
+# kbot_webhook_secret = 从AIOps监控接入页面创建
+
+[observability.logs]
+# enabled = true
+loki_retention = 720h
+loki_port = 3100
+loki_url = http://loki:3100/loki/api/v1/push
+loki_tenant = kbot
+# loki_token = 仅远程Loki必填
+
+[observability.dashboard]
+# enabled = true
+grafana_bind_address = 127.0.0.1
+grafana_port = 3000
+grafana_admin_user = kbot-admin
+# grafana_admin_password = CHANGE_ME
+
+[observability.host]
+# enabled = true
+# target_key = host-prod-01
+# exporter_bind_address = 10.0.0.30
+# exporter_port = 19100
+
+# 可复制本段配置多个数据库。Target Key 必须与 AIOps App 中的绑定完全一致。
+[observability.oracle:oracle-prod-01]
+# enabled = true
+# host = 10.0.0.20
+# port = 1521
+# service = ORCLPDB1
+# username = kbot_monitor
+# password = CHANGE_ME
+# exporter_query_timeout = 15
+# alert_poll_seconds = 15
+# alert_query_timeout_seconds = 15
+# alert_initial_lookback_seconds = 900
+# alert_max_rows = 1000
+# exporter_bind_address = 10.0.0.30
+# exporter_port = 19161
+
+[observability.mysql:mysql-prod-01]
+# enabled = true
+# host = 10.0.0.21
+# port = 3306
+# username = kbot_monitor
+# password = CHANGE_ME
+# exporter_bind_address = 10.0.0.31
+# exporter_port = 19104
+
+[observability.postgres:postgres-prod-01]
+# enabled = true
+# uri = 10.0.0.22:5432/postgres?sslmode=require
+# username = kbot_monitor
+# password = CHANGE_ME
+# exporter_bind_address = 10.0.0.32
+# exporter_port = 19187

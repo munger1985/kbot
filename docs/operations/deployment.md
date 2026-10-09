@@ -13,6 +13,11 @@
 构建和后续 OCIR 发布使用 `installation/` 下的统一工具，详见
 `installation/README.md`。
 
+容器部署必须先填写权限为 `0600` 的 `installation/dev/deployment.ini`。
+`[apps]` 开关决定实际启动的 App 进程及空库 Schema 初始化范围；选择 AIOps 后还可在
+同一配置单的 `[observability.*]` 段选择 Prometheus、Loki、Grafana 和 Exporter。
+确认配置后使用无参数 `installation/dev/kbot-deploy`，不要分别手工拼接 Compose 命令。
+
 ## 空白环境一键部署
 
 先准备 `configuration/kbot.toml` 和 Secret。目标必须是没有任何 `KBOT_%` 表或

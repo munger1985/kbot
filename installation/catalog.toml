@@ -63,3 +63,41 @@ packages = [
 
 [ui]
 name = "kbot-ui"
+
+[base_pack]
+service_configs = ["model_serving", "main_api"]
+
+[app_packs.knowledge_retrieval]
+label = "Knowledge Retrieval"
+entry_path = "/ui/knowledge_retrieval/login.html"
+service_configs = [
+  "knowledge_core",
+  "knowledge_retrieval_app",
+  "agent_runtime",
+  "data_query",
+]
+
+[app_packs.media_studio]
+label = "Media Studio"
+entry_path = "/ui/media_studio/login.html"
+service_configs = ["media_studio_app"]
+
+[app_packs.km_asset]
+label = "KM Asset"
+entry_path = "/ui/km/login.html"
+service_configs = [
+  "knowledge_core",
+  "km_asset_app",
+  "agent_runtime",
+  "data_query",
+]
+
+[app_packs.aiops]
+label = "AIOps"
+entry_path = "/ui/aiops/login.html"
+service_configs = [
+  "knowledge_core",
+  "agent_runtime",
+  "data_query",
+  "aiops_agent",
+]

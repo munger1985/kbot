@@ -4,6 +4,10 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    location = / {
+        return 302 ${UI_ENTRY_PATH};
+    }
+
     location /api/ {
         proxy_pass http://${MAIN_API_UPSTREAM};
         proxy_http_version 1.1;
