@@ -48,12 +48,115 @@ class AgentModelBindings(_Model):
     diagnosis_llm: UUID | None = None
 
 
+class ControlledDynamicParameterRule(_Model):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    allowed_values: tuple[str, ...] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_values(self):
+        supported = {
+            "cursor_sharing": {"EXACT", "FORCE"},
+            "optimizer_mode": {"ALL_ROWS", "FIRST_ROWS"},
+            "statistics_level": {"BASIC", "TYPICAL", "ALL"},
+        }
+        normalized = [value.upper() for value in self.allowed_values]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("动态参数允许值不能重复")
+        if any(
+            re.fullmatch(r"[A-Za-z0-9_]{1,128}", value) is None
+            for value in self.allowed_values
+        ):
+            raise ValueError("动态参数允许值格式无效")
+        if self.name not in supported or not set(normalized) <= supported[self.name]:
+            raise ValueError("动态参数或允许值不在受控动作 Catalog")
+        return self
+
+
+class ControlledActionObjectScopes(_Model):
+    schemas: tuple[str, ...] = ()
+    exclude_system_objects: bool = True
+    dynamic_parameters: tuple[ControlledDynamicParameterRule, ...] = ()
+    resource_manager_plans: tuple[str, ...] = ()
+    privilege_grantees: tuple[str, ...] = ()
+    system_privileges: tuple[str, ...] = ()
+    object_privileges: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_scopes(self):
+        if len(set(self.schemas)) != len(self.schemas):
+            raise ValueError("受控动作 Schema 范围不能重复")
+        for schema in self.schemas:
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_$#]{0,127}", schema) is None:
+                raise ValueError("受控动作 Schema 名称格式无效")
+        parameter_names = [item.name.lower() for item in self.dynamic_parameters]
+        if len(set(parameter_names)) != len(parameter_names):
+            raise ValueError("动态参数白名单不能重复")
+        for label, values in (
+            ("Resource Manager Plan", self.resource_manager_plans),
+            ("授权用户", self.privilege_grantees),
+        ):
+            normalized = [value.upper() for value in values]
+            if len(set(normalized)) != len(normalized):
+                raise ValueError(f"{label} 白名单不能重复")
+            if any(
+                re.fullmatch(r"[A-Za-z][A-Za-z0-9_$#]{0,127}", value) is None
+                for value in values
+            ):
+                raise ValueError(f"{label} 格式无效")
+        supported_privileges = {
+            "系统权限": {
+                "CREATE SESSION", "CREATE TABLE", "CREATE VIEW",
+                "CREATE PROCEDURE", "CREATE SEQUENCE", "CREATE SYNONYM",
+                "CREATE TRIGGER", "CREATE TYPE",
+            },
+            "对象权限": {
+                "SELECT", "READ", "INSERT", "UPDATE", "DELETE", "EXECUTE",
+            },
+        }
+        for label, values in (
+            ("系统权限", self.system_privileges),
+            ("对象权限", self.object_privileges),
+        ):
+            normalized = [value.upper() for value in values]
+            if len(set(normalized)) != len(normalized):
+                raise ValueError(f"{label} 白名单不能重复")
+            if any(
+                re.fullmatch(r"[A-Za-z][A-Za-z ]{0,63}", value) is None
+                for value in values
+            ):
+                raise ValueError(f"{label} 格式无效")
+            if not set(normalized) <= supported_privileges[label]:
+                raise ValueError(f"{label} 不在受控动作 Catalog")
+        return self
+
+
+class TargetControlledActionExecution(_Model):
+    target_id: UUID
+    enabled: bool = False
+    allowed_action_ids: tuple[str, ...] = ()
+    object_scopes: ControlledActionObjectScopes = Field(
+        default_factory=ControlledActionObjectScopes
+    )
+    max_daily_executions: int | None = Field(default=None, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def validate_action_selection(self):
+        if len(set(self.allowed_action_ids)) != len(self.allowed_action_ids):
+            raise ValueError("受控动作不能重复")
+        if self.enabled != bool(self.allowed_action_ids):
+            raise ValueError("启用受控动作时必须明确选择至少一个动作")
+        return self
+
+
 class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
-    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    target_ids: tuple[UUID, ...] = Field(default=(), max_length=32)
+    controlled_action_execution: tuple[
+        TargetControlledActionExecution, ...
+    ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -75,6 +178,11 @@ class CreateAIOpsAgentCommand(_Model):
             raise ValueError("diagnostic_source_ids 不能重复")
         if len(set(self.target_ids)) != len(self.target_ids):
             raise ValueError("target_ids 不能重复")
+        policy_targets = [item.target_id for item in self.controlled_action_execution]
+        if len(set(policy_targets)) != len(policy_targets):
+            raise ValueError("每个 Target 只能声明一份受控动作策略")
+        if not set(policy_targets).issubset(self.target_ids):
+            raise ValueError("受控动作策略只能引用已选择的 Target")
         return self
 
 
@@ -87,9 +195,10 @@ class UpdateAIOpsAgentCommand(_Model):
     diagnostic_source_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=16
     )
-    target_ids: tuple[UUID, ...] | None = Field(
-        default=None, min_length=1, max_length=32
-    )
+    target_ids: tuple[UUID, ...] | None = Field(default=None, max_length=32)
+    controlled_action_execution: tuple[
+        TargetControlledActionExecution, ...
+    ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
         "INFO", "WARNING", "HIGH", "CRITICAL"
@@ -117,6 +226,16 @@ class UpdateAIOpsAgentCommand(_Model):
             self.target_ids
         ):
             raise ValueError("target_ids 不能重复")
+        if self.controlled_action_execution is not None:
+            policy_targets = [
+                item.target_id for item in self.controlled_action_execution
+            ]
+            if len(set(policy_targets)) != len(policy_targets):
+                raise ValueError("每个 Target 只能声明一份受控动作策略")
+            if self.target_ids is not None and not set(policy_targets).issubset(
+                self.target_ids
+            ):
+                raise ValueError("受控动作策略只能引用已选择的 Target")
         return self
 
 
@@ -146,11 +265,8 @@ class AIOpsAgentService:
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
             values = command.model_dump()
-            targets = await self._validate_resources(
+            await self._validate_resources(
                 uow, command.domain_id, command.status, values
-            )
-            values["controlled_action_execution"] = (
-                self._automatic_controlled_action_execution(targets)
             )
             policy = await self._create_policy(
                 uow=uow,
@@ -297,6 +413,9 @@ class AIOpsAgentService:
             current_targets = await uow.agents.version_target_ids(
                 agent_version_id=current.agent_version_id
             )
+            current_action_policies = await uow.agents.version_target_policies(
+                agent_version_id=current.agent_version_id
+            )
             current_policy = await uow.policies.get_scoped(
                 policy_id=current.policy_id, domain_id=command.domain_id
             )
@@ -309,13 +428,23 @@ class AIOpsAgentService:
                 exclude={"domain_id", "agent_id", "expected_row_version", "actor_id"},
                 exclude_unset=True,
             )
+            effective_target_ids = tuple(
+                changes.get("target_ids", tuple(current_targets))
+            )
+            current_controlled_actions = [
+                {"target_id": target_id, **policy}
+                for target_id, policy in current_action_policies.items()
+                if policy and target_id in effective_target_ids
+            ]
             effective = {
                 "domain_id": command.domain_id,
                 "diagnostic_source_ids": changes.get(
                     "diagnostic_source_ids", tuple(current_sources)
                 ),
-                "target_ids": changes.get("target_ids", tuple(current_targets)),
-                "controlled_action_execution": (),
+                "target_ids": effective_target_ids,
+                "controlled_action_execution": changes.get(
+                    "controlled_action_execution", current_controlled_actions
+                ),
                 "auto_alert_enabled": changes.get(
                     "auto_alert_enabled",
                     bool(current_rules.get("auto_alert_enabled", True)),
@@ -339,15 +468,16 @@ class AIOpsAgentService:
                 "instruction": changes.get("instruction", current.instruction),
                 "config": changes.get("config", current.config_json),
             }
-            targets = await self._validate_resources(
-                uow, command.domain_id, str(changes.get("status", agent.status)), effective
-            )
-            effective["controlled_action_execution"] = (
-                self._automatic_controlled_action_execution(targets)
+            await self._validate_resources(
+                uow,
+                command.domain_id,
+                str(changes.get("status", agent.status)),
+                effective,
             )
             version_fields = {
                 "diagnostic_source_ids",
                 "target_ids",
+                "controlled_action_execution",
                 "auto_alert_enabled",
                 "auto_observe_min_severity",
                 "auto_observe_min_target_level",
@@ -546,11 +676,6 @@ class AIOpsAgentService:
                 status_code=422,
             )
         target_ids = tuple(values.get("target_ids") or ())
-        if not target_ids:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_TARGET_REQUIRED", "Agent 至少需要选择一个逻辑 Target",
-                status_code=422,
-            )
         targets = [
             await uow.targets.get_scoped(target_id=target_id, domain_id=domain_id)
             for target_id in target_ids
@@ -572,12 +697,39 @@ class AIOpsAgentService:
                     domain_id=domain_id,
                     active_only=True,
                 )
-                if not ({binding.diagnostic_source_id for binding in bindings} & set(source_ids)):
+                bound_source_ids = {
+                    binding.diagnostic_source_id for binding in bindings
+                }
+                if not bound_source_ids.intersection(source_ids):
                     raise AIOpsAgentError(
                         "AIOPS_AGENT_SOURCE_NOT_BOUND",
                         f"Target“{target.display_name}”至少需要映射一个所选监控源",
                         status_code=422,
                     )
+        policies = self._controlled_action_policies(values)
+        target_by_id = {target.target_id: target for target in targets}
+        for target_id, action_policy in policies.items():
+            if not action_policy.get("enabled"):
+                continue
+            target = target_by_id.get(target_id)
+            if (
+                target is None
+                or not target.controlled_change_enabled
+                or target.execution_credential_id is None
+            ):
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_CHANGE_TARGET_REQUIRED",
+                    "启用受控动作前，目标必须允许受控变更并配置执行凭据",
+                    status_code=422,
+                )
+            selected = set(action_policy.get("allowed_action_ids") or ())
+            compatible = set(self._compatible_action_ids(target))
+            if not selected or not selected.issubset(compatible):
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_ACTION_NOT_COMPATIBLE",
+                    "选择的受控动作与 Target 类型、版本或能力不兼容",
+                    status_code=422,
+                )
         return targets
 
     def _compatible_action_ids(self, target) -> list[str]:
@@ -612,35 +764,16 @@ class AIOpsAgentService:
             }
         )
 
-    def _automatic_controlled_action_execution(self, targets) -> list[dict]:
-        """按 Target 当前能力开放全部已登记动作，执行权仍逐 Proposal 审批。"""
-        policies = []
-        for target in targets:
-            if (
-                not target.controlled_change_enabled
-                or target.execution_credential_id is None
-            ):
-                continue
-            action_ids = self._compatible_action_ids(target)
-            if not action_ids:
-                continue
-            policies.append(
-                {
-                    "target_id": target.target_id,
-                    "enabled": True,
-                    "allowed_action_ids": action_ids,
-                    "object_scopes": {"approval_controls_execution": True},
-                    "max_daily_executions": None,
-                }
-            )
-        return policies
-
     @staticmethod
     def _controlled_action_policies(values) -> dict[UUID, dict[str, Any]]:
         """把请求中的每 Target 策略规范化为不可变版本快照。"""
         result: dict[UUID, dict[str, Any]] = {}
         for raw in values.get("controlled_action_execution") or ():
-            item = dict(raw)
+            item = (
+                raw.model_dump(mode="python")
+                if isinstance(raw, TargetControlledActionExecution)
+                else dict(raw)
+            )
             target_id = UUID(str(item.pop("target_id")))
             item["allowed_action_ids"] = sorted(
                 set(item.get("allowed_action_ids") or ())

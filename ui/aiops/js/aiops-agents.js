@@ -11,11 +11,23 @@
   let bindingTargetId = "";
   const bindingsByTarget = new Map();
   const draftsByTarget = new Map();
+  const actionCatalogsByTarget = new Map();
   let editing = null;
 
   const escape = (value) => shell.escape(value ?? "—");
   const sourceName = (id) => sources.find((item) => item.source_id === id)?.display_name || shell.short(id);
   const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
+  const csv = (value) => String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+  const dynamicParameterText = (rules) => (rules || []).map((item) => `${item.name}=${(item.allowed_values || []).join("|")}`).join(";");
+
+  function parseDynamicParameters(value) {
+    return String(value || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => {
+      const [name, rawValues, ...extra] = item.split("=");
+      const allowedValues = String(rawValues || "").split("|").map((entry) => entry.trim()).filter(Boolean);
+      if (!name?.trim() || extra.length || !allowedValues.length) throw new Error("动态参数白名单格式应为 parameter=VALUE1|VALUE2，多个参数用分号分隔。");
+      return { name: name.trim(), allowed_values: allowedValues };
+    });
+  }
   function showResult(message = "", tone = "") {
     const result = document.getElementById("agent-result");
     result.textContent = message;
@@ -41,7 +53,8 @@
     body.innerHTML = agents.map((agent) => {
       const sourceNames = (agent.diagnostic_source_ids || []).map((id) => escape(sourceName(id)));
       const targetNames = (agent.target_ids || []).map((id) => escape(targetName(id)));
-      const access = "诊断；受控动作逐次审批";
+      const actionCount = (agent.controlled_action_execution || []).reduce((count, item) => count + (item.allowed_action_ids || []).length, 0);
+      const access = actionCount ? `诊断 + ${actionCount} 个受控动作` : "仅诊断";
       return `<tr>
         <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
         <td>${shell.badge(agent.status)}</td>
@@ -163,7 +176,7 @@
       : '<div class="ops-error">没有已启用的监控源，请先完成监控源配置。</div>';
     document.getElementById("agent-targets").innerHTML = targets.length
       ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
-      : '<div class="ops-error">没有已启用的逻辑 Target，请先创建并启用运维目标。</div>';
+      : '<div class="ops-empty">暂无可选 Target；Agent 仍可仅使用已选监控源。</div>';
     const diagnosisModels = sortedDiagnosisModels();
     document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
@@ -279,14 +292,76 @@
       if (show && bindingFor(card.dataset.sourceId)?.status === "ACTIVE") mappedCount += 1;
     });
     const summary = document.getElementById("agent-binding-summary");
-    if (!targetId) summary.textContent = "请先选择至少一个逻辑 Target。";
+    if (!targetId) summary.textContent = selectedCount
+      ? `已选择 ${selectedCount} 个监控源；如需数据库直连或精确映射，可继续选择 Target。`
+      : "请先选择至少一个监控源；数据库 Target 为可选项。";
     else if (!selectedCount) summary.textContent = "请选择监控源，随后填写该 Target 在监控系统中的标识。";
     else summary.textContent = `${selectedCount} 个监控源已选择，${mappedCount} 个已有有效 Target 映射；保存时会补齐或更新。`;
   }
 
   function toggleTargetFields() {
+    const selected = selectedTargetIds();
+    const changeTargets = targets.filter((item) => selected.includes(item.target_id) && item.controlled_change_enabled);
+    document.getElementById("agent-change-help").textContent = !selected.length
+      ? "未选择 Target，Agent 仅使用监控证据。"
+      : changeTargets.length
+        ? `当前有 ${changeTargets.length} 个 Target 可配置；未选择动作时保持只读诊断。`
+        : "所选 Target 均未启用受控变更，Agent 保持只读诊断。";
+    renderControlledActions();
+    loadActionCatalogs(changeTargets.map((item) => item.target_id))
+      .then(renderControlledActions)
+      .catch((error) => showResult(`读取动作目录失败：${error.message}`, "bad"));
     syncMappingTargetOptions();
     syncSourceMappingVisibility();
+  }
+
+  async function loadActionCatalogs(targetIds) {
+    await Promise.all(targetIds.map(async (targetId) => {
+      if (actionCatalogsByTarget.has(targetId)) return;
+      const catalog = await KBotAIOpsAuth.request(`${api}/action-catalog/${encodeURIComponent(targetId)}`);
+      actionCatalogsByTarget.set(targetId, catalog);
+    }));
+  }
+
+  function renderControlledActions() {
+    const selected = selectedTargetIds();
+    const container = document.getElementById("agent-controlled-actions");
+    if (!selected.length) {
+      container.innerHTML = '<div class="ops-empty">未选择数据库 Target，无数据库直连或变更权限。</div>';
+      return;
+    }
+    container.innerHTML = selected.map((targetId) => {
+      const target = targets.find((item) => item.target_id === targetId);
+      if (!target?.controlled_change_enabled) {
+        return `<article class="agent-source-card"><strong>${escape(target?.display_name)}</strong><small>仅只读诊断；该 Target 未启用受控变更。</small></article>`;
+      }
+      const catalog = actionCatalogsByTarget.get(targetId);
+      if (!catalog) return `<article class="agent-source-card"><strong>${escape(target.display_name)}</strong><small>正在读取动作目录…</small></article>`;
+      const configured = (editing?.controlled_action_execution || []).find((item) => item.target_id === targetId) || {};
+      const selectedActions = new Set(configured.allowed_action_ids || []);
+      const actions = [...new Map((catalog.actions || [])
+        .filter((item) => item.execution_mode === "EXECUTABLE_AFTER_APPROVAL")
+        .map((item) => [item.action_id, item])).values()];
+      const choices = actions.length
+        ? actions.map((action) => `<label class="agent-switch-row">
+          <input type="checkbox" data-action-target="${escape(targetId)}" value="${escape(action.action_id)}" ${selectedActions.has(action.action_id) ? "checked" : ""} ${action.currently_executable ? "" : "disabled"}>
+          <span><strong>${escape(action.action_id)}</strong><small>${escape(action.action_family)} · ${escape(action.risk_level)} · ${escape(action.lock_impact)}</small></span>
+        </label>`).join("")
+        : '<small>当前 Target 没有可授权的受控动作，保持只读诊断。</small>';
+      const scopes = configured.object_scopes || {};
+      return `<article class="agent-source-card" data-action-policy-target="${escape(targetId)}">
+        <strong>${escape(target.display_name)}</strong><small>默认只读；勾选的动作仍须逐条人工审批。</small>${choices}
+        <div class="ops-form"><div class="ops-field span-8"><label>允许的 Schema（逗号分隔）</label><input data-action-schemas value="${escape((scopes.schemas || []).join(","))}" placeholder="APP_SCHEMA"></div>
+        <div class="ops-field span-4"><label>每日执行上限</label><input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></div></div>
+        <div class="ops-form">
+          <div class="ops-field span-12"><label>动态参数白名单</label><input data-action-dynamic-parameters value="${escape(dynamicParameterText(scopes.dynamic_parameters))}" placeholder="cursor_sharing=EXACT|FORCE"><small>多个参数用分号分隔。</small></div>
+          <div class="ops-field span-6"><label>Resource Manager Plan（逗号分隔）</label><input data-action-resource-plans value="${escape((scopes.resource_manager_plans || []).join(","))}" placeholder="APP_PLAN"></div>
+          <div class="ops-field span-6"><label>允许授权的本地用户（逗号分隔）</label><input data-action-privilege-grantees value="${escape((scopes.privilege_grantees || []).join(","))}" placeholder="APPUSER,REPORTER"></div>
+          <div class="ops-field span-6"><label>系统权限白名单（逗号分隔）</label><input data-action-system-privileges value="${escape((scopes.system_privileges || []).join(","))}" placeholder="CREATE SESSION"></div>
+          <div class="ops-field span-6"><label>对象权限白名单（逗号分隔）</label><input data-action-object-privileges value="${escape((scopes.object_privileges || []).join(","))}" placeholder="SELECT,EXECUTE"></div>
+        </div>
+      </article>`;
+    }).join("");
   }
 
   function selectedTargetIds() {
@@ -339,7 +414,10 @@
     const select = document.getElementById("agent-mapping-target");
     const selected = selectedTargetIds();
     const previous = selected.includes(select.value) ? select.value : selected[0] || "";
-    select.innerHTML = '<option value="">请选择</option>' + selected.map((id) => `<option value="${escape(id)}">${escape(targetName(id))}</option>`).join("");
+    select.disabled = !selected.length;
+    select.innerHTML = selected.length
+      ? '<option value="">请选择要配置映射的 Target</option>' + selected.map((id) => `<option value="${escape(id)}">${escape(targetName(id))}</option>`).join("")
+      : '<option value="">未选择 Target，仅使用监控证据</option>';
     select.value = previous;
     if (previous && previous !== bindingTargetId) loadBindings(previous).catch((error) => showResult(error.message, "bad"));
   }
@@ -358,6 +436,7 @@
     bindingTargetId = "";
     bindingsByTarget.clear();
     draftsByTarget.clear();
+    actionCatalogsByTarget.clear();
     const form = document.getElementById("agent-form");
     form.reset();
     resetMappingInputs();
@@ -385,6 +464,7 @@
     bindingTargetId = "";
     bindingsByTarget.clear();
     draftsByTarget.clear();
+    actionCatalogsByTarget.clear();
     const form = document.getElementById("agent-form");
     form.reset();
     resetMappingInputs();
@@ -407,7 +487,7 @@
     form.querySelectorAll('[name="target_ids"]').forEach((input) => {
       input.checked = (editing.target_ids || []).includes(input.value);
     });
-    document.getElementById("agent-status-help").textContent = "启用前会检查逻辑 Target、监控源及至少一条有效映射；运行时连接异常不会阻止 Agent 诊断。";
+    document.getElementById("agent-status-help").textContent = "启用前会检查监控源；已选择 Target 时还会检查至少一条有效映射。运行时连接异常不会阻止 Agent 使用已有监控证据诊断。";
     toggleTargetFields();
     toggleAlertSettings();
     showResult();
@@ -429,7 +509,6 @@
     const selectedSources = [...form.querySelectorAll('[name="diagnostic_source_ids"]:checked')].map((input) => input.value);
     const targetIds = selectedTargetIds();
     if (!selectedSources.length) throw new Error("至少选择一个监控源。");
-    if (!targetIds.length) throw new Error("至少选择一个逻辑 Target。");
     const plannerModelId = form.elements.planner_model_id.value.trim();
     const diagnosisModelId = form.elements.diagnosis_model_id.value.trim();
     const ocrModelId = form.elements.ocr_model_id.value.trim();
@@ -450,12 +529,34 @@
       };
     }
     const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
+    const controlledActionExecution = targetIds.map((targetId) => {
+      const card = document.querySelector(`[data-action-policy-target="${CSS.escape(targetId)}"]`);
+      if (!card) return null;
+      const actionIds = [...card.querySelectorAll("[data-action-target]:checked")].map((input) => input.value);
+      if (!actionIds.length) return null;
+      return {
+        target_id: targetId,
+        enabled: true,
+        allowed_action_ids: actionIds,
+        object_scopes: {
+          schemas: csv(card.querySelector("[data-action-schemas]").value),
+          exclude_system_objects: true,
+          dynamic_parameters: parseDynamicParameters(card.querySelector("[data-action-dynamic-parameters]").value),
+          resource_manager_plans: csv(card.querySelector("[data-action-resource-plans]").value),
+          privilege_grantees: csv(card.querySelector("[data-action-privilege-grantees]").value),
+          system_privileges: csv(card.querySelector("[data-action-system-privileges]").value),
+          object_privileges: csv(card.querySelector("[data-action-object-privileges]").value),
+        },
+        max_daily_executions: Number(card.querySelector("[data-action-limit]").value),
+      };
+    }).filter(Boolean);
     return {
       display_name: form.elements.display_name.value.trim(),
       description: form.elements.description.value.trim() || null,
       status: editing ? form.elements.status.value : "DRAFT",
       diagnostic_source_ids: selectedSources,
       target_ids: targetIds,
+      controlled_action_execution: controlledActionExecution,
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
       auto_observe_min_target_level: autoAlertEnabled ? Number(form.elements.auto_observe_min_target_level.value) : (editing?.auto_observe_min_target_level || 1),

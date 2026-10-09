@@ -124,24 +124,32 @@
             <div class="agent-section-heading">
               <div>
                 <h3 id="agent-section-evidence">证据与数据库访问</h3>
-                <p>逻辑 Target 与监控源都必选；一个 Agent 可以管理多个数据库对象。</p>
+                <p>监控源必选；数据库 Target 可选，选择后才配置数据库对象范围和监控映射。</p>
               </div>
             </div>
+            <div class="agent-source-heading">
+              <div><strong>监控源</strong><span>必选，可多选</span></div>
+              <p id="agent-binding-summary">先选择 Agent 可以使用的监控源；无需先选择数据库 Target。</p>
+            </div>
+            <div id="agent-sources" class="agent-source-list"></div>
+
             <div class="ops-field agent-target-field">
               <label>逻辑数据库 Target</label>
               <div id="agent-targets" class="agent-target-list"></div>
-              <small>必选，可多选。Target 是否支持数据库直连和受控变更由 Target 自身配置决定。</small>
-            </div>
-
-            <div class="agent-source-heading">
-              <div><strong>监控源</strong><span>必选，可多选</span></div>
-              <p id="agent-binding-summary">为每个 Target 配置它在所选监控源中的 instance、target_key 或其他定位标识。</p>
+              <small>可选，可多选。选择后可使用该 Target 的数据库能力，并配置监控对象映射。</small>
             </div>
             <div class="ops-field">
               <label for="agent-mapping-target">当前配置映射的 Target</label>
-              <select id="agent-mapping-target"><option value="">请先选择逻辑 Target</option></select>
+              <select id="agent-mapping-target" disabled><option value="">未选择 Target，仅使用监控证据</option></select>
             </div>
-            <div id="agent-sources" class="agent-source-list"></div>
+
+            <div id="agent-change-field" class="agent-permission-row">
+              <div>
+                <strong>Agent–Target 执行策略</strong>
+                <small id="agent-change-help">默认仅允许只读诊断；按 Target 显式选择动作后，才可逐条审批执行。</small>
+              </div>
+              <div id="agent-controlled-actions" class="agent-source-list"></div>
+            </div>
           </div>
         </section>
 
@@ -196,6 +204,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20261009-1"></script>
+  <script src="./js/aiops-agents.js?v=20261009-2"></script>
 </body>
 </html>

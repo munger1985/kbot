@@ -7,6 +7,7 @@ from aiops_agent.application.agents import (
     AIOpsAgentError,
     AIOpsAgentService,
     CreateAIOpsAgentCommand,
+    TargetControlledActionExecution,
     UpdateAIOpsAgentCommand,
 )
 from pydantic import ValidationError
@@ -144,14 +145,19 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 actor_id="kbotui_dev",
             )
 
-    async def test_controlled_actions_are_not_agent_input(self):
+    async def test_controlled_actions_must_reference_selected_target(self):
         with self.assertRaises(ValidationError):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
                 diagnostic_source_ids=(uuid7(),),
-                target_ids=(uuid7(),),
-                controlled_action_execution=(),
+                controlled_action_execution=(
+                    TargetControlledActionExecution(
+                        target_id=uuid7(),
+                        enabled=True,
+                        allowed_action_ids=("db.session.terminate",),
+                    ),
+                ),
                 actor_id="kbotui_dev",
             )
 
@@ -289,14 +295,23 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             "AIOPS_AGENT_PLANNER_MODEL_REQUIRED", raised.exception.code
         )
 
-    async def test_agent_requires_selected_logical_target(self):
-        with self.assertRaises(ValidationError):
+    async def test_agent_allows_monitoring_sources_without_logical_target(self):
+        source_id = uuid7()
+        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+
+        result = await service.create(
             CreateAIOpsAgentCommand(
                 domain_id=100,
-                display_name="数据库诊断助手",
-                diagnostic_source_ids=(uuid7(),),
+                display_name="监控诊断助手",
+                diagnostic_source_ids=(source_id,),
                 actor_id="kbotui_dev",
             )
+        )
+
+        self.assertEqual([], result["target_ids"])
+        self.assertEqual([], result["target_candidates"])
+        self.assertEqual([str(source_id)], result["diagnostic_source_ids"])
 
     async def test_target_without_change_capability_creates_agent_without_actions(self):
         source_id = uuid7()
@@ -330,7 +345,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([], result["controlled_action_execution"])
 
-    async def test_change_capable_target_enables_all_compatible_actions(self):
+    async def test_change_capable_target_is_read_only_by_default(self):
         source_id = uuid7()
         target = SimpleNamespace(
             target_id=uuid7(),
@@ -364,12 +379,53 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+        self.assertEqual([], result["controlled_action_execution"])
+
+    async def test_agent_can_explicitly_select_compatible_controlled_action(self):
+        source_id = uuid7()
+        target = SimpleNamespace(
+            target_id=uuid7(),
+            display_name="受控测试库",
+            db_type="ORACLE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
+            controlled_change_enabled=True,
+            execution_credential_id=uuid7(),
+            importance_level=5,
+            version_code="19c",
+            environment="DEV",
+            capabilities_json={"session_management": True},
+        )
+        unit_of_work = _UnitOfWork(
+            _AgentRepository(), source_id, target=target
+        )
+        service = AIOpsAgentService(
+            uow_factory=lambda: unit_of_work,
+            action_registry=ActionRegistry.load(),
+        )
+
+        result = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="数据库变更助手",
+                diagnostic_source_ids=(source_id,),
+                target_ids=(target.target_id,),
+                controlled_action_execution=(
+                    TargetControlledActionExecution(
+                        target_id=target.target_id,
+                        enabled=True,
+                        allowed_action_ids=("db.session.terminate",),
+                    ),
+                ),
+                actor_id="kbotui_dev",
+            )
+        )
+
         policy = result["controlled_action_execution"][0]
         self.assertTrue(policy["enabled"])
-        self.assertIn("db.session.terminate", policy["allowed_action_ids"])
         self.assertEqual(
-            {"approval_controls_execution": True},
-            policy["object_scopes"],
+            ["db.session.terminate"], policy["allowed_action_ids"]
         )
 
 

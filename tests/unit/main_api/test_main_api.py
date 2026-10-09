@@ -489,6 +489,7 @@ class _FakeAgentRuntimeClient:
 class _FakeAIOpsClient:
     def __init__(self):
         self.binding_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a101")
+        self.last_agent_payload = None
         self.last_start_payload = None
         self.last_target_status = None
 
@@ -508,6 +509,15 @@ class _FakeAIOpsClient:
             "models": {"planner_llm": "internal-model"},
             "config": {"internal": True},
         }]
+
+    async def create_private_agent(self, payload, *, auth_context):
+        del auth_context
+        self.last_agent_payload = payload
+        return {
+            "agent_id": "019f8eae-2c25-7d48-b044-350ec3f5a120",
+            "row_version": 1,
+            **payload,
+        }
 
     async def list_targets(
         self, *, status, cursor, limit, auth_context
@@ -1857,6 +1867,55 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(
             {"source_type": "CHAT"},
             self.aiops.last_start_payload["conversation"]["source"],
+        )
+
+    def test_aiops_agent_allows_monitoring_source_without_target(self) -> None:
+        source_id = "019f8eae-2c25-7d48-b044-350ec3f5a114"
+
+        response = self.client.post(
+            "/api/v1/apps/aiops/agents",
+            headers=self._headers(),
+            json={
+                "display_name": "监控诊断 Agent",
+                "diagnostic_source_ids": [source_id],
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        self.assertEqual([source_id], self.aiops.last_agent_payload[
+            "diagnostic_source_ids"
+        ])
+        self.assertEqual([], self.aiops.last_agent_payload["target_ids"])
+        self.assertEqual(
+            [], self.aiops.last_agent_payload["controlled_action_execution"]
+        )
+
+    def test_aiops_agent_forwards_explicit_controlled_actions(self) -> None:
+        source_id = "019f8eae-2c25-7d48-b044-350ec3f5a114"
+        target_id = "019f8eae-2c25-7d48-b044-350ec3f5a115"
+
+        response = self.client.post(
+            "/api/v1/apps/aiops/agents",
+            headers=self._headers(),
+            json={
+                "display_name": "数据库诊断 Agent",
+                "diagnostic_source_ids": [source_id],
+                "target_ids": [target_id],
+                "controlled_action_execution": [{
+                    "target_id": target_id,
+                    "enabled": True,
+                    "allowed_action_ids": ["db.session.terminate"],
+                }],
+            },
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        action_policy = self.aiops.last_agent_payload[
+            "controlled_action_execution"
+        ][0]
+        self.assertEqual(target_id, action_policy["target_id"])
+        self.assertEqual(
+            ["db.session.terminate"], action_policy["allowed_action_ids"]
         )
 
     def test_aiops_use_permission_reads_active_agents_and_target_list(self) -> None:
