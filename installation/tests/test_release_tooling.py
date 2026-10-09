@@ -44,13 +44,21 @@ class ReleaseToolingTest(unittest.TestCase):
         }
         self.assertEqual({"model_serving", "knowledge_core"}, cpu_images)
 
-    def test_main_api_image_declares_password_hash_dependency(self) -> None:
+    def test_main_api_image_declares_direct_runtime_dependencies(self) -> None:
         pyproject = release.tomllib.loads(
             (ROOT / "services/main_api/pyproject.toml").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertIn("bcrypt==5.0.0", pyproject["project"]["dependencies"])
+        dependencies = set(pyproject["project"]["dependencies"])
+        self.assertTrue(
+            {
+                "bcrypt==5.0.0",
+                "loguru==0.7.3",
+                "python-jose==3.5.0",
+                "python-multipart==0.0.32",
+            }.issubset(dependencies)
+        )
 
     def test_runtime_config_uses_compose_dns_for_every_endpoint(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
