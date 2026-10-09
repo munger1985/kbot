@@ -35,6 +35,7 @@ async def test_target_connection(
                 container_name,
                 container_number,
                 database_name,
+                capability_details,
             ) = await _test_oracle(request)
             error_code = _oracle_container_error(
                 request=request,
@@ -48,6 +49,8 @@ async def test_target_connection(
                 oracle_container_name=container_name,
                 oracle_container_number=container_number,
                 oracle_database_name=database_name,
+                capability_probe_version="oracle-controlled-options.v1",
+                capability_details=capability_details,
                 error_code=error_code,
             )
         elif request.db_type == "MYSQL":
@@ -101,7 +104,7 @@ async def test_target_connection(
 
 async def _test_oracle(
     request: TargetConnectionTest,
-) -> tuple[str, str, str, int, str]:
+) -> tuple[str, str, str, int, str, dict[str, object]]:
     endpoint = request.endpoint
     credential = request.diagnostic_credential
     dsn = (
@@ -134,6 +137,9 @@ async def _test_oracle(
                 container_name, container_number, cdb_enabled, database_name = (
                     await cursor.fetchone()
                 )
+                controlled_action_options = (
+                    await _probe_oracle_controlled_action_options(cursor)
+                )
             finally:
                 cursor.close()
             normalized_name = str(container_name)
@@ -150,10 +156,51 @@ async def _test_oracle(
                 normalized_name,
                 normalized_number,
                 str(database_name),
+                {
+                    "controlled_action_options": controlled_action_options,
+                },
             )
     finally:
         if connection is not None:
             await connection.close()
+
+
+async def _probe_oracle_controlled_action_options(
+    cursor,
+) -> dict[str, list[str]]:
+    """用有界只读目录查询发现受控动作可选范围。"""
+    schemas = await _oracle_catalog_values(
+        cursor,
+        "SELECT username FROM all_users "
+        "WHERE oracle_maintained = 'N' AND common = 'NO' "
+        "ORDER BY username FETCH FIRST 500 ROWS ONLY",
+    )
+    plans = await _oracle_catalog_values(
+        cursor,
+        "SELECT plan FROM dba_rsrc_plans WHERE status = 'ACTIVE' "
+        "ORDER BY plan FETCH FIRST 200 ROWS ONLY",
+    )
+    return {
+        "schemas": schemas,
+        "resource_manager_plans": plans,
+        "privilege_grantees": schemas,
+    }
+
+
+async def _oracle_catalog_values(cursor, sql: str) -> list[str]:
+    """目录权限不足时返回空候选项，不影响基础连通性结论。"""
+    try:
+        await cursor.execute(sql)
+        rows = await cursor.fetchall()
+    except Exception:
+        return []
+    return sorted(
+        {
+            str(row[0]).strip().upper()
+            for row in rows
+            if row and str(row[0]).strip()
+        }
+    )
 
 
 def _oracle_container_error(

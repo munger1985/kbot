@@ -134,6 +134,73 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_action_catalog_exposes_structured_scope_options(self):
+        source_id = uuid7()
+        target = SimpleNamespace(
+            target_id=uuid7(),
+            display_name="受控测试库",
+            db_type="ORACLE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
+            controlled_change_enabled=True,
+            execution_credential_id=uuid7(),
+            importance_level=5,
+            version_code="19c",
+            environment="DEV",
+            capabilities_json={
+                "dba_catalog_views": True,
+                "dynamic_performance_views": True,
+                "capability_probe": {
+                    "details": {
+                        "controlled_action_options": {
+                            "schemas": ["APP", "REPORT"],
+                            "resource_manager_plans": ["APP_PLAN"],
+                            "privilege_grantees": ["APPUSER"],
+                        }
+                    }
+                },
+            },
+        )
+        service = AIOpsAgentService(
+            uow_factory=lambda: _UnitOfWork(
+                _AgentRepository(), source_id, target=target
+            ),
+            action_registry=ActionRegistry.load(),
+        )
+
+        catalog = await service.action_catalog(
+            domain_id=100, target_id=target.target_id
+        )
+
+        self.assertEqual(
+            ["APP", "REPORT"], catalog["scope_options"]["schemas"]
+        )
+        self.assertEqual(
+            ["APP_PLAN"],
+            catalog["scope_options"]["resource_manager_plans"],
+        )
+        self.assertEqual(
+            ["APPUSER"],
+            catalog["scope_options"]["privilege_grantees"],
+        )
+        parameter_action = next(
+            item
+            for item in catalog["actions"]
+            if item["action_id"] == "db.parameter.set"
+        )
+        self.assertEqual(
+            ["dynamic_parameters"],
+            parameter_action["scope_requirements"],
+        )
+        self.assertIn(
+            {
+                "name": "cursor_sharing",
+                "allowed_values": ["EXACT", "FORCE"],
+            },
+            catalog["scope_options"]["dynamic_parameters"],
+        )
+
     async def test_auto_alert_target_level_requires_one_to_five(self):
         with self.assertRaises(ValidationError):
             CreateAIOpsAgentCommand(
@@ -426,6 +493,55 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(policy["enabled"])
         self.assertEqual(
             ["db.session.terminate"], policy["allowed_action_ids"]
+        )
+
+    async def test_parameter_action_requires_explicit_parameter_options(self):
+        source_id = uuid7()
+        target = SimpleNamespace(
+            target_id=uuid7(),
+            display_name="受控测试库",
+            db_type="ORACLE",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            readonly_connection_enabled=True,
+            controlled_change_enabled=True,
+            execution_credential_id=uuid7(),
+            importance_level=5,
+            version_code="19c",
+            environment="DEV",
+            capabilities_json={
+                "dba_catalog_views": True,
+                "dynamic_performance_views": True,
+            },
+        )
+        unit_of_work = _UnitOfWork(
+            _AgentRepository(), source_id, target=target
+        )
+        service = AIOpsAgentService(
+            uow_factory=lambda: unit_of_work,
+            action_registry=ActionRegistry.load(),
+        )
+
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.create(
+                CreateAIOpsAgentCommand(
+                    domain_id=100,
+                    display_name="参数变更助手",
+                    diagnostic_source_ids=(source_id,),
+                    target_ids=(target.target_id,),
+                    controlled_action_execution=(
+                        TargetControlledActionExecution(
+                            target_id=target.target_id,
+                            enabled=True,
+                            allowed_action_ids=("db.parameter.set",),
+                        ),
+                    ),
+                    actor_id="kbotui_dev",
+                )
+            )
+
+        self.assertEqual(
+            "AIOPS_AGENT_ACTION_SCOPE_REQUIRED", raised.exception.code
         )
 
 

@@ -19,6 +19,31 @@ from aiops_agent.application.configuration.common import sha256_json
 from platform_core.identity import uuid7
 
 
+CONTROLLED_DYNAMIC_PARAMETER_VALUES = {
+    "cursor_sharing": ("EXACT", "FORCE"),
+    "optimizer_mode": ("ALL_ROWS", "FIRST_ROWS"),
+    "statistics_level": ("BASIC", "TYPICAL", "ALL"),
+}
+CONTROLLED_SYSTEM_PRIVILEGES = (
+    "CREATE SESSION",
+    "CREATE TABLE",
+    "CREATE VIEW",
+    "CREATE PROCEDURE",
+    "CREATE SEQUENCE",
+    "CREATE SYNONYM",
+    "CREATE TRIGGER",
+    "CREATE TYPE",
+)
+CONTROLLED_OBJECT_PRIVILEGES = (
+    "SELECT",
+    "READ",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "EXECUTE",
+)
+
+
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,11 +79,6 @@ class ControlledDynamicParameterRule(_Model):
 
     @model_validator(mode="after")
     def validate_values(self):
-        supported = {
-            "cursor_sharing": {"EXACT", "FORCE"},
-            "optimizer_mode": {"ALL_ROWS", "FIRST_ROWS"},
-            "statistics_level": {"BASIC", "TYPICAL", "ALL"},
-        }
         normalized = [value.upper() for value in self.allowed_values]
         if len(set(normalized)) != len(normalized):
             raise ValueError("动态参数允许值不能重复")
@@ -67,7 +87,10 @@ class ControlledDynamicParameterRule(_Model):
             for value in self.allowed_values
         ):
             raise ValueError("动态参数允许值格式无效")
-        if self.name not in supported or not set(normalized) <= supported[self.name]:
+        supported = CONTROLLED_DYNAMIC_PARAMETER_VALUES
+        if self.name not in supported or not set(normalized) <= set(
+            supported[self.name]
+        ):
             raise ValueError("动态参数或允许值不在受控动作 Catalog")
         return self
 
@@ -104,14 +127,8 @@ class ControlledActionObjectScopes(_Model):
             ):
                 raise ValueError(f"{label} 格式无效")
         supported_privileges = {
-            "系统权限": {
-                "CREATE SESSION", "CREATE TABLE", "CREATE VIEW",
-                "CREATE PROCEDURE", "CREATE SEQUENCE", "CREATE SYNONYM",
-                "CREATE TRIGGER", "CREATE TYPE",
-            },
-            "对象权限": {
-                "SELECT", "READ", "INSERT", "UPDATE", "DELETE", "EXECUTE",
-            },
+            "系统权限": set(CONTROLLED_SYSTEM_PRIVILEGES),
+            "对象权限": set(CONTROLLED_OBJECT_PRIVILEGES),
         }
         for label, values in (
             ("系统权限", self.system_privileges),
@@ -359,6 +376,9 @@ class AIOpsAgentService:
                 entitlements=set(),
                 environment=target.environment,
             ) if self._action_registry is not None else ()
+            discovered_options = _controlled_action_options(
+                dict(target.capabilities_json or {})
+            )
             return {
                 "target_id": str(target.target_id),
                 "catalog_hash": (
@@ -380,6 +400,9 @@ class AIOpsAgentService:
                         "estimated_duration_seconds": (
                             item.definition.estimated_duration_seconds
                         ),
+                        "scope_requirements": list(
+                            _controlled_scope_requirements(item.definition)
+                        ),
                         "status": item.definition.status,
                         "currently_executable": bool(
                             item.definition.status == "ACTIVE"
@@ -391,6 +414,24 @@ class AIOpsAgentService:
                     }
                     for item in templates
                 ],
+                "scope_options": {
+                    **discovered_options,
+                    "dynamic_parameters": [
+                        {
+                            "name": name,
+                            "allowed_values": list(values),
+                        }
+                        for name, values in (
+                            CONTROLLED_DYNAMIC_PARAMETER_VALUES.items()
+                        )
+                    ],
+                    "system_privileges": list(
+                        CONTROLLED_SYSTEM_PRIVILEGES
+                    ),
+                    "object_privileges": list(
+                        CONTROLLED_OBJECT_PRIVILEGES
+                    ),
+                },
             }
 
     async def update(self, command: UpdateAIOpsAgentCommand) -> dict[str, Any]:
@@ -730,7 +771,56 @@ class AIOpsAgentService:
                     "选择的受控动作与 Target 类型、版本或能力不兼容",
                     status_code=422,
                 )
+            scopes = dict(action_policy.get("object_scopes") or {})
+            required_scopes = self._required_scopes_for_actions(
+                target, selected
+            )
+            missing_scopes = [
+                scope
+                for scope in required_scopes
+                if not scopes.get(scope)
+            ]
+            if missing_scopes:
+                labels = {
+                    "schemas": "Schema",
+                    "dynamic_parameters": "动态参数及允许值",
+                    "resource_manager_plans": "Resource Manager Plan",
+                    "privilege_grantees": "允许授权的本地用户",
+                    "system_privileges": "系统权限",
+                    "object_privileges": "对象权限",
+                }
+                missing = "、".join(
+                    labels.get(item, item) for item in missing_scopes
+                )
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_ACTION_SCOPE_REQUIRED",
+                    f"已选受控动作必须明确选择{missing}",
+                    status_code=422,
+                )
         return targets
+
+    def _required_scopes_for_actions(
+        self, target, action_ids: set[str]
+    ) -> tuple[str, ...]:
+        """汇总同一动作所有可执行变体的必选范围。"""
+        if self._action_registry is None:
+            return ()
+        compatible = set(self._compatible_action_ids(target))
+        requirements: set[str] = set()
+        for template in self._action_registry.templates:
+            definition = template.definition
+            if (
+                definition.action_template_id in action_ids
+                and definition.action_template_id in compatible
+                and definition.db_type == target.db_type
+                and definition.execution_mode
+                == "EXECUTABLE_AFTER_APPROVAL"
+                and definition.status == "ACTIVE"
+            ):
+                requirements.update(
+                    _controlled_scope_requirements(definition)
+                )
+        return tuple(sorted(requirements))
 
     def _compatible_action_ids(self, target) -> list[str]:
         if self._action_registry is None:
@@ -932,6 +1022,60 @@ class AIOpsAgentService:
         raise AIOpsAgentError(
             "AIOPS_AGENT_NOT_FOUND", "AIOps Agent 不存在", status_code=404
         )
+
+
+def _controlled_scope_requirements(definition) -> tuple[str, ...]:
+    """从动作参数语义推导 Agent–Target 必须显式登记的范围。"""
+    parameters = tuple(definition.parameters)
+    names = {item.name for item in parameters}
+    requirements: set[str] = set()
+    object_parameters = [
+        item for item in parameters if item.type == "database_object_ref"
+    ]
+    if any("USER" not in item.object_types for item in object_parameters):
+        requirements.add("schemas")
+    if {"parameter_name", "parameter_value"} <= names:
+        requirements.add("dynamic_parameters")
+    if "resource_plan_name" in names:
+        requirements.add("resource_manager_plans")
+    if "grantee_name" in names:
+        requirements.add("privilege_grantees")
+        requirements.add(
+            "object_privileges" if "object_ref" in names
+            else "system_privileges"
+        )
+    return tuple(sorted(requirements))
+
+
+def _controlled_action_options(
+    capabilities: dict[str, Any],
+) -> dict[str, list[str]]:
+    """读取 Target 最近一次只读探测固化的动作候选项。"""
+    probe = capabilities.get("capability_probe")
+    details = probe.get("details") if isinstance(probe, dict) else None
+    discovered = (
+        details.get("controlled_action_options")
+        if isinstance(details, dict)
+        else None
+    )
+    if not isinstance(discovered, dict):
+        discovered = capabilities.get("controlled_action_options")
+    if not isinstance(discovered, dict):
+        discovered = {}
+    result = {}
+    for key in ("schemas", "resource_manager_plans", "privilege_grantees"):
+        values = discovered.get(key, ())
+        if not isinstance(values, (list, tuple, set)):
+            result[key] = []
+            continue
+        result[key] = sorted(
+            {
+                str(value).strip().upper()
+                for value in values
+                if str(value).strip()
+            }
+        )
+    return result
 
 
 def _image_capabilities_json(value) -> dict[str, Any]:

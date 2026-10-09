@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
 
 from aiops_agent.application.configuration.connection_test import (
+    _probe_oracle_controlled_action_options,
     test_target_connection as run_connection_test,
 )
 from aiops_agent.application.targets.connectivity_check import (
@@ -52,6 +53,9 @@ class _OracleCursor:
 
     async def fetchone(self):
         return ("ORCLPDB1", 3, "YES", "ORCLCDB")
+
+    async def fetchall(self):
+        return ()
 
     def close(self):
         return None
@@ -177,6 +181,33 @@ class _ConnectivityUow:
 
 
 class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_oracle_controlled_options_are_discovered_as_choices(self):
+        class CatalogCursor:
+            sql = ""
+
+            async def execute(self, sql):
+                self.sql = sql
+
+            async def fetchall(self):
+                if "all_users" in self.sql:
+                    return [("reporter",), ("APPUSER",), ("APPUSER",)]
+                return [("APP_PLAN",), ("batch_plan",)]
+
+        options = await _probe_oracle_controlled_action_options(
+            CatalogCursor()
+        )
+
+        self.assertEqual(
+            ["APPUSER", "REPORTER"], options["schemas"]
+        )
+        self.assertEqual(
+            ["APPUSER", "REPORTER"], options["privilege_grantees"]
+        )
+        self.assertEqual(
+            ["APP_PLAN", "BATCH_PLAN"],
+            options["resource_manager_plans"],
+        )
+
     async def test_three_database_types_execute_minimal_connection(self):
         cases = (
             ("ORACLE", "oracledb.connect_async", _OracleConnection(), "19.24.0.0.0"),
@@ -204,6 +235,20 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual("ORCLPDB1", result.oracle_container_name)
                 self.assertEqual(3, result.oracle_container_number)
                 self.assertEqual("ORCLCDB", result.oracle_database_name)
+                self.assertEqual(
+                    "oracle-controlled-options.v1",
+                    result.capability_probe_version,
+                )
+                self.assertEqual(
+                    {
+                        "schemas": [],
+                        "resource_manager_plans": [],
+                        "privilege_grantees": [],
+                    },
+                    result.capability_details[
+                        "controlled_action_options"
+                    ],
+                )
 
     async def test_timeout_returns_stable_error_without_exception_detail(self):
         with patch(

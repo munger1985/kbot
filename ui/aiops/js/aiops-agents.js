@@ -11,22 +11,79 @@
   let bindingTargetId = "";
   const bindingsByTarget = new Map();
   const draftsByTarget = new Map();
+  const actionDraftsByTarget = new Map();
   const actionCatalogsByTarget = new Map();
   let editing = null;
 
   const escape = (value) => shell.escape(value ?? "—");
   const sourceName = (id) => sources.find((item) => item.source_id === id)?.display_name || shell.short(id);
   const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
-  const csv = (value) => String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
-  const dynamicParameterText = (rules) => (rules || []).map((item) => `${item.name}=${(item.allowed_values || []).join("|")}`).join(";");
 
-  function parseDynamicParameters(value) {
-    return String(value || "").split(";").map((item) => item.trim()).filter(Boolean).map((item) => {
-      const [name, rawValues, ...extra] = item.split("=");
-      const allowedValues = String(rawValues || "").split("|").map((entry) => entry.trim()).filter(Boolean);
-      if (!name?.trim() || extra.length || !allowedValues.length) throw new Error("动态参数白名单格式应为 parameter=VALUE1|VALUE2，多个参数用分号分隔。");
-      return { name: name.trim(), allowed_values: allowedValues };
-    });
+  const scopeLabels = {
+    schemas: "Schema",
+    dynamic_parameters: "动态参数及允许值",
+    resource_manager_plans: "Resource Manager Plan",
+    privilege_grantees: "允许授权的本地用户",
+    system_privileges: "系统权限",
+    object_privileges: "对象权限",
+  };
+
+  function uniqueValues(...groups) {
+    return [...new Set(groups.flat().map((value) => String(value || "").trim()).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right, "zh"));
+  }
+
+  function groupedActions(catalog) {
+    const grouped = new Map();
+    (catalog.actions || [])
+      .filter((item) => item.execution_mode === "EXECUTABLE_AFTER_APPROVAL")
+      .forEach((action) => {
+        const current = grouped.get(action.action_id);
+        if (!current) {
+          grouped.set(action.action_id, { ...action, scope_requirements: [...(action.scope_requirements || [])] });
+          return;
+        }
+        current.currently_executable = current.currently_executable || action.currently_executable;
+        current.scope_requirements = uniqueValues(current.scope_requirements, action.scope_requirements || []);
+      });
+    return [...grouped.values()];
+  }
+
+  function optionPicker(kind, label, options, selected, help) {
+    const normalizedOptions = (options || []).map((value) => String(value).toUpperCase());
+    const normalizedSelected = (selected || []).map((value) => String(value).toUpperCase());
+    const values = uniqueValues(normalizedOptions, normalizedSelected);
+    const selectedValues = new Set(normalizedSelected);
+    const choices = values.length
+      ? values.map((value) => `<label class="agent-scope-option" data-option-label="${escape(value.toLocaleLowerCase())}">
+          <input type="checkbox" data-action-scope="${escape(kind)}" value="${escape(value)}" ${selectedValues.has(value) ? "checked" : ""}>
+          <span>${escape(value)}</span>
+        </label>`).join("")
+      : '<p class="agent-scope-empty">当前 Target 没有可选项。请先在 Target 页面执行连接测试，刷新数据库目录。</p>';
+    const search = values.length > 8
+      ? `<input class="agent-scope-search" type="search" data-scope-search="${escape(kind)}" placeholder="搜索${escape(label)}" aria-label="搜索${escape(label)}">`
+      : "";
+    return `<section class="agent-scope-panel" data-scope-kind="${escape(kind)}" hidden>
+      <div class="agent-scope-title"><div><strong>${escape(label)}</strong><small>${escape(help)}</small></div><span data-scope-count>已选 ${selectedValues.size} 项</span></div>
+      ${search}<div class="agent-scope-options">${choices}</div>
+    </section>`;
+  }
+
+  function dynamicParameterPicker(options, configured) {
+    const configuredByName = new Map((configured || []).map((item) => [String(item.name).toLowerCase(), (item.allowed_values || []).map((value) => String(value).toUpperCase())]));
+    const catalogByName = new Map((options || []).map((item) => [String(item.name).toLowerCase(), (item.allowed_values || []).map((value) => String(value).toUpperCase())]));
+    configuredByName.forEach((values, name) => catalogByName.set(name, uniqueValues(catalogByName.get(name) || [], values)));
+    const rows = [...catalogByName.entries()].map(([name, values]) => {
+      const selected = new Set(configuredByName.get(name) || []);
+      return `<div class="agent-parameter-row" data-dynamic-parameter="${escape(name)}">
+        <strong>${escape(name)}</strong>
+        <div class="agent-parameter-values">${values.map((value) => `<label><input type="checkbox" data-dynamic-value value="${escape(value)}" ${selected.has(value) ? "checked" : ""}><span>${escape(value)}</span></label>`).join("")}</div>
+      </div>`;
+    }).join("");
+    return `<section class="agent-scope-panel" data-scope-kind="dynamic_parameters" hidden>
+      <div class="agent-scope-title"><div><strong>动态参数及允许值</strong><small>逐个选择参数和值，未选择的值不会获得授权。</small></div><span data-scope-count>已选 0 项</span></div>
+      <div class="agent-parameter-list">${rows || '<p class="agent-scope-empty">动作目录没有可授权的动态参数。</p>'}</div>
+    </section>`;
   }
   function showResult(message = "", tone = "") {
     const result = document.getElementById("agent-result");
@@ -324,6 +381,7 @@
   }
 
   function renderControlledActions() {
+    captureActionDrafts();
     const selected = selectedTargetIds();
     const container = document.getElementById("agent-controlled-actions");
     if (!selected.length) {
@@ -337,31 +395,80 @@
       }
       const catalog = actionCatalogsByTarget.get(targetId);
       if (!catalog) return `<article class="agent-source-card"><strong>${escape(target.display_name)}</strong><small>正在读取动作目录…</small></article>`;
-      const configured = (editing?.controlled_action_execution || []).find((item) => item.target_id === targetId) || {};
+      const configured = actionDraftsByTarget.get(targetId)
+        || (editing?.controlled_action_execution || []).find((item) => item.target_id === targetId)
+        || {};
       const selectedActions = new Set(configured.allowed_action_ids || []);
-      const actions = [...new Map((catalog.actions || [])
-        .filter((item) => item.execution_mode === "EXECUTABLE_AFTER_APPROVAL")
-        .map((item) => [item.action_id, item])).values()];
+      const actions = groupedActions(catalog);
       const choices = actions.length
-        ? actions.map((action) => `<label class="agent-switch-row">
-          <input type="checkbox" data-action-target="${escape(targetId)}" value="${escape(action.action_id)}" ${selectedActions.has(action.action_id) ? "checked" : ""} ${action.currently_executable ? "" : "disabled"}>
+        ? actions.map((action) => `<label class="agent-switch-row agent-action-choice">
+          <input type="checkbox" data-action-target="${escape(targetId)}" data-scope-requirements="${escape((action.scope_requirements || []).join(","))}" value="${escape(action.action_id)}" ${selectedActions.has(action.action_id) ? "checked" : ""} ${action.currently_executable ? "" : "disabled"}>
           <span><strong>${escape(action.action_id)}</strong><small>${escape(action.action_family)} · ${escape(action.risk_level)} · ${escape(action.lock_impact)}</small></span>
         </label>`).join("")
         : '<small>当前 Target 没有可授权的受控动作，保持只读诊断。</small>';
       const scopes = configured.object_scopes || {};
-      return `<article class="agent-source-card" data-action-policy-target="${escape(targetId)}">
-        <strong>${escape(target.display_name)}</strong><small>默认只读；勾选的动作仍须逐条人工审批。</small>${choices}
-        <div class="ops-form"><div class="ops-field span-8"><label>允许的 Schema（逗号分隔）</label><input data-action-schemas value="${escape((scopes.schemas || []).join(","))}" placeholder="APP_SCHEMA"></div>
-        <div class="ops-field span-4"><label>每日执行上限</label><input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></div></div>
-        <div class="ops-form">
-          <div class="ops-field span-12"><label>动态参数白名单</label><input data-action-dynamic-parameters value="${escape(dynamicParameterText(scopes.dynamic_parameters))}" placeholder="cursor_sharing=EXACT|FORCE"><small>多个参数用分号分隔。</small></div>
-          <div class="ops-field span-6"><label>Resource Manager Plan（逗号分隔）</label><input data-action-resource-plans value="${escape((scopes.resource_manager_plans || []).join(","))}" placeholder="APP_PLAN"></div>
-          <div class="ops-field span-6"><label>允许授权的本地用户（逗号分隔）</label><input data-action-privilege-grantees value="${escape((scopes.privilege_grantees || []).join(","))}" placeholder="APPUSER,REPORTER"></div>
-          <div class="ops-field span-6"><label>系统权限白名单（逗号分隔）</label><input data-action-system-privileges value="${escape((scopes.system_privileges || []).join(","))}" placeholder="CREATE SESSION"></div>
-          <div class="ops-field span-6"><label>对象权限白名单（逗号分隔）</label><input data-action-object-privileges value="${escape((scopes.object_privileges || []).join(","))}" placeholder="SELECT,EXECUTE"></div>
+      const options = catalog.scope_options || {};
+      return `<article class="agent-source-card agent-action-policy" data-action-policy-target="${escape(targetId)}">
+        <div class="agent-policy-head"><div><strong>${escape(target.display_name)}</strong><small>默认只读；勾选的动作仍须逐条人工审批，范围按所选动作展开。</small></div><span>只读为默认</span></div>
+        <div class="agent-action-list">${choices}</div>
+        <div class="agent-policy-settings" data-action-policy-settings hidden>
+          <div class="agent-execution-limit"><div><strong>执行频率</strong><small>限制此 Agent 在当前 Target 上每天最多执行的受控动作次数。</small></div><label>每日上限 <input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></label></div>
+          <div class="agent-scope-grid">
+            ${optionPicker("schemas", "允许操作的 Schema", options.schemas || [], scopes.schemas || [], "来自 Target 最近一次只读目录探测，可多选。")}
+            ${dynamicParameterPicker(options.dynamic_parameters || [], scopes.dynamic_parameters || [])}
+            ${optionPicker("resource_manager_plans", "Resource Manager Plan", options.resource_manager_plans || [], scopes.resource_manager_plans || [], "只显示数据库中可发现的有效 Plan。")}
+            ${optionPicker("privilege_grantees", "允许授权的本地用户", options.privilege_grantees || [], scopes.privilege_grantees || [], "排除 Oracle 维护用户与公共用户。")}
+            ${optionPicker("system_privileges", "系统权限", options.system_privileges || [], scopes.system_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
+            ${optionPicker("object_privileges", "对象权限", options.object_privileges || [], scopes.object_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
+          </div>
         </div>
       </article>`;
     }).join("");
+    container.querySelectorAll("[data-action-policy-target]").forEach(syncActionScopeVisibility);
+  }
+
+  function captureActionDrafts() {
+    document.querySelectorAll("[data-action-policy-target]").forEach((card) => {
+      actionDraftsByTarget.set(card.dataset.actionPolicyTarget, {
+        allowed_action_ids: [...card.querySelectorAll("[data-action-target]:checked")].map((input) => input.value),
+        max_daily_executions: Number(card.querySelector("[data-action-limit]")?.value || 10),
+        object_scopes: {
+          schemas: selectedScopeValues(card, "schemas"),
+          dynamic_parameters: selectedDynamicParameters(card),
+          resource_manager_plans: selectedScopeValues(card, "resource_manager_plans"),
+          privilege_grantees: selectedScopeValues(card, "privilege_grantees"),
+          system_privileges: selectedScopeValues(card, "system_privileges"),
+          object_privileges: selectedScopeValues(card, "object_privileges"),
+        },
+      });
+    });
+  }
+
+  function requiredScopeKinds(card) {
+    return new Set([...card.querySelectorAll("[data-action-target]:checked")]
+      .flatMap((input) => String(input.dataset.scopeRequirements || "").split(","))
+      .map((value) => value.trim()).filter(Boolean));
+  }
+
+  function updateScopeCounts(card) {
+    card.querySelectorAll("[data-scope-kind]").forEach((panel) => {
+      const count = panel.querySelectorAll('input[type="checkbox"]:checked').length;
+      const indicator = panel.querySelector("[data-scope-count]");
+      if (indicator) indicator.textContent = `已选 ${count} 项`;
+    });
+  }
+
+  function syncActionScopeVisibility(card) {
+    const selectedActions = card.querySelectorAll("[data-action-target]:checked");
+    const settings = card.querySelector("[data-action-policy-settings]");
+    if (!settings) return;
+    settings.hidden = !selectedActions.length;
+    const requirements = requiredScopeKinds(card);
+    card.querySelectorAll("[data-scope-kind]").forEach((panel) => {
+      panel.hidden = !requirements.has(panel.dataset.scopeKind);
+    });
+    card.classList.toggle("selected", Boolean(selectedActions.length));
+    updateScopeCounts(card);
   }
 
   function selectedTargetIds() {
@@ -436,7 +543,9 @@
     bindingTargetId = "";
     bindingsByTarget.clear();
     draftsByTarget.clear();
+    actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
+    document.getElementById("agent-controlled-actions").innerHTML = "";
     const form = document.getElementById("agent-form");
     form.reset();
     resetMappingInputs();
@@ -464,7 +573,9 @@
     bindingTargetId = "";
     bindingsByTarget.clear();
     draftsByTarget.clear();
+    actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
+    document.getElementById("agent-controlled-actions").innerHTML = "";
     const form = document.getElementById("agent-form");
     form.reset();
     resetMappingInputs();
@@ -505,6 +616,26 @@
     }
   }
 
+  function selectedScopeValues(card, kind) {
+    return [...card.querySelectorAll(`[data-action-scope="${kind}"]:checked`)]
+      .map((input) => input.value);
+  }
+
+  function selectedDynamicParameters(card) {
+    return [...card.querySelectorAll("[data-dynamic-parameter]")].map((row) => ({
+      name: row.dataset.dynamicParameter,
+      allowed_values: [...row.querySelectorAll("[data-dynamic-value]:checked")].map((input) => input.value),
+    })).filter((item) => item.allowed_values.length);
+  }
+
+  function assertRequiredScopes(requirements, values) {
+    requirements.forEach((kind) => {
+      if (!values[kind]?.length) {
+        throw new Error(`请为已选受控动作选择${scopeLabels[kind] || kind}。`);
+      }
+    });
+  }
+
   function payload(form) {
     const selectedSources = [...form.querySelectorAll('[name="diagnostic_source_ids"]:checked')].map((input) => input.value);
     const targetIds = selectedTargetIds();
@@ -534,18 +665,28 @@
       if (!card) return null;
       const actionIds = [...card.querySelectorAll("[data-action-target]:checked")].map((input) => input.value);
       if (!actionIds.length) return null;
+      const requirements = requiredScopeKinds(card);
+      const scopeValues = {
+        schemas: requirements.has("schemas") ? selectedScopeValues(card, "schemas") : [],
+        dynamic_parameters: requirements.has("dynamic_parameters") ? selectedDynamicParameters(card) : [],
+        resource_manager_plans: requirements.has("resource_manager_plans") ? selectedScopeValues(card, "resource_manager_plans") : [],
+        privilege_grantees: requirements.has("privilege_grantees") ? selectedScopeValues(card, "privilege_grantees") : [],
+        system_privileges: requirements.has("system_privileges") ? selectedScopeValues(card, "system_privileges") : [],
+        object_privileges: requirements.has("object_privileges") ? selectedScopeValues(card, "object_privileges") : [],
+      };
+      assertRequiredScopes(requirements, scopeValues);
       return {
         target_id: targetId,
         enabled: true,
         allowed_action_ids: actionIds,
         object_scopes: {
-          schemas: csv(card.querySelector("[data-action-schemas]").value),
+          schemas: scopeValues.schemas,
           exclude_system_objects: true,
-          dynamic_parameters: parseDynamicParameters(card.querySelector("[data-action-dynamic-parameters]").value),
-          resource_manager_plans: csv(card.querySelector("[data-action-resource-plans]").value),
-          privilege_grantees: csv(card.querySelector("[data-action-privilege-grantees]").value),
-          system_privileges: csv(card.querySelector("[data-action-system-privileges]").value),
-          object_privileges: csv(card.querySelector("[data-action-object-privileges]").value),
+          dynamic_parameters: scopeValues.dynamic_parameters,
+          resource_manager_plans: scopeValues.resource_manager_plans,
+          privilege_grantees: scopeValues.privilege_grantees,
+          system_privileges: scopeValues.system_privileges,
+          object_privileges: scopeValues.object_privileges,
         },
         max_daily_executions: Number(card.querySelector("[data-action-limit]").value),
       };
@@ -701,6 +842,20 @@
     dialog.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => dialog.close()));
     document.getElementById("create-agent").addEventListener("click", openCreate);
     document.getElementById("agent-targets").addEventListener("change", () => toggleTargetFields());
+    document.getElementById("agent-controlled-actions").addEventListener("change", (event) => {
+      const card = event.target.closest("[data-action-policy-target]");
+      if (!card) return;
+      if (event.target.matches("[data-action-target]")) syncActionScopeVisibility(card);
+      else if (event.target.matches('[type="checkbox"]')) updateScopeCounts(card);
+    });
+    document.getElementById("agent-controlled-actions").addEventListener("input", (event) => {
+      if (!event.target.matches("[data-scope-search]")) return;
+      const query = event.target.value.trim().toLocaleLowerCase();
+      const panel = event.target.closest("[data-scope-kind]");
+      panel.querySelectorAll("[data-option-label]").forEach((option) => {
+        option.hidden = Boolean(query && !option.dataset.optionLabel.includes(query));
+      });
+    });
     document.getElementById("agent-mapping-target").addEventListener("change", async (event) => {
       try {
         await loadBindings(event.currentTarget.value);

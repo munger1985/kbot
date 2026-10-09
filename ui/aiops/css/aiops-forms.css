@@ -171,6 +171,39 @@
 .agent-switch-row input,.agent-compact-switch input{margin:3px 0 0!important;accent-color:var(--accent)}
 .agent-switch-row strong,.agent-switch-row small{display:block}
 .agent-switch-row small{margin-top:4px;color:var(--muted);font-weight:400}
+.agent-action-policy{overflow:hidden}
+.agent-policy-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:15px 16px;border-bottom:1px solid var(--line);background:#f7f8fb}
+.agent-policy-head strong,.agent-policy-head small{display:block}
+.agent-policy-head small{margin-top:4px;color:var(--muted);font-size:11px}
+.agent-policy-head>span{flex:0 0 auto;padding:3px 7px;background:#e9edf4;color:#59657a;font-size:10px;font-weight:650}
+.agent-action-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line)}
+.agent-action-choice{min-width:0;padding:12px 14px;background:#fff}
+.agent-action-choice:has(input:checked){background:#f1f5fb}
+.agent-action-choice:has(input:disabled){cursor:not-allowed;opacity:.48}
+.agent-policy-settings{border-top:1px solid var(--line);background:#fbfcfe}
+.agent-execution-limit{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.agent-execution-limit strong,.agent-execution-limit small{display:block}
+.agent-execution-limit small{margin-top:3px;color:var(--muted);font-size:11px}
+.agent-execution-limit label{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:11px;font-weight:650}
+.agent-execution-limit input{width:92px!important}
+.agent-scope-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
+.agent-scope-panel{min-width:0;padding:13px;border:1px solid var(--line);background:#fff}
+.agent-scope-panel[hidden],.agent-policy-settings[hidden]{display:none}
+.agent-scope-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.agent-scope-title strong,.agent-scope-title small{display:block}
+.agent-scope-title small{margin-top:3px;color:var(--muted);font-size:10px;line-height:1.45}
+.agent-scope-title>span{flex:0 0 auto;color:var(--muted);font-size:10px}
+.agent-scope-search{height:34px!important;margin-bottom:8px}
+.agent-scope-options{display:flex;gap:6px;flex-wrap:wrap;max-height:150px;overflow:auto}
+.agent-scope-option,.agent-parameter-values label{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:5px 8px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:11px}
+.agent-scope-option:has(input:checked),.agent-parameter-values label:has(input:checked){border-color:#9eabc8;background:#edf2fa;color:#263c68}
+.agent-scope-option input,.agent-parameter-values input{width:14px!important;height:14px;margin:0!important;accent-color:var(--accent)}
+.agent-scope-empty{margin:0;padding:9px 10px;background:#fff8e7;color:#72570b;font-size:11px;line-height:1.45}
+.agent-parameter-list{display:grid;gap:8px}
+.agent-parameter-row{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(0,2fr);align-items:start;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.agent-parameter-row:first-child{padding-top:0;border-top:0}
+.agent-parameter-row>strong{padding-top:6px;font:600 11px ui-monospace,monospace}
+.agent-parameter-values{display:flex;gap:6px;flex-wrap:wrap}
 .agent-compact-switch{display:flex;align-items:center;gap:8px;min-height:36px;padding:7px 10px;border:1px solid var(--line);color:var(--ink);font-size:12px;cursor:pointer;white-space:nowrap}
 .agent-settings-disabled{opacity:.42}
 .agent-advanced{margin:18px 28px;border:1px solid var(--line)}
@@ -187,6 +220,8 @@
   .agent-form-section{grid-template-columns:42px minmax(0,1fr)}
   .agent-section-content{padding:21px 18px 23px}
   .agent-status-field{width:100%;flex-basis:auto}
+  .agent-action-list,.agent-scope-grid{grid-template-columns:1fr}
+  .agent-execution-limit{align-items:flex-start;flex-direction:column}
   .agent-target-field{grid-template-columns:1fr}
   .agent-target-field label,.agent-target-field select,.agent-target-field small{grid-column:1;grid-row:auto}
   .agent-source-heading p{text-align:left}
