@@ -1,0 +1,65 @@
+schema_version = "kbot-image-catalog.v1"
+
+[[images]]
+id = "model_serving"
+name = "kbot-model-serving"
+packages = ["kbot-model-serving"]
+cpu_torch = true
+
+[[images]]
+id = "knowledge_core"
+name = "kbot-knowledge-core"
+packages = ["kbot-knowledge-core"]
+cpu_torch = true
+
+[[images]]
+id = "knowledge_retrieval_app"
+name = "kbot-knowledge-retrieval-app"
+packages = ["kbot-knowledge-retrieval-app"]
+
+[[images]]
+id = "media_studio_app"
+name = "kbot-media-studio-app"
+packages = ["kbot-media-studio-app"]
+
+[[images]]
+id = "km_asset_app"
+name = "kbot-km-asset-app"
+packages = ["kbot-km-asset-app"]
+
+[[images]]
+id = "agent_runtime"
+name = "kbot-agent-runtime"
+packages = ["kbot-agent-runtime"]
+
+[[images]]
+id = "data_query"
+name = "kbot-data-query"
+packages = ["kbot-data-query"]
+
+[[images]]
+id = "aiops_agent"
+name = "kbot-aiops-agent"
+packages = ["kbot-aiops-agent"]
+
+[[images]]
+id = "main_api"
+name = "kbot-main-api"
+packages = ["kbot-main-api"]
+
+[installer]
+name = "kbot-installer"
+packages = [
+  "kbot-model-serving",
+  "kbot-knowledge-core",
+  "kbot-knowledge-retrieval-app",
+  "kbot-media-studio-app",
+  "kbot-km-asset-app",
+  "kbot-agent-runtime",
+  "kbot-data-query",
+  "kbot-aiops-agent",
+  "kbot-main-api",
+]
+
+[ui]
+name = "kbot-ui"

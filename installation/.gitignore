@@ -1,0 +1,6 @@
+generated/
+__pycache__/
+*.pyc
+dev/release.ini
+dev/deployment.ini
+dev/secrets/

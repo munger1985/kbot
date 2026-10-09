@@ -1,0 +1,16 @@
+[release]
+version = 4.0.0-dev.1
+registry = localhost:5000/kbot
+platform = linux/amd64
+
+[base_images]
+python = python:3.12-slim-bookworm
+nginx = nginx:1.27-alpine
+
+[package_mirrors]
+pip_index_url = https://pypi.org/simple
+
+[python_runtime]
+torch_version = 2.11.0+cpu
+torchvision_version = 0.26.0+cpu
+torch_index_url = https://download.pytorch.org/whl/cpu

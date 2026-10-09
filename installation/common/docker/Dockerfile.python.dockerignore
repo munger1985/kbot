@@ -1,0 +1,14 @@
+.git
+.env
+configuration/kbot.toml
+configuration/*.local.*
+installation/generated
+installation/dev/secrets
+var
+logs
+data
+ui
+tests
+docs
+__pycache__
+*.pyc

@@ -1,0 +1,25 @@
+[deployment]
+project_name = kbot4
+registry = localhost:5000/kbot
+image_version = 4.0.0-dev.1
+ui_port = 8080
+public_base_url = http://127.0.0.1:8080
+embedding_dimension = 2048
+
+[database]
+host = oracle.example.internal
+port = 1521
+service_name = kbot4
+username = kbot
+
+[paths]
+data_dir = ../../var/container/data
+log_dir = ../../var/container/log
+
+[secrets]
+oracle_password_file = secrets/oracle_password
+master_key_file = secrets/master_key
+
+[aiops]
+agent_execution_enabled = false
+mutation_enabled = false

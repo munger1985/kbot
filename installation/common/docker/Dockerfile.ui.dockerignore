@@ -1,0 +1,7 @@
+**
+!ui
+!ui/**
+!installation
+!installation/common
+!installation/common/docker
+!installation/common/docker/nginx.conf.template

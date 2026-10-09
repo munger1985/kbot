@@ -9,7 +9,9 @@
 - Portal/APEX 只访问 Main API，内部服务端口位于受控网络。
 
 生产环境应为每个服务构建独立运行单元。当前共享 Oracle Schema，但服务可以部署
-在不同主机；仅在开发机使用 `start_kbot.sh` 一次启动全部进程。
+在不同主机；仅在开发机使用 `start_kbot.sh` 一次启动全部进程。单机容器交付、镜像
+构建和后续 OCIR 发布使用 `installation/` 下的统一工具，详见
+`installation/README.md`。
 
 ## 空白环境一键部署
 
@@ -20,7 +22,7 @@
 bash scripts/deployment/bootstrap_kbot.sh --production
 ```
 
-脚本依次安装锁定依赖和 9 个内部包、校验配置与 20 进程拓扑、解析 8 个服务的
+脚本依次安装锁定依赖和内部包、校验配置与 25 进程拓扑、解析服务的
 规范 DDL、检查 Oracle 权限与空库条件、创建表/视图/索引/约束，并初始化默认 App
 角色、权限、角色映射和 Prompt Catalog。它不会重置已有 Schema，也不会创建
 Domain、用户、成员授权、业务 Agent、模型或知识库数据。

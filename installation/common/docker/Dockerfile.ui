@@ -1,0 +1,11 @@
+ARG NGINX_IMAGE=nginx:1.27-alpine
+FROM ${NGINX_IMAGE}
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="KBot UI" \
+      org.opencontainers.image.version=${VERSION} \
+      org.opencontainers.image.revision=${REVISION}
+COPY ui/ /usr/share/nginx/html/ui/
+COPY ui/index.html /usr/share/nginx/html/index.html
+COPY installation/common/docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+EXPOSE 8080
