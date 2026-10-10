@@ -163,8 +163,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.up",
           "template_version": "1",
-          "query_template": "up{instance=\"${external_target}\"}",
-          "required_labels": ["instance"]
+          "query_template": "up{target_key=\"${external_target}\"}",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.ping",
@@ -199,8 +199,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.cpu",
           "template_version": "1",
-          "query_template": "kbot_db_cpu_utilization_percent{instance=\"${external_target}\"}",
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_cpu_utilization_percent{target_key=\"${external_target}\"}",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.cpu",
@@ -235,8 +235,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.connections.active",
           "template_version": "1",
-          "query_template": "kbot_db_active_connections{instance=\"${external_target}\"}",
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_active_connections{target_key=\"${external_target}\"}",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.connections.active",
@@ -271,8 +271,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.connections.utilization",
           "template_version": "1",
-          "query_template": "kbot_db_connection_utilization_percent{instance=\"${external_target}\"}",
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_connection_utilization_percent{target_key=\"${external_target}\"}",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.connections.utilization",
@@ -307,8 +307,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.transactions",
           "template_version": "1",
-          "query_template": "rate(kbot_db_transactions_total{instance=\"${external_target}\"}[5m])",
-          "required_labels": ["instance"]
+          "query_template": "rate(kbot_db_transactions_total{target_key=\"${external_target}\"}[5m])",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.transactions",
@@ -343,8 +343,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.latency",
           "template_version": "1",
-          "query_template": "kbot_db_response_latency_milliseconds{instance=\"${external_target}\"}",
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_response_latency_milliseconds{target_key=\"${external_target}\"}",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.latency",
@@ -379,9 +379,9 @@
         "PROMETHEUS": {
           "template_id": "prom.db.storage",
           "template_version": "1",
-          "query_template": "kbot_db_storage_utilization_percent{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_used_percent{instance=\"${external_target}\"}"],
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_storage_utilization_percent{target_key=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_used_percent{target_key=\"${external_target}\"}"],
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.storage",
@@ -416,9 +416,9 @@
         "PROMETHEUS": {
           "template_id": "prom.db.storage.used",
           "template_version": "1",
-          "query_template": "kbot_db_storage_used_bytes{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_bytes{instance=\"${external_target}\"}"],
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_storage_used_bytes{target_key=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_bytes{target_key=\"${external_target}\"}"],
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.storage.used",
@@ -447,9 +447,9 @@
         "PROMETHEUS": {
           "template_id": "prom.db.storage.free",
           "template_version": "1",
-          "query_template": "kbot_db_storage_free_bytes{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_free{instance=\"${external_target}\"}"],
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_storage_free_bytes{target_key=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_free{target_key=\"${external_target}\"}"],
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.storage.free",
@@ -478,9 +478,9 @@
         "PROMETHEUS": {
           "template_id": "prom.db.storage.max",
           "template_version": "1",
-          "query_template": "kbot_db_storage_max_bytes{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_max_bytes{instance=\"${external_target}\"}"],
-          "required_labels": ["instance"]
+          "query_template": "kbot_db_storage_max_bytes{target_key=\"${external_target}\"}",
+          "fallback_query_templates": ["oracledb_tablespace_max_bytes{target_key=\"${external_target}\"}"],
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.storage.max",
@@ -509,8 +509,8 @@
         "PROMETHEUS": {
           "template_id": "prom.db.errors",
           "template_version": "1",
-          "query_template": "rate(kbot_db_errors_total{instance=\"${external_target}\"}[5m])",
-          "required_labels": ["instance"]
+          "query_template": "rate(kbot_db_errors_total{target_key=\"${external_target}\"}[5m])",
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.errors",
