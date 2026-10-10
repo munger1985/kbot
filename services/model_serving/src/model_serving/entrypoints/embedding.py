@@ -304,10 +304,9 @@ def signal_handler(sig: int, frame: Any):
     sys.exit(0)
 
 
-# Register exit hook
-atexit.register(lambda: logger.info("微服务进程已安全退出"))
-
 if __name__ == "__main__":
+    # 仅独立进程注册退出日志；作为 OpenAPI/测试模块导入时不得持有捕获流。
+    atexit.register(lambda: logger.info("微服务进程已安全退出"))
     # Register signal listeners
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
