@@ -286,10 +286,15 @@
           },
         }
       );
-      if (leavesNoActiveBinding && targetWasEnabled) editingTarget.status = "DISABLED";
-      await loadMonitorEditor(editingTarget.target_id);
+      const refreshedTarget = await KBotAIOpsAuth.request(
+        `${api}/targets/${encodeURIComponent(editingTarget.target_id)}`
+      );
+      editingTarget = refreshedTarget;
+      await loadMonitorEditor(refreshedTarget.target_id);
       result.dataset.tone = "good";
-      result.textContent = leavesNoActiveBinding && targetWasEnabled
+      result.textContent = leavesNoActiveBinding
+        && targetWasEnabled
+        && refreshedTarget.status === "DISABLED"
         ? "监控映射已删除；Target 因无有效监控映射已自动停用。"
         : "监控映射已删除。";
     } catch (error) {

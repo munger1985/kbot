@@ -671,6 +671,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("monitor_host_candidate_ref", script)
         self.assertIn("host_candidate_ref", script)
         self.assertIn('data-monitor-binding-action="${action}"', script)
+        self.assertIn("const refreshedTarget = await KBotAIOpsAuth.request", script)
+        self.assertIn("editingTarget = refreshedTarget", script)
 
     def test_diagnostic_source_detail_is_operator_readable(self):
         page = (AIOPS_ROOT / "diagnostic-source-detail.html").read_text(
