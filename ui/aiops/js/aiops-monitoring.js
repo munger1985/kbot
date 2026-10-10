@@ -14,12 +14,6 @@
     PARTIAL: "部分就绪", UNAVAILABLE: "不可用", AVAILABLE: "可用",
   };
   const qualityLabels = { GOOD: "正常", PARTIAL: "部分成功", NO_DATA: "无有效采样" };
-  const importantMetrics = [
-    ["db.availability", "数据库可用性"], ["db.cpu.utilization", "CPU 使用率"],
-    ["db.connection.active", "活动连接"], ["db.connection.utilization", "连接使用率"],
-    ["db.transaction.throughput", "事务吞吐"], ["db.response.latency", "响应延迟"],
-  ];
-
   const esc = shell.escape;
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
@@ -284,13 +278,15 @@
   }
   function renderSingleSummary() {
     const node = document.getElementById("monitoring-single-summary");
-    node.hidden = state.view.instances.length !== 1;
+    const panels = (state.view.panels || []).slice(0, 6);
+    node.hidden = state.view.instances.length !== 1 || !panels.length;
     if (node.hidden) return;
     const instance = state.view.instances[0];
-    node.innerHTML = importantMetrics.map(([code, title]) => {
-      const { panel, series } = pointFor(instance.instance_id, code);
+    node.innerHTML = panels.map((panel) => {
+      const code = panel.metric_code;
+      const series = panel.series.find((item) => item.instance_id === instance.instance_id);
       const point = latestPoint(series);
-      return `<article><span>${esc(title)}</span><strong>${esc(point ? formatValue(point.value, panel?.unit) : "无有效采样")}</strong><small>${point ? `${esc(deltaText(series.points))} · ${esc(shell.fmt(point.observed_at))}` : esc((allGaps().find((gap) => gap.instance_id === instance.instance_id && gap.metric_code === code) || {}).code || "NO_DATA")}</small></article>`;
+      return `<article><span>${esc(panel.title)}</span><strong>${esc(point ? formatValue(point.value, panel.unit) : "无有效采样")}</strong><small>${point ? `${esc(deltaText(series.points))} · ${esc(shell.fmt(point.observed_at))}` : esc((allGaps().find((gap) => gap.instance_id === instance.instance_id && gap.metric_code === code) || {}).code || "NO_DATA")}</small></article>`;
     }).join("");
   }
   function chartOption(panel) {
