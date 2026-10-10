@@ -11,7 +11,7 @@
     <header class="ops-head ops-monitoring-head">
       <div>
         <h1>实时监控</h1>
-        <p>从已接入的监控源查看一个或多个数据库实例的实时指标。</p>
+        <p>从已接入的监控源查看单个数据库实例的实时指标。</p>
         <small id="monitoring-freshness" class="ops-monitoring-freshness">正在读取监控源目录…</small>
       </div>
       <div class="ops-actions">
@@ -36,8 +36,8 @@
     <section id="monitoring-gate" class="ops-panel ops-monitoring-gate"><div class="ops-empty">正在读取监控源目录…</div></section>
 
     <section id="monitoring-instance-picker" class="ops-panel ops-monitoring-instance-picker" hidden>
-      <div class="ops-panel-head"><div><h2>数据库实例</h2><p>在同一张表中完成实例选择、查询状态确认和单实例查看。</p></div><span id="monitoring-selection-count">0 / 12</span></div>
-      <div class="ops-monitoring-instance-tools"><label>搜索实例<input id="monitoring-instance-search" type="search" placeholder="名称或数据库类型"></label><button id="monitoring-select-filtered" type="button">全选当前结果</button><button id="monitoring-clear-selection" type="button">清空</button></div>
+      <div class="ops-panel-head"><div><h2>数据库实例</h2><p>每次选择一个实例查看实时指标和数据质量。</p></div><span id="monitoring-selection-count">未选择</span></div>
+      <div class="ops-monitoring-instance-tools"><label>搜索实例<input id="monitoring-instance-search" type="search" placeholder="名称或数据库类型"></label></div>
       <div class="ops-table-wrap"><table class="ops-table ops-monitoring-instance-table"><thead><tr><th>选择</th><th>数据库实例</th><th>接入状态</th><th>查询状态</th><th>最新采样</th><th>操作</th></tr></thead><tbody id="monitoring-instance-list"></tbody></table></div>
     </section>
 
@@ -56,6 +56,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261010_1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261010_9"></script>
+  <script src="./js/aiops-monitoring.js?v=20261010_10"></script>
 </body>
 </html>

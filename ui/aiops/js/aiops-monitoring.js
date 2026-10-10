@@ -6,7 +6,7 @@
   const state = {
     sources: [], instances: [], profiles: [], view: null,
     sourceId: "", compareSourceId: "", profileId: "", window: "1h", selected: [], search: "",
-    debounceTimer: null, refreshTimer: null, controller: null, contextController: null, charts: new Map(),
+    refreshTimer: null, controller: null, contextController: null, charts: new Map(),
   };
   const readinessLabels = {
     READY: "就绪", DISABLED: "已停用", DISCONNECTED: "连接失败",
@@ -102,17 +102,12 @@
       .filter((series) => series.instance_id === instanceId)
       .map((series) => latestPoint(series)?.observed_at).filter(Boolean).sort().at(-1) || null;
   }
-  function requestBody() {
-    return JSON.stringify({ profile_id: state.profileId, instance_ids: state.selected, window: state.window });
-  }
   function canQuery() {
-    return sourceById()?.monitoring_readiness === "READY" && state.profileId && state.selected.length > 0;
+    return sourceById()?.monitoring_readiness === "READY" && state.profileId && state.selected.length === 1;
   }
   function cancelViewRequest() {
     state.controller?.abort();
     state.controller = null;
-    clearTimeout(state.debounceTimer);
-    state.debounceTimer = null;
   }
   function disposeCharts() {
     state.charts.forEach((chart) => chart.dispose());
@@ -144,7 +139,7 @@
       `生成于 ${shell.fmt(view?.generated_at)}`,
       `最新采样 ${shell.fmt(latestSampleAt())}`,
       `来源 ${sourceById()?.display_name || "—"}`,
-      `已选 ${state.selected.length} / 12`, status,
+      `实例 ${state.instances.find((item) => state.selected.includes(item.instance_id))?.display_name || "未选择"}`, status,
     ].join(" · ");
     document.getElementById("refresh-monitoring").disabled = !canQuery();
     updateDiagnosisLink();
@@ -202,14 +197,14 @@
     const picker = document.getElementById("monitoring-instance-picker");
     picker.hidden = renderGate();
     if (picker.hidden) return;
-    document.getElementById("monitoring-selection-count").textContent = `${state.selected.length} / 12`;
+    document.getElementById("monitoring-selection-count").textContent = state.selected.length ? "已选择" : "未选择";
     const rows = filteredInstances().map((instance) => {
       const selected = state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const quality = result ? instanceQuality(result) : selected ? "待查询" : "未选择";
       const qualityState = quality === "正常" ? "GOOD" : quality === "部分成功" ? "PARTIAL" : quality === "不可用" ? "UNAVAILABLE" : quality === "无有效采样" ? "NO_DATA" : "PARTIAL";
       const current = state.selected.length === 1 && selected;
-      return `<tr class="${selected ? "is-selected" : ""}"><td><input type="checkbox" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""} ${!selected && state.selected.length >= 12 ? "disabled" : ""}></td><td><strong>${esc(instance.display_name)}</strong><small>${esc(instance.db_type)} · ${esc(instance.instance_id.slice(0, 8))}</small></td><td>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></td><td>${badge(qualityState, quality)}</td><td>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</td><td><button type="button" data-drill-instance="${esc(instance.instance_id)}" ${current ? "disabled" : ""}>${current ? "当前实例" : "仅看此实例"}</button></td></tr>`;
+      return `<tr class="${selected ? "is-selected" : ""}"><td><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}></td><td><strong>${esc(instance.display_name)}</strong><small>${esc(instance.db_type)} · ${esc(instance.instance_id.slice(0, 8))}</small></td><td>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></td><td>${badge(qualityState, quality)}</td><td>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</td><td><button type="button" data-drill-instance="${esc(instance.instance_id)}" ${current ? "disabled" : ""}>${current ? "当前实例" : "选择此实例"}</button></td></tr>`;
     }).join("");
     document.getElementById("monitoring-instance-list").innerHTML = rows || '<tr><td colspan="6" class="ops-empty">当前筛选条件下没有数据库实例。</td></tr>';
     renderFreshness();
@@ -221,7 +216,7 @@
     disposeCharts();
     renderInstances(); renderFreshness();
     if (!canQuery()) return;
-    state.debounceTimer = setTimeout(loadView, 250);
+    void loadView();
   }
   async function loadView() {
     if (!canQuery()) return;
@@ -230,14 +225,9 @@
     state.controller = controller;
     setLoading(true);
     try {
-      if (state.selected.length === 1 && state.compareSourceId) {
-        const params = new URLSearchParams({ source_id: state.sourceId, compare_source_id: state.compareSourceId, profile_id: state.profileId, window: state.window });
-        state.view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
-      } else {
-        state.view = await KBotAIOpsAuth.request(`${api}/sources/${encodeURIComponent(state.sourceId)}/views`, {
-          method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: requestBody(),
-        });
-      }
+      const params = new URLSearchParams({ source_id: state.sourceId, profile_id: state.profileId, window: state.window });
+      if (state.compareSourceId) params.set("compare_source_id", state.compareSourceId);
+      state.view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
       if (controller.signal.aborted) return;
       renderResult();
     } catch (error) {
@@ -497,18 +487,11 @@
   document.getElementById("monitoring-instance-search").oninput = (event) => { state.search = event.target.value; renderInstances(); };
   document.getElementById("monitoring-instance-list").onchange = (event) => {
     const input = event.target.closest("[data-instance-id]");
-    if (!input) return;
-    const id = input.dataset.instanceId;
-    if (input.checked && !state.selected.includes(id)) {
-      if (state.selected.length >= 12) { input.checked = false; shell.toast("一次最多选择 12 个数据库实例"); return; }
-      state.selected.push(id);
-    } else if (!input.checked) state.selected = state.selected.filter((value) => value !== id);
-    if (state.selected.length !== 1) state.compareSourceId = "";
+    if (!input?.checked) return;
+    state.selected = [input.dataset.instanceId];
     renderContext();
     renderInstances(); scheduleView();
   };
-  document.getElementById("monitoring-select-filtered").onclick = () => { state.selected = [...new Set([...state.selected, ...filteredInstances().map((item) => item.instance_id)])].slice(0, 12); if (state.selected.length !== 1) state.compareSourceId = ""; renderContext(); renderInstances(); scheduleView(); };
-  document.getElementById("monitoring-clear-selection").onclick = () => { state.selected = []; state.compareSourceId = ""; renderContext(); renderInstances(); scheduleView(); };
   document.getElementById("monitoring-instance-list").onclick = (event) => { const button = event.target.closest("[data-drill-instance]"); if (button && !button.disabled) drillInto(button.dataset.drillInstance); };
   document.getElementById("monitoring-panels").onclick = (event) => { const button = event.target.closest("[data-panel-table]"); if (!button) return; const table = document.querySelector(`[data-panel-data="${button.dataset.panelTable}"]`); table.hidden = !table.hidden; button.textContent = table.hidden ? "查看数据" : "收起数据"; };
   document.getElementById("refresh-monitoring").onclick = loadView;
