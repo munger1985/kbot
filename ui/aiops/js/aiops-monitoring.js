@@ -76,6 +76,9 @@
       return true;
     });
   }
+  function diagnosticGapText(item) {
+    return (item?.diagnostic_gaps || []).map((gap) => `${gap.code}：${gap.detail}`).join("；");
+  }
   function latestSampleAt() {
     return (state.view?.panels || []).flatMap((panel) => panel.series || [])
       .map((series) => latestPoint(series)?.observed_at).filter(Boolean).sort().at(-1) || null;
@@ -174,7 +177,8 @@
     const compareField = document.getElementById("monitoring-compare-field");
     compareField.hidden = state.selected.length !== 1;
     document.getElementById("monitoring-compare-source").innerHTML = '<option value="">不对比</option>' + compareSources().map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.compareSourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(source.source_type)}</option>`).join("");
-    document.getElementById("monitoring-readiness").innerHTML = `${badge(sourceById()?.monitoring_readiness, `监控 ${label(sourceById()?.monitoring_readiness)}`)}${badge(sourceById()?.diagnostic_readiness, `诊断 ${label(sourceById()?.diagnostic_readiness)}`)}`;
+    const diagnosticDetail = diagnosticGapText(sourceById());
+    document.getElementById("monitoring-readiness").innerHTML = `${badge(sourceById()?.monitoring_readiness, `监控 ${label(sourceById()?.monitoring_readiness)}`)}<span title="${esc(diagnosticDetail)}">${badge(sourceById()?.diagnostic_readiness, `自动诊断 ${label(sourceById()?.diagnostic_readiness)}`)}</span>`;
   }
   function filteredInstances() {
     const value = state.search.trim().toLowerCase();
@@ -191,7 +195,7 @@
       const quality = result ? instanceQuality(result) : selected ? "待查询" : "未选择";
       const qualityState = quality === "正常" ? "GOOD" : quality === "部分成功" ? "PARTIAL" : quality === "不可用" ? "UNAVAILABLE" : quality === "无有效采样" ? "NO_DATA" : "PARTIAL";
       const current = state.selected.length === 1 && selected;
-      return `<tr class="${selected ? "is-selected" : ""}"><td><input type="checkbox" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""} ${!selected && state.selected.length >= 12 ? "disabled" : ""}></td><td><strong>${esc(instance.display_name)}</strong><small>${esc(instance.db_type)} · ${esc(instance.instance_id.slice(0, 8))}</small></td><td>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} ${badge(instance.diagnostic_readiness, `诊断 ${label(instance.diagnostic_readiness)}`)}</td><td>${badge(qualityState, quality)}</td><td>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</td><td><button type="button" data-drill-instance="${esc(instance.instance_id)}" ${current ? "disabled" : ""}>${current ? "当前实例" : "仅看此实例"}</button></td></tr>`;
+      return `<tr class="${selected ? "is-selected" : ""}"><td><input type="checkbox" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""} ${!selected && state.selected.length >= 12 ? "disabled" : ""}></td><td><strong>${esc(instance.display_name)}</strong><small>${esc(instance.db_type)} · ${esc(instance.instance_id.slice(0, 8))}</small></td><td>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></td><td>${badge(qualityState, quality)}</td><td>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</td><td><button type="button" data-drill-instance="${esc(instance.instance_id)}" ${current ? "disabled" : ""}>${current ? "当前实例" : "仅看此实例"}</button></td></tr>`;
     }).join("");
     document.getElementById("monitoring-instance-list").innerHTML = rows || '<tr><td colspan="6" class="ops-empty">当前筛选条件下没有数据库实例。</td></tr>';
     renderFreshness();
@@ -255,10 +259,17 @@
       if (contextController.signal.aborted) return;
       state.instances = [...instances].sort((left, right) => left.display_name.localeCompare(right.display_name, "zh-CN"));
       state.profiles = profiles;
-      const targetId = query.get("target_id") || query.get("targetId") || "";
+      const currentQuery = new URLSearchParams(location.search);
+      const targetId = currentQuery.get("target_id") || currentQuery.get("targetId") || "";
       state.selected = [(state.instances.find((item) => item.instance_id === targetId) || state.instances[0])?.instance_id].filter(Boolean);
-      const profileId = query.get("profile_id") || query.get("profileId") || "";
+      const profileId = currentQuery.get("profile_id") || currentQuery.get("profileId") || "";
       state.profileId = state.profiles.find((item) => item.profile_id === profileId)?.profile_id || state.profiles[0]?.profile_id || "";
+      const next = new URLSearchParams(location.search);
+      next.set("source_id", state.sourceId);
+      next.set("target_id", state.selected[0] || "");
+      next.set("profile_id", state.profileId);
+      next.set("window", state.window);
+      history.replaceState(null, "", `${location.pathname}?${next}`);
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
@@ -457,7 +468,13 @@
 
   document.getElementById("monitoring-source").onchange = (event) => { state.sourceId = event.target.value; loadSourceContext(); };
   document.getElementById("monitoring-window").onchange = (event) => { state.window = event.target.value; scheduleView(); };
-  document.getElementById("monitoring-profile").onchange = (event) => { state.profileId = event.target.value; scheduleView(); };
+  document.getElementById("monitoring-profile").onchange = (event) => {
+    state.profileId = event.target.value;
+    const next = new URLSearchParams(location.search);
+    next.set("profile_id", state.profileId);
+    history.replaceState(null, "", `${location.pathname}?${next}`);
+    scheduleView();
+  };
   document.getElementById("monitoring-compare-source").onchange = (event) => { state.compareSourceId = event.target.value; scheduleView(); };
   document.getElementById("monitoring-instance-search").oninput = (event) => { state.search = event.target.value; renderInstances(); };
   document.getElementById("monitoring-instance-list").onchange = (event) => {

@@ -79,6 +79,11 @@ class MonitoringApplicationService:
                 before_id=None,
                 limit=1000,
             )
+            alert_ingress_targets = await self._alert_ingress_target_ids(
+                uow=uow,
+                domain_id=scope.domain_id,
+                sources=sources,
+            )
             summaries = []
             for source in sources:
                 if source.source_type not in {"PROMETHEUS", "ZABBIX"}:
@@ -88,15 +93,24 @@ class MonitoringApplicationService:
                     domain_id=scope.domain_id,
                 )
                 active = [item for item in bindings if item.status == "ACTIVE"]
-                enabled_count = 0
+                enabled_target_ids = set()
                 for binding in active:
                     target = await uow.targets.get_scoped(
                         target_id=binding.target_id,
                         domain_id=scope.domain_id,
                     )
                     if target is not None and target.status == "ENABLED":
-                        enabled_count += 1
-                summaries.append(self._source_summary(source, enabled_count))
+                        enabled_target_ids.add(target.target_id)
+                summaries.append(
+                    self._source_summary(
+                        source,
+                        len(enabled_target_ids),
+                        alert_ingress_ready=(
+                            bool(enabled_target_ids)
+                            and enabled_target_ids.issubset(alert_ingress_targets)
+                        ),
+                    )
+                )
             return tuple(
                 sorted(
                     summaries,
@@ -123,7 +137,19 @@ class MonitoringApplicationService:
                 if target is None or target.status != "ENABLED":
                     continue
                 mapped_targets.append((target, binding))
-            source_summary = self._source_summary(source, len(mapped_targets))
+            alert_ingress_targets = await self._alert_ingress_target_ids(
+                uow=uow,
+                domain_id=scope.domain_id,
+            )
+            mapped_target_ids = {target.target_id for target, _ in mapped_targets}
+            source_summary = self._source_summary(
+                source,
+                len(mapped_targets),
+                alert_ingress_ready=(
+                    bool(mapped_target_ids)
+                    and mapped_target_ids.issubset(alert_ingress_targets)
+                ),
+            )
             instances = [
                 self._instance_summary(
                     target=target,
@@ -252,7 +278,18 @@ class MonitoringApplicationService:
                 if target is None or target.status != "ENABLED":
                     raise resource_not_found("Monitoring Instance")
                 targets.append((target, binding))
-            source_summary = self._source_summary(source, len(bindings))
+            alert_ingress_targets = await self._alert_ingress_target_ids(
+                uow=uow,
+                domain_id=scope.domain_id,
+            )
+            source_summary = self._source_summary(
+                source,
+                len(bindings),
+                alert_ingress_ready=(
+                    bool(requested)
+                    and requested.issubset(alert_ingress_targets)
+                ),
+            )
             self._validate_query_gate(source_summary, profile, targets)
             cache_key = build_monitoring_cache_key(
                 domain_id=str(scope.domain_id),
@@ -549,14 +586,56 @@ class MonitoringApplicationService:
                 status_code=422,
             )
 
+    async def _alert_ingress_target_ids(
+        self,
+        *,
+        uow,
+        domain_id,
+        sources=None,
+    ) -> set[UUID]:
+        """返回具备真实 Alertmanager Webhook 入站链路的 Target。"""
+        if sources is None:
+            sources = await uow.diagnostic_sources.page_scoped(
+                domain_id=domain_id,
+                statuses=None,
+                before_created_at=None,
+                before_id=None,
+                limit=1000,
+            )
+        target_ids: set[UUID] = set()
+        for source in sources:
+            capabilities = set((source.declared_capabilities_json or {}).keys())
+            if (
+                source.source_type != "ALERTMANAGER"
+                or source.status != "ENABLED"
+                or CAPABILITY_EVENT_RECEIVE not in capabilities
+                or source.webhook_key_hash is None
+                or source.webhook_credential_id is None
+            ):
+                continue
+            bindings = await uow.targets.list_source_bindings_by_source(
+                diagnostic_source_id=source.diagnostic_source_id,
+                domain_id=domain_id,
+            )
+            target_ids.update(
+                binding.target_id
+                for binding in bindings
+                if binding.status == "ACTIVE"
+            )
+        return target_ids
+
     @staticmethod
-    def _source_summary(source, active_binding_count):
+    def _source_summary(
+        source,
+        active_binding_count,
+        *,
+        alert_ingress_ready: bool,
+    ):
         capabilities = set((source.declared_capabilities_json or {}).keys())
-        config = dict(source.config_json or {})
         alert_ready = (
             CAPABILITY_EVENT_RECEIVE in capabilities
             if source.source_type == "ZABBIX"
-            else bool(config.get("alert_ingress_ready"))
+            else alert_ingress_ready
         )
         return project_source_readiness(
             source_id=source.diagnostic_source_id,
@@ -581,6 +660,7 @@ class MonitoringApplicationService:
             monitoring_readiness=source.monitoring_readiness,
             diagnostic_readiness=source.diagnostic_readiness,
             capability_gaps=source.capability_gaps,
+            diagnostic_gaps=source.diagnostic_gaps,
         )
 
     @staticmethod

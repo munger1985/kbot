@@ -68,6 +68,7 @@ def project_source_readiness(
             "一期实时监控只支持 Prometheus 和 Zabbix",
         )
     gaps: list[MonitoringGap] = []
+    diagnostic_gaps: list[MonitoringGap] = []
     if status != "ENABLED":
         readiness = "DISABLED"
         gaps.append(_source_gap("SOURCE_DISABLED", "监控源未启用"))
@@ -102,13 +103,13 @@ def project_source_readiness(
     else:
         diagnostic = "PARTIAL"
         if CAPABILITY_EVENT_QUERY not in capabilities:
-            gaps.append(
+            diagnostic_gaps.append(
                 _source_gap(
                     "SOURCE_EVENT_QUERY_MISSING", "监控源缺少活动事件查询能力"
                 )
             )
         if not alert_ingress_ready:
-            gaps.append(
+            diagnostic_gaps.append(
                 _source_gap(
                     "SOURCE_ALERT_INGRESS_MISSING", "告警入站与恢复链路尚未就绪"
                 )
@@ -120,6 +121,7 @@ def project_source_readiness(
         monitoring_readiness=readiness,
         diagnostic_readiness=diagnostic,
         capability_gaps=tuple(gaps),
+        diagnostic_gaps=tuple(diagnostic_gaps),
     )
 
 

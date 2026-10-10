@@ -109,9 +109,7 @@ class MonitoringProfileCatalog:
         requested = {item.upper() for item in db_types}
         return tuple(
             profile.summary()
-            for profile in sorted(
-                self._profiles.values(), key=lambda item: item.profile_id
-            )
+            for profile in self._profiles.values()
             if requested
             and requested.issubset(set(profile.supported_db_types))
         )

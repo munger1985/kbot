@@ -59,6 +59,7 @@ class MonitoringSourceSummary(_Contract):
     monitoring_readiness: MonitoringReadiness
     diagnostic_readiness: DiagnosticReadiness
     capability_gaps: tuple[MonitoringGap, ...] = ()
+    diagnostic_gaps: tuple[MonitoringGap, ...] = ()
 
 
 class MonitoringInstanceSummary(_Contract):
@@ -69,6 +70,7 @@ class MonitoringInstanceSummary(_Contract):
     monitoring_readiness: MonitoringReadiness
     diagnostic_readiness: DiagnosticReadiness
     capability_gaps: tuple[MonitoringGap, ...] = ()
+    diagnostic_gaps: tuple[MonitoringGap, ...] = ()
 
 
 class MonitoringProfileSummary(_Contract):

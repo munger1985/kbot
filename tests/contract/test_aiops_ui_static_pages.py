@@ -112,7 +112,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("source_display_name", script)
         self.assertIn('id="monitoring-compare-source"', page)
         self.assertIn("aiops.css?v=20261010_3", page)
-        self.assertIn("aiops-monitoring.js?v=20261010_6", page)
+        self.assertIn("aiops-monitoring.js?v=20261010_7", page)
         self.assertIn("function gapIdentity(gap)", script)
         self.assertIn("if (seen.has(identity)) return false", script)
         self.assertIn("state.view.panels || []).slice(0, 6)", script)

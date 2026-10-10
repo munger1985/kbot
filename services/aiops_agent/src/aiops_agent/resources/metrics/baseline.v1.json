@@ -200,6 +200,11 @@
           "template_id": "prom.db.cpu",
           "template_version": "1",
           "query_template": "kbot_db_cpu_utilization_percent{instance=\"${external_target}\"}",
+          "fallback_query_templates": [
+            "oracledb_kbot_cpu_utilization_percent{instance=\"${external_target}\"}",
+            "kbot_db_cpu_utilization_percent{target_key=\"${external_target}\"}",
+            "oracledb_kbot_cpu_utilization_percent{target_key=\"${external_target}\"}"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -236,6 +241,11 @@
           "template_id": "prom.db.connections.active",
           "template_version": "1",
           "query_template": "kbot_db_active_connections{instance=\"${external_target}\"}",
+          "fallback_query_templates": [
+            "sum by (instance, target_key) (oracledb_sessions_value{instance=\"${external_target}\",status=\"ACTIVE\",type=\"USER\"})",
+            "kbot_db_active_connections{target_key=\"${external_target}\"}",
+            "sum by (instance, target_key) (oracledb_sessions_value{target_key=\"${external_target}\",status=\"ACTIVE\",type=\"USER\"})"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -272,6 +282,11 @@
           "template_id": "prom.db.connections.utilization",
           "template_version": "1",
           "query_template": "kbot_db_connection_utilization_percent{instance=\"${external_target}\"}",
+          "fallback_query_templates": [
+            "100 * oracledb_kbot_connection_current_sessions{instance=\"${external_target}\"} / oracledb_kbot_connection_limit_sessions{instance=\"${external_target}\"}",
+            "kbot_db_connection_utilization_percent{target_key=\"${external_target}\"}",
+            "100 * oracledb_kbot_connection_current_sessions{target_key=\"${external_target}\"} / oracledb_kbot_connection_limit_sessions{target_key=\"${external_target}\"}"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -308,6 +323,11 @@
           "template_id": "prom.db.transactions",
           "template_version": "1",
           "query_template": "rate(kbot_db_transactions_total{instance=\"${external_target}\"}[5m])",
+          "fallback_query_templates": [
+            "rate(oracledb_activity_user_commits{instance=\"${external_target}\"}[5m]) + rate(oracledb_activity_user_rollbacks{instance=\"${external_target}\"}[5m])",
+            "rate(kbot_db_transactions_total{target_key=\"${external_target}\"}[5m])",
+            "rate(oracledb_activity_user_commits{target_key=\"${external_target}\"}[5m]) + rate(oracledb_activity_user_rollbacks{target_key=\"${external_target}\"}[5m])"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -344,6 +364,11 @@
           "template_id": "prom.db.latency",
           "template_version": "1",
           "query_template": "kbot_db_response_latency_milliseconds{instance=\"${external_target}\"}",
+          "fallback_query_templates": [
+            "oracledb_exporter_last_scrape_duration_seconds{instance=\"${external_target}\"} * 1000",
+            "kbot_db_response_latency_milliseconds{target_key=\"${external_target}\"}",
+            "oracledb_exporter_last_scrape_duration_seconds{target_key=\"${external_target}\"} * 1000"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -380,7 +405,11 @@
           "template_id": "prom.db.storage",
           "template_version": "1",
           "query_template": "kbot_db_storage_utilization_percent{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_used_percent{instance=\"${external_target}\"}"],
+          "fallback_query_templates": [
+            "oracledb_tablespace_used_percent{instance=\"${external_target}\"}",
+            "kbot_db_storage_utilization_percent{target_key=\"${external_target}\"}",
+            "oracledb_tablespace_used_percent{target_key=\"${external_target}\"}"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -417,7 +446,11 @@
           "template_id": "prom.db.storage.used",
           "template_version": "1",
           "query_template": "kbot_db_storage_used_bytes{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_bytes{instance=\"${external_target}\"}"],
+          "fallback_query_templates": [
+            "oracledb_tablespace_bytes{instance=\"${external_target}\"}",
+            "kbot_db_storage_used_bytes{target_key=\"${external_target}\"}",
+            "oracledb_tablespace_bytes{target_key=\"${external_target}\"}"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -448,7 +481,11 @@
           "template_id": "prom.db.storage.free",
           "template_version": "1",
           "query_template": "kbot_db_storage_free_bytes{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_free{instance=\"${external_target}\"}"],
+          "fallback_query_templates": [
+            "oracledb_tablespace_free{instance=\"${external_target}\"}",
+            "kbot_db_storage_free_bytes{target_key=\"${external_target}\"}",
+            "oracledb_tablespace_free{target_key=\"${external_target}\"}"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -479,7 +516,11 @@
           "template_id": "prom.db.storage.max",
           "template_version": "1",
           "query_template": "kbot_db_storage_max_bytes{instance=\"${external_target}\"}",
-          "fallback_query_templates": ["oracledb_tablespace_max_bytes{instance=\"${external_target}\"}"],
+          "fallback_query_templates": [
+            "oracledb_tablespace_max_bytes{instance=\"${external_target}\"}",
+            "kbot_db_storage_max_bytes{target_key=\"${external_target}\"}",
+            "oracledb_tablespace_max_bytes{target_key=\"${external_target}\"}"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {
@@ -510,6 +551,11 @@
           "template_id": "prom.db.errors",
           "template_version": "1",
           "query_template": "rate(kbot_db_errors_total{instance=\"${external_target}\"}[5m])",
+          "fallback_query_templates": [
+            "rate(oracledb_kbot_errors_total{instance=\"${external_target}\"}[5m])",
+            "rate(kbot_db_errors_total{target_key=\"${external_target}\"}[5m])",
+            "rate(oracledb_kbot_errors_total{target_key=\"${external_target}\"}[5m])"
+          ],
           "required_labels": ["instance"]
         },
         "ZABBIX": {

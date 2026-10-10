@@ -72,12 +72,16 @@ class MonitoringProfileContractTest(unittest.TestCase):
         mysql = self.profiles.list_for_db_types(("MYSQL",))
         self.assertEqual(
             [
+                "mysql-overview",
+                "mysql-engine",
                 "database-capacity",
                 "host-overview",
-                "mysql-engine",
-                "mysql-overview",
             ],
             [item.profile_id for item in mysql],
+        )
+        self.assertEqual(
+            "oracle-overview",
+            self.profiles.list_for_db_types(("ORACLE",))[0].profile_id,
         )
         for profile in self.profiles._profiles.values():
             self.assertLessEqual(len(profile.metric_codes), 8)
@@ -92,6 +96,37 @@ class MonitoringProfileContractTest(unittest.TestCase):
             "kbot-oracle-overview",
             self.profiles.get("oracle-overview").grafana_dashboard_uid,
         )
+        self.assertIn(
+            "host.memory.utilization",
+            self.profiles.get("oracle-overview").metric_codes,
+        )
+
+    def test_oracle_overview_prometheus_queries_have_controlled_fallbacks(self):
+        expected_raw_metrics = {
+            "db.cpu.utilization": "oracledb_kbot_cpu_utilization_percent",
+            "db.connection.active": "oracledb_sessions_value",
+            "db.connection.utilization": (
+                "oracledb_kbot_connection_current_sessions"
+            ),
+            "db.transaction.throughput": "oracledb_activity_user_commits",
+            "db.response.latency": (
+                "oracledb_exporter_last_scrape_duration_seconds"
+            ),
+            "db.storage.utilization": "oracledb_tablespace_used_percent",
+        }
+        for code, raw_metric in expected_raw_metrics.items():
+            provider = self.metrics.get(code).providers["PROMETHEUS"]
+            fallbacks = provider.fallback_query_templates
+            with self.subTest(metric_code=code):
+                self.assertTrue(
+                    any(
+                        'target_key="${external_target}"' in query
+                        for query in fallbacks
+                    )
+                )
+                self.assertTrue(
+                    any(raw_metric in query for query in fallbacks)
+                )
 
     def test_grafana_requires_fixed_uid_and_complete_link_security_gate(self):
         disabled = resolve_grafana_integration(
@@ -171,6 +206,11 @@ class MonitoringProfileContractTest(unittest.TestCase):
         )
         self.assertEqual("READY", ready.monitoring_readiness)
         self.assertEqual("PARTIAL", ready.diagnostic_readiness)
+        self.assertEqual((), ready.capability_gaps)
+        self.assertEqual(
+            {"SOURCE_EVENT_QUERY_MISSING", "SOURCE_ALERT_INGRESS_MISSING"},
+            {item.code for item in ready.diagnostic_gaps},
+        )
 
     def test_cache_key_contains_domain_and_configuration_versions(self):
         now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)

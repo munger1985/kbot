@@ -19,6 +19,7 @@ from aiops_agent.monitoring import (
 )
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
+    CAPABILITY_EVENT_RECEIVE,
     CAPABILITY_METRIC_QUERY_RANGE,
     MetricsEvidenceResult,
 )
@@ -232,6 +233,41 @@ def test_not_ready_source_does_not_call_provider():
     assert caught.value.code == "MONITORING_SOURCE_NOT_READY"
     assert registry.create_calls == 0
     assert snapshot.calls == 0
+
+
+def test_alert_ingress_readiness_uses_bound_alertmanager_webhook():
+    service, scope, _source, target, *_rest = _fixture()
+    alertmanager_id = uuid4()
+    alertmanager = SimpleNamespace(
+        diagnostic_source_id=alertmanager_id,
+        source_type="ALERTMANAGER",
+        status="ENABLED",
+        declared_capabilities_json={CAPABILITY_EVENT_RECEIVE: {}},
+        webhook_key_hash="hash",
+        webhook_credential_id=uuid4(),
+    )
+    binding = SimpleNamespace(
+        diagnostic_source_id=alertmanager_id,
+        target_id=target.target_id,
+        status="ACTIVE",
+    )
+    uow = SimpleNamespace(
+        diagnostic_sources=SimpleNamespace(
+            page_scoped=AsyncMock(return_value=[alertmanager])
+        ),
+        targets=SimpleNamespace(
+            list_source_bindings_by_source=AsyncMock(return_value=[binding])
+        ),
+    )
+
+    target_ids = asyncio.run(
+        service._alert_ingress_target_ids(
+            uow=uow,
+            domain_id=scope.domain_id,
+        )
+    )
+
+    assert target_ids == {target.target_id}
 
 
 def test_unmapped_instance_is_hidden_as_not_found():

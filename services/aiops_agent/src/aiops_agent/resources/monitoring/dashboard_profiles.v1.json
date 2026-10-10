@@ -5,10 +5,10 @@
       "profile_id": "oracle-overview",
       "version": "1.0.0",
       "display_name": "Oracle 实时总览",
-      "description": "Oracle 可用性、连接、吞吐、延迟、存储和错误趋势。",
+      "description": "Oracle 可用性、CPU、内存、连接、吞吐、延迟和存储趋势。",
       "supported_db_types": ["ORACLE"],
       "grafana_dashboard_uid": "kbot-oracle-overview",
-      "metric_codes": ["db.availability", "db.cpu.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization", "db.error.rate"]
+      "metric_codes": ["db.availability", "db.cpu.utilization", "host.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization"]
     },
     {
       "profile_id": "mysql-overview",
