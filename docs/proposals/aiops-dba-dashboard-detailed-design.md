@@ -19,6 +19,10 @@ Dashboard 是 DBA 登录 AIOps 后的运维态势入口，替代原“库群总�
 本功能使用现有 Target、Situation、Run、Inspection Fire 和 Finding 数据，不新增数据库表，
 不改变诊断主链，也不提供 `/fleet` 路由或静态页面兼容层。
 
+监控源下多数据库实例的 Prometheus、Zabbix 实时时序、单实例下钻与 Grafana 专业下钻不在本首屏
+展开，见
+[AIOps 实时监控 Dashboard 集成详细设计](aiops-monitoring-dashboard-integration-detailed-design.md)。
+
 ## 2. 现状审计与重构结论
 
 原库群总览主要是 Target 列表和摘要，存在以下问题：
