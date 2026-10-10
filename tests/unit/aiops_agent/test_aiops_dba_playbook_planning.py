@@ -15,6 +15,8 @@ from aiops_agent.contracts.artifacts.database import (
     EvidenceGap,
 )
 from aiops_agent.diagnostics import DiagnosticRegistry
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
+from aiops_agent.monitoring import load_monitoring_profile_catalog
 from aiops_agent.application.investigation import (
     TurnPlanningService,
     TurnPlanningStageError,
@@ -2069,6 +2071,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         uow = _PlanningUow()
+        uow.target.db_type = "MYSQL"
         monitoring_builder = SimpleNamespace(
             build=AsyncMock(
                 return_value={
@@ -2098,6 +2101,9 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             ),
             agent_catalog=_AgentCatalog(),
             monitoring_snapshot_builder=monitoring_builder,
+            monitoring_profile_catalog=load_monitoring_profile_catalog(
+                load_metric_catalog()
+            ),
         )
 
         await service.execute(
@@ -2129,6 +2135,21 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("SITUATION", linked.source_kind)
         self.assertEqual("MONITORING_SIGNAL", linked.evidence_kind)
         monitoring_builder.build.assert_awaited_once()
+        self.assertEqual(
+            (
+                "mysql.availability",
+                "runtime.cpu.utilization",
+                "runtime.memory.utilization",
+                "mysql.connection.utilization",
+                "mysql.transaction.throughput",
+                "mysql.sql.slow_query_rate",
+                "mysql.lock.row_wait_rate",
+                "mysql.innodb.buffer_pool_hit_percent",
+            ),
+            monitoring_builder.build.await_args.kwargs[
+                "requested_metric_codes"
+            ],
+        )
 
     async def test_terminal_planning_failure_updates_turn_and_run(self) -> None:
         uow = _PlanningUow()

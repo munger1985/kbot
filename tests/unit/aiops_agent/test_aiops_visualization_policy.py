@@ -69,7 +69,7 @@ def _result(*observations: dict) -> ObservationSet:
 
 
 class AIOpsChartSelectionPolicyTest(unittest.TestCase):
-    def test_health_suppresses_flat_availability_and_prefers_database_cpu(
+    def test_health_suppresses_flat_availability_and_prefers_runtime_cpu(
         self,
     ) -> None:
         charts = AIOpsChartSelectionPolicy.compile(
@@ -79,6 +79,7 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
                 _observation("db.availability", unit="state", values=(1, 1)),
                 _observation("host.cpu.utilization", values=(20, 30)),
                 _observation("db.cpu.utilization", values=(10, 15)),
+                _observation("runtime.cpu.utilization", values=(12, 16)),
                 _observation("db.connection.utilization", values=(40, 45)),
                 _observation("db.connection.active", unit="count", values=(5, 8)),
                 _observation("db.transaction.throughput", unit="tps", values=(80, 90)),
@@ -88,7 +89,7 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
         self.assertEqual(4, len(charts))
         self.assertEqual(
             [
-                "db.cpu.utilization",
+                "runtime.cpu.utilization",
                 "db.connection.utilization",
                 "db.connection.active",
                 "db.transaction.throughput",
@@ -115,7 +116,7 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
             profile_id="performance.current",
             artifact_id="artifact-1",
             result=_result(
-                _observation("db.cpu.utilization", values=(10, 15)),
+                _observation("runtime.cpu.utilization", values=(10, 15)),
                 _observation("db.transaction.throughput", unit="tps"),
                 _observation("db.response.latency", unit="ms"),
                 _observation("db.connection.utilization", values=(40, 45)),
@@ -125,7 +126,7 @@ class AIOpsChartSelectionPolicyTest(unittest.TestCase):
 
         self.assertEqual(
             [
-                "db.cpu.utilization",
+                "runtime.cpu.utilization",
                 "db.transaction.throughput",
                 "db.response.latency",
                 "db.connection.utilization",

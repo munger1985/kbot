@@ -9,28 +9,28 @@
         {
           "slot_id": "availability",
           "title": "数据库可用性变化",
-          "candidate_metric_codes": ["db.availability"],
+          "candidate_metric_codes": ["db.availability", "mysql.availability", "postgresql.availability"],
           "suppress_when_flat": true
         },
         {
           "slot_id": "cpu",
           "title": "CPU 使用率趋势",
-          "candidate_metric_codes": ["db.cpu.utilization", "host.cpu.utilization"]
+          "candidate_metric_codes": ["runtime.cpu.utilization", "db.cpu.utilization", "host.cpu.utilization"]
         },
         {
           "slot_id": "connection_utilization",
           "title": "连接使用率趋势",
-          "candidate_metric_codes": ["db.connection.utilization"]
+          "candidate_metric_codes": ["db.connection.utilization", "mysql.connection.utilization"]
         },
         {
           "slot_id": "active_connections",
           "title": "活跃连接数趋势",
-          "candidate_metric_codes": ["db.connection.active"]
+          "candidate_metric_codes": ["db.connection.active", "postgresql.connection.active"]
         },
         {
           "slot_id": "throughput",
           "title": "事务吞吐趋势",
-          "candidate_metric_codes": ["db.transaction.throughput"]
+          "candidate_metric_codes": ["db.transaction.throughput", "mysql.transaction.throughput", "postgresql.transaction.throughput"]
         },
         {
           "slot_id": "latency",
@@ -47,12 +47,12 @@
         {
           "slot_id": "cpu",
           "title": "CPU 使用率趋势",
-          "candidate_metric_codes": ["db.cpu.utilization", "host.cpu.utilization"]
+          "candidate_metric_codes": ["runtime.cpu.utilization", "db.cpu.utilization", "host.cpu.utilization"]
         },
         {
           "slot_id": "throughput",
           "title": "事务吞吐趋势",
-          "candidate_metric_codes": ["db.transaction.throughput"]
+          "candidate_metric_codes": ["db.transaction.throughput", "mysql.transaction.throughput", "postgresql.transaction.throughput"]
         },
         {
           "slot_id": "latency",
@@ -62,12 +62,12 @@
         {
           "slot_id": "connection_utilization",
           "title": "连接使用率趋势",
-          "candidate_metric_codes": ["db.connection.utilization"]
+          "candidate_metric_codes": ["db.connection.utilization", "mysql.connection.utilization"]
         },
         {
           "slot_id": "active_connections",
           "title": "活跃连接数趋势",
-          "candidate_metric_codes": ["db.connection.active"]
+          "candidate_metric_codes": ["db.connection.active", "postgresql.connection.active"]
         }
       ]
     },

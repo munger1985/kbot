@@ -171,6 +171,7 @@ class TurnPlanningService:
         tool_snapshot_builder: ToolExecutionSnapshotBuilder,
         agent_catalog,
         monitoring_snapshot_builder=None,
+        monitoring_profile_catalog=None,
         conversation_input_resolver: ConversationInputResolver | None = None,
     ) -> None:
         self._uow_factory = uow_factory
@@ -180,6 +181,7 @@ class TurnPlanningService:
         self._tool_snapshot_builder = tool_snapshot_builder
         self._agent_catalog = agent_catalog
         self._monitoring_snapshot_builder = monitoring_snapshot_builder
+        self._monitoring_profile_catalog = monitoring_profile_catalog
         self._conversation_input_resolver = conversation_input_resolver
 
     async def execute(self, payload: dict) -> dict:
@@ -391,6 +393,11 @@ class TurnPlanningService:
                         investigation.task_frame.visualization_profile_id
                     )
                     or None
+                ),
+                align_with_realtime_profile=(
+                    alert_diagnosis
+                    or investigation.task_frame.visualization_profile_id
+                    in {"health.overview", "performance.current"}
                 ),
             )
             if monitoring_requested
@@ -2137,6 +2144,11 @@ class TurnPlanningService:
                     )
                     or None
                 ),
+                align_with_realtime_profile=(
+                    alert_diagnosis
+                    or investigation.task_frame.visualization_profile_id
+                    in {"health.overview", "performance.current"}
+                ),
             )
             if monitoring_requested
             else {}
@@ -3857,6 +3869,7 @@ class TurnPlanningService:
         *,
         requested_window_seconds: int | None = None,
         requested_metric_codes: tuple[str, ...] | None = None,
+        align_with_realtime_profile: bool = False,
     ) -> dict:
         if self._monitoring_snapshot_builder is None:
             return {}
@@ -3868,6 +3881,15 @@ class TurnPlanningService:
             if target is None:
                 raise resource_not_found("Turn Target")
             now = await uow.runs.database_now()
+            if (
+                align_with_realtime_profile
+                and self._monitoring_profile_catalog is not None
+            ):
+                requested_metric_codes = (
+                    self._monitoring_profile_catalog.overview_for_db_type(
+                        str(target.db_type)
+                    ).metric_codes
+                )
             monitor_window_seconds = (
                 min(
                     int(requested_window_seconds),

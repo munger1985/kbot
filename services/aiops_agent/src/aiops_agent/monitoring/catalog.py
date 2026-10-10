@@ -103,6 +103,19 @@ class MonitoringProfileCatalog:
         except KeyError as exc:
             raise KeyError(f"未知 Monitoring Profile：{profile_id}") from exc
 
+    def overview_for_db_type(
+        self, db_type: str
+    ) -> MonitoringProfileDefinition:
+        """返回实时监控与诊断共享的数据库概览 Profile。"""
+        profile_id = {
+            "ORACLE": "oracle-overview",
+            "MYSQL": "mysql-overview",
+            "POSTGRESQL": "postgresql-overview",
+        }.get(str(db_type).upper())
+        if profile_id is None:
+            raise KeyError(f"数据库类型没有概览 Monitoring Profile：{db_type}")
+        return self.get(profile_id)
+
     def list_for_db_types(
         self, db_types: tuple[str, ...]
     ) -> tuple[MonitoringProfileSummary, ...]:

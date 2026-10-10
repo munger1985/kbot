@@ -113,6 +113,10 @@ class MonitoringProfileContractTest(unittest.TestCase):
             profile = self.profiles.list_for_db_types((db_type,))[0]
             with self.subTest(db_type=db_type):
                 self.assertEqual(profile_id, profile.profile_id)
+                self.assertEqual(
+                    profile_id,
+                    self.profiles.overview_for_db_type(db_type).profile_id,
+                )
                 self.assertTrue(set(profile.metric_codes).issubset(authorized))
 
         mysql_codes = self.profiles.get("mysql-overview").metric_codes

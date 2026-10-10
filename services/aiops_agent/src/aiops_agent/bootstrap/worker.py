@@ -47,6 +47,7 @@ from aiops_agent.application.diagnostic_sources import (
 )
 from aiops_agent.application.targets import TargetConnectivityCheckService
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
+from aiops_agent.monitoring import load_monitoring_profile_catalog
 from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
@@ -127,6 +128,9 @@ def create_aiops_worker_probe(
             Path(resolved.monitoring.catalog_path)
             if resolved.monitoring.catalog_path
             else None
+        )
+        monitoring_profile_catalog = load_monitoring_profile_catalog(
+            metric_catalog
         )
         diagnostic_registry = create_diagnostic_registry(resolved)
         playbook_registry = PlaybookRegistry.load(
@@ -317,6 +321,9 @@ def create_aiops_worker_probe(
                     agent_catalog=agent_catalog,
                     monitoring_snapshot_builder=(
                         monitoring_snapshot_builder
+                    ),
+                    monitoring_profile_catalog=(
+                        monitoring_profile_catalog
                     ),
                     conversation_input_resolver=(
                         conversation_input_resolver
