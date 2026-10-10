@@ -225,9 +225,16 @@ password = postgres-secret
     assert "alertmanager_url: http://alertmanager:9093" in loki_config
     assert "rules_directory: /etc/loki/rules" in loki_config
     loki_rules = (
-        settings.runtime_dir / "loki/rules/fake/kbot-oracle-alerts.yml"
+        settings.runtime_dir / "loki/rules/fake/kbot-database-alerts.yml"
     ).read_text()
     assert "alert: OracleAlertLogProblemDetected" in loki_rules
+    assert "alert: MySQLAlertLogProblemDetected" in loki_rules
+    assert "alert: PostgreSQLAlertLogProblemDetected" in loki_rules
+    assert '{job="mysql_error", severity=~"error|warning"}' in loki_rules
+    assert (
+        '{job="postgresql_log", severity=~"warning|error|fatal|panic"}'
+        in loki_rules
+    )
     assert 'severity=~"critical|warning"' in loki_rules
     assert 'json source_event_id="record_id"' in loki_rules
     assert "source_event_id" in loki_rules
@@ -248,8 +255,17 @@ password = postgres-secret
         signer_environment["AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION"]
         == "${AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION}"
     )
-    alloy_config = (STACK / "configuration/alloy/config.alloy").read_text()
+    alloy_config = (
+        settings.runtime_dir / "alloy/config.alloy"
+    ).read_text()
     assert 'severity       = "severity"' in alloy_config
+    assert 'discovery.docker "database_containers"' in alloy_config
+    assert "aiops_log_source" in alloy_config
+    assert 'regex         = "mysql_error|postgresql_log"' in alloy_config
+    assert (
+        "/var/run/docker.sock:/var/run/docker.sock:ro"
+        in generated["services"]["alloy"]["volumes"]
+    )
     assert (
         settings.runtime_dir / "secrets/loki_authorization"
     ).read_bytes() == b"local-internal-only"
@@ -321,6 +337,9 @@ enabled = true
     stale_rule.write_text("stale", encoding="utf-8")
     stack._prepare_runtime(settings)
     assert not stale_rule.exists()
+    assert not (
+        settings.runtime_dir / "loki/rules/fake/kbot-database-alerts.yml"
+    ).exists()
 
 
 def test_multiple_oracle_targets_generate_isolated_services_and_labels(
@@ -496,6 +515,75 @@ exporter_port = 19101
         "10.0.0.88:19101:8080"
     ]
     assert stack._selected_services(settings) == ["cadvisor"]
+
+
+def test_collector_role_collects_opt_in_database_container_logs(
+    tmp_path: Path,
+) -> None:
+    stack = _load_stack_script()
+    config = tmp_path / "aiops-stack.ini"
+    config.write_text(
+        """[deployment]
+deployment_id = container-log-collector
+role = collector
+local_access = false
+
+[logs]
+enabled = true
+loki_url = http://10.0.0.190:3100/loki/api/v1/push
+loki_tenant = kbot-dev
+loki_token = private-vcn-test-token
+allow_insecure_private_loki = true
+
+[containers]
+enabled = true
+target_key = containers-aiops-88
+exporter_bind_address = 10.0.0.88
+exporter_port = 19101
+""",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    settings = stack._load_settings(config)
+    stack._prepare_runtime(settings)
+    generated = json.loads(
+        (settings.runtime_dir / "compose.generated.yaml").read_text()
+    )
+    alloy_volumes = generated["services"]["alloy"]["volumes"]
+    assert "/var/run/docker.sock:/var/run/docker.sock:ro" in alloy_volumes
+    alloy_config = (
+        settings.runtime_dir / "alloy/config.alloy"
+    ).read_text()
+    assert "aiops_target_key" in alloy_config
+    assert "aiops_log_source" in alloy_config
+    assert 'target_label  = "target_key"' in alloy_config
+    assert 'target_label  = "job"' in alloy_config
+    assert stack._selected_services(settings) == ["alloy", "cadvisor"]
+
+
+def test_collector_role_rejects_unapproved_http_loki(tmp_path: Path) -> None:
+    stack = _load_stack_script()
+    config = tmp_path / "aiops-stack.ini"
+    config.write_text(
+        """[deployment]
+deployment_id = insecure-log-collector
+role = collector
+local_access = false
+
+[logs]
+enabled = true
+loki_url = http://10.0.0.190:3100/loki/api/v1/push
+loki_token = private-vcn-test-token
+""",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    try:
+        stack._load_settings(config)
+    except ValueError as exc:
+        assert "必须使用HTTPS" in str(exc)
+    else:
+        raise AssertionError("未显式批准的私网HTTP Loki入口不应通过校验")
 
 
 def test_cadvisor_docker_labels_generate_target_scoped_resource_metrics(

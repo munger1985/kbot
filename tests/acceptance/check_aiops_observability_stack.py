@@ -128,16 +128,20 @@ def main() -> int:
             if required_text not in loki_config:
                 raise RuntimeError(f"Loki Ruler配置缺少约束：{required_text}")
         loki_rules = (
-            state / "loki/rules/fake/kbot-oracle-alerts.yml"
+            state / "loki/rules/fake/kbot-database-alerts.yml"
         ).read_text(encoding="utf-8")
         for required_text in (
             "alert: OracleAlertLogProblemDetected",
+            "alert: MySQLAlertLogProblemDetected",
+            "alert: PostgreSQLAlertLogProblemDetected",
             'severity=~"critical|warning"',
+            'job="mysql_error"',
+            'job="postgresql_log"',
             'json source_event_id="record_id"',
             "event_class: database.alert_log_problem",
         ):
             if required_text not in loki_rules:
-                raise RuntimeError(f"Oracle通用异常日志规则缺少约束：{required_text}")
+                raise RuntimeError(f"数据库通用异常日志规则缺少约束：{required_text}")
         if "ORA-00060" in loki_rules:
             raise RuntimeError("Oracle异常日志规则不得维护错误码白名单")
         if os.stat(state / "secrets/oracle-oracle-prod-01_password").st_mode & 0o037:
@@ -171,6 +175,8 @@ def main() -> int:
             "host.filesystem.utilization",
             "host.disk.io.utilization",
             "host.network.throughput",
+            "runtime.cpu.utilization",
+            "runtime.memory.utilization",
         }
         if set(overrides) != expected_overrides:
             raise RuntimeError("Oracle AIOps指标查询映射不完整")

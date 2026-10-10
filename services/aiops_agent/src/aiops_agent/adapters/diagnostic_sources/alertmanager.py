@@ -23,6 +23,9 @@ from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
 _SEVERITY = {
     "critical": SignalSeverity.CRITICAL,
     "high": SignalSeverity.HIGH,
+    "error": SignalSeverity.CRITICAL,
+    "fatal": SignalSeverity.CRITICAL,
+    "panic": SignalSeverity.CRITICAL,
     "warning": SignalSeverity.WARNING,
     "warn": SignalSeverity.WARNING,
     "info": SignalSeverity.INFO,

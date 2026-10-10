@@ -93,13 +93,17 @@ local_access = false
 # enabled = true
 # loki_retention = 720h
 # loki_port = 3100
+# 默认只监听127.0.0.1。当前节点需要接收私网Collector写入时填写本机私网IPv4。
+# loki_bind_address = 127.0.0.1
 # 当前节点同时启用metrics和logs时，自动启用Loki Ruler。
-# Oracle结构化异常日志将发送到Alertmanager。
+# Oracle、MySQL和PostgreSQL结构化异常日志将发送到Alertmanager。
 # 单机部署使用下面的内部地址；Collector分离部署时改为带TLS的Central地址。
 # loki_url = http://loki:3100/loki/api/v1/push
 # loki_tenant = kbot
 # 本地内部Loki可以留空；远程Loki必须填写真实Token。
 # loki_token =
+# 仅开发/演示环境可显式允许RFC1918私网HTTP；生产Collector不得启用。
+# allow_insecure_private_loki = true
 
 [dashboard]
 # enabled = true
@@ -126,6 +130,9 @@ local_access = false
 # exporter_port = 19101
 # 每个需监控的数据库容器必须设置Docker标签：
 # aiops_target_key=<该数据库在AIOps中的Target Key>
+# 采集MySQL/PostgreSQL容器日志时还必须设置以下二选一标签：
+# aiops_log_source=mysql_error
+# aiops_log_source=postgresql_log
 
 # 每个数据库使用一个独立配置段；复制整段即可增加数据库。
 # 冒号后的值就是稳定Target Key，必须与AIOps App中的Target绑定一致。
@@ -262,6 +269,51 @@ def _optional(
 ) -> str:
     value = parser.get(section, option, fallback=default)
     return _safe_value(f"[{section}] {option}", value)
+
+
+def _optional_boolean(
+    parser: configparser.ConfigParser,
+    section: str,
+    option: str,
+    default: bool = False,
+) -> bool:
+    try:
+        return parser.getboolean(section, option, fallback=default)
+    except ValueError as exc:
+        raise ValueError(f"[{section}] {option}必须是true或false") from exc
+
+
+def _validate_loki_url(
+    *,
+    url: str,
+    allow_insecure_private: bool,
+    collector: bool,
+) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path != "/loki/api/v1/push"
+    ):
+        raise ValueError("[logs] loki_url必须是无凭据和Query的Loki Push URL")
+    if not collector or parsed.scheme == "https":
+        return
+    if not allow_insecure_private:
+        raise ValueError("collector角色的远程Loki入口必须使用HTTPS")
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError as exc:
+        raise ValueError(
+            "允许私网HTTP时，[logs] loki_url必须使用RFC1918私网IPv4"
+        ) from exc
+    if address.version != 4 or not address.is_private or address.is_loopback:
+        raise ValueError(
+            "允许私网HTTP时，[logs] loki_url必须使用RFC1918私网IPv4"
+        )
 
 
 def _ipv4_address(
@@ -491,15 +543,40 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
             "http://loki:3100/loki/api/v1/push",
         )
         loki_token = parser.get("logs", "loki_token", fallback="").strip()
+        allow_insecure_private = _optional_boolean(
+            parser,
+            "logs",
+            "allow_insecure_private_loki",
+        )
         if loki_url != "http://loki:3100/loki/api/v1/push" and not loki_token:
             raise ValueError("远程[logs] loki_url必须同时配置loki_token")
         if loki_token == "CHANGE_ME":
             raise ValueError("[logs] loki_token仍为CHANGE_ME")
+        _validate_loki_url(
+            url=loki_url,
+            allow_insecure_private=allow_insecure_private,
+            collector=settings.role == "collector",
+        )
+        loki_bind_address = _ipv4_address(
+            parser,
+            "logs",
+            "loki_bind_address",
+            "127.0.0.1",
+        )
+        if loki_bind_address != "127.0.0.1":
+            bind_address = ipaddress.ip_address(loki_bind_address)
+            if (
+                not settings.local_access
+                or not allow_insecure_private
+                or not bind_address.is_private
+            ):
+                raise ValueError(
+                    "Loki监听非回环地址时必须启用local_access和"
+                    "allow_insecure_private_loki，并使用私网IPv4"
+                )
         if settings.role == "collector":
             if loki_url == "http://loki:3100/loki/api/v1/push":
                 raise ValueError("collector角色必须配置远程[logs] loki_url")
-            if not loki_url.startswith("https://"):
-                raise ValueError("collector角色的远程Loki入口必须使用HTTPS")
 
 
 def _bounded_int(
@@ -1058,7 +1135,130 @@ def _loki_rules() -> str:
             {{ $labels.target_key }}/{{ $labels.container_name }}出现
             {{ $labels.severity }}级别数据库日志（事件
             {{ $labels.source_event_id }}），请启动诊断并查询同期完整日志。
+
+  - name: kbot-mysql-error-log
+    interval: 15s
+    rules:
+      - alert: MySQLAlertLogProblemDetected
+        expr: |
+          sum by (target_key, container_name, severity) (
+            count_over_time(
+              {job="mysql_error", severity=~"error|warning"}[1m]
+            )
+          ) > 0
+        labels:
+          event_class: database.alert_log_problem
+          database_type: MYSQL
+          metric_code: mysql.log.error
+          diagnostic_window_seconds: "300"
+        annotations:
+          summary: "MySQL Error Log检测到异常"
+          description: >-
+            {{ $labels.target_key }}/{{ $labels.container_name }}出现
+            {{ $labels.severity }}级别数据库日志，请启动诊断并查询同期完整日志。
+
+  - name: kbot-postgresql-log
+    interval: 15s
+    rules:
+      - alert: PostgreSQLAlertLogProblemDetected
+        expr: |
+          sum by (target_key, container_name, severity) (
+            count_over_time(
+              {job="postgresql_log", severity=~"warning|error|fatal|panic"}[1m]
+            )
+          ) > 0
+        labels:
+          event_class: database.alert_log_problem
+          database_type: POSTGRESQL
+          metric_code: postgresql.log.error
+          diagnostic_window_seconds: "300"
+        annotations:
+          summary: "PostgreSQL Server Log检测到异常"
+          description: >-
+            {{ $labels.target_key }}/{{ $labels.container_name }}出现
+            {{ $labels.severity }}级别数据库日志，请启动诊断并查询同期完整日志。
 """
+
+
+def _docker_log_alloy_config() -> str:
+    """生成仅发现显式启用日志采集的数据库容器的Alloy配置。"""
+
+    return r'''
+
+discovery.docker "database_containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+}
+
+discovery.relabel "database_container_logs" {
+  targets = discovery.docker.database_containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_aiops_target_key"]
+    regex         = ".+"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_aiops_log_source"]
+    regex         = "mysql_error|postgresql_log"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_aiops_target_key"]
+    target_label  = "target_key"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_aiops_log_source"]
+    target_label  = "job"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    replacement   = "$1"
+    target_label  = "container_name"
+  }
+}
+
+loki.source.docker "database_container_logs" {
+  host             = "unix:///var/run/docker.sock"
+  targets          = discovery.relabel.database_container_logs.output
+  refresh_interval = "5s"
+  forward_to       = [loki.process.database_container_logs.receiver]
+}
+
+loki.process "database_container_logs" {
+  stage.match {
+    selector = "{job=\"mysql_error\"}"
+    stage.regex {
+      expression = `\[(?P<severity>System|Error|Warning|Note)\]`
+    }
+  }
+
+  stage.match {
+    selector = "{job=\"postgresql_log\"}"
+    stage.regex {
+      expression = `\s(?P<severity>DEBUG|LOG|INFO|NOTICE|WARNING|ERROR|FATAL|PANIC):\s`
+    }
+  }
+
+  stage.template {
+    source   = "severity"
+    template = "{{ ToLower .Value }}"
+  }
+
+  stage.labels {
+    values = {
+      severity = "",
+    }
+  }
+
+  forward_to = [loki.write.central.receiver]
+}
+'''.lstrip()
 
 
 def _target(
@@ -1342,6 +1542,8 @@ password={password}
         if settings.role == "all-in-one":
             local_targets.append(_target(engine, f"{exporter_name}:{exporter_port}", key))
 
+    if "logs" in settings.profiles and "containers" in settings.profiles:
+        alloy_mounts.append("/var/run/docker.sock:/var/run/docker.sock:ro")
     if alloy_mounts and "logs" in settings.profiles:
         services["alloy"] = {"volumes": alloy_mounts}
     document: dict[str, object] = {"services": services}
@@ -1446,8 +1648,13 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             (loki_config + loki_rules).encode("utf-8")
         ).hexdigest()
         loki_authorization = loki_token or "local-internal-only"
+        alloy_config = (
+            STACK_ROOT / "configuration/alloy/config.alloy"
+        ).read_text(encoding="utf-8")
+        if "containers" in settings.profiles:
+            alloy_config += _docker_log_alloy_config()
         alloy_revision = hashlib.sha256(
-            (STACK_ROOT / "configuration/alloy/config.alloy").read_bytes()
+            alloy_config.encode("utf-8")
             + b"\0http-header-v2\0"
             + loki_authorization.encode("utf-8")
         ).hexdigest()
@@ -1458,6 +1665,13 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
                 f"AIOPS_LOKI_CONFIG_REVISION={loki_revision}",
                 f"AIOPS_ALLOY_CONFIG_REVISION={alloy_revision}",
                 f"LOKI_PORT={_bounded_int(parser, 'logs', 'loki_port', 3100, 1, 65535)}",
+                "LOKI_BIND_ADDRESS="
+                + _ipv4_address(
+                    parser,
+                    "logs",
+                    "loki_bind_address",
+                    "127.0.0.1",
+                ),
             ]
         )
         _write_http_header_secret(
@@ -1467,7 +1681,11 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             runtime / "loki/loki.yml",
             loki_config,
         )
-        loki_rule_path = runtime / "loki/rules/fake/kbot-oracle-alerts.yml"
+        _write_text(runtime / "alloy/config.alloy", alloy_config)
+        (runtime / "loki/rules/fake/kbot-oracle-alerts.yml").unlink(
+            missing_ok=True
+        )
+        loki_rule_path = runtime / "loki/rules/fake/kbot-database-alerts.yml"
         if loki_alerting_enabled:
             _write_text(loki_rule_path, loki_rules)
         else:

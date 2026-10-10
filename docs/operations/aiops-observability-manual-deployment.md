@@ -655,12 +655,12 @@ ruler:
   rule_path: /loki/ruler
 ```
 
-创建`/etc/kbot-aiops/loki/rules/fake/kbot-oracle-alerts.yml`。`auth_enabled: false`
+创建`/etc/kbot-aiops/loki/rules/fake/kbot-database-alerts.yml`。`auth_enabled: false`
 时Loki使用固定租户目录`fake`：
 
 ```bash
 sudo install -d -m 0750 /etc/kbot-aiops/loki/rules/fake
-sudoedit /etc/kbot-aiops/loki/rules/fake/kbot-oracle-alerts.yml
+sudoedit /etc/kbot-aiops/loki/rules/fake/kbot-database-alerts.yml
 ```
 
 ```yaml

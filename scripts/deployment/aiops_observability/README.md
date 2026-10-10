@@ -13,9 +13,13 @@ KBot 容器整机交付时，人工只填写 `installation/dev/deployment.ini`�
 不用于维护第二份人工配置。独立部署 Central 或 Collector 时仍使用上述 `var/` 配置。
 
 `compose.yaml`只定义稳定的中心组件和主机采集组件。数据库Exporter、Oracle Alert
-Collector、逐目标Secret、Volume和KBot Webhook签名桥由入口脚本生成到
+Collector、MySQL/PostgreSQL Docker日志发现、逐目标Secret、Volume和KBot Webhook签名桥由入口脚本生成到
 `var/aiops-stack/generated/compose.generated.yaml`。不要手工维护生成文件，也不要从
 本目录直接执行裸`docker compose up`。
+
+同时启用`[logs]`和`[containers]`时，Alloy只采集显式设置
+`aiops_target_key`以及`aiops_log_source=mysql_error|postgresql_log`的容器。Docker
+Socket以只读方式挂载；不要给无关容器设置日志采集标签。
 
 Oracle DBA在目标PDB创建专用数据库诊断用户时，使用
 `oracle/create_kbot_monitor.sql`。该脚本必须以SYSDBA执行，并会拒绝在`CDB$ROOT`

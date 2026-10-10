@@ -416,6 +416,35 @@ class AlertmanagerWebhookTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CRITICAL", event.severity)
         self.assertNotIn("target_id", event.provider_attributes)
 
+    async def test_database_log_error_levels_are_critical(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        for severity in ("error", "fatal", "panic"):
+            with self.subTest(severity=severity):
+                payload = {
+                    "status": "firing",
+                    "alerts": [
+                        {
+                            "status": "firing",
+                            "labels": {
+                                "target_key": "db-prod-1",
+                                "alertname": "DatabaseLogProblem",
+                                "event_class": "database.alert_log_problem",
+                                "severity": severity,
+                            },
+                            "annotations": {"summary": "数据库日志异常"},
+                            "startsAt": now.isoformat(),
+                            "fingerprint": f"log-{severity}",
+                        }
+                    ],
+                }
+                body = json.dumps(payload).encode()
+                batch = await self._adapter(
+                    "secret"
+                ).verify_and_normalize_webhook(
+                    self._request(body, "secret", now)
+                )
+                self.assertEqual("CRITICAL", batch.events[0].severity)
+
     async def test_invalid_signature_is_rejected_before_parsing(self) -> None:
         now = datetime.now(UTC).replace(microsecond=0)
         with self.assertRaises(DiagnosticSourceAdapterError) as caught:

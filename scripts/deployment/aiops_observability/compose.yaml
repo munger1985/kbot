@@ -86,7 +86,7 @@ services:
       AIOPS_LOKI_TENANT: ${AIOPS_LOKI_TENANT:-kbot}
       AIOPS_ALLOY_CONFIG_REVISION: ${AIOPS_ALLOY_CONFIG_REVISION:-disabled}
     volumes:
-      - ./configuration/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ${AIOPS_STACK_STATE_DIR}/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy
     secrets:
       - source: loki-authorization

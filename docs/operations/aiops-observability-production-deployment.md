@@ -28,6 +28,7 @@ Oracle/MySQL/PostgreSQL               Prometheus / Alertmanager
         │                             Loki / 可选Grafana
 独立Exporter ─── 内部受控网络 ───────▶ Prometheus
 Oracle Alert Collector ── Alloy ─────▶ Loki TLS入口
+MySQL/PostgreSQL容器日志 ─ Alloy ───▶ Loki TLS入口
                                       Loki Ruler ────────▶ Alertmanager
                                       Alertmanager ── 签名桥 ──▶ KBot
 ```
@@ -227,6 +228,21 @@ Collector的`exporter_bind_address:exporter_port`必须与Central的`address`一
 时先部署Collector，再更新Central目标段并重新执行脚本。Prometheus通过`file_sd`每
 30秒刷新目标文件，不需要复制Prometheus实例。
 
+采集Docker中的MySQL/PostgreSQL服务日志时，在数据库侧Collector同时启用`[logs]`与
+`[containers]`，并给容器设置两个稳定标签：
+
+```yaml
+labels:
+  aiops_target_key: mysql-prod-01
+  aiops_log_source: mysql_error
+```
+
+PostgreSQL使用`aiops_log_source: postgresql_log`。Alloy只发现这两个受控值，不根据
+容器名、镜像名或日志关键字猜测数据库类型。生产Collector的`loki_url`必须使用客户
+提供的HTTPS入口和短期Token。`allow_insecure_private_loki = true`只允许演示环境在
+RFC1918私网中临时使用，并且还必须用NSG/防火墙把Central Loki入口限制为指定
+Collector私网地址；不得用于客户生产环境。
+
 ## 6. Alertmanager到KBot
 
 Webhook必须先在AIOps App中建立接收身份，再写入唯一部署配置。完整步骤如下。
@@ -311,7 +327,8 @@ Prometheus侧仍由所有处于firing状态的Alerting Rule进入同一个Alertm
 | `prometheus/kbot-aiops-query-overrides.json` | 完整AIOps指标语义到PromQL映射 |
 | `alertmanager/alertmanager.yml` | 告警路由配置 |
 | `loki/loki.yml` | 单机Loki配置 |
-| `loki/rules/fake/kbot-oracle-alerts.yml` | Oracle Alert Log通用异常规则 |
+| `alloy/config.alloy` | Oracle文件日志与显式启用的数据库容器日志采集配置 |
+| `loki/rules/fake/kbot-database-alerts.yml` | Oracle、MySQL和PostgreSQL异常日志规则 |
 | `deployment.json` | 不含密码的部署清单和Target列表 |
 
 这些文件由脚本生成，不得手工编辑。源配置仍只有INI一份。
@@ -329,11 +346,11 @@ docker compose \
 curl -fsS http://127.0.0.1:9090/-/ready
 curl -fsS http://127.0.0.1:9090/api/v1/targets
 curl -fsS http://127.0.0.1:9093/-/ready
-sed -n '1,120p' var/aiops-stack/generated/loki/rules/fake/kbot-oracle-alerts.yml
+sed -n '1,240p' var/aiops-stack/generated/loki/rules/fake/kbot-database-alerts.yml
 ```
 
 验收标准是每个配置的`target_key`各有一个预期Exporter Target且为`up`，查询结果不
-跨Target，Oracle日志带正确`target_key`和`severity`进入Loki，结构化异常日志及
+跨Target，三类数据库日志带正确`target_key`和`severity`进入Loki，结构化异常日志及
 Prometheus测试告警都经过Alertmanager和签名桥被KBot接受。
 不要通过停止生产数据库制造测试告警。
 
