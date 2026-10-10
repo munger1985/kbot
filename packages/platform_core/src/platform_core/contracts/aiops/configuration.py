@@ -744,6 +744,9 @@ class SourceBindingPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_locator_key: str | None = Field(default=None, min_length=1, max_length=512)
     source_locator: JsonObject | None = None
+    host_candidate_ref: str | None = Field(
+        default=None, min_length=1, max_length=8192
+    )
     role: Literal["PRIMARY", "SUPPLEMENTARY", "FALLBACK"] | None = None
     priority: int | None = Field(default=None, ge=0)
     capability_scope: JsonObject | None = None
@@ -795,14 +798,25 @@ class InstanceDiscoveryCandidate(AIOpsContract):
     mapped_target_id: UUIDv7 | None = None
 
 
+class HostDiscoveryCandidate(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    candidate_ref: str = Field(min_length=1, max_length=8192)
+    display_name: str = Field(min_length=1, max_length=256)
+    locator_hint: str = Field(min_length=1, max_length=256)
+
+
 class InstanceDiscoveryPage(CursorPage):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_id: UUIDv7
     items: tuple[InstanceDiscoveryCandidate, ...] = ()
+    host_items: tuple[HostDiscoveryCandidate, ...] = ()
 
 
 class InstanceMappingItem(AIOpsContract):
     candidate_ref: str = Field(min_length=1, max_length=8192)
+    host_candidate_ref: str | None = Field(
+        default=None, min_length=1, max_length=8192
+    )
     target_id: UUIDv7
 
 

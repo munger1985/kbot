@@ -857,6 +857,8 @@
     const discovery = document.getElementById("target-monitor-discovery");
     const discoverButton = document.getElementById("discover-target-monitor-labels");
     const candidateList = document.getElementById("target-monitor-candidate-list");
+    const hostSection = document.getElementById("target-monitor-host-section");
+    const hostCandidateList = document.getElementById("target-monitor-host-candidate-list");
     const bindingList = document.getElementById("target-monitor-binding-list");
     const result = document.getElementById("target-monitor-binding-result");
     const state = document.getElementById("target-monitor-mapping-state");
@@ -866,34 +868,49 @@
     let candidates = [];
 
     const sourceById = (sourceId) => sources.find((item) => String(item.source_id) === String(sourceId));
+    const bindingBySourceId = (sourceId) => bindings.find(
+      (item) => item.status === "ACTIVE" && String(item.source_id) === String(sourceId)
+    );
     const renderBindings = () => {
       state.textContent = bindings.length ? `${bindings.length} 条有效映射` : "未配置";
       state.className = `ops-badge ${bindings.length ? "good" : "bad"}`;
       bindingList.innerHTML = bindings.length
         ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>Label / 外部标识</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => {
           const source = sourceById(binding.source_id);
-          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td><code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
+          const hostKey = binding.source_locator?.host_target_key;
+          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td>数据库 <code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code><br>主机 <code>${shell.escape(hostKey || "未配置")}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
         }).join("")}</tbody></table>`
         : '<div class="ops-error">尚未绑定监控 Label；完成至少一条映射后才能启用该 Target。</div>';
     };
     const renderSourceOptions = () => {
       const boundSourceIds = new Set(bindings.map((binding) => String(binding.source_id)));
-      const available = sources.filter((source) => source.status === "ENABLED" && !boundSourceIds.has(String(source.source_id)));
+      const available = sources.filter((source) => (
+        source.status === "ENABLED"
+        && (
+          !boundSourceIds.has(String(source.source_id))
+          || source.source_type === "PROMETHEUS"
+        )
+      ));
       sourceSelect.innerHTML = available.length
-        ? '<option value="">请选择监控源</option>' + available.map((source) => `<option value="${shell.escape(source.source_id)}">${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}</option>`).join("")
+        ? '<option value="">请选择监控源</option>' + available.map((source) => `<option value="${shell.escape(source.source_id)}">${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}${boundSourceIds.has(String(source.source_id)) ? " · 修改主机 Label" : ""}</option>`).join("")
         : '<option value="">没有尚未绑定的已启用监控源</option>';
       sourceSelect.disabled = !available.length;
       saveButton.disabled = !available.length;
     };
     const configureSource = () => {
       const source = sourceById(sourceSelect.value);
+      const binding = bindingBySourceId(sourceSelect.value);
       const discoverable = ["PROMETHEUS", "ZABBIX"].includes(source?.source_type);
       discovery.hidden = !discoverable;
       locatorField.hidden = discoverable || !source;
       locatorInput.required = Boolean(source && !discoverable);
       jobField.hidden = source?.source_type !== "LOKI";
+      hostSection.hidden = source?.source_type !== "PROMETHEUS";
       candidates = [];
-      candidateList.innerHTML = '<div class="ops-empty">点击“发现可用 Label”读取当前数据库类型的候选。</div>';
+      candidateList.innerHTML = binding
+        ? `<div class="ops-empty">已绑定数据库 Label：<code>${shell.escape(binding.source_locator_key)}</code>；本次仅修改主机 Label。</div>`
+        : '<div class="ops-empty">点击发现按钮读取当前数据库类型的候选。</div>';
+      hostCandidateList.innerHTML = '<div class="ops-empty">点击发现按钮读取 Node Exporter 主机候选。</div>';
       result.textContent = "";
       if (!source) return;
       const presentation = {
@@ -915,12 +932,19 @@
           method: "POST",
           body: JSON.stringify({ db_types: [target.db_type], page_size: 100 }),
         });
+        const binding = bindingBySourceId(source.source_id);
         candidates = (page.items || []).filter((item) => item.mapping_status !== "MAPPED");
-        candidateList.innerHTML = candidates.length
-          ? `<div class="target-monitor-candidates">${candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
-          : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
-        result.textContent = `已发现 ${candidates.length} 个可绑定候选。`;
-        result.dataset.tone = candidates.length ? "good" : "";
+        if (!binding) {
+          candidateList.innerHTML = candidates.length
+            ? `<div class="target-monitor-candidates">${candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
+            : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
+        }
+        const hostCandidates = page.host_items || [];
+        hostCandidateList.innerHTML = hostCandidates.length
+          ? `<div class="target-monitor-candidates">${hostCandidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_host_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>主机 · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
+          : '<div class="ops-error">未发现 Node Exporter 主机 Label；请先接入目标主机监控。</div>';
+        result.textContent = `已发现 ${candidates.length} 个数据库候选、${hostCandidates.length} 个主机候选。`;
+        result.dataset.tone = (binding || candidates.length) && (source.source_type !== "PROMETHEUS" || hostCandidates.length) ? "good" : "";
       } catch (error) {
         result.textContent = error.message;
         result.dataset.tone = "bad";
@@ -957,13 +981,26 @@
       result.dataset.tone = "";
       try {
         if (["PROMETHEUS", "ZABBIX"].includes(source.source_type)) {
-          const candidateRef = form.elements.monitor_candidate_ref?.value;
-          if (!candidateRef) throw new Error("请先发现并选择一个监控 Label。");
-          await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`, {
-            method: "POST",
-            headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-            body: JSON.stringify({ mappings: [{ candidate_ref: candidateRef, target_id: targetId }] }),
-          });
+          const binding = bindingBySourceId(source.source_id);
+          const hostCandidateRef = form.elements.monitor_host_candidate_ref?.value || null;
+          if (source.source_type === "PROMETHEUS" && !hostCandidateRef) {
+            throw new Error("请先发现并选择数据库所在主机的 Label。");
+          }
+          if (binding) {
+            await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/source-bindings/${encodeURIComponent(binding.binding_id)}`, {
+              method: "PATCH",
+              headers: { "If-Match": `"rv-${binding.row_version}"` },
+              body: JSON.stringify({ host_candidate_ref: hostCandidateRef }),
+            });
+          } else {
+            const candidateRef = form.elements.monitor_candidate_ref?.value;
+            if (!candidateRef) throw new Error("请先发现并选择数据库 Label。");
+            await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`, {
+              method: "POST",
+              headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+              body: JSON.stringify({ mappings: [{ candidate_ref: candidateRef, host_candidate_ref: hostCandidateRef, target_id: targetId }] }),
+            });
+          }
         } else {
           const locatorKey = locatorInput.value.trim();
           if (!locatorKey) throw new Error("监控 Label 值不能为空。");

@@ -109,6 +109,8 @@ class InstanceDiscoveryRequest(BaseModel):
 
     db_types: tuple[DatabaseType, ...] = ()
     locator_keys: tuple[str, ...] = ()
+    include_hosts: bool = False
+    host_locator_keys: tuple[str, ...] = ()
     after_locator_key: str | None = None
     limit: int = Field(default=51, ge=1, le=101)
     trace_id: str
@@ -123,10 +125,18 @@ class InstanceDiscoveryCandidate(BaseModel):
     display_name: str = Field(min_length=1, max_length=256)
 
 
+class HostDiscoveryCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_locator_key: str = Field(min_length=1, max_length=512)
+    display_name: str = Field(min_length=1, max_length=256)
+
+
 class InstanceDiscoveryResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     candidates: tuple[InstanceDiscoveryCandidate, ...] = ()
+    host_candidates: tuple[HostDiscoveryCandidate, ...] = ()
 
 
 class MetricsEvidenceRequest(BaseModel):

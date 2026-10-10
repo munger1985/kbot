@@ -24,6 +24,7 @@ from .configuration import (
     NotificationSubscriptionList,
     NotificationSubscriptionUpsert,
     NotificationSubscriptionView,
+    HostDiscoveryCandidate,
     InstanceDiscoveryCandidate,
     InstanceDiscoveryPage,
     InstanceDiscoveryRequest,

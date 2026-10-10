@@ -37,8 +37,13 @@
             <div class="ops-field span-4" id="target-monitor-locator-field"><label id="target-monitor-locator-label" for="target-monitor-locator">监控 Label 值</label><input id="target-monitor-locator" name="locator_key" maxlength="512"><small id="target-monitor-locator-help"></small></div>
             <div class="ops-field span-4" id="target-monitor-job-field" hidden><label for="target-monitor-job">Loki job label（可选）</label><input id="target-monitor-job" name="job_label" maxlength="256"><small>填写后同时使用 <code>target_key</code> 与 <code>job</code> 精确定位日志流。</small></div>
             <div id="target-monitor-discovery" class="span-12" hidden>
-              <div class="ops-actions"><button id="discover-target-monitor-labels" type="button">发现可用 Label</button></div>
-              <div id="target-monitor-candidate-list" class="ops-empty">选择监控源后发现候选。</div>
+              <div class="ops-actions"><button id="discover-target-monitor-labels" type="button">发现数据库与主机 Label</button></div>
+              <h4>数据库 Label（必选）</h4>
+              <div id="target-monitor-candidate-list" class="ops-empty">选择监控源后发现数据库候选。</div>
+              <div id="target-monitor-host-section" hidden>
+                <h4>主机 Label（Prometheus 必选）</h4>
+                <div id="target-monitor-host-candidate-list" class="ops-empty">发现后选择数据库所在主机。</div>
+              </div>
             </div>
             <div class="ops-filter-actions"><button id="save-target-monitor-binding" class="primary" type="submit">绑定到当前 Target</button></div>
           </form>
@@ -148,6 +153,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-pages.js?v=20261010-8"></script>
+  <script src="./js/aiops-pages.js?v=20261010-9"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ import aiohttp
 from aiops_agent.ports.diagnostic_source import (
     EventEvidenceResult,
     EventEvidenceRequest,
+    HostDiscoveryCandidate,
     InstanceDiscoveryCandidate,
     InstanceDiscoveryRequest,
     InstanceDiscoveryResult,
@@ -41,6 +42,8 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         for db_type in db_types:
             metric_name, job, _label = self._DISCOVERY_SERIES[db_type]
             params.append(("match[]", f'{metric_name}{{job="{job}"}}'))
+        if request.include_hosts or request.host_locator_keys:
+            params.append(("match[]", 'up{job="node"}'))
         now = datetime.now(UTC).timestamp()
         params.extend((("start", now - 3600), ("end", now)))
         async with self._session.get(
@@ -64,7 +67,9 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                 "Prometheus 实例目录响应无效",
             )
         requested_keys = set(request.locator_keys)
+        requested_host_keys = set(request.host_locator_keys)
         candidates: dict[tuple[str, str], InstanceDiscoveryCandidate] = {}
+        host_candidates: dict[str, HostDiscoveryCandidate] = {}
         metric_types = {
             config[0]: (db_type, config[2])
             for db_type, config in self._DISCOVERY_SERIES.items()
@@ -72,6 +77,24 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         }
         for item in series:
             if not isinstance(item, dict):
+                continue
+            if (
+                str(item.get("__name__") or "") == "up"
+                and str(item.get("job") or "") == "node"
+            ):
+                host_key = str(item.get("target_key") or "").strip()
+                if (
+                    host_key
+                    and len(host_key) <= 512
+                    and (
+                        not requested_host_keys
+                        or host_key in requested_host_keys
+                    )
+                ):
+                    host_candidates[host_key] = HostDiscoveryCandidate(
+                        source_locator_key=host_key,
+                        display_name="Node Exporter 主机",
+                    )
                 continue
             metric_type = metric_types.get(str(item.get("__name__") or ""))
             if metric_type is None:
@@ -102,7 +125,13 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
             candidates.values(),
             key=lambda item: (item.source_locator_key, item.db_type),
         )
-        return InstanceDiscoveryResult(candidates=tuple(ordered[: request.limit]))
+        return InstanceDiscoveryResult(
+            candidates=tuple(ordered[: request.limit]),
+            host_candidates=tuple(
+                host_candidates[key]
+                for key in sorted(host_candidates)[: request.limit]
+            ),
+        )
 
     async def health_check(
         self, request: SourceHealthRequest

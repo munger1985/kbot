@@ -41,7 +41,9 @@ class _UnitOfWork:
     def __init__(self, state: SimpleNamespace, binding: _Binding):
         self._state = state
         self.diagnostic_sources = AsyncMock()
-        self.diagnostic_sources.get_scoped.return_value = SimpleNamespace()
+        self.diagnostic_sources.get_scoped.return_value = SimpleNamespace(
+            source_type="PROMETHEUS"
+        )
         self.targets = AsyncMock()
         self.targets.list_source_bindings_by_source.return_value = [binding]
 

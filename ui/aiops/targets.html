@@ -115,8 +115,13 @@
                 <input id="target-monitor-editor-job" name="monitor_job_label" maxlength="256">
               </div>
               <div id="target-monitor-editor-discovery" class="span-12" hidden>
-                <div class="ops-actions"><button id="discover-target-monitor-editor-labels" type="button">发现可用 Label</button></div>
-                <div id="target-monitor-editor-candidates" class="ops-empty">选择监控源后发现候选。</div>
+                <div class="ops-actions"><button id="discover-target-monitor-editor-labels" type="button">发现数据库与主机 Label</button></div>
+                <h4>数据库 Label（必选）</h4>
+                <div id="target-monitor-editor-candidates" class="ops-empty">选择监控源后发现数据库候选。</div>
+                <div id="target-monitor-editor-host-section" hidden>
+                  <h4>主机 Label（Prometheus 必选）</h4>
+                  <div id="target-monitor-editor-host-candidates" class="ops-empty">发现后选择数据库所在主机。</div>
+                </div>
               </div>
             </div>
           </section>
@@ -187,6 +192,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-pages.js?v=20261010-8"></script>
-  <script src="./js/aiops-targets.js?v=20261010-3"></script>
+  <script src="./js/aiops-targets.js?v=20261010-4"></script>
 </body>
 </html>

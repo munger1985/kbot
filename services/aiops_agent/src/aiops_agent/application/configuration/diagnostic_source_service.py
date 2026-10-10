@@ -51,6 +51,7 @@ from platform_core.contracts.aiops import (
     DiagnosticSourcePage,
     DiagnosticSourcePatch,
     DiagnosticSourceSummary,
+    HostDiscoveryCandidate,
     InstanceDiscoveryCandidate,
     InstanceDiscoveryPage,
     InstanceDiscoveryRequest,
@@ -854,6 +855,7 @@ class DiagnosticSourceConfigurationMixin:
                 discovered = await adapter.discover_instances(
                     ProviderInstanceDiscoveryRequest(
                         db_types=request.db_types,
+                        include_hosts=source.source_type == "PROMETHEUS",
                         after_locator_key=after_locator_key,
                         limit=request.page_size + 1,
                         trace_id=scope.trace_id,
@@ -877,11 +879,12 @@ class DiagnosticSourceConfigurationMixin:
         items = tuple(
             InstanceDiscoveryCandidate(
                 candidate_ref=self._instance_candidate_refs.encode(
-                        domain_id=scope.domain_id,
+                    domain_id=scope.domain_id,
                     source_id=source_id,
                     actor_id=scope.actor_id,
                     purpose="candidate",
                     value={
+                        "candidate_kind": "DATABASE",
                         "source_locator_key": item.source_locator_key,
                         "source_locator": item.source_locator,
                         "db_type": item.db_type,
@@ -899,6 +902,23 @@ class DiagnosticSourceConfigurationMixin:
             )
             for item in page_candidates
         )
+        host_items = tuple(
+            HostDiscoveryCandidate(
+                candidate_ref=self._instance_candidate_refs.encode(
+                    domain_id=scope.domain_id,
+                    source_id=source_id,
+                    actor_id=scope.actor_id,
+                    purpose="candidate",
+                    value={
+                        "candidate_kind": "HOST",
+                        "host_target_key": item.source_locator_key,
+                    },
+                ),
+                display_name=item.display_name,
+                locator_hint=self._locator_hint(item.source_locator_key),
+            )
+            for item in discovered.host_candidates
+        )
         has_more = len(discovered.candidates) > request.page_size
         next_cursor = None
         if has_more and page_candidates:
@@ -915,6 +935,7 @@ class DiagnosticSourceConfigurationMixin:
         return InstanceDiscoveryPage(
             source_id=source_id,
             items=items,
+            host_items=host_items,
             next_cursor=next_cursor,
             has_more=has_more,
         )
@@ -945,7 +966,7 @@ class DiagnosticSourceConfigurationMixin:
             for mapping in request.mappings:
                 value = self._instance_candidate_refs.decode(
                     mapping.candidate_ref,
-                        domain_id=scope.domain_id,
+                    domain_id=scope.domain_id,
                     source_id=source_id,
                     actor_id=scope.actor_id,
                     purpose="candidate",
@@ -955,12 +976,35 @@ class DiagnosticSourceConfigurationMixin:
                 locator = value.get("source_locator")
                 db_type = str(value.get("db_type") or "")
                 if (
-                    not locator_key
+                    value.get("candidate_kind") != "DATABASE"
+                    or not locator_key
                     or not isinstance(locator, dict)
                     or db_type not in {"ORACLE", "MYSQL", "POSTGRESQL"}
                 ):
                     raise validation_failed("实例候选引用内容无效")
-                decoded.append((mapping, locator_key, locator, db_type))
+                host_key = None
+                if mapping.host_candidate_ref is not None:
+                    host_value = self._instance_candidate_refs.decode(
+                        mapping.host_candidate_ref,
+                        domain_id=scope.domain_id,
+                        source_id=source_id,
+                        actor_id=scope.actor_id,
+                        purpose="candidate",
+                        now=now,
+                    )
+                    host_key = str(host_value.get("host_target_key") or "")
+                    if (
+                        host_value.get("candidate_kind") != "HOST"
+                        or not host_key
+                    ):
+                        raise validation_failed("主机候选引用内容无效")
+                if source.source_type == "PROMETHEUS" and host_key is None:
+                    raise validation_failed("Prometheus 映射必须选择主机 Label")
+                if source.source_type != "PROMETHEUS" and host_key is not None:
+                    raise validation_failed("当前监控源不支持独立主机 Label")
+                decoded.append(
+                    (mapping, locator_key, locator, db_type, host_key)
+                )
             locator_keys = [item[1] for item in decoded]
             if len(set(locator_keys)) != len(locator_keys):
                 raise validation_failed("批量映射中的外部实例不能重复")
@@ -969,6 +1013,10 @@ class DiagnosticSourceConfigurationMixin:
                     ProviderInstanceDiscoveryRequest(
                         db_types=tuple(sorted({item[3] for item in decoded})),
                         locator_keys=tuple(locator_keys),
+                        include_hosts=source.source_type == "PROMETHEUS",
+                        host_locator_keys=tuple(
+                            item[4] for item in decoded if item[4] is not None
+                        ),
                         limit=len(decoded),
                         trace_id=scope.trace_id,
                     )
@@ -983,8 +1031,11 @@ class DiagnosticSourceConfigurationMixin:
             verified_by_key = {
                 item.source_locator_key: item for item in verified.candidates
             }
+            verified_host_keys = {
+                item.source_locator_key for item in verified.host_candidates
+            }
             prepared_entities = []
-            for mapping, locator_key, locator, db_type in decoded:
+            for mapping, locator_key, locator, db_type, host_key in decoded:
                 current = verified_by_key.get(locator_key)
                 if (
                     current is None
@@ -995,6 +1046,13 @@ class DiagnosticSourceConfigurationMixin:
                     raise state_conflict(
                         "实例候选已变化或不存在，请重新执行发现"
                     )
+                if host_key is not None and host_key not in verified_host_keys:
+                    raise state_conflict(
+                        "主机候选已变化或不存在，请重新执行发现"
+                    )
+                source_locator = dict(current.source_locator)
+                if host_key is not None:
+                    source_locator["host_target_key"] = host_key
                 entity = await self._prepare_source_binding_in_uow(
                     uow=uow,
                     scope=scope,
@@ -1002,7 +1060,7 @@ class DiagnosticSourceConfigurationMixin:
                     request=SourceBindingCreate(
                         source_id=source_id,
                         source_locator_key=locator_key,
-                        source_locator=current.source_locator,
+                        source_locator=source_locator,
                     ),
                     now=now,
                     source=source,
@@ -1245,7 +1303,11 @@ class DiagnosticSourceConfigurationMixin:
     ) -> SourceBindingView:
         fields = request.model_dump(exclude_unset=True, mode="json")
         fields.pop("schema_version", None)
-        if not fields:
+        host_candidate_ref = fields.pop("host_candidate_ref", None)
+        requested_locator_change = bool(
+            {"source_locator", "source_locator_key"} & fields.keys()
+        )
+        if not fields and host_candidate_ref is None:
             raise validation_failed("PATCH 至少需要一个可修改字段")
         if "source_locator" in fields:
             fields["source_locator_json"] = fields.pop("source_locator")
@@ -1271,17 +1333,74 @@ class DiagnosticSourceConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Source Binding")
             self._check_version(entity.row_version, expected_version)
-            if "source_locator_json" in fields or "source_locator_key" in fields:
+            source = None
+            if (
+                "source_locator_json" in fields
+                or "source_locator_key" in fields
+                or host_candidate_ref is not None
+            ):
                 source = await uow.diagnostic_sources.get_scoped(
                     diagnostic_source_id=entity.diagnostic_source_id,
                     domain_id=scope.domain_id,
                 )
                 if source is None:
                     raise resource_not_found("Diagnostic Source")
-                if source.source_type in {"PROMETHEUS", "ZABBIX"}:
+            if host_candidate_ref is not None:
+                assert source is not None
+                if source.source_type != "PROMETHEUS":
                     raise validation_failed(
-                        "Prometheus 与 Zabbix 外部定位只能通过实例发现重新映射"
+                        "仅 Prometheus 映射支持独立主机 Label"
                     )
+                host_value = self._instance_candidate_refs.decode(
+                    host_candidate_ref,
+                    domain_id=scope.domain_id,
+                    source_id=entity.diagnostic_source_id,
+                    actor_id=scope.actor_id,
+                    purpose="candidate",
+                )
+                host_key = str(host_value.get("host_target_key") or "")
+                if (
+                    host_value.get("candidate_kind") != "HOST"
+                    or not host_key
+                ):
+                    raise validation_failed("主机候选引用内容无效")
+                adapter = await self._instance_discovery_adapter(
+                    uow=uow, scope=scope, source=source
+                )
+                try:
+                    verified = await adapter.discover_instances(
+                        ProviderInstanceDiscoveryRequest(
+                            include_hosts=True,
+                            host_locator_keys=(host_key,),
+                            limit=1,
+                            trace_id=scope.trace_id,
+                        )
+                    )
+                except DiagnosticSourceAdapterError as exc:
+                    raise AIOpsApplicationError(
+                        code="INSTANCE_DISCOVERY_FAILED",
+                        message="保存主机映射前重新验证 Label 失败",
+                        status_code=502,
+                        retryable=exc.retryable,
+                    ) from exc
+                if not any(
+                    item.source_locator_key == host_key
+                    for item in verified.host_candidates
+                ):
+                    raise state_conflict(
+                        "主机候选已变化或不存在，请重新执行发现"
+                    )
+                fields["source_locator_json"] = {
+                    **dict(entity.source_locator_json or {}),
+                    "host_target_key": host_key,
+                }
+            if "source_locator_json" in fields or "source_locator_key" in fields:
+                assert source is not None
+                if source.source_type in {"PROMETHEUS", "ZABBIX"}:
+                    if requested_locator_change:
+                        raise validation_failed(
+                            "Prometheus 与 Zabbix 外部定位只能通过实例发现重新映射"
+                        )
                 if "source_locator_json" in fields:
                     self._validate_source_binding_locator(
                         source=source,

@@ -27,11 +27,12 @@ from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_INSTANCE_DISCOVERY,
     CAPABILITY_METRIC_QUERY_RANGE,
     DiagnosticSourceContext,
+    HostDiscoveryCandidate as ProviderHostDiscoveryCandidate,
     InstanceDiscoveryCandidate as ProviderInstanceDiscoveryCandidate,
     InstanceDiscoveryRequest,
     InstanceDiscoveryResult,
 )
-from platform_core.contracts.aiops import InstanceMappingRequest
+from platform_core.contracts.aiops import InstanceMappingRequest, SourceBindingPatch
 from platform_core.identity import uuid7
 from platform_core.managed_credentials import ManagedCredentialCipher
 
@@ -149,6 +150,11 @@ def test_prometheus_discovery_uses_fixed_series_and_projects_locator():
                     "job": "mysql",
                     "target_key": "mysql-prod-01",
                     "untrusted": "must-not-leak",
+                },
+                {
+                    "__name__": "up",
+                    "job": "node",
+                    "target_key": "host-prod-01",
                 }
             ],
         }
@@ -167,12 +173,16 @@ def test_prometheus_discovery_uses_fixed_series_and_projects_locator():
     result = asyncio.run(
         adapter.discover_instances(
             InstanceDiscoveryRequest(
-                db_types=("MYSQL",), limit=10, trace_id="trace"
+                db_types=("MYSQL",),
+                include_hosts=True,
+                limit=10,
+                trace_id="trace",
             )
         )
     )
     assert str(session.url).endswith("/api/v1/series")
     assert ("match[]", 'mysql_up{job="mysql"}') in session.params
+    assert ("match[]", 'up{job="node"}') in session.params
     assert len(result.candidates) == 1
     candidate = result.candidates[0]
     assert candidate.source_locator_key == "mysql-prod-01"
@@ -182,6 +192,12 @@ def test_prometheus_discovery_uses_fixed_series_and_projects_locator():
         "database_type": "MYSQL",
     }
     assert "untrusted" not in candidate.model_dump_json()
+    assert result.host_candidates == (
+        ProviderHostDiscoveryCandidate(
+            source_locator_key="host-prod-01",
+            display_name="Node Exporter 主机",
+        ),
+    )
 
 
 def test_zabbix_discovery_requires_controlled_database_tag_or_template():
@@ -224,7 +240,17 @@ def _mapping_service(*, decoded, verified, targets):
     )
     adapter = AsyncMock()
     adapter.discover_instances.return_value = InstanceDiscoveryResult(
-        candidates=tuple(verified)
+        candidates=tuple(verified),
+        host_candidates=(
+            ProviderHostDiscoveryCandidate(
+                source_locator_key="host-1",
+                display_name="主机 1",
+            ),
+            ProviderHostDiscoveryCandidate(
+                source_locator_key="host-2",
+                display_name="主机 2",
+            ),
+        ),
     )
     service = object.__new__(AIOpsConfigurationService)
     service._instance_candidate_refs = Mock()
@@ -261,10 +287,12 @@ def test_batch_mapping_revalidates_changed_candidate_before_writes():
     service, scope, repository = _mapping_service(
         decoded=[
             {
+                "candidate_kind": "DATABASE",
                 "source_locator_key": "db-1",
                 "source_locator": {"target_key": "old"},
                 "db_type": "ORACLE",
-            }
+            },
+            {"candidate_kind": "HOST", "host_target_key": "host-1"},
         ],
         verified=[_candidate("db-1", "ORACLE", "new")],
         targets=[SimpleNamespace(db_type="ORACLE")],
@@ -277,7 +305,11 @@ def test_batch_mapping_revalidates_changed_candidate_before_writes():
                 request=InstanceMappingRequest.model_validate(
                     {
                         "mappings": [
-                            {"candidate_ref": "candidate-a", "target_id": target_id}
+                            {
+                                "candidate_ref": "candidate-a",
+                                "host_candidate_ref": "host-a",
+                                "target_id": target_id,
+                            }
                         ]
                     }
                 ),
@@ -293,15 +325,19 @@ def test_batch_mapping_preflights_all_target_types_before_writes():
     target_ids = (uuid7(), uuid7())
     decoded = [
         {
+            "candidate_kind": "DATABASE",
             "source_locator_key": "db-1",
             "source_locator": {"target_key": "db-1"},
             "db_type": "ORACLE",
         },
+        {"candidate_kind": "HOST", "host_target_key": "host-1"},
         {
+            "candidate_kind": "DATABASE",
             "source_locator_key": "db-2",
             "source_locator": {"target_key": "db-2"},
             "db_type": "MYSQL",
         },
+        {"candidate_kind": "HOST", "host_target_key": "host-2"},
     ]
     service, scope, repository = _mapping_service(
         decoded=decoded,
@@ -322,7 +358,11 @@ def test_batch_mapping_preflights_all_target_types_before_writes():
                 request=InstanceMappingRequest.model_validate(
                     {
                         "mappings": [
-                            {"candidate_ref": f"candidate-{index}", "target_id": target_id}
+                        {
+                            "candidate_ref": f"candidate-{index}",
+                            "host_candidate_ref": f"host-{index}",
+                            "target_id": target_id,
+                        }
                             for index, target_id in enumerate(target_ids)
                         ]
                     }
@@ -332,3 +372,148 @@ def test_batch_mapping_preflights_all_target_types_before_writes():
         )
     assert caught.value.status_code == 422
     repository.add_source_binding.assert_not_awaited()
+
+
+def test_prometheus_mapping_persists_reverified_host_label():
+    source_id = uuid7()
+    target_id = uuid7()
+    binding_id = uuid7()
+    service, scope, _repository = _mapping_service(
+        decoded=[
+            {
+                "candidate_kind": "DATABASE",
+                "source_locator_key": "db-1",
+                "source_locator": {"target_key": "db-1"},
+                "db_type": "ORACLE",
+            },
+            {"candidate_kind": "HOST", "host_target_key": "host-1"},
+        ],
+        verified=[_candidate("db-1", "ORACLE", "db-1")],
+        targets=[],
+    )
+    entity = SimpleNamespace(
+        target_source_binding_id=binding_id,
+        target_id=target_id,
+        diagnostic_source_id=source_id,
+        source_locator_key="db-1",
+        status="ACTIVE",
+        health_status="UNKNOWN",
+        row_version=1,
+    )
+    service._prepare_source_binding_in_uow = AsyncMock(return_value=entity)
+    service._persist_source_binding_in_uow = AsyncMock()
+
+    result = asyncio.run(
+        service.map_source_instances(
+            scope=scope,
+            source_id=source_id,
+            request=InstanceMappingRequest.model_validate(
+                {
+                    "mappings": [
+                        {
+                            "candidate_ref": "candidate-a",
+                            "host_candidate_ref": "host-a",
+                            "target_id": target_id,
+                        }
+                    ]
+                }
+            ),
+            idempotency_key="map-host-1",
+        )
+    )
+
+    prepared = service._prepare_source_binding_in_uow.await_args.kwargs[
+        "request"
+    ]
+    assert prepared.source_locator == {
+        "target_key": "db-1",
+        "host_target_key": "host-1",
+    }
+    assert result.items[0].binding_id == binding_id
+
+
+def test_patch_binding_reverifies_host_candidate_before_persisting():
+    now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+    source_id = uuid7()
+    target_id = uuid7()
+    binding_id = uuid7()
+    entity = SimpleNamespace(
+        target_source_binding_id=binding_id,
+        target_id=target_id,
+        diagnostic_source_id=source_id,
+        source_locator_key="db-1",
+        source_locator_json={"target_key": "db-1"},
+        role="PRIMARY",
+        priority=100,
+        capability_scope_json=None,
+        mapping_overrides_json=None,
+        query_budget_json=None,
+        status="ACTIVE",
+        health_status="UNKNOWN",
+        row_version=3,
+        created_at=now,
+        updated_at=now,
+        updated_by="old-user",
+    )
+    source = SimpleNamespace(
+        source_type="PROMETHEUS",
+        declared_capabilities_json={},
+    )
+    uow = SimpleNamespace(
+        targets=AsyncMock(),
+        diagnostic_sources=AsyncMock(),
+        session=AsyncMock(),
+        outbox=AsyncMock(),
+        commit=AsyncMock(),
+    )
+    uow.targets.get_source_binding_scoped.return_value = entity
+    uow.diagnostic_sources.get_scoped.return_value = source
+
+    class _UowContext:
+        async def __aenter__(self):
+            return uow
+
+        async def __aexit__(self, *_args):
+            return None
+
+    adapter = AsyncMock()
+    adapter.discover_instances.return_value = InstanceDiscoveryResult(
+        host_candidates=(
+            ProviderHostDiscoveryCandidate(
+                source_locator_key="host-1",
+                display_name="主机 1",
+            ),
+        )
+    )
+    service = object.__new__(AIOpsConfigurationService)
+    service._uow_factory = Mock(return_value=_UowContext())
+    service._instance_discovery_adapter = AsyncMock(return_value=adapter)
+    service._instance_candidate_refs = Mock()
+    service._instance_candidate_refs.decode.return_value = {
+        "candidate_kind": "HOST",
+        "host_target_key": "host-1",
+    }
+    scope = ConfigurationScope(
+        domain_id=100,
+        principal_id="PORTAL:aiops",
+        actor_id="user-1",
+        request_id="request-host-patch",
+        trace_id="trace-host-patch",
+    )
+
+    result = asyncio.run(
+        service.patch_source_binding(
+            scope=scope,
+            target_id=target_id,
+            binding_id=binding_id,
+            request=SourceBindingPatch(host_candidate_ref="host-ref"),
+            expected_version=3,
+        )
+    )
+
+    assert entity.source_locator_json == {
+        "target_key": "db-1",
+        "host_target_key": "host-1",
+    }
+    assert result.source_locator["host_target_key"] == "host-1"
+    uow.commit.assert_awaited_once()

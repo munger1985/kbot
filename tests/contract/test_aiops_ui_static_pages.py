@@ -660,12 +660,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
 
         self.assertIn('id="target-monitor-editor-source"', page)
         self.assertIn('id="discover-target-monitor-editor-labels"', page)
+        self.assertIn('id="target-monitor-editor-host-candidates"', page)
+        self.assertIn("主机 Label（Prometheus 必选）", page)
         self.assertIn("Target 必须至少绑定一条有效监控映射", page)
         self.assertIn("loadMonitorEditor()", script)
         self.assertIn("loadMonitorEditor(target.target_id)", script)
         self.assertIn("monitorSelectionIsValid()", script)
         self.assertIn("saveSelectedMonitorBinding(created)", script)
         self.assertIn("saveSelectedMonitorBinding(updated)", script)
+        self.assertIn("monitor_host_candidate_ref", script)
+        self.assertIn("host_candidate_ref", script)
         self.assertIn('data-monitor-binding-action="${action}"', script)
 
     def test_diagnostic_source_detail_is_operator_readable(self):
@@ -802,6 +806,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("target_key label 值", script)
         self.assertIn("OEM Target Name", script)
         self.assertIn("monitor_candidate_ref", script)
+        self.assertIn("monitor_host_candidate_ref", script)
+        self.assertIn("host_candidate_ref", script)
+        self.assertIn("主机 Label（Prometheus 必选）", page)
         self.assertIn("/instance-discoveries", script)
         self.assertIn("/instance-mappings", script)
         self.assertIn("/source-bindings", script)

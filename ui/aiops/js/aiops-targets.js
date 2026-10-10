@@ -36,6 +36,8 @@
   const monitorJob = document.getElementById("target-monitor-editor-job");
   const monitorDiscovery = document.getElementById("target-monitor-editor-discovery");
   const monitorCandidates = document.getElementById("target-monitor-editor-candidates");
+  const monitorHostSection = document.getElementById("target-monitor-editor-host-section");
+  const monitorHostCandidates = document.getElementById("target-monitor-editor-host-candidates");
   const discoverMonitorLabels = document.getElementById("discover-target-monitor-editor-labels");
   let editingTarget = null;
   let availableMonitorSources = [];
@@ -54,6 +56,9 @@
   const monitorSourceById = (sourceId) => availableMonitorSources.find(
     (item) => String(item.source_id) === String(sourceId)
   );
+  const monitorBindingBySourceId = (sourceId) => currentMonitorBindings.find(
+    (item) => item.status === "ACTIVE" && String(item.source_id) === String(sourceId)
+  );
 
   function renderMonitorBindings() {
     const active = currentMonitorBindings.filter((item) => item.status === "ACTIVE");
@@ -64,7 +69,8 @@
         const source = monitorSourceById(binding.source_id);
         const action = binding.status === "ACTIVE" ? "disable" : "enable";
         const actionLabel = binding.status === "ACTIVE" ? "解除" : "恢复";
-        return `<div class="agent-switch-row"><span><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong><small>${shell.escape(source?.source_type || "—")} · <code>${shell.escape(binding.source_locator_key)}</code> · ${shell.escape(binding.status)}</small></span><button type="button" data-monitor-binding-action="${action}" data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">${actionLabel}</button></div>`;
+        const hostKey = binding.source_locator?.host_target_key;
+        return `<div class="agent-switch-row"><span><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong><small>${shell.escape(source?.source_type || "—")} · 数据库 <code>${shell.escape(binding.source_locator_key)}</code> · 主机 <code>${shell.escape(hostKey || "未配置")}</code> · ${shell.escape(binding.status)}</small></span><button type="button" data-monitor-binding-action="${action}" data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">${actionLabel}</button></div>`;
       }).join("")}</div>`
       : '<div class="ops-error">尚未绑定监控源；创建 Target 前必须选择监控源和 Label。</div>';
   }
@@ -75,11 +81,15 @@
         .filter((binding) => binding.status === "ACTIVE")
         .map((binding) => String(binding.source_id))
     );
-    const sources = availableMonitorSources.filter(
-      (source) => source.status === "ENABLED" && !boundSourceIds.has(String(source.source_id))
-    );
+    const sources = availableMonitorSources.filter((source) => (
+      source.status === "ENABLED"
+      && (
+        !boundSourceIds.has(String(source.source_id))
+        || source.source_type === "PROMETHEUS"
+      )
+    ));
     monitorSource.innerHTML = '<option value="">请选择监控源</option>' + sources.map(
-      (source) => `<option value="${shell.escape(source.source_id)}">${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}</option>`
+      (source) => `<option value="${shell.escape(source.source_id)}">${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}${boundSourceIds.has(String(source.source_id)) ? " · 修改主机 Label" : ""}</option>`
     ).join("");
     monitorSource.disabled = !sources.length;
     configureMonitorSource();
@@ -87,12 +97,17 @@
 
   function configureMonitorSource() {
     const source = monitorSourceById(monitorSource.value);
+    const binding = monitorBindingBySourceId(monitorSource.value);
     const discoverable = ["PROMETHEUS", "ZABBIX"].includes(source?.source_type);
     monitorDiscovery.hidden = !discoverable;
     monitorLocatorField.hidden = discoverable || !source;
     monitorLocator.required = Boolean(source && !discoverable);
     monitorJobField.hidden = source?.source_type !== "LOKI";
-    monitorCandidates.innerHTML = '<div class="ops-empty">点击“发现可用 Label”读取当前数据库类型的候选。</div>';
+    monitorHostSection.hidden = source?.source_type !== "PROMETHEUS";
+    monitorCandidates.innerHTML = binding
+      ? `<div class="ops-empty">已绑定数据库 Label：<code>${shell.escape(binding.source_locator_key)}</code>；本次仅修改主机 Label。</div>`
+      : '<div class="ops-empty">点击发现按钮读取当前数据库类型的候选。</div>';
+    monitorHostCandidates.innerHTML = '<div class="ops-empty">点击发现按钮读取 Node Exporter 主机候选。</div>';
     if (!source) return;
     const presentation = {
       ALERTMANAGER: ["target_key label 值", "必须与告警中的 target_key 完全一致。"],
@@ -126,10 +141,17 @@
         `${api}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-discoveries`,
         { method: "POST", body: JSON.stringify({ db_types: [dbType.value], page_size: 100 }) }
       );
+      const binding = monitorBindingBySourceId(source.source_id);
       const candidates = (page.items || []).filter((item) => item.mapping_status !== "MAPPED");
-      monitorCandidates.innerHTML = candidates.length
-        ? candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")
-        : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
+      if (!binding) {
+        monitorCandidates.innerHTML = candidates.length
+          ? candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")
+          : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
+      }
+      const hostCandidates = page.host_items || [];
+      monitorHostCandidates.innerHTML = hostCandidates.length
+        ? hostCandidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_host_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>主机 · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")
+        : '<div class="ops-error">未发现 Node Exporter 主机 Label；请先接入目标主机监控。</div>';
     } catch (error) {
       monitorCandidates.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
     } finally {
@@ -147,9 +169,14 @@
       return false;
     }
     if (["PROMETHEUS", "ZABBIX"].includes(source.source_type)) {
-      if (form.elements.monitor_candidate_ref?.value) return true;
+      const binding = monitorBindingBySourceId(source.source_id);
+      const databaseSelected = binding || form.elements.monitor_candidate_ref?.value;
+      const hostSelected = source.source_type !== "PROMETHEUS" || form.elements.monitor_host_candidate_ref?.value;
+      if (databaseSelected && hostSelected) return true;
       result.dataset.tone = "bad";
-      result.textContent = "请先发现并选择一个监控 Label。";
+      result.textContent = !databaseSelected
+        ? "请先发现并选择数据库 Label。"
+        : "请先发现并选择数据库所在主机的 Label。";
       return false;
     }
     if (monitorLocator.value.trim()) return true;
@@ -162,13 +189,30 @@
     const source = monitorSourceById(monitorSource.value);
     if (!source) return;
     if (["PROMETHEUS", "ZABBIX"].includes(source.source_type)) {
+      const binding = monitorBindingBySourceId(source.source_id);
+      const hostCandidateRef = form.elements.monitor_host_candidate_ref?.value || null;
+      if (binding) {
+        await KBotAIOpsAuth.request(
+          `${api}/targets/${encodeURIComponent(target.target_id)}/source-bindings/${encodeURIComponent(binding.binding_id)}`,
+          {
+            method: "PATCH",
+            headers: { "If-Match": `"rv-${binding.row_version}"` },
+            body: JSON.stringify({ host_candidate_ref: hostCandidateRef }),
+          }
+        );
+        return;
+      }
       await KBotAIOpsAuth.request(
         `${api}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`,
         {
           method: "POST",
           headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
           body: JSON.stringify({
-            mappings: [{ candidate_ref: form.elements.monitor_candidate_ref.value, target_id: target.target_id }],
+            mappings: [{
+              candidate_ref: form.elements.monitor_candidate_ref.value,
+              host_candidate_ref: hostCandidateRef,
+              target_id: target.target_id,
+            }],
           }),
         }
       );
