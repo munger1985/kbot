@@ -60,6 +60,12 @@ def _inventory(root: Path) -> dict[str, Any]:
             "metrics",
             "metric_code",
         ),
+        "profiles": _catalog_ids(
+            root,
+            "services/aiops_agent/src/aiops_agent/resources/monitoring/*.json",
+            "profiles",
+            "profile_id",
+        ),
     }
 
 

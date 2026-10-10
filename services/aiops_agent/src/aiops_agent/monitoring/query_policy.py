@@ -144,7 +144,10 @@ class PromQueryPolicy:
                 for matcher in vector.matchers.matchers
                 if matcher.op == promql_parser.MatchOp.Equal
             }
-            if ("instance", _EXTERNAL_SENTINEL) in exact:
+            if (
+                ("instance", _EXTERNAL_SENTINEL) in exact
+                or ("target_key", _EXTERNAL_SENTINEL) in exact
+            ):
                 scopes.add("DATABASE")
             elif ("target_key", _HOST_SENTINEL) in exact:
                 scopes.add("HOST")

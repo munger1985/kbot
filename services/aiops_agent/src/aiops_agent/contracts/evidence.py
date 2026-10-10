@@ -46,6 +46,10 @@ class ProviderMetricDefinition(BaseModel):
         default=(), max_length=4
     )
     exact_item_key: str | None = Field(default=None, max_length=512)
+    value_type: Literal[
+        "FLOAT", "CHARACTER", "LOG", "UNSIGNED", "TEXT"
+    ] | None = None
+    unit: str | None = Field(default=None, max_length=32)
     target_type: str | None = Field(default=None, max_length=128)
     metric_name: str | None = Field(default=None, max_length=256)
     required_labels: tuple[str, ...] = ()

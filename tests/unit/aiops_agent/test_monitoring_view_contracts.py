@@ -1,0 +1,356 @@
+"""统一实时监控 Profile、Readiness、View 与 Zabbix 合同测试。"""
+
+import json
+import unittest
+from datetime import UTC, datetime, timedelta
+
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
+from aiops_agent.adapters.diagnostic_sources.zabbix import ZabbixAdapter
+from aiops_agent.contracts.monitoring import (
+    MonitoringGap,
+    MonitoringInstanceSummary,
+)
+from aiops_agent.monitoring import (
+    MonitoringProfileDefinition,
+    MonitoringQueryError,
+    MonitoringViewBuilder,
+    build_monitoring_cache_key,
+    load_monitoring_profile_catalog,
+    project_source_readiness,
+    resolve_monitoring_window,
+)
+from aiops_agent.ports.diagnostic_source import (
+    CAPABILITY_EVENT_QUERY,
+    CAPABILITY_METRIC_QUERY_RANGE,
+    DiagnosticSourceContext,
+    MetricsEvidenceRequest,
+    SourceHealthRequest,
+)
+from aiops_agent.workers.evidence_handlers import _metric_definitions
+from platform_core.identity import uuid7
+
+
+class _Response:
+    status = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    async def read(self):
+        return json.dumps(self._payload).encode()
+
+
+class _ResponseContext:
+    def __init__(self, payload):
+        self._response = _Response(payload)
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+
+class _Session:
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+        self.requests = []
+
+    def post(self, endpoint, *, json, timeout):
+        self.requests.append((endpoint, json, timeout))
+        return _ResponseContext(self.payloads.pop(0))
+
+
+class MonitoringProfileContractTest(unittest.TestCase):
+    def setUp(self):
+        self.metrics = load_metric_catalog()
+        self.profiles = load_monitoring_profile_catalog(self.metrics)
+
+    def test_profiles_are_stable_and_provider_aligned(self):
+        mysql = self.profiles.list_for_db_types(("MYSQL",))
+        self.assertEqual(
+            [
+                "database-capacity",
+                "host-overview",
+                "mysql-engine",
+                "mysql-overview",
+            ],
+            [item.profile_id for item in mysql],
+        )
+        for profile in self.profiles._profiles.values():
+            self.assertLessEqual(len(profile.metric_codes), 8)
+            for code in profile.metric_codes:
+                definition = self.metrics.get(code)
+                self.assertIn("PROMETHEUS", definition.providers)
+                provider = definition.providers["ZABBIX"]
+                self.assertTrue(provider.exact_item_key)
+                self.assertTrue(provider.value_type)
+                self.assertEqual(definition.unit, provider.unit)
+
+    def test_oem_is_not_a_first_phase_monitoring_source(self):
+        with self.assertRaises(MonitoringQueryError) as raised:
+            project_source_readiness(
+                source_id=str(uuid7()),
+                display_name="OEM",
+                source_type="OEM",
+                status="ENABLED",
+                connectivity_status="CONNECTED",
+                capabilities={CAPABILITY_METRIC_QUERY_RANGE},
+                active_binding_count=1,
+                metrics_aligned=True,
+                alert_ingress_ready=False,
+            )
+        self.assertEqual(
+            "MONITORING_SOURCE_TYPE_UNSUPPORTED", raised.exception.code
+        )
+
+    def test_readiness_distinguishes_no_mapping_and_partial_diagnosis(self):
+        no_mapping = project_source_readiness(
+            source_id=uuid7(),
+            display_name="Prometheus",
+            source_type="PROMETHEUS",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            capabilities={CAPABILITY_METRIC_QUERY_RANGE},
+            active_binding_count=0,
+            metrics_aligned=True,
+            alert_ingress_ready=False,
+        )
+        self.assertEqual("NO_MAPPED_INSTANCE", no_mapping.monitoring_readiness)
+        ready = project_source_readiness(
+            source_id=uuid7(),
+            display_name="Zabbix",
+            source_type="ZABBIX",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            capabilities={CAPABILITY_METRIC_QUERY_RANGE},
+            active_binding_count=1,
+            metrics_aligned=True,
+            alert_ingress_ready=False,
+        )
+        self.assertEqual("READY", ready.monitoring_readiness)
+        self.assertEqual("PARTIAL", ready.diagnostic_readiness)
+
+    def test_cache_key_contains_domain_and_configuration_versions(self):
+        now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+        source_id, target_id = uuid7(), uuid7()
+        common = {
+            "source_id": source_id,
+            "instance_ids": (target_id,),
+            "profile_id": "mysql-overview",
+            "window": "1h",
+            "end_time": now,
+            "binding_versions": (3,),
+            "source_config_version": 4,
+        }
+        first = build_monitoring_cache_key(domain_id="domain-a", **common)
+        second = build_monitoring_cache_key(domain_id="domain-b", **common)
+        changed = build_monitoring_cache_key(
+            domain_id="domain-a", **{**common, "binding_versions": (4,)}
+        )
+        self.assertNotEqual(first, second)
+        self.assertNotEqual(first, changed)
+
+    def test_view_keeps_no_data_as_gap_instead_of_zero(self):
+        now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+        source_id, target_id, binding_id = uuid7(), uuid7(), uuid7()
+        source = project_source_readiness(
+            source_id=source_id,
+            display_name="Prometheus",
+            source_type="PROMETHEUS",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            capabilities={
+                CAPABILITY_METRIC_QUERY_RANGE,
+                CAPABILITY_EVENT_QUERY,
+            },
+            active_binding_count=1,
+            metrics_aligned=True,
+            alert_ingress_ready=True,
+        )
+        instance = MonitoringInstanceSummary(
+            instance_id=target_id,
+            display_name="核心 MySQL",
+            db_type="MYSQL",
+            status="PARTIAL",
+            monitoring_readiness="READY",
+            diagnostic_readiness="READY",
+        )
+        definition = self.metrics.get("mysql.availability")
+        observation = ZabbixAdapter(
+            context=DiagnosticSourceContext(
+                source_id=str(source_id),
+                source_type="ZABBIX",
+                adapter_id="zabbix",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="https://zabbix.example.com/api_jsonrpc.php",
+                credentials={"token": "test"},
+            ),
+            session=_Session([]),
+            request_timeout_seconds=5,
+            webhook_replay_seconds=300,
+        )._observation(
+            request=MetricsEvidenceRequest(
+                target_id=str(target_id),
+                binding_id=str(binding_id),
+                source_locator_key="mysql-01",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(hours=1),
+                window_end=now,
+                requested_step_seconds=60,
+                max_response_bytes=1024,
+                trace_id="trace-1",
+            ),
+            definition=definition,
+            raw_series=[
+                (
+                    {},
+                    [
+                        (
+                            now,
+                            1,
+                        )
+                    ],
+                )
+            ],
+            provider_response_hash="a" * 64,
+            effective_step=60,
+            truncated=False,
+        )
+        profile = MonitoringProfileDefinition(
+            profile_id="mysql-state",
+            version="1.0.0",
+            display_name="MySQL 状态",
+            description="MySQL 可用性状态。",
+            supported_db_types=("MYSQL",),
+            metric_codes=("mysql.availability", "mysql.sql.slow_query_rate"),
+        )
+        gap = MonitoringGap(
+            scope="METRIC",
+            instance_id=target_id,
+            metric_code="mysql.sql.slow_query_rate",
+            code="SOURCE_NO_DATA",
+            detail="没有历史采样",
+        )
+        view = MonitoringViewBuilder(metric_catalog=self.metrics).build(
+            source=source,
+            profile=profile,
+            window=resolve_monitoring_window("1h", now=now),
+            instances=(instance,),
+            observations=(observation,),
+            gaps=(gap,),
+            generated_at=now,
+        )
+        self.assertTrue(view.partial)
+        missing = next(
+            item
+            for item in view.panels
+            if item.metric_code == "mysql.sql.slow_query_rate"
+        )
+        self.assertEqual("NO_DATA", missing.quality)
+        self.assertEqual((), missing.series)
+        dumped = view.model_dump_json()
+        self.assertNotIn("source_locator", dumped)
+        self.assertNotIn("query_template", dumped)
+
+    def test_zabbix_item_key_override_is_exact(self):
+        definition = self.metrics.get("mysql.availability")
+        resolved = _metric_definitions(
+            {
+                "binding_version": 7,
+                "metrics": [definition.model_dump(mode="json")],
+                "mapping_overrides": {
+                    "zabbix_item_keys": {
+                        "mysql.availability": "customer.mysql.ping"
+                    }
+                },
+            }
+        )[0]
+        provider = resolved.providers["ZABBIX"]
+        self.assertEqual("customer.mysql.ping", provider.exact_item_key)
+        self.assertEqual("binding.mysql.availability", provider.template_id)
+
+
+class ZabbixAdapterContractTest(unittest.IsolatedAsyncioTestCase):
+    def _adapter(self, session):
+        return ZabbixAdapter(
+            context=DiagnosticSourceContext(
+                source_id=str(uuid7()),
+                source_type="ZABBIX",
+                adapter_id="zabbix",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="https://zabbix.example.com/api_jsonrpc.php",
+                credentials={"token": "test-token"},
+                config={"auth_mode": "API_TOKEN"},
+            ),
+            session=session,
+            request_timeout_seconds=5,
+            webhook_replay_seconds=300,
+        )
+
+    async def test_health_check_uses_json_rpc_and_authenticates(self):
+        session = _Session(
+            [
+                {"jsonrpc": "2.0", "result": "7.0.0", "id": 1},
+                {"jsonrpc": "2.0", "result": [], "id": 1},
+            ]
+        )
+        adapter = self._adapter(session)
+        result = await adapter.health_check(SourceHealthRequest(trace_id="t"))
+        self.assertTrue(result.healthy)
+        self.assertEqual(
+            ["apiinfo.version", "host.get"],
+            [item[1]["method"] for item in session.requests],
+        )
+        self.assertNotIn("auth", session.requests[0][1])
+        self.assertEqual("test-token", session.requests[1][1]["auth"])
+
+    async def test_metric_query_uses_declared_zabbix_history_type(self):
+        now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+        session = _Session(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "result": [{"hostid": "7", "host": "mysql-01"}],
+                    "id": 1,
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "result": [
+                        {
+                            "itemid": "9",
+                            "key_": "kbot.mysql.availability",
+                            "value_type": "3",
+                            "units": "state",
+                        }
+                    ],
+                    "id": 1,
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "result": [{"clock": str(int(now.timestamp())), "value": "1"}],
+                    "id": 1,
+                },
+            ]
+        )
+        adapter = self._adapter(session)
+        definition = load_metric_catalog().get("mysql.availability")
+        result = await adapter.query_metrics(
+            MetricsEvidenceRequest(
+                target_id=str(uuid7()),
+                binding_id=str(uuid7()),
+                source_locator_key="mysql-01",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(minutes=15),
+                window_end=now,
+                requested_step_seconds=60,
+                max_response_bytes=1024 * 1024,
+                trace_id="trace-zabbix",
+            )
+        )
+        self.assertEqual(1, len(result.observations))
+        history_request = session.requests[2][1]
+        self.assertEqual("history.get", history_request["method"])
+        self.assertEqual(3, history_request["params"]["history"])

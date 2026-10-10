@@ -7,7 +7,7 @@
       "unit": "state", "value_kind": "STATE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["LAST"],
       "default_window_seconds": 3600, "min_step_seconds": 60, "max_points": 120, "max_series": 8,
-      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.up", "template_version": "1", "query_template": "mysql_up{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.up", "template_version": "1", "query_template": "mysql_up{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.up", "template_version": "1", "exact_item_key": "kbot.mysql.availability", "value_type": "UNSIGNED", "unit": "state"}}
     },
     {
       "metric_code": "mysql.connection.utilization", "semantic_version": "1.0.0",
@@ -15,7 +15,7 @@
       "unit": "percent", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600, "min_step_seconds": 60, "max_points": 120, "max_series": 8,
-      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.connection.utilization", "template_version": "1", "query_template": "100 * mysql_global_status_threads_connected{target_key=\"${external_target}\"} / clamp_min(mysql_global_variables_max_connections{target_key=\"${external_target}\"}, 1)", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.connection.utilization", "template_version": "1", "query_template": "100 * mysql_global_status_threads_connected{target_key=\"${external_target}\"} / clamp_min(mysql_global_variables_max_connections{target_key=\"${external_target}\"}, 1)", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.connection.utilization", "template_version": "1", "exact_item_key": "kbot.mysql.connection.utilization", "value_type": "FLOAT", "unit": "percent"}}
     },
     {
       "metric_code": "mysql.transaction.throughput", "semantic_version": "1.0.0",
@@ -23,7 +23,7 @@
       "unit": "transactions_per_second", "value_kind": "GAUGE", "expected_dimensions": ["target_key", "command"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600, "min_step_seconds": 60, "max_points": 120, "max_series": 16,
-      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.transactions", "template_version": "1", "query_template": "rate(mysql_global_status_commands_total{target_key=\"${external_target}\",command=~\"commit|rollback\"}[5m])", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.transactions", "template_version": "1", "query_template": "rate(mysql_global_status_commands_total{target_key=\"${external_target}\",command=~\"commit|rollback\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.transactions", "template_version": "1", "exact_item_key": "kbot.mysql.transaction.throughput", "value_type": "FLOAT", "unit": "transactions_per_second"}}
     },
     {
       "metric_code": "mysql.sql.slow_query_rate", "semantic_version": "1.0.0",
@@ -31,7 +31,7 @@
       "unit": "queries_per_second", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600, "min_step_seconds": 60, "max_points": 120, "max_series": 8,
-      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.slow_queries", "template_version": "1", "query_template": "rate(mysql_global_status_slow_queries{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.slow_queries", "template_version": "1", "query_template": "rate(mysql_global_status_slow_queries{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.slow_queries", "template_version": "1", "exact_item_key": "kbot.mysql.sql.slow_query_rate", "value_type": "FLOAT", "unit": "queries_per_second"}}
     },
     {
       "metric_code": "mysql.lock.row_wait_rate", "semantic_version": "1.0.0",
@@ -39,7 +39,7 @@
       "unit": "waits_per_second", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600, "min_step_seconds": 60, "max_points": 120, "max_series": 8,
-      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.row_lock_waits", "template_version": "1", "query_template": "rate(mysql_global_status_innodb_row_lock_waits{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.row_lock_waits", "template_version": "1", "query_template": "rate(mysql_global_status_innodb_row_lock_waits{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.row_lock_waits", "template_version": "1", "exact_item_key": "kbot.mysql.lock.row_wait_rate", "value_type": "FLOAT", "unit": "waits_per_second"}}
     },
     {
       "metric_code": "mysql.innodb.buffer_pool_hit_percent", "semantic_version": "1.0.0",
@@ -47,7 +47,7 @@
       "unit": "percent", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MIN", "LAST"],
       "default_window_seconds": 3600, "min_step_seconds": 60, "max_points": 120, "max_series": 8,
-      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.buffer_pool_hit", "template_version": "1", "query_template": "clamp_min(100 * (1 - rate(mysql_global_status_innodb_buffer_pool_reads{target_key=\"${external_target}\"}[5m]) / clamp_min(rate(mysql_global_status_innodb_buffer_pool_read_requests{target_key=\"${external_target}\"}[5m]), 0.001)), 0)", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.mysql.buffer_pool_hit", "template_version": "1", "query_template": "clamp_min(100 * (1 - rate(mysql_global_status_innodb_buffer_pool_reads{target_key=\"${external_target}\"}[5m]) / clamp_min(rate(mysql_global_status_innodb_buffer_pool_read_requests{target_key=\"${external_target}\"}[5m]), 0.001)), 0)", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.buffer_pool_hit", "template_version": "1", "exact_item_key": "kbot.mysql.innodb.buffer_pool_hit_percent", "value_type": "FLOAT", "unit": "percent"}}
     },
     {
       "metric_code": "postgresql.availability",
@@ -63,7 +63,7 @@
       "min_step_seconds": 60,
       "max_points": 120,
       "max_series": 8,
-      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.up", "template_version": "1", "query_template": "pg_up{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.up", "template_version": "1", "query_template": "pg_up{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.postgresql.up", "template_version": "1", "exact_item_key": "kbot.postgresql.availability", "value_type": "UNSIGNED", "unit": "state"}}
     },
     {
       "metric_code": "postgresql.connection.active",
@@ -79,7 +79,7 @@
       "min_step_seconds": 60,
       "max_points": 120,
       "max_series": 64,
-      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.backends", "template_version": "1", "query_template": "pg_stat_database_numbackends{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.backends", "template_version": "1", "query_template": "pg_stat_database_numbackends{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.postgresql.backends", "template_version": "1", "exact_item_key": "kbot.postgresql.connection.active", "value_type": "UNSIGNED", "unit": "count"}}
     },
     {
       "metric_code": "postgresql.transaction.throughput",
@@ -95,7 +95,7 @@
       "min_step_seconds": 60,
       "max_points": 120,
       "max_series": 64,
-      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.transactions", "template_version": "1", "query_template": "rate(pg_stat_database_xact_commit{target_key=\"${external_target}\"}[5m]) + rate(pg_stat_database_xact_rollback{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.transactions", "template_version": "1", "query_template": "rate(pg_stat_database_xact_commit{target_key=\"${external_target}\"}[5m]) + rate(pg_stat_database_xact_rollback{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.postgresql.transactions", "template_version": "1", "exact_item_key": "kbot.postgresql.transaction.throughput", "value_type": "FLOAT", "unit": "transactions_per_second"}}
     },
     {
       "metric_code": "postgresql.replication.lag_bytes",
@@ -111,7 +111,7 @@
       "min_step_seconds": 60,
       "max_points": 120,
       "max_series": 64,
-      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.replication.lag", "template_version": "1", "query_template": "pg_stat_replication_pg_wal_lsn_diff{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.replication.lag", "template_version": "1", "query_template": "pg_stat_replication_pg_wal_lsn_diff{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.postgresql.replication.lag", "template_version": "1", "exact_item_key": "kbot.postgresql.replication.lag_bytes", "value_type": "UNSIGNED", "unit": "bytes"}}
     },
     {
       "metric_code": "postgresql.replication.slot_retained_bytes",
@@ -127,7 +127,7 @@
       "min_step_seconds": 60,
       "max_points": 120,
       "max_series": 64,
-      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.slot.retained", "template_version": "1", "query_template": "pg_replication_slots_pg_wal_lsn_diff{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.slot.retained", "template_version": "1", "query_template": "pg_replication_slots_pg_wal_lsn_diff{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.postgresql.slot.retained", "template_version": "1", "exact_item_key": "kbot.postgresql.replication.slot_retained_bytes", "value_type": "UNSIGNED", "unit": "bytes"}}
     },
     {
       "metric_code": "postgresql.database.size_bytes",
@@ -143,7 +143,7 @@
       "min_step_seconds": 300,
       "max_points": 120,
       "max_series": 64,
-      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.database.size", "template_version": "1", "query_template": "pg_database_size_bytes{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}}
+      "providers": {"PROMETHEUS": {"template_id": "prom.postgresql.database.size", "template_version": "1", "query_template": "pg_database_size_bytes{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.postgresql.database.size", "template_version": "1", "exact_item_key": "kbot.postgresql.database.size_bytes", "value_type": "UNSIGNED", "unit": "bytes"}}
     },
     {
       "metric_code": "db.availability",
@@ -169,7 +169,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.ping",
           "template_version": "1",
-          "exact_item_key": "kbot.db.ping"
+          "exact_item_key": "kbot.db.ping",
+          "value_type": "UNSIGNED",
+          "unit": "state"
         },
         "OEM": {
           "template_id": "oem.db.status",
@@ -203,7 +205,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.cpu",
           "template_version": "1",
-          "exact_item_key": "kbot.db.cpu.utilization"
+          "exact_item_key": "kbot.db.cpu.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         },
         "OEM": {
           "template_id": "oem.db.cpu",
@@ -237,7 +241,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.connections.active",
           "template_version": "1",
-          "exact_item_key": "kbot.db.connection.active"
+          "exact_item_key": "kbot.db.connection.active",
+          "value_type": "UNSIGNED",
+          "unit": "count"
         },
         "OEM": {
           "template_id": "oem.db.connections.active",
@@ -271,7 +277,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.connections.utilization",
           "template_version": "1",
-          "exact_item_key": "kbot.db.connection.utilization"
+          "exact_item_key": "kbot.db.connection.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         },
         "OEM": {
           "template_id": "oem.db.connections.utilization",
@@ -305,7 +313,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.transactions",
           "template_version": "1",
-          "exact_item_key": "kbot.db.transaction.throughput"
+          "exact_item_key": "kbot.db.transaction.throughput",
+          "value_type": "FLOAT",
+          "unit": "transactions_per_second"
         },
         "OEM": {
           "template_id": "oem.db.transactions",
@@ -339,7 +349,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.latency",
           "template_version": "1",
-          "exact_item_key": "kbot.db.response.latency"
+          "exact_item_key": "kbot.db.response.latency",
+          "value_type": "FLOAT",
+          "unit": "milliseconds"
         },
         "OEM": {
           "template_id": "oem.db.latency",
@@ -374,7 +386,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.storage",
           "template_version": "1",
-          "exact_item_key": "kbot.db.storage.utilization"
+          "exact_item_key": "kbot.db.storage.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         },
         "OEM": {
           "template_id": "oem.db.storage",
@@ -405,6 +419,13 @@
           "query_template": "kbot_db_storage_used_bytes{instance=\"${external_target}\"}",
           "fallback_query_templates": ["oracledb_tablespace_bytes{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.storage.used",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.storage.used_bytes",
+          "value_type": "UNSIGNED",
+          "unit": "bytes"
         }
       }
     },
@@ -429,6 +450,13 @@
           "query_template": "kbot_db_storage_free_bytes{instance=\"${external_target}\"}",
           "fallback_query_templates": ["oracledb_tablespace_free{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.storage.free",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.storage.free_bytes",
+          "value_type": "UNSIGNED",
+          "unit": "bytes"
         }
       }
     },
@@ -453,6 +481,13 @@
           "query_template": "kbot_db_storage_max_bytes{instance=\"${external_target}\"}",
           "fallback_query_templates": ["oracledb_tablespace_max_bytes{instance=\"${external_target}\"}"],
           "required_labels": ["instance"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.db.storage.max",
+          "template_version": "1",
+          "exact_item_key": "kbot.db.storage.max_bytes",
+          "value_type": "UNSIGNED",
+          "unit": "bytes"
         }
       }
     },
@@ -480,7 +515,9 @@
         "ZABBIX": {
           "template_id": "zabbix.db.errors",
           "template_version": "1",
-          "exact_item_key": "kbot.db.error.rate"
+          "exact_item_key": "kbot.db.error.rate",
+          "value_type": "FLOAT",
+          "unit": "errors_per_second"
         },
         "OEM": {
           "template_id": "oem.db.errors",
@@ -510,6 +547,13 @@
           "template_version": "1",
           "query_template": "100 - (avg by (target_key) (rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=\"${host_target}\"}[5m])) * 100)",
           "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.cpu",
+          "template_version": "1",
+          "exact_item_key": "kbot.host.cpu.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         }
       }
     },
@@ -533,6 +577,13 @@
           "template_version": "1",
           "query_template": "100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=\"${host_target}\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=\"${host_target}\"})",
           "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.memory",
+          "template_version": "1",
+          "exact_item_key": "kbot.host.memory.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         }
       }
     },
@@ -556,6 +607,13 @@
           "template_version": "1",
           "query_template": "100 * (1 - node_filesystem_avail_bytes{job=\"node\",fstype!~\"tmpfs|overlay\",target_key=\"${host_target}\"} / node_filesystem_size_bytes{job=\"node\",fstype!~\"tmpfs|overlay\",target_key=\"${host_target}\"})",
           "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.filesystem",
+          "template_version": "1",
+          "exact_item_key": "kbot.host.filesystem.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         }
       }
     },
@@ -579,6 +637,13 @@
           "template_version": "1",
           "query_template": "rate(node_disk_io_time_seconds_total{job=\"node\",target_key=\"${host_target}\"}[5m]) * 100",
           "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.disk.io",
+          "template_version": "1",
+          "exact_item_key": "kbot.host.disk.io.utilization",
+          "value_type": "FLOAT",
+          "unit": "percent"
         }
       }
     },
@@ -602,6 +667,13 @@
           "template_version": "1",
           "query_template": "rate(node_network_receive_bytes_total{job=\"node\",device!=\"lo\",target_key=\"${host_target}\"}[5m]) + rate(node_network_transmit_bytes_total{job=\"node\",device!=\"lo\",target_key=\"${host_target}\"}[5m])",
           "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.network",
+          "template_version": "1",
+          "exact_item_key": "kbot.host.network.throughput",
+          "value_type": "FLOAT",
+          "unit": "bytes_per_second"
         }
       }
     }

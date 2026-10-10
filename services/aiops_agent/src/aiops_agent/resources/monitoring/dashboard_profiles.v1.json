@@ -1,0 +1,53 @@
+{
+  "catalog_version": "dashboard-profiles.v1",
+  "profiles": [
+    {
+      "profile_id": "oracle-overview",
+      "version": "1.0.0",
+      "display_name": "Oracle 实时总览",
+      "description": "Oracle 可用性、连接、吞吐、延迟、存储和错误趋势。",
+      "supported_db_types": ["ORACLE"],
+      "metric_codes": ["db.availability", "db.cpu.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization", "db.error.rate"]
+    },
+    {
+      "profile_id": "mysql-overview",
+      "version": "1.0.0",
+      "display_name": "MySQL 实时总览",
+      "description": "MySQL 可用性、连接、吞吐、延迟、存储和错误趋势。",
+      "supported_db_types": ["MYSQL"],
+      "metric_codes": ["db.availability", "db.cpu.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization", "db.error.rate"]
+    },
+    {
+      "profile_id": "mysql-engine",
+      "version": "1.0.0",
+      "display_name": "MySQL 引擎状态",
+      "description": "MySQL 专属连接、事务、慢查询、锁等待和 Buffer Pool 指标。",
+      "supported_db_types": ["MYSQL"],
+      "metric_codes": ["mysql.availability", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent"]
+    },
+    {
+      "profile_id": "postgresql-overview",
+      "version": "1.0.0",
+      "display_name": "PostgreSQL 实时总览",
+      "description": "PostgreSQL 可用性、连接、事务、复制和容量指标。",
+      "supported_db_types": ["POSTGRESQL"],
+      "metric_codes": ["postgresql.availability", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.replication.lag_bytes", "postgresql.replication.slot_retained_bytes", "postgresql.database.size_bytes"]
+    },
+    {
+      "profile_id": "database-capacity",
+      "version": "1.0.0",
+      "display_name": "数据库容量",
+      "description": "Oracle 与 MySQL 数据库存储已用、可用和最大容量。",
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "metric_codes": ["db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes"]
+    },
+    {
+      "profile_id": "host-overview",
+      "version": "1.0.0",
+      "display_name": "主机资源",
+      "description": "数据库所在主机的 CPU、内存、文件系统、磁盘和网络趋势。",
+      "supported_db_types": ["ORACLE", "MYSQL"],
+      "metric_codes": ["host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
+    }
+  ]
+}

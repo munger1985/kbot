@@ -48,6 +48,9 @@ def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
     prometheus_queries = overrides.get("prometheus_queries") or {}
     if not isinstance(prometheus_queries, dict):
         raise ValueError("prometheus_queries 必须是对象")
+    zabbix_item_keys = overrides.get("zabbix_item_keys") or {}
+    if not isinstance(zabbix_item_keys, dict):
+        raise ValueError("zabbix_item_keys 必须是对象")
     definitions = []
     for item in snapshot["metrics"]:
         definition = MetricDefinition.model_validate(item)
@@ -86,6 +89,35 @@ def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
                                     if override_matches_baseline
                                     else ()
                                 ),
+                            }
+                        ),
+                    }
+                }
+            )
+        item_key = zabbix_item_keys.get(definition.metric_code)
+        if item_key is not None:
+            if (
+                not isinstance(item_key, str)
+                or not item_key.strip()
+                or len(item_key) > 512
+            ):
+                raise ValueError("Zabbix Item Key 覆盖格式无效")
+            provider = definition.providers.get("ZABBIX")
+            if provider is None:
+                raise ValueError("指标不支持 Zabbix Item Key 覆盖")
+            definition = definition.model_copy(
+                update={
+                    "providers": {
+                        **definition.providers,
+                        "ZABBIX": provider.model_copy(
+                            update={
+                                "template_id": (
+                                    f"binding.{definition.metric_code}"
+                                ),
+                                "template_version": str(
+                                    snapshot["binding_version"]
+                                ),
+                                "exact_item_key": item_key.strip(),
                             }
                         ),
                     }
