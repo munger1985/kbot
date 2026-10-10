@@ -17,6 +17,7 @@
   const capacityMetricCodes = [
     "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes",
   ];
+  const summaryOnlyMetricCodes = new Set(["db.availability"]);
   const esc = shell.escape;
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
@@ -409,17 +410,20 @@
     const node = document.getElementById("monitoring-panels");
     disposeCharts();
     const isCapacity = state.view.profile.profile_id === "database-capacity";
+    const panels = isCapacity
+      ? state.view.panels
+      : state.view.panels.filter((panel) => !summaryOnlyMetricCodes.has(panel.metric_code));
     node.classList.toggle("is-capacity", isCapacity);
-    if (!state.view.panels.length) {
+    if (!panels.length) {
       node.innerHTML = '<div class="ops-panel ops-empty">当前 Profile 没有可展示 Panel。无采样不会显示为 0 或健康。</div>';
       return;
     }
     if (isCapacity) {
-      renderCapacityTable(node, state.view.instances, state.view.panels.filter((panel) => capacityMetricCodes.includes(panel.metric_code)));
+      renderCapacityTable(node, state.view.instances, panels.filter((panel) => capacityMetricCodes.includes(panel.metric_code)));
       return;
     }
-    node.innerHTML = state.view.panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
-    state.view.panels.forEach((panel, index) => {
+    node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
+    panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
       if (!container) return;
       const chart = globalThis.echarts.init(container);
