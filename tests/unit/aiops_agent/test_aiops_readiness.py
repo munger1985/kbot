@@ -12,7 +12,10 @@ from sqlalchemy.exc import IntegrityError
 from aiops_agent.application.errors import AIOpsSchemaNotReadyError
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.service import TurnPlanningService
-from aiops_agent.bootstrap.common import AIOpsProcessRuntime
+from aiops_agent.bootstrap.common import (
+    AIOpsProcessRuntime,
+    _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS,
+)
 from aiops_agent.workers.outbox_dispatcher import AIOpsOutboxDispatcher
 from platform_core.identity import uuid7
 
@@ -23,6 +26,9 @@ class _ScalarResult:
 
     def scalar_one_or_none(self):
         return self._value
+
+    def all(self):
+        return list(self._value)
 
 
 class _SchemaSession:
@@ -100,8 +106,19 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _required_column_rows():
+        return [
+            (table_name, column_name, "N")
+            for table_name, column_name in sorted(
+                _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS
+            )
+        ]
+
     async def test_ready_requires_current_schema_contract_integrity(self) -> None:
-        session = _SchemaSession((1, 24, 1, 1, 0))
+        session = _SchemaSession(
+            (1, self._required_column_rows(), 1, 1, 0)
+        )
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -118,10 +135,15 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("schema_version = 37", session.statements[0])
         self.assertIn("aiops-oracle-v27", session.statements[0])
+        self.assertEqual(
+            28, len(_REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS)
+        )
+        self.assertIn("KBOT_OPS_WORK_ITEM_ACTIVITY", session.statements[1])
         self.assertIn("GENERATED = 'USER NAME'", session.statements[-1])
 
     async def test_ready_rejects_partial_current_schema_contract(self) -> None:
-        session = _SchemaSession((1, 23, 1, 1, 0))
+        required_rows = self._required_column_rows()
+        session = _SchemaSession((1, required_rows[:-1], 1, 1, 0))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -140,7 +162,9 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
     async def test_ready_rejects_business_check_constraint(
         self,
     ) -> None:
-        session = _SchemaSession((1, 24, 1, 1, 1))
+        session = _SchemaSession(
+            (1, self._required_column_rows(), 1, 1, 1)
+        )
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -157,7 +181,9 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_ready_rejects_non_clob_report_summary(self) -> None:
-        session = _SchemaSession((1, 15, 0, 1, 0))
+        session = _SchemaSession(
+            (1, self._required_column_rows(), 0, 1, 0)
+        )
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",

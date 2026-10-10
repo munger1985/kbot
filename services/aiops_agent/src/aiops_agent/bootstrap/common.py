@@ -21,6 +21,68 @@ from platform_core.middleware.log_middleware import log_requests
 ReadyCheck = Callable[[], Awaitable[dict[str, str]]]
 
 
+_REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS = frozenset(
+    {
+        ("KBOT_OPS_TASK", "TASK_TYPE"),
+        ("KBOT_OPS_CHANGE_PROPOSAL", "TURN_ID"),
+        ("KBOT_OPS_CONVERSATION_TURN", "CURRENT_PLAN_REVISION"),
+        ("KBOT_OPS_INVESTIGATION_REVISION", "REVISION_ID"),
+        ("KBOT_OPS_PLAYBOOK_INVOCATION", "PLAYBOOK_INVOCATION_ID"),
+        ("KBOT_OPS_TOOL_INVOCATION", "TOOL_INVOCATION_ID"),
+        ("KBOT_OPS_TURN_EVIDENCE", "EVIDENCE_ROLE"),
+        ("KBOT_OPS_INSPECTION_PLAN", "AGENT_ID"),
+        ("KBOT_OPS_INSPECTION_PLAN", "INSPECTION_TEMPLATE_ID"),
+        (
+            "KBOT_OPS_INSPECTION_PLAN",
+            "INSPECTION_TEMPLATE_VERSION_ID",
+        ),
+        ("KBOT_OPS_INSPECTION_FIRE", "INSPECTION_TEMPLATE_ID"),
+        (
+            "KBOT_OPS_INSPECTION_FIRE",
+            "INSPECTION_TEMPLATE_VERSION_ID",
+        ),
+        ("KBOT_OPS_INSPECTION_TEMPLATE", "CURRENT_VERSION_ID"),
+        ("KBOT_OPS_INSPECTION_TEMPLATE_VER", "DEFINITION_JSON"),
+        ("KBOT_OPS_TARGET", "IMPORTANCE_LEVEL"),
+        ("KBOT_OPS_KNOWLEDGE_ASSET", "ASSET_KIND"),
+        ("KBOT_OPS_KNOWLEDGE_VERSION", "SOURCE_HASH"),
+        ("KBOT_OPS_RECOVERY_PROFILE", "RPO_SECONDS"),
+        ("KBOT_OPS_RECOVERY_PROFILE", "RTO_SECONDS"),
+        (
+            "KBOT_OPS_RECOVERY_PROFILE",
+            "REQUIRED_ASSURANCE_LEVEL",
+        ),
+        (
+            "KBOT_OPS_RECOVERY_PROFILE",
+            "REQUIRED_BACKUP_SOURCE_TYPES_JSON",
+        ),
+        ("KBOT_OPS_RECOVERY_DRILL", "RECOVERY_MARKER_JSON"),
+        ("KBOT_OPS_RECOVERY_DRILL", "EVIDENCE_JSON"),
+        ("KBOT_OPS_RECOVERY_DRILL", "SOURCE_TRUST_LEVEL"),
+        ("KBOT_OPS_WORK_ITEM", "WORK_ITEM_ID"),
+        ("KBOT_OPS_WORK_ITEM_OCCURRENCE", "OCCURRENCE_ID"),
+        ("KBOT_OPS_WORK_ITEM_LINK", "WORK_ITEM_LINK_ID"),
+        ("KBOT_OPS_WORK_ITEM_ACTIVITY", "ACTIVITY_ID"),
+    }
+)
+
+
+def _required_schema_columns_statement():
+    predicates = " OR ".join(
+        (
+            f"(TABLE_NAME = '{table_name}' "
+            f"AND COLUMN_NAME = '{column_name}')"
+        )
+        for table_name, column_name in sorted(
+            _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS
+        )
+    )
+    return text(
+        "SELECT TABLE_NAME, COLUMN_NAME, NULLABLE "
+        "FROM USER_TAB_COLUMNS WHERE " + predicates
+    )
+
+
 @dataclass
 class AIOpsProcessRuntime:
     """单个进程独占且可显式关闭的资源集合。"""
@@ -64,75 +126,16 @@ class AIOpsProcessRuntime:
                         "aiops_schema": "version_mismatch",
                         "aiops_schema_integrity": "not_checked",
                     }
-                required_columns = (
+                required_column_rows = (
                     await session.execute(
-                        text(
-                            """
-                            SELECT COUNT(*)
-                            FROM USER_TAB_COLUMNS
-                            WHERE NULLABLE = 'N'
-                              AND (
-                                (TABLE_NAME = 'KBOT_OPS_TASK'
-                                 AND COLUMN_NAME = 'TASK_TYPE')
-                                OR (TABLE_NAME = 'KBOT_OPS_CHANGE_PROPOSAL'
-                                    AND COLUMN_NAME = 'TURN_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_CONVERSATION_TURN'
-                                    AND COLUMN_NAME = 'CURRENT_PLAN_REVISION')
-                                OR (TABLE_NAME = 'KBOT_OPS_INVESTIGATION_REVISION'
-                                    AND COLUMN_NAME = 'REVISION_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_PLAYBOOK_INVOCATION'
-                                    AND COLUMN_NAME = 'PLAYBOOK_INVOCATION_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_TOOL_INVOCATION'
-                                    AND COLUMN_NAME = 'TOOL_INVOCATION_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_TURN_EVIDENCE'
-                                    AND COLUMN_NAME = 'EVIDENCE_ROLE')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
-                                    AND COLUMN_NAME = 'AGENT_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
-                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_PLAN'
-                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_VERSION_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_FIRE'
-                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_FIRE'
-                                    AND COLUMN_NAME = 'INSPECTION_TEMPLATE_VERSION_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_TEMPLATE'
-                                    AND COLUMN_NAME = 'CURRENT_VERSION_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_INSPECTION_TEMPLATE_VER'
-                                    AND COLUMN_NAME = 'DEFINITION_JSON')
-                                OR (TABLE_NAME = 'KBOT_OPS_TARGET'
-                                    AND COLUMN_NAME = 'IMPORTANCE_LEVEL')
-                                OR (TABLE_NAME = 'KBOT_OPS_KNOWLEDGE_ASSET'
-                                    AND COLUMN_NAME = 'ASSET_KIND')
-                                OR (TABLE_NAME = 'KBOT_OPS_KNOWLEDGE_VERSION'
-                                    AND COLUMN_NAME = 'SOURCE_HASH')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_PROFILE'
-                                    AND COLUMN_NAME = 'RPO_SECONDS')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_PROFILE'
-                                    AND COLUMN_NAME = 'RTO_SECONDS')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_PROFILE'
-                                    AND COLUMN_NAME = 'REQUIRED_ASSURANCE_LEVEL')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_PROFILE'
-                                    AND COLUMN_NAME = 'REQUIRED_BACKUP_SOURCE_TYPES_JSON')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_DRILL'
-                                    AND COLUMN_NAME = 'RECOVERY_MARKER_JSON')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_DRILL'
-                                    AND COLUMN_NAME = 'EVIDENCE_JSON')
-                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_DRILL'
-                                    AND COLUMN_NAME = 'SOURCE_TRUST_LEVEL')
-                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM'
-                                    AND COLUMN_NAME = 'WORK_ITEM_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM_OCCURRENCE'
-                                    AND COLUMN_NAME = 'OCCURRENCE_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM_LINK'
-                                    AND COLUMN_NAME = 'WORK_ITEM_LINK_ID')
-                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM_ACTIVITY'
-                                    AND COLUMN_NAME = 'ACTIVITY_ID')
-                              )
-                            """
-                        )
+                        _required_schema_columns_statement()
                     )
-                ).scalar_one_or_none()
+                ).all()
+                required_columns = frozenset(
+                    (str(row[0]).upper(), str(row[1]).upper())
+                    for row in required_column_rows
+                    if str(row[2]).upper() == "N"
+                )
                 report_summary_column = (
                     await session.execute(
                         text(
@@ -171,7 +174,8 @@ class AIOpsProcessRuntime:
                     )
                 ).scalar_one_or_none()
                 integrity_ready = (
-                    required_columns == 24
+                    required_columns
+                    == _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS
                     and report_summary_column == 1
                     and report_source_table == 1
                     and business_check_constraints == 0
