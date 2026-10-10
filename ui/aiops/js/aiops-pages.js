@@ -5,7 +5,7 @@
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
   const configs = {
-    targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
+    targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]] },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
@@ -296,7 +296,7 @@
         body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">当前范围内暂无数据</td></tr>`;
         return;
       }
-      body.innerHTML = items.map((item) => `<tr ${cfg.detail ? `data-href="${cfg.detail}${encodeURIComponent(resourceId(item))}" data-resource-id="${shell.escape(resourceId(item))}"` : ""}>${cfg.cols.map((col) => `<td>${cell(item, col)}</td>`).join("")}</tr>`).join("");
+      body.innerHTML = items.map((item) => `<tr data-resource-id="${shell.escape(resourceId(item))}"${cfg.detail ? ` data-href="${cfg.detail}${encodeURIComponent(resourceId(item))}"` : ""}>${cfg.cols.map((col) => `<td>${cell(item, col)}</td>`).join("")}</tr>`).join("");
       body.querySelectorAll("[data-href]").forEach((row) => {
         row.style.cursor = "pointer";
         row.addEventListener("click", () => {
@@ -713,7 +713,7 @@
       target.observed_oracle_container_name,
     ].filter(Boolean).join(" · ");
     const row = (label, value) => `<dt>${shell.escape(label)}</dt><dd>${shell.escape(value ?? "—")}</dd>`;
-    return `<div class="ops-panel-head target-overview-head"><div><p>${shell.escape(target.db_type)}${target.version_code ? ` · ${shell.escape(target.version_code)}` : ""}</p><h2>${shell.escape(target.display_name)}</h2><small>${shell.escape(environment)} · ${shell.escape(role)} · L${shell.escape(target.importance_level)} ${shell.escape(importance)}</small></div><div class="ops-actions">${shell.badge(target.status)}${shell.badge(target.connectivity_check_pending ? "CHECKING" : target.connectivity_status)}${shell.badge(target.observed_status)}</div></div><div class="ops-panel-body target-overview-grid"><section><h3>数据库范围</h3><dl class="ops-detail">${row("数据库类型", target.db_type)}${row("环境", environment)}${row("数据库角色", role)}${target.db_type === "ORACLE" ? row("Oracle 范围", oracleScope || "尚未确认") : ""}${row("重要程度", `L${target.importance_level} · ${importance}`)}</dl></section><section><h3>连接状态</h3><dl class="ops-detail">${row("诊断模式", target.readonly_connection_enabled ? "数据库只读直连" : "仅监控数据")}${row("Endpoint", endpoint)}${row("TLS", target.endpoint ? (target.endpoint.tls_enabled ? "已启用" : "未启用") : "不适用")}${row("最近检查", shell.fmt(target.last_connectivity_check_at))}${row("最近成功", shell.fmt(target.last_connectivity_success_at))}${target.last_error_code ? row("最近错误", target.last_error_code) : ""}</dl></section><section><h3>凭据与变更</h3><dl class="ops-detail">${row("诊断凭据", credential(target.diagnostic_credential))}${row("受控变更", target.controlled_change_enabled ? "允许人工审批后执行" : "未启用")}${row("执行凭据", target.controlled_change_enabled ? credential(target.execution_credential) : "不适用")}</dl></section><section><h3>观测与采集</h3><dl class="ops-detail">${row("观测状态", target.observed_status)}${row("最近观测", shell.fmt(target.last_observed_at))}${row("负载快照", target.workload_last_collected_at ? `最近采集 ${shell.fmt(target.workload_last_collected_at)}` : "尚无采集记录")}${row("活动采样", target.activity_sampler_status)}${row("最近采样", shell.fmt(target.activity_last_sampled_at))}</dl></section></div>`;
+    return `<div class="ops-panel-head target-overview-head"><div><p>${shell.escape(target.db_type)}${target.version_code ? ` · ${shell.escape(target.version_code)}` : ""}</p><h2>${shell.escape(target.display_name)}</h2><small>${shell.escape(environment)} · ${shell.escape(role)} · L${shell.escape(target.importance_level)} ${shell.escape(importance)}</small></div><div class="ops-actions">${shell.badge(target.status)}${shell.badge(target.connectivity_check_pending ? "CHECKING" : target.connectivity_status)}${shell.badge(target.observed_status)}</div></div><div class="ops-panel-body target-overview-grid"><section><h3>数据库范围</h3><dl class="ops-detail">${row("数据库类型", target.db_type)}${row("已验证版本", target.version_code)}${row("环境", environment)}${row("数据库角色", role)}${target.db_type === "ORACLE" ? row("Oracle 范围", oracleScope || "尚未确认") : ""}${row("重要程度", `L${target.importance_level} · ${importance}`)}</dl></section><section><h3>连接状态</h3><dl class="ops-detail">${row("诊断模式", target.readonly_connection_enabled ? "数据库只读直连" : "仅监控数据")}${row("Endpoint", endpoint)}${row("TLS", target.endpoint ? (target.endpoint.tls_enabled ? "已启用" : "未启用") : "不适用")}${row("最近检查", shell.fmt(target.last_connectivity_check_at))}${row("最近成功", shell.fmt(target.last_connectivity_success_at))}${row("最近错误", target.last_error_code || "无")}</dl></section><section><h3>凭据与变更</h3><dl class="ops-detail">${row("诊断凭据", credential(target.diagnostic_credential))}${row("受控变更", target.controlled_change_enabled ? "允许人工审批后执行" : "未启用")}${row("执行凭据", target.controlled_change_enabled ? credential(target.execution_credential) : "不适用")}</dl></section><section><h3>观测与采集</h3><dl class="ops-detail">${row("观测状态", target.observed_status)}${row("最近观测", shell.fmt(target.last_observed_at))}${row("负载快照", target.workload_last_collected_at ? `最近采集 ${shell.fmt(target.workload_last_collected_at)}` : "尚无采集记录")}${row("快照连续失败", target.workload_consecutive_failures)}${row("活动采样", target.activity_sampler_status)}${row("最近采样", shell.fmt(target.activity_last_sampled_at))}${row("采样连续失败", target.activity_consecutive_failures)}</dl></section><section><h3>管理信息</h3><dl class="ops-detail">${row("Target ID", target.target_id)}${row("创建时间", shell.fmt(target.created_at))}${row("创建人", target.created_by)}${row("最后更新", shell.fmt(target.updated_at))}${row("更新人", target.updated_by)}</dl></section></div>`;
   }
 
   function reportPresentationHtml(data, report, versions) {
@@ -841,10 +841,38 @@
     const tenant = source.source_type === "LOKI"
       ? source.config?.tenant_id || "单租户模式"
       : "不适用";
-    return `<div class="ops-panel-head source-overview-head"><div><p>${shell.escape(sourceTypeLabels[source.source_type] || source.source_type || "监控源")}</p><h2>${shell.escape(source.display_name)}</h2><small>${shell.escape(source.adapter_id)} Adapter · v${shell.escape(source.adapter_version)}</small></div><div class="ops-actions">${shell.badge(source.status)}${shell.badge(source.connectivity_check_pending ? "CHECKING" : source.connectivity_status)}</div></div><div class="ops-panel-body source-overview-grid"><section><h3>接入信息</h3><dl class="ops-detail">${row("监控源类型", sourceTypeLabels[source.source_type] || source.source_type)}${row("访问地址", endpoint)}${row("Adapter", `${source.adapter_id} · v${source.adapter_version}`)}${row("Loki 租户", tenant)}</dl></section><section><h3>连接与健康</h3><dl class="ops-detail">${row("启用状态", statusLabels[source.status] || source.status)}${row("连接状态", connectivity)}${row("最近检查", shell.fmt(source.last_connectivity_check_at))}${row("最近成功", shell.fmt(source.last_connectivity_success_at))}${row("最近错误", source.last_error_code || "无")}</dl></section><section><h3>凭据与 Webhook</h3><dl class="ops-detail">${row("访问凭据", credential(source.secret))}${row("Webhook 验签凭据", credential(source.webhook_secret))}${row("Webhook Key", source.webhook_configured ? "已生成" : "未生成")}${row("TLS Profile", credential(source.tls_profile))}</dl></section><section><h3>管理信息</h3><dl class="ops-detail">${row("监控源 ID", source.source_id)}${row("创建时间", shell.fmt(source.created_at))}${row("创建人", source.created_by)}${row("最后更新", shell.fmt(source.updated_at))}${row("更新人", source.updated_by)}</dl></section><section class="source-capability-section"><h3>系统声明能力</h3><p>由当前监控源类型和内置 Adapter 决定。</p><div class="ops-capability-list">${capabilities(source.declared_capabilities, "当前 Adapter 未声明能力")}</div></section><section class="source-capability-section"><h3>最近验证能力</h3><p>来自最近一次成功的连通性检查，不代表尚未验证的能力不可用。</p><div class="ops-capability-list">${capabilities(source.discovered_capabilities, "尚未通过连通性检查验证能力")}</div></section></div><div class="source-detail-note">具体监控 Label 与数据库对象的映射统一在“运维目标详情”中维护。</div>`;
+    return `<div class="ops-panel-head source-overview-head"><div><p>${shell.escape(sourceTypeLabels[source.source_type] || source.source_type || "监控源")}</p><h2>${shell.escape(source.display_name)}</h2><small>${shell.escape(source.adapter_id)} Adapter · v${shell.escape(source.adapter_version)}</small></div><div class="ops-actions">${shell.badge(source.status)}${shell.badge(source.connectivity_check_pending ? "CHECKING" : source.connectivity_status)}</div></div><div class="ops-panel-body source-overview-grid"><section><h3>接入信息</h3><dl class="ops-detail">${row("监控源类型", sourceTypeLabels[source.source_type] || source.source_type)}${row("访问地址", endpoint)}${row("Adapter", `${source.adapter_id} · v${source.adapter_version}`)}${row("Loki 租户", tenant)}</dl></section><section><h3>连接与健康</h3><dl class="ops-detail">${row("启用状态", statusLabels[source.status] || source.status)}${row("连接状态", connectivity)}${row("最近检查", shell.fmt(source.last_connectivity_check_at))}${row("最近成功", shell.fmt(source.last_connectivity_success_at))}${row("最近错误", source.last_error_code || "无")}</dl></section><section><h3>凭据与 Webhook</h3><dl class="ops-detail">${row("访问凭据", credential(source.secret))}${row("Webhook 验签凭据", credential(source.webhook_secret))}${row("Webhook Key", source.webhook_configured ? "已生成" : "未生成")}${row("TLS Profile", credential(source.tls_profile))}</dl></section><section><h3>管理信息</h3><dl class="ops-detail">${row("监控源 ID", source.source_id)}${row("创建时间", shell.fmt(source.created_at))}${row("创建人", source.created_by)}${row("最后更新", shell.fmt(source.updated_at))}${row("更新人", source.updated_by)}</dl></section><section class="source-capability-section"><h3>系统声明能力</h3><p>由当前监控源类型和内置 Adapter 决定。</p><div class="ops-capability-list">${capabilities(source.declared_capabilities, "当前 Adapter 未声明能力")}</div></section><section class="source-capability-section"><h3>最近验证能力</h3><p>来自最近一次成功的连通性检查，不代表尚未验证的能力不可用。</p><div class="ops-capability-list">${capabilities(source.discovered_capabilities, "尚未通过连通性检查验证能力")}</div></section></div><div class="source-detail-note">具体监控 Label 与数据库对象的映射统一在“运维目标编辑”中维护。</div>`;
   }
 
   async function initializeTargetMonitorMappings(targetId, target) {
+    if (!document.getElementById("target-monitor-binding-form")) {
+      const summaryList = document.getElementById("target-monitor-binding-list");
+      const summaryState = document.getElementById("target-monitor-mapping-state");
+      if (!summaryList || !summaryState) return;
+      try {
+        const [sourcePage, rows] = await Promise.all([
+          KBotAIOpsAuth.request(`${appApi}/diagnostic-sources?limit=200`),
+          KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/source-bindings`),
+        ]);
+        const sources = Array.isArray(sourcePage) ? sourcePage : sourcePage.items || [];
+        const sourceNames = new Map(sources.map((source) => [String(source.source_id), source]));
+        const bindings = Array.isArray(rows) ? rows : [];
+        const activeCount = bindings.filter((binding) => binding.status === "ACTIVE").length;
+        summaryState.textContent = activeCount ? `${activeCount} 条有效映射` : "未配置";
+        summaryState.className = `ops-badge ${activeCount ? "good" : "bad"}`;
+        summaryList.innerHTML = bindings.length
+          ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>数据库 Label</th><th>主机 Label</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => {
+            const source = sourceNames.get(String(binding.source_id));
+            return `<tr><td>${shell.escape(source?.display_name || shell.short(binding.source_id))}</td><td>${shell.escape(source?.source_type || "—")}</td><td><code>${shell.escape(binding.locator_hint || "未配置")}</code></td><td><code>${shell.escape(binding.host_locator_hint || "未配置")}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
+          }).join("")}</tbody></table>`
+          : '<div class="ops-error">尚未绑定监控 Label；Target 当前不能启用。</div>';
+      } catch (error) {
+        summaryList.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
+        summaryState.textContent = "读取失败";
+        summaryState.className = "ops-badge bad";
+      }
+      return;
+    }
     const form = document.getElementById("target-monitor-binding-form");
     if (!form) return;
     const sourceSelect = document.getElementById("target-monitor-source");
@@ -877,7 +905,7 @@
       bindingList.innerHTML = bindings.length
         ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>Label / 外部标识</th><th>状态</th><th>操作</th></tr></thead><tbody>${bindings.map((binding) => {
           const source = sourceById(binding.source_id);
-          const hostKey = binding.source_locator?.host_target_key;
+          const hostKey = binding.host_locator_hint;
           return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td>数据库 <code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code><br>主机 <code>${shell.escape(hostKey || "未配置")}</code></td><td>${shell.badge(binding.status)}</td><td><button type="button" class="danger" data-delete-source-binding="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">删除</button></td></tr>`;
         }).join("")}</tbody></table>`
         : '<div class="ops-error">尚未绑定监控 Label；完成至少一条映射后才能启用该 Target。</div>';

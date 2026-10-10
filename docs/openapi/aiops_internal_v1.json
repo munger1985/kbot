@@ -4932,6 +4932,19 @@
             "title": "Health Status",
             "type": "string"
           },
+          "host_locator_hint": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Locator Hint"
+          },
           "locator_hint": {
             "maxLength": 256,
             "minLength": 1,

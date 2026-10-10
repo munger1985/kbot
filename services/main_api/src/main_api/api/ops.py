@@ -298,6 +298,21 @@ def _safe_source_binding(
         if len(locator_key) <= 4
         else f"{locator_key[:2]}***{locator_key[-2:]}"
     )
+    source_locator = payload.get("source_locator")
+    host_locator_key = (
+        str(source_locator.get("host_target_key") or "")
+        if isinstance(source_locator, dict)
+        else ""
+    )
+    host_locator_hint = (
+        None
+        if not host_locator_key
+        else (
+            "*" * len(host_locator_key)
+            if len(host_locator_key) <= 4
+            else f"{host_locator_key[:2]}***{host_locator_key[-2:]}"
+        )
+    )
     return _validated(
         InstanceMappingView,
         {
@@ -305,6 +320,7 @@ def _safe_source_binding(
             "target_id": payload.get("target_id"),
             "source_id": payload.get("source_id"),
             "locator_hint": locator_hint,
+            "host_locator_hint": host_locator_hint,
             "status": payload.get("status"),
             "health_status": payload.get("health_status"),
             "row_version": payload.get("row_version"),

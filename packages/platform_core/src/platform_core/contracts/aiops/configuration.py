@@ -843,6 +843,9 @@ class InstanceMappingView(AIOpsContract):
     target_id: UUIDv7
     source_id: UUIDv7
     locator_hint: str = Field(min_length=1, max_length=256)
+    host_locator_hint: str | None = Field(
+        default=None, min_length=1, max_length=256
+    )
     status: SourceBindingStatus
     health_status: HealthStatus
     row_version: int = Field(ge=1)

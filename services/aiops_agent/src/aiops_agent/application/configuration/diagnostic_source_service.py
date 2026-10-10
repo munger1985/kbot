@@ -78,11 +78,16 @@ class DiagnosticSourceConfigurationMixin:
 
     @classmethod
     def _instance_mapping_view(cls, entity) -> InstanceMappingView:
+        source_locator = dict(entity.source_locator_json or {})
+        host_locator_key = str(source_locator.get("host_target_key") or "")
         return InstanceMappingView(
             binding_id=entity.target_source_binding_id,
             target_id=entity.target_id,
             source_id=entity.diagnostic_source_id,
             locator_hint=cls._locator_hint(entity.source_locator_key),
+            host_locator_hint=(
+                cls._locator_hint(host_locator_key) if host_locator_key else None
+            ),
             status=entity.status,
             health_status=entity.health_status,
             row_version=int(entity.row_version),

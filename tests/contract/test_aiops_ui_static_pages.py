@@ -491,10 +491,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("连接状态", overview)
         self.assertIn("凭据与变更", overview)
         self.assertIn("观测与采集", overview)
-        for internal_field in (
-            "schema_version", "target_id", "created_at", "created_by", "updated_by"
-        ):
-            self.assertNotIn(internal_field, overview)
+        self.assertIn("管理信息", overview)
+        self.assertIn("target.target_id", overview)
+        self.assertIn("target.created_at", overview)
+        self.assertIn("target.updated_by", overview)
+        self.assertNotIn("schema_version", overview)
         self.assertNotIn("JSON.stringify", overview)
 
     def test_report_center_translates_backend_dictionary_values(self):
@@ -631,6 +632,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertIn('data-target-action="connectivity"', pages_script)
         self.assertIn('data-target-action="detail"', pages_script)
+        target_config = pages_script.split("targets:", 1)[1].split(
+            '"diagnostic-sources":', 1
+        )[0]
+        self.assertNotIn("detail:", target_config)
         self.assertIn('data-target-action="enable"', pages_script)
         self.assertIn('data-target-action="delete"', pages_script)
         self.assertIn('shell.toast("请先停用运维目标，再执行删除")', pages_script)
@@ -670,6 +675,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("saveSelectedMonitorBinding(updated)", script)
         self.assertIn("monitor_host_candidate_ref", script)
         self.assertIn("host_candidate_ref", script)
+        self.assertIn("binding.host_locator_hint", script)
+        self.assertNotIn("binding.source_locator?.host_target_key", script)
         self.assertIn('data-monitor-binding-action="${action}"', script)
         self.assertIn("const refreshedTarget = await KBotAIOpsAuth.request", script)
         self.assertIn("editingTarget = refreshedTarget", script)
@@ -801,23 +808,27 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
+        editor_page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+        editor_script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn('id="target-monitor-binding-form"', page)
+        self.assertNotIn('id="target-monitor-binding-form"', page)
         self.assertIn("监控源与 Label 映射", page)
+        self.assertIn("只读信息", page)
         self.assertIn("initializeTargetMonitorMappings", script)
-        self.assertIn("target_key label 值", script)
-        self.assertIn("OEM Target Name", script)
-        self.assertIn("monitor_candidate_ref", script)
-        self.assertIn("monitor_host_candidate_ref", script)
-        self.assertIn("host_candidate_ref", script)
-        self.assertIn("主机 Label（Prometheus 必选）", page)
-        self.assertIn("/instance-discoveries", script)
-        self.assertIn("/instance-mappings", script)
+        self.assertIn("binding.host_locator_hint", script)
+        self.assertNotIn("binding.source_locator?.host_target_key", script)
         self.assertIn("/source-bindings", script)
-        self.assertIn('method: "DELETE"', script)
-        self.assertIn("data-delete-source-binding", script)
-        self.assertIn("Target 因无有效监控映射已自动停用", script)
-        self.assertIn("已绑定数据库 Label", script)
+        self.assertIn('id="target-monitor-editor-source"', editor_page)
+        self.assertIn("target_key label 值", editor_script)
+        self.assertIn("OEM Target Name", editor_script)
+        self.assertIn("monitor_candidate_ref", editor_script)
+        self.assertIn("monitor_host_candidate_ref", editor_script)
+        self.assertIn("host_candidate_ref", editor_script)
+        self.assertIn("/instance-discoveries", editor_script)
+        self.assertIn("/instance-mappings", editor_script)
+        self.assertIn("data-monitor-binding-delete", editor_script)
 
     def test_workspace_separates_approval_and_manual_actions(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(

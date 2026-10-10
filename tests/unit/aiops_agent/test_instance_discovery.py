@@ -396,6 +396,10 @@ def test_prometheus_mapping_persists_reverified_host_label():
         target_id=target_id,
         diagnostic_source_id=source_id,
         source_locator_key="db-1",
+        source_locator_json={
+            "target_key": "db-1",
+            "host_target_key": "host-1",
+        },
         status="ACTIVE",
         health_status="UNKNOWN",
         row_version=1,
@@ -430,6 +434,7 @@ def test_prometheus_mapping_persists_reverified_host_label():
         "host_target_key": "host-1",
     }
     assert result.items[0].binding_id == binding_id
+    assert result.items[0].host_locator_hint == "ho***-1"
 
 
 def test_patch_binding_reverifies_host_candidate_before_persisting():

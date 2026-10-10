@@ -69,7 +69,7 @@
         const source = monitorSourceById(binding.source_id);
         const action = binding.status === "ACTIVE" ? "disable" : "enable";
         const actionLabel = binding.status === "ACTIVE" ? "解除" : "恢复";
-        const hostKey = binding.source_locator?.host_target_key;
+        const hostKey = binding.host_locator_hint;
         return `<div class="agent-switch-row"><span><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong><small>${shell.escape(source?.source_type || "—")} · 数据库 <code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code> · 主机 <code>${shell.escape(hostKey || "未配置")}</code> · ${shell.escape(binding.status)}</small></span><span class="ops-actions"><button type="button" data-monitor-binding-action="${action}" data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">${actionLabel}</button><button type="button" class="danger" data-monitor-binding-delete data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">删除</button></span></div>`;
       }).join("")}</div>`
       : '<div class="ops-error">尚未绑定监控源；创建 Target 前必须选择监控源和 Label。</div>';
