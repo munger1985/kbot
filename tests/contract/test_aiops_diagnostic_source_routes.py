@@ -32,6 +32,18 @@ class AIOpsDiagnosticSourceRouteContractTest(unittest.TestCase):
             self.assertNotIn(
                 f"{prefix}/diagnostic-sources/{{source_id}}/{{command}}", paths
             )
+            delete_route = next(
+                route
+                for route in router.routes
+                if isinstance(route, APIRoute)
+                and route.path
+                == (
+                    f"{prefix}/targets/{{target_id}}/source-bindings/"
+                    "{binding_id}"
+                )
+                and "DELETE" in route.methods
+            )
+            self.assertEqual(204, delete_route.status_code)
 
 
 if __name__ == "__main__":

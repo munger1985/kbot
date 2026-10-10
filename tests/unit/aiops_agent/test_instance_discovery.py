@@ -517,3 +517,130 @@ def test_patch_binding_reverifies_host_candidate_before_persisting():
     }
     assert result.source_locator["host_target_key"] == "host-1"
     uow.commit.assert_awaited_once()
+
+
+def test_delete_last_active_binding_disables_enabled_target():
+    now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+    target_id = uuid7()
+    source_id = uuid7()
+    binding_id = uuid7()
+    target = SimpleNamespace(
+        target_id=target_id,
+        status="ENABLED",
+        row_version=4,
+        updated_by="old-user",
+        updated_at=now,
+    )
+    binding = SimpleNamespace(
+        target_source_binding_id=binding_id,
+        target_id=target_id,
+        diagnostic_source_id=source_id,
+        source_locator_key="db-1",
+        source_locator_json={"target_key": "db-1"},
+        role="PRIMARY",
+        priority=100,
+        capability_scope_json=None,
+        mapping_overrides_json=None,
+        query_budget_json=None,
+        status="ACTIVE",
+        health_status="HEALTHY",
+        row_version=3,
+        created_at=now,
+        updated_at=now,
+    )
+    targets = AsyncMock()
+    targets.get_scoped.return_value = target
+    targets.get_source_binding_scoped.return_value = binding
+    targets.list_source_bindings.return_value = [binding]
+    uow = SimpleNamespace(targets=targets, outbox=AsyncMock())
+    service = object.__new__(AIOpsConfigurationService)
+
+    async def execute_handler(**kwargs):
+        return await kwargs["handler"](uow, now)
+
+    service._idempotent = AsyncMock(side_effect=execute_handler)
+    scope = ConfigurationScope(
+        domain_id=100,
+        principal_id="PORTAL:aiops",
+        actor_id="user-1",
+        request_id="request-delete-binding",
+        trace_id="trace-delete-binding",
+    )
+
+    result = asyncio.run(
+        service.delete_source_binding(
+            scope=scope,
+            target_id=target_id,
+            binding_id=binding_id,
+            expected_version=3,
+            idempotency_key="delete-binding-1",
+        )
+    )
+
+    assert result.binding_id == binding_id
+    assert target.status == "DISABLED"
+    assert target.updated_by == "user-1"
+    targets.delete_source_binding_with_history.assert_awaited_once_with(binding)
+    assert uow.outbox.add.await_count == 2
+
+
+def test_delete_binding_keeps_enabled_target_when_another_active_mapping_exists():
+    now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+    target_id = uuid7()
+    binding_id = uuid7()
+    binding = SimpleNamespace(
+        target_source_binding_id=binding_id,
+        target_id=target_id,
+        diagnostic_source_id=uuid7(),
+        source_locator_key="db-1",
+        source_locator_json={},
+        role="PRIMARY",
+        priority=100,
+        capability_scope_json=None,
+        mapping_overrides_json=None,
+        query_budget_json=None,
+        status="ACTIVE",
+        health_status="UNKNOWN",
+        row_version=1,
+        created_at=now,
+        updated_at=now,
+    )
+    other = SimpleNamespace(target_source_binding_id=uuid7(), status="ACTIVE")
+    target = SimpleNamespace(
+        target_id=target_id,
+        status="ENABLED",
+        row_version=2,
+        updated_by="old-user",
+        updated_at=now,
+    )
+    targets = AsyncMock()
+    targets.get_scoped.return_value = target
+    targets.get_source_binding_scoped.return_value = binding
+    targets.list_source_bindings.return_value = [binding, other]
+    uow = SimpleNamespace(targets=targets, outbox=AsyncMock())
+    service = object.__new__(AIOpsConfigurationService)
+
+    async def execute_handler(**kwargs):
+        return await kwargs["handler"](uow, now)
+
+    service._idempotent = AsyncMock(side_effect=execute_handler)
+    scope = ConfigurationScope(
+        domain_id=100,
+        principal_id="PORTAL:aiops",
+        actor_id="user-1",
+        request_id="request-delete-binding-2",
+        trace_id="trace-delete-binding-2",
+    )
+
+    asyncio.run(
+        service.delete_source_binding(
+            scope=scope,
+            target_id=target_id,
+            binding_id=binding_id,
+            expected_version=1,
+            idempotency_key="delete-binding-2",
+        )
+    )
+
+    assert target.status == "ENABLED"
+    assert uow.outbox.add.await_count == 1

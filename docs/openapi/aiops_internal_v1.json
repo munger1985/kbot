@@ -3718,6 +3718,41 @@
         "title": "HitlType",
         "type": "string"
       },
+      "HostDiscoveryCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_ref": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Candidate Ref",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "locator_hint": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Locator Hint",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_ref",
+          "display_name",
+          "locator_hint"
+        ],
+        "title": "HostDiscoveryCandidate",
+        "type": "object"
+      },
       "InputContent": {
         "additionalProperties": false,
         "properties": {
@@ -4706,6 +4741,14 @@
             "title": "Has More",
             "type": "boolean"
           },
+          "host_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HostDiscoveryCandidate"
+            },
+            "title": "Host Items",
+            "type": "array"
+          },
           "items": {
             "default": [],
             "items": {
@@ -4792,6 +4835,19 @@
             "minLength": 1,
             "title": "Candidate Ref",
             "type": "string"
+          },
+          "host_candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Candidate Ref"
           },
           "target_id": {
             "format": "uuid",
@@ -9396,6 +9452,19 @@
             ],
             "title": "Capability Scope"
           },
+          "host_candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Candidate Ref"
+          },
           "mapping_overrides": {
             "anyOf": [
               {
@@ -13165,6 +13234,142 @@
         ]
       }
     },
+    "/internal/v1/aiops/config/diagnostic-sources/{source_id}/disable": {
+      "post": {
+        "operationId": "disable_diagnostic_source_internal_v1_aiops_config_diagnostic_sources__source_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Diagnostic Source",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/diagnostic-sources/{source_id}/enable": {
+      "post": {
+        "operationId": "enable_diagnostic_source_internal_v1_aiops_config_diagnostic_sources__source_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Diagnostic Source",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
     "/internal/v1/aiops/config/diagnostic-sources/{source_id}/instance-discoveries": {
       "post": {
         "operationId": "discover_source_instances_internal_v1_aiops_config_diagnostic_sources__source_id__instance_discoveries_post",
@@ -13390,83 +13595,6 @@
           }
         },
         "summary": "Rotate Webhook Key",
-        "tags": [
-          "AIOps Config"
-        ]
-      }
-    },
-    "/internal/v1/aiops/config/diagnostic-sources/{source_id}/{command}": {
-      "post": {
-        "operationId": "command_diagnostic_source_internal_v1_aiops_config_diagnostic_sources__source_id___command__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "command",
-            "required": true,
-            "schema": {
-              "title": "Command",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiagnosticSourceDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Command Diagnostic Source",
         "tags": [
           "AIOps Config"
         ]
@@ -16021,6 +16149,75 @@
       }
     },
     "/internal/v1/aiops/config/targets/{target_id}/source-bindings/{binding_id}": {
+      "delete": {
+        "operationId": "delete_source_binding_internal_v1_aiops_config_targets__target_id__source_bindings__binding_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Binding Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Source Binding",
+        "tags": [
+          "AIOps Config"
+        ]
+      },
       "patch": {
         "operationId": "patch_source_binding_internal_v1_aiops_config_targets__target_id__source_bindings__binding_id__patch",
         "parameters": [

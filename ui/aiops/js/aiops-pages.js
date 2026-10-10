@@ -875,10 +875,10 @@
       state.textContent = bindings.length ? `${bindings.length} 条有效映射` : "未配置";
       state.className = `ops-badge ${bindings.length ? "good" : "bad"}`;
       bindingList.innerHTML = bindings.length
-        ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>Label / 外部标识</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => {
+        ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>Label / 外部标识</th><th>状态</th><th>操作</th></tr></thead><tbody>${bindings.map((binding) => {
           const source = sourceById(binding.source_id);
           const hostKey = binding.source_locator?.host_target_key;
-          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td>数据库 <code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code><br>主机 <code>${shell.escape(hostKey || "未配置")}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
+          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td>数据库 <code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code><br>主机 <code>${shell.escape(hostKey || "未配置")}</code></td><td>${shell.badge(binding.status)}</td><td><button type="button" class="danger" data-delete-source-binding="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">删除</button></td></tr>`;
         }).join("")}</tbody></table>`
         : '<div class="ops-error">尚未绑定监控 Label；完成至少一条映射后才能启用该 Target。</div>';
     };
@@ -908,7 +908,7 @@
       hostSection.hidden = source?.source_type !== "PROMETHEUS";
       candidates = [];
       candidateList.innerHTML = binding
-        ? `<div class="ops-empty">已绑定数据库 Label：<code>${shell.escape(binding.source_locator_key)}</code>；本次仅修改主机 Label。</div>`
+        ? `<div class="ops-empty">已绑定数据库 Label：<code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code>；本次仅修改主机 Label。</div>`
         : '<div class="ops-empty">点击发现按钮读取当前数据库类型的候选。</div>';
       hostCandidateList.innerHTML = '<div class="ops-empty">点击发现按钮读取 Node Exporter 主机候选。</div>';
       result.textContent = "";
@@ -938,6 +938,8 @@
           candidateList.innerHTML = candidates.length
             ? `<div class="target-monitor-candidates">${candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
             : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
+        } else {
+          candidateList.innerHTML = `<div class="ops-empty">已绑定数据库 Label：<code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code>；本次仅修改主机 Label。</div>`;
         }
         const hostCandidates = page.host_items || [];
         hostCandidateList.innerHTML = hostCandidates.length
@@ -972,6 +974,34 @@
     }
     sourceSelect.addEventListener("change", configureSource);
     discoverButton.addEventListener("click", loadCandidates);
+    bindingList.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-delete-source-binding]");
+      if (!button || !confirm("确认删除这条监控映射吗？历史告警会保留；删除最后一条有效映射时 Target 将自动停用。")) return;
+      const binding = bindings.find((item) => item.binding_id === button.dataset.deleteSourceBinding);
+      if (!binding) return;
+      const leavesNoActiveBinding = !bindings.some((item) => item.status === "ACTIVE" && item.binding_id !== binding.binding_id);
+      button.disabled = true;
+      result.textContent = "正在删除监控映射…";
+      result.dataset.tone = "";
+      try {
+        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/source-bindings/${encodeURIComponent(binding.binding_id)}`, {
+          method: "DELETE",
+          headers: {
+            "If-Match": `"rv-${binding.row_version}"`,
+            "Idempotency-Key": KBotAIOpsAuth.uuid(),
+          },
+        });
+        await reloadBindings();
+        result.textContent = leavesNoActiveBinding && target.status === "ENABLED"
+          ? "监控映射已删除；Target 因无有效监控映射已自动停用。"
+          : "监控映射已删除。";
+        result.dataset.tone = "good";
+      } catch (error) {
+        result.textContent = error.message;
+        result.dataset.tone = "bad";
+        button.disabled = false;
+      }
+    });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const source = sourceById(sourceSelect.value);

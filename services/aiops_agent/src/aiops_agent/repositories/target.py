@@ -1003,6 +1003,21 @@ class TargetRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def delete_source_binding_with_history(
+        self,
+        entity: TargetSourceBindingEntity,
+    ) -> None:
+        """删除监控映射，并保留已接收信号的历史事实。"""
+        self._check_active()
+        await self._execute_update(
+            SignalEventEntity,
+            SignalEventEntity.source_binding_id
+            == entity.target_source_binding_id,
+            {"source_binding_id": None},
+        )
+        await self._session.delete(entity)
+        await self._session.flush()
+
     async def get_source_binding_by_locator(
         self,
         *,

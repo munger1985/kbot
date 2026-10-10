@@ -172,7 +172,8 @@ def _route_permissions() -> dict[str, str]:
             "list_source_target_bindings", "discover_source_instances",
             "map_source_instances",
             "list_source_bindings", "create_source_binding",
-            "patch_source_binding", "command_source_binding",
+            "patch_source_binding", "delete_source_binding",
+            "command_source_binding",
         },
         "aiops:policy_manage": {
             "create_policy", "list_policies", "get_policy", "command_policy",
@@ -1778,6 +1779,27 @@ async def patch_source_binding(
         auth_context=request.state.auth_context,
     )
     return _safe_source_binding(payload, response)
+
+
+@router.delete(
+    "/targets/{target_id}/source-bindings/{binding_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_source_binding(
+    target_id: UUID,
+    binding_id: UUID,
+    request: Request,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> Response:
+    await _client(request).delete_source_binding(
+        target_id,
+        binding_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

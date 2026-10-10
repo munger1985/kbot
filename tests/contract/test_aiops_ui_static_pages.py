@@ -812,6 +812,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("/instance-discoveries", script)
         self.assertIn("/instance-mappings", script)
         self.assertIn("/source-bindings", script)
+        self.assertIn('method: "DELETE"', script)
+        self.assertIn("data-delete-source-binding", script)
+        self.assertIn("Target 因无有效监控映射已自动停用", script)
+        self.assertIn("已绑定数据库 Label", script)
 
     def test_workspace_separates_approval_and_manual_actions(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(

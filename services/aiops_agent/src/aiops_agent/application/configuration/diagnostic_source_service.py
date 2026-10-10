@@ -1490,3 +1490,91 @@ class DiagnosticSourceConfigurationMixin:
             response_type=SourceBindingView,
             handler=handler,
         )
+
+    async def delete_source_binding(
+        self,
+        *,
+        scope: ConfigurationScope,
+        target_id: UUID,
+        binding_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> SourceBindingView:
+        """删除 Target 的监控映射；最后一条有效映射删除后自动停用 Target。"""
+
+        async def handler(
+            uow: AIOpsUnitOfWork, now: datetime
+        ) -> SourceBindingView:
+            assert uow.targets is not None
+            target = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=scope.domain_id,
+                lock=True,
+            )
+            if target is None:
+                raise resource_not_found("Target")
+            entity = await uow.targets.get_source_binding_scoped(
+                target_source_binding_id=binding_id,
+                target_id=target_id,
+                domain_id=scope.domain_id,
+                lock=True,
+            )
+            if entity is None:
+                raise resource_not_found("Source Binding")
+            self._check_version(entity.row_version, expected_version)
+
+            result = _source_binding_view(entity)
+            active_bindings = await uow.targets.list_source_bindings(
+                target_id=target_id,
+                domain_id=scope.domain_id,
+                active_only=True,
+            )
+            target_auto_disabled = (
+                target.status == "ENABLED"
+                and not any(
+                    item.target_source_binding_id != binding_id
+                    for item in active_bindings
+                )
+            )
+            if target_auto_disabled:
+                target.status = "DISABLED"
+                target.updated_by = scope.actor_id
+                target.updated_at = now
+
+            await uow.targets.delete_source_binding_with_history(entity)
+            await add_configuration_event(
+                uow=uow,
+                scope=scope,
+                aggregate_type="TARGET_SOURCE_BINDING",
+                aggregate_id=binding_id,
+                event_type="TARGET_SOURCE_BINDING_DELETED",
+                row_version=result.row_version,
+                details={
+                    "target_id": str(target_id),
+                    "target_auto_disabled": target_auto_disabled,
+                },
+            )
+            if target_auto_disabled:
+                await add_configuration_event(
+                    uow=uow,
+                    scope=scope,
+                    aggregate_type="TARGET",
+                    aggregate_id=target_id,
+                    event_type="TARGET_DISABLED",
+                    row_version=int(target.row_version),
+                    details={"reason": "LAST_SOURCE_BINDING_DELETED"},
+                )
+            return result
+
+        return await self._idempotent(
+            scope=scope,
+            operation="TARGET_SOURCE_BINDING_DELETE",
+            parent_resource=str(binding_id),
+            idempotency_key=idempotency_key,
+            payload={
+                "target_id": str(target_id),
+                "row_version": expected_version,
+            },
+            response_type=SourceBindingView,
+            handler=handler,
+        )

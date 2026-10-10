@@ -68,6 +68,7 @@ class _CapturingSession:
 class _DeletionSession:
     def __init__(self) -> None:
         self.statements = []
+        self.deleted = []
         self.flush_count = 0
 
     async def execute(self, statement):
@@ -77,6 +78,9 @@ class _DeletionSession:
 
     async def flush(self):
         self.flush_count += 1
+
+    async def delete(self, entity):
+        self.deleted.append(entity)
 
 
 class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
@@ -151,6 +155,30 @@ class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("delete from kbot_ops_work_item" in item for item in sql))
         self.assertTrue(any("delete from kbot_ops_target" in item for item in sql))
         self.assertIn("delete from kbot_ops_target", sql[-1])
+        self.assertEqual(1, session.flush_count)
+
+    async def test_source_binding_delete_keeps_signal_history(self) -> None:
+        session = _DeletionSession()
+        binding = SimpleNamespace(target_source_binding_id=uuid7())
+
+        await TargetRepository(session).delete_source_binding_with_history(
+            binding
+        )
+
+        sql = [
+            str(statement.compile(dialect=oracle.dialect()))
+            .replace('"', "")
+            .lower()
+            for statement in session.statements
+        ]
+        self.assertTrue(
+            any(
+                "update kbot_ops_signal_event" in item
+                and "source_binding_id" in item
+                for item in sql
+            )
+        )
+        self.assertEqual([binding], session.deleted)
         self.assertEqual(1, session.flush_count)
 
 

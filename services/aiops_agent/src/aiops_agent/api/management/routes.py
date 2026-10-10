@@ -879,6 +879,28 @@ async def patch_source_binding(
     return result
 
 
+@router.delete(
+    "/targets/{target_id}/source-bindings/{binding_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_source_binding(
+    target_id: UUID,
+    binding_id: UUID,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> Response:
+    await service.delete_source_binding(
+        scope=scope,
+        target_id=target_id,
+        binding_id=binding_id,
+        expected_version=parse_etag(if_match),
+        idempotency_key=idempotency_key,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/targets/{target_id}/source-bindings/{binding_id}/{command}",
     response_model=SourceBindingView,
