@@ -32,13 +32,26 @@
     return "warn";
   }
   function badge(value, text) { return `<span class="ops-badge ${tone(value)}">${esc(text || label(value))}</span>`; }
+  function unitLabel(unit = "") {
+    return ({
+      state: "状态", percent: "%", count: "个", milliseconds: "毫秒",
+      seconds: "秒", transactions_per_second: "次/秒",
+      queries_per_second: "次/秒", waits_per_second: "次/秒",
+      errors_per_second: "次/秒", bytes_per_second: "字节/秒",
+      bytes: "字节", "1": "",
+    })[unit] ?? unit;
+  }
   function formatValue(value, unit = "") {
     if (value === null || value === undefined || value === "") return "—";
-    if (typeof value === "boolean") return value ? "可用" : "不可用";
+    if (typeof value === "boolean" || unit === "state") return Number(value) > 0 ? "可用" : "不可用";
     const number = Number(value);
     if (Number.isFinite(number)) {
       const text = number.toLocaleString("zh-CN", { maximumFractionDigits: Math.abs(number) >= 100 ? 1 : 2 });
-      return `${text}${unit && unit !== "1" ? ` ${unit}` : ""}`;
+      if (unit === "percent") return `${text}%`;
+      if (unit === "bytes") return formatBytes(number);
+      if (unit === "bytes_per_second") return `${formatBytes(number)}/秒`;
+      const translatedUnit = unitLabel(unit);
+      return `${text}${translatedUnit ? ` ${translatedUnit}` : ""}`;
     }
     return String(value);
   }
@@ -288,12 +301,13 @@
     if (instance.status === "PARTIAL" || panels.some((panel) => panel.quality !== "GOOD")) return "部分成功";
     return "正常";
   }
-  function deltaText(points) {
+  function deltaText(points, unit) {
     const valid = points.filter((point) => numericValue(point.value) !== null);
     if (valid.length < 2) return "暂无变化基线";
     const delta = numericValue(valid.at(-1).value) - numericValue(valid.at(-2).value);
     if (delta === 0) return "较前值持平";
-    return `较前值${delta > 0 ? "上升" : "下降"} ${Math.abs(delta).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
+    if (unit === "state") return `状态由${formatValue(valid.at(-2).value, unit)}变为${formatValue(valid.at(-1).value, unit)}`;
+    return `较前值${delta > 0 ? "上升" : "下降"} ${formatValue(Math.abs(delta), unit)}`;
   }
   function capacitySeriesIdentity(series) {
     const dimensions = series.dimensions || {};
@@ -358,7 +372,7 @@
       const code = panel.metric_code;
       const series = panel.series.find((item) => item.instance_id === instance.instance_id);
       const point = latestPoint(series);
-      return `<article><span>${esc(panel.title)}</span><strong>${esc(point ? formatValue(point.value, panel.unit) : "无有效采样")}</strong><small>${point ? `${esc(deltaText(series.points))} · ${esc(shell.fmt(point.observed_at))}` : esc((allGaps().find((gap) => gap.instance_id === instance.instance_id && gap.metric_code === code) || {}).code || "NO_DATA")}</small></article>`;
+      return `<article><span>${esc(panel.title)}</span><strong>${esc(point ? formatValue(point.value, panel.unit) : "无有效采样")}</strong><small>${point ? `${esc(deltaText(series.points, panel.unit))} · ${esc(shell.fmt(point.observed_at))}` : esc((allGaps().find((gap) => gap.instance_id === instance.instance_id && gap.metric_code === code) || {}).code || "NO_DATA")}</small></article>`;
     }).join("");
   }
   function chartOption(panel) {
@@ -374,13 +388,13 @@
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
       xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
-      yAxis: { type: "value", name: panel.unit === "1" ? "" : panel.unit, scale: true },
+      yAxis: { type: "value", name: unitLabel(panel.unit), scale: true },
       series: [{ type: "bar", name: panel.title, barMaxWidth: 28, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
     return {
       ...common, tooltip,
       xAxis: { type: "time", axisLabel: { hideOverlap: true } },
-      yAxis: { type: "value", name: panel.unit === "1" ? "" : panel.unit, scale: true },
+      yAxis: { type: "value", name: unitLabel(panel.unit), scale: true },
       series: series.map((item) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]) })),
     };
   }
@@ -404,7 +418,7 @@
       renderCapacityTable(node, state.view.instances, state.view.panels.filter((panel) => capacityMetricCodes.includes(panel.metric_code)));
       return;
     }
-    node.innerHTML = state.view.panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(panel.unit)}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
+    node.innerHTML = state.view.panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
     state.view.panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
       if (!container) return;
