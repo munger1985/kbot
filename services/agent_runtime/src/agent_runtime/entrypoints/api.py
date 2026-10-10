@@ -222,16 +222,14 @@ async def healthz() -> dict[str, Any]:
 
 @app.get("/readyz", tags=["System"])
 async def readyz(request: Request) -> dict[str, Any]:
-    """确认数据库连接可用；尚未部署 Schema 时返回 503。"""
+    """只确认数据库连接可用，不在运行时校验 Schema。"""
     checks: dict[str, str] = {}
     try:
         async with request.app.state.db_runtime.session_factory() as session:
-            await session.execute(
-                text("SELECT 1 FROM KBOT_AGENT_RUN WHERE 1 = 0")
-            )
-        checks["agent_schema"] = "ok"
+            await session.execute(text("SELECT 1 FROM DUAL"))
+        checks["database"] = "ok"
     except Exception as exc:
-        checks["agent_schema"] = type(exc).__name__
+        checks["database"] = type(exc).__name__
     ready = all(value == "ok" for value in checks.values())
     payload = {
         "status": "ready" if ready else "not_ready",

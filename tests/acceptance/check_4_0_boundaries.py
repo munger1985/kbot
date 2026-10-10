@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 
@@ -45,6 +46,52 @@ SERVICE_PACKAGES = {
     "aiops_agent",
     "model_serving",
 }
+RUNTIME_ROOTS = (ROOT / "packages", ROOT / "services")
+EXTERNAL_DATABASE_SCHEMA_PATHS = (
+    "packages/platform_core/src/platform_core/managed_database/"
+    "connection_tester.py",
+    "services/data_query/src/data_query/connectors/",
+    "services/aiops_agent/src/aiops_agent/application/configuration/"
+    "connection_test.py",
+    "services/aiops_agent/src/aiops_agent/adapters/target_connection.py",
+    "services/aiops_agent/src/aiops_agent/executor/drivers/",
+    "services/aiops_agent/src/aiops_agent/diagnostics/",
+)
+FORBIDDEN_RUNTIME_SCHEMA_MARKERS = (
+    "schema_ready_check",
+    "check_aiops_schema",
+    "agent_schema_is_ready",
+    "aiops_schema_is_ready",
+    "AIOPS_SCHEMA_NOT_READY",
+    "_aiops_schema_manifest",
+)
+DATABASE_CATALOG_MARKERS = (
+    "INFORMATION_SCHEMA.COLUMNS",
+    "INFORMATION_SCHEMA.TABLES",
+    "INFORMATION_SCHEMA.TABLE_CONSTRAINTS",
+    "INFORMATION_SCHEMA.CHECK_CONSTRAINTS",
+    "INFORMATION_SCHEMA.STATISTICS",
+    "PG_CATALOG.PG_ATTRIBUTE",
+    "PG_CATALOG.PG_CLASS",
+    "PG_CATALOG.PG_CONSTRAINT",
+    "PG_CATALOG.PG_INDEX",
+    "PG_CATALOG.PG_INDEXES",
+    "USER_TAB_COLUMNS",
+    "USER_TABLES",
+    "USER_CONSTRAINTS",
+    "ALL_TAB_COLUMNS",
+    "ALL_CONSTRAINTS",
+    "DBA_TAB_COLUMNS",
+    "DBA_TABLES",
+    "DBA_CONSTRAINTS",
+)
+SELF_SCHEMA_PROBE = re.compile(
+    r"SELECT\s+1\s+FROM\s+(?:KBOT_|AIOPS_|AGENT_|AMMOLITE_)"
+    r"[A-Z0-9_]*\s+WHERE\s+1\s*=\s*0",
+)
+SELF_SCHEMA_VERSION_VIEW = re.compile(
+    r"\b(?:KBOT|AMMOLITE)_V_[A-Z0-9_]*SCHEMA_VERSION\b",
+)
 
 
 def module_names(node: ast.AST) -> list[str]:
@@ -148,6 +195,56 @@ def check_file(path: Path) -> list[str]:
     return violations
 
 
+def check_runtime_database_boundary(path: Path) -> list[str]:
+    """禁止运行时代码主动核对应用自身数据库 Schema。"""
+    source = path.read_text(encoding="utf-8")
+    violations: list[str] = []
+    lowered = source.lower()
+    for marker in FORBIDDEN_RUNTIME_SCHEMA_MARKERS:
+        offset = lowered.find(marker.lower())
+        if offset >= 0:
+            line = source.count("\n", 0, offset) + 1
+            violations.append(
+                f"{path}:{line}: 运行时代码禁止 Schema 门禁标记 {marker}"
+            )
+    relative = path.relative_to(ROOT).as_posix()
+    external_database_path = any(
+        fragment in relative for fragment in EXTERNAL_DATABASE_SCHEMA_PATHS
+    )
+    literals: list[tuple[int, str]] = []
+    if path.suffix == ".sql":
+        literals.append((1, source))
+    else:
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            return violations
+        literals.extend(
+            (node.lineno, node.value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        )
+    for line, value in literals:
+        normalized = " ".join(value.upper().split())
+        if SELF_SCHEMA_PROBE.search(normalized):
+            violations.append(
+                f"{path}:{line}: 运行时禁止通过业务表探测自身 Schema"
+            )
+        if SELF_SCHEMA_VERSION_VIEW.search(normalized):
+            violations.append(
+                f"{path}:{line}: 运行时禁止读取自身 Schema 版本视图"
+            )
+        if external_database_path:
+            continue
+        for marker in DATABASE_CATALOG_MARKERS:
+            if marker in normalized:
+                violations.append(
+                    f"{path}:{line}: 运行时禁止读取数据库系统目录 {marker}；"
+                    "外部目标库发现必须放在已声明的适配器目录"
+                )
+    return violations
+
+
 def main() -> int:
     violations: list[str] = []
     for path in OBSOLETE_PATHS:
@@ -159,6 +256,16 @@ def main() -> int:
         for path in root.rglob("*.py"):
             if "__pycache__" not in path.parts:
                 violations.extend(check_file(path))
+    for root in RUNTIME_ROOTS:
+        if not root.exists():
+            continue
+        for pattern in ("*.py", "*.sql"):
+            for path in root.rglob(pattern):
+                if (
+                    "__pycache__" not in path.parts
+                    and "build" not in path.parts
+                ):
+                    violations.extend(check_runtime_database_boundary(path))
     if violations:
         print("发现 KBot 4.0 架构边界违规：")
         print("\n".join(violations))
