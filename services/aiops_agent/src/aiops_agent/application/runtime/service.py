@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -176,6 +177,26 @@ from platform_core.identity import uuid7
 _AGENT_TURN_WORKFLOWS = frozenset(
     {"CHAT_TURN", "ALERT_DIAGNOSIS", "INSPECTION"}
 )
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedReportReceipt:
+    """跨事务边界返回的正式报告生成结果。"""
+
+    report_id: UUID
+    status: str
+    template_id: str
+    report_version: int
+
+    @classmethod
+    def from_entity(cls, report: ReportEntity) -> "GeneratedReportReceipt":
+        """在 ORM 实体仍绑定会话时冻结响应所需字段。"""
+        return cls(
+            report_id=report.report_id,
+            status=report.status,
+            template_id=report.template_id,
+            report_version=int(report.report_version),
+        )
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -6654,7 +6675,7 @@ class AIOpsRuntimeService:
         template: ReportTemplate,
         period_kind: str,
         trace_id: str,
-    ) -> ReportEntity:
+    ) -> GeneratedReportReceipt:
         """从完成的聊天或告警诊断显式创建正式报告。"""
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
@@ -6757,7 +6778,7 @@ class AIOpsRuntimeService:
             if current is not None and (
                 period_start is None or current.period_start == period_start
             ):
-                return current
+                return GeneratedReportReceipt.from_entity(current)
             report = await self._publish_diagnosis_report(
                 uow=uow,
                 run=run,
@@ -6772,8 +6793,9 @@ class AIOpsRuntimeService:
                 period_end_override=period_end,
                 period_kind=period_kind,
             )
+            receipt = GeneratedReportReceipt.from_entity(report)
             await uow.commit()
-            return report
+            return receipt
 
     async def get_conversation_source_agent_id(
         self,
@@ -6800,7 +6822,7 @@ class AIOpsRuntimeService:
         conversation_id: UUID,
         template: ReportTemplate,
         trace_id: str,
-    ) -> ReportEntity:
+    ) -> GeneratedReportReceipt:
         """冻结一个智能运维 Session 内全部已终态 Turn 的报告上下文。"""
         async with self._uow_factory() as uow:
             assert uow.inspections is not None
@@ -6923,8 +6945,9 @@ class AIOpsRuntimeService:
                 ),
                 period_end_override=now,
             )
+            receipt = GeneratedReportReceipt.from_entity(report)
             await uow.commit()
-            return report
+            return receipt
 
     def _aggregate_conversation_sources(
         self,

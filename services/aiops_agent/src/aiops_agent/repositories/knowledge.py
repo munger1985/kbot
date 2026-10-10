@@ -37,7 +37,9 @@ class OperationsKnowledgeRepository(AIOpsRepository):
     ) -> None:
         self._check_active()
         self._session.add(asset)
+        await self._session.flush()
         self._session.add(version)
+        await self._session.flush()
         self._session.add_all([*scopes, *sources, *indexes])
         await self._session.flush()
 
@@ -51,6 +53,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
     ) -> None:
         self._check_active()
         self._session.add(version)
+        await self._session.flush()
         self._session.add_all([*scopes, *sources, *indexes])
         await self._session.flush()
 

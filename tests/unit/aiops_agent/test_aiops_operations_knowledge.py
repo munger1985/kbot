@@ -7,7 +7,24 @@ from pydantic import ValidationError
 
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.contracts.knowledge import ManualUploadMetadata
+from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
+
+
+class _OrderedFlushSession:
+    def __init__(self) -> None:
+        self.pending: list[object] = []
+        self.flushes: list[list[object]] = []
+
+    def add(self, entity: object) -> None:
+        self.pending.append(entity)
+
+    def add_all(self, entities: list[object]) -> None:
+        self.pending.extend(entities)
+
+    async def flush(self) -> None:
+        self.flushes.append(list(self.pending))
+        self.pending.clear()
 
 
 class OperationsKnowledgeContractTest(unittest.TestCase):
@@ -87,6 +104,44 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
         )
         self.assertEqual(command, profile.procedures[0].steps[0].command_text)
 
+
+class OperationsKnowledgeRepositoryTest(unittest.IsolatedAsyncioTestCase):
+    async def test_asset_version_flushes_parent_rows_before_dependents(self):
+        session = _OrderedFlushSession()
+        repository = OperationsKnowledgeRepository(session)  # type: ignore[arg-type]
+        asset = object()
+        version = object()
+        scope = object()
+        source = object()
+        index = object()
+
+        await repository.add_asset_version(
+            asset=asset,  # type: ignore[arg-type]
+            version=version,  # type: ignore[arg-type]
+            scopes=[scope],  # type: ignore[list-item]
+            sources=[source],  # type: ignore[list-item]
+            indexes=[index],  # type: ignore[list-item]
+        )
+
+        self.assertEqual(
+            [[asset], [version], [scope, source, index]],
+            session.flushes,
+        )
+
+    async def test_new_version_flushes_version_before_dependents(self):
+        session = _OrderedFlushSession()
+        repository = OperationsKnowledgeRepository(session)  # type: ignore[arg-type]
+        version = object()
+        scope = object()
+
+        await repository.add_version(
+            version=version,  # type: ignore[arg-type]
+            scopes=[scope],  # type: ignore[list-item]
+            sources=[],
+            indexes=[],
+        )
+
+        self.assertEqual([[version], [scope]], session.flushes)
 
 if __name__ == "__main__":
     unittest.main()

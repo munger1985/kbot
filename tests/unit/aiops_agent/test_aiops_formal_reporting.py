@@ -312,6 +312,93 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual(2, len(result["evidence_refs"]))
         self.assertIn("完成 2 次巡检", result["inspection_coverage"])
 
+    def test_existing_report_receipt_survives_uow_exit(self) -> None:
+        run_id = uuid7()
+        artifact_id = uuid7()
+        report_id = uuid7()
+
+        class ExpiringReport:
+            expired = False
+
+            def _value(self, value):
+                if self.expired:
+                    raise AssertionError("事务退出后不得读取 ORM 实体")
+                return value
+
+            @property
+            def report_id(self):
+                return self._value(report_id)
+
+            @property
+            def status(self):
+                return self._value("READY")
+
+            @property
+            def template_id(self):
+                return self._value("system:diagnosis.standard")
+
+            @property
+            def report_version(self):
+                return self._value(1)
+
+            @property
+            def period_start(self):
+                return self._value(None)
+
+        current = ExpiringReport()
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            trigger_type="ALERT",
+            status="COMPLETED",
+            final_artifact_id=artifact_id,
+        )
+        artifact = SimpleNamespace(
+            artifact_id=artifact_id,
+            schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+            provenance_json={},
+        )
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                get_current_report_for_run_template=AsyncMock(
+                    return_value=current
+                )
+            ),
+            runs=SimpleNamespace(
+                get_run_scoped=AsyncMock(return_value=run),
+                get_artifact=AsyncMock(return_value=artifact),
+                list_tasks=AsyncMock(return_value=[SimpleNamespace(
+                    output_artifact_id=artifact_id
+                )]),
+                database_now=AsyncMock(return_value=datetime.now(UTC)),
+            ),
+        )
+
+        class UnitOfWorkContext:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                current.expired = True
+
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: UnitOfWorkContext(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        receipt = asyncio.run(service.generate_user_report(
+            domain_id=8,
+            actor_id="operator-1",
+            ops_run_id=run_id,
+            template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
+            period_kind="AD_HOC",
+            trace_id="trace-existing-report",
+        ))
+
+        self.assertEqual(report_id, receipt.report_id)
+        self.assertEqual("READY", receipt.status)
+        self.assertEqual("system:diagnosis.standard", receipt.template_id)
+        self.assertEqual(1, receipt.report_version)
+
     def test_conversation_report_aggregates_all_completed_turns(self) -> None:
         first_turn, second_turn = uuid7(), uuid7()
         first_run, second_run = uuid7(), uuid7()
@@ -440,7 +527,12 @@ class FormalReportingTest(unittest.TestCase):
             uow_factory=lambda: UnitOfWorkContext(), blueprint_registry=AsyncMock(),
             handler_registry=AsyncMock(),
         )
-        service._publish_diagnosis_report = AsyncMock(return_value=SimpleNamespace(report_id=uuid7()))
+        service._publish_diagnosis_report = AsyncMock(return_value=SimpleNamespace(
+            report_id=uuid7(),
+            status="PARTIAL",
+            template_id="system:diagnosis.standard",
+            report_version=1,
+        ))
         asyncio.run(service.generate_conversation_report(
             domain_id=8, actor_id="operator-1", conversation_id=conversation_id,
             template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"], trace_id="trace-session-report",
