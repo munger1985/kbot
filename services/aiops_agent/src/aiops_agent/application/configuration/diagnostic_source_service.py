@@ -870,9 +870,9 @@ class DiagnosticSourceConfigurationMixin:
                 diagnostic_source_id=source_id,
                 domain_id=scope.domain_id,
             )
-        mapped_targets = {
-            item.source_locator_key: item.target_id for item in bindings
-        }
+            mapped_targets = {
+                item.source_locator_key: item.target_id for item in bindings
+            }
         page_candidates = discovered.candidates[: request.page_size]
         items = tuple(
             InstanceDiscoveryCandidate(
