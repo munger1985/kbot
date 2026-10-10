@@ -17,7 +17,9 @@
   const capacityMetricCodes = [
     "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes",
   ];
-  const summaryOnlyMetricCodes = new Set(["db.availability"]);
+  const summaryOnlyMetricCodes = new Set([
+    "db.availability", "mysql.availability", "postgresql.availability",
+  ]);
   const esc = shell.escape;
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;

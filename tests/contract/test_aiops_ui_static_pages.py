@@ -115,12 +115,17 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("source_display_name", script)
         self.assertIn('id="monitoring-compare-source"', page)
         self.assertIn("aiops.css?v=20261010_3", page)
-        self.assertIn("aiops-monitoring.js?v=20261010_11", page)
+        self.assertIn("aiops-monitoring.js?v=20261010_12", page)
         self.assertIn('percent: "%"', script)
         self.assertIn('transactions_per_second: "次/秒"', script)
         self.assertIn('unit === "state"', script)
         self.assertIn("deltaText(series.points, panel.unit)", script)
-        self.assertIn('new Set(["db.availability"])', script)
+        for metric_code in (
+            "db.availability",
+            "mysql.availability",
+            "postgresql.availability",
+        ):
+            self.assertIn(f'"{metric_code}"', script)
         self.assertIn("!summaryOnlyMetricCodes.has(panel.metric_code)", script)
         self.assertIn("function gapIdentity(gap)", script)
         self.assertIn("if (seen.has(identity)) return false", script)
