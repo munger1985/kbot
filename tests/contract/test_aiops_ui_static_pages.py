@@ -627,8 +627,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-target-action="enable"', pages_script)
         self.assertIn('data-target-action="delete"', pages_script)
         self.assertIn('shell.toast("请先停用运维目标，再执行删除")', pages_script)
-        self.assertIn("删除会撤销数据库诊断凭据和执行凭据", pages_script)
-        self.assertIn("如果仍有关联配置或运行历史", pages_script)
+        self.assertIn("删除会一并清理该 Target 的监控映射、数据库凭据", pages_script)
+        self.assertIn("运行、会话、报告、告警、工作项、恢复与负载历史", pages_script)
+        self.assertIn("共享的监控源、Agent、策略、巡检定义和知识资产不会删除", pages_script)
         self.assertIn(
             "KBotAIOpsAuth.request(`${appApi}/targets/${targetId}`",
             pages_script,
@@ -643,6 +644,22 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertFalse((AIOPS_ROOT / "policies.html").exists())
         self.assertIn('"If-Match"', script)
         self.assertIn("openEdit", script)
+
+    def test_target_create_and_edit_include_required_monitor_binding(self):
+        page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="target-monitor-editor-source"', page)
+        self.assertIn('id="discover-target-monitor-editor-labels"', page)
+        self.assertIn("Target 必须至少绑定一条有效监控映射", page)
+        self.assertIn("loadMonitorEditor()", script)
+        self.assertIn("loadMonitorEditor(target.target_id)", script)
+        self.assertIn("monitorSelectionIsValid()", script)
+        self.assertIn("saveSelectedMonitorBinding(created)", script)
+        self.assertIn("saveSelectedMonitorBinding(updated)", script)
+        self.assertIn('data-monitor-binding-action="${action}"', script)
 
     def test_diagnostic_source_detail_is_operator_readable(self):
         page = (AIOPS_ROOT / "diagnostic-source-detail.html").read_text(

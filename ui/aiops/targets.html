@@ -94,6 +94,32 @@
             </select>
             <small>用于 Agent 自动告警诊断过滤，5 表示最重要。</small>
           </div>
+          <section class="target-access-policy span-12" aria-labelledby="target-monitor-editor-title">
+            <div class="target-access-policy-head">
+              <div><h3 id="target-monitor-editor-title">监控源与 Label 映射</h3><p>Target 必须至少绑定一条有效监控映射；Agent 会从 Target 自动继承监控能力。</p></div>
+              <span id="target-monitor-editor-state">必填</span>
+            </div>
+            <div id="target-monitor-editor-bindings" class="ops-empty">尚未绑定监控源</div>
+            <div class="ops-form target-monitor-binding-form">
+              <div class="ops-field span-4">
+                <label for="target-monitor-editor-source">监控源</label>
+                <select id="target-monitor-editor-source" name="monitor_source_id"></select>
+              </div>
+              <div id="target-monitor-editor-locator-field" class="ops-field span-4">
+                <label id="target-monitor-editor-locator-label" for="target-monitor-editor-locator">监控 Label 值</label>
+                <input id="target-monitor-editor-locator" name="monitor_locator_key" maxlength="512">
+                <small id="target-monitor-editor-locator-help">填写监控系统中唯一标识当前数据库的值。</small>
+              </div>
+              <div id="target-monitor-editor-job-field" class="ops-field span-4" hidden>
+                <label for="target-monitor-editor-job">Loki job label（可选）</label>
+                <input id="target-monitor-editor-job" name="monitor_job_label" maxlength="256">
+              </div>
+              <div id="target-monitor-editor-discovery" class="span-12" hidden>
+                <div class="ops-actions"><button id="discover-target-monitor-editor-labels" type="button">发现可用 Label</button></div>
+                <div id="target-monitor-editor-candidates" class="ops-empty">选择监控源后发现候选。</div>
+              </div>
+            </div>
+          </section>
           <div class="ops-field span-8 target-connection-field">
             <label for="target-host">数据库主机名或 IP</label>
             <input id="target-host" name="host" maxlength="253" required placeholder="db.example.internal">
@@ -160,7 +186,7 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-pages.js?v=20261010-7"></script>
-  <script src="./js/aiops-targets.js?v=20261010-2"></script>
+  <script src="./js/aiops-pages.js?v=20261010-8"></script>
+  <script src="./js/aiops-targets.js?v=20261010-3"></script>
 </body>
 </html>

@@ -65,6 +65,20 @@ class _CapturingSession:
         return _CapturedRows()
 
 
+class _DeletionSession:
+    def __init__(self) -> None:
+        self.statements = []
+        self.flush_count = 0
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        statement.compile(dialect=oracle.dialect())
+        return _CapturedRows()
+
+    async def flush(self):
+        self.flush_count += 1
+
+
 class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
     async def test_situation_page_filters_by_related_agent_run(self) -> None:
         session = _CapturingSession()
@@ -116,6 +130,28 @@ class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
             "kbot_ops_diagnostic_source.diagnostic_source_id desc",
             normalized,
         )
+
+    async def test_target_delete_cleans_owned_history_without_commit(self) -> None:
+        session = _DeletionSession()
+        target_id = uuid7()
+
+        await TargetRepository(session).delete_target_with_history(
+            SimpleNamespace(target_id=target_id)
+        )
+
+        sql = [
+            str(statement.compile(dialect=oracle.dialect()))
+            .replace('"', "")
+            .lower()
+            for statement in session.statements
+        ]
+        self.assertTrue(any("delete from kbot_ops_run" in item for item in sql))
+        self.assertTrue(any("delete from kbot_ops_conversation" in item for item in sql))
+        self.assertTrue(any("delete from kbot_ops_target_source_binding" in item for item in sql))
+        self.assertTrue(any("delete from kbot_ops_work_item" in item for item in sql))
+        self.assertTrue(any("delete from kbot_ops_target" in item for item in sql))
+        self.assertIn("delete from kbot_ops_target", sql[-1])
+        self.assertEqual(1, session.flush_count)
 
 
 class ETagAndCursorTest(unittest.TestCase):

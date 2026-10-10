@@ -653,6 +653,8 @@ class TargetConfigurationMixin:
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
             if target.status != "DISABLED": raise state_conflict("仅允许删除已停用的 Target")
+            if await uow.targets.has_active_runs(target_id=target_id):
+                raise state_conflict("Target 仍有运行中的任务，请先等待完成或取消运行")
             result = _target_detail(target)
             for credential_id, kind in ((target.diagnostic_credential_id, "DIAGNOSTIC"), (target.execution_credential_id, "EXECUTION")):
                 if credential_id:
@@ -663,9 +665,9 @@ class TargetConfigurationMixin:
                         actor_id=scope.actor_id,
                     )
             try:
-                await uow.targets.delete_target(target)
+                await uow.targets.delete_target_with_history(target)
             except IntegrityError as exc:
-                raise state_conflict("Target 仍有关联的配置或运行历史，不能删除") from exc
+                raise state_conflict("Target 关联数据发生并发变化，请刷新后重试删除") from exc
             return result
         return await self._idempotent(scope=scope, operation="TARGET_DELETE", parent_resource=str(target_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=TargetDetail, handler=handler)
 

@@ -25,7 +25,21 @@
   const readonlyEnabled = document.getElementById("target-readonly-enabled");
   const changeEnabled = document.getElementById("target-change-enabled");
   const accessSummary = document.getElementById("target-access-summary");
+  const monitorState = document.getElementById("target-monitor-editor-state");
+  const monitorBindings = document.getElementById("target-monitor-editor-bindings");
+  const monitorSource = document.getElementById("target-monitor-editor-source");
+  const monitorLocatorField = document.getElementById("target-monitor-editor-locator-field");
+  const monitorLocator = document.getElementById("target-monitor-editor-locator");
+  const monitorLocatorLabel = document.getElementById("target-monitor-editor-locator-label");
+  const monitorLocatorHelp = document.getElementById("target-monitor-editor-locator-help");
+  const monitorJobField = document.getElementById("target-monitor-editor-job-field");
+  const monitorJob = document.getElementById("target-monitor-editor-job");
+  const monitorDiscovery = document.getElementById("target-monitor-editor-discovery");
+  const monitorCandidates = document.getElementById("target-monitor-editor-candidates");
+  const discoverMonitorLabels = document.getElementById("discover-target-monitor-editor-labels");
   let editingTarget = null;
+  let availableMonitorSources = [];
+  let currentMonitorBindings = [];
   const supportedVersions = {
     ORACLE: ["19c", "26ai"],
     MYSQL: ["8.4"],
@@ -35,6 +49,176 @@
   function clearResult() {
     result.textContent = "";
     delete result.dataset.tone;
+  }
+
+  const monitorSourceById = (sourceId) => availableMonitorSources.find(
+    (item) => String(item.source_id) === String(sourceId)
+  );
+
+  function renderMonitorBindings() {
+    const active = currentMonitorBindings.filter((item) => item.status === "ACTIVE");
+    monitorState.textContent = active.length ? `${active.length} 条有效映射` : "必须配置";
+    monitorState.className = active.length ? "good" : "bad";
+    monitorBindings.innerHTML = currentMonitorBindings.length
+      ? `<div class="target-monitor-candidates">${currentMonitorBindings.map((binding) => {
+        const source = monitorSourceById(binding.source_id);
+        const action = binding.status === "ACTIVE" ? "disable" : "enable";
+        const actionLabel = binding.status === "ACTIVE" ? "解除" : "恢复";
+        return `<div class="agent-switch-row"><span><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong><small>${shell.escape(source?.source_type || "—")} · <code>${shell.escape(binding.source_locator_key)}</code> · ${shell.escape(binding.status)}</small></span><button type="button" data-monitor-binding-action="${action}" data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">${actionLabel}</button></div>`;
+      }).join("")}</div>`
+      : '<div class="ops-error">尚未绑定监控源；创建 Target 前必须选择监控源和 Label。</div>';
+  }
+
+  function renderMonitorSourceOptions() {
+    const boundSourceIds = new Set(
+      currentMonitorBindings
+        .filter((binding) => binding.status === "ACTIVE")
+        .map((binding) => String(binding.source_id))
+    );
+    const sources = availableMonitorSources.filter(
+      (source) => source.status === "ENABLED" && !boundSourceIds.has(String(source.source_id))
+    );
+    monitorSource.innerHTML = '<option value="">请选择监控源</option>' + sources.map(
+      (source) => `<option value="${shell.escape(source.source_id)}">${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}</option>`
+    ).join("");
+    monitorSource.disabled = !sources.length;
+    configureMonitorSource();
+  }
+
+  function configureMonitorSource() {
+    const source = monitorSourceById(monitorSource.value);
+    const discoverable = ["PROMETHEUS", "ZABBIX"].includes(source?.source_type);
+    monitorDiscovery.hidden = !discoverable;
+    monitorLocatorField.hidden = discoverable || !source;
+    monitorLocator.required = Boolean(source && !discoverable);
+    monitorJobField.hidden = source?.source_type !== "LOKI";
+    monitorCandidates.innerHTML = '<div class="ops-empty">点击“发现可用 Label”读取当前数据库类型的候选。</div>';
+    if (!source) return;
+    const presentation = {
+      ALERTMANAGER: ["target_key label 值", "必须与告警中的 target_key 完全一致。"],
+      LOKI: ["target_key label 值", "必须与日志流中的 target_key 完全一致。"],
+      OEM: ["OEM Target Name", "填写 OEM 中唯一的 Target Name。"],
+    }[source.source_type] || ["监控 Label 值", "填写监控系统中唯一标识当前数据库的值。"];
+    monitorLocatorLabel.textContent = presentation[0];
+    monitorLocatorHelp.textContent = presentation[1];
+  }
+
+  async function loadMonitorEditor(targetId = null) {
+    monitorBindings.innerHTML = '<div class="ops-empty">正在读取监控配置…</div>';
+    const sourcePage = await KBotAIOpsAuth.request(`${api}/diagnostic-sources?limit=200`);
+    availableMonitorSources = Array.isArray(sourcePage) ? sourcePage : sourcePage.items || [];
+    currentMonitorBindings = targetId
+      ? await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`)
+      : [];
+    monitorLocator.value = "";
+    monitorJob.value = "";
+    renderMonitorBindings();
+    renderMonitorSourceOptions();
+  }
+
+  async function discoverMonitorCandidates() {
+    const source = monitorSourceById(monitorSource.value);
+    if (!source || !["PROMETHEUS", "ZABBIX"].includes(source.source_type)) return;
+    discoverMonitorLabels.disabled = true;
+    monitorCandidates.innerHTML = '<div class="ops-empty">正在从监控源发现候选 Label…</div>';
+    try {
+      const page = await KBotAIOpsAuth.request(
+        `${api}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-discoveries`,
+        { method: "POST", body: JSON.stringify({ db_types: [dbType.value], page_size: 100 }) }
+      );
+      const candidates = (page.items || []).filter((item) => item.mapping_status !== "MAPPED");
+      monitorCandidates.innerHTML = candidates.length
+        ? candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")
+        : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
+    } catch (error) {
+      monitorCandidates.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
+    } finally {
+      discoverMonitorLabels.disabled = false;
+    }
+  }
+
+  function monitorSelectionIsValid() {
+    const hasActiveBinding = currentMonitorBindings.some((item) => item.status === "ACTIVE");
+    const source = monitorSourceById(monitorSource.value);
+    if (!source) {
+      if (hasActiveBinding) return true;
+      result.dataset.tone = "bad";
+      result.textContent = "请先选择监控源并配置当前数据库的 Label。";
+      return false;
+    }
+    if (["PROMETHEUS", "ZABBIX"].includes(source.source_type)) {
+      if (form.elements.monitor_candidate_ref?.value) return true;
+      result.dataset.tone = "bad";
+      result.textContent = "请先发现并选择一个监控 Label。";
+      return false;
+    }
+    if (monitorLocator.value.trim()) return true;
+    result.dataset.tone = "bad";
+    result.textContent = "监控 Label 值不能为空。";
+    return false;
+  }
+
+  async function saveSelectedMonitorBinding(target) {
+    const source = monitorSourceById(monitorSource.value);
+    if (!source) return;
+    if (["PROMETHEUS", "ZABBIX"].includes(source.source_type)) {
+      await KBotAIOpsAuth.request(
+        `${api}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+          body: JSON.stringify({
+            mappings: [{ candidate_ref: form.elements.monitor_candidate_ref.value, target_id: target.target_id }],
+          }),
+        }
+      );
+      return;
+    }
+    const locatorKey = monitorLocator.value.trim();
+    const labels = source.source_type === "LOKI"
+      ? { target_key: locatorKey, ...(monitorJob.value.trim() ? { job: monitorJob.value.trim() } : {}) }
+      : null;
+    await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(target.target_id)}/source-bindings`, {
+      method: "POST",
+      headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+      body: JSON.stringify({
+        source_id: source.source_id,
+        source_locator_key: locatorKey,
+        source_locator: labels ? { labels } : {},
+        role: "PRIMARY",
+        priority: 100,
+      }),
+    });
+  }
+
+  async function commandMonitorBinding(button) {
+    if (!editingTarget) return;
+    const action = button.dataset.monitorBindingAction;
+    const activeCount = currentMonitorBindings.filter((item) => item.status === "ACTIVE").length;
+    if (action === "disable" && activeCount <= 1) {
+      result.dataset.tone = "bad";
+      result.textContent = "Target 必须保留至少一条有效监控映射；请先绑定新的监控源。";
+      return;
+    }
+    button.disabled = true;
+    try {
+      await KBotAIOpsAuth.request(
+        `${api}/targets/${encodeURIComponent(editingTarget.target_id)}/source-bindings/${encodeURIComponent(button.dataset.bindingId)}/${action}`,
+        {
+          method: "POST",
+          headers: {
+            "If-Match": `"rv-${button.dataset.rowVersion}"`,
+            "Idempotency-Key": KBotAIOpsAuth.uuid(),
+          },
+          body: JSON.stringify({}),
+        }
+      );
+      await loadMonitorEditor(editingTarget.target_id);
+    } catch (error) {
+      result.dataset.tone = "bad";
+      result.textContent = error.message;
+      button.disabled = false;
+    }
   }
 
   function configureEndpoint(resetPort = true) {
@@ -114,7 +298,7 @@
       : "凭据将写入 AIOps 加密凭据存储，列表和详情不会返回密码明文。";
   }
 
-  function openCreate() {
+  async function openCreate() {
     editingTarget = null;
     form.reset();
     dbType.disabled = false;
@@ -128,6 +312,13 @@
     document.getElementById("target-dialog-title").textContent = "新增运维目标";
     submit.textContent = "创建目标";
     dialog.showModal();
+    try {
+      await loadMonitorEditor();
+    } catch (error) {
+      monitorBindings.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
+      result.dataset.tone = "bad";
+      result.textContent = "监控源读取失败，暂时不能创建 Target。";
+    }
     form.elements.display_name.focus();
   }
 
@@ -160,6 +351,7 @@
       submit.textContent = "保存修改";
       clearResult();
       dialog.showModal();
+      await loadMonitorEditor(target.target_id);
       form.elements.display_name.focus();
     } catch (error) {
       shell.toast(error.message);
@@ -282,6 +474,8 @@
 
   async function saveTarget(event) {
     event.preventDefault();
+    if (!monitorSelectionIsValid()) return;
+    const creating = !editingTarget;
     const rotatingCredential = readonlyEnabled.checked && Boolean(username.value.trim() || password.value);
     const rotatingExecutionCredential = Boolean(
       changeEnabled.checked && (executionUsername.value.trim() || executionPassword.value)
@@ -314,11 +508,14 @@
         if (rotatingExecutionCredential) {
           createPayload.execution_credential = executionCredentialPayload();
         }
-        await KBotAIOpsAuth.request(`${api}/targets`, {
+        const created = await KBotAIOpsAuth.request(`${api}/targets`, {
           method: "POST",
           headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
           body: JSON.stringify(createPayload),
         });
+        editingTarget = created;
+        baseSaved = true;
+        await saveSelectedMonitorBinding(created);
       } else {
         let updated = editingTarget;
         const targetUrl = `${api}/targets/${encodeURIComponent(editingTarget.target_id)}`;
@@ -355,16 +552,18 @@
           headers: { "If-Match": `"rv-${updated.row_version}"` },
           body: JSON.stringify({ ...targetFields(), capabilities: editingTarget.capabilities || {} }),
         });
+        editingTarget = updated;
         baseSaved = true;
+        await saveSelectedMonitorBinding(updated);
       }
       dialog.close();
-      shell.toast(editingTarget ? "运维目标已更新" : "运维目标已创建");
+      shell.toast(creating ? "运维目标及监控映射已创建" : "运维目标及监控映射已更新");
       editingTarget = null;
       await KBotAIOpsPages.reload();
     } catch (error) {
       result.dataset.tone = "bad";
       result.textContent = baseSaved
-        ? `基本信息已保存，但凭据轮换失败：${error.message}`
+        ? `Target 基本信息已保存，但监控映射或后续配置失败：${error.message}`
         : versionSavedBeforeCredential
           ? `数据库版本已保存，但后续操作失败：${error.message}`
           : error.message;
@@ -377,11 +576,20 @@
 
   globalThis.KBotAIOpsTargets = { openEdit };
   shell.ready.then(() => {
-    document.getElementById("create-target").addEventListener("click", openCreate);
+    document.getElementById("create-target").addEventListener("click", () => void openCreate());
     document.getElementById("close-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("cancel-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("test-target-connection").addEventListener("click", testConnection);
-    dbType.addEventListener("change", () => configureEndpoint());
+    dbType.addEventListener("change", () => {
+      configureEndpoint();
+      configureMonitorSource();
+    });
+    monitorSource.addEventListener("change", configureMonitorSource);
+    discoverMonitorLabels.addEventListener("click", () => void discoverMonitorCandidates());
+    monitorBindings.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-monitor-binding-action]");
+      if (button) void commandMonitorBinding(button);
+    });
     oracleScope.addEventListener("change", () => configureEndpoint(false));
     readonlyEnabled.addEventListener("change", toggleAccessFields);
     changeEnabled.addEventListener("change", toggleAccessFields);

@@ -223,8 +223,8 @@
       }
       const confirmed = confirm(
         `确认删除运维目标“${item.display_name || item.target_id}”吗？\n\n`
-        + "删除会撤销数据库诊断凭据和执行凭据，且不可恢复。"
-        + "如果仍有关联配置或运行历史，系统会拒绝删除。",
+        + "删除会一并清理该 Target 的监控映射、数据库凭据、运行、会话、报告、告警、工作项、恢复与负载历史，且不可恢复。"
+        + "共享的监控源、Agent、策略、巡检定义和知识资产不会删除。仍有运行中任务时系统会拒绝删除。",
       );
       if (!confirmed) return;
       button.disabled = true;
@@ -872,7 +872,7 @@
       bindingList.innerHTML = bindings.length
         ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>Label / 外部标识</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => {
           const source = sourceById(binding.source_id);
-          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td><code>${shell.escape(binding.locator_hint)}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
+          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td><code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
         }).join("")}</tbody></table>`
         : '<div class="ops-error">尚未绑定监控 Label；完成至少一条映射后才能启用该 Target。</div>';
     };

@@ -4,17 +4,58 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, or_, select, update
+from sqlalchemy import Select, and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
+    ActivitySampleEntity,
+    AIOpsAgentVersionTargetEntity,
+    ApprovalTokenEntity,
+    ChangeProposalEntity,
+    EvidenceRequestEntity,
+    ExecutionEntity,
+    HitlEntity,
+    ImageEvidenceProcessingEntity,
+    NotificationSubscriptionEntity,
+    OperationsKnowledgeSourceEntity,
+    OpsAnswerBlockEntity,
+    OpsAnswerCitationEntity,
+    OpsArtifactEntity,
+    OpsConversationEntity,
+    OpsConversationMessageEntity,
+    OpsConversationTurnEntity,
+    OpsInvestigationRevisionEntity,
+    OpsPlaybookInvocationEntity,
+    OpsRunEntity,
+    OpsRunEventEntity,
+    OpsTaskEntity,
+    OpsToolInvocationEntity,
+    OpsTurnEventEntity,
+    OpsTurnEvidenceEntity,
+    OpsTurnInputItemEntity,
+    OpsTurnRunEntity,
     PolicyEntity,
+    RecoveryDrillEntity,
+    RecoveryProfileEntity,
+    ReportEntity,
+    ReportSourceEntity,
+    SignalEventEntity,
+    SituationEntity,
+    SituationEventEntity,
     TargetBindingEntity,
     TargetEntity,
     TargetFactEntity,
     TargetSourceBindingEntity,
+    WorkItemActivityEntity,
+    WorkItemEntity,
+    WorkItemLinkEntity,
+    WorkItemOccurrenceEntity,
+    WorkloadMetricEntity,
+    WorkloadSnapshotEntity,
+    WorkloadStatementEntity,
 )
+from aiops_agent.domain.operations import TERMINAL_RUN_STATUSES
 from aiops_agent.repositories._base import AIOpsRepository
 
 
@@ -44,11 +85,378 @@ class TargetRepository(AIOpsRepository):
     async def add_target(self, entity: TargetEntity) -> TargetEntity:
         return await self._add(entity)
 
-    async def delete_target(self, entity: TargetEntity) -> None:
-        """仅由用例层在确认停用后删除无关联 Target。"""
+    async def has_active_runs(self, *, target_id: UUID) -> bool:
+        """判断 Target 是否仍有不可安全中断的运行。"""
         self._check_active()
-        await self._session.delete(entity)
+        terminal = tuple(status.value for status in TERMINAL_RUN_STATUSES)
+        statement = select(func.count()).select_from(OpsRunEntity).where(
+            OpsRunEntity.target_id == target_id,
+            OpsRunEntity.status.not_in(terminal),
+        )
+        return bool((await self._session.execute(statement)).scalar_one())
+
+    async def delete_target_with_history(self, entity: TargetEntity) -> None:
+        """在当前事务内删除 Target 专属配置和历史，保留共享配置。"""
+        self._check_active()
+
+        target_id = entity.target_id
+        run_ids = select(OpsRunEntity.ops_run_id).where(
+            OpsRunEntity.target_id == target_id
+        )
+        artifact_ids = select(OpsArtifactEntity.artifact_id).where(
+            OpsArtifactEntity.ops_run_id.in_(run_ids)
+        )
+        task_ids = select(OpsTaskEntity.ops_task_id).where(
+            OpsTaskEntity.ops_run_id.in_(run_ids)
+        )
+        proposal_ids = select(ChangeProposalEntity.proposal_id).where(
+            or_(
+                ChangeProposalEntity.target_id == target_id,
+                ChangeProposalEntity.ops_run_id.in_(run_ids),
+            )
+        )
+        hitl_ids = select(HitlEntity.hitl_id).where(
+            HitlEntity.ops_run_id.in_(run_ids)
+        )
+        report_ids = select(ReportEntity.report_id).where(
+            or_(
+                ReportEntity.target_id == target_id,
+                ReportEntity.ops_run_id.in_(run_ids),
+            )
+        )
+        conversation_ids = select(OpsConversationEntity.conversation_id).where(
+            OpsConversationEntity.target_id == target_id
+        )
+        turn_ids = select(OpsConversationTurnEntity.turn_id).where(
+            OpsConversationTurnEntity.conversation_id.in_(conversation_ids)
+        )
+        revision_ids = select(OpsInvestigationRevisionEntity.revision_id).where(
+            OpsInvestigationRevisionEntity.turn_id.in_(turn_ids)
+        )
+        playbook_ids = select(
+            OpsPlaybookInvocationEntity.playbook_invocation_id
+        ).where(OpsPlaybookInvocationEntity.turn_id.in_(turn_ids))
+        tool_ids = select(OpsToolInvocationEntity.tool_invocation_id).where(
+            OpsToolInvocationEntity.turn_id.in_(turn_ids)
+        )
+        evidence_ids = select(OpsTurnEvidenceEntity.turn_evidence_id).where(
+            OpsTurnEvidenceEntity.turn_id.in_(turn_ids)
+        )
+        answer_block_ids = select(OpsAnswerBlockEntity.answer_block_id).where(
+            OpsAnswerBlockEntity.turn_id.in_(turn_ids)
+        )
+        request_ids = select(EvidenceRequestEntity.request_id).where(
+            EvidenceRequestEntity.turn_id.in_(turn_ids)
+        )
+        work_item_ids = select(WorkItemEntity.work_item_id).where(
+            WorkItemEntity.target_id == target_id
+        )
+        source_binding_ids = select(
+            TargetSourceBindingEntity.target_source_binding_id
+        ).where(TargetSourceBindingEntity.target_id == target_id)
+        signal_ids = select(SignalEventEntity.signal_event_id).where(
+            or_(
+                SignalEventEntity.target_id == target_id,
+                SignalEventEntity.source_binding_id.in_(source_binding_ids),
+            )
+        )
+        situation_ids = select(SituationEntity.situation_id).where(
+            SituationEntity.target_id == target_id
+        )
+        recovery_profile_ids = select(
+            RecoveryProfileEntity.recovery_profile_id
+        ).where(RecoveryProfileEntity.target_id == target_id)
+
+        # 先解除其他 Target 可能持有的可空历史引用，避免误删共享父对象。
+        await self._execute_update(
+            OpsConversationTurnEntity,
+            OpsConversationTurnEntity.resolved_target_id == target_id,
+            {"resolved_target_id": None},
+        )
+        await self._execute_update(
+            OpsConversationEntity,
+            OpsConversationEntity.source_situation_id.in_(situation_ids),
+            {"source_situation_id": None},
+        )
+        await self._execute_update(
+            OpsConversationEntity,
+            OpsConversationEntity.source_run_id.in_(run_ids),
+            {"source_run_id": None},
+        )
+        await self._execute_update(
+            OpsConversationEntity,
+            OpsConversationEntity.source_report_id.in_(report_ids),
+            {"source_report_id": None},
+        )
+        await self._execute_update(
+            OpsRunEntity,
+            OpsRunEntity.trigger_signal_event_id.in_(signal_ids),
+            {"trigger_signal_event_id": None},
+        )
+        await self._execute_update(
+            OpsRunEntity,
+            OpsRunEntity.situation_id.in_(situation_ids),
+            {"situation_id": None},
+        )
+        await self._execute_update(
+            RecoveryDrillEntity,
+            RecoveryDrillEntity.source_ops_run_id.in_(run_ids),
+            {"source_ops_run_id": None},
+        )
+
+        # 清除 Run/Artifact、报告和自引用形成的环，再按子到父顺序删除。
+        await self._execute_update(
+            OpsRunEntity,
+            OpsRunEntity.ops_run_id.in_(run_ids),
+            {
+                "final_artifact_id": None,
+                "source_proposal_id": None,
+                "source_result_artifact_id": None,
+            },
+        )
+        await self._execute_update(
+            OpsTaskEntity,
+            OpsTaskEntity.ops_run_id.in_(run_ids),
+            {"parent_task_id": None, "output_artifact_id": None},
+        )
+        await self._execute_update(
+            ExecutionEntity,
+            or_(
+                ExecutionEntity.target_id == target_id,
+                ExecutionEntity.ops_run_id.in_(run_ids),
+            ),
+            {"result_artifact_id": None, "rollback_of_execution_id": None},
+        )
+        await self._execute_update(
+            ReportEntity,
+            ReportEntity.report_id.in_(report_ids),
+            {"content_artifact_id": None, "supersedes_report_id": None},
+        )
+        await self._execute_update(
+            OpsPlaybookInvocationEntity,
+            OpsPlaybookInvocationEntity.playbook_invocation_id.in_(playbook_ids),
+            {"parent_invocation_id": None},
+        )
+        await self._execute_update(
+            OpsAnswerBlockEntity,
+            OpsAnswerBlockEntity.answer_block_id.in_(answer_block_ids),
+            {"supersedes_id": None},
+        )
+        await self._execute_update(
+            EvidenceRequestEntity,
+            EvidenceRequestEntity.request_id.in_(request_ids),
+            {"parent_request_id": None},
+        )
+
+        await self._execute_delete(
+            ImageEvidenceProcessingEntity,
+            ImageEvidenceProcessingEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsAnswerCitationEntity,
+            or_(
+                OpsAnswerCitationEntity.answer_block_id.in_(answer_block_ids),
+                OpsAnswerCitationEntity.turn_evidence_id.in_(evidence_ids),
+            ),
+        )
+        await self._execute_delete(
+            OpsTurnEventEntity,
+            OpsTurnEventEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsTurnEvidenceEntity,
+            OpsTurnEvidenceEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsToolInvocationEntity,
+            OpsToolInvocationEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsPlaybookInvocationEntity,
+            OpsPlaybookInvocationEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            ImageEvidenceProcessingEntity,
+            ImageEvidenceProcessingEntity.evidence_request_id.in_(request_ids),
+        )
+        await self._execute_delete(
+            EvidenceRequestEntity,
+            EvidenceRequestEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsAnswerBlockEntity,
+            OpsAnswerBlockEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsTurnInputItemEntity,
+            OpsTurnInputItemEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsConversationMessageEntity,
+            OpsConversationMessageEntity.turn_id.in_(turn_ids),
+        )
+
+        await self._execute_delete(
+            OperationsKnowledgeSourceEntity,
+            or_(
+                OperationsKnowledgeSourceEntity.source_report_id.in_(report_ids),
+                OperationsKnowledgeSourceEntity.source_run_id.in_(run_ids),
+                OperationsKnowledgeSourceEntity.source_artifact_id.in_(artifact_ids),
+            ),
+        )
+        await self._execute_delete(
+            ReportSourceEntity,
+            or_(
+                ReportSourceEntity.report_id.in_(report_ids),
+                ReportSourceEntity.ops_run_id.in_(run_ids),
+            ),
+        )
+        await self._execute_delete(
+            WorkItemOccurrenceEntity,
+            or_(
+                WorkItemOccurrenceEntity.work_item_id.in_(work_item_ids),
+                WorkItemOccurrenceEntity.ops_run_id.in_(run_ids),
+                WorkItemOccurrenceEntity.situation_id.in_(situation_ids),
+            ),
+        )
+        await self._execute_delete(
+            ExecutionEntity,
+            or_(
+                ExecutionEntity.target_id == target_id,
+                ExecutionEntity.ops_run_id.in_(run_ids),
+            ),
+        )
+        await self._execute_delete(
+            ApprovalTokenEntity,
+            or_(
+                ApprovalTokenEntity.proposal_id.in_(proposal_ids),
+                ApprovalTokenEntity.hitl_id.in_(hitl_ids),
+            ),
+        )
+        await self._execute_delete(
+            HitlEntity,
+            HitlEntity.ops_run_id.in_(run_ids),
+        )
+        await self._execute_delete(
+            ChangeProposalEntity,
+            ChangeProposalEntity.proposal_id.in_(proposal_ids),
+        )
+        await self._execute_delete(
+            ReportEntity,
+            ReportEntity.report_id.in_(report_ids),
+        )
+        await self._execute_delete(
+            OpsInvestigationRevisionEntity,
+            OpsInvestigationRevisionEntity.revision_id.in_(revision_ids),
+        )
+        await self._execute_delete(
+            OpsTurnRunEntity,
+            OpsTurnRunEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsConversationTurnEntity,
+            OpsConversationTurnEntity.turn_id.in_(turn_ids),
+        )
+        await self._execute_delete(
+            OpsConversationEntity,
+            OpsConversationEntity.conversation_id.in_(conversation_ids),
+        )
+        await self._execute_delete(
+            OpsRunEventEntity,
+            OpsRunEventEntity.ops_run_id.in_(run_ids),
+        )
+        await self._execute_delete(
+            OpsArtifactEntity,
+            OpsArtifactEntity.artifact_id.in_(artifact_ids),
+        )
+        await self._execute_delete(
+            OpsTaskEntity,
+            OpsTaskEntity.ops_task_id.in_(task_ids),
+        )
+        await self._execute_delete(
+            RecoveryDrillEntity,
+            RecoveryDrillEntity.target_id == target_id,
+        )
+        await self._execute_delete(
+            OpsRunEntity,
+            OpsRunEntity.ops_run_id.in_(run_ids),
+        )
+
+        await self._execute_delete(
+            SituationEventEntity,
+            or_(
+                SituationEventEntity.situation_id.in_(situation_ids),
+                SituationEventEntity.signal_event_id.in_(signal_ids),
+            ),
+        )
+        await self._execute_delete(
+            SituationEntity,
+            SituationEntity.situation_id.in_(situation_ids),
+        )
+        await self._execute_delete(
+            SignalEventEntity,
+            SignalEventEntity.signal_event_id.in_(signal_ids),
+        )
+
+        for model in (
+            WorkItemActivityEntity,
+            WorkItemLinkEntity,
+        ):
+            await self._execute_delete(model, model.work_item_id.in_(work_item_ids))
+        await self._execute_delete(
+            WorkItemEntity,
+            WorkItemEntity.work_item_id.in_(work_item_ids),
+        )
+        await self._execute_delete(
+            RecoveryDrillEntity,
+            RecoveryDrillEntity.recovery_profile_id.in_(recovery_profile_ids),
+        )
+        await self._execute_delete(
+            RecoveryProfileEntity,
+            RecoveryProfileEntity.recovery_profile_id.in_(recovery_profile_ids),
+        )
+        for model in (
+            WorkloadStatementEntity,
+            WorkloadMetricEntity,
+        ):
+            await self._execute_delete(model, model.target_id == target_id)
+        await self._execute_delete(
+            WorkloadSnapshotEntity,
+            WorkloadSnapshotEntity.target_id == target_id,
+        )
+        await self._execute_delete(
+            ActivitySampleEntity,
+            ActivitySampleEntity.target_id == target_id,
+        )
+
+        for model in (
+            NotificationSubscriptionEntity,
+            AIOpsAgentVersionTargetEntity,
+            TargetFactEntity,
+            TargetBindingEntity,
+            TargetSourceBindingEntity,
+        ):
+            await self._execute_delete(model, model.target_id == target_id)
+        await self._execute_delete(
+            TargetEntity,
+            TargetEntity.target_id == target_id,
+        )
         await self._session.flush()
+
+    async def _execute_delete(self, model, predicate) -> None:
+        await self._session.execute(
+            delete(model).where(predicate).execution_options(
+                synchronize_session=False
+            )
+        )
+
+    async def _execute_update(self, model, predicate, values: dict) -> None:
+        await self._session.execute(
+            update(model)
+            .where(predicate)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
 
     async def add_binding(
         self, entity: TargetBindingEntity
