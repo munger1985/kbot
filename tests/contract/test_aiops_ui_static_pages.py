@@ -625,6 +625,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-target-action="connectivity"', pages_script)
         self.assertIn('data-target-action="detail"', pages_script)
         self.assertIn('data-target-action="enable"', pages_script)
+        self.assertIn('data-target-action="delete"', pages_script)
+        self.assertIn('shell.toast("请先停用运维目标，再执行删除")', pages_script)
+        self.assertIn("删除会撤销数据库诊断凭据和执行凭据", pages_script)
+        self.assertIn("如果仍有关联配置或运行历史", pages_script)
+        self.assertIn(
+            "KBotAIOpsAuth.request(`${appApi}/targets/${targetId}`",
+            pages_script,
+        )
         self.assertNotIn('data-target-action="maintenance"', pages_script)
         self.assertIn('data-target-action="disable"', pages_script)
         self.assertIn('method: editing ? "PATCH" : "POST"', script)

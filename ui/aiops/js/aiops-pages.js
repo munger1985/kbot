@@ -38,7 +38,8 @@
         : (!item.readonly_connection_enabled || ["CONNECTED", "DEGRADED"].includes(item.connectivity_status))
           ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
           : [];
-      return `<div class="ops-actions">${detailButton}${editButton}${checkButton}${buttons.join("")}</div>`;
+      const deleteButton = `<button type="button" data-target-action="delete" title="${item.status === "DISABLED" ? "删除运维目标" : "请先停用运维目标"}">删除</button>`;
+      return `<div class="ops-actions">${detailButton}${editButton}${checkButton}${buttons.join("")}${deleteButton}</div>`;
     }
     if (type === "target-access") {
       const mode = item.controlled_change_enabled
@@ -213,6 +214,34 @@
     }
     if (action === "edit") {
       globalThis.KBotAIOpsTargets?.openEdit(item.target_id);
+      return;
+    }
+    if (action === "delete") {
+      if (item.status !== "DISABLED") {
+        shell.toast("请先停用运维目标，再执行删除");
+        return;
+      }
+      const confirmed = confirm(
+        `确认删除运维目标“${item.display_name || item.target_id}”吗？\n\n`
+        + "删除会撤销数据库诊断凭据和执行凭据，且不可恢复。"
+        + "如果仍有关联配置或运行历史，系统会拒绝删除。",
+      );
+      if (!confirmed) return;
+      button.disabled = true;
+      try {
+        await KBotAIOpsAuth.request(`${appApi}/targets/${targetId}`, {
+          method: "DELETE",
+          headers: {
+            "If-Match": `"rv-${item.row_version}"`,
+            "Idempotency-Key": KBotAIOpsAuth.uuid(),
+          },
+        });
+        shell.toast("运维目标已删除");
+        await renderList("targets");
+      } catch (error) {
+        shell.toast(error.message);
+        button.disabled = false;
+      }
       return;
     }
     const path = action === "connectivity"
