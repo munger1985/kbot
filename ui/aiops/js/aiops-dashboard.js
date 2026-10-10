@@ -27,7 +27,7 @@
     STALE: "数据过期",
     UNKNOWN: "未知",
     OPEN: "未恢复",
-    RESOLVED: "已恢复",
+    RESOLVED: "当前无活动告警",
     COMPLETED: "已完成",
     SUCCEEDED: "成功",
     PARTIAL: "部分成功",

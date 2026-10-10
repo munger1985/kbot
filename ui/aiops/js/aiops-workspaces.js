@@ -202,7 +202,7 @@
   function situationStatusText(status) {
     const labels = {
       OPEN: "持续告警，仍有未恢复信号",
-      RESOLVED: "已恢复",
+      RESOLVED: "当前无活动告警",
       ACKNOWLEDGED: "已确认",
       INVESTIGATING: "诊断中",
       DIAGNOSED: "已诊断",
