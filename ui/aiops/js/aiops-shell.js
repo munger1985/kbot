@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   const pagePermissions = {
-    dashboard: "aiops:use", chat: "aiops:use", situations: "aiops:use", inspections: "aiops:use",
+    dashboard: "aiops:use", monitoring: "aiops:use", chat: "aiops:use", situations: "aiops:use", inspections: "aiops:use",
     reports: "aiops:use", "report-detail": "aiops:use",
     "run-detail": "aiops:use", targets: "aiops:target_manage",
     "target-detail": "aiops:target_manage",
@@ -16,7 +16,7 @@
   };
   const sections = [
     ["业务工作区", [
-      ["dashboard", "Dashboard"], ["chat", "智能运维"], ["situations", "告警诊断"],
+      ["dashboard", "Dashboard"], ["monitoring", "实时监控"], ["chat", "智能运维"], ["situations", "告警诊断"],
       ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "报告中心"],
     ]],
     ["资源配置", [

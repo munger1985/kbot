@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>实时监控 · KBot AIOps</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261010_1">
+</head>
+<body data-page="monitoring">
+  <main class="ops-main ops-monitoring-main">
+    <header class="ops-head ops-monitoring-head">
+      <div>
+        <h1>实时监控</h1>
+        <p>从已接入的监控源查看一个或多个数据库实例的实时指标。</p>
+        <small id="monitoring-freshness" class="ops-monitoring-freshness">正在读取监控源目录…</small>
+      </div>
+      <div class="ops-actions">
+        <label class="ops-monitoring-refresh">自动刷新
+          <select id="monitoring-refresh-interval">
+            <option value="0" selected>关闭</option><option value="15">15 秒</option><option value="30">30 秒</option><option value="60">1 分钟</option>
+          </select>
+        </label>
+        <button id="refresh-monitoring" type="button" disabled>立即刷新</button>
+        <a id="monitoring-diagnosis-link" class="ops-button primary is-disabled" aria-disabled="true" href="./chat.html">进入智能运维</a>
+      </div>
+    </header>
+
+    <section id="monitoring-context" class="ops-monitoring-context" aria-label="实时监控筛选" hidden>
+      <label>监控源<select id="monitoring-source"></select></label>
+      <label>时间范围<select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
+      <label>指标视图<select id="monitoring-profile"></select></label>
+      <div id="monitoring-readiness" class="ops-monitoring-readiness"></div>
+    </section>
+
+    <section id="monitoring-gate" class="ops-panel ops-monitoring-gate"><div class="ops-empty">正在读取监控源目录…</div></section>
+
+    <section id="monitoring-instance-picker" class="ops-panel ops-monitoring-instance-picker" hidden>
+      <div class="ops-panel-head"><div><h2>选择数据库实例</h2><p>只显示当前来源下通过 ACTIVE Binding 映射且有权查看的实例。</p></div><span id="monitoring-selection-count">0 / 12</span></div>
+      <div class="ops-monitoring-instance-tools"><label>搜索实例<input id="monitoring-instance-search" type="search" placeholder="名称或数据库类型"></label><button id="monitoring-select-filtered" type="button">全选当前结果</button><button id="monitoring-clear-selection" type="button">清空</button></div>
+      <div id="monitoring-instance-list" class="ops-monitoring-instance-list" role="group" aria-label="数据库实例多选"></div>
+    </section>
+
+    <section id="monitoring-loading" class="ops-panel ops-monitoring-loading" hidden><div class="ops-empty">正在查询实时指标…</div></section>
+    <div id="monitoring-result" hidden>
+      <section id="monitoring-quality-ledger" class="ops-monitoring-ledger" aria-label="数据质量概览"></section>
+      <section class="ops-panel ops-monitoring-status-panel">
+        <div class="ops-panel-head"><div><h2>实例状态矩阵</h2><p>可用性、关键指标和数据时间保持各自语义；点击实例进入单实例下钻。</p></div></div>
+        <div class="ops-table-wrap"><table class="ops-table ops-monitoring-status-table"><thead><tr><th>数据库实例</th><th>可用性</th><th>CPU</th><th>活动连接</th><th>连接使用率</th><th>最后采样</th><th>数据质量</th><th>操作</th></tr></thead><tbody id="monitoring-status-body"></tbody></table></div>
+      </section>
+      <section id="monitoring-single-summary" class="ops-monitoring-single-summary" aria-label="单实例当前状态" hidden></section>
+      <section id="monitoring-panels" class="ops-monitoring-panels" aria-label="实时监控图表"></section>
+      <section class="ops-panel ops-monitoring-quality-panel">
+        <div class="ops-panel-head"><div><h2>数据质量与缺口</h2><p>来源、窗口、覆盖率与稳定 Gap Code。</p></div><span id="monitoring-result-state"></span></div>
+        <div class="ops-monitoring-quality-layout"><dl id="monitoring-quality-context" class="ops-detail"></dl><div id="monitoring-gaps" class="ops-monitoring-gaps"></div></div>
+      </section>
+    </div>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="../vendor/echarts.min.js?v=6.1.0"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js?v=20261010_1"></script>
+  <script src="./js/aiops-monitoring.js?v=20261010_1"></script>
+</body>
+</html>

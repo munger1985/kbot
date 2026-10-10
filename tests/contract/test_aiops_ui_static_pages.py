@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "dashboard", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
@@ -50,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(11, len(scripts))
+        self.assertEqual(12, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -90,6 +90,38 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("scrollIntoView", script)
         self.assertFalse((AIOPS_ROOT / "fleet.html").exists())
         self.assertFalse((AIOPS_ROOT / "js" / "aiops-fleet.js").exists())
+
+    def test_monitoring_is_independent_local_and_contract_driven(self):
+        page = (AIOPS_ROOT / "monitoring.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-monitoring.js").read_text(encoding="utf-8")
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(encoding="utf-8")
+        vendor = ROOT / "ui" / "vendor"
+        self.assertIn('["monitoring", "实时监控"]', shell)
+        self.assertIn('data-page="monitoring"', page)
+        self.assertIn("../vendor/echarts.min.js?v=6.1.0", page)
+        self.assertTrue((vendor / "echarts.min.js").is_file())
+        self.assertTrue((vendor / "echarts-LICENSE.txt").is_file())
+        self.assertTrue((vendor / "echarts-NOTICE.txt").is_file())
+        self.assertIn('const api = "/api/v1/apps/aiops/monitoring"', script)
+        self.assertNotIn("/internal/v1", script)
+        self.assertNotIn("PromQL", script)
+        self.assertNotIn("prometheus_queries", script)
+        self.assertIn("instance_ids: state.selected", script)
+        self.assertIn("state.selected.length >= 12", script)
+        self.assertIn("setTimeout(loadView, 250)", script)
+        self.assertIn("state.controller?.abort()", script)
+        self.assertIn("state.contextController?.abort()", script)
+        self.assertIn("connectNulls: false", script)
+        self.assertIn("查看数据", script)
+        self.assertIn(".ops-monitoring-main [hidden]{display:none!important}", (
+            AIOPS_ROOT / "css" / "aiops.css"
+        ).read_text(encoding="utf-8"))
+        for text in (
+            "尚未配置监控源", "监控源未启用", "监控源连接失败",
+            "尚未关联数据库实例", "无有效采样", "部分成功",
+        ):
+            self.assertIn(text, script)
+        self.assertNotIn("<iframe", page.lower())
 
     def test_chat_code_copy_supports_insecure_http_context(self):
         renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(
