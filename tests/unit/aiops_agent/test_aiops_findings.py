@@ -420,6 +420,38 @@ def _proposal_artifact(*, mode: str = "ADVISORY") -> dict:
 
 
 class FindingCompilerTest(unittest.TestCase):
+    def test_catalog_finding_types_are_declared(self) -> None:
+        load_finding_catalog.cache_clear()
+        catalog_types = {
+            str(spec["finding_type"])
+            for spec in load_finding_catalog()
+        }
+        self.assertEqual(
+            set(),
+            catalog_types - {item.value for item in FindingType},
+        )
+
+    def test_empty_postgresql_replication_slots_compile_without_failure(
+        self,
+    ) -> None:
+        compilation = compile_findings(
+            (
+                _fact(
+                    tool_id="db.postgresql.replication.slot_retention",
+                    columns=("slot_name", "active", "retained_wal_bytes"),
+                    rows=(),
+                ),
+            ),
+            database_type="POSTGRESQL",
+        )
+
+        self.assertEqual((), compilation.findings)
+        self.assertEqual(
+            ("当前未配置 PostgreSQL replication slot。",),
+            compilation.empty_reasons,
+        )
+        self.assertEqual((), compilation.gaps)
+
     def test_blocking_chain_compiles_lock_wait_fields(self) -> None:
         compilation = compile_findings((_lock_fact(),), target_id="tgt-1")
         self.assertEqual((), compilation.empty_reasons)

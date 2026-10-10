@@ -1923,7 +1923,13 @@
           "ARCHIVE_HEADROOM",
           "BACKUP_FAILED",
           "LONG_TRANSACTION",
-          "TOP_SQL"
+          "TOP_SQL",
+          "REPLICATION_SLOT",
+          "ARCHIVER_FAILURE",
+          "CHECKPOINT_PRESSURE",
+          "ANALYZE_STALE",
+          "FREEZE_HEADROOM",
+          "BLOAT_CANDIDATE"
         ],
         "title": "FindingType",
         "type": "string"

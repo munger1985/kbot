@@ -41,6 +41,13 @@ def load_finding_catalog() -> tuple[dict[str, Any], ...]:
     if not types:
         raise ValueError("Finding 目录不能为空")
     for spec in types:
+        finding_type = str(spec.get("finding_type") or "")
+        try:
+            FindingType(finding_type)
+        except ValueError as exc:
+            raise ValueError(
+                f"Finding规则包含未知finding_type：{finding_type!r}"
+            ) from exc
         database_types = tuple(spec.get("database_types") or ())
         if not database_types or set(database_types) - _DATABASE_TYPES:
             raise ValueError("Finding规则必须声明有效database_types")
