@@ -86,6 +86,19 @@ class DocumentationLayoutTest(unittest.TestCase):
         self.assertFalse((DOCS_ROOT / "kbot_4.0_showcase").exists())
         self.assertFalse((DOCS_ROOT / "install").exists())
 
+    def test_aiops_shared_planning_documents_exist(self):
+        self.assertTrue(
+            {
+                "aiops-cross-project-unified-implementation-plan.md",
+                "aiops-monitoring-dashboard-integration-detailed-design.md",
+            }.issubset(
+                {
+                    path.name
+                    for path in (DOCS_ROOT / "proposals").glob("*.md")
+                }
+            )
+        )
+
     def test_all_local_markdown_links_resolve(self):
         missing: list[str] = []
         paths = [ROOT / "README.md", *DOCS_ROOT.rglob("*.md")]

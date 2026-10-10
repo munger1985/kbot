@@ -47,6 +47,8 @@ Git 历史保存，不再作为有效文档。
 
 ## 详细设计与实施方案
 
+- [AIOps 跨项目统一实施方案](proposals/aiops-cross-project-unified-implementation-plan.md)：按七个批次完成双向能力吸收、实时监控、双前端和真实环境联合验收。
+- [AIOps 实时监控 Dashboard 集成详细设计](proposals/aiops-monitoring-dashboard-integration-detailed-design.md)：第一阶段对齐 Prometheus/Zabbix 的 Oracle、MySQL、PostgreSQL 多实例图表及诊断闭环；Zabbix只保留外部接入，OEM暂缓，并要求与Ammolite Cube同步实施。
 - [AIOps 数据库实施文档中心详细设计](proposals/aiops-database-implementation-library-detailed-design.md)：已实施的 Runbook v3、RAC、RMAN、补丁、升级、迁移、克隆和 ADG 演练基准。
 - [AIOps 运维知识库详细设计](proposals/aiops-operations-knowledge-base-detailed-design.md)：用户手册提炼、诊断案例治理、KC 内部索引、Agent 检索与迁移方案。
 
