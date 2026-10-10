@@ -1368,6 +1368,74 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json("GET", f"{INTERNAL_API_V1}/aiops/situations/{situation_id}",
                                 auth_context=auth_context)
 
+    async def list_work_items(
+        self, *, status: str | None, priority: str | None,
+        target_id: UUID | None, assignee_user_id: str | None,
+        unassigned: bool, overdue: bool, cursor: str | None, limit: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = {
+            "limit": str(limit),
+            "unassigned": str(unassigned).lower(),
+            "overdue": str(overdue).lower(),
+        }
+        for key, value in (
+            ("status", status), ("priority", priority),
+            ("target_id", target_id), ("assignee_user_id", assignee_user_id),
+            ("cursor", cursor),
+        ):
+            if value is not None:
+                query[key] = str(value)
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/work-items?{urlencode(query)}",
+            auth_context=auth_context,
+        )
+
+    async def get_work_item(
+        self, work_item_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/work-items/{work_item_id}",
+            auth_context=auth_context,
+        )
+
+    async def create_work_item(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/work-items",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def assign_work_item(
+        self, work_item_id: UUID, payload: dict[str, Any], *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PATCH",
+            f"{INTERNAL_API_V1}/aiops/work-items/{work_item_id}/assignment",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def transition_work_item(
+        self, work_item_id: UUID, payload: dict[str, Any], *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/work-items/{work_item_id}/transitions",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def route_run_to_work_items(
+        self, payload: dict[str, Any], *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/work-items:route-run",
+            payload=payload, auth_context=auth_context,
+        )
+
     async def get_run_result(
         self,
         run_id: UUID,

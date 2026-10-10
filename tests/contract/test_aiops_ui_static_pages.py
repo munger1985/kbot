@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "dashboard", "monitoring", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "work-items", "work-item-detail", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
@@ -50,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(12, len(scripts))
+        self.assertEqual(13, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -141,6 +141,25 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("iframe", script.lower())
         self.assertNotIn("locator", page.lower())
         self.assertNotIn("locator", script.lower())
+
+    def test_work_items_are_a_compact_operational_queue(self):
+        page = (AIOPS_ROOT / "work-items.html").read_text(encoding="utf-8")
+        detail = (AIOPS_ROOT / "work-item-detail.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-work-items.js").read_text(
+            encoding="utf-8"
+        )
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('["work-items", "工作项中心"]', shell)
+        self.assertIn("处理队列", page)
+        self.assertIn("解决 SLA", page)
+        self.assertIn("事实与发生记录", detail)
+        self.assertIn("关联资源", detail)
+        self.assertIn("活动时间线", detail)
+        self.assertIn("/api/v1/apps/aiops/work-items", script)
+        self.assertIn('PENDING_VERIFICATION: ["IN_PROGRESS", "RESOLVED"]', script)
+        self.assertNotIn("fake", script.lower())
 
     def test_chat_code_copy_supports_insecure_http_context(self):
         renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(

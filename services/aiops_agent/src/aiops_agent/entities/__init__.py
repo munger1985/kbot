@@ -47,6 +47,12 @@ from .workload import (
     WorkloadSnapshotEntity,
     WorkloadStatementEntity,
 )
+from .work_item import (
+    WorkItemActivityEntity,
+    WorkItemEntity,
+    WorkItemLinkEntity,
+    WorkItemOccurrenceEntity,
+)
 from .conversation import (
     EvidenceRequestEntity, ImageEvidenceProcessingEntity,
     OpsAnswerBlockEntity, OpsAnswerCitationEntity,
@@ -116,6 +122,10 @@ __all__ = [
     "WorkloadMetricEntity",
     "WorkloadSnapshotEntity",
     "WorkloadStatementEntity",
+    "WorkItemActivityEntity",
+    "WorkItemEntity",
+    "WorkItemLinkEntity",
+    "WorkItemOccurrenceEntity",
 ]
 from .agent import (
     AIOpsAgentEntity,

@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 34
-                              AND contract_version = 'aiops-oracle-v24'
+                              AND schema_version = 35
+                              AND contract_version = 'aiops-oracle-v25'
                             """
                         )
                     )
@@ -120,6 +120,14 @@ class AIOpsProcessRuntime:
                                     AND COLUMN_NAME = 'EVIDENCE_JSON')
                                 OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_DRILL'
                                     AND COLUMN_NAME = 'SOURCE_TRUST_LEVEL')
+                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM'
+                                    AND COLUMN_NAME = 'WORK_ITEM_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM_OCCURRENCE'
+                                    AND COLUMN_NAME = 'OCCURRENCE_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM_LINK'
+                                    AND COLUMN_NAME = 'WORK_ITEM_LINK_ID')
+                                OR (TABLE_NAME = 'KBOT_OPS_WORK_ITEM_ACTIVITY'
+                                    AND COLUMN_NAME = 'ACTIVITY_ID')
                               )
                             """
                         )

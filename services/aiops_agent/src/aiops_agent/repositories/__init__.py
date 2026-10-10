@@ -13,6 +13,7 @@ from .runtime import OpsRunRepository
 from .target import PolicyRepository, TargetRepository
 from .recovery import RecoveryRepository
 from .workload import WorkloadRepository
+from .work_item import WorkItemRepository
 
 __all__ = [
     "ConversationRepository",
@@ -32,5 +33,6 @@ __all__ = [
     "TargetRepository",
     "RecoveryRepository",
     "WorkloadRepository",
+    "WorkItemRepository",
 ]
 from .agent import AIOpsAgentRepository, AIOpsAgentExecutionBinding

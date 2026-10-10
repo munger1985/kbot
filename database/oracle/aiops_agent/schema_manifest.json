@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 34,
-  "contract_version": "aiops-oracle-v24",
+  "schema_version": 35,
+  "contract_version": "aiops-oracle-v25",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "8f600d16b3b60f591c58d624590bc5e4b127353b8da30d63431788fd9cefad62"
+      "sha256": "ba85725a29e6bf7337ea954ca72f02f784df83ea48eee56f690eed86f6f6d111"
     },
     {
       "name": "007_ops_agents.sql",
@@ -58,6 +58,11 @@
       "name": "011_ops_recovery.sql",
       "statements": 8,
       "sha256": "2199dc280b5ce644cf9f742c773715502b09a155a64dbf45f14e8d4c43d79362"
+    },
+    {
+      "name": "012_ops_work_items.sql",
+      "statements": 15,
+      "sha256": "5c5eceb25073fb57c179ea73361da303b948ba7d04e8d1b38dfe77c1ded546db"
     }
   ],
   "tables": [
@@ -118,7 +123,11 @@
     "KBOT_OPS_KNOWLEDGE_INDEX",
     "KBOT_OPS_KNOWLEDGE_REVIEW",
     "KBOT_OPS_RECOVERY_PROFILE",
-    "KBOT_OPS_RECOVERY_DRILL"
+    "KBOT_OPS_RECOVERY_DRILL",
+    "KBOT_OPS_WORK_ITEM",
+    "KBOT_OPS_WORK_ITEM_OCCURRENCE",
+    "KBOT_OPS_WORK_ITEM_LINK",
+    "KBOT_OPS_WORK_ITEM_ACTIVITY"
   ],
   "views": [
     "KBOT_V_OPS_TARGET",
@@ -793,6 +802,72 @@
         "TARGET_ID",
         "SAMPLED_AT",
         "ACTIVITY_SAMPLE_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORK_ITEM_DOMAIN",
+      "index": "IX_OPS_WORK_ITEM_QUEUE",
+      "table": "KBOT_OPS_WORK_ITEM",
+      "columns": [
+        "DOMAIN_ID",
+        "STATUS",
+        "PRIORITY",
+        "UPDATED_AT"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORK_ITEM_TARGET",
+      "index": "IX_OPS_WORK_ITEM_TARGET",
+      "table": "KBOT_OPS_WORK_ITEM",
+      "columns": [
+        "TARGET_ID",
+        "STATUS",
+        "UPDATED_AT"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WI_OCC_ITEM",
+      "index": "IX_OPS_WI_OCC_ITEM",
+      "table": "KBOT_OPS_WORK_ITEM_OCCURRENCE",
+      "columns": [
+        "WORK_ITEM_ID",
+        "OBSERVED_AT"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WI_OCC_RUN",
+      "index": "IX_OPS_WI_OCC_RUN",
+      "table": "KBOT_OPS_WORK_ITEM_OCCURRENCE",
+      "columns": [
+        "OPS_RUN_ID",
+        "FINDING_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WI_OCC_SITUATION",
+      "index": "IX_OPS_WI_OCC_SITUATION",
+      "table": "KBOT_OPS_WORK_ITEM_OCCURRENCE",
+      "columns": [
+        "SITUATION_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WI_LINK_ITEM",
+      "index": "IX_OPS_WI_LINK_ITEM",
+      "table": "KBOT_OPS_WORK_ITEM_LINK",
+      "columns": [
+        "WORK_ITEM_ID",
+        "RESOURCE_KIND",
+        "CREATED_AT"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WI_ACTIVITY_ITEM",
+      "index": "IX_OPS_WI_ACTIVITY_ITEM",
+      "table": "KBOT_OPS_WORK_ITEM_ACTIVITY",
+      "columns": [
+        "WORK_ITEM_ID",
+        "CREATED_AT"
       ]
     }
   ],

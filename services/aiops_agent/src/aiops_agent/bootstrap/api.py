@@ -25,6 +25,7 @@ from aiops_agent.application.managed_credentials import (
 )
 from aiops_agent.application.postgresql_artifacts import PostgreSQLArtifactStore
 from aiops_agent.application.workload import WorkloadService
+from aiops_agent.application.work_items import WorkItemService
 from aiops_agent.adapters.diagnostic_sources import (
     DiagnosticSourceAdapterCatalog,
     DiagnosticSourceAdapterRegistry,
@@ -51,6 +52,7 @@ from aiops_agent.api.workload import (
     artifact_router as workload_artifact_router,
     router as workload_router,
 )
+from aiops_agent.api.work_items import router as work_item_router
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
@@ -200,6 +202,10 @@ def create_aiops_api(
         cursor_codec = SignedCursorCodec(
             secret=cursor_secret,
             ttl_seconds=resolved.management.cursor_ttl_seconds,
+        )
+        app.state.work_item_service = WorkItemService(
+            uow_factory=runtime.uow_factory,
+            cursor_codec=cursor_codec,
         )
         diagnostic_source_catalog = DiagnosticSourceAdapterCatalog()
         metric_catalog = load_metric_catalog(
@@ -427,6 +433,7 @@ def create_aiops_api(
     app.include_router(execution_events_router)
     app.include_router(workload_router)
     app.include_router(workload_artifact_router)
+    app.include_router(work_item_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

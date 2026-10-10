@@ -80,7 +80,11 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_INDEX',
             'KBOT_OPS_KNOWLEDGE_REVIEW',
             'KBOT_OPS_RECOVERY_PROFILE',
-            'KBOT_OPS_RECOVERY_DRILL'
+            'KBOT_OPS_RECOVERY_DRILL',
+            'KBOT_OPS_WORK_ITEM',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE',
+            'KBOT_OPS_WORK_ITEM_LINK',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY'
           ))
         MINUS
         SELECT table_name AS object_name
@@ -155,7 +159,11 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_INDEX',
             'KBOT_OPS_KNOWLEDGE_REVIEW',
             'KBOT_OPS_RECOVERY_PROFILE',
-            'KBOT_OPS_RECOVERY_DRILL'
+            'KBOT_OPS_RECOVERY_DRILL',
+            'KBOT_OPS_WORK_ITEM',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE',
+            'KBOT_OPS_WORK_ITEM_LINK',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY'
           ))
     ) LOOP
         l_issue_count := l_issue_count + 1;
@@ -167,7 +175,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 58 项。');
+        dbms_output.put_line('[通过] AIOps 表: 62 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -409,6 +417,12 @@ BEGIN
             'IX_OPS_TURN_SUFF_ART',
             'IX_OPS_TURN_TARGET',
             'IX_OPS_TURN_TARGET_OWNER',
+            'IX_OPS_WI_ACTIVITY_ITEM',
+            'IX_OPS_WI_LINK_ITEM',
+            'IX_OPS_WI_LINK_RESOURCE',
+            'IX_OPS_WI_OCC_ITEM',
+            'IX_OPS_WI_OCC_RUN',
+            'IX_OPS_WI_OCC_SITUATION',
             'IX_OPS_WORKLOAD_EXPIRY',
             'IX_OPS_WORKLOAD_METRIC_FAMILY',
             'IX_OPS_WORKLOAD_METRIC_SNAP',
@@ -418,6 +432,11 @@ BEGIN
             'IX_OPS_WORKLOAD_STMT_SNAPSHOT',
             'IX_OPS_WORKLOAD_STMT_SUBJECT',
             'IX_OPS_WORKLOAD_STMT_TARGET',
+            'IX_OPS_WORK_ITEM_ASSIGNEE',
+            'IX_OPS_WORK_ITEM_FINGERPRINT',
+            'IX_OPS_WORK_ITEM_QUEUE',
+            'IX_OPS_WORK_ITEM_SLA',
+            'IX_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_SOURCE',
             'PK_OPS_AGENT_VERSION_TARGET',
             'PK_OPS_ANSWER_CITATION',
@@ -679,6 +698,12 @@ BEGIN
             'IX_OPS_TURN_SUFF_ART',
             'IX_OPS_TURN_TARGET',
             'IX_OPS_TURN_TARGET_OWNER',
+            'IX_OPS_WI_ACTIVITY_ITEM',
+            'IX_OPS_WI_LINK_ITEM',
+            'IX_OPS_WI_LINK_RESOURCE',
+            'IX_OPS_WI_OCC_ITEM',
+            'IX_OPS_WI_OCC_RUN',
+            'IX_OPS_WI_OCC_SITUATION',
             'IX_OPS_WORKLOAD_EXPIRY',
             'IX_OPS_WORKLOAD_METRIC_FAMILY',
             'IX_OPS_WORKLOAD_METRIC_SNAP',
@@ -688,6 +713,11 @@ BEGIN
             'IX_OPS_WORKLOAD_STMT_SNAPSHOT',
             'IX_OPS_WORKLOAD_STMT_SUBJECT',
             'IX_OPS_WORKLOAD_STMT_TARGET',
+            'IX_OPS_WORK_ITEM_ASSIGNEE',
+            'IX_OPS_WORK_ITEM_FINGERPRINT',
+            'IX_OPS_WORK_ITEM_QUEUE',
+            'IX_OPS_WORK_ITEM_SLA',
+            'IX_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_SOURCE',
             'PK_OPS_AGENT_VERSION_TARGET',
             'PK_OPS_ANSWER_CITATION',
@@ -759,7 +789,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 251 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 262 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -932,6 +962,11 @@ BEGIN
             'FK_OPS_TURN_RUN_TURN',
             'FK_OPS_TURN_SUFF_ART',
             'FK_OPS_TURN_TARGET',
+            'FK_OPS_WI_ACTIVITY_ITEM',
+            'FK_OPS_WI_LINK_ITEM',
+            'FK_OPS_WI_OCC_ITEM',
+            'FK_OPS_WI_OCC_RUN',
+            'FK_OPS_WI_OCC_SITUATION',
             'FK_OPS_WL_METRIC_SNAPSHOT',
             'FK_OPS_WORKLOAD_DOMAIN',
             'FK_OPS_WORKLOAD_METRIC_DOMAIN',
@@ -940,6 +975,8 @@ BEGIN
             'FK_OPS_WORKLOAD_STMT_SNAPSHOT',
             'FK_OPS_WORKLOAD_STMT_TARGET',
             'FK_OPS_WORKLOAD_TARGET',
+            'FK_OPS_WORK_ITEM_DOMAIN',
+            'FK_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_SOURCE',
             'PK_OPS_AGENT_VERSION_TARGET',
             'PK_OPS_ANSWER_CITATION',
@@ -1173,6 +1210,11 @@ BEGIN
             'FK_OPS_TURN_RUN_TURN',
             'FK_OPS_TURN_SUFF_ART',
             'FK_OPS_TURN_TARGET',
+            'FK_OPS_WI_ACTIVITY_ITEM',
+            'FK_OPS_WI_LINK_ITEM',
+            'FK_OPS_WI_OCC_ITEM',
+            'FK_OPS_WI_OCC_RUN',
+            'FK_OPS_WI_OCC_SITUATION',
             'FK_OPS_WL_METRIC_SNAPSHOT',
             'FK_OPS_WORKLOAD_DOMAIN',
             'FK_OPS_WORKLOAD_METRIC_DOMAIN',
@@ -1181,6 +1223,8 @@ BEGIN
             'FK_OPS_WORKLOAD_STMT_SNAPSHOT',
             'FK_OPS_WORKLOAD_STMT_TARGET',
             'FK_OPS_WORKLOAD_TARGET',
+            'FK_OPS_WORK_ITEM_DOMAIN',
+            'FK_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_SOURCE',
             'PK_OPS_AGENT_VERSION_TARGET',
             'PK_OPS_ANSWER_CITATION',
@@ -1239,7 +1283,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 222 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 229 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -2226,7 +2270,69 @@ BEGIN
             'KBOT_OPS_WORKLOAD_STATEMENT|TOTAL_DURATION_MICROSECONDS',
             'KBOT_OPS_WORKLOAD_STATEMENT|USER_IDENTIFIER',
             'KBOT_OPS_WORKLOAD_STATEMENT|WORKLOAD_SNAPSHOT_ID',
-            'KBOT_OPS_WORKLOAD_STATEMENT|WORKLOAD_STATEMENT_ID'
+            'KBOT_OPS_WORKLOAD_STATEMENT|WORKLOAD_STATEMENT_ID',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|ACTIVITY_ID',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|ACTIVITY_TYPE',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|ACTOR_ID',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|DETAIL_JSON',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|FROM_PHASE',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|FROM_STATUS',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|TO_PHASE',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|TO_STATUS',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM_LINK|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM_LINK|CREATED_BY',
+            'KBOT_OPS_WORK_ITEM_LINK|LINK_ROLE',
+            'KBOT_OPS_WORK_ITEM_LINK|RESOURCE_ID',
+            'KBOT_OPS_WORK_ITEM_LINK|RESOURCE_KIND',
+            'KBOT_OPS_WORK_ITEM_LINK|SNAPSHOT_JSON',
+            'KBOT_OPS_WORK_ITEM_LINK|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM_LINK|WORK_ITEM_LINK_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|CONFIRMATION',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|EVIDENCE_REFS_JSON',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|FINDING_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|FINDING_SNAPSHOT_JSON',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|FINDING_TYPE',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|OBSERVED_AT',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|OCCURRENCE_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|OPS_RUN_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|SEVERITY',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|SITUATION_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM|ACKNOWLEDGEMENT_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|ASSIGNEE_USER_ID',
+            'KBOT_OPS_WORK_ITEM|ASSIGNMENT_GROUP',
+            'KBOT_OPS_WORK_ITEM|CLOSED_AT',
+            'KBOT_OPS_WORK_ITEM|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM|CREATED_BY',
+            'KBOT_OPS_WORK_ITEM|DOMAIN_ID',
+            'KBOT_OPS_WORK_ITEM|FINGERPRINT',
+            'KBOT_OPS_WORK_ITEM|FIRST_OBSERVED_AT',
+            'KBOT_OPS_WORK_ITEM|ITEM_KEY',
+            'KBOT_OPS_WORK_ITEM|LAST_OBSERVED_AT',
+            'KBOT_OPS_WORK_ITEM|OCCURRENCE_COUNT',
+            'KBOT_OPS_WORK_ITEM|PHASE',
+            'KBOT_OPS_WORK_ITEM|PRIORITY',
+            'KBOT_OPS_WORK_ITEM|REOPEN_COUNT',
+            'KBOT_OPS_WORK_ITEM|RESOLUTION_CODE',
+            'KBOT_OPS_WORK_ITEM|RESOLUTION_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|RESOLUTION_NOTE',
+            'KBOT_OPS_WORK_ITEM|RESOLVED_AT',
+            'KBOT_OPS_WORK_ITEM|ROW_VERSION',
+            'KBOT_OPS_WORK_ITEM|SEVERITY',
+            'KBOT_OPS_WORK_ITEM|SOURCE_KIND',
+            'KBOT_OPS_WORK_ITEM|STATUS',
+            'KBOT_OPS_WORK_ITEM|SUMMARY',
+            'KBOT_OPS_WORK_ITEM|TARGET_ID',
+            'KBOT_OPS_WORK_ITEM|TITLE',
+            'KBOT_OPS_WORK_ITEM|UPDATED_AT',
+            'KBOT_OPS_WORK_ITEM|UPDATED_BY',
+            'KBOT_OPS_WORK_ITEM|VERIFICATION_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|WAIT_REASON',
+            'KBOT_OPS_WORK_ITEM|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM|WORK_TYPE'
           ))
         MINUS
         SELECT table_name || '|' || column_name AS object_name
@@ -3225,7 +3331,69 @@ BEGIN
             'KBOT_OPS_WORKLOAD_STATEMENT|TOTAL_DURATION_MICROSECONDS',
             'KBOT_OPS_WORKLOAD_STATEMENT|USER_IDENTIFIER',
             'KBOT_OPS_WORKLOAD_STATEMENT|WORKLOAD_SNAPSHOT_ID',
-            'KBOT_OPS_WORKLOAD_STATEMENT|WORKLOAD_STATEMENT_ID'
+            'KBOT_OPS_WORKLOAD_STATEMENT|WORKLOAD_STATEMENT_ID',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|ACTIVITY_ID',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|ACTIVITY_TYPE',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|ACTOR_ID',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|DETAIL_JSON',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|FROM_PHASE',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|FROM_STATUS',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|TO_PHASE',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|TO_STATUS',
+            'KBOT_OPS_WORK_ITEM_ACTIVITY|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM_LINK|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM_LINK|CREATED_BY',
+            'KBOT_OPS_WORK_ITEM_LINK|LINK_ROLE',
+            'KBOT_OPS_WORK_ITEM_LINK|RESOURCE_ID',
+            'KBOT_OPS_WORK_ITEM_LINK|RESOURCE_KIND',
+            'KBOT_OPS_WORK_ITEM_LINK|SNAPSHOT_JSON',
+            'KBOT_OPS_WORK_ITEM_LINK|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM_LINK|WORK_ITEM_LINK_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|CONFIRMATION',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|EVIDENCE_REFS_JSON',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|FINDING_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|FINDING_SNAPSHOT_JSON',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|FINDING_TYPE',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|OBSERVED_AT',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|OCCURRENCE_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|OPS_RUN_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|SEVERITY',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|SITUATION_ID',
+            'KBOT_OPS_WORK_ITEM_OCCURRENCE|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM|ACKNOWLEDGEMENT_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|ASSIGNEE_USER_ID',
+            'KBOT_OPS_WORK_ITEM|ASSIGNMENT_GROUP',
+            'KBOT_OPS_WORK_ITEM|CLOSED_AT',
+            'KBOT_OPS_WORK_ITEM|CREATED_AT',
+            'KBOT_OPS_WORK_ITEM|CREATED_BY',
+            'KBOT_OPS_WORK_ITEM|DOMAIN_ID',
+            'KBOT_OPS_WORK_ITEM|FINGERPRINT',
+            'KBOT_OPS_WORK_ITEM|FIRST_OBSERVED_AT',
+            'KBOT_OPS_WORK_ITEM|ITEM_KEY',
+            'KBOT_OPS_WORK_ITEM|LAST_OBSERVED_AT',
+            'KBOT_OPS_WORK_ITEM|OCCURRENCE_COUNT',
+            'KBOT_OPS_WORK_ITEM|PHASE',
+            'KBOT_OPS_WORK_ITEM|PRIORITY',
+            'KBOT_OPS_WORK_ITEM|REOPEN_COUNT',
+            'KBOT_OPS_WORK_ITEM|RESOLUTION_CODE',
+            'KBOT_OPS_WORK_ITEM|RESOLUTION_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|RESOLUTION_NOTE',
+            'KBOT_OPS_WORK_ITEM|RESOLVED_AT',
+            'KBOT_OPS_WORK_ITEM|ROW_VERSION',
+            'KBOT_OPS_WORK_ITEM|SEVERITY',
+            'KBOT_OPS_WORK_ITEM|SOURCE_KIND',
+            'KBOT_OPS_WORK_ITEM|STATUS',
+            'KBOT_OPS_WORK_ITEM|SUMMARY',
+            'KBOT_OPS_WORK_ITEM|TARGET_ID',
+            'KBOT_OPS_WORK_ITEM|TITLE',
+            'KBOT_OPS_WORK_ITEM|UPDATED_AT',
+            'KBOT_OPS_WORK_ITEM|UPDATED_BY',
+            'KBOT_OPS_WORK_ITEM|VERIFICATION_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|WAIT_REASON',
+            'KBOT_OPS_WORK_ITEM|WORK_ITEM_ID',
+            'KBOT_OPS_WORK_ITEM|WORK_TYPE'
           ))
     ) LOOP
         l_issue_count := l_issue_count + 1;
@@ -3237,7 +3405,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 982 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1044 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3329,19 +3497,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 34
-           OR l_contract_version <> 'aiops-oracle-v24' THEN
+           OR l_schema_version <> 35
+           OR l_contract_version <> 'aiops-oracle-v25' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '34/aiops-oracle-v24'
+                || '35/aiops-oracle-v25'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/34/'
-                || 'aiops-oracle-v24'
+                '[通过] Schema 合同：AIOPS/35/'
+                || 'aiops-oracle-v25'
             );
         END IF;
     EXCEPTION
@@ -3367,9 +3535,9 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：58 张表、10 个视图、'
-        || '251 个命名索引、222 个命名约束、'
-        || '982 个表列；Schema 与当前规范一致。'
+        '验证通过：62 张表、10 个视图、'
+        || '262 个命名索引、229 个命名约束、'
+        || '1044 个表列；Schema 与当前规范一致。'
     );
 END;
 /

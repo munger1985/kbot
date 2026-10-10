@@ -187,6 +187,20 @@ class ChangeRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def list_proposals_for_run(
+        self, *, ops_run_id: UUID
+    ) -> list[ChangeProposalEntity]:
+        self._check_active()
+        rows = await self._session.scalars(
+            select(ChangeProposalEntity)
+            .where(ChangeProposalEntity.ops_run_id == ops_run_id)
+            .order_by(
+                ChangeProposalEntity.command_ordinal,
+                ChangeProposalEntity.proposal_id,
+            )
+        )
+        return list(rows)
+
     async def get_hitl_scoped(
         self,
         *,

@@ -96,6 +96,13 @@ from platform_core.contracts.aiops import (
     TargetPage,
     TargetPatch,
     WebhookKeyRotation,
+    WorkItemAssignment,
+    WorkItemCreate,
+    WorkItemPage,
+    WorkItemRouteRun,
+    WorkItemSummary,
+    WorkItemTransition,
+    WorkItemView,
 )
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
 from platform_core.contracts.aiops.monitoring import (
@@ -129,10 +136,15 @@ def _route_permissions() -> dict[str, str]:
             "list_monitoring_profiles", "get_monitoring_view",
             "list_target_monitoring_profiles", "get_target_monitoring_view",
             "list_situations", "get_situation", "get_ops_run",
+            "list_work_items", "get_work_item",
+            "transition_work_item", "route_run_to_work_items",
             "get_ops_run_result", "get_pending_input", "get_hitl_input",
             "respond_hitl", "skip_hitl", "decide_diagnostic_query",
             "list_proposals", "get_proposal", "cancel_ops_run",
             "stream_ops_run_events", "list_targets",
+        },
+        "aiops:member_manage": {
+            "assign_work_item", "create_work_item",
         },
         "aiops:proposal:approve": {
             "reject_proposal", "approve_proposal", "record_manual_result",
@@ -654,6 +666,97 @@ async def get_situation(situation_id: UUID, request: Request) -> SituationView:
         situation_id, auth_context=request.state.auth_context
     )
     return SituationView.model_validate(payload)
+
+
+@router.get("/work-items", response_model=WorkItemPage)
+async def list_work_items(
+    request: Request,
+    status: str | None = None,
+    priority: str | None = None,
+    target_id: UUID | None = None,
+    assignee_user_id: str | None = None,
+    unassigned: bool = False,
+    overdue: bool = False,
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> WorkItemPage:
+    payload = await _client(request).list_work_items(
+        status=status, priority=priority, target_id=target_id,
+        assignee_user_id=assignee_user_id, unassigned=unassigned,
+        overdue=overdue,
+        cursor=cursor, limit=limit,
+        auth_context=request.state.auth_context,
+    )
+    return WorkItemPage.model_validate(payload)
+
+
+@router.post("/work-items", response_model=WorkItemView, status_code=201)
+async def create_work_item(
+    body: WorkItemCreate, request: Request, response: Response,
+) -> WorkItemView:
+    payload = await _client(request).create_work_item(
+        body.model_dump(mode="json"), auth_context=request.state.auth_context
+    )
+    result = WorkItemView.model_validate(payload)
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.post(
+    "/work-items:route-run",
+    response_model=tuple[WorkItemSummary, ...],
+)
+async def route_run_to_work_items(
+    body: WorkItemRouteRun, request: Request,
+) -> tuple[WorkItemSummary, ...]:
+    payload = await _client(request).route_run_to_work_items(
+        body.model_dump(mode="json"), auth_context=request.state.auth_context
+    )
+    return tuple(WorkItemSummary.model_validate(item) for item in payload)
+
+
+@router.get("/work-items/{work_item_id}", response_model=WorkItemView)
+async def get_work_item(
+    work_item_id: UUID, request: Request, response: Response,
+) -> WorkItemView:
+    payload = await _client(request).get_work_item(
+        work_item_id, auth_context=request.state.auth_context
+    )
+    result = WorkItemView.model_validate(payload)
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.patch(
+    "/work-items/{work_item_id}/assignment", response_model=WorkItemView
+)
+async def assign_work_item(
+    work_item_id: UUID, body: WorkItemAssignment,
+    request: Request, response: Response,
+) -> WorkItemView:
+    payload = await _client(request).assign_work_item(
+        work_item_id, body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    result = WorkItemView.model_validate(payload)
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.post(
+    "/work-items/{work_item_id}/transitions", response_model=WorkItemView
+)
+async def transition_work_item(
+    work_item_id: UUID, body: WorkItemTransition,
+    request: Request, response: Response,
+) -> WorkItemView:
+    payload = await _client(request).transition_work_item(
+        work_item_id, body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    result = WorkItemView.model_validate(payload)
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
 
 
 @router.get("/runs/{run_id}", response_model=OpsRunSummary)

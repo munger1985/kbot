@@ -22,6 +22,7 @@ if TYPE_CHECKING:
         PolicyEntity,
         ReportSourceEntity,
         TargetEntity,
+        WorkItemEntity,
     )
 
 
@@ -172,6 +173,10 @@ class OutboxRepositoryPort(Protocol):
     ) -> OutboxEntity | None: ...
 
 
+class WorkItemRepositoryPort(Protocol):
+    async def add(self, entity: WorkItemEntity) -> WorkItemEntity: ...
+
+
 class AIOpsUnitOfWorkPort(Protocol):
     targets: TargetRepositoryPort
     diagnostic_sources: DiagnosticSourceRepositoryPort
@@ -182,6 +187,7 @@ class AIOpsUnitOfWorkPort(Protocol):
     inspections: InspectionRepositoryPort
     inbox: InboxRepositoryPort
     outbox: OutboxRepositoryPort
+    work_items: WorkItemRepositoryPort
 
     async def __aenter__(self) -> "AIOpsUnitOfWorkPort": ...
 

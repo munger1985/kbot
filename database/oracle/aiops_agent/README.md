@@ -32,11 +32,11 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 权限/角色/成员关系以及 `operations-manuals`、`diagnosis-cases` 两个固定 KC Collection 位于共享平台/KC 表，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 34 / aiops-oracle-v24`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 35 / aiops-oracle-v25`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 34 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 35 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
 
 升级失败但必须保留已配置的监控源和运维目标时，改用

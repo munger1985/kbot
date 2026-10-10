@@ -34,6 +34,7 @@ from aiops_agent.application.runtime.dashboard import (
     project_ops_dashboard,
 )
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
+from aiops_agent.application.work_items import route_completed_run_work_items
 from aiops_agent.application.diagnosis.findings import compile_findings
 from aiops_agent.domain.operations import (
     ERROR_CATALOG,
@@ -2065,6 +2066,12 @@ class AIOpsRuntimeService:
                     )
                 run.final_artifact_id = final_artifact.artifact_id
                 run.completed_at = now
+                await route_completed_run_work_items(
+                    uow=uow,
+                    run=run,
+                    now=now,
+                    actor_id="system:work-item-router",
+                )
                 if (
                     run.trigger_type == "CHAT"
                     and final_artifact.schema_version
