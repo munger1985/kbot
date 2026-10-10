@@ -13,6 +13,7 @@ from aiops_agent.entities import (
     AIOpsAgentVersionTargetEntity,
     ApprovalTokenEntity,
     ChangeProposalEntity,
+    DiagnosticSourceEntity,
     EvidenceRequestEntity,
     ExecutionEntity,
     HitlEntity,
@@ -540,6 +541,40 @@ class TargetRepository(AIOpsRepository):
             TargetEntity.target_id,
         )
         return list((await self._session.execute(statement)).scalars())
+
+    async def list_monitoring_observation_candidates(
+        self,
+        *,
+        limit: int,
+    ) -> list[tuple[UUID, int]]:
+        """列出已启用且具备指标监控映射的 Target 标识。"""
+
+        self._check_active()
+        statement = (
+            select(TargetEntity.target_id, TargetEntity.domain_id)
+            .join(
+                TargetSourceBindingEntity,
+                TargetSourceBindingEntity.target_id == TargetEntity.target_id,
+            )
+            .join(
+                DiagnosticSourceEntity,
+                DiagnosticSourceEntity.diagnostic_source_id
+                == TargetSourceBindingEntity.diagnostic_source_id,
+            )
+            .where(
+                TargetEntity.status == "ENABLED",
+                TargetSourceBindingEntity.status == "ACTIVE",
+                DiagnosticSourceEntity.status == "ENABLED",
+                DiagnosticSourceEntity.source_type.in_(
+                    {"PROMETHEUS", "ZABBIX"}
+                ),
+            )
+            .distinct()
+            .order_by(TargetEntity.target_id)
+            .limit(limit)
+        )
+        rows = (await self._session.execute(statement)).all()
+        return [(row.target_id, int(row.domain_id)) for row in rows]
 
     async def page_scoped(
         self,

@@ -429,6 +429,64 @@ class MonitoringApplicationService:
         self._cache[cache_key] = (generated_at + timedelta(seconds=15), view)
         return view
 
+    async def refresh_target_availability(
+        self,
+        *,
+        domain_id: int,
+        target_id: UUID,
+        trace_id: str,
+        now: datetime | None = None,
+    ) -> bool:
+        """只查询可用性指标，供后台周期刷新 Target 观测状态。"""
+
+        generated_at = (now or datetime.now(UTC)).astimezone(UTC)
+        window = MonitoringWindow(
+            start=generated_at - timedelta(minutes=5),
+            end=generated_at,
+        )
+        async with self._uow_factory() as uow:
+            target = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=domain_id,
+            )
+            if target is None or target.status != "ENABLED":
+                return False
+            requested_codes = {
+                "MYSQL": ("db.availability", "mysql.availability"),
+                "POSTGRESQL": (
+                    "db.availability",
+                    "postgresql.availability",
+                ),
+            }.get(target.db_type, ("db.availability",))
+            snapshot = await self._snapshot_builder.build(
+                uow=uow,
+                domain_id=domain_id,
+                target=target,
+                now=generated_at,
+                window_start=window.start,
+                window_end=window.end,
+                requested_metric_codes=requested_codes,
+            )
+            frozen_bindings = tuple(
+                item for item in snapshot["bindings"] if item["metrics"]
+            )
+        observations = []
+        for frozen in frozen_bindings:
+            result = await self._query_binding(
+                target_id=target_id,
+                frozen=frozen,
+                window=window,
+                trace_id=trace_id,
+                max_response_bytes=max(
+                    1024,
+                    self._max_response_bytes
+                    // max(1, len(frozen_bindings)),
+                ),
+            )
+            observations.extend(result.observations)
+        await self._reduce_observed_statuses(observations)
+        return bool(observations)
+
     async def _reduce_observed_statuses(self, observations) -> None:
         """把实时可用性采样归并为 Target 的最新观测状态。"""
 
