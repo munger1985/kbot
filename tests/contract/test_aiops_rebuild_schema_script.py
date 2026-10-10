@@ -206,7 +206,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         )
         self.assertIn("l_missing_table_count <> 0", self.sql)
         self.assertIn("l_missing_view_count <> 0", self.sql)
-        self.assertIn("l_required_column_count <> 24", self.sql)
+        self.assertIn("l_required_column_count <> 30", self.sql)
         self.assertIn("l_report_summary_count <> 1", self.sql)
         self.assertIn("l_business_check_constraint_count <> 0", self.sql)
         self.assertNotIn("CK_OPS_TASK_TYPE", self.sql)

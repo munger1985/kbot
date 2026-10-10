@@ -212,19 +212,35 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('action.status === "SUCCEEDED"', workspace)
-        self.assertIn("下载原生 AWR 报告", workspace)
-        self.assertIn("下载原生 AWR 对比报告", workspace)
-        self.assertIn("下载原生 ASH 报告", workspace)
-        self.assertIn("下载原生 SQL Monitor 报告", workspace)
-        self.assertIn("oracle-awr-report.html", workspace)
-        self.assertIn("oracle-awr-diff-report.html", workspace)
-        self.assertIn("oracle-ash-report.html", workspace)
-        self.assertIn("oracle-sql-monitor.html", workspace)
-        self.assertIn("data-workload-report-action", workspace)
-        self.assertIn("/workload-reports/${toolId}?action_id=${actionId}", workspace)
-        self.assertNotIn("reports.set(action.tool_id", workspace)
-        self.assertIn('"text/html"', workspace)
+        main_api = (
+            ROOT / "services/main_api/src/main_api/api/aiops_app.py"
+        ).read_text(encoding="utf-8")
+        client = (
+            ROOT / "packages/platform_clients/src/platform_clients/aiops.py"
+        ).read_text(encoding="utf-8")
+        policy = (
+            ROOT / "packages/platform_core/src/platform_core/authorization/policy.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("REPORT_ARTIFACT_LINKS", workspace)
+        self.assertIn("data-download-report-artifact", workspace)
+        self.assertIn("report.artifact_id", workspace)
+        self.assertIn(
+            "/artifacts/${artifactId}/content",
+            workspace,
+        )
+        self.assertNotIn("/workload-reports/", workspace)
+        self.assertNotIn("data-download-workload-report", workspace)
+        self.assertIn('"*/*"', workspace)
+        artifact_route = (
+            "/conversations/{conversation_id}/turns/{turn_id}/"
+            "artifacts/{artifact_id}/content"
+        )
+        self.assertIn(artifact_route, main_api)
+        self.assertIn("download_conversation_artifact", client)
+        self.assertIn("/artifacts/{artifact_id}/content", client)
+        self.assertIn("/artifacts/[0-9a-fA-F-]{36}/content", policy)
+        self.assertNotIn("/workload-reports/", main_api)
+        self.assertNotIn("download_workload_report", client)
         self.assertIn('accept = "application/pdf"', auth)
         self.assertIn("Accept: accept", auth)
         self.assertIn("data-download-implementation-runbook", workspace)
@@ -498,7 +514,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn(".ops-fact-confirmation", workspaces_css)
         self.assertIn(".target-facts-list", forms_css)
         self.assertIn(".target-facts-form", forms_css)
-        self.assertNotIn("command_preview", workspace.split("function factConfirmationHtml")[1].split("function htmlReportLinksHtml")[0])
+        self.assertNotIn(
+            "command_preview",
+            workspace.split("function factConfirmationHtml")[1].split(
+                "function reportArtifactLinksHtml"
+            )[0],
+        )
 
     def test_configuration_pages_open_real_create_and_edit_dialogs(self):
         pages = {
@@ -768,7 +789,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('schemaVersion === "REPORT_CONTENT.v1"', workspace)
         self.assertIn('block.block_type === "FINDING_CARDS"', workspace)
         self.assertIn("conversationAnswerHtml(result)", workspace)
-        self.assertIn("bindWorkloadReportActions(panel)", workspace)
+        self.assertIn("bindReportArtifactActions(panel)", workspace)
         css = (AIOPS_ROOT / "css" / "workspaces.css").read_text(encoding="utf-8")
         self.assertIn(".ops-findings", css)
         self.assertIn(".ops-finding-card", css)

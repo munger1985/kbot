@@ -195,7 +195,9 @@ class InspectionSchedulerTest(unittest.TestCase):
         context = AsyncMock()
         context.__aenter__.return_value = uow
         service = ConversationTurnService(uow_factory=lambda: context)
-        service._require_existing_target = AsyncMock()
+        service._require_existing_target = AsyncMock(
+            return_value=SimpleNamespace(db_type="ORACLE")
+        )
         service._create_turn = AsyncMock(
             return_value={"status": "QUEUED"}
         )
@@ -245,7 +247,8 @@ class InspectionSchedulerTest(unittest.TestCase):
                 [
                     item["tool_id"]
                     for item in compile_selected_check_steps(
-                        default_selected_check_ids("DAILY")
+                        default_selected_check_ids("DAILY"),
+                        database_type="ORACLE",
                     )
                 ],
             )
@@ -303,7 +306,9 @@ class InspectionSchedulerTest(unittest.TestCase):
         context = AsyncMock()
         context.__aenter__.return_value = uow
         service = ConversationTurnService(uow_factory=lambda: context)
-        service._require_existing_target = AsyncMock()
+        service._require_existing_target = AsyncMock(
+            return_value=SimpleNamespace(db_type="ORACLE")
+        )
         service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
         selected = [
             "oracle.session.lock_wait",

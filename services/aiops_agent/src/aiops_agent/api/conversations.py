@@ -272,36 +272,28 @@ async def get_uploaded_input_content(
     )
 
 
-@router.get("/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}")
-async def download_workload_report(
+@router.get("/{conversation_id}/turns/{turn_id}/artifacts/{artifact_id}/content")
+async def download_artifact_content(
     conversation_id: UUID,
     turn_id: UUID,
+    artifact_id: UUID,
     request: Request,
-    tool_id: str = Path(
-        pattern=r"^db\.oracle\.(awr\.report|awr\.diff_report|ash\.report|sql_monitor\.report)$"
-    ),
-    action_id: str = Query(pattern=r"^a[0-9]+$"),
     context: AuthContext = Depends(get_aiops_auth_context),
 ) -> Response:
-    """下载本轮指定调查动作生成的原生 Oracle 工作负载 HTML，默认作为附件而非内嵌页面。"""
+    """下载本轮Run拥有的不可变Artifact，默认作为附件。"""
     domain_id, actor_id = _scope(request, context)
-    content = await request.app.state.conversation_turn_service.get_workload_report_content(
-        domain_id=domain_id,
-        conversation_id=conversation_id,
-        turn_id=turn_id,
-        actor_id=actor_id,
-        tool_id=tool_id,
-        action_id=action_id,
+    content, media_type, filename = (
+        await request.app.state.conversation_turn_service.get_artifact_content(
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+            actor_id=actor_id,
+            artifact_id=artifact_id,
+        )
     )
-    filename = {
-        "db.oracle.awr.report": "oracle-awr-report",
-        "db.oracle.awr.diff_report": "oracle-awr-diff-report",
-        "db.oracle.ash.report": "oracle-ash-report",
-        "db.oracle.sql_monitor.report": "oracle-sql-monitor",
-    }[tool_id] + f"-{action_id}.html"
     return Response(
         content=content,
-        media_type="text/html",
+        media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "private, no-store",

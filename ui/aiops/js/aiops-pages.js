@@ -570,7 +570,19 @@
     summary.innerHTML = `<dl class="ops-detail"><dt>当前 RPO</dt><dd>${profile ? `${profile.rpo_seconds / 60} 分钟` : "未配置"}</dd><dt>当前 RTO</dt><dd>${profile ? `${profile.rto_seconds / 60} 分钟` : "未配置"}</dd><dt>最新尝试</dt><dd>${latest ? `${shell.escape(latest.result)} · ${shell.escape(shell.fmt(latest.simulated_failure_at))}` : "无记录"}</dd><dt>最新审核成功</dt><dd>${success ? `${shell.escape(success.assurance_level)} · ${shell.escape(shell.fmt(success.simulated_failure_at))}` : "无记录"}</dd></dl>${latest && latest.result !== "PASS" && success ? '<p class="ops-connection-result" data-tone="bad">最新尝试未通过；下方旧成功记录仅作历史证据，不能掩盖本次失败。</p>' : ""}`;
   }
 
-  async function loadTargetRecovery(targetId, populateProfile = true) {
+  const recoverySourcesByDatabase = {
+    ORACLE: ["ORACLE_RMAN", "FILESYSTEM_SNAPSHOT", "STORAGE_SNAPSHOT", "CLOUD_MANAGED_BACKUP", "THIRD_PARTY_BACKUP"],
+    POSTGRESQL: ["POSTGRESQL_BASEBACKUP", "POSTGRESQL_PGBACKREST", "POSTGRESQL_BARMAN", "POSTGRESQL_WALG", "FILESYSTEM_SNAPSHOT", "STORAGE_SNAPSHOT", "CLOUD_MANAGED_BACKUP", "THIRD_PARTY_BACKUP"],
+    MYSQL: ["MYSQL_XTRABACKUP", "MYSQL_ENTERPRISE_BACKUP", "MYSQL_LOGICAL_DUMP", "FILESYSTEM_SNAPSHOT", "STORAGE_SNAPSHOT", "CLOUD_MANAGED_BACKUP", "THIRD_PARTY_BACKUP"],
+  };
+
+  function configureRecoverySources(form, dbType, selected = []) {
+    const values = recoverySourcesByDatabase[dbType] || [];
+    const selectedValues = new Set(selected.length ? selected : values.slice(0, 1));
+    form.required_backup_source_types.innerHTML = values.map((value) => `<option value="${shell.escape(value)}" ${selectedValues.has(value) ? "selected" : ""}>${shell.escape(value)}</option>`).join("");
+  }
+
+  async function loadTargetRecovery(targetId, dbType, populateProfile = true) {
     const [profile, drillsPayload] = await Promise.all([
       KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`),
       KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-drills`),
@@ -583,25 +595,27 @@
       form.rto_minutes.value = profile.rto_seconds / 60;
       form.required_drill_interval_days.value = profile.required_drill_interval_days;
       form.required_assurance_level.value = profile.required_assurance_level;
+      configureRecoverySources(form, dbType, profile.required_backup_source_types || []);
       form.source_note.value = profile.source_note || "";
     }
     return { profile, drills };
   }
 
-  async function initializeTargetRecovery(targetId) {
+  async function initializeTargetRecovery(targetId, target) {
     const profileForm = document.getElementById("target-recovery-profile-form");
     if (!profileForm) return;
+    configureRecoverySources(profileForm, target.db_type);
     document.getElementById("target-recovery-drills-link").href = `./recovery-drills.html?target_id=${encodeURIComponent(targetId)}`;
     profileForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const result = document.getElementById("target-recovery-profile-result");
       try {
-        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
+        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, required_backup_source_types: [...profileForm.required_backup_source_types.selectedOptions].map((option) => option.value), rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
         result.textContent = "已保存为新的生效版本。"; result.dataset.tone = "good";
-        await loadTargetRecovery(targetId, true);
+        await loadTargetRecovery(targetId, target.db_type, true);
       } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
     });
-    try { await loadTargetRecovery(targetId, true); }
+    try { await loadTargetRecovery(targetId, target.db_type, true); }
     catch (error) { document.getElementById("target-recovery-summary").innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
 
@@ -840,7 +854,7 @@
           editTargetAccess.href = `targets.html?edit=${encodeURIComponent(id)}`;
         }
         await initializeTargetSubscription(id, data);
-        await initializeTargetRecovery(id);
+        await initializeTargetRecovery(id, data);
         await initializeTargetFacts(id);
       } else if (page === "diagnostic-source-detail") {
         await initializeSourceInstanceMappings(data);

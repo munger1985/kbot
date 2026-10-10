@@ -20,24 +20,6 @@
   const terminalTurnStatuses = new Set([
     "WAITING_USER", "COMPLETED", "PARTIAL", "FAILED", "CANCELLED",
   ]);
-  const workloadReportDefinitions = {
-    "db.oracle.awr.report": {
-      label: "下载原生 AWR 报告",
-      filename: "oracle-awr-report.html",
-    },
-    "db.oracle.awr.diff_report": {
-      label: "下载原生 AWR 对比报告",
-      filename: "oracle-awr-diff-report.html",
-    },
-    "db.oracle.ash.report": {
-      label: "下载原生 ASH 报告",
-      filename: "oracle-ash-report.html",
-    },
-    "db.oracle.sql_monitor.report": {
-      label: "下载原生 SQL Monitor 报告",
-      filename: "oracle-sql-monitor.html",
-    },
-  };
   let activeSituationId = null;
   let situationRefreshTimer = null;
   const graphemeSegmenter = typeof Intl?.Segmenter === "function"
@@ -839,22 +821,17 @@
     return `<figure class="ops-evidence-chart"><figcaption><span>${esc(payload.title || "指标对比")}</span></figcaption><div class="ops-chart-rows">${rows}</div></figure>`;
   }
 
-  function htmlReportLinksHtml(payload, turn) {
+  function reportArtifactLinksHtml(payload, turn) {
     const reports = values(payload.reports);
     if (!reports.length) return "";
     const items = reports.map((report) => {
-      const label = report.label || report.tool_id || "原生报告";
-      if (turn && report.action_id) {
-        const definition = workloadReportDefinitions[report.tool_id] || {
-          filename: "oracle-workload-report.html",
-        };
-        const filename = workloadReportFilename(definition.filename, report.action_id);
+      const label = report.title || report.label || report.report_type || "原生报告";
+      if (turn && report.artifact_id) {
         return (
-          `<button type="button" data-download-workload-report="${esc(report.tool_id)}" `
-          + `data-workload-report-action="${esc(report.action_id)}" `
+          `<button type="button" data-download-report-artifact="${esc(report.artifact_id)}" `
           + `data-conversation-id="${esc(turn.conversation_id)}" `
           + `data-turn-id="${esc(turn.turn_id)}" `
-          + `data-workload-report-filename="${esc(filename)}">`
+          + `data-report-artifact-filename="${esc(report.file_name || "aiops-report.bin")}">`
           + `${esc(label)}</button>`
         );
       }
@@ -874,7 +851,7 @@
     }
     if (block.block_type === "FACT_CONFIRMATION") return factConfirmationHtml(payload, turn);
     if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload);
-    if (block.block_type === "HTML_REPORT_LINKS") return htmlReportLinksHtml(payload, turn);
+    if (["REPORT_ARTIFACT_LINKS", "HTML_REPORT_LINKS"].includes(block.block_type)) return reportArtifactLinksHtml(payload, turn);
     if (block.block_type === "IMPLEMENTATION_RUNBOOK") {
       const applicabilityLabel = {
         REQUIRED: "必须实施",
@@ -1019,47 +996,8 @@
     return `<div class="ops-filter-actions"><button type="button" class="primary" ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
   }
 
-  function workloadReportFilename(filename, actionId) {
-    return String(filename || "oracle-workload-report.html").replace(
-      /\.html$/i,
-      `-${actionId}.html`,
-    );
-  }
-
-  function workloadReportLabel(definition, action, actions) {
-    const sameTool = actions.filter((item) => item.tool_id === action.tool_id);
-    if (sameTool.length <= 1) return definition.label;
-    const question = String(action.question || "").trim();
-    const uniqueQuestion = question && sameTool.filter(
-      (item) => String(item.question || "").trim() === question,
-    ).length === 1;
-    if (uniqueQuestion) return `${definition.label}：${question}`;
-    return `${definition.label}（${action.action_id}）`;
-  }
-
-  function workloadReportActions(turn) {
-    const actions = values(turn.investigation_plan?.actions).filter((action) => (
-      action.status === "SUCCEEDED" && workloadReportDefinitions[action.tool_id]
-    ));
-    if (!actions.length) return "";
-    const buttons = actions.map((action) => {
-      const definition = workloadReportDefinitions[action.tool_id];
-      const filename = workloadReportFilename(definition.filename, action.action_id);
-      const label = workloadReportLabel(definition, action, actions);
-      return (
-        `<button type="button" data-download-workload-report="${esc(action.tool_id)}" `
-        + `data-workload-report-action="${esc(action.action_id)}" `
-        + `data-conversation-id="${esc(turn.conversation_id)}" `
-        + `data-turn-id="${esc(turn.turn_id)}" `
-        + `data-workload-report-filename="${esc(filename)}">`
-        + `${esc(label)}</button>`
-      );
-    }).join("");
-    return `<div class="ops-workload-report-actions">${buttons}</div>`;
-  }
-
-  function bindWorkloadReportActions(root = document) {
-    root.querySelectorAll("[data-download-workload-report]").forEach((button) => {
+  function bindReportArtifactActions(root = document) {
+    root.querySelectorAll("[data-download-report-artifact]").forEach((button) => {
       button.onclick = async () => {
         button.disabled = true;
         const label = button.textContent;
@@ -1067,12 +1005,11 @@
         try {
           const conversationId = encodeURIComponent(button.dataset.conversationId);
           const turnId = encodeURIComponent(button.dataset.turnId);
-          const toolId = encodeURIComponent(button.dataset.downloadWorkloadReport);
-          const actionId = encodeURIComponent(button.dataset.workloadReportAction);
+          const artifactId = encodeURIComponent(button.dataset.downloadReportArtifact);
           await KBotAIOpsAuth.download(
-            `${api}/conversations/${conversationId}/turns/${turnId}/workload-reports/${toolId}?action_id=${actionId}`,
-            button.dataset.workloadReportFilename,
-            "text/html",
+            `${api}/conversations/${conversationId}/turns/${turnId}/artifacts/${artifactId}/content`,
+            button.dataset.reportArtifactFilename,
+            "*/*",
           );
           shell.toast("原生 Oracle 报告已开始下载");
         } catch (error) {
@@ -1197,9 +1134,7 @@
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
-    const hasHtmlLinks = answerBlocks.some((block) => block.block_type === "HTML_REPORT_LINKS");
-    const workloadReports = hasHtmlLinks ? "" : workloadReportActions(turn);
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}${workloadReports}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -1243,7 +1178,7 @@
     }));
     panel.scrollTop = panel.scrollHeight;
     document.querySelectorAll("[data-copy-code]").forEach((button) => { button.onclick = () => markdown.copyCode(button); });
-    bindWorkloadReportActions(panel);
+    bindReportArtifactActions(panel);
     bindImplementationRunbookActions(panel);
     bindReportActions(panel);
     resumeActiveTurns(conversation.conversation_id, turns);
@@ -1916,7 +1851,7 @@
     panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
     if (source) await bindContinue(source);
     bindReportActions(panel);
-    bindWorkloadReportActions(panel);
+    bindReportArtifactActions(panel);
     bindImplementationRunbookActions(panel);
   }
 

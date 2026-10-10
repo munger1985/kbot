@@ -947,29 +947,20 @@ async def download_conversation_input_image(
 
 
 @router.get(
-    "/conversations/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}"
+    "/conversations/{conversation_id}/turns/{turn_id}/artifacts/{artifact_id}/content"
 )
-async def download_workload_report(
+async def download_conversation_artifact(
     conversation_id: UUID,
     turn_id: UUID,
-    tool_id: str,
+    artifact_id: UUID,
     request: Request,
-    action_id: str = Query(pattern=r"^a[0-9]+$"),
 ):
-    """代理原生 Oracle 工作负载报告，避免向浏览器暴露 Agent 内部存储。"""
-    if tool_id not in {
-        "db.oracle.awr.report",
-        "db.oracle.awr.diff_report",
-        "db.oracle.ash.report",
-        "db.oracle.sql_monitor.report",
-    }:
-        raise HTTPException(404, {"code": "AIOPS_WORKLOAD_REPORT_NOT_FOUND"})
+    """按会话授权边界代理不可变Artifact。"""
     await _conversation_with_access(request, conversation_id)
-    upstream = await _client(request).download_workload_report(
+    upstream = await _client(request).download_conversation_artifact(
         conversation_id,
         turn_id,
-        tool_id,
-        action_id,
+        artifact_id,
         auth_context=request.state.auth_context,
     )
     return Response(
@@ -978,7 +969,7 @@ async def download_workload_report(
         headers={
             "Content-Disposition": upstream.headers.get(
                 "Content-Disposition",
-                'attachment; filename="oracle-workload-report.html"',
+                'attachment; filename="aiops-artifact.bin"',
             ),
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

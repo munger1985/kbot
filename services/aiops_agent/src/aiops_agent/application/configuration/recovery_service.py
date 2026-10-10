@@ -39,7 +39,7 @@ _SOURCE_DB_TYPES = {
 }
 
 
-def _profile_view(entity: RecoveryProfileEntity) -> TargetRecoveryProfileView:
+def recovery_profile_view(entity: RecoveryProfileEntity) -> TargetRecoveryProfileView:
     return TargetRecoveryProfileView(
         recovery_profile_id=entity.recovery_profile_id,
         target_id=entity.target_id,
@@ -48,6 +48,9 @@ def _profile_view(entity: RecoveryProfileEntity) -> TargetRecoveryProfileView:
         rto_seconds=int(entity.rto_seconds),
         required_drill_interval_days=int(entity.required_drill_interval_days),
         required_assurance_level=entity.required_assurance_level,
+        required_backup_source_types=tuple(
+            entity.required_backup_source_types_json
+        ),
         rto_clock_basis=entity.rto_clock_basis,
         source_note=entity.source_note,
         status=entity.status,
@@ -119,7 +122,7 @@ class RecoveryConfigurationMixin:
             entity = await uow.recovery.get_active_profile(
                 target_id=target_id, domain_id=scope.domain_id
             )
-            return _profile_view(entity) if entity is not None else None
+            return recovery_profile_view(entity) if entity is not None else None
 
     async def upsert_recovery_profile(
         self,
@@ -136,6 +139,15 @@ class RecoveryConfigurationMixin:
             )
             if target is None:
                 raise resource_not_found("Target")
+            source_db_types = {
+                _SOURCE_DB_TYPES[item]
+                for item in request.required_backup_source_types
+                if item in _SOURCE_DB_TYPES
+            }
+            if source_db_types - {str(target.db_type)}:
+                raise validation_failed(
+                    "必需备份来源类型必须与 Target 数据库类型一致"
+                )
             versions = await uow.recovery.list_profile_versions(
                 target_id=target_id, domain_id=scope.domain_id, lock=True
             )
@@ -154,6 +166,9 @@ class RecoveryConfigurationMixin:
                 rto_seconds=request.rto_seconds,
                 required_drill_interval_days=request.required_drill_interval_days,
                 required_assurance_level=request.required_assurance_level,
+                required_backup_source_types_json=list(
+                    request.required_backup_source_types
+                ),
                 rto_clock_basis=request.rto_clock_basis,
                 source_note=request.source_note,
                 status="ACTIVE",
@@ -176,7 +191,7 @@ class RecoveryConfigurationMixin:
                 row_version=1,
                 details={"target_id": str(target_id), "version_no": entity.version_no},
             )
-            return _profile_view(entity)
+            return recovery_profile_view(entity)
 
         return await self._idempotent(
             scope=scope,

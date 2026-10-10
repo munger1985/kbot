@@ -315,6 +315,8 @@ def _context(
     task_frame_overrides: dict | None = None,
     target_facts=(),
 ) -> TaskExecutionContext:
+    conversation_id = uuid7()
+    turn_id = uuid7()
     task_frame = {
         "objectives": ["ASSESS"],
         "problem_statement": "分析当前锁等待",
@@ -333,6 +335,8 @@ def _context(
         attempt=1,
         deadline_at=None,
         plan_snapshot={
+            "conversation_id": str(conversation_id),
+            "turn_id": str(turn_id),
             "answer_context": {
                 "question": "当前谁堵住了会话？",
                 "workflow_kind": workflow_kind,
@@ -1117,13 +1121,18 @@ class DiagnosisComposeTest(unittest.TestCase):
                 AnswerBlockType.ANALYSIS_MARKDOWN,
                 AnswerBlockType.SOLUTION_MARKDOWN,
                 AnswerBlockType.PROPOSAL_SUMMARY,
-                AnswerBlockType.HTML_REPORT_LINKS,
+                AnswerBlockType.REPORT_ARTIFACT_LINKS,
             ],
             block_types[:5],
         )
-        self.assertEqual(
-            "a1",
-            result.blocks[4].payload["reports"][0]["action_id"],
+        report = result.blocks[4].payload["reports"][0]
+        self.assertEqual(str(awr.artifact_id), report["artifact_id"])
+        self.assertEqual("db.oracle.awr.report", report["report_type"])
+        self.assertEqual("ORACLE_NATIVE", report["report_origin"])
+        self.assertEqual("HTML", report["format"])
+        self.assertIn(
+            f"/artifacts/{awr.artifact_id}/content",
+            report["download_url"],
         )
 
     def test_html_report_without_action_id_keeps_label_only(self) -> None:
@@ -1143,9 +1152,14 @@ class DiagnosisComposeTest(unittest.TestCase):
         html_block = next(
             item
             for item in result.blocks
-            if item.block_type == AnswerBlockType.HTML_REPORT_LINKS
+            if item.block_type == AnswerBlockType.REPORT_ARTIFACT_LINKS
         )
-        self.assertIsNone(html_block.payload["reports"][0]["action_id"])
+        report = html_block.payload["reports"][0]
+        self.assertEqual(str(awr.artifact_id), report["artifact_id"])
+        self.assertTrue(report["download_url"].endswith(
+            f"/artifacts/{awr.artifact_id}/content"
+        ))
+        self.assertTrue(report["file_name"].endswith("-report.html"))
         self.assertFalse(
             any(
                 item.block_type in {AnswerBlockType.TABLE, AnswerBlockType.CHART}
@@ -1293,7 +1307,7 @@ class ProposalSequencerTest(unittest.TestCase):
             SimpleNamespace(block_no=1, block_type="FINDING_CARDS"),
             SimpleNamespace(block_no=2, block_type="ANALYSIS_MARKDOWN"),
             SimpleNamespace(block_no=3, block_type="SOLUTION_MARKDOWN"),
-            SimpleNamespace(block_no=4, block_type="HTML_REPORT_LINKS"),
+            SimpleNamespace(block_no=4, block_type="REPORT_ARTIFACT_LINKS"),
             SimpleNamespace(block_no=5, block_type="TABLE"),
         ]
         self.assertEqual(4, proposal_insert_block_no(blocks))
@@ -1312,7 +1326,7 @@ class ProposalSequencerTest(unittest.TestCase):
             SimpleNamespace(block_no=2, block_type="ANALYSIS_MARKDOWN"),
             SimpleNamespace(block_no=3, block_type="SOLUTION_MARKDOWN"),
             SimpleNamespace(block_no=4, block_type="FACT_CONFIRMATION"),
-            SimpleNamespace(block_no=5, block_type="HTML_REPORT_LINKS"),
+            SimpleNamespace(block_no=5, block_type="REPORT_ARTIFACT_LINKS"),
         ]
         self.assertEqual(5, proposal_insert_block_no(blocks))
 

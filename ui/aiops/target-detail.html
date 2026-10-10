@@ -39,6 +39,7 @@
             <div class="ops-field"><label>RTO（分钟）</label><input name="rto_minutes" type="number" min="1" max="525600" required></div>
             <div class="ops-field"><label>演练周期（天）</label><input name="required_drill_interval_days" type="number" min="1" max="3650" required value="90"></div>
             <div class="ops-field"><label>最低演练等级</label><select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN" selected>数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
+            <div class="ops-field"><label>必需备份来源</label><select name="required_backup_source_types" multiple required size="4"></select><small>至少选择一种；只有已审核通过的对应来源演练才计入覆盖。</small></div>
             <div class="ops-field span-12"><label>目标来源说明</label><input name="source_note" maxlength="1000" placeholder="例如：生产系统灾备规范 2026-Q3"></div>
             <div class="ops-filter-actions"><button class="primary" type="submit">保存为新版本</button></div>
             <p id="target-recovery-profile-result" class="ops-connection-result" role="status"></p>

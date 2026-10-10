@@ -345,10 +345,21 @@ class TargetRecoveryProfileUpsert(AIOpsContract):
     rto_seconds: int = Field(ge=60, le=31_536_000)
     required_drill_interval_days: int = Field(ge=1, le=3650)
     required_assurance_level: RecoveryAssuranceLevel
+    required_backup_source_types: tuple[RecoveryBackupSourceType, ...] = Field(
+        min_length=1, max_length=16
+    )
     rto_clock_basis: Literal["SERVICE_UNAVAILABLE_TO_VALIDATED"] = (
         "SERVICE_UNAVAILABLE_TO_VALIDATED"
     )
     source_note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_source_types(self) -> "TargetRecoveryProfileUpsert":
+        if len(set(self.required_backup_source_types)) != len(
+            self.required_backup_source_types
+        ):
+            raise ValueError("必需备份来源类型不能重复")
+        return self
 
 
 class TargetRecoveryProfileView(TargetRecoveryProfileUpsert):

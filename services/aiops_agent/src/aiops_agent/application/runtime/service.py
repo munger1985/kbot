@@ -194,6 +194,7 @@ def sha256_json(value: Any) -> str:
 
 _LATER_PROPOSAL_BLOCK_TYPES = frozenset(
     {
+        "REPORT_ARTIFACT_LINKS",
         "HTML_REPORT_LINKS",
         "TABLE",
         "CHART",

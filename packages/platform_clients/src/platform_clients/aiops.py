@@ -1993,25 +1993,23 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             accept="image/*",
         )
 
-    async def download_workload_report(
+    async def download_conversation_artifact(
         self,
         conversation_id: UUID,
         turn_id: UUID,
-        tool_id: str,
-        action_id: str,
+        artifact_id: UUID,
         *,
         auth_context: AuthContext,
     ) -> AIOpsBinaryResponse:
-        """下载会话内指定调查动作已固化的原生 Oracle 工作负载报告。"""
+        """下载会话本轮Run拥有的不可变Artifact。"""
         return await self._bytes(
             "GET",
             (
                 f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
-                f"/turns/{turn_id}/workload-reports/{quote(tool_id, safe='')}"
-                f"?{urlencode({'action_id': action_id})}"
+                f"/turns/{turn_id}/artifacts/{artifact_id}/content"
             ),
             auth_context=auth_context,
-            accept="text/html",
+            accept="*/*",
         )
 
     async def download_implementation_runbook_pdf(

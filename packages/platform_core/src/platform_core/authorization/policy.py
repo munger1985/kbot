@@ -202,7 +202,7 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
                 ("GET", r"conversations/[0-9a-fA-F-]{36}/turns/[0-9a-fA-F-]{36}", "aiops:conversation:read"),
                 ("GET", r"conversations/[0-9a-fA-F-]{36}/turns/[0-9a-fA-F-]{36}/events", "aiops:conversation:read"),
                 ("GET", r"conversations/[0-9a-fA-F-]{36}/turns/[0-9a-fA-F-]{36}/inputs/[0-9]+/content", "aiops:conversation:read"),
-                ("GET", r"conversations/[0-9a-fA-F-]{36}/turns/[0-9a-fA-F-]{36}/workload-reports/[^/]+", "aiops:conversation:read"),
+                ("GET", r"conversations/[0-9a-fA-F-]{36}/turns/[0-9a-fA-F-]{36}/artifacts/[0-9a-fA-F-]{36}/content", "aiops:conversation:read"),
                 ("DELETE", r"conversations/[0-9a-fA-F-]{36}", "aiops:conversation:delete"),
                 ("POST", r"runs", "aiops:chat:write"),
                 ("POST", r"runs/[0-9a-fA-F-]{36}/cancel", "aiops:chat:write"),

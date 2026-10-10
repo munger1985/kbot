@@ -2970,6 +2970,19 @@
             "title": "Risk Level",
             "type": "string"
           },
+          "risk_level_display": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level Display"
+          },
           "risks": {
             "default": [],
             "items": {
@@ -8050,6 +8063,29 @@
             "title": "Required Assurance Level",
             "type": "string"
           },
+          "required_backup_source_types": {
+            "items": {
+              "enum": [
+                "ORACLE_RMAN",
+                "POSTGRESQL_BASEBACKUP",
+                "POSTGRESQL_PGBACKREST",
+                "POSTGRESQL_BARMAN",
+                "POSTGRESQL_WALG",
+                "MYSQL_XTRABACKUP",
+                "MYSQL_ENTERPRISE_BACKUP",
+                "MYSQL_LOGICAL_DUMP",
+                "FILESYSTEM_SNAPSHOT",
+                "STORAGE_SNAPSHOT",
+                "CLOUD_MANAGED_BACKUP",
+                "THIRD_PARTY_BACKUP"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Required Backup Source Types",
+            "type": "array"
+          },
           "required_drill_interval_days": {
             "maximum": 3650.0,
             "minimum": 1.0,
@@ -8096,7 +8132,8 @@
           "rpo_seconds",
           "rto_seconds",
           "required_drill_interval_days",
-          "required_assurance_level"
+          "required_assurance_level",
+          "required_backup_source_types"
         ],
         "title": "TargetRecoveryProfileUpsert",
         "type": "object"
@@ -8132,6 +8169,29 @@
             ],
             "title": "Required Assurance Level",
             "type": "string"
+          },
+          "required_backup_source_types": {
+            "items": {
+              "enum": [
+                "ORACLE_RMAN",
+                "POSTGRESQL_BASEBACKUP",
+                "POSTGRESQL_PGBACKREST",
+                "POSTGRESQL_BARMAN",
+                "POSTGRESQL_WALG",
+                "MYSQL_XTRABACKUP",
+                "MYSQL_ENTERPRISE_BACKUP",
+                "MYSQL_LOGICAL_DUMP",
+                "FILESYSTEM_SNAPSHOT",
+                "STORAGE_SNAPSHOT",
+                "CLOUD_MANAGED_BACKUP",
+                "THIRD_PARTY_BACKUP"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Required Backup Source Types",
+            "type": "array"
           },
           "required_drill_interval_days": {
             "maximum": 3650.0,
@@ -8220,6 +8280,7 @@
           "rto_seconds",
           "required_drill_interval_days",
           "required_assurance_level",
+          "required_backup_source_types",
           "recovery_profile_id",
           "target_id",
           "version_no",

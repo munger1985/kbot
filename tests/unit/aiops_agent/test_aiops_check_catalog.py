@@ -13,6 +13,7 @@ from aiops_agent.application.inspections.check_catalog import (
     _canonical_json,
     compile_selected_check_steps,
     default_selected_check_ids,
+    inspection_template_steps,
     load_check_catalog,
     normalize_selected_check_ids,
     selected_check_ids_from_json,
@@ -39,6 +40,7 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         )
         for item in ready:
             self.assertTrue(item.tool_id or item.playbook_id)
+            self.assertTrue(item.supported_db_types)
 
     def test_default_selection_uses_ready_daily_or_weekly(self) -> None:
         daily = default_selected_check_ids("DAILY")
@@ -150,6 +152,33 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             item["measurement_semantics"] == "CURRENT_ACTIVITY"
             for item in steps
         ))
+
+    def test_compile_and_frozen_steps_reject_cross_dialect_selection(self) -> None:
+        selected = (
+            "oracle.session.lock_wait",
+            "postgresql.session.blocking",
+            "mysql.backup.binlog_chain",
+        )
+        postgres_steps = compile_selected_check_steps(
+            selected, database_type="POSTGRESQL"
+        )
+        self.assertEqual(
+            ["db.postgresql.lock.tree"],
+            [item["tool_id"] for item in postgres_steps],
+        )
+        definition = InspectionTemplateService._definition(
+            display_name="跨库巡检",
+            selected_check_ids=selected,
+        )
+        mysql_steps = inspection_template_steps(
+            definition,
+            schedule_type="DAILY",
+            database_type="MYSQL",
+        )
+        self.assertEqual(
+            ["db.mysql.binlog.status"],
+            [item["tool_id"] for item in mysql_steps],
+        )
 
     def test_compile_weekly_trend_required_uses_historical_samples(self) -> None:
         selected = [

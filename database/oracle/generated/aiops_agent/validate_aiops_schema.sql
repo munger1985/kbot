@@ -1812,6 +1812,7 @@ BEGIN
             'KBOT_OPS_RECOVERY_PROFILE|EFFECTIVE_AT',
             'KBOT_OPS_RECOVERY_PROFILE|RECOVERY_PROFILE_ID',
             'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_ASSURANCE_LEVEL',
+            'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_BACKUP_SOURCE_TYPES_JSON',
             'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_DRILL_INTERVAL_DAYS',
             'KBOT_OPS_RECOVERY_PROFILE|RETIRED_AT',
             'KBOT_OPS_RECOVERY_PROFILE|ROW_VERSION',
@@ -2810,6 +2811,7 @@ BEGIN
             'KBOT_OPS_RECOVERY_PROFILE|EFFECTIVE_AT',
             'KBOT_OPS_RECOVERY_PROFILE|RECOVERY_PROFILE_ID',
             'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_ASSURANCE_LEVEL',
+            'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_BACKUP_SOURCE_TYPES_JSON',
             'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_DRILL_INTERVAL_DAYS',
             'KBOT_OPS_RECOVERY_PROFILE|RETIRED_AT',
             'KBOT_OPS_RECOVERY_PROFILE|ROW_VERSION',
@@ -3235,7 +3237,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 981 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 982 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3327,19 +3329,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 33
-           OR l_contract_version <> 'aiops-oracle-v23' THEN
+           OR l_schema_version <> 34
+           OR l_contract_version <> 'aiops-oracle-v24' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '33/aiops-oracle-v23'
+                || '34/aiops-oracle-v24'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/33/'
-                || 'aiops-oracle-v23'
+                '[通过] Schema 合同：AIOPS/34/'
+                || 'aiops-oracle-v24'
             );
         END IF;
     EXCEPTION
@@ -3367,7 +3369,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：58 张表、10 个视图、'
         || '251 个命名索引、222 个命名约束、'
-        || '981 个表列；Schema 与当前规范一致。'
+        || '982 个表列；Schema 与当前规范一致。'
     );
 END;
 /

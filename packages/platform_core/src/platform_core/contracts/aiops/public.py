@@ -445,6 +445,7 @@ class LeadershipBriefing(AIOpsContract):
 
     schema_version: str = "LEADERSHIP_BRIEFING.v1"
     risk_level: str = Field(min_length=1, max_length=32)
+    risk_level_display: str | None = Field(default=None, min_length=1, max_length=64)
     business_impact: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
     recommendations: tuple[str, ...] = ()

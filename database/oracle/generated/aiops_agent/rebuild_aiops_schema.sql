@@ -1690,8 +1690,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    33 AS SCHEMA_VERSION,
-    'aiops-oracle-v23' AS CONTRACT_VERSION
+    34 AS SCHEMA_VERSION,
+    'aiops-oracle-v24' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -2687,6 +2687,7 @@ CREATE TABLE KBOT_OPS_RECOVERY_PROFILE (
     RTO_SECONDS NUMBER(19) NOT NULL,
     REQUIRED_DRILL_INTERVAL_DAYS NUMBER(10) NOT NULL,
     REQUIRED_ASSURANCE_LEVEL VARCHAR2(32 CHAR) NOT NULL,
+    REQUIRED_BACKUP_SOURCE_TYPES_JSON JSON NOT NULL,
     RTO_CLOCK_BASIS VARCHAR2(64 CHAR) NOT NULL,
     SOURCE_NOTE VARCHAR2(1000 CHAR),
     STATUS VARCHAR2(16 CHAR) NOT NULL,
@@ -3009,7 +3010,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 33 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 34 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3018,8 +3019,8 @@ BEGIN
         raise_application_error(-20009, 'AIOps 业务表不得包含命名 CHECK 约束。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 33
-       OR l_contract_version <> 'aiops-oracle-v23' THEN
+       OR l_schema_version <> 34
+       OR l_contract_version <> 'aiops-oracle-v24' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3029,7 +3030,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：58 张表、10 个视图，Schema Version '
-        || '33，合同 aiops-oracle-v23。'
+        || '34，合同 aiops-oracle-v24。'
     );
 END;
 /

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from aiops_agent.application.recovery_assurance import (
     build_recovery_assurance_snapshot,
 )
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.configuration.recovery_service import (
     RecoveryConfigurationMixin,
@@ -93,9 +94,12 @@ class RecoveryContractTest(unittest.TestCase):
         manifest = json.loads(
             (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
         )
-        self.assertEqual(33, manifest["schema_version"])
+        self.assertEqual(34, manifest["schema_version"])
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
+        self.assertIn("required_backup_source_types", (
+            root / "ui/aiops/js/aiops-pages.js"
+        ).read_text())
         target_page = (root / "ui/aiops/target-detail.html").read_text()
         drill_page = (root / "ui/aiops/recovery-drills.html").read_text()
         drill_script = (root / "ui/aiops/js/aiops-recovery-drills.js").read_text()
@@ -134,7 +138,7 @@ class _RecoveryRepository:
 
 
 class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
-    async def test_oracle_without_external_provider_keeps_explicit_gap(self) -> None:
+    async def test_missing_profile_has_stable_target_status_and_gaps(self) -> None:
         target_id = uuid7()
         snapshot = await build_recovery_assurance_snapshot(
             recovery_repository=_RecoveryRepository(None, []),
@@ -148,7 +152,11 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
         )
 
         codes = {item["code"] for item in snapshot["gaps"]}
-        self.assertIn("EXTERNAL_BACKUP_PROVIDER_NOT_CONFIGURED", codes)
+        self.assertEqual(
+            {"RPO_NOT_CONFIGURED", "RTO_NOT_CONFIGURED", "RESTORE_NOT_DEMONSTRATED"},
+            codes,
+        )
+        self.assertEqual("TARGET_NOT_CONFIGURED", snapshot["assurance_status"])
 
     async def test_latest_failure_does_not_hide_older_success(self) -> None:
         now = datetime(2026, 10, 8, tzinfo=UTC)
@@ -163,6 +171,10 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
             rto_seconds=900,
             required_drill_interval_days=30,
             required_assurance_level="DATABASE_OPEN",
+            required_backup_source_types_json=[
+                "POSTGRESQL_PGBACKREST",
+                "STORAGE_SNAPSHOT",
+            ],
             rto_clock_basis="SERVICE_UNAVAILABLE_TO_VALIDATED",
             source_note="业务灾备规范",
             status="ACTIVE",
@@ -198,6 +210,8 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
 
         latest_failure = drill(days=1, result="FAIL", status="VERIFIED", version=2)
         older_success = drill(days=40, result="PASS", status="VERIFIED", version=1)
+        older_success.achieved_rpo_seconds = 301
+        older_success.achieved_rto_seconds = None
         snapshot = await build_recovery_assurance_snapshot(
             recovery_repository=_RecoveryRepository(profile, [latest_failure, older_success]),
             target=SimpleNamespace(
@@ -214,7 +228,16 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
         codes = {item["code"] for item in snapshot["gaps"]}
         self.assertIn("DRILL_STALE", codes)
         self.assertIn("POLICY_CHANGED_SINCE_DRILL", codes)
-        self.assertIn("EXTERNAL_BACKUP_PROVIDER_NOT_CONFIGURED", codes)
+        self.assertIn("LATEST_DRILL_FAILED", codes)
+        self.assertIn("RPO_TARGET_BREACHED", codes)
+        self.assertIn("RTO_MEASUREMENT_MISSING", codes)
+        self.assertIn("BACKUP_SOURCE_NOT_VERIFIED", codes)
+        self.assertEqual("LATEST_DRILL_FAILED", snapshot["assurance_status"])
+        self.assertTrue(snapshot["restore_demonstrated"])
+        self.assertEqual(
+            ["STORAGE_SNAPSHOT"],
+            snapshot["uncovered_backup_source_types"],
+        )
 
         index = normalize_evidence_artifacts(
             ({
@@ -286,6 +309,38 @@ class _RecoveryService(RecoveryConfigurationMixin):
 
 
 class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_profile_rejects_backup_source_from_another_database(self) -> None:
+        target = SimpleNamespace(
+            target_id=uuid7(), domain_id=1, db_type="MYSQL"
+        )
+        repository = _MutableRecoveryRepository(None, [])
+        service = _RecoveryService(_Uow(target, repository))
+        scope = ConfigurationScope(
+            domain_id=1,
+            principal_id="principal",
+            actor_id="operator",
+            request_id="request",
+            trace_id="trace",
+        )
+        from platform_core.contracts.aiops import TargetRecoveryProfileUpsert
+
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await service.upsert_recovery_profile(
+                scope=scope,
+                target_id=target.target_id,
+                request=TargetRecoveryProfileUpsert(
+                    rpo_seconds=300,
+                    rto_seconds=900,
+                    required_drill_interval_days=30,
+                    required_assurance_level="DATABASE_OPEN",
+                    required_backup_source_types=("POSTGRESQL_PGBACKREST",),
+                ),
+                idempotency_key="profile-invalid-source",
+            )
+
+        self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
+        self.assertIsNone(repository.profile)
+
     async def test_profile_versions_drill_metrics_and_review_trust(self) -> None:
         target = SimpleNamespace(
             target_id=uuid7(), domain_id=1, db_type="MYSQL"
@@ -312,6 +367,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
                 rto_seconds=900,
                 required_drill_interval_days=30,
                 required_assurance_level="DATABASE_OPEN",
+                required_backup_source_types=("MYSQL_XTRABACKUP",),
             ),
             idempotency_key="profile-1",
         )
@@ -323,6 +379,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
                 rto_seconds=1200,
                 required_drill_interval_days=60,
                 required_assurance_level="APPLICATION_VALIDATED",
+                required_backup_source_types=("MYSQL_XTRABACKUP",),
             ),
             idempotency_key="profile-2",
         )

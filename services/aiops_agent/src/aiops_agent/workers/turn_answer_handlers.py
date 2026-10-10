@@ -1696,7 +1696,9 @@ class DbaAnswerComposeHandler:
             proposal_block = self._proposal_block(context.input_artifacts)
             if proposal_block is not None:
                 blocks.append(proposal_block)
-        html_block = self._html_report_links_block(assessment.evidence)
+        html_block = self._report_artifact_links_block(
+            assessment.evidence, context
+        )
         if html_block is not None:
             blocks.append(html_block)
         data_blocks = list(self._data_blocks(assessment.evidence))
@@ -1781,30 +1783,44 @@ class DbaAnswerComposeHandler:
         return payload
 
     @staticmethod
-    def _html_report_links_block(
+    def _report_artifact_links_block(
         evidence: tuple[TurnEvidenceFact, ...],
+        context: TaskExecutionContext,
     ) -> TurnAnswerBlock | None:
+        report_facts = tuple(
+            fact for fact in evidence if fact.tool_id in _HTML_REPORT_TOOLS
+        )
+        if not report_facts:
+            return None
+        conversation_id = context.plan_snapshot.get("conversation_id")
+        turn_id = context.plan_snapshot.get("turn_id")
+        if not conversation_id or not turn_id:
+            raise ValueError("报告 Artifact 链接缺少 Conversation/Turn 上下文")
         reports = []
-        for fact in evidence:
-            if fact.tool_id not in _HTML_REPORT_TOOLS:
-                continue
+        for fact in report_facts:
             action_id = (
                 fact.step_id if _ACTION_ID_RE.fullmatch(fact.step_id) else None
             )
             reports.append(
                 {
-                    "tool_id": fact.tool_id,
-                    "action_id": action_id,
-                    "label": _HTML_REPORT_LABELS[fact.tool_id],
+                    "artifact_id": str(fact.artifact_id),
+                    "report_type": fact.tool_id,
+                    "report_origin": "ORACLE_NATIVE",
+                    "title": _HTML_REPORT_LABELS[fact.tool_id],
+                    "format": "HTML",
+                    "content_type": "text/html",
+                    "file_name": f"{fact.tool_id.replace('.', '-')}-{action_id or 'report'}.html",
+                    "download_url": (
+                        f"/conversations/{conversation_id}/turns/"
+                        f"{turn_id}/artifacts/{fact.artifact_id}/content"
+                    ),
                     "evidence_ref": fact.evidence_ref,
                     "captured_at": fact.captured_at,
                 }
             )
-        if not reports:
-            return None
         return TurnAnswerBlock(
-            block_type=AnswerBlockType.HTML_REPORT_LINKS,
-            schema_version="AIOPS_HTML_REPORT_LINKS_BLOCK.v1",
+            block_type=AnswerBlockType.REPORT_ARTIFACT_LINKS,
+            schema_version="AIOPS_REPORT_ARTIFACT_LINKS_BLOCK.v1",
             payload={"reports": reports},
             evidence_refs=tuple(item["evidence_ref"] for item in reports),
         )

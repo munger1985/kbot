@@ -209,6 +209,8 @@ def _sql_row(
 
 
 def _answer_context(artifacts) -> TaskExecutionContext:
+    conversation_id = uuid7()
+    turn_id = uuid7()
     return TaskExecutionContext(
         run_id=str(uuid7()),
         task_id=str(uuid7()),
@@ -220,6 +222,8 @@ def _answer_context(artifacts) -> TaskExecutionContext:
         attempt=1,
         deadline_at=None,
         plan_snapshot={
+            "conversation_id": str(conversation_id),
+            "turn_id": str(turn_id),
             "answer_context": {
                 "question": "对比昨天和今天的 AWR",
                 "workflow_kind": "",
@@ -520,16 +524,23 @@ class AwrFactComposeTest(unittest.TestCase):
         html_block = next(
             item
             for item in result.blocks
-            if item.block_type == AnswerBlockType.HTML_REPORT_LINKS
+            if item.block_type == AnswerBlockType.REPORT_ARTIFACT_LINKS
         )
         self.assertEqual(
             ["db.oracle.awr.report"],
-            [item["tool_id"] for item in html_block.payload["reports"]],
+            [item["report_type"] for item in html_block.payload["reports"]],
         )
-        self.assertEqual("a1", html_block.payload["reports"][0]["action_id"])
+        self.assertEqual(
+            str(html.artifact_id),
+            html_block.payload["reports"][0]["artifact_id"],
+        )
+        self.assertEqual(
+            "ORACLE_NATIVE",
+            html_block.payload["reports"][0]["report_origin"],
+        )
         self.assertNotIn(
             "db.oracle.awr.load_profile",
-            [item["tool_id"] for item in html_block.payload["reports"]],
+            [item["report_type"] for item in html_block.payload["reports"]],
         )
 
 

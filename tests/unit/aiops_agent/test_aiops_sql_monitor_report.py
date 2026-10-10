@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import unittest
 from pathlib import Path
 
-import aiops_agent.api.conversations as conversations
 from aiops_agent.application.investigation.discovery import (
     rewrite_incomplete_discovery_actions,
 )
@@ -16,7 +14,6 @@ from aiops_agent.application.investigation.discovery_binding import (
     catalog_tool_cards,
     decide_discovery_continuation,
 )
-from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.diagnostics.registry import DiagnosticRegistry
 from platform_core.contracts.aiops.investigation import (
     InvestigationAction,
@@ -285,17 +282,6 @@ class OracleSqlMonitorReportTest(unittest.TestCase):
                 },
             ),
         )
-
-    def test_download_whitelist_includes_sql_monitor_report(self) -> None:
-        download_source = inspect.getsource(conversations.download_workload_report)
-        content_source = inspect.getsource(
-            ConversationTurnService.get_workload_report_content
-        )
-        self.assertIn("sql_monitor\\.report", download_source)
-        self.assertIn("oracle-sql-monitor", download_source)
-        self.assertIn("db.oracle.sql_monitor.report", content_source)
-        self.assertNotIn("db.sql.plan_monitor", download_source)
-
 
 if __name__ == "__main__":
     unittest.main()

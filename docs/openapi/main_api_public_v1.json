@@ -1132,6 +1132,7 @@
           "ANALYSIS_MARKDOWN",
           "SOLUTION_MARKDOWN",
           "FACT_CONFIRMATION",
+          "REPORT_ARTIFACT_LINKS",
           "HTML_REPORT_LINKS",
           "IMPLEMENTATION_RUNBOOK"
         ],
@@ -8098,6 +8099,19 @@
             "minLength": 1,
             "title": "Risk Level",
             "type": "string"
+          },
+          "risk_level_display": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level Display"
           },
           "risks": {
             "default": [],
@@ -15140,6 +15154,29 @@
             "title": "Required Assurance Level",
             "type": "string"
           },
+          "required_backup_source_types": {
+            "items": {
+              "enum": [
+                "ORACLE_RMAN",
+                "POSTGRESQL_BASEBACKUP",
+                "POSTGRESQL_PGBACKREST",
+                "POSTGRESQL_BARMAN",
+                "POSTGRESQL_WALG",
+                "MYSQL_XTRABACKUP",
+                "MYSQL_ENTERPRISE_BACKUP",
+                "MYSQL_LOGICAL_DUMP",
+                "FILESYSTEM_SNAPSHOT",
+                "STORAGE_SNAPSHOT",
+                "CLOUD_MANAGED_BACKUP",
+                "THIRD_PARTY_BACKUP"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Required Backup Source Types",
+            "type": "array"
+          },
           "required_drill_interval_days": {
             "maximum": 3650.0,
             "minimum": 1.0,
@@ -15186,7 +15223,8 @@
           "rpo_seconds",
           "rto_seconds",
           "required_drill_interval_days",
-          "required_assurance_level"
+          "required_assurance_level",
+          "required_backup_source_types"
         ],
         "title": "TargetRecoveryProfileUpsert",
         "type": "object"
@@ -15222,6 +15260,29 @@
             ],
             "title": "Required Assurance Level",
             "type": "string"
+          },
+          "required_backup_source_types": {
+            "items": {
+              "enum": [
+                "ORACLE_RMAN",
+                "POSTGRESQL_BASEBACKUP",
+                "POSTGRESQL_PGBACKREST",
+                "POSTGRESQL_BARMAN",
+                "POSTGRESQL_WALG",
+                "MYSQL_XTRABACKUP",
+                "MYSQL_ENTERPRISE_BACKUP",
+                "MYSQL_LOGICAL_DUMP",
+                "FILESYSTEM_SNAPSHOT",
+                "STORAGE_SNAPSHOT",
+                "CLOUD_MANAGED_BACKUP",
+                "THIRD_PARTY_BACKUP"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Required Backup Source Types",
+            "type": "array"
           },
           "required_drill_interval_days": {
             "maximum": 3650.0,
@@ -15310,6 +15371,7 @@
           "rto_seconds",
           "required_drill_interval_days",
           "required_assurance_level",
+          "required_backup_source_types",
           "recovery_profile_id",
           "target_id",
           "version_no",
@@ -17403,6 +17465,68 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/artifacts/{artifact_id}/content": {
+      "get": {
+        "description": "按会话授权边界代理不可变Artifact。",
+        "operationId": "download_conversation_artifact_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__artifacts__artifact_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Conversation Artifact",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/cancel": {
       "post": {
         "operationId": "cancel_conversation_turn_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__cancel_post",
@@ -17792,77 +17916,6 @@
           }
         },
         "summary": "Confirm Conversation Target Fact",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/workload-reports/{tool_id}": {
-      "get": {
-        "description": "代理原生 Oracle 工作负载报告，避免向浏览器暴露 Agent 内部存储。",
-        "operationId": "download_workload_report_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__workload_reports__tool_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "turn_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Turn Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "tool_id",
-            "required": true,
-            "schema": {
-              "title": "Tool Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "action_id",
-            "required": true,
-            "schema": {
-              "pattern": "^a[0-9]+$",
-              "title": "Action Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Download Workload Report",
         "tags": [
           "AIOps App"
         ]

@@ -167,16 +167,22 @@ def compile_selected_check_steps(
     check_ids: Any,
     *,
     schedule_type: str = "DAILY",
+    database_type: str | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """把勾选的 READY 检查项编译为固定取证步骤；同一 tool 去重并保持目录顺序。"""
     selected = normalize_selected_check_ids(check_ids)
     catalog = load_check_catalog()
     by_id = {item.check_id: item for item in _catalog_items(catalog)}
     weekly = schedule_type == "WEEKLY"
+    normalized_db_type = str(database_type or "").strip().upper()
     steps: list[dict[str, Any]] = []
     index_by_tool: dict[str, int] = {}
     for check_id in selected:
         item = by_id[check_id]
+        if normalized_db_type and normalized_db_type not in {
+            str(value).upper() for value in item.supported_db_types
+        }:
+            continue
         tool_id = item.tool_id
         if not _is_inspection_executor_tool(tool_id):
             continue
@@ -229,6 +235,7 @@ def inspection_template_steps(
     definition: Any,
     *,
     schedule_type: str,
+    database_type: str | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """从冻结模板定义生成本次步骤，不再读取当前 Check Catalog。"""
     if not isinstance(definition, dict):
@@ -239,12 +246,19 @@ def inspection_template_steps(
     if not isinstance(raw_steps, list) or not raw_steps:
         raise ValueError("巡检模板未冻结取证步骤")
     weekly = schedule_type == "WEEKLY"
+    normalized_db_type = str(database_type or "").strip().upper()
     steps: list[dict[str, Any]] = []
     index_by_tool: dict[str, int] = {}
     for raw in raw_steps:
         if not isinstance(raw, dict) or not raw.get("tool_id"):
             raise ValueError("巡检模板取证步骤无效")
         step = dict(raw)
+        supported = {
+            str(value).upper()
+            for value in step.get("supported_db_types") or ()
+        }
+        if normalized_db_type and normalized_db_type not in supported:
+            continue
         step["input"] = dict(step.get("input") or {})
         step["measurement_semantics"] = _measurement_semantics(
             weekly=weekly,

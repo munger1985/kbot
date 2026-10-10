@@ -130,10 +130,15 @@ _REPORT_DISPLAY_NAMES = {
     "SAMPLING_BOUNDARY": "采样边界限制",
     "RPO_NOT_CONFIGURED": "未配置业务 RPO",
     "RTO_NOT_CONFIGURED": "未配置业务 RTO",
-    "RESTORE_NOT_VERIFIED": "恢复能力尚未验证",
-    "DRILL_STALE": "最近成功演练已超过要求周期",
+    "RESTORE_NOT_DEMONSTRATED": "恢复能力尚未实证",
+    "LATEST_DRILL_FAILED": "最近一次恢复演练失败",
+    "DRILL_STALE": "最近合格成功演练已超过要求周期",
     "POLICY_CHANGED_SINCE_DRILL": "演练后恢复策略已变更",
-    "EXTERNAL_BACKUP_PROVIDER_NOT_CONFIGURED": "未配置外部备份提供方",
+    "RPO_MEASUREMENT_MISSING": "合格演练缺少实测 RPO",
+    "RTO_MEASUREMENT_MISSING": "合格演练缺少实测 RTO",
+    "RPO_TARGET_BREACHED": "实测 RPO 超出业务目标",
+    "RTO_TARGET_BREACHED": "实测 RTO 超出业务目标",
+    "BACKUP_SOURCE_NOT_VERIFIED": "必需备份来源尚未验证",
     "VERIFICATION_ADVERSE": "验证发现不利变化",
     "ACTION_EFFECT_VERIFIED": "已验证动作达到预期效果",
     "EXPECTED_DIRECT_EFFECT_NOT_OBSERVED": "未观测到预期直接效果",
@@ -172,6 +177,9 @@ def _report_briefing_display(briefing: dict[str, Any]) -> dict[str, Any]:
     if not briefing:
         return {}
     result = dict(briefing)
+    result["risk_level_display"] = _report_display_text(
+        briefing.get("risk_level") or "LOW"
+    )
     for key in ("business_impact", "risks", "recommendations"):
         result[key] = [
             _report_display_text(item) for item in briefing.get(key) or ()

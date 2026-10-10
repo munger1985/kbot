@@ -53,8 +53,8 @@ class AIOpsProcessRuntime:
                             SELECT 1
                             FROM KBOT_V_OPS_SCHEMA_VERSION
                             WHERE component = 'AIOPS'
-                              AND schema_version = 33
-                              AND contract_version = 'aiops-oracle-v23'
+                              AND schema_version = 34
+                              AND contract_version = 'aiops-oracle-v24'
                             """
                         )
                     )
@@ -112,6 +112,8 @@ class AIOpsProcessRuntime:
                                     AND COLUMN_NAME = 'RTO_SECONDS')
                                 OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_PROFILE'
                                     AND COLUMN_NAME = 'REQUIRED_ASSURANCE_LEVEL')
+                                OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_PROFILE'
+                                    AND COLUMN_NAME = 'REQUIRED_BACKUP_SOURCE_TYPES_JSON')
                                 OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_DRILL'
                                     AND COLUMN_NAME = 'RECOVERY_MARKER_JSON')
                                 OR (TABLE_NAME = 'KBOT_OPS_RECOVERY_DRILL'
@@ -161,7 +163,7 @@ class AIOpsProcessRuntime:
                     )
                 ).scalar_one_or_none()
                 integrity_ready = (
-                    required_columns == 23
+                    required_columns == 24
                     and report_summary_column == 1
                     and report_source_table == 1
                     and business_check_constraints == 0

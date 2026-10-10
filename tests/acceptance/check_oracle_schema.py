@@ -145,6 +145,8 @@ SERVICE_TABLES = {
         "KBOT_OPS_KNOWLEDGE_SOURCE",
         "KBOT_OPS_KNOWLEDGE_INDEX",
         "KBOT_OPS_KNOWLEDGE_REVIEW",
+        "KBOT_OPS_RECOVERY_PROFILE",
+        "KBOT_OPS_RECOVERY_DRILL",
     },
     "knowledge_retrieval_app": {
         "KBOT_KR_AGENT",

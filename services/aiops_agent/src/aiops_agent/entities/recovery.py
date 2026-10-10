@@ -33,6 +33,9 @@ class RecoveryProfileEntity(BaseEntity):
     required_assurance_level: Mapped[str] = mapped_column(
         String(32), nullable=False
     )
+    required_backup_source_types_json: Mapped[list[str]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
     rto_clock_basis: Mapped[str] = mapped_column(String(64), nullable=False)
     source_note: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(16), nullable=False)

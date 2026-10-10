@@ -2,7 +2,7 @@
 
 版本：2.0
 状态：已批准，实施中
-目标数据库契约：Schema 33 / `aiops-oracle-v23`
+目标数据库契约：Schema 34 / `aiops-oracle-v24`
 
 ## 1. 范围和替换原则
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -310,10 +311,6 @@ class ConversationTurnService:
             selected_check_ids = tuple(
                 template_definition.get("selected_check_ids") or ()
             )
-            evidence_steps = inspection_template_steps(
-                template_definition,
-                schedule_type=str(payload.get("schedule_type") or "DAILY"),
-            )
         except ValueError as exc:
             raise self._error(
                 "AIOPS_INSPECTION_CHECK_SELECTION_INVALID",
@@ -377,11 +374,21 @@ class ConversationTurnService:
             )
             receipts: list[dict[str, Any]] = []
             for target_id in target_ids:
-                await self._require_existing_target(
+                target = await self._require_existing_target(
                     uow=uow,
                     domain_id=domain_id,
                     target_id=target_id,
                 )
+                evidence_steps = inspection_template_steps(
+                    template_definition,
+                    schedule_type=schedule_type,
+                    database_type=str(target.db_type),
+                )
+                if not evidence_steps:
+                    raise self._error(
+                        "AIOPS_INSPECTION_CHECK_SELECTION_INVALID",
+                        "巡检模板没有适用于当前数据库类型的检查项",
+                    )
                 conversation = OpsConversationEntity(
                     domain_id=domain_id,
                     agent_id=agent.agent_id,
@@ -818,24 +825,16 @@ class ConversationTurnService:
         except (OSError, ValueError) as exc:
             raise resource_not_found("Conversation Image Input") from exc
 
-    async def get_workload_report_content(
+    async def get_artifact_content(
         self,
         *,
         domain_id: int,
         conversation_id: UUID,
         turn_id: UUID,
         actor_id: str,
-        tool_id: str,
-        action_id: str,
-    ) -> bytes:
-        """按调查动作实例导出固定目录生成的原生 Oracle HTML 报告。"""
-        if tool_id not in {
-            "db.oracle.awr.report",
-            "db.oracle.awr.diff_report",
-            "db.oracle.ash.report",
-            "db.oracle.sql_monitor.report",
-        }:
-            raise resource_not_found("Oracle Workload Report")
+        artifact_id: UUID,
+    ) -> tuple[bytes, str, str]:
+        """按会话、Turn和Run关系读取不可变Artifact内容。"""
         async with self._uow_factory() as uow:
             conversation = await uow.conversations.get_conversation(
                 domain_id=domain_id, conversation_id=conversation_id,
@@ -854,35 +853,77 @@ class ConversationTurnService:
                 turn_id=turn_id, purpose="PRIMARY",
             )
             if link is None:
-                raise resource_not_found("Oracle Workload Report")
-            for artifact in await uow.runs.list_artifacts(
-                ops_run_id=link.ops_run_id
-            ):
-                if artifact.schema_version != "DBA_TOOL_RESULT.v1":
-                    continue
+                raise resource_not_found("Artifact")
+            artifact = await uow.runs.get_artifact(artifact_id=artifact_id)
+            if artifact is None or artifact.ops_run_id != link.ops_run_id:
+                raise resource_not_found("Artifact")
+            provenance = dict(artifact.provenance_json or {})
+            file_name = self._safe_artifact_file_name(
+                str(
+                    provenance.get("file_name")
+                    or f"{artifact.artifact_type.lower()}-{artifact.artifact_id}.json"
+                )
+            )
+            if artifact.payload_uri is not None:
+                try:
+                    content = self._upload_store.read_artifact(
+                        payload_uri=artifact.payload_uri,
+                        content_hash=artifact.content_hash,
+                        byte_size=artifact.byte_size,
+                    )
+                except (OSError, ValueError) as exc:
+                    raise resource_not_found("Artifact") from exc
+                return (
+                    content,
+                    str(provenance.get("content_type") or "application/octet-stream"),
+                    file_name,
+                )
+            if artifact.schema_version == "DBA_TOOL_RESULT.v1":
                 result = DbaToolResult.model_validate(artifact.payload_json)
+                reports: list[bytes] = []
+                report_labels: list[str] = []
                 for outcome in result.tool_outcomes:
                     observation = outcome.observation
                     if (
-                        outcome.tool_id != tool_id
-                        or outcome.step_id != action_id
-                        or observation is None
-                    ):
-                        continue
-                    if (
-                        observation.truncated
+                        observation is None
+                        or observation.truncated
                         or len(observation.columns) != 1
                         or observation.columns[0].name != "output"
                     ):
-                        raise state_conflict("原生工作负载报告正文不完整")
+                        continue
                     content = "".join(
                         str(row[0]) for row in observation.rows
                         if row and row[0] is not None
                     ).encode("utf-8")
                     if content:
-                        return content
-                    raise state_conflict("原生工作负载报告正文为空")
-        raise resource_not_found("Oracle Workload Report")
+                        reports.append(content)
+                        report_labels.append(outcome.tool_id)
+                if len(reports) != 1:
+                    raise state_conflict("报告Artifact必须且只能包含一份完整正文")
+                if not reports[0].lstrip().lower().startswith(
+                    (b"<!doctype html", b"<html")
+                ):
+                    raise state_conflict("报告Artifact正文不是受支持的HTML")
+                return (
+                    reports[0],
+                    "text/html",
+                    self._safe_artifact_file_name(
+                        f"{report_labels[0].replace('.', '-')}-{artifact.artifact_id}.html"
+                    ),
+                )
+            content = json.dumps(
+                artifact.payload_json,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+            return content, "application/json", file_name
+
+    @staticmethod
+    def _safe_artifact_file_name(value: str) -> str:
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip(".-")
+        return (safe or "aiops-artifact.bin")[:256]
 
     async def _get_implementation_runbook_payload(
         self,
@@ -1403,7 +1444,7 @@ class ConversationTurnService:
         uow,
         domain_id: int,
         target_id: UUID,
-    ) -> None:
+    ):
         target = await uow.targets.get_scoped(
             target_id=target_id,
             domain_id=domain_id,
@@ -1413,6 +1454,7 @@ class ConversationTurnService:
                 "AIOPS_TARGET_NOT_ENABLED",
                 "Target 不存在或未启用，不能开始或继续诊断",
             )
+        return target
 
     async def _require_conversation_runnable(
         self,
