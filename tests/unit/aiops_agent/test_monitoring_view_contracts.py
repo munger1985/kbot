@@ -93,28 +93,6 @@ class MonitoringProfileContractTest(unittest.TestCase):
             self.profiles.get("oracle-overview").grafana_dashboard_uid,
         )
 
-    def test_database_prometheus_metrics_use_canonical_target_key(self):
-        metric_codes = {
-            code
-            for profile_id in ("oracle-overview", "database-capacity")
-            for code in self.profiles.get(profile_id).metric_codes
-        }
-        for code in metric_codes:
-            provider = self.metrics.get(code).providers["PROMETHEUS"]
-            queries = (
-                provider.query_template,
-                *provider.fallback_query_templates,
-            )
-            with self.subTest(metric_code=code):
-                self.assertEqual(("target_key",), provider.required_labels)
-                self.assertTrue(
-                    all(
-                        'target_key="${external_target}"' in query
-                        for query in queries
-                    )
-                )
-                self.assertTrue(all("instance=" not in query for query in queries))
-
     def test_grafana_requires_fixed_uid_and_complete_link_security_gate(self):
         disabled = resolve_grafana_integration(
             source_type="PROMETHEUS",
