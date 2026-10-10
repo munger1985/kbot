@@ -7,7 +7,7 @@
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]] },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
-    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
+    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]] },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
@@ -51,13 +51,14 @@
       return `<strong>${mode}</strong><small>${detail}</small>`;
     }
     if (type === "inspection-actions") {
-      const action = item.status === "ACTIVE"
-        ? "pause"
-        : ["PAUSED", "DISABLED"].includes(item.status) ? "activate" : "";
-      if (!action) return "—";
-      const label = action === "activate" ? "启用" : "暂停";
-      const primary = action === "activate" ? ' class="primary"' : "";
-      return `<div class="ops-actions"><button type="button"${primary} data-inspection-action="${action}">${label}</button></div>`;
+      const lifecycle = item.status === "ACTIVE"
+        ? '<button type="button" data-inspection-action="pause">暂停</button><button type="button" data-inspection-action="disable">停用</button>'
+        : item.status === "PAUSED"
+          ? '<button type="button" class="primary" data-inspection-action="activate">启用</button><button type="button" data-inspection-action="disable">停用</button>'
+          : item.status === "DISABLED"
+            ? '<button type="button" class="primary" data-inspection-action="activate">启用</button><button type="button" class="danger" data-inspection-action="delete">删除</button>'
+            : "";
+      return `<div class="ops-actions"><button type="button" data-inspection-action="detail">详情</button><button type="button" data-inspection-action="edit">编辑</button>${lifecycle}</div>`;
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
@@ -302,11 +303,9 @@
         row.addEventListener("click", () => {
           const editors = {
             targets: globalThis.KBotAIOpsTargets,
-            "inspection-plans": globalThis.KBotAIOpsConfigurations,
           };
           if (editors[page]?.openEdit) {
-            if (page === "targets") editors[page].openEdit(row.dataset.resourceId);
-            else editors[page].openEdit(page, row.dataset.resourceId);
+            editors[page].openEdit(row.dataset.resourceId);
             return;
           }
           location.href = row.dataset.href;
@@ -348,17 +347,34 @@
             const row = button.closest("tr");
             const item = items.find((candidate) => String(candidate.plan_id) === row.dataset.resourceId);
             if (!item) return;
+            const action = button.dataset.inspectionAction;
+            if (action === "detail") {
+              location.href = `inspection-plan-detail.html?id=${encodeURIComponent(item.plan_id)}`;
+              return;
+            }
+            if (action === "edit") {
+              await globalThis.KBotAIOpsConfigurations?.openEdit?.("inspection-plans", item.plan_id);
+              return;
+            }
+            if (action === "delete" && !globalThis.confirm(`确认永久删除巡检计划“${item.display_name}”？只有未产生执行记录的已停用计划可以删除。`)) return;
             button.disabled = true;
             try {
-              await KBotAIOpsAuth.request(`${appApi}/inspection-plans/${encodeURIComponent(item.plan_id)}/${button.dataset.inspectionAction}`, {
-                method: "POST",
+              const deleting = action === "delete";
+              await KBotAIOpsAuth.request(`${appApi}/inspection-plans/${encodeURIComponent(item.plan_id)}${deleting ? "" : `/${action}`}`, {
+                method: deleting ? "DELETE" : "POST",
                 headers: {
                   "If-Match": `"rv-${item.row_version}"`,
                   "Idempotency-Key": KBotAIOpsAuth.uuid(),
                 },
-                body: JSON.stringify({}),
+                ...(deleting ? {} : { body: JSON.stringify({}) }),
               });
-              shell.toast(button.dataset.inspectionAction === "activate" ? "巡检计划已启用" : "巡检计划已暂停");
+              const messages = {
+                activate: "巡检计划已启用",
+                pause: "巡检计划已暂停",
+                disable: "巡检计划已停用",
+                delete: "巡检计划已删除",
+              };
+              shell.toast(messages[action] || "巡检计划已更新");
               await renderList("inspection-plans");
             } catch (error) {
               shell.toast(error.message);

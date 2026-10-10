@@ -392,6 +392,75 @@ class InspectionConfigurationMixin:
             await uow.commit()
             return response
 
+    async def delete_inspection_plan(
+        self,
+        *,
+        scope: ConfigurationScope,
+        plan_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> InspectionPlanDetail:
+        async def handler(
+            uow: AIOpsUnitOfWork, now: datetime
+        ) -> InspectionPlanDetail:
+            del now
+            assert uow.inspections is not None
+            entity = await uow.inspections.get_plan_scoped(
+                inspection_plan_id=plan_id,
+                domain_id=scope.domain_id,
+                lock=True,
+            )
+            if entity is None:
+                raise resource_not_found("Inspection Plan")
+            self._check_version(entity.row_version, expected_version)
+            if entity.status != "DISABLED":
+                raise state_conflict("仅允许删除已停用的巡检计划")
+            if await uow.inspections.plan_has_fires(
+                inspection_plan_id=plan_id
+            ):
+                raise state_conflict(
+                    "巡检计划已经产生执行记录，必须保留作为审计依据"
+                )
+            target_count = await self._inspection_agent_target_count(
+                uow=uow,
+                domain_id=scope.domain_id,
+                agent_id=entity.agent_id,
+            )
+            template = await uow.inspections.get_inspection_template(
+                domain_id=scope.domain_id,
+                inspection_template_id=entity.inspection_template_id,
+            )
+            template_version = await uow.inspections.get_inspection_template_version(
+                inspection_template_version_id=(
+                    entity.inspection_template_version_id
+                )
+            )
+            if template is None or template_version is None:
+                raise state_conflict("巡检计划引用的模板版本不存在")
+            result = _inspection_detail(
+                entity,
+                agent_target_count=target_count,
+                template=template,
+                template_version=template_version,
+            )
+            try:
+                await uow.inspections.delete_plan(entity)
+            except IntegrityError as exc:
+                raise state_conflict(
+                    "巡检计划仍有关联的运行或报告，不能删除"
+                ) from exc
+            return result
+
+        return await self._idempotent(
+            scope=scope,
+            operation="INSPECTION_PLAN_DELETE",
+            parent_resource=str(plan_id),
+            idempotency_key=idempotency_key,
+            payload={"row_version": expected_version},
+            response_type=InspectionPlanDetail,
+            handler=handler,
+        )
+
     async def command_inspection_plan(
         self,
         *,

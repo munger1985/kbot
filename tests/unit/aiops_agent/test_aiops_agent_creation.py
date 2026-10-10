@@ -6,6 +6,7 @@ from aiops_agent.actions import ActionRegistry
 from aiops_agent.application.agents import (
     AIOpsAgentError,
     AIOpsAgentService,
+    ArchiveAIOpsAgentCommand,
     CreateAIOpsAgentCommand,
     TargetControlledActionExecution,
     UpdateAIOpsAgentCommand,
@@ -21,6 +22,7 @@ class _AgentRepository:
         self.current_version_at_agent_insert = "NOT_CAPTURED"
         self.version_targets = {}
         self.controlled_action_policies = {}
+        self.has_schedulable_plans = False
 
     async def resource_states(self, **kwargs):
         del kwargs
@@ -59,6 +61,10 @@ class _AgentRepository:
     async def version(self, *, agent_id, agent_version_id):
         row = self.versions.get(agent_version_id)
         return row if row is not None and row.agent_id == agent_id else None
+
+    async def has_schedulable_inspection_plans(self, **kwargs):
+        del kwargs
+        return self.has_schedulable_plans
 
 
 class _UnitOfWork:
@@ -134,6 +140,7 @@ class _PolicyRepository:
         self.rows = {}
 
     async def add(self, row):
+        row.row_version = 1
         self.rows[row.policy_id] = row
 
     async def get_scoped(self, *, policy_id, domain_id):
@@ -142,6 +149,62 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_archive_hides_runtime_policy_but_preserves_agent_row(self):
+        repository = _AgentRepository()
+        unit_of_work = _UnitOfWork(repository, uuid7())
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+        created = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="待删除诊断助手",
+                target_ids=(unit_of_work.target.target_id,),
+                actor_id="kbotui_dev",
+            )
+        )
+
+        await service.archive(
+            ArchiveAIOpsAgentCommand(
+                domain_id=100,
+                agent_id=created["agent_id"],
+                expected_row_version=created["row_version"],
+                actor_id="kbotui_dev",
+            )
+        )
+
+        agent = next(iter(repository.agents.values()))
+        self.assertEqual("ARCHIVED", agent.status)
+        policy = next(iter(unit_of_work.policies.rows.values()))
+        self.assertEqual("RETIRED", policy.status)
+        self.assertEqual(2, unit_of_work.commit_count)
+
+    async def test_archive_rejects_schedulable_inspection_plan(self):
+        repository = _AgentRepository()
+        unit_of_work = _UnitOfWork(repository, uuid7())
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+        created = await service.create(
+            CreateAIOpsAgentCommand(
+                domain_id=100,
+                display_name="巡检诊断助手",
+                target_ids=(unit_of_work.target.target_id,),
+                actor_id="kbotui_dev",
+            )
+        )
+        repository.has_schedulable_plans = True
+
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.archive(
+                ArchiveAIOpsAgentCommand(
+                    domain_id=100,
+                    agent_id=created["agent_id"],
+                    expected_row_version=created["row_version"],
+                    actor_id="kbotui_dev",
+                )
+            )
+
+        self.assertEqual(
+            "AIOPS_AGENT_INSPECTION_PLAN_CONFLICT", raised.exception.code
+        )
+
     async def test_active_agent_requires_target_monitor_mapping(self):
         source_id = uuid7()
         missing_source_id = uuid7()

@@ -1076,6 +1076,26 @@ async def patch_inspection_plan(
     return result
 
 
+@router.delete(
+    "/inspection-plans/{plan_id}",
+    status_code=204,
+)
+async def delete_inspection_plan(
+    plan_id: UUID,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> Response:
+    await service.delete_inspection_plan(
+        scope=scope,
+        plan_id=plan_id,
+        expected_version=parse_etag(if_match),
+        idempotency_key=idempotency_key,
+    )
+    return Response(status_code=204)
+
+
 async def _command_inspection_plan(
     plan_id: UUID,
     command: str,

@@ -111,12 +111,35 @@
         <td><strong>${targetNames.length} 个 Target</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td><strong>${access}</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起 · Target L${escape(agent.auto_observe_min_target_level)}+</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
-        <td><button type="button" data-agent-id="${escape(agent.agent_id)}">编辑</button></td>
+        <td><div class="ops-actions"><button type="button" data-agent-action="edit" data-agent-id="${escape(agent.agent_id)}">编辑</button><button type="button" class="danger" data-agent-action="delete" data-agent-id="${escape(agent.agent_id)}">删除</button></div></td>
       </tr>`;
     }).join("");
-    body.querySelectorAll("[data-agent-id]").forEach((button) => {
-      button.addEventListener("click", () => void openEdit(button.dataset.agentId));
+    body.querySelectorAll("[data-agent-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.agentAction === "edit") {
+          void openEdit(button.dataset.agentId);
+          return;
+        }
+        const agent = agents.find((item) => item.agent_id === button.dataset.agentId);
+        if (agent) void deleteAgent(agent, button);
+      });
     });
+  }
+
+  async function deleteAgent(agent, button) {
+    if (!globalThis.confirm(`确认删除 Agent“${agent.display_name}”？删除后不再接收新任务，历史运行和报告仍会保留。`)) return;
+    button.disabled = true;
+    try {
+      await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agent.agent_id)}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"rv-${agent.row_version}"` },
+      });
+      shell.toast("Agent 已删除");
+      await load();
+    } catch (error) {
+      shell.toast(error.message);
+      button.disabled = false;
+    }
   }
 
 

@@ -48,6 +48,28 @@ class InspectionRepository(AIOpsRepository):
     ) -> InspectionPlanEntity:
         return await self._add(entity)
 
+    async def delete_plan(self, entity: InspectionPlanEntity) -> None:
+        """删除用例层已经确认可安全移除的未执行巡检计划。"""
+        self._check_active()
+        await self._session.delete(entity)
+        await self._session.flush()
+
+    async def plan_has_fires(self, *, inspection_plan_id: UUID) -> bool:
+        """计划一旦产生执行批次就必须保留，作为运行与报告审计依据。"""
+        self._check_active()
+        return bool(
+            await self._session.scalar(
+                select(
+                    select(InspectionFireEntity.inspection_fire_id)
+                    .where(
+                        InspectionFireEntity.inspection_plan_id
+                        == inspection_plan_id
+                    )
+                    .exists()
+                )
+            )
+        )
+
     async def add_fire(
         self, entity: InspectionFireEntity
     ) -> InspectionFireEntity:

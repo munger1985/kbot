@@ -7,6 +7,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "ui" / "aiops" / "js" / "aiops-agents.js"
 PAGE = ROOT / "ui" / "aiops" / "agents.html"
+INTERNAL_API = ROOT / "services" / "aiops_agent" / "src" / "aiops_agent" / "api" / "agents" / "routes.py"
+CLIENT = ROOT / "packages" / "platform_clients" / "src" / "platform_clients" / "aiops.py"
+MAIN_API = ROOT / "services" / "main_api" / "src" / "main_api" / "api" / "aiops_app.py"
 
 
 class AIOpsAgentEditorUiTest(unittest.TestCase):
@@ -22,7 +25,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20261010-2", page)
+        self.assertIn("aiops-agents.js?v=20261011-1", page)
 
     def test_agent_does_not_maintain_monitor_mappings(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
@@ -44,6 +47,23 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         self.assertIn("image_capabilities: imageCapabilities", script)
         self.assertIn("allowed_model_ids: [ocrModelId]", script)
         self.assertIn("allowed_model_ids: [vlmModelId]", script)
+
+    def test_agent_list_exposes_versioned_delete(self) -> None:
+        script = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('data-agent-action="delete"', script)
+        self.assertIn('method: "DELETE"', script)
+        self.assertIn('"If-Match": `"rv-${agent.row_version}"`', script)
+
+    def test_agent_delete_is_an_end_to_end_archive_operation(self) -> None:
+        internal_api = INTERNAL_API.read_text(encoding="utf-8")
+        client = CLIENT.read_text(encoding="utf-8")
+        main_api = MAIN_API.read_text(encoding="utf-8")
+
+        self.assertIn('@router.delete("/{agent_id}", status_code=204)', internal_api)
+        self.assertIn("ArchiveAIOpsAgentCommand", internal_api)
+        self.assertIn("async def delete_private_agent(", client)
+        self.assertIn('@router.delete("/agents/{agent_id}"', main_api)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,27 @@ AIOPS_PORTAL_DOMAIN_NAME = "aiops_portal"
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key")]
 
 
+def _expected_row_version(if_match: str | None) -> int:
+    if if_match is None:
+        raise HTTPException(
+            428,
+            {"code": "PRECONDITION_REQUIRED", "message": "该操作必须提供 If-Match"},
+        )
+    normalized = if_match.strip()
+    if not normalized.startswith('"rv-') or not normalized.endswith('"'):
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_AGENT_ETAG_INVALID", "message": 'If-Match 必须使用 "rv-N" 格式'},
+        )
+    try:
+        return int(normalized[4:-1])
+    except ValueError as exc:
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_AGENT_ETAG_INVALID", "message": 'If-Match 必须使用 "rv-N" 格式'},
+        ) from exc
+
+
 class _Payload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -548,6 +569,21 @@ async def update_agent(
         payload.model_dump(mode="json", exclude_unset=True),
         auth_context=request.state.auth_context,
     )
+
+
+@router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent(
+    agent_id: UUID,
+    request: Request,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+) -> Response:
+    await _require(request, "aiops:agent_manage")
+    await _client(request).delete_private_agent(
+        agent_id,
+        expected_row_version=_expected_row_version(if_match),
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -770,9 +770,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         ).read_text(encoding="utf-8")
         self.assertIn('["schedule_type", "调度周期", "schedule"]', pages_script)
         self.assertIn('DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期"', pages_script)
-        self.assertIn('data-inspection-action="${action}"', pages_script)
-        self.assertIn('["PAUSED", "DISABLED"].includes(item.status)', pages_script)
-        self.assertIn('/inspection-plans/${encodeURIComponent(item.plan_id)}/${button.dataset.inspectionAction}', pages_script)
+        self.assertIn('data-inspection-action="edit"', pages_script)
+        self.assertIn('data-inspection-action="detail"', pages_script)
+        self.assertIn('data-inspection-action="delete"', pages_script)
+        self.assertIn('method: deleting ? "DELETE" : "POST"', pages_script)
+        self.assertNotIn('"inspection-plans": globalThis.KBotAIOpsConfigurations', pages_script)
 
     def test_agent_form_owns_resources_and_approval_is_not_a_policy_input(self):
         page = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")

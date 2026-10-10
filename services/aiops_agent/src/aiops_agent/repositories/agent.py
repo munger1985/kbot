@@ -11,6 +11,7 @@ from aiops_agent.entities import (
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionTargetEntity,
+    InspectionPlanEntity,
     PolicyEntity,
     TargetEntity,
     TargetSourceBindingEntity,
@@ -148,10 +149,31 @@ class AIOpsAgentRepository:
     async def list(self, *, domain_id: int) -> list[AIOpsAgentEntity]:
         rows = await self._session.scalars(
             select(AIOpsAgentEntity)
-            .where(AIOpsAgentEntity.domain_id == domain_id)
+            .where(
+                AIOpsAgentEntity.domain_id == domain_id,
+                AIOpsAgentEntity.status != "ARCHIVED",
+            )
             .order_by(AIOpsAgentEntity.updated_at.desc(), AIOpsAgentEntity.agent_id)
         )
         return list(rows)
+
+    async def has_schedulable_inspection_plans(
+        self, *, domain_id: int, agent_id: UUID
+    ) -> bool:
+        """归档 Agent 前确认没有仍会触发调度的巡检计划。"""
+        return bool(
+            await self._session.scalar(
+                select(
+                    select(InspectionPlanEntity.inspection_plan_id)
+                    .where(
+                        InspectionPlanEntity.domain_id == domain_id,
+                        InspectionPlanEntity.agent_id == agent_id,
+                        InspectionPlanEntity.status.in_(("ACTIVE", "PAUSED")),
+                    )
+                    .exists()
+                )
+            )
+        )
 
     async def version(self, *, agent_id: UUID, agent_version_id: UUID):
         statement = select(AIOpsAgentVersionEntity).where(
@@ -190,7 +212,7 @@ class AIOpsAgentRepository:
                 AIOpsAgentVersionEntity,
                 AIOpsAgentVersionEntity.agent_version_id
                 == AIOpsAgentEntity.current_version_id,
-            )
+            ).where(AIOpsAgentEntity.status != "ARCHIVED")
         )
         materialized = list(rows)
         expected = str(model_id)

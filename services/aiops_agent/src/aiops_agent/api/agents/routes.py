@@ -3,12 +3,13 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.application.agents import (
     AIOpsAgentError,
+    ArchiveAIOpsAgentCommand,
     AgentImageCapabilities,
     AgentModelBindings,
     CreateAIOpsAgentCommand,
@@ -70,6 +71,10 @@ class AgentUpdateRequest(_Request):
     instruction: str | None = Field(default=None, max_length=32000)
     config: dict[str, Any] | None = None
     status: Literal["DRAFT", "ACTIVE", "DISABLED", "ARCHIVED"] | None = None
+
+
+class AgentDeleteRequest(_Request):
+    expected_row_version: int = Field(ge=1)
 
 
 def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
@@ -178,6 +183,28 @@ async def update_agent(
         )
     except AIOpsAgentError as exc:
         _raise(exc)
+
+
+@router.delete("/{agent_id}", status_code=204)
+async def delete_agent(
+    agent_id: UUID,
+    payload: AgentDeleteRequest,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+) -> Response:
+    domain_id, actor_id = _scope(request, context)
+    try:
+        await request.app.state.agent_service.archive(
+            ArchiveAIOpsAgentCommand(
+                domain_id=domain_id,
+                agent_id=agent_id,
+                expected_row_version=payload.expected_row_version,
+                actor_id=actor_id,
+            )
+        )
+    except AIOpsAgentError as exc:
+        _raise(exc)
+    return Response(status_code=204)
 
 
 @router.get("/{agent_id}/execution-spec")

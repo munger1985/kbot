@@ -1981,6 +1981,25 @@ async def patch_inspection_plan(
     return _validated(InspectionPlanDetail, payload, response)
 
 
+@router.delete(
+    "/inspection-plans/{plan_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_inspection_plan(
+    plan_id: UUID,
+    request: Request,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> Response:
+    await _client(request).delete_inspection_plan(
+        plan_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 async def _inspection_plan_command(
     *,
     plan_id: UUID,

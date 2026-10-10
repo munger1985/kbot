@@ -544,6 +544,57 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(2, result.agent_target_count)
 
+    async def test_delete_plan_requires_disabled_plan_without_execution_history(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        plan = self._plan(status="DISABLED")
+        template, template_version = self._template()
+        template.inspection_template_id = plan.inspection_template_id
+        template_version.inspection_template_version_id = (
+            plan.inspection_template_version_id
+        )
+        inspections = SimpleNamespace(
+            get_plan_scoped=AsyncMock(return_value=plan),
+            plan_has_fires=AsyncMock(return_value=False),
+            get_inspection_template=AsyncMock(return_value=template),
+            get_inspection_template_version=AsyncMock(
+                return_value=template_version
+            ),
+            delete_plan=AsyncMock(),
+        )
+        uow = SimpleNamespace(
+            inspections=inspections,
+            agents=SimpleNamespace(
+                get=AsyncMock(return_value=None),
+                version_target_ids=AsyncMock(return_value=[]),
+            ),
+        )
+
+        async def execute_idempotently(**kwargs):
+            return await kwargs["handler"](uow, datetime.now(UTC))
+
+        service._idempotent = execute_idempotently
+        result = await service.delete_inspection_plan(
+            scope=self._scope(),
+            plan_id=plan.inspection_plan_id,
+            expected_version=3,
+            idempotency_key="inspection-delete-1",
+        )
+
+        self.assertEqual(plan.inspection_plan_id, result.plan_id)
+        inspections.delete_plan.assert_awaited_once_with(plan)
+
+        inspections.plan_has_fires.return_value = True
+        inspections.delete_plan.reset_mock()
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.delete_inspection_plan(
+                scope=self._scope(),
+                plan_id=plan.inspection_plan_id,
+                expected_version=3,
+                idempotency_key="inspection-delete-2",
+            )
+        self.assertEqual("OPS_STATE_CONFLICT", raised.exception.code)
+        inspections.delete_plan.assert_not_awaited()
+
     async def test_activate_restores_disabled_plan(self) -> None:
         entity = self._plan(status="DISABLED")
         service, uow = self._command_service(entity)

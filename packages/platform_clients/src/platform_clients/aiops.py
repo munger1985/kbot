@@ -1291,6 +1291,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def delete_inspection_plan(
+        self,
+        plan_id: UUID,
+        *,
+        if_match: str,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{self._CONFIG}/inspection-plans/{plan_id}",
+            if_match=if_match,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def command_inspection_plan(
         self,
         plan_id: UUID,
@@ -1929,6 +1945,20 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         return await self._json(
             "PATCH", f"{INTERNAL_API_V1}/aiops/agents/{agent_id}",
             payload=payload, auth_context=auth_context,
+        )
+
+    async def delete_private_agent(
+        self,
+        agent_id: UUID,
+        *,
+        expected_row_version: int,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{INTERNAL_API_V1}/aiops/agents/{agent_id}",
+            payload={"expected_row_version": expected_row_version},
+            auth_context=auth_context,
         )
 
     async def list_model_references(

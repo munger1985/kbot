@@ -247,6 +247,13 @@ class UpdateAIOpsAgentCommand(_Model):
         return self
 
 
+class ArchiveAIOpsAgentCommand(_Model):
+    domain_id: int
+    agent_id: UUID
+    expected_row_version: int = Field(ge=1)
+    actor_id: str = Field(min_length=1, max_length=256)
+
+
 class AIOpsAgentError(ValueError):
     def __init__(self, code: str, message: str, *, status_code: int = 409):
         super().__init__(message)
@@ -332,11 +339,50 @@ class AIOpsAgentService:
     async def get(self, *, domain_id: int, agent_id: UUID) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
-            if agent is None:
+            if agent is None or agent.status == "ARCHIVED":
                 self._not_found()
             return await self._view(
                 uow, agent, await self._version(uow.agents, agent)
             )
+
+    async def archive(self, command: ArchiveAIOpsAgentCommand) -> None:
+        """归档 Agent，保留历史运行和会话的审计引用。"""
+        async with self._uow_factory() as uow:
+            agent = await uow.agents.get(
+                domain_id=command.domain_id,
+                agent_id=command.agent_id,
+                lock=True,
+            )
+            if agent is None or agent.status == "ARCHIVED":
+                self._not_found()
+            if int(agent.row_version) != command.expected_row_version:
+                raise AIOpsAgentError(
+                    "STATE_VERSION_CONFLICT", "Agent 配置版本已变化"
+                )
+            if await uow.agents.has_schedulable_inspection_plans(
+                domain_id=command.domain_id,
+                agent_id=command.agent_id,
+            ):
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_INSPECTION_PLAN_CONFLICT",
+                    "Agent 仍被启用或暂停的巡检计划使用，请先停用相关计划",
+                )
+            current = await self._version(uow.agents, agent)
+            policy = await uow.policies.get_scoped(
+                policy_id=current.policy_id,
+                domain_id=command.domain_id,
+            )
+            now = datetime.now(UTC)
+            if policy is not None and policy.status != "RETIRED":
+                policy.status = "RETIRED"
+                policy.retired_at = now
+                policy.updated_by = command.actor_id
+                policy.row_version = int(policy.row_version) + 1
+            agent.status = "ARCHIVED"
+            agent.updated_by = command.actor_id
+            agent.updated_at = now
+            agent.row_version = int(agent.row_version) + 1
+            await uow.commit()
 
     async def action_catalog(
         self, *, domain_id: int, target_id: UUID
@@ -421,7 +467,7 @@ class AIOpsAgentService:
                 agent_id=command.agent_id,
                 lock=True,
             )
-            if agent is None:
+            if agent is None or agent.status == "ARCHIVED":
                 self._not_found()
             if int(agent.row_version) != command.expected_row_version:
                 raise AIOpsAgentError(
