@@ -137,6 +137,7 @@ services:
     command:
       - --docker_only=true
       - --housekeeping_interval=15s
+      - --store_container_labels=true
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:

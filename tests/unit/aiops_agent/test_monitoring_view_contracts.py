@@ -97,8 +97,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             self.profiles.get("oracle-overview").grafana_dashboard_uid,
         )
         oracle_codes = self.profiles.get("oracle-overview").metric_codes
-        self.assertIn("container.cpu.utilization", oracle_codes)
-        self.assertIn("container.memory.utilization", oracle_codes)
+        self.assertIn("runtime.cpu.utilization", oracle_codes)
+        self.assertIn("runtime.memory.utilization", oracle_codes)
         self.assertNotIn("host.cpu.utilization", oracle_codes)
         self.assertNotIn("host.memory.utilization", oracle_codes)
 
@@ -118,23 +118,44 @@ class MonitoringProfileContractTest(unittest.TestCase):
         mysql_codes = self.profiles.get("mysql-overview").metric_codes
         self.assertTrue(
             all(
-                code.startswith("mysql.") or code.startswith("container.")
+                code.startswith("mysql.") or code.startswith("runtime.")
                 for code in mysql_codes
             )
         )
-        self.assertIn("container.cpu.utilization", mysql_codes)
-        self.assertIn("container.memory.utilization", mysql_codes)
+        self.assertIn("runtime.cpu.utilization", mysql_codes)
+        self.assertIn("runtime.memory.utilization", mysql_codes)
         postgresql_codes = self.profiles.get(
             "postgresql-overview"
         ).metric_codes
-        self.assertIn("container.cpu.utilization", postgresql_codes)
-        self.assertIn("container.memory.utilization", postgresql_codes)
+        self.assertIn("runtime.cpu.utilization", postgresql_codes)
+        self.assertIn("runtime.memory.utilization", postgresql_codes)
         self.assertNotIn(
             "postgresql.replication.lag_bytes", postgresql_codes
         )
         self.assertNotIn(
             "postgresql.replication.slot_retained_bytes", postgresql_codes
         )
+
+    def test_runtime_resources_use_container_labels_or_explicit_host_mapping(self):
+        cpu_query = self.metrics.get("runtime.cpu.utilization").providers[
+            "PROMETHEUS"
+        ].query_template
+        memory_query = self.metrics.get("runtime.memory.utilization").providers[
+            "PROMETHEUS"
+        ].query_template
+
+        self.assertTrue(
+            cpu_query.startswith("kbot_db_container_cpu_utilization_percent")
+        )
+        self.assertIn("node_cpu_seconds_total", cpu_query)
+        self.assertNotIn("kbot_db_cpu_utilization_percent", cpu_query)
+        self.assertTrue(
+            memory_query.startswith(
+                "kbot_db_container_memory_utilization_percent"
+            )
+        )
+        self.assertIn(" or on() ", memory_query)
+        self.assertIn("node_memory_MemAvailable_bytes", memory_query)
 
     def test_oracle_overview_prometheus_queries_have_controlled_fallbacks(self):
         expected_raw_metrics = {

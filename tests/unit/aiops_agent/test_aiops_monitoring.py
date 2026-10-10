@@ -587,6 +587,51 @@ class PrometheusMetricQueryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(session.queries))
         self.assertFalse(result.observations[0].provenance["fallback_used"])
 
+    async def test_host_metric_requires_explicit_host_target_mapping(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        definition = load_metric_catalog().select(
+            ("runtime.memory.utilization",), db_type="ORACLE"
+        )[0]
+        session = _MetricQuerySession(
+            [_HealthResponse(status=200, payload=self._payload([]))]
+        )
+        adapter = PrometheusAdapter(
+            context=DiagnosticSourceContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="http://prometheus.example.com",
+                declared_capabilities={CAPABILITY_METRIC_QUERY_RANGE: {}},
+            ),
+            session=session,  # type: ignore[arg-type]
+            request_timeout_seconds=10,
+            webhook_replay_seconds=300,
+        )
+        await adapter.query_metrics(
+            MetricsEvidenceRequest(
+                target_id="target-1",
+                binding_id="binding-1",
+                source_locator_key="oracle-dev-190",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(minutes=10),
+                window_end=now,
+                requested_step_seconds=300,
+                max_response_bytes=4096,
+                trace_id="trace-1",
+            )
+        )
+
+        self.assertIn(
+            'node_memory_MemAvailable_bytes{job="node",target_key="__unbound_host_target__"}',
+            session.queries[0],
+        )
+        self.assertNotIn(
+            'node_memory_MemAvailable_bytes{job="node",target_key="oracle-dev-190"}',
+            session.queries[0],
+        )
+
 
 class PrometheusHealthTest(unittest.IsolatedAsyncioTestCase):
     def _adapter(self, response: _HealthResponse):

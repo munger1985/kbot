@@ -243,8 +243,8 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         observations = []
         gaps = []
         source_locator_key = request.source_locator_key
-        host_target_key = request.source_locator.get(
-            "host_target_key", source_locator_key
+        host_target_key = request.source_locator.get("host_target_key") or (
+            "__unbound_host_target__"
         )
         for definition in request.metric_definitions:
             provider = definition.providers.get("PROMETHEUS")

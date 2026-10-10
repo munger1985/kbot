@@ -57,10 +57,6 @@ DATABASE_SECTION = re.compile(
 PROMETHEUS_TARGET_SECTION = re.compile(
     r"^prometheus_target:(?P<target_key>[a-z0-9][a-z0-9_-]*)$"
 )
-CONTAINER_MAPPING_SECTION = re.compile(
-    r"^container:(?P<target_key>[a-z0-9][a-z0-9_-]*)$"
-)
-
 CONFIG_TEMPLATE = """# KBot AIOps观测工具唯一部署配置
 #
 # 使用方法：
@@ -128,6 +124,8 @@ local_access = false
 # Collector角色必须填写Central可达的监听地址。
 # exporter_bind_address = 10.0.0.30
 # exporter_port = 19101
+# 每个需监控的数据库容器必须设置Docker标签：
+# aiops_target_key=<该数据库在AIOps中的Target Key>
 
 # 每个数据库使用一个独立配置段；复制整段即可增加数据库。
 # 冒号后的值就是稳定Target Key，必须与AIOps App中的Target绑定一致。
@@ -176,20 +174,11 @@ local_access = false
 # all-in-one角色下，本文件启用的数据库会自动登记，无需重复填写。
 [prometheus_target:oracle-prod-01]
 # enabled = true
-# 必填：oracle、mysql、postgres或node。
+# 必填：oracle、mysql、postgres、node或cadvisor。
 # engine = oracle
 # 必填：Central Prometheus可达的host:port，不要带URL路径。
 # address = 10.0.0.30:19161
 # environment = production
-
-# 将cAdvisor中的数据库容器映射回数据库Target Key，用于计算容器资源使用率。
-# 同一个cAdvisor抓取目标可以映射多个数据库容器。
-[container:oracle-prod-01]
-# enabled = true
-# 必填：对应[prometheus_target:*]冒号后的cAdvisor Target Key。
-# scrape_target_key = containers-prod-01
-# 必填：Docker容器名称，不要填写容器ID。
-# container_name = oracle19c
 """
 
 
@@ -323,14 +312,6 @@ def _prometheus_target_sections(parser: configparser.ConfigParser) -> tuple[str,
     )
 
 
-def _container_mapping_sections(parser: configparser.ConfigParser) -> tuple[str, ...]:
-    return tuple(
-        section
-        for section in parser.sections()
-        if CONTAINER_MAPPING_SECTION.fullmatch(section) and _enabled(parser, section)
-    )
-
-
 def _load_settings(path: Path) -> DeploymentSettings:
     if path.stat().st_mode & 0o077:
         raise ValueError(f"配置文件权限必须为0600：chmod 600 {path}")
@@ -372,8 +353,6 @@ def _load_settings(path: Path) -> DeploymentSettings:
         profiles = (*profiles, *tuple(sorted({item.engine for item in database_targets})))
     if external_targets and "metrics" not in profiles:
         raise ValueError("启用[prometheus_target:*]前必须启用[metrics]")
-    if _container_mapping_sections(parser) and "metrics" not in profiles:
-        raise ValueError("启用[container:*]前必须启用[metrics]")
     settings = DeploymentSettings(
         config_path=path,
         runtime_dir=path.parent / "generated",
@@ -504,32 +483,6 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
             raise ValueError(f"[{section}] address必须是host:port")
         if int(address.rsplit(":", 1)[1]) > 65535:
             raise ValueError(f"[{section}] address端口必须介于1和65535之间")
-    external_engines = {
-        PROMETHEUS_TARGET_SECTION.fullmatch(section).group("target_key"): _required(
-            parser, section, "engine"
-        )
-        for section in _prometheus_target_sections(parser)
-        if PROMETHEUS_TARGET_SECTION.fullmatch(section)
-    }
-    if "containers" in settings.profiles:
-        external_engines[_required(parser, "containers", "target_key")] = "cadvisor"
-    seen_container_mappings: set[tuple[str, str]] = set()
-    for section in _container_mapping_sections(parser):
-        match = CONTAINER_MAPPING_SECTION.fullmatch(section)
-        if match is None:
-            raise ValueError(f"无法解析容器映射配置段：{section}")
-        scrape_target_key = _required(parser, section, "scrape_target_key")
-        if external_engines.get(scrape_target_key) != "cadvisor":
-            raise ValueError(
-                f"[{section}] scrape_target_key必须引用已启用的cAdvisor Prometheus目标"
-            )
-        container_name = _required(parser, section, "container_name")
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", container_name):
-            raise ValueError(f"[{section}] container_name格式无效")
-        identity = (scrape_target_key, container_name)
-        if identity in seen_container_mappings:
-            raise ValueError("同一cAdvisor目标中的容器名称不能重复映射")
-        seen_container_mappings.add(identity)
     if "logs" in settings.profiles:
         loki_url = _optional(
             parser,
@@ -587,62 +540,56 @@ scrape_configs:
 """
 
 
-def _container_recording_rules(settings: DeploymentSettings) -> str:
-    parser = settings.values
-    sections = _container_mapping_sections(parser)
-    if not sections:
-        return ""
-    rules = [
-        "",
-        "  - name: kbot-aiops-container-recording",
-        "    interval: 15s",
-        "    rules:",
-    ]
-    for section in sections:
-        match = CONTAINER_MAPPING_SECTION.fullmatch(section)
-        if match is None:
-            raise ValueError(f"无法解析容器映射配置段：{section}")
-        target_key = match.group("target_key")
-        scrape_target_key = _required(parser, section, "scrape_target_key")
-        container_name = _required(parser, section, "container_name")
-        selector = (
-            'job="cadvisor",target_key='
-            + json.dumps(scrape_target_key)
-            + ',name=~'
-            + json.dumps("/?" + re.escape(container_name))
-        )
-        target_label = json.dumps(target_key, ensure_ascii=False)
-        container_label = json.dumps(container_name, ensure_ascii=False)
-        rules.extend(
-            [
-                "      - record: kbot_db_container_cpu_utilization_percent",
-                "        expr: 100 * sum(rate(container_cpu_usage_seconds_total{"
-                + selector
-                + "}[5m])) / clamp_min(max(container_spec_cpu_quota{"
-                + selector
-                + "}) / clamp_min(max(container_spec_cpu_period{"
-                + selector
-                + "}), 1), 0.001)",
-                "        labels:",
-                f"          target_key: {target_label}",
-                f"          container_name: {container_label}",
-                "",
-                "      - record: kbot_db_container_memory_utilization_percent",
-                "        expr: 100 * max(container_memory_working_set_bytes{"
-                + selector
-                + "}) / clamp_min(max(container_spec_memory_limit_bytes{"
-                + selector
-                + "}), 1)",
-                "        labels:",
-                f"          target_key: {target_label}",
-                f"          container_name: {container_label}",
-                "",
-            ]
-        )
-    return "\n".join(rules)
+def _container_recording_rules() -> str:
+    return """
+
+  - name: kbot-aiops-container-recording
+    interval: 15s
+    rules:
+      - record: kbot_db_container_cpu_utilization_percent
+        expr: |
+          label_replace(
+            100 *
+            sum by (container_label_aiops_target_key, name) (
+              rate(container_cpu_usage_seconds_total{job="cadvisor",container_label_aiops_target_key!=""}[5m])
+            )
+            /
+            on (container_label_aiops_target_key, name)
+            (
+              max by (container_label_aiops_target_key, name) (
+                container_spec_cpu_quota{job="cadvisor",container_label_aiops_target_key!=""}
+              )
+              /
+              clamp_min(
+                max by (container_label_aiops_target_key, name) (
+                  container_spec_cpu_period{job="cadvisor",container_label_aiops_target_key!=""}
+                ),
+                1
+              )
+            ),
+            "target_key", "$1", "container_label_aiops_target_key", "(.+)"
+          )
+
+      - record: kbot_db_container_memory_utilization_percent
+        expr: |
+          label_replace(
+            100 *
+            max by (container_label_aiops_target_key, name) (
+              container_memory_working_set_bytes{job="cadvisor",container_label_aiops_target_key!=""}
+            )
+            /
+            clamp_min(
+              max by (container_label_aiops_target_key, name) (
+                container_spec_memory_limit_bytes{job="cadvisor",container_label_aiops_target_key!=""}
+              ),
+              1
+            ),
+            "target_key", "$1", "container_label_aiops_target_key", "(.+)"
+          )
+"""
 
 
-def _prometheus_rules(settings: DeploymentSettings | None = None) -> str:
+def _prometheus_rules() -> str:
     base = """groups:
   - name: kbot-observability-health
     rules:
@@ -979,9 +926,7 @@ def _prometheus_rules(settings: DeploymentSettings | None = None) -> str:
           summary: "PostgreSQL缓存命中率偏低"
           description: "{{ $labels.target_key }}缓存命中率连续15分钟低于95%。"
 """
-    if settings is None:
-        return base
-    return base + _container_recording_rules(settings)
+    return base + _container_recording_rules()
 
 
 def _prometheus_query_overrides() -> str:
@@ -1004,8 +949,8 @@ def _prometheus_query_overrides() -> str:
                 "host.filesystem.utilization": '100 * (1 - node_filesystem_avail_bytes{job="node",fstype!~"tmpfs|overlay",target_key="${host_target}"} / node_filesystem_size_bytes{job="node",fstype!~"tmpfs|overlay",target_key="${host_target}"})',
                 "host.disk.io.utilization": 'rate(node_disk_io_time_seconds_total{job="node",target_key="${host_target}"}[5m]) * 100',
                 "host.network.throughput": 'rate(node_network_receive_bytes_total{job="node",device!="lo",target_key="${host_target}"}[5m]) + rate(node_network_transmit_bytes_total{job="node",device!="lo",target_key="${host_target}"}[5m])',
-                "container.cpu.utilization": 'kbot_db_container_cpu_utilization_percent{target_key="${external_target}"}',
-                "container.memory.utilization": 'kbot_db_container_memory_utilization_percent{target_key="${external_target}"}',
+                "runtime.cpu.utilization": 'kbot_db_container_cpu_utilization_percent{target_key="${external_target}"} or on() (100 - (avg(rate(node_cpu_seconds_total{job="node",mode="idle",target_key="${host_target}"}[5m])) * 100))',
+                "runtime.memory.utilization": 'kbot_db_container_memory_utilization_percent{target_key="${external_target}"} or on() (100 * (1 - node_memory_MemAvailable_bytes{job="node",target_key="${host_target}"} / node_memory_MemTotal_bytes{job="node",target_key="${host_target}"}))',
             }
         },
         ensure_ascii=False,
@@ -1431,7 +1376,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
 
     if "metrics" in settings.profiles:
         prometheus_revision = hashlib.sha256(
-            (_prometheus_config() + _prometheus_rules(settings)).encode("utf-8")
+            (_prometheus_config() + _prometheus_rules()).encode("utf-8")
         ).hexdigest()
         webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
         alertmanager_config = _alertmanager_config(bool(webhook_url))
@@ -1616,7 +1561,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
     _write_text(runtime / "prometheus/prometheus.yml", _prometheus_config())
     _write_text(
         runtime / "prometheus/rules/kbot-observability.yml",
-        _prometheus_rules(settings),
+        _prometheus_rules(),
     )
     _write_text(
         runtime / "prometheus/kbot-aiops-query-overrides.json",

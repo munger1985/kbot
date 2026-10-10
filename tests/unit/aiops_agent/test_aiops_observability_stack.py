@@ -129,8 +129,8 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
         "host.filesystem.utilization",
         "host.disk.io.utilization",
         "host.network.throughput",
-        "container.cpu.utilization",
-        "container.memory.utilization",
+        "runtime.cpu.utilization",
+        "runtime.memory.utilization",
     }
 
 
@@ -139,7 +139,7 @@ def test_template_has_one_required_section_and_modules_are_disabled() -> None:
     assert "[deployment]" in stack.CONFIG_TEMPLATE
     assert "deployment_id = CHANGE_ME" in stack.CONFIG_TEMPLATE
     assert "OEM不在此部署文件中配置" in stack.CONFIG_TEMPLATE
-    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 10
+    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 9
 
 
 def test_single_config_generates_every_enabled_module(tmp_path: Path) -> None:
@@ -498,7 +498,7 @@ exporter_port = 19101
     assert stack._selected_services(settings) == ["cadvisor"]
 
 
-def test_cadvisor_container_mapping_generates_target_scoped_resource_metrics(
+def test_cadvisor_docker_labels_generate_target_scoped_resource_metrics(
     tmp_path: Path,
 ) -> None:
     stack = _load_stack_script()
@@ -518,15 +518,6 @@ engine = cadvisor
 address = 10.0.0.88:19101
 environment = development
 
-[container:mysql-aiops-88]
-enabled = true
-scrape_target_key = containers-aiops-88
-container_name = aiops-mysql
-
-[container:postgres-aiops-88]
-enabled = true
-scrape_target_key = containers-aiops-88
-container_name = aiops-postgres
 """,
         encoding="utf-8",
     )
@@ -552,10 +543,10 @@ container_name = aiops-postgres
     ).read_text()
     assert "kbot_db_container_cpu_utilization_percent" in rules
     assert "kbot_db_container_memory_utilization_percent" in rules
-    assert 'target_key: "mysql-aiops-88"' in rules
-    assert 'container_name: "aiops-postgres"' in rules
-    assert 'target_key="containers-aiops-88"' in rules
-    assert 'name=~"/?aiops\\\\-mysql"' in rules
+    assert "container_label_aiops_target_key" in rules
+    assert '"target_key", "$1"' in rules
+    assert "mysql-aiops-88" not in rules
+    assert "name=~" not in rules
 
 
 def test_webhook_signer_uses_dynamic_hmac_headers() -> None:

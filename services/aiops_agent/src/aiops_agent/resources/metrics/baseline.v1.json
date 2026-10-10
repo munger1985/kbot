@@ -575,13 +575,13 @@
       }
     },
     {
-      "metric_code": "container.cpu.utilization",
+      "metric_code": "runtime.cpu.utilization",
       "semantic_version": "1.0.0",
-      "name": "容器 CPU 使用率",
-      "description": "数据库容器 CPU 使用量相对该容器 CPU 硬上限的百分比。",
+      "name": "运行环境 CPU 使用率",
+      "description": "数据库运行环境 CPU 使用率；Docker 容器按自身 CPU 硬上限计算，非容器目标读取显式绑定主机的 Node Exporter 指标。",
       "unit": "percent",
       "value_kind": "GAUGE",
-      "expected_dimensions": ["target_key", "container_name"],
+      "expected_dimensions": ["target_key"],
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600,
@@ -589,18 +589,18 @@
       "max_points": 120,
       "max_series": 8,
       "providers": {
-        "PROMETHEUS": {"template_id": "prom.container.cpu", "template_version": "1", "query_template": "kbot_db_container_cpu_utilization_percent{target_key=\"${external_target}\"}", "required_labels": ["target_key"]},
-        "ZABBIX": {"template_id": "zabbix.container.cpu", "template_version": "1", "exact_item_key": "kbot.container.cpu.utilization", "value_type": "FLOAT", "unit": "percent"}
+        "PROMETHEUS": {"template_id": "prom.runtime.cpu", "template_version": "1", "query_template": "kbot_db_container_cpu_utilization_percent{target_key=\"${external_target}\"} or on() (100 - (avg(rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\",target_key=\"${host_target}\"}[5m])) * 100))", "required_labels": ["target_key"]},
+        "ZABBIX": {"template_id": "zabbix.runtime.cpu", "template_version": "1", "exact_item_key": "kbot.runtime.cpu.utilization", "value_type": "FLOAT", "unit": "percent"}
       }
     },
     {
-      "metric_code": "container.memory.utilization",
+      "metric_code": "runtime.memory.utilization",
       "semantic_version": "1.0.0",
-      "name": "容器内存使用率",
-      "description": "数据库容器工作集内存相对该容器内存硬上限的百分比。",
+      "name": "运行环境内存使用率",
+      "description": "数据库运行环境内存使用率；Docker 容器按自身内存硬上限计算，非容器目标读取显式绑定主机的 Node Exporter 指标。",
       "unit": "percent",
       "value_kind": "GAUGE",
-      "expected_dimensions": ["target_key", "container_name"],
+      "expected_dimensions": ["target_key"],
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "allowed_aggregations": ["AVG", "MAX", "LAST"],
       "default_window_seconds": 3600,
@@ -608,8 +608,8 @@
       "max_points": 120,
       "max_series": 8,
       "providers": {
-        "PROMETHEUS": {"template_id": "prom.container.memory", "template_version": "1", "query_template": "kbot_db_container_memory_utilization_percent{target_key=\"${external_target}\"}", "required_labels": ["target_key"]},
-        "ZABBIX": {"template_id": "zabbix.container.memory", "template_version": "1", "exact_item_key": "kbot.container.memory.utilization", "value_type": "FLOAT", "unit": "percent"}
+        "PROMETHEUS": {"template_id": "prom.runtime.memory", "template_version": "1", "query_template": "kbot_db_container_memory_utilization_percent{target_key=\"${external_target}\"} or on() (100 * (1 - node_memory_MemAvailable_bytes{job=\"node\",target_key=\"${host_target}\"} / node_memory_MemTotal_bytes{job=\"node\",target_key=\"${host_target}\"}))", "required_labels": ["target_key"]},
+        "ZABBIX": {"template_id": "zabbix.runtime.memory", "template_version": "1", "exact_item_key": "kbot.runtime.memory.utilization", "value_type": "FLOAT", "unit": "percent"}
       }
     },
     {
