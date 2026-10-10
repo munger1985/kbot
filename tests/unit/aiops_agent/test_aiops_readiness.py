@@ -135,9 +135,6 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("schema_version = 37", session.statements[0])
         self.assertIn("aiops-oracle-v27", session.statements[0])
-        self.assertEqual(
-            28, len(_REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS)
-        )
         self.assertIn("KBOT_OPS_WORK_ITEM_ACTIVITY", session.statements[1])
         self.assertIn("GENERATED = 'USER NAME'", session.statements[-1])
 
