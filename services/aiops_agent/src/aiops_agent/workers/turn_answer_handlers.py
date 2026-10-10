@@ -30,6 +30,11 @@ from aiops_agent.application.diagnosis import (
     is_diagnosis_turn,
     summarize_awr_facts,
 )
+from aiops_agent.application.display_dictionary import (
+    dictionary_for_payload,
+    display_name,
+    display_text,
+)
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -1315,20 +1320,24 @@ class DbaAnswerComposeHandler:
             "answer_compose",
             frozen_prompts=dict(answer_context["prompts"]),
         )
+        model_input = {
+            "question": str(answer_context.get("question", "")),
+            "input_envelope": dict(
+                answer_context.get("input_envelope", {})
+            ),
+            "task_frame": dict(answer_context.get("task_frame", {})),
+            "sufficiency": self._model_assessment_payload(assessment),
+            "proposal_summary": proposal_summary,
+        }
+        model_input["user_facing_dictionary"] = dictionary_for_payload(
+            model_input
+        )
         result = await self._model.generate_structured(
             purpose="aiops.dba-answer-compose",
             output_model=DbaAnswerDraft,
             model_snapshot=dict(answer_context["model"]),
             prompt_ref={**prompt.ref(), "content": prompt.content},
-            input_payload={
-                "question": str(answer_context.get("question", "")),
-                "input_envelope": dict(
-                    answer_context.get("input_envelope", {})
-                ),
-                "task_frame": dict(answer_context.get("task_frame", {})),
-                "sufficiency": self._model_assessment_payload(assessment),
-                "proposal_summary": proposal_summary,
-            },
+            input_payload=model_input,
             deadline=self._deadline(context.deadline_at),
             idempotency_key=f"turn:{context.run_id}:answer:{context.attempt}",
         )
@@ -1472,6 +1481,9 @@ class DbaAnswerComposeHandler:
                 "previous_invalid_answer": answer or None,
                 "validation_error": validation_error or None,
             }
+            last_input_payload["user_facing_dictionary"] = (
+                dictionary_for_payload(last_input_payload)
+            )
             async for chunk in self._model.stream_text(
                 purpose="aiops.dba-answer-stream",
                 model_snapshot=dict(answer_context["model"]),
@@ -1501,7 +1513,7 @@ class DbaAnswerComposeHandler:
         else:
             raise ValueError("模型连续两次未生成可验证的诊断回答")
 
-        markdown = self._strip_citation_labels(answer)
+        markdown = display_text(self._strip_citation_labels(answer))
         evidence_refs = tuple(labels[label] for label in used_labels)
         for index, delta in enumerate(self._answer_deltas(markdown), start=1):
             yield DbaAnswerProgress(
@@ -1590,11 +1602,13 @@ class DbaAnswerComposeHandler:
         )
         draft = DiagnosisAnswerDraft.model_validate(result.output)
         self._validate_evidence_refs(draft.evidence_refs, assessment)
+        analysis_markdown = display_text(draft.analysis_markdown)
+        solution_markdown = display_text(draft.solution_markdown)
         markdown = "\n\n".join(
             item
             for item in (
-                draft.analysis_markdown.strip(),
-                draft.solution_markdown.strip(),
+                analysis_markdown.strip(),
+                solution_markdown.strip(),
             )
             if item
         )
@@ -1608,8 +1622,8 @@ class DbaAnswerComposeHandler:
             context=context,
             assessment=assessment,
             compilation=compilation,
-            analysis_markdown=draft.analysis_markdown,
-            solution_markdown=draft.solution_markdown,
+            analysis_markdown=analysis_markdown,
+            solution_markdown=solution_markdown,
             evidence_refs=draft.evidence_refs,
         )
         yield AIOpsTurnResult(
@@ -1659,7 +1673,7 @@ class DbaAnswerComposeHandler:
                 TurnAnswerBlock(
                     block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
                     schema_version="AIOPS_ANALYSIS_BLOCK.v1",
-                    payload={"markdown": analysis_markdown},
+                    payload={"markdown": display_text(analysis_markdown)},
                     evidence_refs=evidence_refs,
                 )
             )
@@ -1667,7 +1681,7 @@ class DbaAnswerComposeHandler:
                 TurnAnswerBlock(
                     block_type=AnswerBlockType.SOLUTION_MARKDOWN,
                     schema_version="AIOPS_SOLUTION_BLOCK.v1",
-                    payload={"markdown": solution_markdown},
+                    payload={"markdown": display_text(solution_markdown)},
                     evidence_refs=evidence_refs,
                 )
             )
@@ -1682,7 +1696,7 @@ class DbaAnswerComposeHandler:
                 TurnAnswerBlock(
                     block_type=AnswerBlockType.MARKDOWN,
                     schema_version="AIOPS_MARKDOWN_BLOCK.v1",
-                    payload={"markdown": markdown},
+                    payload={"markdown": display_text(markdown)},
                     evidence_refs=evidence_refs,
                 )
             )
@@ -1761,6 +1775,7 @@ class DbaAnswerComposeHandler:
                 dict(item) for item in extract_metric_trend_rows(assessment.evidence)
             ]
             payload["trend_computation_policy"] = "USE_SERVER_FIELDS"
+        payload["user_facing_dictionary"] = dictionary_for_payload(payload)
         return payload
 
     @staticmethod
@@ -2138,7 +2153,7 @@ class DbaAnswerComposeHandler:
                     TurnAnswerBlock(
                         block_type=AnswerBlockType.MARKDOWN,
                         schema_version="AIOPS_MARKDOWN_BLOCK.v1",
-                        payload={"markdown": message},
+                        payload={"markdown": display_text(message)},
                     ),
                     proposal_block,
                 ),
@@ -2159,7 +2174,7 @@ class DbaAnswerComposeHandler:
             TurnAnswerBlock(
                 block_type=AnswerBlockType.MARKDOWN,
                 schema_version="AIOPS_MARKDOWN_BLOCK.v1",
-                payload={"markdown": message},
+                payload={"markdown": display_text(message)},
             )
         ]
         evidence_request = DbaAnswerComposeHandler._evidence_request_block(
@@ -2250,7 +2265,8 @@ class DbaAnswerComposeHandler:
             for gap, tool in manual_requests:
                 tool_id = str(tool["tool_id"])
                 lines.append(
-                    f"- `{tool_id}`：{gap.detail}（`{gap.code}`）"
+                    f"- `{tool_id}`：{display_text(gap.detail)}"
+                    f"（{display_name(gap.code)}）"
                 )
             request_codes = {gap.code for gap, _ in manual_requests}
             permission_codes = {"AUTH_FAILED", "PRIVILEGE_MISSING"}
@@ -2304,7 +2320,8 @@ class DbaAnswerComposeHandler:
             )
             for gap in monitoring_gaps:
                 lines.append(
-                    f"- `{gap.step_id}`：{gap.detail}（`{gap.code}`）"
+                    f"- `{gap.step_id}`：{display_text(gap.detail)}"
+                    f"（{display_name(gap.code)}）"
                 )
                 query = queries.get(gap.step_id)
                 if query:

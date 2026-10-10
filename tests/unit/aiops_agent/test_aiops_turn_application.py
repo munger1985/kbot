@@ -1051,6 +1051,11 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             view.investigation_plan.task_frame.problem_statement,
         )
         self.assertEqual(run_id, view.ops_run_id)
+        self.assertEqual("排队中", view.display_dictionary["QUEUED"])
+        self.assertEqual(
+            "等待审批",
+            view.display_dictionary["WAITING_APPROVAL"],
+        )
 
     async def test_start_rejects_disabled_target(self) -> None:
         uow = _Uow()

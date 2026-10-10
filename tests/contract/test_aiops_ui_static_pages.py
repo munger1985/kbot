@@ -974,6 +974,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('`**根因等级：**', workspace)
         self.assertIn("answerBlockHtml", workspace)
         self.assertIn("turnEvidenceHtml", workspace)
+        self.assertIn("turn.display_dictionary", workspace)
+        self.assertIn("displayText", workspace)
         self.assertIn(
             'const dataBlocks = blocks.filter((block) => '
             'block.block_type === "TABLE")',

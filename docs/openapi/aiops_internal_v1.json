@@ -12505,6 +12505,13 @@
             "title": "Current Plan Revision",
             "type": "integer"
           },
+          "display_dictionary": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Display Dictionary",
+            "type": "object"
+          },
           "error_code": {
             "anyOf": [
               {
@@ -13763,6 +13770,65 @@
       }
     },
     "/internal/v1/aiops/config/inspection-plans/{plan_id}": {
+      "delete": {
+        "operationId": "delete_inspection_plan_internal_v1_aiops_config_inspection_plans__plan_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Inspection Plan",
+        "tags": [
+          "AIOps Config"
+        ]
+      },
       "get": {
         "operationId": "get_inspection_plan_internal_v1_aiops_config_inspection_plans__plan_id__get",
         "parameters": [

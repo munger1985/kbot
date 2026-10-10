@@ -40,7 +40,9 @@ def _require_turn_contract(
     missing = sorted(
         {
             *{"evidence_gaps"}.difference(summary_contract.model_fields),
-            *{"investigation_plan"}.difference(view_contract.model_fields),
+            *{"investigation_plan", "display_dictionary"}.difference(
+                view_contract.model_fields
+            ),
         }
     )
     if missing:

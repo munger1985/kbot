@@ -2897,7 +2897,7 @@
     },
     "/readyz": {
       "get": {
-        "description": "确认数据库连接可用；尚未部署 Schema 时返回 503。",
+        "description": "只确认数据库连接可用，不在运行时校验 Schema。",
         "operationId": "readyz_readyz_get",
         "responses": {
           "200": {

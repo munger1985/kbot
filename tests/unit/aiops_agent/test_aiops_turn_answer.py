@@ -109,8 +109,10 @@ class _StreamAnswerModel:
     def __init__(self, answers: tuple[str, ...]) -> None:
         self.answers = list(answers)
         self.calls = 0
+        self.last_input_payload = {}
 
-    async def stream_text(self, **_):
+    async def stream_text(self, **kwargs):
+        self.last_input_payload = kwargs["input_payload"]
         answer = self.answers[self.calls]
         self.calls += 1
         midpoint = max(1, len(answer) // 2)
@@ -1676,7 +1678,8 @@ class DbaTurnAnswerTest(unittest.TestCase):
             result.blocks[1].block_type,
         )
         markdown = result.blocks[1].payload["markdown"]
-        self.assertIn("PRIVILEGE_MISSING", markdown)
+        self.assertIn("数据库只读账号缺少所需权限", markdown)
+        self.assertNotIn("PRIVILEGE_MISSING", markdown)
         self.assertIn("V_$SQLSTATS", markdown)
         self.assertIn("ROWNUM <= 10", markdown)
         self.assertNotIn(":limit", markdown)
@@ -2411,6 +2414,61 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(
             (assessment.evidence[0].evidence_ref,),
             final.blocks[0].evidence_refs,
+        )
+
+    def test_streamed_answer_translates_backend_dictionary_values(self) -> None:
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
+                    )
+                )
+            )
+        )
+        context = _context(
+            artifacts=(
+                {
+                    "artifact_id": str(uuid7()),
+                    "schema_version": "DBA_SUFFICIENCY.v1",
+                    "payload": assessment.model_dump(mode="json"),
+                },
+            ),
+            task_frame_overrides={"objectives": ["EXPLAIN"]},
+        )
+        model = _StreamAnswerModel(
+            ("当前结论为 PARTIAL，证据状态为 NEEDS_EVIDENCE。[E1]",)
+        )
+        handler = DbaAnswerComposeHandler(
+            model_client=model,
+            prompts=_TestPrompts(),
+        )
+
+        async def collect():
+            return [item async for item in handler.execute_stream(context)]
+
+        items = asyncio.run(collect())
+        final = items[-1]
+        streamed = "".join(
+            item.payload["delta"]
+            for item in items[:-1]
+            if item.event_type == "answer.delta"
+        )
+
+        self.assertIn("当前结论为 部分完成", streamed)
+        self.assertIn("证据状态为 仍需补充证据", streamed)
+        self.assertNotIn("PARTIAL", streamed)
+        self.assertNotIn("NEEDS_EVIDENCE", streamed)
+        self.assertEqual(streamed, final.blocks[0].payload["markdown"])
+        self.assertEqual(
+            {
+                "ANSWERABLE": "证据充分，可以回答",
+                "CURRENT_ACTIVITY": "当前活动快照",
+                "EXPLAIN": "解释",
+                "SOURCE_VERIFIED": "来源已验证",
+                "TABLE_AND_CHART": "数据表格与图表",
+            },
+            model.last_input_payload["user_facing_dictionary"],
         )
 
     def test_streamed_answer_retries_unknown_reference(self) -> None:

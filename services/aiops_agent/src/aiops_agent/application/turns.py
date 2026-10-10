@@ -25,6 +25,7 @@ from aiops_agent.application.errors import (
     state_conflict,
     validation_failed,
 )
+from aiops_agent.application.display_dictionary import dictionary_for_payload
 from aiops_agent.application.targets.facts import create_confirmed_fact
 from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
@@ -698,16 +699,29 @@ class ConversationTurnService:
                     execution_snapshot=execution_snapshot,
                     tool_invocations=tool_invocations,
                 )
+            block_views = [
+                self._block_view(
+                    row,
+                    citations_by_block.get(row.answer_block_id, []),
+                )
+                for row in blocks
+            ]
+            turn_summary = self._turn_summary(turn)
             return {
-                **self._turn_summary(turn),
+                **turn_summary,
                 "messages": [self._message_view(row) for row in messages],
-                "answer_blocks": [
-                    self._block_view(
-                        row,
-                        citations_by_block.get(row.answer_block_id, []),
-                    )
-                    for row in blocks
-                ],
+                "answer_blocks": block_views,
+                "display_dictionary": dictionary_for_payload(
+                    {
+                        "status": turn_summary["status"],
+                        "sufficiency_status": turn_summary[
+                            "sufficiency_status"
+                        ],
+                        "evidence_gaps": turn_summary["evidence_gaps"],
+                        "answer_blocks": block_views,
+                        "investigation_plan": plan_view,
+                    }
+                ),
                 "investigation_plan": plan_view,
                 "ops_run_id": (
                     str(link.ops_run_id) if link is not None else None

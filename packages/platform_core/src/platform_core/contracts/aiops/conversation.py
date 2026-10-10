@@ -374,6 +374,7 @@ class TurnView(TurnSummary):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     messages: tuple[ConversationMessageView, ...] = ()
     answer_blocks: tuple[AnswerBlockView, ...] = ()
+    display_dictionary: dict[str, str] = Field(default_factory=dict)
     investigation_plan: TurnInvestigationPlanView | None = None
     ops_run_id: UUIDv7 | None = None
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO
 import json
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -23,6 +22,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from aiops_agent.application.errors import validation_failed
+from aiops_agent.application.display_dictionary import display_name, display_text
 from aiops_agent.application.leadership import project_leadership_briefing
 
 
@@ -61,101 +61,11 @@ _ALLOWED_SECTIONS = frozenset(
     }
 )
 
-_REPORT_DISPLAY_NAMES = {
-    "EXECUTIVE_SUMMARY": "执行摘要",
-    "SCOPE": "报告范围",
-    "ALERT_TIMELINE": "告警时间线",
-    "INSPECTION_COVERAGE": "巡检覆盖情况",
-    "RISK_OVERVIEW": "风险概览",
-    "TREND": "趋势分析",
-    "FINDINGS": "核验发现",
-    "ROOT_CAUSE": "根因分析",
-    "RECOMMENDATIONS": "处置建议",
-    "ACTIONS": "已执行动作",
-    "EVIDENCE_BOUNDARY": "证据边界",
-    "EVIDENCE_APPENDIX": "证据附录",
-    "CONFIRMED": "已确认",
-    "PROBABLE": "很可能",
-    "POSSIBLE": "可能",
-    "INCONCLUSIVE": "证据不足，无法定论",
-    "GENERATING": "生成中",
-    "READY": "已完成",
-    "PARTIAL": "部分完成",
-    "FAILED": "失败",
-    "CRITICAL": "严重",
-    "HIGH": "高",
-    "MEDIUM": "中",
-    "LOW": "低",
-    "INFO": "提示",
-    "RESOLVED": "已解决",
-    "IMPROVED": "已改善",
-    "UNCHANGED": "未改善",
-    "DEGRADED": "已恶化",
-    "MISSING_ASH": "缺少 ASH 历史会话数据",
-    "MISSING_PRIMARY_RUN": "缺少主诊断运行记录",
-    "MISSING_FINAL_RESULT": "缺少最终诊断结果",
-    "UNREPORTABLE_FINAL_RESULT": "最终结果暂不支持生成报告",
-    "MISSING_FINAL_ARTIFACT": "缺少最终报告产物",
-    "USER_RESULT_UNAVAILABLE": "用户提供的结果不可用",
-    "EVIDENCE_FACT_LIMIT_REACHED": "已达到证据事实数量上限",
-    "VERIFICATION_EVIDENCE_MISSING": "缺少处置验证证据",
-    "ACTION_VERIFIER_UNAVAILABLE": "动作验证器不可用",
-    "EVIDENCE_NOT_COMPARABLE": "处理前后证据不可比较",
-    "VERIFICATION_STATE_UNSUPPORTED": "当前验证状态不受支持",
-    "SOURCE_AUTH_FAILED": "诊断源认证失败",
-    "SOURCE_UNREACHABLE": "诊断源不可达",
-    "DIAGNOSTIC_POLICY_DENIED": "诊断策略不允许数据库直连",
-    "DB_DIRECT_NOT_CONFIGURED": "未配置数据库直连",
-    "TARGET_INACTIVE": "Target 未启用",
-    "DIAGNOSTIC_SECRET_MISSING": "缺少诊断凭据",
-    "TARGET_ENDPOINT_MISSING": "缺少 Target 连接地址",
-    "TARGET_CONNECTIVITY_UNAVAILABLE": "Target 当前不可连接",
-    "VERSION_UNSUPPORTED": "数据库版本不受支持",
-    "CAPABILITY_UNAVAILABLE": "所需诊断能力不可用",
-    "INSPECTION_OBSERVATION_MISSING": "缺少巡检观测结果",
-    "INSPECTION_TEMPLATE_STEPS_MISSING": "巡检模板缺少检查步骤",
-    "METRIC_SOURCE_UNAVAILABLE": "指标源不可用",
-    "ACTION_TEMPLATE_UNAVAILABLE": "动作模板不可用",
-    "EXECUTION_SECRET_MISSING": "缺少执行凭据",
-    "EXECUTION_UNAVAILABLE_ADVISORY_PROVIDED": "无法自动执行，已提供人工建议",
-    "MUTATION_EXECUTION_UNAVAILABLE": "受控变更执行不可用",
-    "OPERATIONS_KNOWLEDGE_UNAVAILABLE": "运维知识不可用",
-    "OPS_DELEGATION_RESULT_NOT_READY": "委派结果尚未就绪",
-    "POLICY_MISSING": "缺少执行策略",
-    "SECRET_UNAVAILABLE": "凭据不可用",
-    "VERIFIED_ACTION_PARAMETERS_UNAVAILABLE": "缺少已验证的动作参数",
-    "EXTERNAL_SOURCE_NOT_SOURCE_VERIFIED": "外部数据源未通过来源验证",
-    "DISCONTINUITY": "数据采样不连续",
-    "METRIC_COUNTER_RESET": "指标计数器已重置",
-    "SAMPLING_BOUNDARY": "采样边界限制",
-    "RPO_NOT_CONFIGURED": "未配置业务 RPO",
-    "RTO_NOT_CONFIGURED": "未配置业务 RTO",
-    "RESTORE_NOT_DEMONSTRATED": "恢复能力尚未实证",
-    "LATEST_DRILL_FAILED": "最近一次恢复演练失败",
-    "DRILL_STALE": "最近合格成功演练已超过要求周期",
-    "POLICY_CHANGED_SINCE_DRILL": "演练后恢复策略已变更",
-    "RPO_MEASUREMENT_MISSING": "合格演练缺少实测 RPO",
-    "RTO_MEASUREMENT_MISSING": "合格演练缺少实测 RTO",
-    "RPO_TARGET_BREACHED": "实测 RPO 超出业务目标",
-    "RTO_TARGET_BREACHED": "实测 RTO 超出业务目标",
-    "BACKUP_SOURCE_NOT_VERIFIED": "必需备份来源尚未验证",
-    "VERIFICATION_ADVERSE": "验证发现不利变化",
-    "ACTION_EFFECT_VERIFIED": "已验证动作达到预期效果",
-    "EXPECTED_DIRECT_EFFECT_NOT_OBSERVED": "未观测到预期直接效果",
-    "TARGET_ABSENT": "目标对象已消失",
-    "BLOCKING_ABSENT": "阻塞关系已消失",
-}
-_REPORT_CODE_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,}")
 
 
 def _report_display_text(value: object) -> str:
-    """仅替换已登记的报告枚举，未知技术文本保持原样。"""
-    return _REPORT_CODE_PATTERN.sub(
-        lambda match: _REPORT_DISPLAY_NAMES.get(
-            match.group(0), match.group(0)
-        ),
-        str(value),
-    )
+    """使用统一 AIOps 展示字典翻译报告文本。"""
+    return display_text(value)
 
 
 def _report_gap_item(value: object) -> str:
@@ -698,7 +608,7 @@ def report_presentation(
         body = [_report_display_text(item) for item in body]
         section_data.append({
             "kind": kind,
-            "display_name": _REPORT_DISPLAY_NAMES.get(kind, kind),
+            "display_name": display_name(kind),
             "items": body,
             "human_edited": kind in overrides,
         })
@@ -843,9 +753,7 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
             continue
         if kind == "EVIDENCE_APPENDIX":
             story.append(PageBreak())
-        label = item.get("display_name") or _REPORT_DISPLAY_NAMES.get(
-            kind, kind
-        )
+        label = item.get("display_name") or display_name(kind)
         story.append(Paragraph(_pdf_paragraph(label), section))
         for detail in item.get("items") or ():
             if str(detail).startswith("【") and str(detail).endswith("】"):

@@ -28,6 +28,13 @@
 
   const esc = shell.escape;
   const values = (items) => Array.isArray(items) ? items : [];
+  const displayText = (value, dictionary = {}) => String(value ?? "")
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g)
+    .map((part, index) => index % 2 ? part : part.replace(
+      /(^|[^A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?=$|[^A-Za-z0-9_])/g,
+      (match, prefix, code) => `${prefix}${dictionary[code] || code}`,
+    ))
+    .join("");
   const bullets = (items) => values(items).length
     ? values(items).map((item) => `- ${typeof item === "string" ? item : item.fact_summary || item.summary || item.title || "已记录"}`).join("\n")
     : "- 无";
@@ -235,7 +242,7 @@
     }));
   }
 
-  function investigationPlanHtml(plan) {
+  function investigationPlanHtml(plan, dictionary = {}) {
     const actions = values(plan?.actions);
     const frame = plan?.task_frame || {};
     const hypotheses = values(plan?.hypotheses);
@@ -255,13 +262,13 @@
     const rows = actions.map((action) => {
       const approval = action.execution_mode === "APPROVAL_REQUIRED";
       const mode = approval ? "需人工审批" : "自动只读执行";
-      const status = action.status || "PLANNED";
-      const evidence = action.expected_evidence_kind ? ` · 预期证据 ${action.expected_evidence_kind}` : "";
+      const status = displayText(action.status || "PLANNED", dictionary);
+      const evidence = action.expected_evidence_kind ? ` · 预期证据 ${displayText(action.expected_evidence_kind, dictionary)}` : "";
       const dependency = values(action.depends_on).length ? ` · 依赖 ${values(action.depends_on).join("、")}` : "";
       const query = action.sql_text
         ? `<details class="ops-plan-query"><summary>查看待执行 SQL 与参数</summary><pre><code>${esc(action.sql_text)}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(action.parameters || {}, null, 2))}</code></pre></details>`
         : "";
-      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(action.tool_class || action.tool_id || "DIAGNOSTIC")} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}</small>${query}</li>`;
+      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(displayText(action.tool_class || action.tool_id || "DIAGNOSTIC", dictionary))} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}</small>${query}</li>`;
     }).join("");
     const actionsHtml = actions.length ? `<div class="ops-plan-actions"><strong>取证步骤</strong><ol>${rows}</ol></div>` : `<p class="ops-plan-empty">现有材料已足够，本轮不需要调用额外诊断工具。</p>`;
     return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划与判断依据</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header>${frameHtml}${hypothesisHtml}${actionsHtml}</section>`;
@@ -493,6 +500,12 @@
     SQL_STATS_STALE: "统计过期",
     EXACHECK_FAIL: "ExaCheck 失败",
     EXACHECK_WARNING: "ExaCheck 警告",
+    REPLICATION_LAG: "复制延迟",
+    DEAD_TUPLES: "无效元组堆积",
+    AUTOVACUUM: "自动清理异常",
+    IDLE_SESSION: "空闲会话异常",
+    CONNECTION_USAGE: "连接使用率异常",
+    QUERY_RATE: "查询速率异常",
     INVALID_OBJECT: "无效对象",
     ARCHIVE_HEADROOM: "FRA 余量",
     BACKUP_FAILED: "备份失败",
@@ -674,24 +687,24 @@
     return value == null || value === "" ? "空" : value;
   }
 
-  function findingFieldsHtml(fields, findingType) {
+  function findingFieldsHtml(fields, findingType, dictionary = {}) {
     const source = fields || {};
     const keys = Object.keys(source);
     if (!keys.length) return "";
     const priority = findingPriorityFields[findingType] || [];
     const remaining = keys.filter((key) => !priority.includes(key));
     const ordered = [...priority.filter((key) => Object.prototype.hasOwnProperty.call(source, key)), ...remaining];
-    return `<ul class="ops-finding-fields">${ordered.map((key) => `<li><span>${esc(findingFieldLabels[key] || key)}</span><strong>${esc(findingFieldValue(source[key]))}</strong></li>`).join("")}</ul>`;
+    return `<ul class="ops-finding-fields">${ordered.map((key) => `<li><span>${esc(findingFieldLabels[key] || key)}</span><strong>${esc(displayText(findingFieldValue(source[key]), dictionary))}</strong></li>`).join("")}</ul>`;
   }
 
-  function findingCardsHtml(payload) {
+  function findingCardsHtml(payload, dictionary = {}) {
     const findings = values(payload.findings);
     const emptyReasons = values(payload.empty_reasons);
     const gaps = values(payload.gaps);
     const cards = findings.map((card) => {
       const severity = String(card.severity || "INFO");
       const tone = ["CRITICAL", "HIGH"].includes(severity) ? "bad" : severity === "MEDIUM" ? "warn" : "good";
-      return `<article class="ops-finding-card is-${esc(severity.toLowerCase())}"><header><div><strong>${esc(findingTypeLabels[card.finding_type] || card.finding_type || "发现")}</strong><small>${esc(findingConfirmationLabels[card.confirmation] || card.confirmation || "")}</small></div><span class="ops-badge ${tone}">${esc(findingSeverityLabels[severity] || severity)}</span></header><p class="ops-finding-impact">${esc(card.impact || "")}</p>${findingFieldsHtml(card.fields, card.finding_type)}</article>`;
+      return `<article class="ops-finding-card is-${esc(severity.toLowerCase())}"><header><div><strong>${esc(findingTypeLabels[card.finding_type] || displayText(card.finding_type || "发现", dictionary))}</strong><small>${esc(findingConfirmationLabels[card.confirmation] || displayText(card.confirmation || "", dictionary))}</small></div><span class="ops-badge ${tone}">${esc(findingSeverityLabels[severity] || displayText(severity, dictionary))}</span></header><p class="ops-finding-impact">${esc(displayText(card.impact || "", dictionary))}</p>${findingFieldsHtml(card.fields, card.finding_type, dictionary)}</article>`;
     }).join("");
     const empty = !findings.length
       ? `<p class="ops-finding-empty">${esc(emptyReasons.join(" ") || "当前没有需要报告的发现，不等于未取证。")}</p>`
@@ -842,15 +855,16 @@
 
   function answerBlockHtml(block, turn) {
     const payload = block.payload || {};
-    if (block.block_type === "MARKDOWN") return markdown.render(payload.markdown || payload.text || "");
+    const dictionary = turn?.display_dictionary || {};
+    if (block.block_type === "MARKDOWN") return markdown.render(displayText(payload.markdown || payload.text || "", dictionary));
     if (block.block_type === "ANALYSIS_MARKDOWN") {
-      return `<section class="ops-analysis"><header><strong>分析</strong></header>${markdown.render(payload.markdown || payload.text || "")}</section>`;
+      return `<section class="ops-analysis"><header><strong>分析</strong></header>${markdown.render(displayText(payload.markdown || payload.text || "", dictionary))}</section>`;
     }
     if (block.block_type === "SOLUTION_MARKDOWN") {
-      return `<section class="ops-solution"><header><strong>解决方案</strong></header>${markdown.render(payload.markdown || payload.text || "")}</section>`;
+      return `<section class="ops-solution"><header><strong>解决方案</strong></header>${markdown.render(displayText(payload.markdown || payload.text || "", dictionary))}</section>`;
     }
     if (block.block_type === "FACT_CONFIRMATION") return factConfirmationHtml(payload, turn);
-    if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload);
+    if (block.block_type === "FINDING_CARDS") return findingCardsHtml(payload, dictionary);
     if (["REPORT_ARTIFACT_LINKS", "HTML_REPORT_LINKS"].includes(block.block_type)) return reportArtifactLinksHtml(payload, turn);
     if (block.block_type === "IMPLEMENTATION_RUNBOOK") {
       const applicabilityLabel = {
@@ -863,24 +877,24 @@
         .some((value) => String(value || "").toUpperCase() === "MANUAL");
       const commandHtml = (command, manual = false) => {
         const metadata = [
-          manual ? "" : command.executor || command.command_type,
+          manual ? "" : displayText(command.executor || command.command_type, dictionary),
           command.run_as ? `身份 ${command.run_as}` : "",
           values(command.node_scope).length ? `节点 ${values(command.node_scope).join("、")}` : "",
           command.container_name ? `容器 ${command.container_name}` : "",
-          command.risk_level ? `风险 ${command.risk_level}` : "",
+          command.risk_level ? `风险 ${displayText(command.risk_level, dictionary)}` : "",
         ].filter(Boolean).map((item) => `<span>${esc(item)}</span>`).join("");
         if (manual) {
           return `<div class="ops-runbook-manual"><h6>${esc(command.title || "人工确认")}</h6><p>${esc(command.content || "")}</p>${metadata ? `<div class="ops-runbook-command-meta">${metadata}</div>` : ""}${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
         }
-        return `<div class="agent-code-block ops-runbook-command"><div class="agent-code-toolbar"><span><b>${esc(command.executor || command.command_type || "COMMAND")}</b>${esc(command.title || "")}</span><button type="button" data-copy-code>复制命令</button></div>${metadata ? `<div class="ops-runbook-command-meta">${metadata}</div>` : ""}<pre><code>${esc(command.content || "")}</code></pre>${values(command.expected_result).length ? `<div class="ops-runbook-expected"><strong>预期结果</strong><ul>${values(command.expected_result).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : ""}${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>`;
+        return `<div class="agent-code-block ops-runbook-command"><div class="agent-code-toolbar"><span><b>${esc(displayText(command.executor || command.command_type || "COMMAND", dictionary))}</b>${esc(command.title || "")}</span><button type="button" data-copy-code>复制命令</button></div>${metadata ? `<div class="ops-runbook-command-meta">${metadata}</div>` : ""}<pre><code>${esc(command.content || "")}</code></pre>${values(command.expected_result).length ? `<div class="ops-runbook-expected"><strong>预期结果</strong><ul>${values(command.expected_result).map((item) => `<li>${esc(displayText(item, dictionary))}</li>`).join("")}</ul></div>` : ""}${values(command.notes).length ? `<ul>${values(command.notes).map((item) => `<li>${esc(displayText(item, dictionary))}</li>`).join("")}</ul>` : ""}</div>`;
       };
       const commandGroup = (title, commands, manual = false) => values(commands).length
         ? `<section class="ops-runbook-command-group${manual ? " is-manual" : ""}"><h5>${esc(title)}</h5>${values(commands).map((command) => commandHtml(command, manual)).join("")}</section>`
         : "";
-      const stateItems = values(payload.current_state).map((item) => `<li class="is-${esc(String(item.status || "unknown").toLowerCase())}"><span>${esc(item.label || "-")}</span><strong>${esc(item.value || "-")}</strong><small>${esc(item.status || "UNKNOWN")}</small></li>`).join("");
-      const resolvedParameters = values(payload.resolved_parameters).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.source || "")}</small></div><code>${esc(item.value || "")}</code><span>${esc(item.status || "")}</span></li>`).join("");
+      const stateItems = values(payload.current_state).map((item) => `<li class="is-${esc(String(item.status || "unknown").toLowerCase())}"><span>${esc(item.label || "-")}</span><strong>${esc(item.value || "-")}</strong><small>${esc(displayText(item.status || "UNKNOWN", dictionary))}</small></li>`).join("");
+      const resolvedParameters = values(payload.resolved_parameters).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(displayText(item.source || "", dictionary))}</small></div><code>${esc(item.value || "")}</code><span>${esc(displayText(item.status || "", dictionary))}</span></li>`).join("");
       const requiredInputs = values(payload.required_inputs).map((item) => `<li><div><strong>${esc(item.label || item.key)}</strong><small>${esc(item.description || "")}</small></div><code>${esc(item.placeholder || "")}</code></li>`).join("");
-      const missingFacts = values(payload.missing_facts).map((item) => `<li><div><strong>${esc(item.fact_key || "必要事实")}</strong><small>${esc(item.reason || "")}</small></div><code>${esc(item.resolution_source || "")}</code><span>${values(item.blocking_steps).length ? `阻断 ${esc(values(item.blocking_steps).join("、"))}` : ""}</span></li>`).join("");
+      const missingFacts = values(payload.missing_facts).map((item) => `<li><div><strong>${esc(item.fact_key || "必要事实")}</strong><small>${esc(displayText(item.reason || "", dictionary))}</small></div><code>${esc(displayText(item.resolution_source || "", dictionary))}</code><span>${values(item.blocking_steps).length ? `阻断 ${esc(values(item.blocking_steps).join("、"))}` : ""}</span></li>`).join("");
       const artifactItems = values(payload.artifacts).map((item) => `<li><div><strong>${esc(item.file_name || item.artifact_id)}</strong><small>${esc(item.description || "")}</small></div><code>${esc(item.target_path || item.relative_path || "")}</code><span>${esc(item.file_mode || "")} · ${esc(item.run_as || "")} · SHA256 ${esc(String(item.sha256 || "").slice(0, 12))}…</span></li>`).join("");
       const runbookId = `runbook-${String(turn?.turn_id || "current").replace(/[^a-zA-Z0-9_-]/g, "")}`;
       const phaseValues = values(payload.phases);
@@ -909,7 +923,7 @@
       const appendix = stateItems || resolvedParameters || requiredInputs || missingFacts || artifactItems
         ? `<section class="ops-runbook-appendix"><h3>附录：当前状态与实施参数</h3>${stateItems ? `<section><h4>当前环境摘要</h4><ul class="ops-runbook-state">${stateItems}</ul></section>` : ""}${resolvedParameters ? `<section class="ops-runbook-parameters"><h4>已解析实施参数</h4><ul>${resolvedParameters}</ul></section>` : ""}${missingFacts ? `<section class="ops-runbook-missing-facts"><h4>缺失的必要事实</h4><p>请在对应 Target 的部署拓扑、主机采集或策略配置中补齐，重新生成后解除阻断。</p><ul>${missingFacts}</ul></section>` : ""}${requiredInputs ? `<section class="ops-runbook-inputs"><h4>历史档案所需输入</h4><ul>${requiredInputs}</ul></section>` : ""}${artifactItems ? `<section class="ops-runbook-artifacts"><h4>脚本与配置清单</h4><ul>${artifactItems}</ul></section>` : ""}</section>`
         : "";
-      return `<article class="ops-runbook"><header class="ops-runbook-document-header"><div><p class="ops-runbook-kicker">KBot 智能运维 · 数据库实施操作文档</p><h2>${esc(payload.title || "数据库实施 Runbook")}</h2><p class="ops-runbook-meta">${esc(payload.profile || "")} · ${esc(payload.schema_version || "")}</p></div><div class="ops-runbook-header-actions"><span class="ops-runbook-status">${esc(payload.status || "UNKNOWN")}</span>${adjustParameters}${download}</div></header><section class="ops-runbook-policy"><h3>执行边界</h3><p>${esc(payload.execution_policy || "")}</p></section>${tableOfContents}<div class="ops-runbook-body">${phases}</div>${stopConditions}${appendix}</article>`;
+      return `<article class="ops-runbook"><header class="ops-runbook-document-header"><div><p class="ops-runbook-kicker">KBot 智能运维 · 数据库实施操作文档</p><h2>${esc(payload.title || "数据库实施 Runbook")}</h2><p class="ops-runbook-meta">${esc(displayText(payload.profile || "", dictionary))}</p></div><div class="ops-runbook-header-actions"><span class="ops-runbook-status">${esc(displayText(payload.status || "UNKNOWN", dictionary))}</span>${adjustParameters}${download}</div></header><section class="ops-runbook-policy"><h3>执行边界</h3><p>${esc(displayText(payload.execution_policy || "", dictionary))}</p></section>${tableOfContents}<div class="ops-runbook-body">${phases}</div>${stopConditions}${appendix}</article>`;
     }
     if (block.block_type === "TABLE") {
       const columns = values(payload.columns);
@@ -932,17 +946,17 @@
         ? `<div class="ops-proposal-actions"><button type="button" class="primary" data-approve-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}" data-hash="${esc(payload.proposal_hash)}">批准并执行</button><button type="button" data-reject-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">拒绝</button></div>`
         : manual && canApprove
           ? `<div class="ops-manual-result"><strong>DBA 人工执行结果</strong><select data-manual-status><option value="EXECUTED">已执行</option><option value="FAILED">执行失败</option><option value="CANCELLED">已取消</option></select><textarea data-manual-note maxlength="4000" placeholder="处理说明（可选）"></textarea><textarea data-manual-output maxlength="16000" placeholder="受限输出（可选，请勿填写密码或密钥）"></textarea><button type="button" class="primary" data-manual-proposal="${esc(payload.proposal_id)}" data-version="${esc(payload.row_version || 1)}">回填结果</button></div>`
-          : `<p class="ops-proposal-status">当前状态：${esc(payload.status || "UNKNOWN")}</p>`;
+          : `<p class="ops-proposal-status">当前状态：${esc(displayText(payload.status || "UNKNOWN", dictionary))}</p>`;
       const command = payload.command_preview ? `<div class="agent-code-block"><div class="agent-code-toolbar"><span>仅供 DBA 人工核对${manual ? "并在 KBot 外执行" : ""}</span><button type="button" data-copy-code>复制命令</button></div><pre><code>${esc(payload.command_preview)}</code></pre></div>` : "";
       const verification = values(payload.verification_plan).length ? `<p><strong>验证计划：</strong>${values(payload.verification_plan).map(esc).join("、")}</p>` : "";
       const title = manual ? "仅供人工执行" : pending ? "受控变更待审批" : "受控动作建议";
-      return `<section class="ops-proposal"><header><div><strong>${title}</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(payload.risk_level || "UNKNOWN")}</small></div></header><p>${esc(payload.rationale || "")}</p><p><strong>影响范围：</strong>${esc(payload.impact || "-")}</p><p><strong>锁影响：</strong>${esc(payload.lock_impact || "-")}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${command}${verification}${actions}</section>`;
+      return `<section class="ops-proposal"><header><div><strong>${title}</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(displayText(payload.risk_level || "UNKNOWN", dictionary))}</small></div></header><p>${esc(displayText(payload.rationale || "", dictionary))}</p><p><strong>影响范围：</strong>${esc(displayText(payload.impact || "-", dictionary))}</p><p><strong>锁影响：</strong>${esc(displayText(payload.lock_impact || "-", dictionary))}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${command}${verification}${actions}</section>`;
     }
     if (block.block_type === "EVIDENCE_REFERENCES") return "";
-    return markdown.render(payload.markdown || payload.text || payload.instruction || "");
+    return markdown.render(displayText(payload.markdown || payload.text || payload.instruction || "", dictionary));
   }
 
-  function turnEvidenceHtml(blocks, gaps = []) {
+  function turnEvidenceHtml(blocks, gaps = [], dictionary = {}) {
     const evidence = new Map();
     const dataBlocks = blocks.filter((block) => block.block_type === "TABLE");
     const add = (key, label, meta) => {
@@ -954,7 +968,7 @@
       values(block.evidence_refs).forEach((item) => add(
         item,
         item,
-        "VERIFIED_EVIDENCE",
+        "已验证证据",
       ));
       values(block.citations).forEach((item) => add(
         item.turn_evidence_id || `citation:${item.label || item.citation_no}`,
@@ -965,22 +979,22 @@
       values(block.payload?.items).forEach((item, index) => add(
         item.turn_evidence_id || item.artifact_id || `reference:${item.label || item.summary || index}`,
         item.label || item.summary || "诊断证据",
-        `${item.source || "EVIDENCE"}${item.observed_at ? ` · ${shell.fmt(item.observed_at)}` : ""}`,
+        `${displayText(item.source || "诊断证据", dictionary)}${item.observed_at ? ` · ${shell.fmt(item.observed_at)}` : ""}`,
       ));
     });
     const rows = Array.from(evidence.values());
     const gapRows = values(gaps).map((item) => ({
-      label: item.detail || item.code || "本次未取得证据",
-      meta: `${item.code || "EVIDENCE_GAP"}${item.step_id ? ` · ${item.step_id}` : ""}`,
+      label: displayText(item.detail || item.code || "本次未取得证据", dictionary),
+      meta: `${displayText(item.code || "EVIDENCE_GAP", dictionary)}${item.step_id ? ` · ${item.step_id}` : ""}`,
     }));
     if (!rows.length && !gapRows.length && !dataBlocks.length) return "";
     const evidenceRows = rows.length
-      ? `<ol class="ops-evidence-list">${rows.map((item) => `<li><span>${esc(item.label)}</span><small>${esc(item.meta || "EVIDENCE")}</small></li>`).join("")}</ol>`
+      ? `<ol class="ops-evidence-list">${rows.map((item) => `<li><span>${esc(item.label)}</span><small>${esc(item.meta || "诊断证据")}</small></li>`).join("")}</ol>`
       : dataBlocks.length
         ? ""
         : '<p class="ops-evidence-empty">本次没有形成可展示的有效证据。</p>';
     const evidenceData = dataBlocks.length
-      ? `<div class="ops-evidence-data"><strong>原始取证结果</strong>${dataBlocks.map((block) => { const payload = block.payload || {}; const meta = [payload.measurement_semantics, payload.captured_at ? shell.fmt(payload.captured_at) : ""].filter(Boolean).join(" · "); return `<section><header><span>${esc(payload.title || (block.block_type === "CHART" ? "指标图表" : "查询结果"))}</span>${meta ? `<small>${esc(meta)}</small>` : ""}</header>${answerBlockHtml(block)}</section>`; }).join("")}</div>`
+      ? `<div class="ops-evidence-data"><strong>原始取证结果</strong>${dataBlocks.map((block) => { const payload = block.payload || {}; const meta = [displayText(payload.measurement_semantics || "", dictionary), payload.captured_at ? shell.fmt(payload.captured_at) : ""].filter(Boolean).join(" · "); return `<section><header><span>${esc(payload.title || (block.block_type === "CHART" ? "指标图表" : "查询结果"))}</span>${meta ? `<small>${esc(meta)}</small>` : ""}</header>${answerBlockHtml(block, { display_dictionary: dictionary })}</section>`; }).join("")}</div>`
       : "";
     const missingRows = gapRows.length
       ? `<div class="ops-evidence-gaps"><strong>未取得的证据</strong><ol class="ops-evidence-list">${gapRows.map((item) => `<li><span>${esc(item.label)}</span><small>${esc(item.meta)}</small></li>`).join("")}</ol></div>`
@@ -1129,11 +1143,11 @@
     const answerBlocks = values(turn.answer_blocks);
     const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type));
     const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
-    const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps);
-    const plan = investigationPlanHtml(turn.investigation_plan);
-    const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(assistant?.payload?.text || "")}</div>${evidence}</div></article>` : "";
+    const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
+    const plan = investigationPlanHtml(turn.investigation_plan, turn.display_dictionary);
+    const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(displayText(assistant?.payload?.text || "", turn.display_dictionary))}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
-    const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(turn.error_message || `当前状态：${turn.status}`)}</div>`;
+    const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(displayText(turn.error_message || `当前状态：${turn.status}`, turn.display_dictionary))}</div>`;
     return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}`;
   }
 
