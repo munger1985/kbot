@@ -71,6 +71,18 @@ Schema 34 / `aiops-oracle-v24`。脚本为恢复目标新增显式必需备份�
 为既有 Profile 写入规范默认来源；不删除目标或演练记录。脚本可在部分升级后续跑；执行前必须停止
 AIOps API、Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
 
+`apply_aiops_schema_36.sql` 用于将 AIOps Schema 35 / `aiops-oracle-v25` 原地升级到
+Schema 36 / `aiops-oracle-v26`。脚本先重建 Target 只读视图，再删除 Target 上已废弃的
+`SECURITY_LEVEL`，保留全部业务行。脚本可在部分升级后续跑；执行前必须停止 AIOps API、
+Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
+
+`apply_aiops_schema_37.sql` 用于将 AIOps Schema 36 / `aiops-oracle-v26` 原地升级到
+Schema 37 / `aiops-oracle-v27`。脚本删除废弃的 Agent–监控源关系表，但不会把旧监控源关系
+猜测为 Target 授权；没有有效监控映射或引用未启用监控源的 Target 会被停用，没有 Target 或
+引用未启用 Target 的 ACTIVE Agent 也会被停用。Agent、Target、监控源、Target 映射及历史
+运行数据均保留。脚本可在部分升级后续跑；执行前必须停止 AIOps API、Worker、Scheduler 和
+DB Executor，并完成 Schema 备份。
+
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
 `KNOWLEDGE_CORE_ID` + `DATA_MODEL_IDS_JSON`，新增 X Search 运行表，并创建多媒体绑定、

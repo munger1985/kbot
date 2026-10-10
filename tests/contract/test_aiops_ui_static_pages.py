@@ -610,6 +610,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-source-action="edit"', pages_script)
         self.assertIn('data-source-action="enable"', pages_script)
         self.assertIn('data-source-action="disable"', pages_script)
+        self.assertIn('data-source-action="delete"', pages_script)
+        self.assertIn('disabled title="请先停用监控源"', pages_script)
+        self.assertIn('method: "DELETE"', pages_script)
+        self.assertIn('"If-Match": `"rv-${item.row_version}"`', pages_script)
+        self.assertIn('"Idempotency-Key": KBotAIOpsAuth.uuid()', pages_script)
+        self.assertIn("删除会撤销该监控源的访问凭据和 Webhook 凭据", pages_script)
+        self.assertIn("如果仍有运维目标或运行历史引用它", pages_script)
         self.assertIn("connectivity_check_pending", pages_script)
         self.assertIn(
             'hasOwnProperty.call(item, "readonly_connection_enabled")',

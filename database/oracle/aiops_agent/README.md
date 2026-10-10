@@ -1,6 +1,6 @@
 # AIOps Agent Oracle Schema
 
-本目录当前拥有 AIOps 服务的58张表和10个只读视图，按以下顺序在空Schema
+本目录当前拥有 AIOps 服务的61张表和10个只读视图，按以下顺序在空Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -11,22 +11,23 @@
 6. `006_ops_fks_views.sql`：循环外键、函数唯一索引和 APEX 投影；
 7. `007_ops_agents.sql`：私有 Agent、版本和资源绑定；
 8. `008_ops_conversations_reports.sql`：Turn、Skill调用、证据、回答块、对话和报告模板；
-9. `009_ops_workload.sql`：MySQL/PostgreSQL工作负载快照、指标和活动采样。
+9. `009_ops_workload.sql`：MySQL/PostgreSQL工作负载快照、指标和活动采样；
 10. `010_ops_knowledge.sql`：运维知识资产、版本、适用范围、来源、索引引用和审核记录；
 11. `011_ops_recovery.sql`：Target恢复目标、数据库类型化恢复坐标和人工恢复演练记录。
+12. `012_ops_work_items.sql`：DBA 工作项、发生记录、资源关联和审计活动。
 
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
 需要保留的数据，然后用 KBot Schema 所有者执行
 `../generated/aiops_agent/rebuild_aiops_schema.sql`。它会
-直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述十一份规范 DDL，避免
+直接删除 `KBOT_OPS_%` 表与 `KBOT_V_OPS_%` 视图，再内嵌执行上述十二份规范 DDL，避免
 维护第二份建表定义。
 
 在 SQL Developer 中打开该文件，确认当前连接是目标 KBot Schema，然后使用
 Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建文件已经内嵌
-全部十段规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
+全部十二份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 33 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 37 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `operations-manuals`、`diagnosis-cases` 两个固定 KC Collection 位于共享平台/KC 表，
@@ -36,7 +37,7 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 36 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 37 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
 
 升级失败但必须保留已配置的监控源和运维目标时，改用

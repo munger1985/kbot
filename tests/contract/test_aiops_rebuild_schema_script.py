@@ -96,6 +96,20 @@ APPLY_SCHEMA_30 = (
     / "operations"
     / "apply_aiops_schema_30.sql"
 )
+APPLY_SCHEMA_36 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_36.sql"
+)
+APPLY_SCHEMA_37 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
+    / "apply_aiops_schema_37.sql"
+)
 CHECK_CATALOG = (
     ROOT
     / "services"
@@ -479,6 +493,54 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertNotIn("DBMS_LOB.SUBSTR(L_DEFINITION, 32767", normalized)
         self.assertIn("30 AS SCHEMA_VERSION", normalized)
         self.assertIn("'AIOPS-ORACLE-V20' AS CONTRACT_VERSION", normalized)
+
+    def test_schema_36_apply_removes_target_security_level_safely(self) -> None:
+        sql = APPLY_SCHEMA_36.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertIn("CREATE OR REPLACE VIEW KBOT_V_OPS_TARGET", normalized)
+        self.assertIn("DROP COLUMN SECURITY_LEVEL", normalized)
+        self.assertIn("USER_TAB_COLUMNS", normalized)
+        self.assertIn("SCHEMA_VERSION = 35", normalized)
+        self.assertIn("SCHEMA_VERSION = 36", normalized)
+        self.assertIn("36 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V26' AS CONTRACT_VERSION", normalized)
+        target_view = normalized.split(
+            "CREATE OR REPLACE VIEW KBOT_V_OPS_TARGET AS", maxsplit=1
+        )[1].split(
+            "PROMPT === 正在移除 TARGET 安全级别列 ===", maxsplit=1
+        )[0]
+        self.assertNotIn("T.SECURITY_LEVEL", target_view)
+        self.assertNotIn("DROP TABLE", normalized)
+        self.assertNotRegex(normalized, r"\bDELETE\s+FROM\b")
+
+    def test_schema_37_apply_removes_legacy_source_links_without_guessing(
+        self,
+    ) -> None:
+        sql = APPLY_SCHEMA_37.read_text(encoding="utf-8")
+        normalized = sql.upper()
+
+        self.assertIn("USER_TABLES", normalized)
+        self.assertIn(
+            "DROP TABLE KBOT_OPS_AGENT_VERSION_SOURCE "
+            "CASCADE CONSTRAINTS PURGE",
+            normalized,
+        )
+        self.assertIn("KBOT_OPS_TARGET_SOURCE_BINDING", normalized)
+        self.assertIn("KBOT_OPS_DIAGNOSTIC_SOURCE", normalized)
+        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", normalized)
+        self.assertGreaterEqual(normalized.count("SET STATUS = 'DISABLED'"), 2)
+        self.assertIn("ROW_VERSION = TARGET.ROW_VERSION + 1", normalized)
+        self.assertIn("ROW_VERSION = AGENT.ROW_VERSION + 1", normalized)
+        self.assertIn("'SCHEMA-UPGRADE-37'", normalized)
+        self.assertIn("SCHEMA_VERSION = 36", normalized)
+        self.assertIn("SCHEMA_VERSION = 37", normalized)
+        self.assertIn("37 AS SCHEMA_VERSION", normalized)
+        self.assertIn("'AIOPS-ORACLE-V27' AS CONTRACT_VERSION", normalized)
+        self.assertNotIn(
+            "INSERT INTO KBOT_OPS_AGENT_VERSION_TARGET",
+            normalized,
+        )
 
     def test_canonical_analyzer_rejects_unclosed_check_constraint(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "括号未闭合"):

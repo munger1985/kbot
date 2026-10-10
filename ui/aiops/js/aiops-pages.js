@@ -23,7 +23,10 @@
         : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status) && !checking
           ? '<button type="button" class="primary" data-source-action="enable">启用</button>'
           : "";
-      return `<div class="ops-actions">${detailButton}${editButton}${healthButton}${lifecycleButton}</div>`;
+      const deleteButton = item.status === "DISABLED"
+        ? '<button type="button" data-source-action="delete">删除</button>'
+        : '<button type="button" data-source-action="delete" disabled title="请先停用监控源">删除</button>';
+      return `<div class="ops-actions">${detailButton}${editButton}${healthButton}${lifecycleButton}${deleteButton}</div>`;
     }
     if (type === "target-actions") {
       const checking = item.connectivity_check_pending;
@@ -150,6 +153,30 @@
     }
     if (action === "edit") {
       globalThis.KBotAIOpsConfigurations?.openEdit("diagnostic-sources", item.source_id);
+      return;
+    }
+    if (action === "delete") {
+      const confirmed = confirm(
+        `确认删除监控源“${item.display_name || item.source_id}”吗？\n\n`
+        + "删除会撤销该监控源的访问凭据和 Webhook 凭据，且不可恢复。"
+        + "如果仍有运维目标或运行历史引用它，系统会拒绝删除。",
+      );
+      if (!confirmed) return;
+      button.disabled = true;
+      try {
+        await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${sourceId}`, {
+          method: "DELETE",
+          headers: {
+            "If-Match": `"rv-${item.row_version}"`,
+            "Idempotency-Key": KBotAIOpsAuth.uuid(),
+          },
+        });
+        shell.toast("监控源已删除");
+        await renderList("diagnostic-sources");
+      } catch (error) {
+        shell.toast(error.message);
+        button.disabled = false;
+      }
       return;
     }
     const path = action === "connectivity"
