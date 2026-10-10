@@ -61,6 +61,7 @@ def main() -> int:
                 "[oracle:oracle-prod-01]\n# enabled = true",
                 "[oracle:oracle-prod-01]\nenabled = true",
             )
+            .replace("# version = 19c", "version = 19c")
             .replace("# host = 10.0.0.20", "host = 127.0.0.1")
             .replace("# service = ORCLPDB1", "service = FREEPDB1")
             .replace("# username = kbot_monitor", "username = kbot_monitor", 1)

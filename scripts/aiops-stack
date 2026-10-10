@@ -119,6 +119,8 @@ local_access = false
 # 冒号后的值就是稳定Target Key，必须与AIOps App中的Target绑定一致。
 [oracle:oracle-prod-01]
 # enabled = true
+# 必填：仅允许已经过端到端验证的19c或26ai。
+# version = 19c
 # host = 10.0.0.20
 # port = 1521
 # service = ORCLPDB1
@@ -137,6 +139,8 @@ local_access = false
 
 [mysql:mysql-prod-01]
 # enabled = true
+# 必填：仅允许已经过端到端验证的8.4。
+# version = 8.4
 # host = 10.0.0.21
 # port = 3306
 # username = kbot_monitor
@@ -146,6 +150,8 @@ local_access = false
 
 [postgres:postgres-prod-01]
 # enabled = true
+# 必填：仅允许已经过端到端验证的16。
+# version = 16
 # uri = 10.0.0.22:5432/postgres?sslmode=require
 # username = kbot_monitor
 # password = CHANGE_ME
@@ -377,8 +383,10 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
     for target in database_targets:
         section = target.section
         if target.engine == "oracle":
-            for option in ("host", "service", "username", "password"):
+            for option in ("version", "host", "service", "username", "password"):
                 _required(parser, section, option)
+            if _required(parser, section, "version") not in {"19c", "26ai"}:
+                raise ValueError(f"[{section}] version仅支持19c或26ai")
             _bounded_int(parser, section, "port", 1521, 1, 65535)
             _bounded_int(parser, section, "exporter_query_timeout", 15, 1, 300)
             _bounded_int(parser, section, "alert_poll_seconds", 15, 5, 3600)
@@ -391,13 +399,17 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
             _bounded_int(parser, section, "alert_max_rows", 1000, 1, 5000)
             default_exporter_port = 9161
         elif target.engine == "mysql":
-            for option in ("host", "username", "password"):
+            for option in ("version", "host", "username", "password"):
                 _required(parser, section, option)
+            if _required(parser, section, "version") != "8.4":
+                raise ValueError(f"[{section}] version仅支持8.4")
             _bounded_int(parser, section, "port", 3306, 1, 65535)
             default_exporter_port = 9104
         else:
-            for option in ("uri", "username", "password"):
+            for option in ("version", "uri", "username", "password"):
                 _required(parser, section, option)
+            if _required(parser, section, "version") != "16":
+                raise ValueError(f"[{section}] version仅支持16")
             default_exporter_port = 9187
         if settings.role == "collector":
             bind_address = _required(parser, section, "exporter_bind_address")
@@ -640,7 +652,6 @@ def _prometheus_rules() -> str:
         annotations:
           summary: "Oracle表空间使用率严重不足"
           description: "{{ $labels.target_key }}/{{ $labels.tablespace }}使用率超过95%。"
-+
   - name: kbot-aiops-mysql-recording
     interval: 15s
     rules:
@@ -1025,6 +1036,7 @@ def _database_generated_compose(
             port_mapping = [f"{bind_address}:{host_port}:{default_port}"]
 
         if engine == "oracle":
+            database_version = _required(parser, section, "version")
             host = _required(parser, section, "host")
             port = _bounded_int(parser, section, "port", 1521, 1, 65535)
             service = _required(parser, section, "service")
@@ -1108,6 +1120,7 @@ def _database_generated_compose(
                     "ORACLE_HOST": host,
                     "ORACLE_PORT": port,
                     "ORACLE_SERVICE": service,
+                    "ORACLE_DATABASE_VERSION": database_version,
                     "ORACLE_TARGET_KEY": key,
                     "ORACLE_POLL_SECONDS": _bounded_int(
                         parser, section, "alert_poll_seconds", 15, 5, 3600

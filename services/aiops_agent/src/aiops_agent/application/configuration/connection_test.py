@@ -21,6 +21,36 @@ from platform_core.contracts.aiops import (
 )
 
 
+_SUPPORTED_VERSION_PREFIXES = {
+    ("ORACLE", "19c"): ("19.",),
+    ("ORACLE", "26ai"): ("23.26.",),
+    ("MYSQL", "8.4"): ("8.4.",),
+    ("POSTGRESQL", "16"): ("16.",),
+}
+
+
+def _database_version_error(
+    *,
+    db_type: str,
+    selected_version: str,
+    detected_version: str,
+) -> str | None:
+    """核验实测版本属于已发布且由用户明确选择的版本档案。"""
+    prefixes = _SUPPORTED_VERSION_PREFIXES[(db_type, selected_version)]
+    if detected_version.startswith(prefixes):
+        return None
+    detected_is_supported = any(
+        detected_version.startswith(candidate_prefixes)
+        for (candidate_type, _), candidate_prefixes in _SUPPORTED_VERSION_PREFIXES.items()
+        if candidate_type == db_type
+    )
+    return (
+        "DATABASE_VERSION_MISMATCH"
+        if detected_is_supported
+        else "UNSUPPORTED_DATABASE_VERSION"
+    )
+
+
 async def test_target_connection(
     request: TargetConnectionTest,
     *,
@@ -42,9 +72,15 @@ async def test_target_connection(
                 observed_scope=container_scope,
                 observed_name=container_name,
             )
+            error_code = error_code or _database_version_error(
+                db_type="ORACLE",
+                selected_version=request.version_code,
+                detected_version=version,
+            )
             return TargetConnectionTestResult(
                 ok=error_code is None,
                 database_version=version,
+                supported_version_code=request.version_code,
                 oracle_container_scope=container_scope,
                 oracle_container_name=container_name,
                 oracle_container_number=container_number,
@@ -62,15 +98,22 @@ async def test_target_connection(
                 privileges,
                 capability_details,
             ) = await _test_mysql(request)
+            error_code = _database_version_error(
+                db_type="MYSQL",
+                selected_version=request.version_code,
+                detected_version=version,
+            )
             return TargetConnectionTestResult(
-                ok=True,
+                ok=error_code is None,
                 database_version=version,
+                supported_version_code=request.version_code,
                 server_uuid=server_uuid,
                 server_started_at=server_started_at,
                 capability_probe_version="mysql-capabilities.v1",
                 discovered_capabilities=capabilities,
                 discovered_privileges=privileges,
                 capability_details=capability_details,
+                error_code=error_code,
             )
         else:
             (
@@ -83,15 +126,22 @@ async def test_target_connection(
             ) = await _test_postgresql(
                 request, tls_profile_resolver=tls_profile_resolver
             )
+            error_code = _database_version_error(
+                db_type="POSTGRESQL",
+                selected_version=request.version_code,
+                detected_version=version,
+            )
             return TargetConnectionTestResult(
-                ok=True,
+                ok=error_code is None,
                 database_version=version,
+                supported_version_code=request.version_code,
                 server_uuid=system_identifier,
                 server_started_at=server_started_at,
                 capability_probe_version="postgresql-capabilities.v1",
                 discovered_capabilities=capabilities,
                 discovered_privileges=privileges,
                 capability_details=capability_details,
+                error_code=error_code,
             )
     except Exception as exc:
         error_code = _stable_error_code(request.db_type, exc)

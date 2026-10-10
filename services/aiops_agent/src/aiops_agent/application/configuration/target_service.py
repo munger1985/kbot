@@ -81,6 +81,9 @@ from platform_core.contracts.aiops import (
     TargetSummary,
     WebhookKeyRotation,
 )
+from platform_core.contracts.aiops.configuration import (
+    validate_supported_database_version,
+)
 from platform_core.identity import uuid7
 
 from .projections import (
@@ -150,6 +153,8 @@ class TargetConfigurationMixin:
         if result.error_code in {
             "ORACLE_CONTAINER_MISMATCH",
             "ORACLE_CONTAINER_UNSUPPORTED",
+            "DATABASE_VERSION_MISMATCH",
+            "UNSUPPORTED_DATABASE_VERSION",
         }:
             connectivity_status = "MISCONFIGURED"
         entity.connectivity_status = connectivity_status
@@ -159,8 +164,6 @@ class TargetConfigurationMixin:
         if connected:
             entity.last_connectivity_success_at = checked_at
         entity.last_error_code = result.error_code
-        if result.database_version is not None:
-            entity.version_code = result.database_version
         if result.oracle_container_scope is not None:
             entity.observed_oracle_container_scope = result.oracle_container_scope
             entity.observed_oracle_container_name = result.oracle_container_name
@@ -181,6 +184,7 @@ class TargetConfigurationMixin:
                             else None
                         ),
                         "details": dict(result.capability_details),
+                        "detected_database_version": result.database_version,
                     },
                 }
             )
@@ -209,6 +213,7 @@ class TargetConfigurationMixin:
             TargetConnectionTest.model_validate(
                 {
                     "db_type": entity.db_type,
+                    "version_code": entity.version_code,
                     "oracle_container_scope": entity.oracle_container_scope,
                     "oracle_pdb_name": entity.oracle_pdb_name,
                     "endpoint": dict(entity.endpoint_json or {}),
@@ -429,6 +434,14 @@ class TargetConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Target")
             self._check_version(entity.row_version, expected_version)
+            if "version_code" in fields:
+                version_code = fields["version_code"]
+                if version_code is None:
+                    raise validation_failed("数据库版本不能为空")
+                try:
+                    validate_supported_database_version(entity.db_type, version_code)
+                except ValueError as exc:
+                    raise validation_failed(str(exc)) from exc
             effective_readonly = fields.get(
                 "readonly_connection_enabled", entity.readonly_connection_enabled
             )

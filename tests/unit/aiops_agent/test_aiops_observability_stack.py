@@ -76,6 +76,7 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
             "[oracle:oracle-prod-01]\n# enabled = true",
             "[oracle:oracle-prod-01]\nenabled = true",
         )
+        .replace("# version = 19c", "version = 19c")
         .replace("# host = 10.0.0.20", "host = db.example.internal")
         .replace("# service = ORCLPDB1", "service = FREEPDB1")
         .replace("# username = kbot_monitor", "username = kbot_monitor", 1)
@@ -107,6 +108,7 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
         "oracle-oracle-prod-01-alert-collector"
     ]
     assert oracle_collector["environment"]["ORACLE_QUERY_TIMEOUT_SECONDS"] == 15
+    assert oracle_collector["environment"]["ORACLE_DATABASE_VERSION"] == "19c"
     overrides = json.loads(
         (state / "prometheus/kbot-aiops-query-overrides.json").read_text()
     )["prometheus_queries"]
@@ -168,6 +170,7 @@ target_key = host-all-modules-01
 
 [oracle:oracle-all-modules-01]
 enabled = true
+version = 19c
 host = oracle.internal
 service = FREEPDB1
 username = oracle-monitor
@@ -175,12 +178,14 @@ password = oracle-secret
 
 [mysql:mysql-all-modules-01]
 enabled = true
+version = 8.4
 host = mysql.internal
 username = mysql-monitor
 password = mysql-secret
 
 [postgres:postgres-all-modules-01]
 enabled = true
+version = 16
 uri = postgres.internal:5432/postgres?sslmode=require
 username = postgres-monitor
 password = postgres-secret
@@ -331,6 +336,7 @@ enabled = true
 
 [oracle:oracle-prod-01]
 enabled = true
+version = 19c
 host = db01.internal
 service = PROD1
 username = monitor01
@@ -338,6 +344,7 @@ password = secret01
 
 [oracle:oracle-prod-02]
 enabled = true
+version = 26ai
 host = db02.internal
 service = PROD2
 username = monitor02
@@ -430,6 +437,7 @@ exporter_port = 19100
 
 [oracle:oracle-prod-01]
 enabled = true
+version = 19c
 host = oracle.internal
 service = PROD1
 username = monitor
@@ -463,11 +471,29 @@ def test_webhook_signer_uses_dynamic_hmac_headers() -> None:
 
 def test_oracle_collector_uses_durable_ordered_checkpoint() -> None:
     collector = _load_collector()
-    assert "V$DIAG_ALERT_EXT" in collector.QUERY
-    assert "ORIGINATING_TIMESTAMP > :last_timestamp" in collector.QUERY
-    assert "RECORD_ID > :last_record_id" in collector.QUERY
-    assert "ORDER BY ORIGINATING_TIMESTAMP, RECORD_ID" in collector.QUERY
+    assert set(collector._ALERT_QUERIES) == {"19c", "26ai"}
     assert collector.Settings.__dataclass_params__.frozen is True
+
+
+def test_oracle_collector_uses_fixed_19c_query() -> None:
+    collector = _load_collector()
+    query = collector._ALERT_QUERIES["19c"]
+
+    assert "ORIGINATING_TIMESTAMP > :last_timestamp" in query
+    assert "RECORD_ID > :last_record_id" in query
+    assert "ORDER BY ORIGINATING_TIMESTAMP, RECORD_ID" in query
+    assert "DATABASE_ID" not in query
+    assert "SQL_ID" not in query
+    assert "SESSION_ID" not in query
+
+
+def test_oracle_collector_uses_fixed_26ai_query() -> None:
+    collector = _load_collector()
+    query = collector._ALERT_QUERIES["26ai"]
+
+    assert "DATABASE_ID" in query
+    assert "SQL_ID" in query
+    assert "SESSION_ID" in query
 
 
 def test_oracle_collector_rejects_rows_at_or_before_checkpoint() -> None:
@@ -508,6 +534,7 @@ def test_oracle_collector_writes_normalized_severity(tmp_path: Path) -> None:
         host="oracle.internal",
         port=1521,
         service="PDB01",
+        database_version="19c",
         target_key="oracle-test",
         poll_seconds=15,
         query_timeout_seconds=15,
@@ -543,6 +570,7 @@ def test_oracle_collector_applies_configured_query_timeout(tmp_path: Path) -> No
         host="oracle.internal",
         port=1521,
         service="PDB01",
+        database_version="26ai",
         target_key="oracle-test",
         poll_seconds=15,
         query_timeout_seconds=27,

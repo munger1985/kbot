@@ -64,7 +64,8 @@
           </div>
           <div class="ops-field span-3">
             <label for="target-version">数据库版本</label>
-            <input id="target-version" name="version_code" maxlength="64" placeholder="例如 19c">
+            <select id="target-version" name="version_code" required></select>
+            <small>仅列出已完成端到端验证并绑定固定诊断 SQL 的版本。</small>
           </div>
           <div class="ops-field span-3">
             <label for="target-environment">环境</label>

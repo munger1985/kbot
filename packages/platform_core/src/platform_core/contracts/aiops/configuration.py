@@ -36,6 +36,34 @@ NotificationStage = Literal[
     "REPORT_READY",
     "SITUATION_RECOVERED",
 ]
+SupportedDatabaseVersion = Literal["19c", "26ai", "8.4", "16"]
+SUPPORTED_DATABASE_VERSIONS: dict[DatabaseType, tuple[SupportedDatabaseVersion, ...]] = {
+    DatabaseType.ORACLE: ("19c", "26ai"),
+    DatabaseType.MYSQL: ("8.4",),
+    DatabaseType.POSTGRESQL: ("16",),
+}
+# 多个已验证版本可复用同一档案；仅当系统视图合同变化时新增SQL档案。
+DATABASE_SQL_PROFILES: dict[
+    tuple[DatabaseType, SupportedDatabaseVersion], str
+] = {
+    (DatabaseType.ORACLE, "19c"): "oracle_19c",
+    (DatabaseType.ORACLE, "26ai"): "oracle_26ai",
+    (DatabaseType.MYSQL, "8.4"): "mysql_8_4",
+    (DatabaseType.POSTGRESQL, "16"): "postgresql_16",
+}
+
+
+def validate_supported_database_version(
+    db_type: DatabaseType | str,
+    version_code: str,
+) -> None:
+    """只允许已经过端到端验证的数据库版本组合。"""
+    database_type = DatabaseType(db_type)
+    if version_code not in SUPPORTED_DATABASE_VERSIONS[database_type]:
+        supported = "、".join(SUPPORTED_DATABASE_VERSIONS[database_type])
+        raise ValueError(f"{database_type.value}仅支持已验证版本：{supported}")
+    if (database_type, version_code) not in DATABASE_SQL_PROFILES:
+        raise ValueError("数据库版本缺少固定SQL档案")
 
 
 class SecretRefStatus(AIOpsContract):
@@ -84,7 +112,7 @@ class TargetCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str = Field(min_length=1, max_length=256)
     db_type: DatabaseType
-    version_code: str | None = Field(default=None, max_length=64)
+    version_code: SupportedDatabaseVersion
     environment: Literal["PROD", "STG", "DEV"]
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] = "UNKNOWN"
     oracle_container_scope: OracleContainerScope | None = None
@@ -106,6 +134,7 @@ class TargetCreate(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetCreate":
+        validate_supported_database_version(self.db_type, self.version_code)
         if self.readonly_connection_enabled and (
             self.endpoint is None or self.diagnostic_credential is None
         ):
@@ -161,6 +190,7 @@ class TargetCreate(AIOpsContract):
 
 class TargetConnectionTest(AIOpsContract):
     db_type: DatabaseType
+    version_code: SupportedDatabaseVersion
     endpoint: TargetEndpoint
     diagnostic_credential: DatabaseCredentialInput
     oracle_container_scope: OracleContainerScope | None = None
@@ -168,6 +198,7 @@ class TargetConnectionTest(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetConnectionTest":
+        validate_supported_database_version(self.db_type, self.version_code)
         if self.db_type == DatabaseType.ORACLE:
             if self.endpoint.tls_profile_ref is not None:
                 raise ValueError("当前只有PostgreSQL Target支持受控TLS Profile")
@@ -192,6 +223,7 @@ class TargetConnectionTest(AIOpsContract):
 class TargetConnectionTestResult(AIOpsContract):
     ok: bool
     database_version: str | None = None
+    supported_version_code: SupportedDatabaseVersion | None = None
     server_uuid: str | None = Field(default=None, max_length=128)
     server_started_at: UtcDatetime | None = None
     capability_probe_version: str | None = Field(default=None, max_length=64)
@@ -208,7 +240,7 @@ class TargetConnectionTestResult(AIOpsContract):
 class TargetPatch(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
-    version_code: str | None = Field(default=None, max_length=64)
+    version_code: SupportedDatabaseVersion | None = None
     environment: Literal["PROD", "STG", "DEV"] | None = None
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
     oracle_container_scope: OracleContainerScope | None = None

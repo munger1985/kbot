@@ -33,6 +33,11 @@ def _request(db_type: str) -> TargetConnectionTest:
     )
     payload = {
         "db_type": db_type,
+        "version_code": {
+            "ORACLE": "19c",
+            "MYSQL": "8.4",
+            "POSTGRESQL": "16",
+        }[db_type],
         "endpoint": endpoint,
         "diagnostic_credential": {
             "username": "diag",
@@ -139,6 +144,7 @@ class _ConnectivityUow:
             domain_id=7,
             target_id=self.target_id,
             db_type="ORACLE",
+            version_code="19c",
             oracle_container_scope="PDB",
             oracle_pdb_name="ORCLPDB1",
             endpoint_json={
@@ -314,6 +320,18 @@ class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.ok)
         self.assertEqual("ORACLE_CONTAINER_MISMATCH", result.error_code)
         self.assertEqual("ORCLPDB1", result.oracle_container_name)
+
+    async def test_oracle_rejects_supported_but_mismatched_version(self):
+        request = _request("ORACLE").model_copy(update={"version_code": "26ai"})
+        with patch(
+            "aiops_agent.application.configuration.connection_test."
+            "oracledb.connect_async",
+            AsyncMock(return_value=_OracleConnection()),
+        ):
+            result = await run_connection_test(request)
+
+        self.assertFalse(result.ok)
+        self.assertEqual("DATABASE_VERSION_MISMATCH", result.error_code)
 
     async def test_connectivity_check_persists_oracle_container_observation(self):
         uow = _ConnectivityUow()

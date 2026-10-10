@@ -706,6 +706,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
         self.create_request = TargetCreate(
             display_name="Oracle Dev",
             db_type="ORACLE",
+            version_code="19c",
             environment="DEV",
             importance_level=4,
             readonly_connection_enabled=True,
@@ -788,7 +789,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             domain_id=self.scope.domain_id,
             display_name="Oracle Dev",
             db_type="ORACLE",
-            version_code=None,
+            version_code="19c",
             environment="DEV",
             db_role="UNKNOWN",
             oracle_container_scope="PDB",
@@ -851,7 +852,7 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             domain_id=self.scope.domain_id,
             display_name="Oracle Dev",
             db_type="ORACLE",
-            version_code=None,
+            version_code="19c",
             environment="DEV",
             db_role="UNKNOWN",
             oracle_container_scope="PDB",
@@ -1031,10 +1032,20 @@ class DiagnosticSourceDeletionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class ConfigurationContractTest(unittest.TestCase):
+    def test_target_version_must_match_verified_database_profile(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "ORACLE仅支持已验证版本"):
+            TargetCreate(
+                display_name="错误版本",
+                db_type="ORACLE",
+                version_code="8.4",
+                environment="DEV",
+            )
+
     def test_target_importance_level_is_application_validated(self) -> None:
         target = TargetCreate(
             display_name="低重要程度测试库",
             db_type="ORACLE",
+            version_code="19c",
             environment="DEV",
             importance_level=1,
         )
@@ -1043,6 +1054,7 @@ class ConfigurationContractTest(unittest.TestCase):
             TargetCreate(
                 display_name="非法重要程度测试库",
                 db_type="ORACLE",
+                version_code="19c",
                 environment="DEV",
                 importance_level=6,
             )
@@ -1063,6 +1075,7 @@ class ConfigurationContractTest(unittest.TestCase):
         payload = {
             "display_name": "ERP 生产库",
             "db_type": "ORACLE",
+            "version_code": "19c",
             "environment": "PROD",
             "oracle_container_scope": "PDB",
             "oracle_pdb_name": "ERP",
@@ -1088,6 +1101,7 @@ class ConfigurationContractTest(unittest.TestCase):
             {
                 "display_name": "仅监控 Oracle",
                 "db_type": "ORACLE",
+                "version_code": "19c",
                 "environment": "PROD",
             }
         )
@@ -1102,6 +1116,7 @@ class ConfigurationContractTest(unittest.TestCase):
                 {
                     "display_name": "缺少凭据的 Oracle",
                     "db_type": "ORACLE",
+                    "version_code": "19c",
                     "environment": "PROD",
                     "readonly_connection_enabled": True,
                     "endpoint": {
@@ -1116,6 +1131,7 @@ class ConfigurationContractTest(unittest.TestCase):
                 {
                     "display_name": "缺少执行凭据的 Oracle",
                     "db_type": "ORACLE",
+                    "version_code": "19c",
                     "environment": "PROD",
                     "readonly_connection_enabled": True,
                     "controlled_change_enabled": True,

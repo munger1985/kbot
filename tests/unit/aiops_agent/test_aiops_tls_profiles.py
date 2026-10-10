@@ -65,6 +65,7 @@ def test_only_postgresql_target_accepts_tls_profile(db_type, endpoint) -> None:
         TargetCreate(
             display_name="database",
             db_type=db_type,
+            version_code={"MYSQL": "8.4", "ORACLE": "19c"}[db_type],
             environment="PROD",
             endpoint=endpoint,
             readonly_connection_enabled=True,
@@ -74,6 +75,7 @@ def test_only_postgresql_target_accepts_tls_profile(db_type, endpoint) -> None:
     postgresql = TargetCreate(
         display_name="postgresql",
         db_type="POSTGRESQL",
+        version_code="16",
         environment="PROD",
         endpoint=TargetEndpoint(
             host="db.internal",

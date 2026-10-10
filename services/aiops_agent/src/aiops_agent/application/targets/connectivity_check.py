@@ -46,6 +46,7 @@ class TargetConnectivityCheckService:
             snapshot = {
                 "domain_id": int(target.domain_id),
                 "db_type": target.db_type,
+                "version_code": target.version_code,
                 "oracle_container_scope": target.oracle_container_scope,
                 "oracle_pdb_name": target.oracle_pdb_name,
                 "endpoint": dict(target.endpoint_json or {}),
@@ -71,6 +72,7 @@ class TargetConnectivityCheckService:
                     TargetConnectionTest.model_validate(
                         {
                             "db_type": snapshot["db_type"],
+                            "version_code": snapshot["version_code"],
                             "oracle_container_scope": snapshot[
                                 "oracle_container_scope"
                             ],
@@ -91,6 +93,8 @@ class TargetConnectivityCheckService:
         if result is not None and result.error_code in {
             "ORACLE_CONTAINER_MISMATCH",
             "ORACLE_CONTAINER_UNSUPPORTED",
+            "DATABASE_VERSION_MISMATCH",
+            "UNSUPPORTED_DATABASE_VERSION",
         }:
             connectivity_status = "MISCONFIGURED"
         oracle_observation = None
@@ -117,6 +121,7 @@ class TargetConnectivityCheckService:
                             else None
                         ),
                         "details": dict(result.capability_details),
+                        "detected_database_version": result.database_version,
                     },
                 }
             )
@@ -133,9 +138,7 @@ class TargetConnectivityCheckService:
                 checked_at=now,
                 last_error_code=error_code,
                 oracle_observation=oracle_observation,
-                database_version=(
-                    result.database_version if result is not None else None
-                ),
+                database_version=None,
                 capability_observation=capability_observation,
             )
             if changed:

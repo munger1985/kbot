@@ -13,22 +13,26 @@ from typing import Any
 
 import oracledb
 
-QUERY = """
+_COMMON_ALERT_COLUMNS = (
+    "ORIGINATING_TIMESTAMP",
+    "RECORD_ID",
+    "MESSAGE_TYPE",
+    "MESSAGE_LEVEL",
+    "MESSAGE_TEXT",
+    "PROBLEM_KEY",
+    "COMPONENT_ID",
+    "HOST_ID",
+    "CONTAINER_NAME",
+)
+
+
+def _fixed_alert_query(columns: tuple[str, ...]) -> str:
+    select_list = ",\n        ".join(columns)
+    return f"""
 SELECT *
 FROM (
     SELECT
-        ORIGINATING_TIMESTAMP,
-        RECORD_ID,
-        MESSAGE_TYPE,
-        MESSAGE_LEVEL,
-        MESSAGE_TEXT,
-        PROBLEM_KEY,
-        COMPONENT_ID,
-        HOST_ID,
-        CONTAINER_NAME,
-        DATABASE_ID,
-        SQL_ID,
-        SESSION_ID
+        {select_list}
     FROM V$DIAG_ALERT_EXT
     WHERE ORIGINATING_TIMESTAMP > :last_timestamp
        OR (ORIGINATING_TIMESTAMP = :last_timestamp AND RECORD_ID > :last_record_id)
@@ -36,6 +40,14 @@ FROM (
 )
 WHERE ROWNUM <= :max_rows
 """
+
+
+_ALERT_QUERIES = {
+    "19c": _fixed_alert_query(_COMMON_ALERT_COLUMNS),
+    "26ai": _fixed_alert_query(
+        _COMMON_ALERT_COLUMNS + ("DATABASE_ID", "SQL_ID", "SESSION_ID")
+    ),
+}
 
 # Oracle ADR的MESSAGE_TYPE枚举：2为Incident Error、3为Error、4为Warning。
 _ERROR_MESSAGE_TYPES = {2, 3}
@@ -54,6 +66,7 @@ class Settings:
     host: str
     port: int
     service: str
+    database_version: str
     target_key: str
     poll_seconds: int
     query_timeout_seconds: int
@@ -72,6 +85,7 @@ class Settings:
             host=_required("ORACLE_HOST"),
             port=_bounded_int("ORACLE_PORT", 1521, 1, 65535),
             service=_required("ORACLE_SERVICE"),
+            database_version=_required("ORACLE_DATABASE_VERSION"),
             target_key=_required("ORACLE_TARGET_KEY"),
             poll_seconds=_bounded_int("ORACLE_POLL_SECONDS", 15, 5, 3600),
             query_timeout_seconds=_bounded_int(
@@ -89,6 +103,8 @@ class Settings:
         )
         if not settings.target_key.replace("-", "").replace("_", "").isalnum():
             raise ValueError("ORACLE_TARGET_KEY只能包含字母、数字、连字符和下划线")
+        if settings.database_version not in _ALERT_QUERIES:
+            raise ValueError("ORACLE_DATABASE_VERSION仅支持19c或26ai")
         return settings
 
 
@@ -243,10 +259,11 @@ def _collect_once(
     connection: oracledb.Connection,
     settings: Settings,
     checkpoint: tuple[datetime, int],
+    query: str,
 ) -> tuple[datetime, int]:
     with connection.cursor() as cursor:
         cursor.execute(
-            QUERY,
+            query,
             last_timestamp=checkpoint[0],
             last_record_id=checkpoint[1],
             max_rows=settings.max_rows,
@@ -304,7 +321,8 @@ def run(settings: Settings) -> None:
         try:
             with oracledb.connect(user=username, password=password, dsn=dsn) as connection:
                 _configure_connection(connection, settings)
-                checkpoint = _collect_once(connection, settings, checkpoint)
+                query = _ALERT_QUERIES[settings.database_version]
+                checkpoint = _collect_once(connection, settings, checkpoint, query)
             _write_health(settings, "healthy")
         except Exception as exc:  # noqa: BLE001
             # 日志不得输出连接串或凭据，仅保留驱动错误类型和受限错误文本。

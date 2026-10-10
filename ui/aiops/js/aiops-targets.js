@@ -6,6 +6,7 @@
   const form = document.getElementById("target-form");
   const dialog = document.getElementById("target-dialog");
   const dbType = document.getElementById("target-db-type");
+  const version = document.getElementById("target-version");
   const port = document.getElementById("target-port");
   const serviceField = document.getElementById("target-service-field");
   const databaseField = document.getElementById("target-database-field");
@@ -25,6 +26,11 @@
   const changeEnabled = document.getElementById("target-change-enabled");
   const accessSummary = document.getElementById("target-access-summary");
   let editingTarget = null;
+  const supportedVersions = {
+    ORACLE: ["19c", "26ai"],
+    MYSQL: ["8.4"],
+    POSTGRESQL: ["16"],
+  };
 
   function clearResult() {
     result.textContent = "";
@@ -49,6 +55,16 @@
       oraclePdbName.value = "";
     }
     if (resetPort) port.value = { ORACLE: 1521, MYSQL: 3306, POSTGRESQL: 5432 }[dbType.value];
+    const previousVersion = version.value;
+    version.replaceChildren(...supportedVersions[dbType.value].map((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      return option;
+    }));
+    if (!resetPort && supportedVersions[dbType.value].includes(previousVersion)) {
+      version.value = previousVersion;
+    }
     clearResult();
   }
 
@@ -217,6 +233,7 @@
         method: "POST",
         body: JSON.stringify({
           db_type: dbType.value,
+          version_code: version.value,
           endpoint: endpointPayload(),
           diagnostic_credential: credentialPayload(),
           ...oracleContainerPayload(),
@@ -230,6 +247,8 @@
           CONNECTION_FAILED: "数据库连接失败，请检查连接参数。",
           ORACLE_CONTAINER_MISMATCH: "实际连接的 Oracle 容器与配置的 CDB/PDB 范围或 PDB Name 不一致。",
           ORACLE_CONTAINER_UNSUPPORTED: "PDB$SEED 不能作为运维目标。",
+          UNSUPPORTED_DATABASE_VERSION: "数据库实际版本尚未完成支持验证，不能创建 Target。",
+          DATABASE_VERSION_MISMATCH: "数据库实际版本与所选受支持版本不一致。",
         };
         throw new Error(messages[response.error_code] || "数据库连接测试失败。");
       }
@@ -250,7 +269,7 @@
   function targetFields() {
     const fields = {
       display_name: form.elements.display_name.value.trim(),
-      version_code: form.elements.version_code.value.trim() || null,
+      version_code: version.value,
       environment: form.elements.environment.value,
       db_role: form.elements.db_role.value,
       readonly_connection_enabled: readonlyEnabled.checked,
