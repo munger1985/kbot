@@ -1,4 +1,4 @@
-"""公开实时监控视图的 Provider 无关合同。"""
+"""Provider 无关的实时监控跨服务合同。"""
 
 from __future__ import annotations
 

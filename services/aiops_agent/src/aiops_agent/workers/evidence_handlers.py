@@ -31,6 +31,7 @@ from aiops_agent.monitoring import (
     MonitoringQueryRejected,
     PromQueryPolicy,
     PromQueryPolicySnapshot,
+    resolve_metric_definitions,
 )
 
 from .handlers import TaskExecutionContext, investigation_task_identity
@@ -40,125 +41,6 @@ def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
         UTC
     )
-
-
-def _metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
-    """把目标绑定的受控 Provider 查询覆盖应用到冻结指标定义。"""
-    overrides = dict(snapshot.get("mapping_overrides") or {})
-    prometheus_queries = overrides.get("prometheus_queries") or {}
-    if not isinstance(prometheus_queries, dict):
-        raise ValueError("prometheus_queries 必须是对象")
-    zabbix_item_keys = overrides.get("zabbix_item_keys") or {}
-    if not isinstance(zabbix_item_keys, dict):
-        raise ValueError("zabbix_item_keys 必须是对象")
-    definitions = []
-    for item in snapshot["metrics"]:
-        definition = MetricDefinition.model_validate(item)
-        query = prometheus_queries.get(definition.metric_code)
-        if query is not None:
-            if (
-                not isinstance(query, str)
-                or not query.strip()
-                or len(query) > 2000
-                or "${" in query.replace("${external_target}", "").replace(
-                    "${host_target}", ""
-                )
-            ):
-                raise ValueError("Prometheus 指标查询覆盖格式无效")
-            provider = definition.providers.get("PROMETHEUS")
-            if provider is None:
-                raise ValueError("指标不支持 Prometheus 查询覆盖")
-            override_matches_baseline = (
-                query.strip() == provider.query_template
-            )
-            definition = definition.model_copy(
-                update={
-                    "providers": {
-                        **definition.providers,
-                        "PROMETHEUS": provider.model_copy(
-                            update={
-                                "template_id": (
-                                    f"binding.{definition.metric_code}"
-                                ),
-                                "template_version": str(
-                                    snapshot["binding_version"]
-                                ),
-                                "query_template": query.strip(),
-                                "fallback_query_templates": (
-                                    provider.fallback_query_templates
-                                    if override_matches_baseline
-                                    else ()
-                                ),
-                            }
-                        ),
-                    }
-                }
-            )
-        item_key = zabbix_item_keys.get(definition.metric_code)
-        if item_key is not None:
-            if (
-                not isinstance(item_key, str)
-                or not item_key.strip()
-                or len(item_key) > 512
-            ):
-                raise ValueError("Zabbix Item Key 覆盖格式无效")
-            provider = definition.providers.get("ZABBIX")
-            if provider is None:
-                raise ValueError("指标不支持 Zabbix Item Key 覆盖")
-            definition = definition.model_copy(
-                update={
-                    "providers": {
-                        **definition.providers,
-                        "ZABBIX": provider.model_copy(
-                            update={
-                                "template_id": (
-                                    f"binding.{definition.metric_code}"
-                                ),
-                                "template_version": str(
-                                    snapshot["binding_version"]
-                                ),
-                                "exact_item_key": item_key.strip(),
-                            }
-                        ),
-                    }
-                }
-            )
-        provider = definition.providers.get("PROMETHEUS")
-        if provider is not None and provider.query_template is not None:
-            checked = PromQueryPolicy(PromQueryPolicySnapshot()).validate(
-                provider.query_template,
-                window_seconds=min(
-                    definition.default_window_seconds,
-                    PromQueryPolicySnapshot().max_window_seconds,
-                ),
-            )
-            checked_fallbacks = tuple(
-                PromQueryPolicy(PromQueryPolicySnapshot())
-                .validate(
-                    fallback,
-                    window_seconds=min(
-                        definition.default_window_seconds,
-                        PromQueryPolicySnapshot().max_window_seconds,
-                    ),
-                )
-                .normalized_query
-                for fallback in provider.fallback_query_templates
-            )
-            definition = definition.model_copy(
-                update={
-                    "providers": {
-                        **definition.providers,
-                        "PROMETHEUS": provider.model_copy(
-                            update={
-                                "query_template": checked.normalized_query,
-                                "fallback_query_templates": checked_fallbacks,
-                            }
-                        ),
-                    }
-                }
-            )
-        definitions.append(definition)
-    return tuple(definitions)
 
 
 def _ad_hoc_metric_definition(item: dict) -> MetricDefinition:
@@ -326,7 +208,7 @@ class EvidenceObserveHandler:
                             "source_locator_key"
                         ],
                         source_locator=dict(snapshot["source_locator"]),
-                        metric_definitions=_metric_definitions(snapshot),
+                        metric_definitions=resolve_metric_definitions(snapshot),
                         window_start=_parse_time(window["start"]),
                         window_end=_parse_time(window["end"]),
                         requested_step_seconds=60,

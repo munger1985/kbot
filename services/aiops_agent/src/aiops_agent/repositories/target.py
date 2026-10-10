@@ -544,6 +544,32 @@ class TargetRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def list_source_bindings_by_source(
+        self,
+        *,
+        diagnostic_source_id: UUID,
+        domain_id: int,
+    ) -> list[TargetSourceBindingEntity]:
+        """按监控数据源列出 Domain 内全部 Target 映射。"""
+        self._check_active()
+        statement = (
+            select(TargetSourceBindingEntity)
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == TargetSourceBindingEntity.target_id,
+            )
+            .where(
+                TargetSourceBindingEntity.diagnostic_source_id
+                == diagnostic_source_id,
+                TargetEntity.domain_id == domain_id,
+            )
+            .order_by(
+                TargetSourceBindingEntity.created_at.desc(),
+                TargetSourceBindingEntity.target_source_binding_id.desc(),
+            )
+        )
+        return list((await self._session.execute(statement)).scalars())
+
     async def get_source_binding_scoped(
         self,
         *,

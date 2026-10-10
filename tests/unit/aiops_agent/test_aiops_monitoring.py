@@ -22,6 +22,7 @@ from aiops_agent.contracts.evidence import (
     MetricSeries,
 )
 from aiops_agent.domain.evidence import summarize_points
+from aiops_agent.monitoring import resolve_metric_definitions
 from aiops_agent.orchestration import (
     BlueprintRegistry,
     build_monitor_observe_blueprint,
@@ -41,7 +42,6 @@ from aiops_agent.workers import (
 from aiops_agent.workers.evidence_handlers import (
     EvidenceObserveHandler,
     EvidenceReportHandler,
-    _metric_definitions,
 )
 from aiops_agent.workers.handlers import investigation_task_identity
 from fastapi import FastAPI
@@ -181,7 +181,7 @@ class MetricCatalogTest(unittest.TestCase):
         definition = load_metric_catalog().select(
             ("db.connection.active",), db_type="ORACLE"
         )[0]
-        resolved = _metric_definitions(
+        resolved = resolve_metric_definitions(
             {
                 "binding_version": 3,
                 "metrics": [definition.model_dump(mode="json")],
@@ -206,7 +206,7 @@ class MetricCatalogTest(unittest.TestCase):
             ("db.storage.used_bytes",), db_type="ORACLE"
         )[0]
         provider = definition.providers["PROMETHEUS"]
-        resolved = _metric_definitions(
+        resolved = resolve_metric_definitions(
             {
                 "binding_version": 3,
                 "metrics": [definition.model_dump(mode="json")],
@@ -226,7 +226,7 @@ class MetricCatalogTest(unittest.TestCase):
         definition = load_metric_catalog().select(
             ("db.storage.used_bytes",), db_type="ORACLE"
         )[0]
-        resolved = _metric_definitions(
+        resolved = resolve_metric_definitions(
             {
                 "binding_version": 3,
                 "metrics": [definition.model_dump(mode="json")],

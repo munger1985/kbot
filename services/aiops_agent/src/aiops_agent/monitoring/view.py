@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from aiops_agent.contracts.evidence import MetricObservation
-from aiops_agent.contracts.monitoring import (
+from platform_core.contracts.aiops.monitoring import (
     MonitoringGap,
     MonitoringInstanceSummary,
     MonitoringPanel,
@@ -129,7 +129,7 @@ def build_monitoring_cache_key(
     source_id: UUID,
     instance_ids: tuple[UUID, ...],
     profile_id: str,
-    window: MonitoringWindowName,
+    window: str,
     end_time: datetime,
     binding_versions: tuple[int, ...],
     source_config_version: int,

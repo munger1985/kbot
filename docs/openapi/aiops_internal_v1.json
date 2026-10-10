@@ -4856,6 +4856,600 @@
         "title": "MeasurementSemantics",
         "type": "string"
       },
+      "MonitoringGap": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Detail",
+            "type": "string"
+          },
+          "instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "metric_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Code"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "scope": {
+            "enum": [
+              "SOURCE",
+              "INSTANCE",
+              "METRIC"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "code",
+          "detail"
+        ],
+        "title": "MonitoringGap",
+        "type": "object"
+      },
+      "MonitoringInstanceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Capability Gaps",
+            "type": "array"
+          },
+          "db_type": {
+            "enum": [
+              "ORACLE",
+              "MYSQL",
+              "POSTGRESQL"
+            ],
+            "title": "Db Type",
+            "type": "string"
+          },
+          "diagnostic_readiness": {
+            "enum": [
+              "READY",
+              "PARTIAL",
+              "UNAVAILABLE"
+            ],
+            "title": "Diagnostic Readiness",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "monitoring_readiness": {
+            "enum": [
+              "READY",
+              "DISABLED",
+              "DISCONNECTED",
+              "CAPABILITY_MISSING",
+              "NO_MAPPED_INSTANCE"
+            ],
+            "title": "Monitoring Readiness",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "AVAILABLE",
+              "UNAVAILABLE",
+              "PARTIAL"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_id",
+          "display_name",
+          "db_type",
+          "status",
+          "monitoring_readiness",
+          "diagnostic_readiness"
+        ],
+        "title": "MonitoringInstanceSummary",
+        "type": "object"
+      },
+      "MonitoringPanel": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "panel_id": {
+            "pattern": "^[a-z][a-z0-9._-]{2,127}$",
+            "title": "Panel Id",
+            "type": "string"
+          },
+          "quality": {
+            "enum": [
+              "GOOD",
+              "PARTIAL",
+              "NO_DATA"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "series": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "summary": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Summary",
+            "type": "object"
+          },
+          "title": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          },
+          "value_kind": {
+            "enum": [
+              "GAUGE",
+              "COUNTER",
+              "STATE"
+            ],
+            "title": "Value Kind",
+            "type": "string"
+          },
+          "visualization": {
+            "enum": [
+              "STAT",
+              "STATE_TIMELINE",
+              "TIME_SERIES",
+              "GAUGE"
+            ],
+            "title": "Visualization",
+            "type": "string"
+          }
+        },
+        "required": [
+          "panel_id",
+          "title",
+          "description",
+          "visualization",
+          "metric_code",
+          "unit",
+          "value_kind",
+          "quality"
+        ],
+        "title": "MonitoringPanel",
+        "type": "object"
+      },
+      "MonitoringPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "quality": {
+            "default": "GOOD",
+            "enum": [
+              "GOOD",
+              "INVALID",
+              "STALE",
+              "ESTIMATED"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "observed_at",
+          "value"
+        ],
+        "title": "MonitoringPoint",
+        "type": "object"
+      },
+      "MonitoringProfileSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "metric_codes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Metric Codes",
+            "type": "array"
+          },
+          "profile_id": {
+            "pattern": "^[a-z][a-z0-9-]{2,63}$",
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "supported_db_types": {
+            "items": {
+              "enum": [
+                "ORACLE",
+                "MYSQL",
+                "POSTGRESQL"
+              ],
+              "type": "string"
+            },
+            "title": "Supported Db Types",
+            "type": "array"
+          },
+          "version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "version",
+          "display_name",
+          "description",
+          "supported_db_types",
+          "metric_codes"
+        ],
+        "title": "MonitoringProfileSummary",
+        "type": "object"
+      },
+      "MonitoringSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage_ratio": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Coverage Ratio",
+            "type": "number"
+          },
+          "dimensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "object"
+          },
+          "instance_display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Instance Display Name",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "points": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringPoint"
+            },
+            "maxItems": 240,
+            "title": "Points",
+            "type": "array"
+          },
+          "series_key": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Series Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_id",
+          "instance_display_name",
+          "series_key",
+          "coverage_ratio"
+        ],
+        "title": "MonitoringSeries",
+        "type": "object"
+      },
+      "MonitoringSourceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Capability Gaps",
+            "type": "array"
+          },
+          "diagnostic_readiness": {
+            "enum": [
+              "READY",
+              "PARTIAL",
+              "UNAVAILABLE"
+            ],
+            "title": "Diagnostic Readiness",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "monitoring_readiness": {
+            "enum": [
+              "READY",
+              "DISABLED",
+              "DISCONNECTED",
+              "CAPABILITY_MISSING",
+              "NO_MAPPED_INSTANCE"
+            ],
+            "title": "Monitoring Readiness",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "PROMETHEUS",
+              "ZABBIX"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "display_name",
+          "source_type",
+          "monitoring_readiness",
+          "diagnostic_readiness"
+        ],
+        "title": "MonitoringSourceSummary",
+        "type": "object"
+      },
+      "MonitoringView": {
+        "additionalProperties": false,
+        "properties": {
+          "gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/MonitoringInstanceSummary"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Instances",
+            "type": "array"
+          },
+          "panels": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringPanel"
+            },
+            "maxItems": 8,
+            "title": "Panels",
+            "type": "array"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/MonitoringProfileSummary"
+          },
+          "refresh_after_seconds": {
+            "default": 30,
+            "maximum": 300.0,
+            "minimum": 15.0,
+            "title": "Refresh After Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "aiops.public.v1",
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MonitoringSourceSummary"
+          },
+          "window": {
+            "$ref": "#/components/schemas/MonitoringWindow"
+          }
+        },
+        "required": [
+          "source",
+          "profile",
+          "window",
+          "instances",
+          "partial"
+        ],
+        "title": "MonitoringView",
+        "type": "object"
+      },
+      "MonitoringViewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "instance_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Instance Ids",
+            "type": "array"
+          },
+          "profile_id": {
+            "pattern": "^[a-z][a-z0-9-]{2,63}$",
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "15m",
+              "1h",
+              "6h",
+              "24h"
+            ],
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "instance_ids",
+          "window"
+        ],
+        "title": "MonitoringViewRequest",
+        "type": "object"
+      },
+      "MonitoringWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "enum": [
+                  "15m",
+                  "1h",
+                  "6h",
+                  "24h"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "MonitoringWindow",
+        "type": "object"
+      },
       "MutationClaimReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -16592,6 +17186,178 @@
         ]
       }
     },
+    "/internal/v1/aiops/monitoring/sources": {
+      "get": {
+        "operationId": "list_sources_internal_v1_aiops_monitoring_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitoringSourceSummary"
+                  },
+                  "title": "Response List Sources Internal V1 Aiops Monitoring Sources Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sources",
+        "tags": [
+          "AIOps Monitoring"
+        ]
+      }
+    },
+    "/internal/v1/aiops/monitoring/sources/{source_id}/instances": {
+      "get": {
+        "operationId": "list_instances_internal_v1_aiops_monitoring_sources__source_id__instances_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitoringInstanceSummary"
+                  },
+                  "title": "Response List Instances Internal V1 Aiops Monitoring Sources  Source Id  Instances Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Instances",
+        "tags": [
+          "AIOps Monitoring"
+        ]
+      }
+    },
+    "/internal/v1/aiops/monitoring/sources/{source_id}/profiles": {
+      "get": {
+        "operationId": "list_profiles_internal_v1_aiops_monitoring_sources__source_id__profiles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitoringProfileSummary"
+                  },
+                  "title": "Response List Profiles Internal V1 Aiops Monitoring Sources  Source Id  Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Profiles",
+        "tags": [
+          "AIOps Monitoring"
+        ]
+      }
+    },
+    "/internal/v1/aiops/monitoring/sources/{source_id}/views": {
+      "post": {
+        "operationId": "get_view_internal_v1_aiops_monitoring_sources__source_id__views_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitoringViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get View",
+        "tags": [
+          "AIOps Monitoring"
+        ]
+      }
+    },
     "/internal/v1/aiops/proposals": {
       "get": {
         "operationId": "list_proposals_internal_v1_aiops_proposals_get",
@@ -17825,6 +18591,165 @@
         "summary": "Get Situation",
         "tags": [
           "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/targets/{target_id}/monitoring/profiles": {
+      "get": {
+        "operationId": "list_target_profiles_internal_v1_aiops_targets__target_id__monitoring_profiles_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitoringProfileSummary"
+                  },
+                  "title": "Response List Target Profiles Internal V1 Aiops Targets  Target Id  Monitoring Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Target Profiles",
+        "tags": [
+          "AIOps Monitoring"
+        ]
+      }
+    },
+    "/internal/v1/aiops/targets/{target_id}/monitoring/view": {
+      "get": {
+        "operationId": "get_target_view_internal_v1_aiops_targets__target_id__monitoring_view_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "default": "1h",
+              "enum": [
+                "15m",
+                "1h",
+                "6h",
+                "24h"
+              ],
+              "title": "Window",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Target View",
+        "tags": [
+          "AIOps Monitoring"
         ]
       }
     },

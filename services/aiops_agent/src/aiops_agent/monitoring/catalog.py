@@ -9,7 +9,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from aiops_agent.contracts.monitoring import MonitoringProfileSummary
+from aiops_agent.contracts.evidence import MetricDefinition
+from platform_core.contracts.aiops.monitoring import MonitoringProfileSummary
+from aiops_agent.monitoring.query_policy import (
+    PromQueryPolicy,
+    PromQueryPolicySnapshot,
+)
 
 
 class MonitoringProfileDefinition(BaseModel):
@@ -121,3 +126,105 @@ def load_monitoring_profile_catalog(
         resolved.read_text(encoding="utf-8")
     )
     return MonitoringProfileCatalog(document, metric_catalog)
+
+
+def resolve_metric_definitions(snapshot: dict) -> tuple[MetricDefinition, ...]:
+    """应用 Binding 中受控的 Prometheus 与 Zabbix 精确映射覆盖。"""
+    overrides = dict(snapshot.get("mapping_overrides") or {})
+    prometheus_queries = overrides.get("prometheus_queries") or {}
+    zabbix_item_keys = overrides.get("zabbix_item_keys") or {}
+    if not isinstance(prometheus_queries, dict):
+        raise ValueError("prometheus_queries 必须是对象")
+    if not isinstance(zabbix_item_keys, dict):
+        raise ValueError("zabbix_item_keys 必须是对象")
+    definitions = []
+    for item in snapshot["metrics"]:
+        definition = MetricDefinition.model_validate(item)
+        query = prometheus_queries.get(definition.metric_code)
+        if query is not None:
+            if (
+                not isinstance(query, str)
+                or not query.strip()
+                or len(query) > 2000
+                or "${" in query.replace("${external_target}", "").replace(
+                    "${host_target}", ""
+                )
+            ):
+                raise ValueError("Prometheus 指标查询覆盖格式无效")
+            provider = definition.providers.get("PROMETHEUS")
+            if provider is None:
+                raise ValueError("指标不支持 Prometheus 查询覆盖")
+            definition = definition.model_copy(
+                update={
+                    "providers": {
+                        **definition.providers,
+                        "PROMETHEUS": provider.model_copy(
+                            update={
+                                "template_id": f"binding.{definition.metric_code}",
+                                "template_version": str(snapshot["binding_version"]),
+                                "query_template": query.strip(),
+                                "fallback_query_templates": (
+                                    provider.fallback_query_templates
+                                    if query.strip() == provider.query_template
+                                    else ()
+                                ),
+                            }
+                        ),
+                    }
+                }
+            )
+        item_key = zabbix_item_keys.get(definition.metric_code)
+        if item_key is not None:
+            if (
+                not isinstance(item_key, str)
+                or not item_key.strip()
+                or len(item_key) > 512
+            ):
+                raise ValueError("Zabbix Item Key 覆盖格式无效")
+            provider = definition.providers.get("ZABBIX")
+            if provider is None:
+                raise ValueError("指标不支持 Zabbix Item Key 覆盖")
+            definition = definition.model_copy(
+                update={
+                    "providers": {
+                        **definition.providers,
+                        "ZABBIX": provider.model_copy(
+                            update={
+                                "template_id": f"binding.{definition.metric_code}",
+                                "template_version": str(snapshot["binding_version"]),
+                                "exact_item_key": item_key.strip(),
+                            }
+                        ),
+                    }
+                }
+            )
+        provider = definition.providers.get("PROMETHEUS")
+        if provider is not None and provider.query_template is not None:
+            policy = PromQueryPolicy(PromQueryPolicySnapshot())
+            window = min(
+                definition.default_window_seconds,
+                PromQueryPolicySnapshot().max_window_seconds,
+            )
+            checked = policy.validate(
+                provider.query_template, window_seconds=window
+            )
+            definition = definition.model_copy(
+                update={
+                    "providers": {
+                        **definition.providers,
+                        "PROMETHEUS": provider.model_copy(
+                            update={
+                                "query_template": checked.normalized_query,
+                                "fallback_query_templates": tuple(
+                                    policy.validate(
+                                        fallback, window_seconds=window
+                                    ).normalized_query
+                                    for fallback in provider.fallback_query_templates
+                                ),
+                            }
+                        ),
+                    }
+                }
+            )
+        definitions.append(definition)
+    return tuple(definitions)

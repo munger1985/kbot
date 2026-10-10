@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.adapters.diagnostic_sources.zabbix import ZabbixAdapter
-from aiops_agent.contracts.monitoring import (
+from platform_core.contracts.aiops.monitoring import (
     MonitoringGap,
     MonitoringInstanceSummary,
 )
@@ -17,6 +17,7 @@ from aiops_agent.monitoring import (
     build_monitoring_cache_key,
     load_monitoring_profile_catalog,
     project_source_readiness,
+    resolve_metric_definitions,
     resolve_monitoring_window,
 )
 from aiops_agent.ports.diagnostic_source import (
@@ -26,7 +27,6 @@ from aiops_agent.ports.diagnostic_source import (
     MetricsEvidenceRequest,
     SourceHealthRequest,
 )
-from aiops_agent.workers.evidence_handlers import _metric_definitions
 from platform_core.identity import uuid7
 
 
@@ -256,7 +256,7 @@ class MonitoringProfileContractTest(unittest.TestCase):
 
     def test_zabbix_item_key_override_is_exact(self):
         definition = self.metrics.get("mysql.availability")
-        resolved = _metric_definitions(
+        resolved = resolve_metric_definitions(
             {
                 "binding_version": 7,
                 "metrics": [definition.model_dump(mode="json")],

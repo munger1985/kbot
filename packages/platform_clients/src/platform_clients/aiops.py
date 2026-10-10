@@ -324,6 +324,84 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     """Main API 的管理、用户命令和 Direct Run Client。"""
 
     _CONFIG = f"{INTERNAL_API_V1}/aiops/config"
+    _MONITORING = f"{INTERNAL_API_V1}/aiops/monitoring"
+
+    async def list_monitoring_sources(
+        self, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET", f"{self._MONITORING}/sources", auth_context=auth_context
+        )
+
+    async def list_monitoring_instances(
+        self, source_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{self._MONITORING}/sources/{source_id}/instances",
+            auth_context=auth_context,
+        )
+
+    async def list_monitoring_profiles(
+        self, source_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{self._MONITORING}/sources/{source_id}/profiles",
+            auth_context=auth_context,
+        )
+
+    async def get_monitoring_view(
+        self,
+        source_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._MONITORING}/sources/{source_id}/views",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def list_target_monitoring_profiles(
+        self, target_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/targets/{target_id}/monitoring/profiles",
+            auth_context=auth_context,
+        )
+
+    async def get_target_monitoring_view(
+        self,
+        target_id: UUID,
+        *,
+        source_id: UUID,
+        profile_id: str,
+        window: str,
+        window_start: str | None,
+        window_end: str | None,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        query = {
+            "source_id": str(source_id),
+            "profile_id": profile_id,
+            "window": window,
+        }
+        if window_start is not None:
+            query["window_start"] = window_start
+        if window_end is not None:
+            query["window_end"] = window_end
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/aiops/targets/{target_id}"
+                f"/monitoring/view?{urlencode(query)}"
+            ),
+            auth_context=auth_context,
+        )
 
     async def get_operations_knowledge_overview(
         self, *, auth_context: AuthContext

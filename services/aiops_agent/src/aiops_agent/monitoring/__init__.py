@@ -4,6 +4,7 @@ from .catalog import (
     MonitoringProfileCatalog,
     MonitoringProfileDefinition,
     load_monitoring_profile_catalog,
+    resolve_metric_definitions,
 )
 
 from .query_policy import (
@@ -38,5 +39,6 @@ __all__ = [
     "build_monitoring_cache_key",
     "load_monitoring_profile_catalog",
     "project_source_readiness",
+    "resolve_metric_definitions",
     "resolve_monitoring_window",
 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime
 from typing import Annotated, Literal, TypeVar, cast
 from uuid import UUID
 
@@ -93,6 +94,14 @@ from platform_core.contracts.aiops import (
     WebhookKeyRotation,
 )
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
+from platform_core.contracts.aiops.monitoring import (
+    MonitoringInstanceSummary,
+    MonitoringProfileSummary,
+    MonitoringSourceSummary,
+    MonitoringView,
+    MonitoringViewRequest,
+    MonitoringWindowName,
+)
 from platform_core.identity import uuid7
 from main_api.application import (
     authorize_app_request,
@@ -112,6 +121,9 @@ def _route_permissions() -> dict[str, str]:
             "list_reports", "list_report_versions", "list_inspection_fires",
             "get_inspection_fire", "create_ops_run", "list_ops_runs",
             "get_dashboard",
+            "list_monitoring_sources", "list_monitoring_instances",
+            "list_monitoring_profiles", "get_monitoring_view",
+            "list_target_monitoring_profiles", "get_target_monitoring_view",
             "list_situations", "get_situation", "get_ops_run",
             "get_ops_run_result", "get_pending_input", "get_hitl_input",
             "respond_hitl", "skip_hitl", "decide_diagnostic_query",
@@ -493,6 +505,84 @@ async def get_dashboard(request: Request) -> OpsDashboard:
         auth_context=request.state.auth_context,
     )
     return OpsDashboard.model_validate(payload)
+
+
+@router.get(
+    "/monitoring/sources",
+    response_model=tuple[MonitoringSourceSummary, ...],
+)
+async def list_monitoring_sources(request: Request):
+    return await _client(request).list_monitoring_sources(
+        auth_context=request.state.auth_context
+    )
+
+
+@router.get(
+    "/monitoring/sources/{source_id}/instances",
+    response_model=tuple[MonitoringInstanceSummary, ...],
+)
+async def list_monitoring_instances(source_id: UUID, request: Request):
+    return await _client(request).list_monitoring_instances(
+        source_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get(
+    "/monitoring/sources/{source_id}/profiles",
+    response_model=tuple[MonitoringProfileSummary, ...],
+)
+async def list_monitoring_profiles(source_id: UUID, request: Request):
+    return await _client(request).list_monitoring_profiles(
+        source_id, auth_context=request.state.auth_context
+    )
+
+
+@router.post(
+    "/monitoring/sources/{source_id}/views",
+    response_model=MonitoringView,
+)
+async def get_monitoring_view(
+    source_id: UUID, body: MonitoringViewRequest, request: Request
+):
+    return await _client(request).get_monitoring_view(
+        source_id,
+        body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get(
+    "/targets/{target_id}/monitoring/profiles",
+    response_model=tuple[MonitoringProfileSummary, ...],
+)
+async def list_target_monitoring_profiles(target_id: UUID, request: Request):
+    return await _client(request).list_target_monitoring_profiles(
+        target_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get(
+    "/targets/{target_id}/monitoring/view",
+    response_model=MonitoringView,
+)
+async def get_target_monitoring_view(
+    target_id: UUID,
+    source_id: UUID,
+    profile_id: str,
+    request: Request,
+    window: MonitoringWindowName = Query(default="1h"),
+    window_start: datetime | None = Query(default=None),
+    window_end: datetime | None = Query(default=None),
+):
+    return await _client(request).get_target_monitoring_view(
+        target_id,
+        source_id=source_id,
+        profile_id=profile_id,
+        window=window,
+        window_start=window_start.isoformat() if window_start else None,
+        window_end=window_end.isoformat() if window_end else None,
+        auth_context=request.state.auth_context,
+    )
 
 
 @router.get("/runs", response_model=OpsRunPage)

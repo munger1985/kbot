@@ -36,6 +36,10 @@ from aiops_agent.adapters.diagnostic_sources.payload_store import (
     LocalSignalPayloadStore,
 )
 from aiops_agent.api.management import router as management_router
+from aiops_agent.api.monitoring import (
+    router as monitoring_router,
+    target_router as target_monitoring_router,
+)
 from aiops_agent.api.agents import router as agent_router
 from aiops_agent.api.conversations import router as conversation_router
 from aiops_agent.api.conversation_starters import (
@@ -57,6 +61,7 @@ from aiops_agent.application.report_templates import (
     SessionReportTemplateService,
 )
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
+from aiops_agent.application.monitoring_views import MonitoringApplicationService
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
 from aiops_agent.api.changes import router as changes_router
@@ -83,6 +88,7 @@ from aiops_agent.orchestration import create_kernel_blueprint_registry
 from aiops_agent.orchestration.diagnosis import AIOpsPromptRegistry
 from aiops_agent.workers import create_runtime_handler_registry
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
+from aiops_agent.monitoring import load_monitoring_profile_catalog
 from aiops_agent.diagnostics import (
     create_diagnostic_grant_codec,
     create_diagnostic_registry,
@@ -201,6 +207,9 @@ def create_aiops_api(
             if resolved.monitoring.catalog_path
             else None
         )
+        monitoring_profile_catalog = load_monitoring_profile_catalog(
+            metric_catalog
+        )
         diagnostic_registry = create_diagnostic_registry(resolved)
         app.state.change_service = AIOpsChangeService(
             uow_factory=runtime.uow_factory,
@@ -242,6 +251,14 @@ def create_aiops_api(
             webhook_replay_seconds=(
                 resolved.monitoring.webhook_replay_seconds
             ),
+        )
+        app.state.monitoring_service = MonitoringApplicationService(
+            uow_factory=runtime.uow_factory,
+            metric_catalog=metric_catalog,
+            profile_catalog=monitoring_profile_catalog,
+            diagnostic_source_registry=diagnostic_source_registry,
+            secret_store=secret_store,
+            max_response_bytes=resolved.monitoring.max_response_bytes,
         )
         app.state.configuration_service = AIOpsConfigurationService(
             uow_factory=runtime.uow_factory,
@@ -396,6 +413,8 @@ def create_aiops_api(
         )
     )
     app.include_router(management_router)
+    app.include_router(monitoring_router)
+    app.include_router(target_monitoring_router)
     app.include_router(agent_router)
     app.include_router(conversation_starter_router)
     app.include_router(conversation_router)
