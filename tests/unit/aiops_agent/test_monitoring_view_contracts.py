@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.adapters.diagnostic_sources.zabbix import ZabbixAdapter
+from aiops_agent.domain.evidence import DEFAULT_BASELINE_METRICS
 from platform_core.contracts.aiops.monitoring import (
     MonitoringGap,
     MonitoringInstanceSummary,
@@ -73,7 +74,6 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertEqual(
             [
                 "mysql-overview",
-                "mysql-engine",
                 "database-capacity",
                 "host-overview",
             ],
@@ -99,6 +99,31 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertIn(
             "host.memory.utilization",
             self.profiles.get("oracle-overview").metric_codes,
+        )
+
+    def test_default_database_profiles_use_authorized_exporter_metrics(self):
+        expected_profiles = {
+            "ORACLE": "oracle-overview",
+            "MYSQL": "mysql-overview",
+            "POSTGRESQL": "postgresql-overview",
+        }
+        authorized = set(DEFAULT_BASELINE_METRICS)
+        for db_type, profile_id in expected_profiles.items():
+            profile = self.profiles.list_for_db_types((db_type,))[0]
+            with self.subTest(db_type=db_type):
+                self.assertEqual(profile_id, profile.profile_id)
+                self.assertTrue(set(profile.metric_codes).issubset(authorized))
+
+        mysql_codes = self.profiles.get("mysql-overview").metric_codes
+        self.assertTrue(all(code.startswith("mysql.") for code in mysql_codes))
+        postgresql_codes = self.profiles.get(
+            "postgresql-overview"
+        ).metric_codes
+        self.assertNotIn(
+            "postgresql.replication.lag_bytes", postgresql_codes
+        )
+        self.assertNotIn(
+            "postgresql.replication.slot_retained_bytes", postgresql_codes
         )
 
     def test_oracle_overview_prometheus_queries_have_controlled_fallbacks(self):
