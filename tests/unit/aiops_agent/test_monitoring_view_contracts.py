@@ -96,10 +96,11 @@ class MonitoringProfileContractTest(unittest.TestCase):
             "kbot-oracle-overview",
             self.profiles.get("oracle-overview").grafana_dashboard_uid,
         )
-        self.assertIn(
-            "host.memory.utilization",
-            self.profiles.get("oracle-overview").metric_codes,
-        )
+        oracle_codes = self.profiles.get("oracle-overview").metric_codes
+        self.assertIn("container.cpu.utilization", oracle_codes)
+        self.assertIn("container.memory.utilization", oracle_codes)
+        self.assertNotIn("host.cpu.utilization", oracle_codes)
+        self.assertNotIn("host.memory.utilization", oracle_codes)
 
     def test_default_database_profiles_use_authorized_exporter_metrics(self):
         expected_profiles = {
@@ -115,10 +116,19 @@ class MonitoringProfileContractTest(unittest.TestCase):
                 self.assertTrue(set(profile.metric_codes).issubset(authorized))
 
         mysql_codes = self.profiles.get("mysql-overview").metric_codes
-        self.assertTrue(all(code.startswith("mysql.") for code in mysql_codes))
+        self.assertTrue(
+            all(
+                code.startswith("mysql.") or code.startswith("container.")
+                for code in mysql_codes
+            )
+        )
+        self.assertIn("container.cpu.utilization", mysql_codes)
+        self.assertIn("container.memory.utilization", mysql_codes)
         postgresql_codes = self.profiles.get(
             "postgresql-overview"
         ).metric_codes
+        self.assertIn("container.cpu.utilization", postgresql_codes)
+        self.assertIn("container.memory.utilization", postgresql_codes)
         self.assertNotIn(
             "postgresql.replication.lag_bytes", postgresql_codes
         )

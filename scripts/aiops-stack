@@ -31,6 +31,7 @@ MODULE_PROFILES = {
     "logs": "logs",
     "dashboard": "dashboard",
     "host": "host",
+    "containers": "containers",
 }
 
 PROFILE_SERVICES: dict[str, set[str]] = {
@@ -38,6 +39,7 @@ PROFILE_SERVICES: dict[str, set[str]] = {
     "logs": {"loki", "alloy"},
     "dashboard": {"grafana"},
     "host": {"node-exporter"},
+    "containers": {"cadvisor"},
 }
 
 ROLE_SERVICES: dict[str, set[str]] = {
@@ -45,6 +47,7 @@ ROLE_SERVICES: dict[str, set[str]] = {
     "collector": {
         "alloy",
         "node-exporter",
+        "cadvisor",
     },
 }
 
@@ -53,6 +56,9 @@ DATABASE_SECTION = re.compile(
 )
 PROMETHEUS_TARGET_SECTION = re.compile(
     r"^prometheus_target:(?P<target_key>[a-z0-9][a-z0-9_-]*)$"
+)
+CONTAINER_MAPPING_SECTION = re.compile(
+    r"^container:(?P<target_key>[a-z0-9][a-z0-9_-]*)$"
 )
 
 CONFIG_TEMPLATE = """# KBot AIOps观测工具唯一部署配置
@@ -115,6 +121,14 @@ local_access = false
 # exporter_bind_address = 10.0.0.30
 # exporter_port = 19100
 
+[containers]
+# enabled = true
+# 必填：该Docker主机cAdvisor抓取目标的稳定Target Key。
+# target_key = containers-prod-01
+# Collector角色必须填写Central可达的监听地址。
+# exporter_bind_address = 10.0.0.30
+# exporter_port = 19101
+
 # 每个数据库使用一个独立配置段；复制整段即可增加数据库。
 # 冒号后的值就是稳定Target Key，必须与AIOps App中的Target绑定一致。
 [oracle:oracle-prod-01]
@@ -167,6 +181,15 @@ local_access = false
 # 必填：Central Prometheus可达的host:port，不要带URL路径。
 # address = 10.0.0.30:19161
 # environment = production
+
+# 将cAdvisor中的数据库容器映射回数据库Target Key，用于计算容器资源使用率。
+# 同一个cAdvisor抓取目标可以映射多个数据库容器。
+[container:oracle-prod-01]
+# enabled = true
+# 必填：对应[prometheus_target:*]冒号后的cAdvisor Target Key。
+# scrape_target_key = containers-prod-01
+# 必填：Docker容器名称，不要填写容器ID。
+# container_name = oracle19c
 """
 
 
@@ -300,6 +323,14 @@ def _prometheus_target_sections(parser: configparser.ConfigParser) -> tuple[str,
     )
 
 
+def _container_mapping_sections(parser: configparser.ConfigParser) -> tuple[str, ...]:
+    return tuple(
+        section
+        for section in parser.sections()
+        if CONTAINER_MAPPING_SECTION.fullmatch(section) and _enabled(parser, section)
+    )
+
+
 def _load_settings(path: Path) -> DeploymentSettings:
     if path.stat().st_mode & 0o077:
         raise ValueError(f"配置文件权限必须为0600：chmod 600 {path}")
@@ -341,6 +372,8 @@ def _load_settings(path: Path) -> DeploymentSettings:
         profiles = (*profiles, *tuple(sorted({item.engine for item in database_targets})))
     if external_targets and "metrics" not in profiles:
         raise ValueError("启用[prometheus_target:*]前必须启用[metrics]")
+    if _container_mapping_sections(parser) and "metrics" not in profiles:
+        raise ValueError("启用[container:*]前必须启用[metrics]")
     settings = DeploymentSettings(
         config_path=path,
         runtime_dir=path.parent / "generated",
@@ -365,6 +398,13 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
         if settings.role == "collector":
             _required(parser, "host", "exporter_bind_address")
             _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535)
+    if "containers" in settings.profiles:
+        _required(parser, "containers", "target_key")
+        if settings.role == "collector":
+            _required(parser, "containers", "exporter_bind_address")
+            _bounded_int(
+                parser, "containers", "exporter_port", 19101, 1, 65535
+            )
     database_targets = _database_targets(parser)
     seen_ports: set[tuple[str, int]] = set()
     if settings.role == "collector" and "host" in settings.profiles:
@@ -372,6 +412,15 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
             (
                 _required(parser, "host", "exporter_bind_address"),
                 _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535),
+            )
+        )
+    if settings.role == "collector" and "containers" in settings.profiles:
+        seen_ports.add(
+            (
+                _required(parser, "containers", "exporter_bind_address"),
+                _bounded_int(
+                    parser, "containers", "exporter_port", 19101, 1, 65535
+                ),
             )
         )
     if settings.role == "central" and database_targets:
@@ -446,13 +495,41 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
                 raise ValueError("central角色的KBot Webhook必须使用HTTPS")
     for section in _prometheus_target_sections(parser):
         engine = _required(parser, section, "engine")
-        if engine not in {"oracle", "mysql", "postgres", "node"}:
-            raise ValueError(f"[{section}] engine必须是oracle、mysql、postgres或node")
+        if engine not in {"oracle", "mysql", "postgres", "node", "cadvisor"}:
+            raise ValueError(
+                f"[{section}] engine必须是oracle、mysql、postgres、node或cadvisor"
+            )
         address = _required(parser, section, "address")
         if not re.fullmatch(r"[^\s:/]+:\d{1,5}", address):
             raise ValueError(f"[{section}] address必须是host:port")
         if int(address.rsplit(":", 1)[1]) > 65535:
             raise ValueError(f"[{section}] address端口必须介于1和65535之间")
+    external_engines = {
+        PROMETHEUS_TARGET_SECTION.fullmatch(section).group("target_key"): _required(
+            parser, section, "engine"
+        )
+        for section in _prometheus_target_sections(parser)
+        if PROMETHEUS_TARGET_SECTION.fullmatch(section)
+    }
+    if "containers" in settings.profiles:
+        external_engines[_required(parser, "containers", "target_key")] = "cadvisor"
+    seen_container_mappings: set[tuple[str, str]] = set()
+    for section in _container_mapping_sections(parser):
+        match = CONTAINER_MAPPING_SECTION.fullmatch(section)
+        if match is None:
+            raise ValueError(f"无法解析容器映射配置段：{section}")
+        scrape_target_key = _required(parser, section, "scrape_target_key")
+        if external_engines.get(scrape_target_key) != "cadvisor":
+            raise ValueError(
+                f"[{section}] scrape_target_key必须引用已启用的cAdvisor Prometheus目标"
+            )
+        container_name = _required(parser, section, "container_name")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", container_name):
+            raise ValueError(f"[{section}] container_name格式无效")
+        identity = (scrape_target_key, container_name)
+        if identity in seen_container_mappings:
+            raise ValueError("同一cAdvisor目标中的容器名称不能重复映射")
+        seen_container_mappings.add(identity)
     if "logs" in settings.profiles:
         loki_url = _optional(
             parser,
@@ -510,8 +587,63 @@ scrape_configs:
 """
 
 
-def _prometheus_rules() -> str:
-    return """groups:
+def _container_recording_rules(settings: DeploymentSettings) -> str:
+    parser = settings.values
+    sections = _container_mapping_sections(parser)
+    if not sections:
+        return ""
+    rules = [
+        "",
+        "  - name: kbot-aiops-container-recording",
+        "    interval: 15s",
+        "    rules:",
+    ]
+    for section in sections:
+        match = CONTAINER_MAPPING_SECTION.fullmatch(section)
+        if match is None:
+            raise ValueError(f"无法解析容器映射配置段：{section}")
+        target_key = match.group("target_key")
+        scrape_target_key = _required(parser, section, "scrape_target_key")
+        container_name = _required(parser, section, "container_name")
+        selector = (
+            'job="cadvisor",target_key='
+            + json.dumps(scrape_target_key)
+            + ',name=~'
+            + json.dumps("/?" + re.escape(container_name))
+        )
+        target_label = json.dumps(target_key, ensure_ascii=False)
+        container_label = json.dumps(container_name, ensure_ascii=False)
+        rules.extend(
+            [
+                "      - record: kbot_db_container_cpu_utilization_percent",
+                "        expr: 100 * sum(rate(container_cpu_usage_seconds_total{"
+                + selector
+                + "}[5m])) / clamp_min(max(container_spec_cpu_quota{"
+                + selector
+                + "}) / clamp_min(max(container_spec_cpu_period{"
+                + selector
+                + "}), 1), 0.001)",
+                "        labels:",
+                f"          target_key: {target_label}",
+                f"          container_name: {container_label}",
+                "",
+                "      - record: kbot_db_container_memory_utilization_percent",
+                "        expr: 100 * max(container_memory_working_set_bytes{"
+                + selector
+                + "}) / clamp_min(max(container_spec_memory_limit_bytes{"
+                + selector
+                + "}), 1)",
+                "        labels:",
+                f"          target_key: {target_label}",
+                f"          container_name: {container_label}",
+                "",
+            ]
+        )
+    return "\n".join(rules)
+
+
+def _prometheus_rules(settings: DeploymentSettings | None = None) -> str:
+    base = """groups:
   - name: kbot-observability-health
     rules:
       - alert: KBotDiagnosticSourceDown
@@ -847,6 +979,9 @@ def _prometheus_rules() -> str:
           summary: "PostgreSQL缓存命中率偏低"
           description: "{{ $labels.target_key }}缓存命中率连续15分钟低于95%。"
 """
+    if settings is None:
+        return base
+    return base + _container_recording_rules(settings)
 
 
 def _prometheus_query_overrides() -> str:
@@ -869,6 +1004,8 @@ def _prometheus_query_overrides() -> str:
                 "host.filesystem.utilization": '100 * (1 - node_filesystem_avail_bytes{job="node",fstype!~"tmpfs|overlay",target_key="${host_target}"} / node_filesystem_size_bytes{job="node",fstype!~"tmpfs|overlay",target_key="${host_target}"})',
                 "host.disk.io.utilization": 'rate(node_disk_io_time_seconds_total{job="node",target_key="${host_target}"}[5m]) * 100',
                 "host.network.throughput": 'rate(node_network_receive_bytes_total{job="node",device!="lo",target_key="${host_target}"}[5m]) + rate(node_network_transmit_bytes_total{job="node",device!="lo",target_key="${host_target}"}[5m])',
+                "container.cpu.utilization": 'kbot_db_container_cpu_utilization_percent{target_key="${external_target}"}',
+                "container.memory.utilization": 'kbot_db_container_memory_utilization_percent{target_key="${external_target}"}',
             }
         },
         ensure_ascii=False,
@@ -1011,6 +1148,23 @@ def _database_generated_compose(
                 "{}:{}:9100".format(
                     _required(parser, "host", "exporter_bind_address"),
                     _bounded_int(parser, "host", "exporter_port", 19100, 1, 65535),
+                )
+            ]
+        }
+
+    if "containers" in settings.profiles and settings.role == "collector":
+        services["cadvisor"] = {
+            "ports": [
+                "{}:{}:8080".format(
+                    _required(parser, "containers", "exporter_bind_address"),
+                    _bounded_int(
+                        parser,
+                        "containers",
+                        "exporter_port",
+                        19101,
+                        1,
+                        65535,
+                    ),
                 )
             ]
         }
@@ -1277,7 +1431,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
 
     if "metrics" in settings.profiles:
         prometheus_revision = hashlib.sha256(
-            (_prometheus_config() + _prometheus_rules()).encode("utf-8")
+            (_prometheus_config() + _prometheus_rules(settings)).encode("utf-8")
         ).hexdigest()
         webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
         alertmanager_config = _alertmanager_config(bool(webhook_url))
@@ -1397,6 +1551,14 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         targets.append(
             _target("node", "node-exporter:9100", _required(parser, "host", "target_key"))
         )
+    if "containers" in settings.profiles:
+        targets.append(
+            _target(
+                "cadvisor",
+                "cadvisor:8080",
+                _required(parser, "containers", "target_key"),
+            )
+        )
 
     generated_compose, local_targets = _database_generated_compose(settings)
     targets.extend(local_targets)
@@ -1452,7 +1614,10 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
 
     _write_text(runtime / "stack.env", "\n".join(env_lines) + "\n")
     _write_text(runtime / "prometheus/prometheus.yml", _prometheus_config())
-    _write_text(runtime / "prometheus/rules/kbot-observability.yml", _prometheus_rules())
+    _write_text(
+        runtime / "prometheus/rules/kbot-observability.yml",
+        _prometheus_rules(settings),
+    )
     _write_text(
         runtime / "prometheus/kbot-aiops-query-overrides.json",
         _prometheus_query_overrides(),

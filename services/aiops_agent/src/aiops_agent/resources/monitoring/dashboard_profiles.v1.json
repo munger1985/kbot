@@ -5,28 +5,28 @@
       "profile_id": "oracle-overview",
       "version": "1.0.0",
       "display_name": "Oracle 实时总览",
-      "description": "Oracle 可用性、CPU、内存、连接、吞吐、延迟和存储趋势。",
+      "description": "Oracle 可用性、容器 CPU、容器内存、连接、吞吐、延迟和存储趋势。",
       "supported_db_types": ["ORACLE"],
       "grafana_dashboard_uid": "kbot-oracle-overview",
-      "metric_codes": ["db.availability", "db.cpu.utilization", "host.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization"]
+      "metric_codes": ["db.availability", "container.cpu.utilization", "container.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization"]
     },
     {
       "profile_id": "mysql-overview",
       "version": "1.0.0",
       "display_name": "MySQL 实时总览",
-      "description": "MySQL 可用性、连接、事务、慢查询、锁等待和 Buffer Pool 指标。",
+      "description": "MySQL 可用性、容器 CPU、容器内存、连接、事务、慢查询、锁等待和 Buffer Pool 指标。",
       "supported_db_types": ["MYSQL"],
       "grafana_dashboard_uid": "kbot-mysql-overview",
-      "metric_codes": ["mysql.availability", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent"]
+      "metric_codes": ["mysql.availability", "container.cpu.utilization", "container.memory.utilization", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent"]
     },
     {
       "profile_id": "postgresql-overview",
       "version": "1.0.0",
       "display_name": "PostgreSQL 实时总览",
-      "description": "PostgreSQL 可用性、连接、事务和数据库容量指标。",
+      "description": "PostgreSQL 可用性、容器 CPU、容器内存、连接、事务和数据库容量指标。",
       "supported_db_types": ["POSTGRESQL"],
       "grafana_dashboard_uid": "kbot-postgresql-overview",
-      "metric_codes": ["postgresql.availability", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes"]
+      "metric_codes": ["postgresql.availability", "container.cpu.utilization", "container.memory.utilization", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes"]
     },
     {
       "profile_id": "postgresql-replication",

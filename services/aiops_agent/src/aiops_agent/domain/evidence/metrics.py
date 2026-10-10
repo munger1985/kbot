@@ -17,6 +17,8 @@ DEFAULT_BASELINE_METRICS = (
     "host.filesystem.utilization",
     "host.disk.io.utilization",
     "host.network.throughput",
+    "container.cpu.utilization",
+    "container.memory.utilization",
     "mysql.availability",
     "mysql.connection.utilization",
     "mysql.transaction.throughput",

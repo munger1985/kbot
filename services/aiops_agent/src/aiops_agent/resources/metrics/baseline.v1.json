@@ -575,6 +575,44 @@
       }
     },
     {
+      "metric_code": "container.cpu.utilization",
+      "semantic_version": "1.0.0",
+      "name": "容器 CPU 使用率",
+      "description": "数据库容器 CPU 使用量相对该容器 CPU 硬上限的百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "container_name"],
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 8,
+      "providers": {
+        "PROMETHEUS": {"template_id": "prom.container.cpu", "template_version": "1", "query_template": "kbot_db_container_cpu_utilization_percent{target_key=\"${external_target}\"}", "required_labels": ["target_key"]},
+        "ZABBIX": {"template_id": "zabbix.container.cpu", "template_version": "1", "exact_item_key": "kbot.container.cpu.utilization", "value_type": "FLOAT", "unit": "percent"}
+      }
+    },
+    {
+      "metric_code": "container.memory.utilization",
+      "semantic_version": "1.0.0",
+      "name": "容器内存使用率",
+      "description": "数据库容器工作集内存相对该容器内存硬上限的百分比。",
+      "unit": "percent",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "container_name"],
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 8,
+      "providers": {
+        "PROMETHEUS": {"template_id": "prom.container.memory", "template_version": "1", "query_template": "kbot_db_container_memory_utilization_percent{target_key=\"${external_target}\"}", "required_labels": ["target_key"]},
+        "ZABBIX": {"template_id": "zabbix.container.memory", "template_version": "1", "exact_item_key": "kbot.container.memory.utilization", "value_type": "FLOAT", "unit": "percent"}
+      }
+    },
+    {
       "metric_code": "host.cpu.utilization",
       "semantic_version": "1.0.0",
       "name": "主机 CPU 使用率",

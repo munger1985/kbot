@@ -128,6 +128,25 @@ services:
       - /:/host:ro,rslave
     expose: ["9100"]
 
+  cadvisor:
+    <<: *service-defaults
+    image: ${CADVISOR_IMAGE}
+    profiles: [containers]
+    privileged: true
+    security_opt: []
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    expose: ["8080"]
+
 networks:
   observability:
     internal: ${AIOPS_INTERNAL_NETWORK:-true}

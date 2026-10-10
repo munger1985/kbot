@@ -129,6 +129,8 @@ def test_single_config_enables_oracle_and_keeps_password_out_of_env(
         "host.filesystem.utilization",
         "host.disk.io.utilization",
         "host.network.throughput",
+        "container.cpu.utilization",
+        "container.memory.utilization",
     }
 
 
@@ -137,7 +139,7 @@ def test_template_has_one_required_section_and_modules_are_disabled() -> None:
     assert "[deployment]" in stack.CONFIG_TEMPLATE
     assert "deployment_id = CHANGE_ME" in stack.CONFIG_TEMPLATE
     assert "OEM不在此部署文件中配置" in stack.CONFIG_TEMPLATE
-    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 8
+    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 10
 
 
 def test_single_config_generates_every_enabled_module(tmp_path: Path) -> None:
@@ -167,6 +169,10 @@ grafana_admin_password = grafana-secret
 [host]
 enabled = true
 target_key = host-all-modules-01
+
+[containers]
+enabled = true
+target_key = containers-all-modules-01
 
 [oracle:oracle-all-modules-01]
 enabled = true
@@ -459,6 +465,97 @@ exporter_port = 19161
     assert generated["services"]["oracle-oracle-prod-01-exporter"]["ports"] == [
         "10.20.0.11:19161:9161"
     ]
+
+
+def test_collector_role_exposes_cadvisor_on_declared_private_endpoint(
+    tmp_path: Path,
+) -> None:
+    stack = _load_stack_script()
+    config = tmp_path / "aiops-stack.ini"
+    config.write_text(
+        """[deployment]
+deployment_id = container-collector
+role = collector
+local_access = false
+
+[containers]
+enabled = true
+target_key = containers-aiops-88
+exporter_bind_address = 10.0.0.88
+exporter_port = 19101
+""",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    settings = stack._load_settings(config)
+    stack._prepare_runtime(settings)
+    generated = json.loads(
+        (settings.runtime_dir / "compose.generated.yaml").read_text()
+    )
+    assert generated["services"]["cadvisor"]["ports"] == [
+        "10.0.0.88:19101:8080"
+    ]
+    assert stack._selected_services(settings) == ["cadvisor"]
+
+
+def test_cadvisor_container_mapping_generates_target_scoped_resource_metrics(
+    tmp_path: Path,
+) -> None:
+    stack = _load_stack_script()
+    config = tmp_path / "aiops-stack.ini"
+    config.write_text(
+        """[deployment]
+deployment_id = container-central
+role = all-in-one
+local_access = false
+
+[metrics]
+enabled = true
+
+[prometheus_target:containers-aiops-88]
+enabled = true
+engine = cadvisor
+address = 10.0.0.88:19101
+environment = development
+
+[container:mysql-aiops-88]
+enabled = true
+scrape_target_key = containers-aiops-88
+container_name = aiops-mysql
+
+[container:postgres-aiops-88]
+enabled = true
+scrape_target_key = containers-aiops-88
+container_name = aiops-postgres
+""",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    settings = stack._load_settings(config)
+    stack._prepare_runtime(settings)
+    targets = json.loads(
+        (settings.runtime_dir / "prometheus/targets/kbot.json").read_text()
+    )
+    assert targets == [
+        {
+            "targets": ["10.0.0.88:19101"],
+            "labels": {
+                "job": "cadvisor",
+                "instance": "containers-aiops-88",
+                "target_key": "containers-aiops-88",
+                "environment": "development",
+            },
+        }
+    ]
+    rules = (
+        settings.runtime_dir / "prometheus/rules/kbot-observability.yml"
+    ).read_text()
+    assert "kbot_db_container_cpu_utilization_percent" in rules
+    assert "kbot_db_container_memory_utilization_percent" in rules
+    assert 'target_key: "mysql-aiops-88"' in rules
+    assert 'container_name: "aiops-postgres"' in rules
+    assert 'target_key="containers-aiops-88"' in rules
+    assert 'name=~"/?aiops\\\\-mysql"' in rules
 
 
 def test_webhook_signer_uses_dynamic_hmac_headers() -> None:
