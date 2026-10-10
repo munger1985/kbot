@@ -183,6 +183,7 @@ def _route_permissions() -> dict[str, str]:
             "list_inspection_plans", "get_inspection_plan",
             "patch_inspection_plan", "activate_inspection_plan",
             "pause_inspection_plan", "disable_inspection_plan",
+            "delete_inspection_plan",
         },
     }
     for permission, endpoint_names in groups.items():
