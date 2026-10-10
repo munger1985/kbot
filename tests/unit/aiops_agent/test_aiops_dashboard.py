@@ -374,6 +374,7 @@ class AIOpsDashboardTest(unittest.TestCase):
         self.assertEqual(len(parse_finding_payload(payload)), 1)
 
     def test_runtime_service_uses_batch_dashboard_queries(self) -> None:
+        runtime_now = datetime.now(UTC)
         target = SimpleNamespace(
             target_id=uuid7(),
             display_name="核心库",
@@ -385,15 +386,15 @@ class AIOpsDashboardTest(unittest.TestCase):
             connectivity_status="CONNECTED",
             observed_status="UP",
             readonly_connection_enabled=True,
-            last_observed_at=self.now,
+            last_observed_at=runtime_now,
             last_error_code=None,
         )
         run = SimpleNamespace(
             target_id=target.target_id,
             ops_run_id=uuid7(),
             status="COMPLETED",
-            created_at=self.now - timedelta(minutes=5),
-            completed_at=self.now,
+            created_at=runtime_now - timedelta(minutes=5),
+            completed_at=runtime_now,
             error_code=None,
         )
         payload = FindingCompilation(
