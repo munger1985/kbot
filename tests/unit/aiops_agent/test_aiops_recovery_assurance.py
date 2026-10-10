@@ -94,7 +94,7 @@ class RecoveryContractTest(unittest.TestCase):
         manifest = json.loads(
             (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
         )
-        self.assertEqual(34, manifest["schema_version"])
+        self.assertEqual(37, manifest["schema_version"])
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
         self.assertIn("required_backup_source_types", (
