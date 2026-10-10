@@ -261,6 +261,18 @@
 .target-overview-grid h3{margin:0 0 8px;font:650 15px Georgia,"Songti SC",serif}
 .target-overview-grid .ops-detail{grid-template-columns:120px minmax(0,1fr)}
 .target-overview-grid .ops-detail dd{overflow-wrap:anywhere}
+.source-overview-head{align-items:flex-start;padding:20px 22px}
+.source-overview-head h2{margin:2px 0 4px;font-size:24px}
+.source-overview-head p,.source-overview-head small{margin:0;color:var(--muted)}
+.source-overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.source-overview-grid section{min-width:0}
+.source-overview-grid h3{margin:0 0 8px;font:650 15px Georgia,"Songti SC",serif}
+.source-overview-grid .ops-detail{grid-template-columns:140px minmax(0,1fr)}
+.source-overview-grid .ops-detail dd{overflow-wrap:anywhere}
+.source-capability-section{padding:16px;border:1px solid var(--line);background:#f8fafc}
+.source-capability-section p{margin:0 0 12px;color:var(--muted);font-size:11px}
+.source-capability-empty{color:var(--muted);font-size:12px}
+.source-detail-note{margin:0 18px 18px;padding:13px 15px;border-left:3px solid var(--accent);background:#f5f7fa;color:var(--muted)}
 .target-subscription-dialog{width:min(640px,calc(100vw - 32px))}
 .target-subscription-dialog header>div{display:grid;gap:3px}
 .target-subscription-dialog header p{margin:0;color:var(--muted);font-size:12px}
@@ -278,7 +290,7 @@
 .target-stage-fieldset input{margin:3px 0 0;accent-color:var(--accent)}
 .target-stage-fieldset strong,.target-stage-fieldset small{display:block}
 .target-stage-fieldset small{margin-top:2px;color:var(--muted);font-size:11px;font-weight:400}
-@media(max-width:900px){.target-overview-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.target-overview-grid,.source-overview-grid{grid-template-columns:1fr}}
 
 /* Target 详情中的运维记忆。 */
 .target-facts-list{margin-bottom:16px}

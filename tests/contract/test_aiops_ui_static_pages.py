@@ -611,7 +611,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-source-action="enable"', pages_script)
         self.assertIn('data-source-action="disable"', pages_script)
         self.assertIn('data-source-action="delete"', pages_script)
-        self.assertIn('disabled title="请先停用监控源"', pages_script)
+        self.assertIn('shell.toast("请先停用监控源，再执行删除")', pages_script)
         self.assertIn('method: "DELETE"', pages_script)
         self.assertIn('"If-Match": `"rv-${item.row_version}"`', pages_script)
         self.assertIn('"Idempotency-Key": KBotAIOpsAuth.uuid()', pages_script)
@@ -635,6 +635,34 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertFalse((AIOPS_ROOT / "policies.html").exists())
         self.assertIn('"If-Match"', script)
         self.assertIn("openEdit", script)
+
+    def test_diagnostic_source_detail_is_operator_readable(self):
+        page = (AIOPS_ROOT / "diagnostic-source-detail.html").read_text(
+            encoding="utf-8"
+        )
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        detail_renderer = script.split(
+            "function sourceDetailHtml(source)", maxsplit=1
+        )[1].split("async function initializeTargetMonitorMappings", maxsplit=1)[0]
+
+        self.assertIn("aiops-forms.css", page)
+        self.assertIn('class="ops-panel-head source-overview-head"', detail_renderer)
+        for label in (
+            "接入信息",
+            "连接与健康",
+            "凭据与 Webhook",
+            "管理信息",
+            "系统声明能力",
+            "最近验证能力",
+        ):
+            self.assertIn(label, detail_renderer)
+        self.assertIn('"metric.query_range": "查询时序指标"', detail_renderer)
+        self.assertIn('"instance.discover": "发现监控实例"', detail_renderer)
+        self.assertIn("具体监控 Label 与数据库对象的映射", detail_renderer)
+        self.assertNotIn("JSON.stringify(source", detail_renderer)
+        self.assertNotIn("Object.entries(source)", detail_renderer)
 
     def test_auth_rejects_missing_runtime_configuration(self):
         script = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(

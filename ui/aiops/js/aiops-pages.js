@@ -23,9 +23,7 @@
         : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status) && !checking
           ? '<button type="button" class="primary" data-source-action="enable">启用</button>'
           : "";
-      const deleteButton = item.status === "DISABLED"
-        ? '<button type="button" data-source-action="delete">删除</button>'
-        : '<button type="button" data-source-action="delete" disabled title="请先停用监控源">删除</button>';
+      const deleteButton = `<button type="button" data-source-action="delete" title="${item.status === "DISABLED" ? "删除监控源" : "请先停用监控源"}">删除</button>`;
       return `<div class="ops-actions">${detailButton}${editButton}${healthButton}${lifecycleButton}${deleteButton}</div>`;
     }
     if (type === "target-actions") {
@@ -156,6 +154,10 @@
       return;
     }
     if (action === "delete") {
+      if (item.status !== "DISABLED") {
+        shell.toast("请先停用监控源，再执行删除");
+        return;
+      }
       const confirmed = confirm(
         `确认删除监控源“${item.display_name || item.source_id}”吗？\n\n`
         + "删除会撤销该监控源的访问凭据和 Webhook 凭据，且不可恢复。"
@@ -765,8 +767,52 @@
   }
 
   function sourceDetailHtml(source) {
-    const summary = `<dl class="ops-detail">${Object.entries(source).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(source, null, 2))}</pre>`;
-    return `${summary}<div class="ops-dialog-note">具体监控 label 与数据库对象的映射统一在“运维目标详情”中维护。</div>`;
+    const sourceTypeLabels = {
+      PROMETHEUS: "Prometheus",
+      ALERTMANAGER: "Alertmanager",
+      LOKI: "Loki",
+      ZABBIX: "Zabbix",
+      OEM: "Oracle Enterprise Manager",
+    };
+    const statusLabels = { ENABLED: "已启用", DISABLED: "已停用" };
+    const connectivityLabels = {
+      UNKNOWN: "尚未检查",
+      CHECKING: "正在检查",
+      CONNECTED: "连接正常",
+      DEGRADED: "部分可用",
+      MISCONFIGURED: "配置错误",
+      UNREACHABLE: "无法连接",
+    };
+    const capabilityLabels = {
+      "health.check": "健康检查",
+      "event.receive": "接收告警事件",
+      "event.query": "查询活动事件",
+      "metric.query_range": "查询时序指标",
+      "log.query": "查询日志",
+      "database.query_live": "数据库实时查询",
+      "database.query_history": "数据库历史查询",
+      "host.inspect": "主机检查",
+      "topology.resolve": "拓扑解析",
+      "change.query": "变更查询",
+      "workload.query": "工作负载查询",
+      "action.execute": "执行受控动作",
+      "instance.discover": "发现监控实例",
+    };
+    const row = (label, value) => `<dt>${shell.escape(label)}</dt><dd>${shell.escape(value ?? "—")}</dd>`;
+    const credential = (value) => value?.configured ? "已配置" : "未配置";
+    const capabilities = (value, emptyText) => {
+      const keys = Object.keys(value || {}).sort();
+      if (!keys.length) return `<span class="source-capability-empty">${shell.escape(emptyText)}</span>`;
+      return keys.map((key) => `<span class="ops-capability" title="${shell.escape(key)}">${shell.escape(capabilityLabels[key] || key)}</span>`).join("");
+    };
+    const connectivity = source.connectivity_check_pending
+      ? "正在检查"
+      : connectivityLabels[source.connectivity_status] || source.connectivity_status || "未知";
+    const endpoint = source.endpoint || (source.webhook_secret?.configured ? "仅接收 Webhook" : "未配置");
+    const tenant = source.source_type === "LOKI"
+      ? source.config?.tenant_id || "单租户模式"
+      : "不适用";
+    return `<div class="ops-panel-head source-overview-head"><div><p>${shell.escape(sourceTypeLabels[source.source_type] || source.source_type || "监控源")}</p><h2>${shell.escape(source.display_name)}</h2><small>${shell.escape(source.adapter_id)} Adapter · v${shell.escape(source.adapter_version)}</small></div><div class="ops-actions">${shell.badge(source.status)}${shell.badge(source.connectivity_check_pending ? "CHECKING" : source.connectivity_status)}</div></div><div class="ops-panel-body source-overview-grid"><section><h3>接入信息</h3><dl class="ops-detail">${row("监控源类型", sourceTypeLabels[source.source_type] || source.source_type)}${row("访问地址", endpoint)}${row("Adapter", `${source.adapter_id} · v${source.adapter_version}`)}${row("Loki 租户", tenant)}</dl></section><section><h3>连接与健康</h3><dl class="ops-detail">${row("启用状态", statusLabels[source.status] || source.status)}${row("连接状态", connectivity)}${row("最近检查", shell.fmt(source.last_connectivity_check_at))}${row("最近成功", shell.fmt(source.last_connectivity_success_at))}${row("最近错误", source.last_error_code || "无")}</dl></section><section><h3>凭据与 Webhook</h3><dl class="ops-detail">${row("访问凭据", credential(source.secret))}${row("Webhook 验签凭据", credential(source.webhook_secret))}${row("Webhook Key", source.webhook_configured ? "已生成" : "未生成")}${row("TLS Profile", credential(source.tls_profile))}</dl></section><section><h3>管理信息</h3><dl class="ops-detail">${row("监控源 ID", source.source_id)}${row("创建时间", shell.fmt(source.created_at))}${row("创建人", source.created_by)}${row("最后更新", shell.fmt(source.updated_at))}${row("更新人", source.updated_by)}</dl></section><section class="source-capability-section"><h3>系统声明能力</h3><p>由当前监控源类型和内置 Adapter 决定。</p><div class="ops-capability-list">${capabilities(source.declared_capabilities, "当前 Adapter 未声明能力")}</div></section><section class="source-capability-section"><h3>最近验证能力</h3><p>来自最近一次成功的连通性检查，不代表尚未验证的能力不可用。</p><div class="ops-capability-list">${capabilities(source.discovered_capabilities, "尚未通过连通性检查验证能力")}</div></section></div><div class="source-detail-note">具体监控 Label 与数据库对象的映射统一在“运维目标详情”中维护。</div>`;
   }
 
   async function initializeTargetMonitorMappings(targetId, target) {
