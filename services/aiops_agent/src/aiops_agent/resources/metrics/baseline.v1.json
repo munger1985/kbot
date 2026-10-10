@@ -153,7 +153,7 @@
       "unit": "state",
       "value_kind": "STATE",
       "expected_dimensions": [],
-      "supported_db_types": ["ORACLE", "MYSQL"],
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "allowed_aggregations": ["LAST"],
       "default_window_seconds": 3600,
       "min_step_seconds": 60,
@@ -163,8 +163,9 @@
         "PROMETHEUS": {
           "template_id": "prom.db.up",
           "template_version": "1",
-          "query_template": "up{instance=\"${external_target}\"}",
-          "required_labels": ["instance"]
+          "query_template": "oracledb_up{target_key=\"${external_target}\"} or mysql_up{target_key=\"${external_target}\"} or pg_up{target_key=\"${external_target}\"}",
+          "fallback_query_templates": ["up{instance=\"${external_target}\"}"],
+          "required_labels": ["target_key"]
         },
         "ZABBIX": {
           "template_id": "zabbix.db.ping",

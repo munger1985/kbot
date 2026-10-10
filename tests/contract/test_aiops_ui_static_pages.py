@@ -393,6 +393,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
 
     def test_target_create_form_uses_public_contract_fields(self):
         page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+        forms = (AIOPS_ROOT / "css" / "aiops-forms.css").read_text(
+            encoding="utf-8"
+        )
         script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(
             encoding="utf-8"
         )
@@ -433,6 +436,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('get("edit")', script)
         self.assertIn('credentialConfigured("execution")', script)
         self.assertIn("db_type", script)
+        self.assertIn(".ops-dialog .ops-field{align-content:start}", forms)
         pages_script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )

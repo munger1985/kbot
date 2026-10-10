@@ -5130,7 +5130,12 @@ class AIOpsRuntimeService:
             point.get("value")
             for observation_payload in observation_payloads
             for observation in observation_payload.get("observations", [])
-            if observation.get("metric_code") == "db.availability"
+            if observation.get("metric_code")
+            in {
+                "db.availability",
+                "mysql.availability",
+                "postgresql.availability",
+            }
             for series in observation.get("series", [])
             for point in series.get("points", [])[-1:]
             if point.get("quality") == "GOOD"

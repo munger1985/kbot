@@ -1159,6 +1159,10 @@ class TargetRepository(AIOpsRepository):
             update(TargetEntity)
             .where(
                 TargetEntity.target_id == target_id,
+                or_(
+                    TargetEntity.last_observed_at.is_(None),
+                    TargetEntity.last_observed_at <= checked_at,
+                ),
             )
             .values(
                 observed_status=observed_status,

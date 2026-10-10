@@ -41,6 +41,28 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 
+_AVAILABILITY_METRIC_CODES = frozenset(
+    {
+        "db.availability",
+        "mysql.availability",
+        "postgresql.availability",
+    }
+)
+
+
+def _availability_bool(value) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(float(value))
+    normalized = str(value).strip().upper()
+    if normalized in {"UP", "AVAILABLE", "ONLINE", "TRUE", "1"}:
+        return True
+    if normalized in {"DOWN", "UNAVAILABLE", "OFFLINE", "FALSE", "0"}:
+        return False
+    return None
+
+
 class MonitoringApplicationService:
     """只通过 UoW、冻结快照和 Adapter 生成脱敏实时视图。"""
 
@@ -403,8 +425,55 @@ class MonitoringApplicationService:
                 message="标准化监控视图超过单次响应预算",
                 status_code=422,
             )
+        await self._reduce_observed_statuses(observations)
         self._cache[cache_key] = (generated_at + timedelta(seconds=15), view)
         return view
+
+    async def _reduce_observed_statuses(self, observations) -> None:
+        """把实时可用性采样归并为 Target 的最新观测状态。"""
+
+        values_by_target: dict[str, list[tuple[datetime, bool]]] = {}
+        for observation in observations:
+            if observation.metric_code not in _AVAILABILITY_METRIC_CODES:
+                continue
+            for series in observation.series:
+                latest = next(
+                    (
+                        point
+                        for point in reversed(series.points)
+                        if point.quality == "GOOD"
+                        and _availability_bool(point.value) is not None
+                    ),
+                    None,
+                )
+                if latest is None:
+                    continue
+                values_by_target.setdefault(observation.target_id, []).append(
+                    (latest.observed_at, bool(_availability_bool(latest.value)))
+                )
+        if not values_by_target:
+            return
+        async with self._uow_factory() as uow:
+            for target_id, samples in values_by_target.items():
+                normalized = {value for _, value in samples}
+                observed_status = (
+                    "DEGRADED"
+                    if len(normalized) > 1
+                    else "UP"
+                    if True in normalized
+                    else "DOWN"
+                )
+                await uow.targets.update_observed_status(
+                    target_id=(
+                        target_id
+                        if isinstance(target_id, UUID)
+                        else UUID(str(target_id))
+                    ),
+                    observed_status=observed_status,
+                    checked_at=max(observed_at for observed_at, _ in samples),
+                    last_error_code=None,
+                )
+            await uow.commit()
 
     @staticmethod
     def _merge_comparison(

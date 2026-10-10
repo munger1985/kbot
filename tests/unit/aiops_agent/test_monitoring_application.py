@@ -13,6 +13,11 @@ import pytest
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.application.errors import AIOpsApplicationError, dependency_unavailable
 from aiops_agent.application.monitoring_views import MonitoringApplicationService
+from aiops_agent.contracts.evidence import (
+    MetricObservation,
+    MetricPoint,
+    MetricSeries,
+)
 from aiops_agent.monitoring import (
     load_monitoring_profile_catalog,
     project_source_readiness,
@@ -66,17 +71,27 @@ class _Targets:
             return None
         return self.target
 
+    async def update_observed_status(self, **kwargs):
+        self.target.observed_status = kwargs["observed_status"]
+        self.target.last_observed_at = kwargs["checked_at"]
+        self.target.last_error_code = kwargs["last_error_code"]
+        return True
+
 
 class _Uow:
     def __init__(self, source, target, binding):
         self.diagnostic_sources = _DiagnosticSources(source)
         self.targets = _Targets(target, binding)
+        self.commits = 0
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_args):
         return None
+
+    async def commit(self):
+        self.commits += 1
 
 
 class _SnapshotBuilder:
@@ -133,10 +148,11 @@ class _SnapshotBuilder:
 class _Adapter:
     def __init__(self):
         self.calls = 0
+        self.result = MetricsEvidenceResult()
 
     async def query_metrics(self, _request):
         self.calls += 1
-        return MetricsEvidenceResult()
+        return self.result
 
 
 class _Registry:
@@ -183,6 +199,9 @@ def _fixture(*, connected=True, secret_ref=None):
         display_name="核心库",
         db_type="ORACLE",
         status="ENABLED",
+        observed_status="UNKNOWN",
+        last_observed_at=None,
+        last_error_code=None,
     )
     binding = SimpleNamespace(
         target_source_binding_id=uuid4(),
@@ -330,6 +349,61 @@ def test_credential_failure_becomes_sanitized_gap():
         "never-returned",
     ):
         assert forbidden not in encoded.lower()
+
+
+def test_live_availability_sample_updates_target_observed_status():
+    service, scope, source, target, binding, registry, _snapshot, request = (
+        _fixture()
+    )
+    observed_at = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+    registry.adapter.result = MetricsEvidenceResult(
+        observations=(
+            MetricObservation(
+                metric_code="db.availability",
+                semantic_version="1.0.0",
+                unit="state",
+                value_kind="STATE",
+                window_start=observed_at - timedelta(minutes=5),
+                window_end=observed_at,
+                requested_step_seconds=60,
+                effective_step_seconds=60,
+                source_id=str(source.diagnostic_source_id),
+                source_type="PROMETHEUS",
+                source_version=source.row_version,
+                target_id=str(target.target_id),
+                binding_id=str(binding.target_source_binding_id),
+                external_target_fingerprint="a" * 64,
+                series=(
+                    MetricSeries(
+                        points=(
+                            MetricPoint(
+                                observed_at=observed_at,
+                                value=1,
+                                quality="GOOD",
+                            ),
+                        )
+                    ),
+                ),
+                summary={"last": 1.0},
+                expected_points=1,
+                actual_points=1,
+                coverage_ratio=1.0,
+            ),
+        )
+    )
+
+    asyncio.run(
+        service.get_view(
+            scope=scope,
+            source_id=source.diagnostic_source_id,
+            request=request,
+            now=observed_at,
+        )
+    )
+
+    assert target.observed_status == "UP"
+    assert target.last_observed_at == observed_at
+    assert service._uow_factory().commits == 1
 
 
 def test_target_view_can_compare_prometheus_and_zabbix_independently():

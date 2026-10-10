@@ -69,6 +69,25 @@ class MetricCatalogTest(unittest.TestCase):
         )
         self.assertEqual(8, len(selected))
 
+    def test_database_availability_uses_exporter_target_key_for_all_engines(
+        self,
+    ) -> None:
+        catalog = load_metric_catalog()
+        for db_type, metric_name in (
+            ("ORACLE", "oracledb_up"),
+            ("MYSQL", "mysql_up"),
+            ("POSTGRESQL", "pg_up"),
+        ):
+            definition = catalog.select(
+                ("db.availability",), db_type=db_type
+            )[0]
+            provider = definition.providers["PROMETHEUS"]
+            self.assertIn(metric_name, provider.query_template)
+            self.assertEqual(
+                ('up{instance="${external_target}"}',),
+                provider.fallback_query_templates,
+            )
+
     def test_invalid_sample_is_not_converted_to_zero(self) -> None:
         now = datetime.now(UTC)
         series = (
