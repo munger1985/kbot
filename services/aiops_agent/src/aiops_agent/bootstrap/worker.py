@@ -98,7 +98,7 @@ def create_aiops_worker_probe(
             ),
         )
         app.state.runtime = runtime
-        app.state.ready_check = runtime.check_aiops_schema
+        app.state.ready_check = runtime.check_database_connection
         action_registry = ActionRegistry.load()
         model_client = AIModelConfigClient(
             base_url=resolved.clients.model_serving.base_url,
@@ -321,7 +321,6 @@ def create_aiops_worker_probe(
                     conversation_input_resolver=(
                         conversation_input_resolver
                     ),
-                    schema_ready_check=runtime.check_aiops_schema,
                 ),
             ),
             dispatcher_id=f"{config.worker_id}-outbox",

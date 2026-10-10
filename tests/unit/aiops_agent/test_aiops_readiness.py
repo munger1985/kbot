@@ -1,21 +1,14 @@
-"""AIOps Schema 就绪门禁与不可重试错误回归测试。"""
+"""AIOps 数据库连通性与不可重试错误回归测试。"""
 
 from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-
 from sqlalchemy.exc import IntegrityError
 
-from aiops_agent.application.errors import AIOpsSchemaNotReadyError
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
-from aiops_agent.application.investigation.service import TurnPlanningService
-from aiops_agent.bootstrap.common import (
-    AIOpsProcessRuntime,
-    _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS,
-)
+from aiops_agent.bootstrap.common import AIOpsProcessRuntime
 from aiops_agent.workers.outbox_dispatcher import AIOpsOutboxDispatcher
 from platform_core.identity import uuid7
 
@@ -27,11 +20,7 @@ class _ScalarResult:
     def scalar_one_or_none(self):
         return self._value
 
-    def all(self):
-        return list(self._value)
-
-
-class _SchemaSession:
+class _DatabaseSession:
     def __init__(self, values) -> None:
         self._values = list(values)
         self.statements = []
@@ -106,19 +95,8 @@ class _IntegrityFailureSink:
 
 
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
-    @staticmethod
-    def _required_column_rows():
-        return [
-            (table_name, column_name, "N")
-            for table_name, column_name in sorted(
-                _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS
-            )
-        ]
-
-    async def test_ready_requires_current_schema_contract_integrity(self) -> None:
-        session = _SchemaSession(
-            (1, self._required_column_rows(), 1, 1, 0)
-        )
+    async def test_ready_checks_database_connectivity_only(self) -> None:
+        session = _DatabaseSession((1,))
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
@@ -127,89 +105,20 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        checks = await runtime.check_aiops_schema()
+        checks = await runtime.check_database_connection()
 
-        self.assertEqual(
-            {"aiops_schema": "ok", "aiops_schema_integrity": "ok"},
-            checks,
-        )
-        self.assertIn("schema_version = 37", session.statements[0])
-        self.assertIn("aiops-oracle-v27", session.statements[0])
-        self.assertIn("KBOT_OPS_WORK_ITEM_ACTIVITY", session.statements[1])
-        self.assertIn("GENERATED = 'USER NAME'", session.statements[-1])
+        self.assertEqual({"database": "ok"}, checks)
+        self.assertEqual(["SELECT 1 FROM DUAL"], session.statements)
 
-    async def test_ready_rejects_partial_current_schema_contract(self) -> None:
-        required_rows = self._required_column_rows()
-        session = _SchemaSession((1, required_rows[:-1], 1, 1, 0))
+    async def test_ready_reports_unconfigured_database(self) -> None:
         runtime = AIOpsProcessRuntime(
             settings=object(),
             service_name="test-aiops",
-            database_runtime=SimpleNamespace(
-                session_factory=lambda: session
-            ),
         )
 
-        checks = await runtime.check_aiops_schema()
+        checks = await runtime.check_database_connection()
 
-        self.assertEqual("ok", checks["aiops_schema"])
-        self.assertEqual(
-            "contract_mismatch", checks["aiops_schema_integrity"]
-        )
-
-    async def test_ready_rejects_business_check_constraint(
-        self,
-    ) -> None:
-        session = _SchemaSession(
-            (1, self._required_column_rows(), 1, 1, 1)
-        )
-        runtime = AIOpsProcessRuntime(
-            settings=object(),
-            service_name="test-aiops",
-            database_runtime=SimpleNamespace(
-                session_factory=lambda: session
-            ),
-        )
-
-        checks = await runtime.check_aiops_schema()
-
-        self.assertEqual("ok", checks["aiops_schema"])
-        self.assertEqual(
-            "contract_mismatch", checks["aiops_schema_integrity"]
-        )
-
-    async def test_ready_rejects_non_clob_report_summary(self) -> None:
-        session = _SchemaSession(
-            (1, self._required_column_rows(), 0, 1, 0)
-        )
-        runtime = AIOpsProcessRuntime(
-            settings=object(),
-            service_name="test-aiops",
-            database_runtime=SimpleNamespace(
-                session_factory=lambda: session
-            ),
-        )
-
-        checks = await runtime.check_aiops_schema()
-
-        self.assertEqual("ok", checks["aiops_schema"])
-        self.assertEqual(
-            "contract_mismatch", checks["aiops_schema_integrity"]
-        )
-
-    async def test_schema_gate_stops_before_planning_model(self) -> None:
-        service = object.__new__(TurnPlanningService)
-        service._schema_ready_check = AsyncMock(
-            return_value={
-                "aiops_schema": "ok",
-                "aiops_schema_integrity": "contract_mismatch",
-            }
-        )
-        service._execute_once = AsyncMock()
-
-        with self.assertRaises(AIOpsSchemaNotReadyError):
-            await service.execute({"domain_id": 7, "turn_id": str(uuid7())})
-
-        service._execute_once.assert_not_awaited()
+        self.assertEqual({"database": "not_configured"}, checks)
 
     async def test_integrity_error_is_terminal_on_first_attempt(self) -> None:
         uow = _OutboxUow()

@@ -21,68 +21,6 @@ from platform_core.middleware.log_middleware import log_requests
 ReadyCheck = Callable[[], Awaitable[dict[str, str]]]
 
 
-_REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS = frozenset(
-    {
-        ("KBOT_OPS_TASK", "TASK_TYPE"),
-        ("KBOT_OPS_CHANGE_PROPOSAL", "TURN_ID"),
-        ("KBOT_OPS_CONVERSATION_TURN", "CURRENT_PLAN_REVISION"),
-        ("KBOT_OPS_INVESTIGATION_REVISION", "REVISION_ID"),
-        ("KBOT_OPS_PLAYBOOK_INVOCATION", "PLAYBOOK_INVOCATION_ID"),
-        ("KBOT_OPS_TOOL_INVOCATION", "TOOL_INVOCATION_ID"),
-        ("KBOT_OPS_TURN_EVIDENCE", "EVIDENCE_ROLE"),
-        ("KBOT_OPS_INSPECTION_PLAN", "AGENT_ID"),
-        ("KBOT_OPS_INSPECTION_PLAN", "INSPECTION_TEMPLATE_ID"),
-        (
-            "KBOT_OPS_INSPECTION_PLAN",
-            "INSPECTION_TEMPLATE_VERSION_ID",
-        ),
-        ("KBOT_OPS_INSPECTION_FIRE", "INSPECTION_TEMPLATE_ID"),
-        (
-            "KBOT_OPS_INSPECTION_FIRE",
-            "INSPECTION_TEMPLATE_VERSION_ID",
-        ),
-        ("KBOT_OPS_INSPECTION_TEMPLATE", "CURRENT_VERSION_ID"),
-        ("KBOT_OPS_INSPECTION_TEMPLATE_VER", "DEFINITION_JSON"),
-        ("KBOT_OPS_TARGET", "IMPORTANCE_LEVEL"),
-        ("KBOT_OPS_KNOWLEDGE_ASSET", "ASSET_KIND"),
-        ("KBOT_OPS_KNOWLEDGE_VERSION", "SOURCE_HASH"),
-        ("KBOT_OPS_RECOVERY_PROFILE", "RPO_SECONDS"),
-        ("KBOT_OPS_RECOVERY_PROFILE", "RTO_SECONDS"),
-        (
-            "KBOT_OPS_RECOVERY_PROFILE",
-            "REQUIRED_ASSURANCE_LEVEL",
-        ),
-        (
-            "KBOT_OPS_RECOVERY_PROFILE",
-            "REQUIRED_BACKUP_SOURCE_TYPES_JSON",
-        ),
-        ("KBOT_OPS_RECOVERY_DRILL", "RECOVERY_MARKER_JSON"),
-        ("KBOT_OPS_RECOVERY_DRILL", "EVIDENCE_JSON"),
-        ("KBOT_OPS_RECOVERY_DRILL", "SOURCE_TRUST_LEVEL"),
-        ("KBOT_OPS_WORK_ITEM", "WORK_ITEM_ID"),
-        ("KBOT_OPS_WORK_ITEM_OCCURRENCE", "OCCURRENCE_ID"),
-        ("KBOT_OPS_WORK_ITEM_LINK", "WORK_ITEM_LINK_ID"),
-        ("KBOT_OPS_WORK_ITEM_ACTIVITY", "ACTIVITY_ID"),
-    }
-)
-
-
-def _required_schema_columns_statement():
-    predicates = " OR ".join(
-        (
-            f"(TABLE_NAME = '{table_name}' "
-            f"AND COLUMN_NAME = '{column_name}')"
-        )
-        for table_name, column_name in sorted(
-            _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS
-        )
-    )
-    return text(
-        "SELECT TABLE_NAME, COLUMN_NAME, NULLABLE "
-        "FROM USER_TAB_COLUMNS WHERE " + predicates
-    )
-
-
 @dataclass
 class AIOpsProcessRuntime:
     """单个进程独占且可显式关闭的资源集合。"""
@@ -100,97 +38,18 @@ class AIOpsProcessRuntime:
         if self.database_runtime is not None:
             await self.database_runtime.close()
 
-    async def check_aiops_schema(self) -> dict[str, str]:
+    async def check_database_connection(self) -> dict[str, str]:
+        """只检查数据库连通性，Schema 契约由部署流程负责校验。"""
         if self.database_runtime is None:
-            return {
-                "aiops_schema": "database_not_configured",
-                "aiops_schema_integrity": "not_checked",
-            }
+            return {"database": "not_configured"}
         try:
             async with self.database_runtime.session_factory() as session:
-                version_ready = (
-                    await session.execute(
-                        text(
-                            """
-                            SELECT 1
-                            FROM KBOT_V_OPS_SCHEMA_VERSION
-                            WHERE component = 'AIOPS'
-                              AND schema_version = 37
-                              AND contract_version = 'aiops-oracle-v27'
-                            """
-                        )
-                    )
+                ready = (
+                    await session.execute(text("SELECT 1 FROM DUAL"))
                 ).scalar_one_or_none()
-                if version_ready != 1:
-                    return {
-                        "aiops_schema": "version_mismatch",
-                        "aiops_schema_integrity": "not_checked",
-                    }
-                required_column_rows = (
-                    await session.execute(
-                        _required_schema_columns_statement()
-                    )
-                ).all()
-                required_columns = frozenset(
-                    (str(row[0]).upper(), str(row[1]).upper())
-                    for row in required_column_rows
-                    if str(row[2]).upper() == "N"
-                )
-                report_summary_column = (
-                    await session.execute(
-                        text(
-                            """
-                            SELECT COUNT(*)
-                            FROM USER_TAB_COLUMNS
-                            WHERE TABLE_NAME = 'KBOT_OPS_REPORT'
-                              AND COLUMN_NAME = 'SUMMARY'
-                              AND DATA_TYPE = 'CLOB'
-                            """
-                        )
-                    )
-                ).scalar_one_or_none()
-                report_source_table = (
-                    await session.execute(
-                        text(
-                            """
-                            SELECT COUNT(*)
-                            FROM USER_TABLES
-                            WHERE TABLE_NAME = 'KBOT_OPS_REPORT_SOURCE'
-                            """
-                        )
-                    )
-                ).scalar_one_or_none()
-                business_check_constraints = (
-                    await session.execute(
-                        text(
-                            """
-                            SELECT COUNT(*)
-                            FROM USER_CONSTRAINTS
-                            WHERE TABLE_NAME LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
-                              AND CONSTRAINT_TYPE = 'C'
-                              AND GENERATED = 'USER NAME'
-                            """
-                        )
-                    )
-                ).scalar_one_or_none()
-                integrity_ready = (
-                    required_columns
-                    == _REQUIRED_AIOPS_SCHEMA_NOT_NULL_COLUMNS
-                    and report_summary_column == 1
-                    and report_source_table == 1
-                    and business_check_constraints == 0
-                )
-            return {
-                "aiops_schema": "ok",
-                "aiops_schema_integrity": (
-                    "ok" if integrity_ready else "contract_mismatch"
-                ),
-            }
+            return {"database": "ok" if ready == 1 else "invalid_response"}
         except Exception as exc:
-            return {
-                "aiops_schema": type(exc).__name__,
-                "aiops_schema_integrity": "not_checked",
-            }
+            return {"database": type(exc).__name__}
 
     async def check_executor_components(self) -> dict[str, str]:
         return {

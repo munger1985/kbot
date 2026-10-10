@@ -73,23 +73,6 @@ def is_schema_or_integrity_error(exc: BaseException) -> bool:
     return False
 
 
-class AIOpsSchemaNotReadyError(RuntimeError):
-    """Schema 契约未就绪，禁止进入任何付费模型调用。"""
-
-    code = "AIOPS_SCHEMA_NOT_READY"
-    retryable = False
-
-    def __init__(self, checks: dict[str, str] | None) -> None:
-        checks = checks or {}
-        failed = sorted(
-            name for name, status in checks.items() if status != "ok"
-        )
-        super().__init__(
-            "AIOps Schema 未就绪：" + ",".join(failed or ["unknown"])
-        )
-        self.failed_checks = tuple(failed)
-
-
 class AIOpsApplicationError(RuntimeError):
     """可安全映射到 HTTP 的 AIOps 用例错误。"""
 

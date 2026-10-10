@@ -11,11 +11,7 @@ from loguru import logger
 
 from aiops_agent.application.conversation_inputs import ConversationInputResolver
 from aiops_agent.application.diagnosis import freeze_automatic_entry_intent
-from aiops_agent.application.errors import (
-    AIOpsSchemaNotReadyError,
-    resource_not_found,
-    state_conflict,
-)
+from aiops_agent.application.errors import resource_not_found, state_conflict
 from aiops_agent.application.investigation.context import (
     PlanningAlreadyApplied,
     TurnPlanningContext,
@@ -176,7 +172,6 @@ class TurnPlanningService:
         agent_catalog,
         monitoring_snapshot_builder=None,
         conversation_input_resolver: ConversationInputResolver | None = None,
-        schema_ready_check=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._investigation_reasoner = investigation_reasoner
@@ -186,15 +181,12 @@ class TurnPlanningService:
         self._agent_catalog = agent_catalog
         self._monitoring_snapshot_builder = monitoring_snapshot_builder
         self._conversation_input_resolver = conversation_input_resolver
-        self._schema_ready_check = schema_ready_check
 
     async def execute(self, payload: dict) -> dict:
         """执行首轮规划，并把未预期异常转换为可审计的阶段错误。"""
         try:
-            await self._require_schema_ready()
             return await self._execute_once(payload)
         except (
-            AIOpsSchemaNotReadyError,
             InvestigationPlanValidationError,
             TurnPlanningStageError,
         ):
@@ -235,14 +227,6 @@ class TurnPlanningService:
             resolver_bound and has_upload_reference,
         )
         return has_upload_reference
-
-    async def _require_schema_ready(self) -> None:
-        schema_ready_check = getattr(self, "_schema_ready_check", None)
-        if schema_ready_check is None:
-            return
-        checks = await schema_ready_check()
-        if not checks or any(status != "ok" for status in checks.values()):
-            raise AIOpsSchemaNotReadyError(checks)
 
     async def _execute_once(self, payload: dict) -> dict:
         try:

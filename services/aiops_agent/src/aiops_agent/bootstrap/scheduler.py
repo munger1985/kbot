@@ -44,7 +44,7 @@ def create_aiops_scheduler_probe(
             ),
         )
         app.state.runtime = runtime
-        app.state.ready_check = runtime.check_aiops_schema
+        app.state.ready_check = runtime.check_database_connection
         await runtime.start()
         scheduler = AIOpsInspectionScheduler(
             uow_factory=runtime.uow_factory,

@@ -172,7 +172,7 @@ def create_aiops_api(
         app.state.session_report_template_service = SessionReportTemplateService(
             uow_factory=runtime.uow_factory
         )
-        app.state.ready_check = runtime.check_aiops_schema
+        app.state.ready_check = runtime.check_database_connection
         app.state.auth_context_codec = create_auth_context_codec()
         app.state.service_identity_codec = create_service_identity_codec()
         # 先完成不可恢复的配置校验，避免失败时遗留 HTTP 会话。
