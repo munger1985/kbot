@@ -52,13 +52,25 @@
   function latestPoint(series) {
     return [...(series?.points || [])].reverse().find((point) => point.value !== null && point.value !== undefined) || null;
   }
+  function gapIdentity(gap) {
+    return JSON.stringify([
+      gap.scope || "", gap.source_id || "", gap.instance_id || "", gap.metric_code || "",
+      gap.code || "", gap.detail || "", Boolean(gap.retryable),
+    ]);
+  }
   function allGaps() {
     const selectedInstances = state.instances.filter((item) => state.selected.includes(item.instance_id));
+    const seen = new Set();
     return [
       ...(sourceById()?.capability_gaps || []),
       ...selectedInstances.flatMap((item) => item.capability_gaps || []),
       ...(state.view?.gaps || []),
-    ];
+    ].filter((gap) => {
+      const identity = gapIdentity(gap);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
   }
   function latestSampleAt() {
     return (state.view?.panels || []).flatMap((panel) => panel.series || [])
