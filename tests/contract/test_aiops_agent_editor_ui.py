@@ -29,7 +29,20 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20260904-1", page)
+        self.assertIn("aiops-agents.js?v=20261010-1", page)
+
+    def test_agent_only_validates_preconfigured_source_bindings(self) -> None:
+        script = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("assertExistingBindings", script)
+        self.assertIn("Agent 不会创建或修改映射", script)
+        self.assertNotIn("source_locator_key", script)
+        self.assertNotIn("source_locator:", script)
+        self.assertNotIn("ensureSourceBindings", script)
+        self.assertNotIn(
+            '`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`, {',
+            script,
+        )
 
     def test_image_capability_selects_use_catalog_categories(self) -> None:
         page = PAGE.read_text(encoding="utf-8")

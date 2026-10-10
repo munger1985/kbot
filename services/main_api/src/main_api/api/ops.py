@@ -47,9 +47,13 @@ from platform_core.contracts.aiops import (
     NotificationSubscriptionList,
     NotificationSubscriptionUpsert,
     NotificationSubscriptionView,
+    InstanceDiscoveryPage,
+    InstanceDiscoveryRequest,
+    InstanceMappingRequest,
+    InstanceMappingResult,
+    InstanceMappingView,
     SourceBindingCreate,
     SourceBindingPatch,
-    SourceBindingView,
     DiagnosticSourceCreate,
     DiagnosticSourceConnectionTestResult,
     DiagnosticSourceDetail,
@@ -152,6 +156,8 @@ def _route_permissions() -> dict[str, str]:
             "patch_diagnostic_source", "delete_diagnostic_source",
             "check_diagnostic_source_connectivity",
             "rotate_diagnostic_source_webhook_key", "command_diagnostic_source",
+            "list_source_target_bindings", "discover_source_instances",
+            "map_source_instances",
             "list_source_bindings", "create_source_binding",
             "patch_source_binding", "command_source_binding",
         },
@@ -266,6 +272,31 @@ def _validated(
     if response is not None and row_version is not None:
         response.headers["ETag"] = f'"rv-{int(row_version)}"'
     return result
+
+
+def _safe_source_binding(
+    payload: dict,
+    response: Response | None = None,
+) -> InstanceMappingView:
+    locator_key = str(payload.get("source_locator_key") or "")
+    locator_hint = (
+        "*" * len(locator_key)
+        if len(locator_key) <= 4
+        else f"{locator_key[:2]}***{locator_key[-2:]}"
+    )
+    return _validated(
+        InstanceMappingView,
+        {
+            "binding_id": payload.get("binding_id"),
+            "target_id": payload.get("target_id"),
+            "source_id": payload.get("source_id"),
+            "locator_hint": locator_hint,
+            "status": payload.get("status"),
+            "health_status": payload.get("health_status"),
+            "row_version": payload.get("row_version"),
+        },
+        response,
+    )
 
 
 @router.get(
@@ -1499,21 +1530,71 @@ async def command_diagnostic_source(
 
 
 @router.get(
+    "/diagnostic-sources/{source_id}/target-bindings",
+    response_model=tuple[InstanceMappingView, ...],
+)
+async def list_source_target_bindings(
+    source_id: UUID, request: Request
+) -> tuple[InstanceMappingView, ...]:
+    payload = await _client(request).list_source_target_bindings(
+        source_id, auth_context=request.state.auth_context
+    )
+    return tuple(InstanceMappingView.model_validate(item) for item in payload)
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/instance-discoveries",
+    response_model=InstanceDiscoveryPage,
+)
+async def discover_source_instances(
+    source_id: UUID,
+    body: InstanceDiscoveryRequest,
+    request: Request,
+) -> InstanceDiscoveryPage:
+    payload = await _client(request).discover_source_instances(
+        source_id,
+        body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return InstanceDiscoveryPage.model_validate(payload)
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/instance-mappings",
+    response_model=InstanceMappingResult,
+    status_code=201,
+)
+async def map_source_instances(
+    source_id: UUID,
+    body: InstanceMappingRequest,
+    request: Request,
+    idempotency_key: IdempotencyKey,
+) -> InstanceMappingResult:
+    payload = await _client(request).map_source_instances(
+        source_id,
+        body.model_dump(mode="json"),
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+    return InstanceMappingResult.model_validate(payload)
+
+
+@router.get(
     "/targets/{target_id}/source-bindings",
-    response_model=tuple[SourceBindingView, ...],
+    response_model=tuple[InstanceMappingView, ...],
 )
 async def list_source_bindings(
     target_id: UUID, request: Request
-) -> tuple[SourceBindingView, ...]:
+) -> tuple[InstanceMappingView, ...]:
     payload = await _client(request).list_source_bindings(
         target_id, auth_context=request.state.auth_context
     )
-    return tuple(SourceBindingView.model_validate(item) for item in payload)
+    return tuple(_safe_source_binding(item) for item in payload)
 
 
 @router.post(
     "/targets/{target_id}/source-bindings",
-    response_model=SourceBindingView,
+    response_model=InstanceMappingView,
     status_code=201,
 )
 async def create_source_binding(
@@ -1522,19 +1603,19 @@ async def create_source_binding(
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
-) -> SourceBindingView:
+) -> InstanceMappingView:
     payload = await _client(request).create_source_binding(
         target_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(SourceBindingView, payload, response)
+    return _safe_source_binding(payload, response)
 
 
 @router.patch(
     "/targets/{target_id}/source-bindings/{binding_id}",
-    response_model=SourceBindingView,
+    response_model=InstanceMappingView,
 )
 async def patch_source_binding(
     target_id: UUID,
@@ -1543,7 +1624,7 @@ async def patch_source_binding(
     request: Request,
     response: Response,
     if_match: IfMatch,
-) -> SourceBindingView:
+) -> InstanceMappingView:
     payload = await _client(request).patch_source_binding(
         target_id,
         binding_id,
@@ -1551,12 +1632,12 @@ async def patch_source_binding(
         if_match=if_match,
         auth_context=request.state.auth_context,
     )
-    return _validated(SourceBindingView, payload, response)
+    return _safe_source_binding(payload, response)
 
 
 @router.post(
     "/targets/{target_id}/source-bindings/{binding_id}/{command}",
-    response_model=SourceBindingView,
+    response_model=InstanceMappingView,
 )
 async def command_source_binding(
     target_id: UUID,
@@ -1566,7 +1647,7 @@ async def command_source_binding(
     response: Response,
     if_match: IfMatch,
     idempotency_key: IdempotencyKey,
-) -> SourceBindingView:
+) -> InstanceMappingView:
     payload = await _client(request).command_source_binding(
         target_id,
         binding_id,
@@ -1575,7 +1656,7 @@ async def command_source_binding(
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(SourceBindingView, payload, response)
+    return _safe_source_binding(payload, response)
 
 
 @router.post("/policies", response_model=PolicyDetail, status_code=201)

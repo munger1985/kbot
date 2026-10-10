@@ -35,6 +35,11 @@ from platform_core.contracts.aiops import (
     NotificationSubscriptionList,
     NotificationSubscriptionUpsert,
     NotificationSubscriptionView,
+    InstanceDiscoveryPage,
+    InstanceDiscoveryRequest,
+    InstanceMappingRequest,
+    InstanceMappingResult,
+    InstanceMappingView,
     SourceBindingCreate,
     SourceBindingPatch,
     SourceBindingView,
@@ -738,6 +743,53 @@ async def command_diagnostic_source(
     )
     _etag(response, result.row_version)
     return result
+
+
+@router.get(
+    "/diagnostic-sources/{source_id}/target-bindings",
+    response_model=tuple[InstanceMappingView, ...],
+)
+async def list_source_target_bindings(
+    source_id: UUID, service: Service, scope: Scope
+) -> tuple[InstanceMappingView, ...]:
+    return await service.list_source_target_bindings(
+        scope=scope, source_id=source_id
+    )
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/instance-discoveries",
+    response_model=InstanceDiscoveryPage,
+)
+async def discover_source_instances(
+    source_id: UUID,
+    body: InstanceDiscoveryRequest,
+    service: Service,
+    scope: Scope,
+) -> InstanceDiscoveryPage:
+    return await service.discover_source_instances(
+        scope=scope, source_id=source_id, request=body
+    )
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/instance-mappings",
+    response_model=InstanceMappingResult,
+    status_code=201,
+)
+async def map_source_instances(
+    source_id: UUID,
+    body: InstanceMappingRequest,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+) -> InstanceMappingResult:
+    return await service.map_source_instances(
+        scope=scope,
+        source_id=source_id,
+        request=body,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.get(

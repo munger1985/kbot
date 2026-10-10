@@ -714,6 +714,110 @@
     };
   }
 
+  function sourceDetailHtml(source) {
+    const summary = `<dl class="ops-detail">${Object.entries(source).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(source, null, 2))}</pre>`;
+    if (!["PROMETHEUS", "ZABBIX"].includes(source.source_type)) return summary;
+    return `${summary}<section class="ops-panel ops-instance-mapping" id="source-instance-mapping"><div class="ops-panel-head"><div><small>监控接入</small><h2>实例发现与 Target 映射</h2><p>服务端只执行固定元数据查询；浏览器不会接收原始 Locator 或 Provider 查询。</p></div><button type="button" id="discover-source-instances">发现实例</button></div><div class="ops-panel-body"><p id="source-instance-result" class="ops-result"></p><h3>已配置映射</h3><div id="source-binding-list" class="ops-empty">正在读取…</div><h3>候选实例</h3><div id="source-candidate-list" class="ops-empty">点击“发现实例”读取受控候选。</div><div class="ops-actions"><button type="button" id="load-more-source-instances" hidden>加载更多</button><button type="button" class="primary" id="save-source-instance-mappings" disabled>保存所选映射</button></div></div></section>`;
+  }
+
+  async function initializeSourceInstanceMappings(source) {
+    if (!["PROMETHEUS", "ZABBIX"].includes(source.source_type)) return;
+    const result = document.getElementById("source-instance-result");
+    const bindingList = document.getElementById("source-binding-list");
+    const candidateList = document.getElementById("source-candidate-list");
+    const discoverButton = document.getElementById("discover-source-instances");
+    const loadMoreButton = document.getElementById("load-more-source-instances");
+    const saveButton = document.getElementById("save-source-instance-mappings");
+    let targets = [];
+    let bindings = [];
+    let candidates = [];
+    let nextCursor = null;
+
+    const targetName = (targetId) => targets.find((item) => String(item.target_id) === String(targetId))?.display_name || "Target 已不可用";
+    const renderBindings = () => {
+      bindingList.innerHTML = bindings.length
+        ? `<table class="ops-table"><thead><tr><th>Target</th><th>外部定位</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => `<tr><td>${shell.escape(targetName(binding.target_id))}</td><td><code>${shell.escape(binding.locator_hint)}</code></td><td>${shell.badge(binding.status)}</td></tr>`).join("")}</tbody></table>`
+        : '<div class="ops-empty">尚未配置实例映射。</div>';
+    };
+    const renderCandidates = () => {
+      const boundTargets = new Set(bindings.map((binding) => String(binding.target_id)));
+      candidateList.innerHTML = candidates.length
+        ? `<table class="ops-table"><thead><tr><th>候选实例</th><th>数据库</th><th>状态</th><th>映射 Target</th></tr></thead><tbody>${candidates.map((candidate) => {
+          const options = targets.filter((target) => target.db_type === candidate.db_type && !boundTargets.has(String(target.target_id)));
+          const mapping = candidate.mapping_status === "MAPPED"
+            ? shell.escape(targetName(candidate.mapped_target_id))
+            : `<select data-candidate-ref="${shell.escape(candidate.candidate_ref)}"><option value="">暂不映射</option>${options.map((target) => `<option value="${shell.escape(target.target_id)}">${shell.escape(target.display_name)}</option>`).join("")}</select>`;
+          return `<tr><td><strong>${shell.escape(candidate.display_name)}</strong><small><code>${shell.escape(candidate.locator_hint)}</code></small></td><td>${shell.escape(candidate.db_type)}</td><td>${shell.badge(candidate.mapping_status)}</td><td>${mapping}</td></tr>`;
+        }).join("")}</tbody></table>`
+        : '<div class="ops-empty">当前过滤范围没有候选实例。</div>';
+      loadMoreButton.hidden = !nextCursor;
+      saveButton.disabled = !candidateList.querySelector("select[data-candidate-ref] option:not([value=''])");
+    };
+    const loadCandidates = async (append = false) => {
+      discoverButton.disabled = true;
+      loadMoreButton.disabled = true;
+      result.textContent = "正在从监控来源读取候选实例…";
+      result.dataset.tone = "";
+      try {
+        const page = await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-discoveries`, {
+          method: "POST",
+          body: JSON.stringify({ page_size: 100, ...(append && nextCursor ? { cursor: nextCursor } : {}) }),
+        });
+        candidates = append ? [...candidates, ...(page.items || [])] : (page.items || []);
+        nextCursor = page.next_cursor || null;
+        renderCandidates();
+        result.textContent = `已发现 ${candidates.length} 个候选；未保存的候选不会进入实时监控。`;
+        result.dataset.tone = "good";
+      } catch (error) {
+        result.textContent = error.message;
+        result.dataset.tone = "bad";
+      } finally {
+        discoverButton.disabled = false;
+        loadMoreButton.disabled = false;
+      }
+    };
+    try {
+      const [targetPage, bindingRows] = await Promise.all([
+        KBotAIOpsAuth.request(`${appApi}/targets?limit=200`),
+        KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/target-bindings`),
+      ]);
+      targets = Array.isArray(targetPage) ? targetPage : targetPage.items || [];
+      bindings = Array.isArray(bindingRows) ? bindingRows : [];
+      renderBindings();
+    } catch (error) {
+      bindingList.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
+    }
+    discoverButton.addEventListener("click", () => loadCandidates(false));
+    loadMoreButton.addEventListener("click", () => loadCandidates(true));
+    candidateList.addEventListener("change", () => {
+      const selected = [...candidateList.querySelectorAll("select[data-candidate-ref]")].filter((select) => select.value);
+      const values = selected.map((select) => select.value);
+      saveButton.disabled = !selected.length || new Set(values).size !== values.length;
+    });
+    saveButton.addEventListener("click", async () => {
+      const mappings = [...candidateList.querySelectorAll("select[data-candidate-ref]")]
+        .filter((select) => select.value)
+        .map((select) => ({ candidate_ref: select.dataset.candidateRef, target_id: select.value }));
+      if (!mappings.length || new Set(mappings.map((item) => item.target_id)).size !== mappings.length) return;
+      saveButton.disabled = true;
+      try {
+        const response = await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`, {
+          method: "POST",
+          headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+          body: JSON.stringify({ mappings }),
+        });
+        bindings = [...bindings, ...(response.items || [])];
+        renderBindings();
+        await loadCandidates(false);
+        shell.toast("实例与 Target 映射已保存");
+      } catch (error) {
+        result.textContent = error.message;
+        result.dataset.tone = "bad";
+        saveButton.disabled = false;
+      }
+    });
+  }
+
   async function renderDetail(page) {
     const id = new URLSearchParams(location.search).get("id");
     const paths = { "run-detail": "/runs/", "report-detail": "/reports/", "target-detail": "/targets/", "diagnostic-source-detail": "/diagnostic-sources/", "inspection-plan-detail": "/inspection-plans/" };
@@ -727,7 +831,9 @@
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));
       panel.innerHTML = page === "target-detail"
         ? targetOverviewHtml(data)
-        : `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
+        : page === "diagnostic-source-detail"
+          ? sourceDetailHtml(data)
+          : `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
       if (page === "target-detail") {
         const editTargetAccess = document.getElementById("edit-target-access");
         if (editTargetAccess) {
@@ -736,6 +842,8 @@
         await initializeTargetSubscription(id, data);
         await initializeTargetRecovery(id);
         await initializeTargetFacts(id);
+      } else if (page === "diagnostic-source-detail") {
+        await initializeSourceInstanceMappings(data);
       }
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }

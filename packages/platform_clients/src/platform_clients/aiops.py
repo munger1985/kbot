@@ -1042,6 +1042,45 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def list_source_target_bindings(
+        self, source_id: UUID, *, auth_context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return await self._json(
+            "GET",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/target-bindings",
+            auth_context=auth_context,
+        )
+
+    async def discover_source_instances(
+        self,
+        source_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/instance-discoveries",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def map_source_instances(
+        self,
+        source_id: UUID,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{self._CONFIG}/diagnostic-sources/{source_id}/instance-mappings",
+            payload=payload,
+            idempotency_key=idempotency_key,
+            auth_context=auth_context,
+        )
+
     async def create_source_binding(
         self,
         target_id: UUID,

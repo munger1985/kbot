@@ -11,6 +11,7 @@ from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
     CAPABILITY_EVENT_RECEIVE,
     CAPABILITY_HEALTH_CHECK,
+    CAPABILITY_INSTANCE_DISCOVERY,
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
     DiagnosticSourceAdapterDescriptor,
@@ -59,6 +60,7 @@ class DiagnosticSourceAdapterCatalog:
                     CAPABILITY_HEALTH_CHECK,
                     CAPABILITY_METRIC_QUERY_RANGE,
                     CAPABILITY_EVENT_QUERY,
+                    CAPABILITY_INSTANCE_DISCOVERY,
                 }
             ),
             adapter_type=PrometheusAdapter,
@@ -82,6 +84,7 @@ class DiagnosticSourceAdapterCatalog:
                     CAPABILITY_EVENT_RECEIVE,
                     CAPABILITY_EVENT_QUERY,
                     CAPABILITY_METRIC_QUERY_RANGE,
+                    CAPABILITY_INSTANCE_DISCOVERY,
                 }
             ),
             adapter_type=ZabbixAdapter,
@@ -217,7 +220,10 @@ class DiagnosticSourceAdapterRegistry:
                     f"Adapter {context.adapter_id} 不支持能力 {capability}"
                 )
             if (
-                capability != CAPABILITY_HEALTH_CHECK
+                capability not in {
+                    CAPABILITY_HEALTH_CHECK,
+                    CAPABILITY_INSTANCE_DISCOVERY,
+                }
                 and capability not in context.declared_capabilities
             ):
                 raise LookupError(

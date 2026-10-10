@@ -10,7 +10,6 @@
   let sourceBindings = [];
   let bindingTargetId = "";
   const bindingsByTarget = new Map();
-  const draftsByTarget = new Map();
   const actionDraftsByTarget = new Map();
   const actionCatalogsByTarget = new Map();
   let editing = null;
@@ -165,64 +164,17 @@
     return local ? local.model_id : "";
   }
 
-  function locatorLabel(sourceType) {
-    if (sourceType === "PROMETHEUS") return "Prometheus instance 标签值";
-    if (sourceType === "ALERTMANAGER") return "告警中的目标标签值";
-    if (sourceType === "ZABBIX") return "Zabbix Host 名称";
-    if (sourceType === "OEM") return "OEM Target 标识";
-    if (sourceType === "LOKI") return "关联标识";
-    return "监控系统中的目标标识";
-  }
-
-  function locatorHelp(sourceType) {
-    if (sourceType === "PROMETHEUS") return "填写 Prometheus 指标 instance 标签的值，例如 oracle-dev-190。";
-    if (sourceType === "ALERTMANAGER") return "填写告警 target_label 对应的值；Oracle 一键部署通常与 Target Key 相同。";
-    if (sourceType === "LOKI") return "关联标识用于唯一映射该 Target；下面的精确标签用于查询日志。";
-    return "填写该数据库在此监控源中的唯一标识。";
-  }
-
   function sourceCard(source) {
     const sourceId = escape(source.source_id);
-    const lokiFields = source.source_type === "LOKI" ? `<div class="agent-loki-fields">
-      <div class="ops-field">
-        <label>日志任务标签 job</label>
-        <input data-loki-job maxlength="256" value="oracle_alert" placeholder="oracle_alert">
-      </div>
-      <div class="ops-field">
-        <label>目标标签名称</label>
-        <input data-loki-target-label maxlength="64" value="target_key" placeholder="target_key">
-      </div>
-      <div class="ops-field">
-        <label>目标标签值</label>
-        <input data-loki-target-value maxlength="256" placeholder="例如 oracle-dev-190">
-      </div>
-    </div>` : "";
-    const prometheusHint = source.source_type === "PROMETHEUS"
-      ? '<small class="agent-source-requirement">需要配置 Oracle Exporter 与 Node Exporter 两个 target_key</small>'
-      : "";
-    const prometheusFields = source.source_type === "PROMETHEUS" ? `<div class="agent-prometheus-fields">
-      <p><strong>主机指标映射</strong>CPU、内存、磁盘、文件系统和网络指标使用 Node Exporter 标签，不能沿用 Oracle Exporter 标签。</p>
-      <div class="ops-field">
-        <label>数据库主机的 Node Exporter target_key</label>
-        <input data-prometheus-host-target maxlength="256" placeholder="例如 dev-db-host-190">
-        <small>可在 Prometheus 查询 <code>count by (target_key) (node_uname_info{job=&quot;node&quot;})</code> 确认，然后填写该数据库所在主机对应的值。</small>
-      </div>
-    </div>` : "";
     return `<article class="agent-source-card" data-source-id="${sourceId}" data-source-type="${escape(source.source_type)}">
       <label class="agent-source-choice">
         <input type="checkbox" name="diagnostic_source_ids" value="${sourceId}">
-        <span class="agent-source-identity"><strong>${escape(source.display_name)}</strong><small>${escape(source.source_type)}</small>${prometheusHint}</span>
+        <span class="agent-source-identity"><strong>${escape(source.display_name)}</strong><small>${escape(source.source_type)}</small></span>
         <span class="agent-source-health">${escape(source.connectivity_status)}</span>
       </label>
       <div class="agent-source-mapping" hidden>
         <div class="agent-mapping-head"><strong>Target 映射</strong><span data-binding-state>尚未配置</span></div>
-        <div class="ops-field">
-          <label>${locatorLabel(source.source_type)}</label>
-          <input data-locator-key maxlength="512" placeholder="例如 oracle-dev-190">
-          <small>${locatorHelp(source.source_type)}</small>
-        </div>
-        ${prometheusFields}
-        ${lokiFields}
+        <div class="ops-empty">Agent 只使用已配置映射，不创建或修改监控 Locator。 <a href="diagnostic-source-detail.html?id=${sourceId}">前往诊断源配置</a></div>
       </div>
     </article>`;
   }
@@ -261,24 +213,8 @@
     return [...document.querySelectorAll("#agent-sources .agent-source-card[data-source-id]")];
   }
 
-  function sourceCardFor(sourceId) {
-    return sourceCards().find((card) => card.dataset.sourceId === sourceId) || null;
-  }
-
   function resetMappingInputs() {
     sourceCards().forEach((card) => {
-      card.querySelector("[data-locator-key]").value = "";
-      const job = card.querySelector("[data-loki-job]");
-      const label = card.querySelector("[data-loki-target-label]");
-      const value = card.querySelector("[data-loki-target-value]");
-      const hostTarget = card.querySelector("[data-prometheus-host-target]");
-      if (job) job.value = "oracle_alert";
-      if (label) label.value = "target_key";
-      if (value) {
-        value.value = "";
-        delete value.dataset.userEdited;
-      }
-      if (hostTarget) hostTarget.value = "";
       card.querySelector("[data-binding-state]").textContent = "尚未配置";
       card.dataset.bindingId = "";
     });
@@ -289,29 +225,12 @@
       const binding = bindingFor(card.dataset.sourceId);
       if (!binding) return;
       card.dataset.bindingId = binding.binding_id;
-      card.querySelector("[data-locator-key]").value = binding.source_locator_key || "";
-      const labels = binding.source_locator?.labels || {};
-      const job = card.querySelector("[data-loki-job]");
-      const label = card.querySelector("[data-loki-target-label]");
-      const value = card.querySelector("[data-loki-target-value]");
-      const hostTarget = card.querySelector("[data-prometheus-host-target]");
-      if (job) job.value = labels.job || "oracle_alert";
-      if (label && value) {
-        const targetLabel = Object.keys(labels).find((name) => name !== "job") || "target_key";
-        label.value = targetLabel;
-        value.value = labels[targetLabel] || "";
-        value.dataset.userEdited = "true";
-      }
-      if (hostTarget) {
-        hostTarget.value = binding.source_locator?.host_target_key || "";
-      }
       const health = binding.health_status && binding.health_status !== "UNKNOWN" ? ` · ${binding.health_status}` : "";
-      card.querySelector("[data-binding-state]").textContent = `${binding.status === "ACTIVE" ? "已建立" : "已停用"}${health}`;
+      card.querySelector("[data-binding-state]").textContent = `${binding.status === "ACTIVE" ? "已映射" : "已停用"}${health} · ${binding.locator_hint || "已脱敏"}`;
     });
   }
 
   async function loadBindings(targetId) {
-    captureMappingDraft();
     resetMappingInputs();
     sourceBindings = [];
     bindingTargetId = "";
@@ -329,7 +248,6 @@
     bindingsByTarget.set(targetId, sourceBindings);
     bindingTargetId = targetId;
     applyBindings();
-    applyMappingDraft(targetId);
     syncSourceMappingVisibility();
   }
 
@@ -352,8 +270,8 @@
     if (!targetId) summary.textContent = selectedCount
       ? `已选择 ${selectedCount} 个监控源；如需数据库直连或精确映射，可继续选择 Target。`
       : "请先选择至少一个监控源；数据库 Target 为可选项。";
-    else if (!selectedCount) summary.textContent = "请选择监控源，随后填写该 Target 在监控系统中的标识。";
-    else summary.textContent = `${selectedCount} 个监控源已选择，${mappedCount} 个已有有效 Target 映射；保存时会补齐或更新。`;
+    else if (!selectedCount) summary.textContent = "请选择监控源，系统将校验该 Target 的既有映射。";
+    else summary.textContent = `${selectedCount} 个监控源已选择，${mappedCount} 个已有有效 Target 映射；Agent 不会创建或修改映射。`;
   }
 
   function toggleTargetFields() {
@@ -475,55 +393,13 @@
     return [...document.querySelectorAll('[name="target_ids"]:checked')].map((input) => input.value);
   }
 
-  function captureMappingDraft() {
-    if (!bindingTargetId) return;
-    const draft = {};
-    sourceCards().forEach((card) => {
-      const labels = {};
-      const job = card.querySelector("[data-loki-job]");
-      const label = card.querySelector("[data-loki-target-label]");
-      const value = card.querySelector("[data-loki-target-value]");
-      if (job && label && value && job.value.trim() && label.value.trim()) {
-        labels.job = job.value.trim();
-        labels[label.value.trim()] = value.value.trim();
-      }
-      draft[card.dataset.sourceId] = {
-        locatorKey: card.querySelector("[data-locator-key]").value.trim(),
-        sourceLocator: labels.job ? { labels } : (card.querySelector("[data-prometheus-host-target]") ? { host_target_key: card.querySelector("[data-prometheus-host-target]").value.trim() } : {}),
-      };
-    });
-    draftsByTarget.set(bindingTargetId, draft);
-  }
-
-  function applyMappingDraft(targetId) {
-    const draft = draftsByTarget.get(targetId);
-    if (!draft) return;
-    sourceCards().forEach((card) => {
-      const item = draft[card.dataset.sourceId];
-      if (!item) return;
-      card.querySelector("[data-locator-key]").value = item.locatorKey || "";
-      const host = card.querySelector("[data-prometheus-host-target]");
-      if (host) host.value = item.sourceLocator?.host_target_key || "";
-      const labels = item.sourceLocator?.labels || {};
-      const job = card.querySelector("[data-loki-job]");
-      const label = card.querySelector("[data-loki-target-label]");
-      const value = card.querySelector("[data-loki-target-value]");
-      if (job && label && value) {
-        const targetLabel = Object.keys(labels).find((name) => name !== "job") || "target_key";
-        job.value = labels.job || "oracle_alert";
-        label.value = targetLabel;
-        value.value = labels[targetLabel] || "";
-      }
-    });
-  }
-
   function syncMappingTargetOptions() {
     const select = document.getElementById("agent-mapping-target");
     const selected = selectedTargetIds();
     const previous = selected.includes(select.value) ? select.value : selected[0] || "";
     select.disabled = !selected.length;
     select.innerHTML = selected.length
-      ? '<option value="">请选择要配置映射的 Target</option>' + selected.map((id) => `<option value="${escape(id)}">${escape(targetName(id))}</option>`).join("")
+      ? '<option value="">请选择要校验映射的 Target</option>' + selected.map((id) => `<option value="${escape(id)}">${escape(targetName(id))}</option>`).join("")
       : '<option value="">未选择 Target，仅使用监控证据</option>';
     select.value = previous;
     if (previous && previous !== bindingTargetId) loadBindings(previous).catch((error) => showResult(error.message, "bad"));
@@ -542,7 +418,6 @@
     sourceBindings = [];
     bindingTargetId = "";
     bindingsByTarget.clear();
-    draftsByTarget.clear();
     actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
     document.getElementById("agent-controlled-actions").innerHTML = "";
@@ -572,7 +447,6 @@
     sourceBindings = [];
     bindingTargetId = "";
     bindingsByTarget.clear();
-    draftsByTarget.clear();
     actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
     document.getElementById("agent-controlled-actions").innerHTML = "";
@@ -712,81 +586,16 @@
     };
   }
 
-  function normalized(value) {
-    if (!value || typeof value !== "object") return value;
-    if (Array.isArray(value)) return value.map(normalized);
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalized(value[key])]));
-  }
-
-  function sameJson(left, right) {
-    return JSON.stringify(normalized(left || {})) === JSON.stringify(normalized(right || {}));
-  }
-
-  function collectBindingPlans(targetId, selectedSourceIds) {
-    if (!targetId) return [];
-    return selectedSourceIds.map((sourceId) => {
-      const card = sourceCardFor(sourceId);
+  function assertExistingBindings(targetId, selectedSourceIds) {
+    if (!targetId) return;
+    selectedSourceIds.forEach((sourceId) => {
       const source = sources.find((item) => item.source_id === sourceId);
-      if (!card || !source) throw new Error("监控源配置已经变化，请刷新页面后重试。");
-      const locatorKey = card.querySelector("[data-locator-key]").value.trim();
-      if (!locatorKey) throw new Error(`${source.display_name}：请填写 Target 在监控系统中的标识。`);
-      let sourceLocator = {};
-      if (source.source_type === "LOKI") {
-        const job = card.querySelector("[data-loki-job]").value.trim();
-        const targetLabel = card.querySelector("[data-loki-target-label]").value.trim();
-        const targetValue = card.querySelector("[data-loki-target-value]").value.trim();
-        if (!job || !targetLabel || !targetValue) throw new Error(`${source.display_name}：请完整填写 Loki 日志标签。`);
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(targetLabel) || targetLabel === "job") throw new Error(`${source.display_name}：目标标签名称格式无效，且不能与 job 重复。`);
-        sourceLocator = { labels: { job, [targetLabel]: targetValue } };
+      if (!source) throw new Error("监控源配置已经变化，请刷新页面后重试。");
+      const existing = bindingFor(sourceId);
+      if (!existing || existing.status !== "ACTIVE") {
+        throw new Error(`${source.display_name}：请先在诊断源详情中完成当前 Target 的映射。`);
       }
-      if (source.source_type === "PROMETHEUS") {
-        const hostTargetKey = card.querySelector("[data-prometheus-host-target]").value.trim();
-        if (!hostTargetKey) throw new Error(`${source.display_name}：请填写数据库主机的 Node Exporter target_key。`);
-        sourceLocator = { host_target_key: hostTargetKey };
-      }
-      return { source, locatorKey, sourceLocator, existing: bindingFor(sourceId) };
     });
-  }
-
-  async function ensureSourceBindings(targetId, plans) {
-    if (!targetId || !plans.length) return;
-    if (bindingTargetId !== targetId) await loadBindings(targetId);
-    for (let index = 0; index < plans.length; index += 1) {
-      const plan = plans[index];
-      plan.existing = bindingFor(plan.source.source_id);
-      showResult(`正在配置监控源映射（${index + 1}/${plans.length}）：${plan.source.display_name}…`);
-      let current = plan.existing;
-      if (!current) {
-        current = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`, {
-          method: "POST",
-          headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-          body: JSON.stringify({
-            source_id: plan.source.source_id,
-            source_locator_key: plan.locatorKey,
-            source_locator: plan.sourceLocator,
-            role: "PRIMARY",
-            priority: 100,
-          }),
-        });
-      } else if (current.source_locator_key !== plan.locatorKey || !sameJson(current.source_locator, plan.sourceLocator)) {
-        current = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings/${encodeURIComponent(current.binding_id)}`, {
-          method: "PATCH",
-          headers: { "If-Match": `"rv-${current.row_version}"` },
-          body: JSON.stringify({ source_locator_key: plan.locatorKey, source_locator: plan.sourceLocator }),
-        });
-      }
-      if (current.status !== "ACTIVE") {
-        current = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings/${encodeURIComponent(current.binding_id)}/enable`, {
-          method: "POST",
-          headers: { "If-Match": `"rv-${current.row_version}"`, "Idempotency-Key": KBotAIOpsAuth.uuid() },
-          body: JSON.stringify({}),
-        });
-      }
-      sourceBindings = sourceBindings.filter((item) => item.binding_id !== current.binding_id);
-      sourceBindings.push(current);
-    }
-    applyBindings();
-    bindingsByTarget.set(targetId, sourceBindings);
   }
 
   async function save(event) {
@@ -798,12 +607,10 @@
     showResult(editing ? "正在校验 Agent 配置…" : "正在创建 Agent…");
     try {
       const body = payload(event.currentTarget);
-      captureMappingDraft();
       for (const targetId of body.target_ids) {
         document.getElementById("agent-mapping-target").value = targetId;
         await loadBindings(targetId);
-        const plans = collectBindingPlans(targetId, body.diagnostic_source_ids);
-        await ensureSourceBindings(targetId, plans);
+        assertExistingBindings(targetId, body.diagnostic_source_ids);
       }
       if (editing) body.expected_row_version = editing.row_version;
       await KBotAIOpsAuth.request(editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`, {
@@ -811,7 +618,7 @@
         body: JSON.stringify(body),
       });
       document.getElementById("agent-dialog").close();
-      shell.toast(editing ? "Agent 已更新，监控源映射已同步" : "Agent 已创建");
+      shell.toast(editing ? "Agent 已更新" : "Agent 已创建");
       await load();
     } catch (error) {
       showResult(error.message, "bad");
@@ -865,15 +672,6 @@
     });
     document.getElementById("agent-sources").addEventListener("change", (event) => {
       if (event.target.matches('[name="diagnostic_source_ids"]')) syncSourceMappingVisibility();
-    });
-    document.getElementById("agent-sources").addEventListener("input", (event) => {
-      if (!event.target.matches("[data-locator-key]")) return;
-      const card = event.target.closest(".agent-source-card");
-      const lokiValue = card.querySelector("[data-loki-target-value]");
-      if (lokiValue && !lokiValue.dataset.userEdited) lokiValue.value = event.target.value;
-    });
-    document.getElementById("agent-sources").addEventListener("change", (event) => {
-      if (event.target.matches("[data-loki-target-value]")) event.target.dataset.userEdited = "true";
     });
     document.querySelector('[name="auto_alert_enabled"]').addEventListener("change", toggleAlertSettings);
     document.getElementById("agent-form").addEventListener("submit", save);

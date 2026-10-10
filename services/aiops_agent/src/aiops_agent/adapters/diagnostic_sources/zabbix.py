@@ -18,6 +18,9 @@ from aiops_agent.domain.evidence import (
 from aiops_agent.ports.diagnostic_source import (
     EventEvidenceRequest,
     EventEvidenceResult,
+    InstanceDiscoveryCandidate,
+    InstanceDiscoveryRequest,
+    InstanceDiscoveryResult,
     MetricsEvidenceRequest,
     MetricsEvidenceResult,
     SignalWebhookRequest,
@@ -46,6 +49,99 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
         "UNSIGNED": 3,
         "TEXT": 4,
     }
+
+    @staticmethod
+    def _database_type(host: dict) -> str | None:
+        aliases = {
+            "ORACLE": "ORACLE",
+            "MYSQL": "MYSQL",
+            "POSTGRES": "POSTGRESQL",
+            "POSTGRESQL": "POSTGRESQL",
+        }
+        tagged: set[str] = set()
+        for tag in host.get("tags") or []:
+            if not isinstance(tag, dict):
+                continue
+            name = str(tag.get("tag") or "").strip().lower()
+            if name not in {
+                "database_type",
+                "db_type",
+                "ammolite_database_type",
+            }:
+                continue
+            value = str(tag.get("value") or "").strip().upper()
+            if value in aliases:
+                tagged.add(aliases[value])
+        if len(tagged) == 1:
+            return next(iter(tagged))
+        if tagged:
+            return None
+        template_types: set[str] = set()
+        for template in host.get("parentTemplates") or []:
+            if not isinstance(template, dict):
+                continue
+            name = str(template.get("name") or "").upper()
+            for marker, db_type in aliases.items():
+                if marker in name:
+                    template_types.add(db_type)
+        return next(iter(template_types)) if len(template_types) == 1 else None
+
+    async def discover_instances(
+        self, request: InstanceDiscoveryRequest
+    ) -> InstanceDiscoveryResult:
+        params = {
+            "output": ["hostid", "host", "name"],
+            "selectTags": ["tag", "value"],
+            "selectParentTemplates": ["templateid", "name"],
+            "sortfield": "host",
+            "sortorder": "ASC",
+            "limit": 1001,
+        }
+        if request.locator_keys:
+            params["filter"] = {"host": list(request.locator_keys)}
+        hosts, _ = await self._rpc(
+            "host.get", params, max_bytes=2 * 1024 * 1024
+        )
+        if not isinstance(hosts, list):
+            raise DiagnosticSourceAdapterError(
+                "SOURCE_RESPONSE_INVALID", "Zabbix Host 目录响应无效"
+            )
+        accepted_types = set(request.db_types)
+        requested_keys = set(request.locator_keys)
+        candidates = []
+        for host in hosts:
+            if not isinstance(host, dict):
+                continue
+            locator_key = str(host.get("host") or "").strip()
+            db_type = self._database_type(host)
+            if (
+                not locator_key
+                or len(locator_key) > 512
+                or db_type is None
+                or (accepted_types and db_type not in accepted_types)
+                or (requested_keys and locator_key not in requested_keys)
+                or (
+                    request.after_locator_key is not None
+                    and locator_key <= request.after_locator_key
+                )
+            ):
+                continue
+            display_name = str(host.get("name") or locator_key).strip()
+            candidates.append(
+                InstanceDiscoveryCandidate(
+                    source_locator_key=locator_key,
+                    source_locator={
+                        "host": locator_key,
+                        "database_type": db_type,
+                    },
+                    db_type=db_type,
+                    display_name=display_name[:256],
+                )
+            )
+        candidates.sort(key=lambda item: item.source_locator_key)
+        return InstanceDiscoveryResult(
+            candidates=tuple(candidates[: request.limit])
+        )
 
     async def _rpc(
         self,

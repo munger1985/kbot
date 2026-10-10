@@ -15,7 +15,7 @@ from aiops_agent.contracts.evidence import (
     NormalizedSignalBatch,
     ObservationGap,
 )
-from platform_core.contracts.aiops.types import UtcDatetime
+from platform_core.contracts.aiops.types import DatabaseType, UtcDatetime
 
 
 CAPABILITY_HEALTH_CHECK = "health.check"
@@ -30,6 +30,7 @@ CAPABILITY_TOPOLOGY_RESOLVE = "topology.resolve"
 CAPABILITY_CHANGE_QUERY = "change.query"
 CAPABILITY_WORKLOAD_QUERY = "workload.query"
 CAPABILITY_ACTION_EXECUTE = "action.execute"
+CAPABILITY_INSTANCE_DISCOVERY = "instance.discover"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,33 @@ class SourceHealthResult(BaseModel):
     adapter_id: str
     adapter_version: str
     discovered_capabilities: tuple[str, ...] = ()
+
+
+class InstanceDiscoveryRequest(BaseModel):
+    """Adapter 只接收应用层生成的白名单过滤与精确 Locator 集合。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    db_types: tuple[DatabaseType, ...] = ()
+    locator_keys: tuple[str, ...] = ()
+    after_locator_key: str | None = None
+    limit: int = Field(default=51, ge=1, le=101)
+    trace_id: str
+
+
+class InstanceDiscoveryCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_locator_key: str = Field(min_length=1, max_length=512)
+    source_locator: dict[str, Any]
+    db_type: DatabaseType
+    display_name: str = Field(min_length=1, max_length=256)
+
+
+class InstanceDiscoveryResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    candidates: tuple[InstanceDiscoveryCandidate, ...] = ()
 
 
 class MetricsEvidenceRequest(BaseModel):
@@ -211,6 +239,13 @@ class MetricsEvidencePort(Protocol):
     async def query_metrics(
         self, request: MetricsEvidenceRequest
     ) -> MetricsEvidenceResult: ...
+
+
+@runtime_checkable
+class InstanceDiscoveryPort(Protocol):
+    async def discover_instances(
+        self, request: InstanceDiscoveryRequest
+    ) -> InstanceDiscoveryResult: ...
 
 
 @runtime_checkable

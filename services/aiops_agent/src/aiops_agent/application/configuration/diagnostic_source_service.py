@@ -25,6 +25,9 @@ from aiops_agent.application.errors import (
 from aiops_agent.application.configuration.source_connection_test import (
     run_diagnostic_source_health_check,
 )
+from aiops_agent.adapters.diagnostic_sources.base import (
+    DiagnosticSourceAdapterError,
+)
 from aiops_agent.entities import (
     DiagnosticSourceEntity,
     TargetSourceBindingEntity,
@@ -33,7 +36,10 @@ from aiops_agent.domain.evidence import validate_event_class_map
 from aiops_agent.persistence import AIOpsUnitOfWork
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_HEALTH_CHECK,
+    CAPABILITY_INSTANCE_DISCOVERY,
     CAPABILITY_LOG_QUERY,
+    DiagnosticSourceContext,
+    InstanceDiscoveryRequest as ProviderInstanceDiscoveryRequest,
     LogSourceLocator,
 )
 from platform_core.contracts.aiops import (
@@ -45,6 +51,12 @@ from platform_core.contracts.aiops import (
     DiagnosticSourcePage,
     DiagnosticSourcePatch,
     DiagnosticSourceSummary,
+    InstanceDiscoveryCandidate,
+    InstanceDiscoveryPage,
+    InstanceDiscoveryRequest,
+    InstanceMappingRequest,
+    InstanceMappingResult,
+    InstanceMappingView,
     WebhookKeyRotation,
 )
 from platform_core.identity import uuid7
@@ -57,6 +69,68 @@ from .projections import (
 
 
 class DiagnosticSourceConfigurationMixin:
+    @staticmethod
+    def _locator_hint(locator_key: str) -> str:
+        if len(locator_key) <= 4:
+            return "*" * len(locator_key)
+        return f"{locator_key[:2]}***{locator_key[-2:]}"
+
+    @classmethod
+    def _instance_mapping_view(cls, entity) -> InstanceMappingView:
+        return InstanceMappingView(
+            binding_id=entity.target_source_binding_id,
+            target_id=entity.target_id,
+            source_id=entity.diagnostic_source_id,
+            locator_hint=cls._locator_hint(entity.source_locator_key),
+            status=entity.status,
+            health_status=entity.health_status,
+            row_version=int(entity.row_version),
+        )
+
+    async def _instance_discovery_adapter(
+        self, *, uow, scope: ConfigurationScope, source
+    ):
+        if source.source_type not in {"PROMETHEUS", "ZABBIX"}:
+            raise validation_failed("该 Diagnostic Source 不支持实例发现")
+        if source.status != "ENABLED":
+            raise state_conflict("Diagnostic Source 未启用，不能发现实例")
+        if source.connectivity_status != "CONNECTED":
+            raise state_conflict("Diagnostic Source 尚未通过连接验证")
+        if self._diagnostic_source_registry is None:
+            raise validation_failed("Diagnostic Source Adapter 注册表不可用")
+        credentials: dict[str, object] = {}
+        if source.auth_credential_id is not None:
+            credentials = await self._managed_credentials.read(
+                uow=uow,
+                domain_id=scope.domain_id,
+                credential_id=source.auth_credential_id,
+                credential_kind="diagnostic_source",
+                external_key=source.diagnostic_source_id,
+            )
+        normalized_credentials = {
+            str(key): str(value) for key, value in credentials.items()
+        }
+        if "value" in normalized_credentials:
+            normalized_credentials["token"] = normalized_credentials["value"]
+        try:
+            return self._diagnostic_source_registry.create(
+                DiagnosticSourceContext(
+                    source_id=str(source.diagnostic_source_id),
+                    source_type=source.source_type,
+                    adapter_id=source.adapter_id,
+                    adapter_version=source.adapter_version,
+                    config_version=int(source.row_version),
+                    endpoint=source.endpoint,
+                    credentials=normalized_credentials,
+                    declared_capabilities=dict(
+                        source.declared_capabilities_json or {}
+                    ),
+                    config=dict(source.config_json or {}),
+                ),
+                capability=CAPABILITY_INSTANCE_DISCOVERY,
+            )
+        except LookupError as exc:
+            raise validation_failed(str(exc)) from exc
     @staticmethod
     def _apply_diagnostic_source_health_result(
         *, entity, result, checked_at: datetime
@@ -740,6 +814,355 @@ class DiagnosticSourceConfigurationMixin:
             },
         )
 
+    async def discover_source_instances(
+        self,
+        *,
+        scope: ConfigurationScope,
+        source_id: UUID,
+        request: InstanceDiscoveryRequest,
+    ) -> InstanceDiscoveryPage:
+        filter_types = tuple(sorted(request.db_types))
+        after_locator_key = None
+        if request.cursor is not None:
+            cursor_value = self._instance_candidate_refs.decode(
+                request.cursor,
+                domain_id=scope.domain_id,
+                source_id=source_id,
+                actor_id=scope.actor_id,
+                purpose="cursor",
+            )
+            if tuple(cursor_value.get("db_types") or ()) != filter_types:
+                raise validation_failed("实例发现游标与当前过滤条件不匹配")
+            after_locator_key = str(
+                cursor_value.get("after_locator_key") or ""
+            )
+            if not after_locator_key:
+                raise validation_failed("实例发现游标缺少定位信息")
+        async with self._uow_factory() as uow:
+            assert uow.diagnostic_sources is not None
+            assert uow.targets is not None
+            source = await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=source_id,
+                domain_id=scope.domain_id,
+            )
+            if source is None:
+                raise resource_not_found("Diagnostic Source")
+            adapter = await self._instance_discovery_adapter(
+                uow=uow, scope=scope, source=source
+            )
+            try:
+                discovered = await adapter.discover_instances(
+                    ProviderInstanceDiscoveryRequest(
+                        db_types=request.db_types,
+                        after_locator_key=after_locator_key,
+                        limit=request.page_size + 1,
+                        trace_id=scope.trace_id,
+                    )
+                )
+            except DiagnosticSourceAdapterError as exc:
+                raise AIOpsApplicationError(
+                    code="INSTANCE_DISCOVERY_FAILED",
+                    message="监控来源实例发现失败",
+                    status_code=502,
+                    retryable=exc.retryable,
+                ) from exc
+            bindings = await uow.targets.list_source_bindings_by_source(
+                diagnostic_source_id=source_id,
+                domain_id=scope.domain_id,
+            )
+        mapped_targets = {
+            item.source_locator_key: item.target_id for item in bindings
+        }
+        page_candidates = discovered.candidates[: request.page_size]
+        items = tuple(
+            InstanceDiscoveryCandidate(
+                candidate_ref=self._instance_candidate_refs.encode(
+                        domain_id=scope.domain_id,
+                    source_id=source_id,
+                    actor_id=scope.actor_id,
+                    purpose="candidate",
+                    value={
+                        "source_locator_key": item.source_locator_key,
+                        "source_locator": item.source_locator,
+                        "db_type": item.db_type,
+                    },
+                ),
+                display_name=item.display_name,
+                locator_hint=self._locator_hint(item.source_locator_key),
+                db_type=item.db_type,
+                mapping_status=(
+                    "MAPPED"
+                    if item.source_locator_key in mapped_targets
+                    else "UNMAPPED"
+                ),
+                mapped_target_id=mapped_targets.get(item.source_locator_key),
+            )
+            for item in page_candidates
+        )
+        has_more = len(discovered.candidates) > request.page_size
+        next_cursor = None
+        if has_more and page_candidates:
+            next_cursor = self._instance_candidate_refs.encode(
+                domain_id=scope.domain_id,
+                source_id=source_id,
+                actor_id=scope.actor_id,
+                purpose="cursor",
+                value={
+                    "after_locator_key": page_candidates[-1].source_locator_key,
+                    "db_types": filter_types,
+                },
+            )
+        return InstanceDiscoveryPage(
+            source_id=source_id,
+            items=items,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
+
+    async def map_source_instances(
+        self,
+        *,
+        scope: ConfigurationScope,
+        source_id: UUID,
+        request: InstanceMappingRequest,
+        idempotency_key: str,
+    ) -> InstanceMappingResult:
+        async def handler(
+            uow: AIOpsUnitOfWork, now: datetime
+        ) -> InstanceMappingResult:
+            assert uow.diagnostic_sources is not None
+            source = await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=source_id,
+                domain_id=scope.domain_id,
+                lock=True,
+            )
+            if source is None:
+                raise resource_not_found("Diagnostic Source")
+            adapter = await self._instance_discovery_adapter(
+                uow=uow, scope=scope, source=source
+            )
+            decoded = []
+            for mapping in request.mappings:
+                value = self._instance_candidate_refs.decode(
+                    mapping.candidate_ref,
+                        domain_id=scope.domain_id,
+                    source_id=source_id,
+                    actor_id=scope.actor_id,
+                    purpose="candidate",
+                    now=now,
+                )
+                locator_key = str(value.get("source_locator_key") or "")
+                locator = value.get("source_locator")
+                db_type = str(value.get("db_type") or "")
+                if (
+                    not locator_key
+                    or not isinstance(locator, dict)
+                    or db_type not in {"ORACLE", "MYSQL", "POSTGRESQL"}
+                ):
+                    raise validation_failed("实例候选引用内容无效")
+                decoded.append((mapping, locator_key, locator, db_type))
+            locator_keys = [item[1] for item in decoded]
+            if len(set(locator_keys)) != len(locator_keys):
+                raise validation_failed("批量映射中的外部实例不能重复")
+            try:
+                verified = await adapter.discover_instances(
+                    ProviderInstanceDiscoveryRequest(
+                        db_types=tuple(sorted({item[3] for item in decoded})),
+                        locator_keys=tuple(locator_keys),
+                        limit=len(decoded),
+                        trace_id=scope.trace_id,
+                    )
+                )
+            except DiagnosticSourceAdapterError as exc:
+                raise AIOpsApplicationError(
+                    code="INSTANCE_DISCOVERY_FAILED",
+                    message="保存映射前重新验证实例失败",
+                    status_code=502,
+                    retryable=exc.retryable,
+                ) from exc
+            verified_by_key = {
+                item.source_locator_key: item for item in verified.candidates
+            }
+            prepared_entities = []
+            for mapping, locator_key, locator, db_type in decoded:
+                current = verified_by_key.get(locator_key)
+                if (
+                    current is None
+                    or current.db_type != db_type
+                    or canonical_json(current.source_locator)
+                    != canonical_json(locator)
+                ):
+                    raise state_conflict(
+                        "实例候选已变化或不存在，请重新执行发现"
+                    )
+                entity = await self._prepare_source_binding_in_uow(
+                    uow=uow,
+                    scope=scope,
+                    target_id=mapping.target_id,
+                    request=SourceBindingCreate(
+                        source_id=source_id,
+                        source_locator_key=locator_key,
+                        source_locator=current.source_locator,
+                    ),
+                    now=now,
+                    source=source,
+                    expected_db_type=db_type,
+                    discovery_verified=True,
+                )
+                prepared_entities.append(entity)
+            for entity in prepared_entities:
+                await self._persist_source_binding_in_uow(
+                    uow=uow,
+                    scope=scope,
+                    entity=entity,
+                )
+            return InstanceMappingResult(
+                source_id=source_id,
+                items=tuple(
+                    self._instance_mapping_view(entity)
+                    for entity in prepared_entities
+                ),
+            )
+
+        return await self._idempotent(
+            scope=scope,
+            operation="DIAGNOSTIC_SOURCE_INSTANCE_MAPPING_CREATE",
+            parent_resource=str(source_id),
+            idempotency_key=idempotency_key,
+            payload=request.model_dump(mode="json"),
+            response_type=InstanceMappingResult,
+            handler=handler,
+        )
+
+    async def _prepare_source_binding_in_uow(
+        self,
+        *,
+        uow: AIOpsUnitOfWork,
+        scope: ConfigurationScope,
+        target_id: UUID,
+        request: SourceBindingCreate,
+        now: datetime,
+        source=None,
+        expected_db_type: str | None = None,
+        discovery_verified: bool = False,
+    ) -> TargetSourceBindingEntity:
+        assert uow.targets is not None
+        assert uow.diagnostic_sources is not None
+        target = await uow.targets.get_scoped(
+            target_id=target_id,
+            domain_id=scope.domain_id,
+            lock=True,
+        )
+        if target is None:
+            raise resource_not_found("Target")
+        if expected_db_type is not None and target.db_type != expected_db_type:
+            raise validation_failed("候选实例数据库类型与 Target 不一致")
+        if source is None:
+            source = await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=request.source_id,
+                domain_id=scope.domain_id,
+            )
+        if source is None:
+            raise resource_not_found("Diagnostic Source")
+        if (
+            source.source_type in {"PROMETHEUS", "ZABBIX"}
+            and not discovery_verified
+        ):
+            raise validation_failed(
+                "Prometheus 与 Zabbix 映射必须通过实例发现候选创建"
+            )
+        existing = await uow.targets.list_source_bindings(
+            target_id=target_id,
+            domain_id=scope.domain_id,
+            active_only=False,
+        )
+        if any(
+            binding.diagnostic_source_id == request.source_id
+            for binding in existing
+        ):
+            raise state_conflict("Target 与 Diagnostic Source 已存在映射")
+        locator_conflict = (
+            await uow.targets.get_source_binding_by_locator_any_status(
+                diagnostic_source_id=request.source_id,
+                source_locator_key=request.source_locator_key,
+                lock=True,
+            )
+        )
+        if locator_conflict is not None:
+            raise state_conflict("Diagnostic Source 外部定位键已被使用")
+        self._validate_source_binding_locator(
+            source=source,
+            source_locator=request.source_locator,
+        )
+        return TargetSourceBindingEntity(
+            target_source_binding_id=uuid7(),
+            target_id=target_id,
+            diagnostic_source_id=request.source_id,
+            source_locator_key=request.source_locator_key,
+            source_locator_json=request.source_locator,
+            role=request.role,
+            priority=request.priority,
+            capability_scope_json=request.capability_scope,
+            mapping_overrides_json=request.mapping_overrides,
+            query_budget_json=request.query_budget,
+            status="ACTIVE",
+            health_status="UNKNOWN",
+            row_version=1,
+            health_version=1,
+            created_by=scope.actor_id,
+            updated_by=scope.actor_id,
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def _persist_source_binding_in_uow(
+        self,
+        *,
+        uow: AIOpsUnitOfWork,
+        scope: ConfigurationScope,
+        entity: TargetSourceBindingEntity,
+    ) -> None:
+        assert uow.targets is not None
+        await uow.targets.add_source_binding(entity)
+        await add_configuration_event(
+            uow=uow,
+            scope=scope,
+            aggregate_type="TARGET_SOURCE_BINDING",
+            aggregate_id=entity.target_source_binding_id,
+            event_type="TARGET_SOURCE_BINDING_CREATED",
+            row_version=1,
+            details={"target_id": str(entity.target_id)},
+        )
+
+    async def _create_source_binding_in_uow(
+        self,
+        *,
+        uow: AIOpsUnitOfWork,
+        scope: ConfigurationScope,
+        target_id: UUID,
+        request: SourceBindingCreate,
+        now: datetime,
+        source=None,
+        expected_db_type: str | None = None,
+        discovery_verified: bool = False,
+    ) -> TargetSourceBindingEntity:
+        entity = await self._prepare_source_binding_in_uow(
+            uow=uow,
+            scope=scope,
+            target_id=target_id,
+            request=request,
+            now=now,
+            source=source,
+            expected_db_type=expected_db_type,
+            discovery_verified=discovery_verified,
+        )
+        await self._persist_source_binding_in_uow(
+            uow=uow,
+            scope=scope,
+            entity=entity,
+        )
+        return entity
+
     async def create_source_binding(
         self,
         *,
@@ -756,54 +1179,12 @@ class DiagnosticSourceConfigurationMixin:
         async def handler(
             uow: AIOpsUnitOfWork, now: datetime
         ) -> SourceBindingView:
-            assert uow.targets is not None
-            assert uow.diagnostic_sources is not None
-            target = await uow.targets.get_scoped(
-                target_id=target_id,
-                domain_id=scope.domain_id,
-                lock=True,
-            )
-            if target is None:
-                raise resource_not_found("Target")
-            source = await uow.diagnostic_sources.get_scoped(
-                diagnostic_source_id=request.source_id,
-                domain_id=scope.domain_id,
-            )
-            if source is None:
-                raise resource_not_found("Diagnostic Source")
-            self._validate_source_binding_locator(
-                source=source,
-                source_locator=request.source_locator,
-            )
-            entity = TargetSourceBindingEntity(
-                target_source_binding_id=uuid7(),
-                target_id=target_id,
-                diagnostic_source_id=request.source_id,
-                source_locator_key=request.source_locator_key,
-                source_locator_json=request.source_locator,
-                role=request.role,
-                priority=request.priority,
-                capability_scope_json=request.capability_scope,
-                mapping_overrides_json=request.mapping_overrides,
-                query_budget_json=request.query_budget,
-                status="ACTIVE",
-                health_status="UNKNOWN",
-                row_version=1,
-                health_version=1,
-                created_by=scope.actor_id,
-                updated_by=scope.actor_id,
-                created_at=now,
-                updated_at=now,
-            )
-            await uow.targets.add_source_binding(entity)
-            await add_configuration_event(
+            entity = await self._create_source_binding_in_uow(
                 uow=uow,
                 scope=scope,
-                aggregate_type="TARGET_SOURCE_BINDING",
-                aggregate_id=entity.target_source_binding_id,
-                event_type="TARGET_SOURCE_BINDING_CREATED",
-                row_version=1,
-                details={"target_id": str(target_id)},
+                target_id=target_id,
+                request=request,
+                now=now,
             )
             return _source_binding_view(entity)
 
@@ -834,6 +1215,24 @@ class DiagnosticSourceConfigurationMixin:
                 active_only=False,
             )
             return tuple(_source_binding_view(item) for item in entities)
+
+    async def list_source_target_bindings(
+        self, *, scope: ConfigurationScope, source_id: UUID
+    ) -> tuple[InstanceMappingView, ...]:
+        async with self._uow_factory() as uow:
+            assert uow.targets is not None
+            assert uow.diagnostic_sources is not None
+            source = await uow.diagnostic_sources.get_scoped(
+                diagnostic_source_id=source_id,
+                domain_id=scope.domain_id,
+            )
+            if source is None:
+                raise resource_not_found("Diagnostic Source")
+            entities = await uow.targets.list_source_bindings_by_source(
+                diagnostic_source_id=source_id,
+                domain_id=scope.domain_id,
+            )
+            return tuple(self._instance_mapping_view(item) for item in entities)
 
     async def patch_source_binding(
         self,
@@ -872,17 +1271,37 @@ class DiagnosticSourceConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Source Binding")
             self._check_version(entity.row_version, expected_version)
-            if "source_locator_json" in fields:
+            if "source_locator_json" in fields or "source_locator_key" in fields:
                 source = await uow.diagnostic_sources.get_scoped(
                     diagnostic_source_id=entity.diagnostic_source_id,
                     domain_id=scope.domain_id,
                 )
                 if source is None:
                     raise resource_not_found("Diagnostic Source")
-                self._validate_source_binding_locator(
-                    source=source,
-                    source_locator=fields["source_locator_json"],
+                if source.source_type in {"PROMETHEUS", "ZABBIX"}:
+                    raise validation_failed(
+                        "Prometheus 与 Zabbix 外部定位只能通过实例发现重新映射"
+                    )
+                if "source_locator_json" in fields:
+                    self._validate_source_binding_locator(
+                        source=source,
+                        source_locator=fields["source_locator_json"],
+                    )
+            if "source_locator_key" in fields:
+                locator_conflict = (
+                    await uow.targets.get_source_binding_by_locator_any_status(
+                        diagnostic_source_id=entity.diagnostic_source_id,
+                        source_locator_key=fields["source_locator_key"],
+                        lock=True,
+                    )
                 )
+                if (
+                    locator_conflict is not None
+                    and locator_conflict.target_source_binding_id != binding_id
+                ):
+                    raise state_conflict(
+                        "Diagnostic Source 外部定位键已被使用"
+                    )
             for name, value in fields.items():
                 setattr(entity, name, value)
             entity.updated_by = scope.actor_id

@@ -9,6 +9,9 @@ import aiohttp
 from aiops_agent.ports.diagnostic_source import (
     EventEvidenceResult,
     EventEvidenceRequest,
+    InstanceDiscoveryCandidate,
+    InstanceDiscoveryRequest,
+    InstanceDiscoveryResult,
     MetricsEvidenceRequest,
     MetricsEvidenceResult,
     SourceHealthRequest,
@@ -24,6 +27,82 @@ def _escape_prometheus_label(value: str) -> str:
 
 class PrometheusAdapter(BaseDiagnosticSourceAdapter):
     _minimum_complete_coverage_ratio = 0.8
+    _DISCOVERY_SERIES = {
+        "ORACLE": ("oracledb_up", "oracle", "target_key"),
+        "MYSQL": ("mysql_up", "mysql", "target_key"),
+        "POSTGRESQL": ("pg_up", "postgres", "target_key"),
+    }
+
+    async def discover_instances(
+        self, request: InstanceDiscoveryRequest
+    ) -> InstanceDiscoveryResult:
+        db_types = request.db_types or tuple(self._DISCOVERY_SERIES)
+        params: list[tuple[str, str | float]] = []
+        for db_type in db_types:
+            metric_name, job, _label = self._DISCOVERY_SERIES[db_type]
+            params.append(("match[]", f'{metric_name}{{job="{job}"}}'))
+        now = datetime.now(UTC).timestamp()
+        params.extend((("start", now - 3600), ("end", now)))
+        async with self._session.get(
+            f"{self._endpoint().rstrip('/')}/api/v1/series",
+            headers=self._headers(),
+            params=params,
+            timeout=self._timeout,
+        ) as response:
+            payload, _ = await self._response_json(
+                response, max_bytes=2 * 1024 * 1024
+            )
+        if not isinstance(payload, dict) or payload.get("status") != "success":
+            raise DiagnosticSourceAdapterError(
+                "SOURCE_RESPONSE_INVALID",
+                "Prometheus 实例目录响应无效",
+            )
+        series = payload.get("data")
+        if not isinstance(series, list):
+            raise DiagnosticSourceAdapterError(
+                "SOURCE_RESPONSE_INVALID",
+                "Prometheus 实例目录响应无效",
+            )
+        requested_keys = set(request.locator_keys)
+        candidates: dict[tuple[str, str], InstanceDiscoveryCandidate] = {}
+        metric_types = {
+            config[0]: (db_type, config[2])
+            for db_type, config in self._DISCOVERY_SERIES.items()
+            if db_type in db_types
+        }
+        for item in series:
+            if not isinstance(item, dict):
+                continue
+            metric_type = metric_types.get(str(item.get("__name__") or ""))
+            if metric_type is None:
+                continue
+            db_type, locator_label = metric_type
+            locator_key = str(item.get(locator_label) or "").strip()
+            if (
+                not locator_key
+                or len(locator_key) > 512
+                or (requested_keys and locator_key not in requested_keys)
+                or (
+                    request.after_locator_key is not None
+                    and locator_key <= request.after_locator_key
+                )
+            ):
+                continue
+            candidates[(db_type, locator_key)] = InstanceDiscoveryCandidate(
+                source_locator_key=locator_key,
+                source_locator={
+                    "target_key": locator_key,
+                    "instance": locator_key,
+                    "database_type": db_type,
+                },
+                db_type=db_type,
+                display_name=f"{db_type.title()} 数据库实例",
+            )
+        ordered = sorted(
+            candidates.values(),
+            key=lambda item: (item.source_locator_key, item.db_type),
+        )
+        return InstanceDiscoveryResult(candidates=tuple(ordered[: request.limit]))
 
     async def health_check(
         self, request: SourceHealthRequest

@@ -730,6 +730,76 @@ class SourceBindingView(AIOpsContract):
     updated_at: UtcDatetime
 
 
+class InstanceDiscoveryRequest(AIOpsContract):
+    """受控的监控实例发现请求，不接受 Provider 查询或 Locator。"""
+
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    db_types: tuple[DatabaseType, ...] = ()
+    page_size: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = Field(default=None, min_length=1, max_length=8192)
+
+    @model_validator(mode="after")
+    def validate_db_types(self) -> "InstanceDiscoveryRequest":
+        if len(set(self.db_types)) != len(self.db_types):
+            raise ValueError("数据库类型过滤条件不能重复")
+        return self
+
+
+class InstanceDiscoveryCandidate(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    candidate_ref: str = Field(min_length=1, max_length=8192)
+    display_name: str = Field(min_length=1, max_length=256)
+    locator_hint: str = Field(min_length=1, max_length=256)
+    db_type: DatabaseType
+    mapping_status: Literal["UNMAPPED", "MAPPED"]
+    mapped_target_id: UUIDv7 | None = None
+
+
+class InstanceDiscoveryPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    source_id: UUIDv7
+    items: tuple[InstanceDiscoveryCandidate, ...] = ()
+
+
+class InstanceMappingItem(AIOpsContract):
+    candidate_ref: str = Field(min_length=1, max_length=8192)
+    target_id: UUIDv7
+
+
+class InstanceMappingRequest(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    mappings: tuple[InstanceMappingItem, ...] = Field(
+        min_length=1, max_length=100
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_mappings(self) -> "InstanceMappingRequest":
+        target_ids = [item.target_id for item in self.mappings]
+        candidate_refs = [item.candidate_ref for item in self.mappings]
+        if len(set(target_ids)) != len(target_ids):
+            raise ValueError("批量映射中的 Target 不能重复")
+        if len(set(candidate_refs)) != len(candidate_refs):
+            raise ValueError("批量映射中的候选实例不能重复")
+        return self
+
+
+class InstanceMappingView(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    binding_id: UUIDv7
+    target_id: UUIDv7
+    source_id: UUIDv7
+    locator_hint: str = Field(min_length=1, max_length=256)
+    status: SourceBindingStatus
+    health_status: HealthStatus
+    row_version: int = Field(ge=1)
+
+
+class InstanceMappingResult(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    source_id: UUIDv7
+    items: tuple[InstanceMappingView, ...]
+
+
 class PolicyCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     policy_key: str = Field(pattern=r"^[a-z][a-z0-9._-]{0,127}$")

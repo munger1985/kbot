@@ -23,6 +23,9 @@ from aiops_agent.application.configuration.common import (
     canonical_json,
     sha256_json,
 )
+from aiops_agent.application.configuration.instance_discovery import (
+    InstanceCandidateRefCodec,
+)
 from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
@@ -118,6 +121,9 @@ class ConfigurationServiceBase:
         self._management = management
         self._idempotency = IdempotencyGuard()
         self._credential_cipher = credential_cipher
+        self._instance_candidate_refs = InstanceCandidateRefCodec(
+            cipher=credential_cipher
+        )
         self._managed_credentials = managed_credential_service
         self._target_connection_tester = target_connection_tester
         self._diagnostic_source_catalog = diagnostic_source_catalog

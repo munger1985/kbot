@@ -2659,6 +2659,291 @@
         "title": "InspectionPlanSummary",
         "type": "object"
       },
+      "InstanceDiscoveryCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_ref": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Candidate Ref",
+            "type": "string"
+          },
+          "db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "locator_hint": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Locator Hint",
+            "type": "string"
+          },
+          "mapped_target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapped Target Id"
+          },
+          "mapping_status": {
+            "enum": [
+              "UNMAPPED",
+              "MAPPED"
+            ],
+            "title": "Mapping Status",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_ref",
+          "display_name",
+          "locator_hint",
+          "db_type",
+          "mapping_status"
+        ],
+        "title": "InstanceDiscoveryCandidate",
+        "type": "object"
+      },
+      "InstanceDiscoveryPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InstanceDiscoveryCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "InstanceDiscoveryPage",
+        "type": "object"
+      },
+      "InstanceDiscoveryRequest": {
+        "additionalProperties": false,
+        "description": "受控的监控实例发现请求，不接受 Provider 查询或 Locator。",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "db_types": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DatabaseType"
+            },
+            "title": "Db Types",
+            "type": "array"
+          },
+          "page_size": {
+            "default": 50,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "InstanceDiscoveryRequest",
+        "type": "object"
+      },
+      "InstanceMappingItem": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_ref": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Candidate Ref",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_ref",
+          "target_id"
+        ],
+        "title": "InstanceMappingItem",
+        "type": "object"
+      },
+      "InstanceMappingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceMappingItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mappings"
+        ],
+        "title": "InstanceMappingRequest",
+        "type": "object"
+      },
+      "InstanceMappingResult": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceMappingView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "items"
+        ],
+        "title": "InstanceMappingResult",
+        "type": "object"
+      },
+      "InstanceMappingView": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "format": "uuid",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "health_status": {
+            "enum": [
+              "UNKNOWN",
+              "HEALTHY",
+              "DEGRADED",
+              "UNREACHABLE"
+            ],
+            "title": "Health Status",
+            "type": "string"
+          },
+          "locator_hint": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Locator Hint",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "target_id",
+          "source_id",
+          "locator_hint",
+          "status",
+          "health_status",
+          "row_version"
+        ],
+        "title": "InstanceMappingView",
+        "type": "object"
+      },
       "LeadershipBriefing": {
         "additionalProperties": false,
         "description": "正式报告的领导简报投影；不展开 SID/SQL 明细。",
@@ -6354,133 +6639,6 @@
         "title": "SourceBindingPatch",
         "type": "object"
       },
-      "SourceBindingView": {
-        "additionalProperties": false,
-        "properties": {
-          "binding_id": {
-            "format": "uuid",
-            "title": "Binding Id",
-            "type": "string"
-          },
-          "capability_scope": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Capability Scope"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "health_status": {
-            "enum": [
-              "UNKNOWN",
-              "HEALTHY",
-              "DEGRADED",
-              "UNREACHABLE"
-            ],
-            "title": "Health Status",
-            "type": "string"
-          },
-          "mapping_overrides": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mapping Overrides"
-          },
-          "priority": {
-            "title": "Priority",
-            "type": "integer"
-          },
-          "query_budget": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Query Budget"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          },
-          "source_locator": {
-            "additionalProperties": true,
-            "title": "Source Locator",
-            "type": "object"
-          },
-          "source_locator_key": {
-            "title": "Source Locator Key",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "binding_id",
-          "target_id",
-          "source_id",
-          "source_locator_key",
-          "source_locator",
-          "role",
-          "priority",
-          "status",
-          "health_status",
-          "row_version",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "SourceBindingView",
-        "type": "object"
-      },
       "TargetConnectionTest": {
         "additionalProperties": false,
         "properties": {
@@ -8616,6 +8774,168 @@
           }
         },
         "summary": "Check Diagnostic Source Connectivity",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/instance-discoveries": {
+      "post": {
+        "operationId": "discover_source_instances_api_v1_apps_aiops_diagnostic_sources__source_id__instance_discoveries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceDiscoveryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Source Instances",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/instance-mappings": {
+      "post": {
+        "operationId": "map_source_instances_api_v1_apps_aiops_diagnostic_sources__source_id__instance_mappings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceMappingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceMappingResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Map Source Instances",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/diagnostic-sources/{source_id}/target-bindings": {
+      "get": {
+        "operationId": "list_source_target_bindings_api_v1_apps_aiops_diagnostic_sources__source_id__target_bindings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstanceMappingView"
+                  },
+                  "title": "Response List Source Target Bindings Api V1 Apps Aiops Diagnostic Sources  Source Id  Target Bindings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Source Target Bindings",
         "tags": [
           "AIOps"
         ]
@@ -13253,7 +13573,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/SourceBindingView"
+                    "$ref": "#/components/schemas/InstanceMappingView"
                   },
                   "title": "Response List Source Bindings Api V1 Apps Aiops Targets  Target Id  Source Bindings Get",
                   "type": "array"
@@ -13316,7 +13636,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceBindingView"
+                  "$ref": "#/components/schemas/InstanceMappingView"
                 }
               }
             },
@@ -13395,7 +13715,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceBindingView"
+                  "$ref": "#/components/schemas/InstanceMappingView"
                 }
               }
             },
@@ -13486,7 +13806,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceBindingView"
+                  "$ref": "#/components/schemas/InstanceMappingView"
                 }
               }
             },

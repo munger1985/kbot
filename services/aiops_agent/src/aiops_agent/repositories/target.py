@@ -613,6 +613,25 @@ class TargetRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_source_binding_by_locator_any_status(
+        self,
+        *,
+        diagnostic_source_id: UUID,
+        source_locator_key: str,
+        lock: bool = False,
+    ) -> TargetSourceBindingEntity | None:
+        """映射自然键在停用后也不能被另一个 Target 复用。"""
+        self._check_active()
+        statement: Select = select(TargetSourceBindingEntity).where(
+            TargetSourceBindingEntity.diagnostic_source_id
+            == diagnostic_source_id,
+            TargetSourceBindingEntity.source_locator_key
+            == source_locator_key,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def update_monitor(
         self,
         *,
