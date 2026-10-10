@@ -133,6 +133,7 @@ services:
     image: ${CADVISOR_IMAGE}
     profiles: [containers]
     privileged: true
+    cgroup: host
     security_opt: []
     command:
       - --docker_only=true
