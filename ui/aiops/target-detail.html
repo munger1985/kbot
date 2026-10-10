@@ -39,7 +39,7 @@
         <div class="ops-panel-head">
           <div>
             <h2 id="target-recovery-title">恢复保障</h2>
-            <p>这里只维护 Target 的业务 RPO/RTO 和演练要求；演练登记、审核与历史记录在独立工作区处理。</p>
+            <p>只读展示 Target 的业务 RPO/RTO、演练要求与最近状态；修改请进入“编辑目标”。</p>
           </div>
           <div class="ops-actions">
             <a id="target-recovery-drills-link" class="ops-button" href="./recovery-drills.html">恢复演练</a>
@@ -47,18 +47,6 @@
           </div>
         </div>
         <div class="ops-panel-body target-recovery-layout">
-          <form id="target-recovery-profile-form" class="ops-form target-recovery-form">
-            <h3>业务恢复目标</h3>
-            <div class="ops-field"><label>RPO（分钟）</label><input name="rpo_minutes" type="number" min="0" max="525600" required></div>
-            <div class="ops-field"><label>RTO（分钟）</label><input name="rto_minutes" type="number" min="1" max="525600" required></div>
-            <div class="ops-field"><label>演练周期（天）</label><input name="required_drill_interval_days" type="number" min="1" max="3650" required value="90"></div>
-            <div class="ops-field"><label>最低演练等级</label><select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN" selected>数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
-            <div class="ops-field"><label>必需备份来源</label><select name="required_backup_source_types" multiple required size="4"></select><small>至少选择一种；只有已审核通过的对应来源演练才计入覆盖。</small></div>
-            <div class="ops-field span-12"><label>目标来源说明</label><input name="source_note" maxlength="1000" placeholder="例如：生产系统灾备规范 2026-Q3"></div>
-            <div class="ops-filter-actions"><button class="primary" type="submit">保存为新版本</button></div>
-            <p id="target-recovery-profile-result" class="ops-connection-result" role="status"></p>
-          </form>
-
           <div class="target-recovery-summary">
             <h3>演练状态</h3>
             <div id="target-recovery-summary">正在加载…</div>
@@ -70,29 +58,11 @@
         <div class="ops-panel-head">
           <div>
             <h2 id="target-facts-title">运维记忆</h2>
-            <p>确认后的 ASM 磁盘组、数据文件路径和表空间放置策略会固化到该 Target，撤回后不再参与容量判断。</p>
+            <p>只读展示已确认的 ASM 磁盘组、数据文件路径和表空间放置策略；修改请进入“编辑目标”。</p>
           </div>
         </div>
         <div class="ops-panel-body">
           <div id="target-facts-list" class="target-facts-list">正在加载…</div>
-          <form id="target-facts-form" class="ops-form target-facts-form">
-            <div class="ops-field">
-              <label for="target-fact-type">事实类型</label>
-              <select id="target-fact-type" name="fact_type" required>
-                <option value="ASM_DISKGROUP">ASM 磁盘组</option>
-                <option value="DATAFILE_PATH">数据文件目录</option>
-                <option value="TABLESPACE_PLACEMENT">表空间放置</option>
-              </select>
-            </div>
-            <div class="ops-field span-6">
-              <label for="target-fact-value">事实值</label>
-              <input id="target-fact-value" name="fact_value" maxlength="256" required placeholder="例如 DATA 或 /u01/oradata">
-            </div>
-            <div class="ops-filter-actions">
-              <button id="save-target-fact" class="primary" type="submit">确认写入</button>
-            </div>
-          </form>
-          <p id="target-facts-result" class="ops-connection-result" role="status"></p>
         </div>
       </section>
     </div>
@@ -137,6 +107,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-pages.js?v=20261010-12"></script>
+  <script src="./js/aiops-pages.js?v=20261010-13"></script>
 </body>
 </html>

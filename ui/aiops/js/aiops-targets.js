@@ -393,6 +393,7 @@
     setCredentialMode();
     toggleAccessFields();
     document.getElementById("target-dialog-title").textContent = "新增运维目标";
+    document.getElementById("target-advanced-editor").hidden = true;
     submit.textContent = "创建目标";
     dialog.showModal();
     try {
@@ -435,6 +436,11 @@
       clearResult();
       dialog.showModal();
       await loadMonitorEditor(target.target_id);
+      document.getElementById("target-advanced-editor").hidden = false;
+      await Promise.all([
+        globalThis.KBotAIOpsPages.initializeTargetRecovery(target.target_id, target),
+        globalThis.KBotAIOpsPages.initializeTargetFacts(target.target_id),
+      ]);
       form.elements.display_name.focus();
     } catch (error) {
       shell.toast(error.message);

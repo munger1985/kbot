@@ -509,7 +509,8 @@
       list.innerHTML = '<p class="ops-empty">当前没有已确认的运维记忆。</p>';
       return;
     }
-    list.innerHTML = `<table class="ops-table"><thead><tr><th>类型</th><th>事实值</th><th>来源</th><th>确认时间</th><th></th></tr></thead><tbody>${items.map((item) => `<tr><td>${shell.escape(factTypeLabels[item.fact_type] || item.fact_type)}</td><td>${shell.escape(factValueText(item))}</td><td>${shell.escape(item.source || "—")}</td><td>${shell.escape(shell.fmt(item.confirmed_at))}</td><td><button type="button" data-retire-target-fact="${shell.escape(item.fact_id)}" data-version="${shell.escape(item.row_version)}">撤回</button></td></tr>`).join("")}</tbody></table>`;
+    const editable = Boolean(document.getElementById("target-facts-form"));
+    list.innerHTML = `<table class="ops-table"><thead><tr><th>类型</th><th>事实值</th><th>来源</th><th>确认时间</th>${editable ? "<th>操作</th>" : ""}</tr></thead><tbody>${items.map((item) => `<tr><td>${shell.escape(factTypeLabels[item.fact_type] || item.fact_type)}</td><td>${shell.escape(factValueText(item))}</td><td>${shell.escape(item.source || "—")}</td><td>${shell.escape(shell.fmt(item.confirmed_at))}</td>${editable ? `<td><button type="button" data-retire-target-fact="${shell.escape(item.fact_id)}" data-version="${shell.escape(item.row_version)}">撤回</button></td>` : ""}</tr>`).join("")}</tbody></table>`;
   }
 
   async function loadTargetFacts(targetId) {
@@ -521,8 +522,16 @@
     const form = document.getElementById("target-facts-form");
     const list = document.getElementById("target-facts-list");
     const result = document.getElementById("target-facts-result");
-    if (!form || !list) return;
-    form.addEventListener("submit", async (event) => {
+    if (!list) return;
+    if (!form) {
+      try { await loadTargetFacts(targetId); }
+      catch (error) { list.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
+      return;
+    }
+    form.dataset.targetId = targetId;
+    if (!result) return;
+    if (form.dataset.initialized !== "true") {
+      form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const factType = form.fact_type.value;
       const raw = String(form.fact_value.value || "").trim();
@@ -534,7 +543,8 @@
       }
       form.querySelector("button[type=submit]").disabled = true;
       try {
-        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/facts`, {
+        const currentTargetId = form.dataset.targetId;
+        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(currentTargetId)}/facts`, {
           method: "POST",
           headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
           body: JSON.stringify({
@@ -546,22 +556,23 @@
         form.fact_value.value = "";
         result.textContent = "已写入运维记忆，不会执行 SQL。";
         result.dataset.tone = "good";
-        await loadTargetFacts(targetId);
+        await loadTargetFacts(currentTargetId);
       } catch (error) {
         result.textContent = error.message;
         result.dataset.tone = "bad";
       } finally {
         form.querySelector("button[type=submit]").disabled = false;
       }
-    });
-    list.addEventListener("click", async (event) => {
+      });
+      list.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-retire-target-fact]");
       if (!button) return;
       if (!confirm("确认撤回这条运维记忆吗？撤回后不再参与容量判断。")) return;
       button.disabled = true;
       try {
+        const currentTargetId = form.dataset.targetId;
         await KBotAIOpsAuth.request(
-          `${appApi}/targets/${encodeURIComponent(targetId)}/facts/${encodeURIComponent(button.dataset.retireTargetFact)}/retire`,
+          `${appApi}/targets/${encodeURIComponent(currentTargetId)}/facts/${encodeURIComponent(button.dataset.retireTargetFact)}/retire`,
           {
             method: "POST",
             headers: {
@@ -572,13 +583,15 @@
         );
         result.textContent = "已撤回该运维记忆。";
         result.dataset.tone = "good";
-        await loadTargetFacts(targetId);
+        await loadTargetFacts(currentTargetId);
       } catch (error) {
         result.textContent = error.message;
         result.dataset.tone = "bad";
         button.disabled = false;
       }
-    });
+      });
+      form.dataset.initialized = "true";
+    }
     try {
       await loadTargetFacts(targetId);
     } catch (error) {
@@ -670,18 +683,30 @@
 
   async function initializeTargetRecovery(targetId, target) {
     const profileForm = document.getElementById("target-recovery-profile-form");
-    if (!profileForm) return;
+    const drillsLink = document.getElementById("target-recovery-drills-link");
+    if (drillsLink) drillsLink.href = `./recovery-drills.html?target_id=${encodeURIComponent(targetId)}`;
+    if (!profileForm) {
+      try { await loadTargetRecovery(targetId, target.db_type, false); }
+      catch (error) { document.getElementById("target-recovery-summary").innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
+      return;
+    }
+    profileForm.dataset.targetId = targetId;
+    profileForm.dataset.dbType = target.db_type;
     configureRecoverySources(profileForm, target.db_type);
-    document.getElementById("target-recovery-drills-link").href = `./recovery-drills.html?target_id=${encodeURIComponent(targetId)}`;
-    profileForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const result = document.getElementById("target-recovery-profile-result");
-      try {
-        await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, required_backup_source_types: [...profileForm.required_backup_source_types.selectedOptions].map((option) => option.value), rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
-        result.textContent = "已保存为新的生效版本。"; result.dataset.tone = "good";
-        await loadTargetRecovery(targetId, target.db_type, true);
-      } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
-    });
+    if (profileForm.dataset.initialized !== "true") {
+      profileForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const result = document.getElementById("target-recovery-profile-result");
+        const currentTargetId = profileForm.dataset.targetId;
+        const currentDbType = profileForm.dataset.dbType;
+        try {
+          await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(currentTargetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, required_backup_source_types: [...profileForm.required_backup_source_types.selectedOptions].map((option) => option.value), rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
+          result.textContent = "已保存为新的生效版本。"; result.dataset.tone = "good";
+          await loadTargetRecovery(currentTargetId, currentDbType, true);
+        } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
+      });
+      profileForm.dataset.initialized = "true";
+    }
     try { await loadTargetRecovery(targetId, target.db_type, true); }
     catch (error) { document.getElementById("target-recovery-summary").innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
@@ -1139,6 +1164,8 @@
     else if (page !== "agents") renderSimple(page);
   });
   globalThis.KBotAIOpsPages = {
+    initializeTargetFacts,
+    initializeTargetRecovery,
     reload() {
       const page = document.body.dataset.page;
       return configs[page] ? renderList(page) : Promise.resolve();

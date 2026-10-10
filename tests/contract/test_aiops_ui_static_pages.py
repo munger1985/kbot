@@ -479,6 +479,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
 
     def test_target_detail_uses_business_overview_instead_of_raw_payload(self):
         page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
+        editor_page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
@@ -497,6 +498,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("target.updated_by", overview)
         self.assertNotIn("schema_version", overview)
         self.assertNotIn("JSON.stringify", overview)
+        self.assertNotIn('id="target-monitor-binding-form"', page)
+        self.assertNotIn('id="target-recovery-profile-form"', page)
+        self.assertNotIn('id="target-facts-form"', page)
+        self.assertIn('id="target-recovery-profile-form"', editor_page)
+        self.assertIn('id="target-facts-form"', editor_page)
 
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
@@ -545,8 +551,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("验证完成时间不能早于模拟故障时间", drill_script)
         self.assertIn('["recovery-drills", "恢复演练"]', shell)
 
-    def test_target_detail_and_chat_own_target_fact_confirmation(self):
+    def test_target_edit_and_chat_own_target_fact_confirmation(self):
         page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
+        editor_page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
@@ -560,6 +567,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         self.assertIn('id="target-facts"', page)
+        self.assertNotIn('id="target-facts-form"', page)
+        self.assertIn('id="target-facts-form"', editor_page)
         self.assertIn("initializeTargetFacts", pages)
         self.assertIn("/facts", pages)
         self.assertIn("FACT_CONFIRMATION", workspace)
