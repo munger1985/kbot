@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>实时监控 · KBot AIOps</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261010_2">
+  <link rel="stylesheet" href="./css/aiops.css?v=20261010_3">
 </head>
 <body data-page="monitoring">
   <main class="ops-main ops-monitoring-main">
@@ -36,18 +36,14 @@
     <section id="monitoring-gate" class="ops-panel ops-monitoring-gate"><div class="ops-empty">正在读取监控源目录…</div></section>
 
     <section id="monitoring-instance-picker" class="ops-panel ops-monitoring-instance-picker" hidden>
-      <div class="ops-panel-head"><div><h2>选择数据库实例</h2><p>只显示当前来源下通过 ACTIVE Binding 映射且有权查看的实例。</p></div><span id="monitoring-selection-count">0 / 12</span></div>
+      <div class="ops-panel-head"><div><h2>数据库实例</h2><p>在同一张表中完成实例选择、查询状态确认和单实例查看。</p></div><span id="monitoring-selection-count">0 / 12</span></div>
       <div class="ops-monitoring-instance-tools"><label>搜索实例<input id="monitoring-instance-search" type="search" placeholder="名称或数据库类型"></label><button id="monitoring-select-filtered" type="button">全选当前结果</button><button id="monitoring-clear-selection" type="button">清空</button></div>
-      <div id="monitoring-instance-list" class="ops-monitoring-instance-list" role="group" aria-label="数据库实例多选"></div>
+      <div class="ops-table-wrap"><table class="ops-table ops-monitoring-instance-table"><thead><tr><th>选择</th><th>数据库实例</th><th>接入状态</th><th>查询状态</th><th>最新采样</th><th>操作</th></tr></thead><tbody id="monitoring-instance-list"></tbody></table></div>
     </section>
 
     <section id="monitoring-loading" class="ops-panel ops-monitoring-loading" hidden><div class="ops-empty">正在查询实时指标…</div></section>
     <div id="monitoring-result" hidden>
       <section id="monitoring-quality-ledger" class="ops-monitoring-ledger" aria-label="数据质量概览"></section>
-      <section class="ops-panel ops-monitoring-status-panel">
-        <div class="ops-panel-head"><div><h2>实例状态矩阵</h2><p>可用性、关键指标和数据时间保持各自语义；点击实例进入单实例下钻。</p></div></div>
-        <div class="ops-table-wrap"><table class="ops-table ops-monitoring-status-table"><thead><tr><th>数据库实例</th><th>可用性</th><th>CPU</th><th>活动连接</th><th>连接使用率</th><th>最后采样</th><th>数据质量</th><th>操作</th></tr></thead><tbody id="monitoring-status-body"></tbody></table></div>
-      </section>
       <section id="monitoring-single-summary" class="ops-monitoring-single-summary" aria-label="单实例当前状态" hidden></section>
       <section id="monitoring-panels" class="ops-monitoring-panels" aria-label="实时监控图表"></section>
       <section class="ops-panel ops-monitoring-quality-panel">
@@ -60,6 +56,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261010_1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261010_5"></script>
+  <script src="./js/aiops-monitoring.js?v=20261010_6"></script>
 </body>
 </html>
