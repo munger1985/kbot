@@ -735,10 +735,10 @@ class AIOpsAgentService:
                 bound_source_ids = {
                     binding.diagnostic_source_id for binding in bindings
                 }
-                if not bound_source_ids.intersection(source_ids):
+                if not set(source_ids).issubset(bound_source_ids):
                     raise AIOpsAgentError(
-                        "AIOPS_AGENT_SOURCE_NOT_BOUND",
-                        f"Target“{target.display_name}”至少需要映射一个所选监控源",
+                        "AIOPS_AGENT_SOURCE_BINDING_REQUIRED",
+                        "启用 Agent 前，每个 Target 必须与全部所选监控源建立有效映射",
                         status_code=422,
                     )
         policies = self._controlled_action_policies(values)

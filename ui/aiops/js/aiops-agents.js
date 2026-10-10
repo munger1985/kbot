@@ -598,7 +598,7 @@
     form.querySelectorAll('[name="target_ids"]').forEach((input) => {
       input.checked = (editing.target_ids || []).includes(input.value);
     });
-    document.getElementById("agent-status-help").textContent = "启用前会检查监控源；已选择 Target 时还会检查至少一条有效映射。运行时连接异常不会阻止 Agent 使用已有监控证据诊断。";
+    document.getElementById("agent-status-help").textContent = "启用前会检查监控源；已选择 Target 时会检查与全部所选监控源的有效映射。运行时连接异常不会阻止 Agent 使用已有监控证据诊断。";
     toggleTargetFields();
     toggleAlertSettings();
     showResult();

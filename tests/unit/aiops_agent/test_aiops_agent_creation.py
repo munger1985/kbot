@@ -69,7 +69,15 @@ class _AgentRepository:
 
 
 class _UnitOfWork:
-    def __init__(self, repository, source_id, target=None):
+    def __init__(
+        self,
+        repository,
+        source_id,
+        target=None,
+        *,
+        source_ids=None,
+        bound_source_ids=None,
+    ):
         self.agents = repository
         self.diagnostic_sources = SimpleNamespace(
             get_scoped=self._get_source
@@ -80,6 +88,8 @@ class _UnitOfWork:
         )
         self.policies = _PolicyRepository()
         self.source_id = source_id
+        self.source_ids = set(source_ids or (source_id,))
+        self.bound_source_ids = tuple(bound_source_ids or (source_id,))
         self.target = target or SimpleNamespace(
             target_id=uuid7(), display_name="逻辑测试库", db_type="ORACLE",
             status="ENABLED", connectivity_status="UNKNOWN",
@@ -93,7 +103,7 @@ class _UnitOfWork:
 
     async def _get_source(self, *, diagnostic_source_id, domain_id):
         del domain_id
-        if diagnostic_source_id != self.source_id:
+        if diagnostic_source_id not in self.source_ids:
             return None
         return SimpleNamespace(
             status="ENABLED", connectivity_status="CONNECTED"
@@ -109,7 +119,10 @@ class _UnitOfWork:
 
     async def _list_source_bindings(self, **kwargs):
         del kwargs
-        return [SimpleNamespace(diagnostic_source_id=self.source_id)]
+        return [
+            SimpleNamespace(diagnostic_source_id=source_id)
+            for source_id in self.bound_source_ids
+        ]
 
     async def __aenter__(self):
         return self
@@ -134,6 +147,38 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_active_agent_requires_complete_target_source_binding_matrix(self):
+        source_id = uuid7()
+        missing_source_id = uuid7()
+        unit_of_work = _UnitOfWork(
+            _AgentRepository(),
+            source_id,
+            source_ids=(source_id, missing_source_id),
+            bound_source_ids=(source_id,),
+        )
+        service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
+
+        with self.assertRaises(AIOpsAgentError) as raised:
+            await service.create(
+                CreateAIOpsAgentCommand(
+                    domain_id=100,
+                    display_name="映射不完整的诊断助手",
+                    diagnostic_source_ids=(source_id, missing_source_id),
+                    target_ids=(unit_of_work.target.target_id,),
+                    models={
+                        "planner_llm": uuid7(),
+                        "diagnosis_llm": uuid7(),
+                    },
+                    status="ACTIVE",
+                    actor_id="kbotui_dev",
+                )
+            )
+
+        self.assertEqual(
+            "AIOPS_AGENT_SOURCE_BINDING_REQUIRED", raised.exception.code
+        )
+        self.assertEqual(0, unit_of_work.commit_count)
+
     async def test_action_catalog_exposes_structured_scope_options(self):
         source_id = uuid7()
         target = SimpleNamespace(

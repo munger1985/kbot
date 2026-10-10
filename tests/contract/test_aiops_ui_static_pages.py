@@ -582,6 +582,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="agent-controlled-actions"', page)
         self.assertIn("controlled_action_execution:", script)
         self.assertIn('/action-catalog/', script)
+        self.assertIn("与全部所选监控源的有效映射", script)
         self.assertIn("默认仅允许只读诊断", page)
         self.assertIn('data-scope-kind="dynamic_parameters"', script)
         self.assertIn("selectedDynamicParameters", script)
