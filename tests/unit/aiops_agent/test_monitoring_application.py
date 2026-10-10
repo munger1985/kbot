@@ -86,9 +86,20 @@ class _SnapshotBuilder:
         self.secret_ref = secret_ref
         self.calls = 0
 
-    async def build(self, *, profile_metric_slots, **_kwargs):
+    async def build(
+        self,
+        *,
+        uow,
+        domain_id,
+        target,
+        now,
+        allowed_source_ids=None,
+        window_start=None,
+        window_end=None,
+        requested_metric_codes=None,
+    ):
         self.calls += 1
-        codes = tuple(item["metric_codes"][0] for item in profile_metric_slots)
+        codes = tuple(requested_metric_codes or ())
         return {
             "initial_gaps": (),
             "bindings": (

@@ -291,17 +291,9 @@ class MonitoringApplicationService:
                         allowed_source_ids=(source_id,),
                         window_start=window.start,
                         window_end=window.end,
-                        profile_metric_slots=tuple(
-                            {
-                                "slot_id": code,
-                                "label": self._metric_catalog.get(code).name,
-                                "metric_codes": (code,),
-                                "required": True,
-                            }
-                            for code in profile.metric_codes
-                        ),
+                        requested_metric_codes=profile.metric_codes,
                     )
-                except (AIOpsApplicationError, KeyError, TypeError, ValueError):
+                except (AIOpsApplicationError, KeyError, ValueError):
                     gaps.append(
                         MonitoringGap(
                             scope="INSTANCE",
