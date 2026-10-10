@@ -130,6 +130,9 @@ class InvestigationReasoner:
                 "recent_context": list(conversation_context[-8:]),
                 "target_context": dict(target_context),
                 "source_run_evidence": source_run_evidence,
+                "planning_constraints": {
+                    "max_actions": MODEL_GENERATED_PLAN_ACTION_LIMIT,
+                },
                 "available_tools": list(available_tools),
                 "available_playbooks": list(available_playbooks),
             },
@@ -137,7 +140,23 @@ class InvestigationReasoner:
             idempotency_key=idempotency_key,
         )
         output = InvestigationPlanningOutput.model_validate(result.output)
-        validate_model_plan_action_limit(output, planning_kind="调查规划")
+        try:
+            validate_model_plan_action_limit(output, planning_kind="调查规划")
+        except InvestigationPlanValidationError as exc:
+            return await self.repair_policy_invalid_plan(
+                content=content,
+                conversation_context=conversation_context,
+                target_context=target_context,
+                prompt_snapshot=prompt_snapshot,
+                source_run_evidence=source_run_evidence,
+                invalid_output=output,
+                validation_error=str(exc),
+                available_tools=available_tools,
+                available_playbooks=available_playbooks,
+                model_snapshot=model_snapshot,
+                deadline=deadline,
+                idempotency_key=f"{idempotency_key}:action-limit-repair",
+            )
         known_tools = {str(item["tool_id"]) for item in available_tools}
         unknown = tuple(
             action.tool_id
@@ -183,6 +202,9 @@ class InvestigationReasoner:
                 "source_run_evidence": source_run_evidence,
                 "validation_error": validation_error,
                 "rejected_output": invalid_output.model_dump(mode="json"),
+                "planning_constraints": {
+                    "max_actions": MODEL_GENERATED_PLAN_ACTION_LIMIT,
+                },
                 "available_tools": list(available_tools),
                 "available_playbooks": list(available_playbooks),
             },
@@ -254,6 +276,9 @@ class InvestigationReasoner:
                 "assessment": assessment,
                 "available_tools": list(available_tools),
                 "available_playbooks": list(available_playbooks),
+                "planning_constraints": {
+                    "max_actions": MODEL_GENERATED_PLAN_ACTION_LIMIT,
+                },
                 "required_revision_no": revision_no,
             },
             deadline=deadline,

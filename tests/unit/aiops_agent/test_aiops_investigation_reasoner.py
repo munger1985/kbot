@@ -107,13 +107,14 @@ def _output(*, tool_id: str | None = None) -> dict:
 
 
 class _Model:
-    def __init__(self, payload: dict) -> None:
-        self.payload = payload
+    def __init__(self, payload: dict, *additional_payloads: dict) -> None:
+        self.payloads = (payload, *additional_payloads)
         self.calls = []
 
     async def generate_structured(self, **kwargs):
+        payload = self.payloads[min(len(self.calls), len(self.payloads) - 1)]
         self.calls.append(kwargs)
-        output = kwargs["output_model"].model_validate(self.payload)
+        output = kwargs["output_model"].model_validate(payload)
         return StructuredModelResult(
             output=output,
             receipt=ModelInvocationReceipt(
@@ -360,7 +361,56 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="turn-2",
             )
 
-    async def test_plan_rejects_more_than_twelve_model_actions(self) -> None:
+    async def test_plan_repairs_more_than_twelve_model_actions(self) -> None:
+        payload = _output()
+        payload["plan"]["actions"] = [
+            {
+                "action_id": f"a{index}",
+                "question": f"执行第 {index} 项模型调查动作",
+                "tool_id": "db.instance.identity",
+                "input": {},
+                "expected_evidence_kind": "DATABASE_STATUS",
+                "measurement_semantics": "CURRENT_ACTIVITY",
+            }
+            for index in range(1, 22)
+        ]
+        repaired_payload = _output(tool_id="db.instance.identity")
+        model = _Model(payload, repaired_payload)
+        reasoner = InvestigationReasoner(model, _Prompts())
+
+        result = await reasoner.plan(
+            content=({"content_type": "TEXT", "text": "检查数据库"},),
+            conversation_context=(),
+            target_context=TARGET_CONTEXT,
+            prompt_snapshot=PROMPT_SNAPSHOT,
+            available_tools=(
+                {"tool_id": "db.instance.identity", "version": "1.0.0"},
+            ),
+            available_playbooks=(),
+            model_snapshot={},
+            deadline=None,
+            idempotency_key="turn-model-action-limit",
+        )
+
+        self.assertEqual(1, len(result.output.plan.actions))
+        self.assertEqual(2, len(model.calls))
+        self.assertEqual(
+            {"max_actions": 12},
+            model.calls[0]["input_payload"]["planning_constraints"],
+        )
+        repair = model.calls[1]
+        self.assertEqual("aiops.investigation-policy-repair", repair["purpose"])
+        self.assertIn("实际为 21 个", repair["input_payload"]["validation_error"])
+        self.assertEqual(
+            {"max_actions": 12},
+            repair["input_payload"]["planning_constraints"],
+        )
+        self.assertEqual(
+            "turn-model-action-limit:action-limit-repair",
+            repair["idempotency_key"],
+        )
+
+    async def test_plan_rejects_repair_that_remains_over_limit(self) -> None:
         payload = _output()
         payload["plan"]["actions"] = [
             {
@@ -373,11 +423,12 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
             }
             for index in range(1, 14)
         ]
-        reasoner = InvestigationReasoner(_Model(payload), _Prompts())
+        model = _Model(payload)
+        reasoner = InvestigationReasoner(model, _Prompts())
 
         with self.assertRaisesRegex(
             InvestigationPlanValidationError,
-            "最多允许生成 12 个调查动作，实际为 13 个",
+            "策略修正规划最多允许生成 12 个调查动作，实际为 13 个",
         ):
             await reasoner.plan(
                 content=({"content_type": "TEXT", "text": "检查数据库"},),
@@ -390,8 +441,10 @@ class InvestigationReasonerTest(unittest.IsolatedAsyncioTestCase):
                 available_playbooks=(),
                 model_snapshot={},
                 deadline=None,
-                idempotency_key="turn-model-action-limit",
+                idempotency_key="turn-model-action-limit-invalid-repair",
             )
+
+        self.assertEqual(2, len(model.calls))
 
     async def test_replan_rejects_identical_tool_call_without_progress(self) -> None:
         payload = _output(tool_id="db.instance.identity")
