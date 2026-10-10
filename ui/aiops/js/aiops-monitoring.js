@@ -218,6 +218,30 @@
     if (!canQuery()) return;
     void loadView();
   }
+  function updateLocation() {
+    const next = new URLSearchParams(location.search);
+    next.set("source_id", state.sourceId);
+    next.set("target_id", state.selected[0] || "");
+    next.set("profile_id", state.profileId);
+    next.set("window", state.window);
+    history.replaceState(null, "", `${location.pathname}?${next}`);
+  }
+  async function loadSelectedTargetProfiles({ signal, preferredProfileId = "" }) {
+    const targetId = state.selected[0];
+    if (!targetId) {
+      state.profiles = [];
+      state.profileId = "";
+      return;
+    }
+    const profiles = await KBotAIOpsAuth.request(
+      `/api/v1/apps/aiops/targets/${encodeURIComponent(targetId)}/monitoring/profiles`,
+      { signal },
+    );
+    if (signal.aborted) return;
+    state.profiles = profiles;
+    state.profileId = state.profiles.find((item) => item.profile_id === preferredProfileId)?.profile_id
+      || state.profiles[0]?.profile_id || "";
+  }
   async function loadView() {
     if (!canQuery()) return;
     cancelViewRequest();
@@ -256,28 +280,53 @@
     }
     setLoading(true, "正在读取监控实例与指标视图…");
     try {
-      const [instances, profiles] = await Promise.all([
-        KBotAIOpsAuth.request(`${api}/sources/${encodeURIComponent(state.sourceId)}/instances`, { signal: contextController.signal }),
-        KBotAIOpsAuth.request(`${api}/sources/${encodeURIComponent(state.sourceId)}/profiles`, { signal: contextController.signal }),
-      ]);
+      const instances = await KBotAIOpsAuth.request(
+        `${api}/sources/${encodeURIComponent(state.sourceId)}/instances`,
+        { signal: contextController.signal },
+      );
       if (contextController.signal.aborted) return;
       state.instances = [...instances].sort((left, right) => left.display_name.localeCompare(right.display_name, "zh-CN"));
-      state.profiles = profiles;
       const currentQuery = new URLSearchParams(location.search);
       const targetId = currentQuery.get("target_id") || currentQuery.get("targetId") || "";
       state.selected = [(state.instances.find((item) => item.instance_id === targetId) || state.instances[0])?.instance_id].filter(Boolean);
       const profileId = currentQuery.get("profile_id") || currentQuery.get("profileId") || "";
-      state.profileId = state.profiles.find((item) => item.profile_id === profileId)?.profile_id || state.profiles[0]?.profile_id || "";
-      const next = new URLSearchParams(location.search);
-      next.set("source_id", state.sourceId);
-      next.set("target_id", state.selected[0] || "");
-      next.set("profile_id", state.profileId);
-      next.set("window", state.window);
-      history.replaceState(null, "", `${location.pathname}?${next}`);
+      await loadSelectedTargetProfiles({ signal: contextController.signal, preferredProfileId: profileId });
+      if (contextController.signal.aborted) return;
+      updateLocation();
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
       shell.toast(error.message || "无法读取监控实例与指标视图");
+    } finally {
+      if (state.contextController === contextController) {
+        state.contextController = null;
+        setLoading(false);
+      }
+    }
+  }
+  async function selectInstance(instanceId) {
+    state.contextController?.abort();
+    const contextController = new AbortController();
+    state.contextController = contextController;
+    cancelViewRequest();
+    state.selected = [instanceId];
+    state.view = null;
+    state.profiles = [];
+    state.profileId = "";
+    document.getElementById("monitoring-result").hidden = true;
+    disposeCharts();
+    renderContext(); renderInstances();
+    setLoading(true, "正在读取所选实例的监控指标…");
+    try {
+      const currentQuery = new URLSearchParams(location.search);
+      const preferredProfileId = currentQuery.get("profile_id") || currentQuery.get("profileId") || "";
+      await loadSelectedTargetProfiles({ signal: contextController.signal, preferredProfileId });
+      if (contextController.signal.aborted) return;
+      updateLocation();
+      renderContext(); renderInstances(); scheduleView();
+    } catch (error) {
+      if (contextController.signal.aborted) return;
+      shell.toast(error.message || "无法读取所选实例的 Monitoring Profile");
     } finally {
       if (state.contextController === contextController) {
         state.contextController = null;
@@ -447,11 +496,7 @@
     renderSingleSummary(); renderPanels(); renderQuality(); renderInstances(); renderFreshness();
   }
   function drillInto(instanceId) {
-    state.selected = [instanceId];
-    const next = new URLSearchParams(location.search);
-    next.set("source_id", state.sourceId); next.set("target_id", instanceId); next.set("profile_id", state.profileId); next.set("window", state.window);
-    history.replaceState(null, "", `${location.pathname}?${next}`);
-    renderContext(); renderInstances(); scheduleView();
+    void selectInstance(instanceId);
   }
   function scheduleRefresh() {
     clearInterval(state.refreshTimer);
@@ -488,9 +533,7 @@
   document.getElementById("monitoring-instance-list").onchange = (event) => {
     const input = event.target.closest("[data-instance-id]");
     if (!input?.checked) return;
-    state.selected = [input.dataset.instanceId];
-    renderContext();
-    renderInstances(); scheduleView();
+    void selectInstance(input.dataset.instanceId);
   };
   document.getElementById("monitoring-instance-list").onclick = (event) => { const button = event.target.closest("[data-drill-instance]"); if (button && !button.disabled) drillInto(button.dataset.drillInstance); };
   document.getElementById("monitoring-panels").onclick = (event) => { const button = event.target.closest("[data-panel-table]"); if (!button) return; const table = document.querySelector(`[data-panel-data="${button.dataset.panelTable}"]`); table.hidden = !table.hidden; button.textContent = table.hidden ? "查看数据" : "收起数据"; };
