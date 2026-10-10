@@ -379,6 +379,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         target_id: UUID,
         *,
         source_id: UUID,
+        compare_source_id: UUID | None = None,
         profile_id: str,
         window: str,
         window_start: str | None,
@@ -390,6 +391,8 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             "profile_id": profile_id,
             "window": window,
         }
+        if compare_source_id is not None:
+            query["compare_source_id"] = str(compare_source_id)
         if window_start is not None:
             query["window_start"] = window_start
         if window_end is not None:

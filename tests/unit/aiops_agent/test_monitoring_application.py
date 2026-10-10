@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -12,13 +13,19 @@ import pytest
 from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.application.errors import AIOpsApplicationError, dependency_unavailable
 from aiops_agent.application.monitoring_views import MonitoringApplicationService
-from aiops_agent.monitoring import load_monitoring_profile_catalog
+from aiops_agent.monitoring import (
+    load_monitoring_profile_catalog,
+    project_source_readiness,
+)
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
     MetricsEvidenceResult,
 )
-from platform_core.contracts.aiops.monitoring import MonitoringViewRequest
+from platform_core.contracts.aiops.monitoring import (
+    MonitoringGap,
+    MonitoringViewRequest,
+)
 
 
 class _DiagnosticSources:
@@ -276,3 +283,79 @@ def test_credential_failure_becomes_sanitized_gap():
         "never-returned",
     ):
         assert forbidden not in encoded.lower()
+
+
+def test_target_view_can_compare_prometheus_and_zabbix_independently():
+    service, scope, source, target, *_rest, request = _fixture()
+    now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+    primary = asyncio.run(
+        service.get_view(
+            scope=scope,
+            source_id=source.diagnostic_source_id,
+            request=request,
+            now=now,
+        )
+    )
+    compare_source_id = uuid4()
+    compare_source = project_source_readiness(
+        source_id=compare_source_id,
+        display_name="生产 Zabbix",
+        source_type="ZABBIX",
+        status="ENABLED",
+        connectivity_status="CONNECTED",
+        capabilities={CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_EVENT_QUERY},
+        active_binding_count=1,
+        metrics_aligned=True,
+        alert_ingress_ready=True,
+    )
+    comparison = primary.model_copy(
+        update={
+            "source": compare_source,
+            "gaps": (
+                MonitoringGap(
+                    scope="SOURCE",
+                    source_id=compare_source_id,
+                    code="SOURCE_UNREACHABLE",
+                    detail="监控源查询失败",
+                    retryable=True,
+                ),
+            ),
+            "partial": True,
+        }
+    )
+    service.get_view = AsyncMock(side_effect=(primary, comparison))
+
+    result = asyncio.run(
+        service.get_target_view(
+            scope=scope,
+            target_id=target.target_id,
+            source_id=source.diagnostic_source_id,
+            compare_source_id=compare_source_id,
+            profile_id="oracle-overview",
+            window="1h",
+        )
+    )
+
+    assert service.get_view.await_count == 2
+    assert result.source.source_type == "PROMETHEUS"
+    assert result.compare_source == compare_source
+    assert result.partial is True
+    assert result.gaps[0].source_id == compare_source_id
+
+
+def test_target_view_rejects_comparing_source_with_itself_before_query():
+    service, scope, source, target, *_rest = _fixture()
+    service.get_view = AsyncMock()
+    with pytest.raises(AIOpsApplicationError) as caught:
+        asyncio.run(
+            service.get_target_view(
+                scope=scope,
+                target_id=target.target_id,
+                source_id=source.diagnostic_source_id,
+                compare_source_id=source.diagnostic_source_id,
+                profile_id="oracle-overview",
+                window="1h",
+            )
+        )
+    assert caught.value.code == "MONITORING_COMPARE_SOURCE_INVALID"
+    service.get_view.assert_not_awaited()

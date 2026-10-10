@@ -7,6 +7,7 @@
       "display_name": "Oracle 实时总览",
       "description": "Oracle 可用性、连接、吞吐、延迟、存储和错误趋势。",
       "supported_db_types": ["ORACLE"],
+      "grafana_dashboard_uid": "kbot-oracle-overview",
       "metric_codes": ["db.availability", "db.cpu.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization", "db.error.rate"]
     },
     {
@@ -15,6 +16,7 @@
       "display_name": "MySQL 实时总览",
       "description": "MySQL 可用性、连接、吞吐、延迟、存储和错误趋势。",
       "supported_db_types": ["MYSQL"],
+      "grafana_dashboard_uid": "kbot-mysql-overview",
       "metric_codes": ["db.availability", "db.cpu.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization", "db.error.rate"]
     },
     {
@@ -23,6 +25,7 @@
       "display_name": "MySQL 引擎状态",
       "description": "MySQL 专属连接、事务、慢查询、锁等待和 Buffer Pool 指标。",
       "supported_db_types": ["MYSQL"],
+      "grafana_dashboard_uid": "kbot-mysql-overview",
       "metric_codes": ["mysql.availability", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent"]
     },
     {
@@ -31,6 +34,7 @@
       "display_name": "PostgreSQL 实时总览",
       "description": "PostgreSQL 可用性、连接、事务、复制和容量指标。",
       "supported_db_types": ["POSTGRESQL"],
+      "grafana_dashboard_uid": "kbot-postgresql-overview",
       "metric_codes": ["postgresql.availability", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.replication.lag_bytes", "postgresql.replication.slot_retained_bytes", "postgresql.database.size_bytes"]
     },
     {
@@ -47,6 +51,7 @@
       "display_name": "主机资源",
       "description": "数据库所在主机的 CPU、内存、文件系统、磁盘和网络趋势。",
       "supported_db_types": ["ORACLE", "MYSQL"],
+      "grafana_dashboard_uid": "kbot-host-overview",
       "metric_codes": ["host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
     }
   ]

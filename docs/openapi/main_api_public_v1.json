@@ -8571,6 +8571,71 @@
         "title": "ModelCatalogItem",
         "type": "object"
       },
+      "MonitoringDashboardIntegration": {
+        "additionalProperties": false,
+        "properties": {
+          "dashboard_uid": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kbot-database-fleet",
+                  "kbot-oracle-overview",
+                  "kbot-oracle-storage",
+                  "kbot-oracle-alerts",
+                  "kbot-oracle-alert-log",
+                  "kbot-mysql-overview",
+                  "kbot-postgresql-overview",
+                  "kbot-host-overview"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboard Uid"
+          },
+          "integration_mode": {
+            "enum": [
+              "LINK",
+              "DISABLED"
+            ],
+            "title": "Integration Mode",
+            "type": "string"
+          },
+          "launch_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Url"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          }
+        },
+        "required": [
+          "integration_mode"
+        ],
+        "title": "MonitoringDashboardIntegration",
+        "type": "object"
+      },
       "MonitoringGap": {
         "additionalProperties": false,
         "properties": {
@@ -8622,6 +8687,18 @@
             ],
             "title": "Scope",
             "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           }
         },
         "required": [
@@ -8863,6 +8940,27 @@
             "title": "Display Name",
             "type": "string"
           },
+          "grafana_dashboard_uid": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kbot-database-fleet",
+                  "kbot-oracle-overview",
+                  "kbot-oracle-storage",
+                  "kbot-oracle-alerts",
+                  "kbot-oracle-alert-log",
+                  "kbot-mysql-overview",
+                  "kbot-postgresql-overview",
+                  "kbot-host-overview"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grafana Dashboard Uid"
+          },
           "metric_codes": {
             "items": {
               "type": "string"
@@ -8947,9 +9045,31 @@
             "pattern": "^[a-f0-9]{64}$",
             "title": "Series Key",
             "type": "string"
+          },
+          "source_display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source Display Name",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "PROMETHEUS",
+              "ZABBIX"
+            ],
+            "title": "Source Type",
+            "type": "string"
           }
         },
         "required": [
+          "source_id",
+          "source_display_name",
+          "source_type",
           "instance_id",
           "instance_display_name",
           "series_key",
@@ -9022,6 +9142,26 @@
       "MonitoringView": {
         "additionalProperties": false,
         "properties": {
+          "compare_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringSourceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dashboard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringDashboardIntegration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "gaps": {
             "default": [],
             "items": {
@@ -23744,6 +23884,23 @@
             "schema": {
               "title": "Profile Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "compare_source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Compare Source Id"
             }
           },
           {

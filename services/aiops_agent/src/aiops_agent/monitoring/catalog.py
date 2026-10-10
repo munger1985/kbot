@@ -10,7 +10,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aiops_agent.contracts.evidence import MetricDefinition
-from platform_core.contracts.aiops.monitoring import MonitoringProfileSummary
+from platform_core.contracts.aiops.monitoring import (
+    GrafanaDashboardUid,
+    MonitoringProfileSummary,
+)
 from aiops_agent.monitoring.query_policy import (
     PromQueryPolicy,
     PromQueryPolicySnapshot,
@@ -28,6 +31,7 @@ class MonitoringProfileDefinition(BaseModel):
         Literal["ORACLE", "MYSQL", "POSTGRESQL"], ...
     ]
     metric_codes: tuple[str, ...] = Field(min_length=1, max_length=8)
+    grafana_dashboard_uid: GrafanaDashboardUid | None = None
 
     @model_validator(mode="after")
     def validate_uniqueness(self):

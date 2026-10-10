@@ -11,6 +11,7 @@ from platform_core.contracts.aiops.monitoring import (
     MonitoringInstanceSummary,
 )
 from aiops_agent.monitoring import (
+    GrafanaLinkSecurity,
     MonitoringProfileDefinition,
     MonitoringQueryError,
     MonitoringViewBuilder,
@@ -18,6 +19,7 @@ from aiops_agent.monitoring import (
     load_monitoring_profile_catalog,
     project_source_readiness,
     resolve_metric_definitions,
+    resolve_grafana_integration,
     resolve_monitoring_window,
 )
 from aiops_agent.ports.diagnostic_source import (
@@ -86,6 +88,45 @@ class MonitoringProfileContractTest(unittest.TestCase):
                 self.assertTrue(provider.exact_item_key)
                 self.assertTrue(provider.value_type)
                 self.assertEqual(definition.unit, provider.unit)
+        self.assertEqual(
+            "kbot-oracle-overview",
+            self.profiles.get("oracle-overview").grafana_dashboard_uid,
+        )
+
+    def test_grafana_requires_fixed_uid_and_complete_link_security_gate(self):
+        disabled = resolve_grafana_integration(
+            source_type="PROMETHEUS",
+            profile_dashboard_uid="kbot-oracle-overview",
+            instance_count=1,
+        )
+        self.assertEqual("DISABLED", disabled.integration_mode)
+        self.assertEqual(
+            "GRAFANA_SECURE_GATEWAY_UNAVAILABLE", disabled.reason_code
+        )
+        security = GrafanaLinkSecurity(
+            non_admin_identity=True,
+            target_locked=True,
+            domain_isolated=True,
+            audit_enabled=True,
+            https_upstream=True,
+        )
+        unsafe = resolve_grafana_integration(
+            source_type="PROMETHEUS",
+            profile_dashboard_uid="kbot-oracle-overview",
+            instance_count=1,
+            launch_url="https://grafana.invalid/d/kbot-oracle-overview?var-target_key=secret",
+            security=security,
+        )
+        self.assertEqual("DISABLED", unsafe.integration_mode)
+        linked = resolve_grafana_integration(
+            source_type="PROMETHEUS",
+            profile_dashboard_uid="kbot-oracle-overview",
+            instance_count=2,
+            launch_url="/api/v1/apps/aiops/grafana/launch/session-1",
+            security=security,
+        )
+        self.assertEqual("LINK", linked.integration_mode)
+        self.assertEqual("kbot-database-fleet", linked.dashboard_uid)
 
     def test_oem_is_not_a_first_phase_monitoring_source(self):
         with self.assertRaises(MonitoringQueryError) as raised:
@@ -148,8 +189,14 @@ class MonitoringProfileContractTest(unittest.TestCase):
         changed = build_monitoring_cache_key(
             domain_id="domain-a", **{**common, "binding_versions": (4,)}
         )
+        compared = build_monitoring_cache_key(
+            domain_id="domain-a",
+            compare_source_id=uuid7(),
+            **common,
+        )
         self.assertNotEqual(first, second)
         self.assertNotEqual(first, changed)
+        self.assertNotEqual(first, compared)
 
     def test_view_keeps_no_data_as_gap_instead_of_zero(self):
         now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
@@ -250,6 +297,14 @@ class MonitoringProfileContractTest(unittest.TestCase):
         )
         self.assertEqual("NO_DATA", missing.quality)
         self.assertEqual((), missing.series)
+        available = next(
+            item
+            for item in view.panels
+            if item.metric_code == "mysql.availability"
+        )
+        self.assertEqual(source_id, available.series[0].source_id)
+        self.assertEqual("Prometheus", available.series[0].source_display_name)
+        self.assertEqual("PROMETHEUS", available.series[0].source_type)
         dumped = view.model_dump_json()
         self.assertNotIn("source_locator", dumped)
         self.assertNotIn("query_template", dumped)

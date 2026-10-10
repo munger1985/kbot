@@ -29,6 +29,7 @@ from aiops_agent.monitoring import (
     MonitoringViewBuilder,
     build_monitoring_cache_key,
     project_source_readiness,
+    resolve_grafana_integration,
     resolve_metric_definitions,
     resolve_monitoring_window,
 )
@@ -164,6 +165,7 @@ class MonitoringApplicationService:
         window: str,
         window_start: datetime | None = None,
         window_end: datetime | None = None,
+        compare_source_id: UUID | None = None,
     ) -> MonitoringView:
         generated_at = datetime.now(UTC)
         explicit_window = self._explicit_window(
@@ -183,13 +185,29 @@ class MonitoringApplicationService:
                 message="实时监控请求参数无效",
                 status_code=422,
             ) from exc
-        return await self.get_view(
+        if compare_source_id == source_id:
+            raise AIOpsApplicationError(
+                code="MONITORING_COMPARE_SOURCE_INVALID",
+                message="对比来源必须与主来源不同",
+                status_code=422,
+            )
+        primary = await self.get_view(
             scope=scope,
             source_id=source_id,
             request=request,
             now=generated_at,
             window_override=explicit_window,
         )
+        if compare_source_id is None:
+            return primary
+        comparison = await self.get_view(
+            scope=scope,
+            source_id=compare_source_id,
+            request=request,
+            now=generated_at,
+            window_override=explicit_window,
+        )
+        return self._merge_comparison(primary, comparison)
 
     async def get_view(
         self,
@@ -287,6 +305,7 @@ class MonitoringApplicationService:
                     gaps.append(
                         MonitoringGap(
                             scope="INSTANCE",
+                            source_id=source_id,
                             instance_id=target.target_id,
                             code="SOURCE_CONFIGURATION_INVALID",
                             detail="监控源或实例映射配置无效",
@@ -294,7 +313,7 @@ class MonitoringApplicationService:
                     )
                     continue
                 gaps.extend(
-                    self._snapshot_gap(target.target_id, item)
+                    self._snapshot_gap(target.target_id, source_id, item)
                     for item in snapshot["initial_gaps"]
                 )
                 if not snapshot["bindings"]:
@@ -313,6 +332,7 @@ class MonitoringApplicationService:
                 gaps.extend(
                     MonitoringGap(
                         scope="METRIC" if item.metric_code else "INSTANCE",
+                        source_id=source_id,
                         instance_id=target.target_id,
                         metric_code=item.metric_code,
                         code=item.code,
@@ -331,6 +351,15 @@ class MonitoringApplicationService:
                 gaps=tuple(gaps),
                 generated_at=generated_at,
             )
+            view = view.model_copy(
+                update={
+                    "dashboard": resolve_grafana_integration(
+                        source_type=source_summary.source_type,
+                        profile_dashboard_uid=profile.grafana_dashboard_uid,
+                        instance_count=len(instances),
+                    )
+                }
+            )
         except MonitoringQueryError as exc:
             raise AIOpsApplicationError(
                 code=exc.code,
@@ -347,6 +376,54 @@ class MonitoringApplicationService:
             )
         self._cache[cache_key] = (generated_at + timedelta(seconds=15), view)
         return view
+
+    @staticmethod
+    def _merge_comparison(
+        primary: MonitoringView,
+        comparison: MonitoringView,
+    ) -> MonitoringView:
+        if comparison.source.source_type == primary.source.source_type:
+            raise AIOpsApplicationError(
+                code="MONITORING_COMPARE_SOURCE_TYPE_DUPLICATE",
+                message="单实例来源对比仅支持 Prometheus 与 Zabbix 互比",
+                status_code=422,
+            )
+        comparison_panels = {
+            panel.metric_code: panel for panel in comparison.panels
+        }
+        panels = []
+        for panel in primary.panels:
+            other = comparison_panels.get(panel.metric_code)
+            if other is None:
+                panels.append(panel)
+                continue
+            combined_series = panel.series + other.series
+            if not combined_series:
+                quality = "NO_DATA"
+            elif panel.quality == "GOOD" and other.quality == "GOOD":
+                quality = "GOOD"
+            else:
+                quality = "PARTIAL"
+            panels.append(
+                panel.model_copy(
+                    update={
+                        "series": combined_series,
+                        "summary": {
+                            "source_count": 2,
+                            "series_count": len(combined_series),
+                        },
+                        "quality": quality,
+                    }
+                )
+            )
+        return primary.model_copy(
+            update={
+                "compare_source": comparison.source,
+                "panels": tuple(panels),
+                "gaps": primary.gaps + comparison.gaps,
+                "partial": primary.partial or comparison.partial,
+            }
+        )
 
     async def _query_binding(
         self, *, target_id, frozen, window, trace_id, max_response_bytes
@@ -515,9 +592,10 @@ class MonitoringApplicationService:
         )
 
     @staticmethod
-    def _snapshot_gap(instance_id, item):
+    def _snapshot_gap(instance_id, source_id, item):
         return MonitoringGap(
             scope="METRIC" if item.get("metric_code") else "INSTANCE",
+            source_id=source_id,
             instance_id=instance_id,
             metric_code=item.get("metric_code"),
             code=str(item.get("code") or "SOURCE_QUERY_UNSUPPORTED"),

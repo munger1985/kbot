@@ -29,6 +29,7 @@
       <label>监控源<select id="monitoring-source"></select></label>
       <label>时间范围<select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
       <label>指标视图<select id="monitoring-profile"></select></label>
+      <label id="monitoring-compare-field" hidden>对比来源<select id="monitoring-compare-source"><option value="">不对比</option></select></label>
       <div id="monitoring-readiness" class="ops-monitoring-readiness"></div>
     </section>
 
@@ -59,6 +60,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261010_1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261010_1"></script>
+  <script src="./js/aiops-monitoring.js?v=20261010_2"></script>
 </body>
 </html>

@@ -177,6 +177,7 @@ class MonitoringViewBuilder:
         )
         panels = tuple(
             self._panel(
+                source=source,
                 metric_code=metric_code,
                 instances=instance_by_id,
                 observations=selected_observations,
@@ -223,7 +224,7 @@ class MonitoringViewBuilder:
                 "Profile 与选定实例的数据库类型不兼容",
             )
 
-    def _panel(self, *, metric_code, instances, observations, gaps):
+    def _panel(self, *, source, metric_code, instances, observations, gaps):
         definition = self._metric_catalog.get(metric_code)
         metric_observations = tuple(
             item for item in observations if item.metric_code == metric_code
@@ -239,6 +240,7 @@ class MonitoringViewBuilder:
                 identity = json.dumps(
                     {
                         "instance_id": str(observation.target_id),
+                        "source_id": str(source.source_id),
                         "metric_code": metric_code,
                         "dimensions": item.dimensions,
                     },
@@ -248,6 +250,9 @@ class MonitoringViewBuilder:
                 )
                 series.append(
                     MonitoringSeries(
+                        source_id=source.source_id,
+                        source_display_name=source.display_name,
+                        source_type=source.source_type,
                         instance_id=instance.instance_id,
                         instance_display_name=instance.display_name,
                         series_key=hashlib.sha256(identity.encode()).hexdigest(),

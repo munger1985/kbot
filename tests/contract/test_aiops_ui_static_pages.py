@@ -107,6 +107,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("PromQL", script)
         self.assertNotIn("prometheus_queries", script)
         self.assertIn("instance_ids: state.selected", script)
+        self.assertIn("compare_source_id: state.compareSourceId", script)
+        self.assertIn("/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}", script)
+        self.assertIn("source_display_name", script)
+        self.assertIn('id="monitoring-compare-source"', page)
+        self.assertIn("aiops-monitoring.js?v=20261010_2", page)
         self.assertIn("state.selected.length >= 12", script)
         self.assertIn("setTimeout(loadView, 250)", script)
         self.assertIn("state.controller?.abort()", script)
@@ -122,6 +127,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         ):
             self.assertIn(text, script)
         self.assertNotIn("<iframe", page.lower())
+        self.assertNotIn("iframe", script.lower())
+        self.assertNotIn("locator", page.lower())
+        self.assertNotIn("locator", script.lower())
 
     def test_chat_code_copy_supports_insecure_http_context(self):
         renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(

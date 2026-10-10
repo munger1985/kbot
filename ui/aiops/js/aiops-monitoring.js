@@ -5,7 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   const state = {
     sources: [], instances: [], profiles: [], view: null,
-    sourceId: "", profileId: "", window: "1h", selected: [], search: "",
+    sourceId: "", compareSourceId: "", profileId: "", window: "1h", selected: [], search: "",
     debounceTimer: null, refreshTimer: null, controller: null, contextController: null, charts: new Map(),
   };
   const readinessLabels = {
@@ -24,6 +24,9 @@
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
   const profileById = () => state.profiles.find((item) => item.profile_id === state.profileId) || null;
+  const compareSources = () => state.sources.filter((item) => item.source_id !== state.sourceId
+    && item.source_type !== sourceById()?.source_type && item.monitoring_readiness === "READY");
+  const seriesLabel = (series) => `${series.instance_display_name} · ${series.source_display_name}`;
 
   function label(value) { return readinessLabels[value] || value || "不可用"; }
   function tone(value) {
@@ -147,6 +150,9 @@
     document.getElementById("monitoring-profile").disabled = !state.profiles.length;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
+    const compareField = document.getElementById("monitoring-compare-field");
+    compareField.hidden = state.selected.length !== 1;
+    document.getElementById("monitoring-compare-source").innerHTML = '<option value="">不对比</option>' + compareSources().map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.compareSourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(source.source_type)}</option>`).join("");
     document.getElementById("monitoring-readiness").innerHTML = `${badge(sourceById()?.monitoring_readiness, `监控 ${label(sourceById()?.monitoring_readiness)}`)}${badge(sourceById()?.diagnostic_readiness, `诊断 ${label(sourceById()?.diagnostic_readiness)}`)}`;
   }
   function filteredInstances() {
@@ -177,9 +183,14 @@
     state.controller = controller;
     setLoading(true);
     try {
-      state.view = await KBotAIOpsAuth.request(`${api}/sources/${encodeURIComponent(state.sourceId)}/views`, {
-        method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: requestBody(),
-      });
+      if (state.selected.length === 1 && state.compareSourceId) {
+        const params = new URLSearchParams({ source_id: state.sourceId, compare_source_id: state.compareSourceId, profile_id: state.profileId, window: state.window });
+        state.view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
+      } else {
+        state.view = await KBotAIOpsAuth.request(`${api}/sources/${encodeURIComponent(state.sourceId)}/views`, {
+          method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: requestBody(),
+        });
+      }
       if (controller.signal.aborted) return;
       renderResult();
     } catch (error) {
@@ -198,7 +209,7 @@
     const contextController = new AbortController();
     state.contextController = contextController;
     cancelViewRequest();
-    state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.profileId = "";
+    state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.compareSourceId = ""; state.profileId = "";
     disposeCharts();
     document.getElementById("monitoring-result").hidden = true;
     renderContext(); renderInstances();
@@ -273,16 +284,16 @@
   function chartOption(panel) {
     const colors = ["#465f9e", "#247455", "#9a6518", "#ad3c45", "#526f8a", "#7a5f8f"];
     const series = panel.series.filter((item) => item.points.some((point) => numericValue(point.value) !== null));
-    const selected = Object.fromEntries(series.map((item, index) => [item.instance_display_name, index < 6]));
+    const selected = Object.fromEntries(series.map((item, index) => [seriesLabel(item), index < 6]));
     const common = { animationDuration: 220, color: colors, legend: { top: 0, type: "scroll", selected }, grid: { left: 64, right: 26, top: 52, bottom: 46 } };
     const tooltip = { trigger: "axis", formatter: (entries) => {
       const values = Array.isArray(entries) ? entries : [entries];
       const at = values[0]?.axisValue || values[0]?.name || "";
-      return [esc(shell.fmt(at)), ...values.map((entry) => `${entry.marker || ""}${esc(entry.seriesName)}：${esc(formatValue(Array.isArray(entry.value) ? entry.value[1] : entry.value, panel.unit))}`), `来源：${esc(state.view.source.display_name)}`].join("<br>");
+      return [esc(shell.fmt(at)), ...values.map((entry) => `${entry.marker || ""}${esc(entry.seriesName)}：${esc(formatValue(Array.isArray(entry.value) ? entry.value[1] : entry.value, panel.unit))}`)].join("<br>");
     } };
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
-      xAxis: { type: "category", data: series.map((item) => item.instance_display_name), axisLabel: { interval: 0, hideOverlap: true } },
+      xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
       yAxis: { type: "value", name: panel.unit === "1" ? "" : panel.unit, scale: true },
       series: [{ type: "bar", name: panel.title, barMaxWidth: 28, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
@@ -290,7 +301,7 @@
       ...common, tooltip,
       xAxis: { type: "time", axisLabel: { hideOverlap: true } },
       yAxis: { type: "value", name: panel.unit === "1" ? "" : panel.unit, scale: true },
-      series: series.map((item) => ({ type: "line", name: item.instance_display_name, showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]) })),
+      series: series.map((item) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]) })),
     };
   }
   function chartSeries(panel) {
@@ -298,7 +309,7 @@
   }
   function tableHtml(panel) {
     const times = [...new Set(panel.series.flatMap((series) => series.points.map((point) => point.observed_at)))].sort();
-    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(series.instance_display_name)}</th>`).join("")}</tr></thead><tbody>${times.map((time) => `<tr><td>${esc(shell.fmt(time))}</td>${panel.series.map((series) => { const point = series.points.find((item) => item.observed_at === time); return `<td>${point ? `${esc(formatValue(point.value, panel.unit))} · ${esc(point.quality)}` : "—"}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(seriesLabel(series))}</th>`).join("")}</tr></thead><tbody>${times.map((time) => `<tr><td>${esc(shell.fmt(time))}</td>${panel.series.map((series) => { const point = series.points.find((item) => item.observed_at === time); return `<td>${point ? `${esc(formatValue(point.value, panel.unit))} · ${esc(point.quality)}` : "—"}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
   function renderPanels() {
     const node = document.getElementById("monitoring-panels");
@@ -307,7 +318,7 @@
       node.innerHTML = '<div class="ops-panel ops-empty">当前 Profile 没有可展示 Panel。无采样不会显示为 0 或健康。</div>';
       return;
     }
-    node.innerHTML = state.view.panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(panel.unit)}</span>${panel.series.map((series) => `<span>${esc(series.instance_display_name)} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
+    node.innerHTML = state.view.panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(panel.unit)}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
     state.view.panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
       if (!container) return;
@@ -326,7 +337,8 @@
   function renderQuality() {
     const gaps = allGaps();
     document.getElementById("monitoring-result-state").innerHTML = badge(state.view.partial ? "PARTIAL" : "GOOD", state.view.partial ? "部分成功" : "查询完成");
-    document.getElementById("monitoring-quality-context").innerHTML = `<dt>监控源</dt><dd>${esc(state.view.source.display_name)} · ${esc(state.view.source.source_type)}</dd><dt>采样窗口</dt><dd>${esc(shell.fmt(state.view.window.start))} 至 ${esc(shell.fmt(state.view.window.end))}</dd><dt>Profile</dt><dd>${esc(state.view.profile.display_name)} · ${esc(state.view.profile.version)}</dd><dt>返回实例</dt><dd>${state.view.instances.length}</dd>`;
+    const sourceLabel = [state.view.source, state.view.compare_source].filter(Boolean).map((source) => `${source.display_name} · ${source.source_type}`).join(" / ");
+    document.getElementById("monitoring-quality-context").innerHTML = `<dt>监控源</dt><dd>${esc(sourceLabel)}</dd><dt>采样窗口</dt><dd>${esc(shell.fmt(state.view.window.start))} 至 ${esc(shell.fmt(state.view.window.end))}</dd><dt>Profile</dt><dd>${esc(state.view.profile.display_name)} · ${esc(state.view.profile.version)}</dd><dt>返回实例</dt><dd>${state.view.instances.length}</dd>`;
     document.getElementById("monitoring-gaps").innerHTML = gaps.length ? gaps.map((gap) => `<article>${badge("PARTIAL", gap.scope)}<div><strong>${esc(gap.code)}${gap.metric_code ? ` · ${esc(gap.metric_code)}` : ""}</strong><p>${esc(gap.detail)}</p></div><small>${gap.retryable ? "可重试" : "需配置或检查"}</small></article>`).join("") : '<div class="ops-empty">当前查询未返回能力或采样缺口。</div>';
   }
   function renderResult() {
@@ -345,7 +357,7 @@
     const next = new URLSearchParams(location.search);
     next.set("source_id", state.sourceId); next.set("target_id", instanceId); next.set("profile_id", state.profileId); next.set("window", state.window);
     history.replaceState(null, "", `${location.pathname}?${next}`);
-    renderInstances(); scheduleView();
+    renderContext(); renderInstances(); scheduleView();
   }
   function scheduleRefresh() {
     clearInterval(state.refreshTimer);
@@ -371,6 +383,7 @@
   document.getElementById("monitoring-source").onchange = (event) => { state.sourceId = event.target.value; loadSourceContext(); };
   document.getElementById("monitoring-window").onchange = (event) => { state.window = event.target.value; scheduleView(); };
   document.getElementById("monitoring-profile").onchange = (event) => { state.profileId = event.target.value; scheduleView(); };
+  document.getElementById("monitoring-compare-source").onchange = (event) => { state.compareSourceId = event.target.value; scheduleView(); };
   document.getElementById("monitoring-instance-search").oninput = (event) => { state.search = event.target.value; renderInstances(); };
   document.getElementById("monitoring-instance-list").onchange = (event) => {
     const input = event.target.closest("[data-instance-id]");
@@ -380,10 +393,12 @@
       if (state.selected.length >= 12) { input.checked = false; shell.toast("一次最多选择 12 个数据库实例"); return; }
       state.selected.push(id);
     } else if (!input.checked) state.selected = state.selected.filter((value) => value !== id);
+    if (state.selected.length !== 1) state.compareSourceId = "";
+    renderContext();
     renderInstances(); scheduleView();
   };
-  document.getElementById("monitoring-select-filtered").onclick = () => { state.selected = [...new Set([...state.selected, ...filteredInstances().map((item) => item.instance_id)])].slice(0, 12); renderInstances(); scheduleView(); };
-  document.getElementById("monitoring-clear-selection").onclick = () => { state.selected = []; renderInstances(); scheduleView(); };
+  document.getElementById("monitoring-select-filtered").onclick = () => { state.selected = [...new Set([...state.selected, ...filteredInstances().map((item) => item.instance_id)])].slice(0, 12); if (state.selected.length !== 1) state.compareSourceId = ""; renderContext(); renderInstances(); scheduleView(); };
+  document.getElementById("monitoring-clear-selection").onclick = () => { state.selected = []; state.compareSourceId = ""; renderContext(); renderInstances(); scheduleView(); };
   document.getElementById("monitoring-status-body").onclick = (event) => { const button = event.target.closest("[data-drill-instance]"); if (button) drillInto(button.dataset.drillInstance); };
   document.getElementById("monitoring-panels").onclick = (event) => { const button = event.target.closest("[data-panel-table]"); if (!button) return; const table = document.querySelector(`[data-panel-data="${button.dataset.panelTable}"]`); table.hidden = !table.hidden; button.textContent = table.hidden ? "查看数据" : "收起数据"; };
   document.getElementById("refresh-monitoring").onclick = loadView;

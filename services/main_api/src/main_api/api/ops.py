@@ -601,6 +601,7 @@ async def get_target_monitoring_view(
     source_id: UUID,
     profile_id: str,
     request: Request,
+    compare_source_id: UUID | None = Query(default=None),
     window: MonitoringWindowName = Query(default="1h"),
     window_start: datetime | None = Query(default=None),
     window_end: datetime | None = Query(default=None),
@@ -608,6 +609,7 @@ async def get_target_monitoring_view(
     return await _client(request).get_target_monitoring_view(
         target_id,
         source_id=source_id,
+        compare_source_id=compare_source_id,
         profile_id=profile_id,
         window=window,
         window_start=window_start.isoformat() if window_start else None,
