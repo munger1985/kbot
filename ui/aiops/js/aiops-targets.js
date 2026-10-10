@@ -302,6 +302,7 @@
     submit.disabled = true;
     submit.textContent = editingTarget ? "保存中…" : "创建中…";
     let baseSaved = false;
+    let versionSavedBeforeCredential = false;
     try {
       if (!editingTarget) {
         const createPayload = {
@@ -320,6 +321,15 @@
         });
       } else {
         let updated = editingTarget;
+        const targetUrl = `${api}/targets/${encodeURIComponent(editingTarget.target_id)}`;
+        if (rotatingCredential && version.value !== editingTarget.version_code) {
+          updated = await KBotAIOpsAuth.request(targetUrl, {
+            method: "PATCH",
+            headers: { "If-Match": `"rv-${updated.row_version}"` },
+            body: JSON.stringify({ version_code: version.value }),
+          });
+          versionSavedBeforeCredential = true;
+        }
         if (rotatingCredential) {
           updated = await KBotAIOpsAuth.request(
             `${api}/targets/${encodeURIComponent(editingTarget.target_id)}/diagnostic-credential:rotate`,
@@ -340,7 +350,7 @@
             },
           );
         }
-        updated = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(editingTarget.target_id)}`, {
+        updated = await KBotAIOpsAuth.request(targetUrl, {
           method: "PATCH",
           headers: { "If-Match": `"rv-${updated.row_version}"` },
           body: JSON.stringify({ ...targetFields(), capabilities: editingTarget.capabilities || {} }),
@@ -353,8 +363,12 @@
       await KBotAIOpsPages.reload();
     } catch (error) {
       result.dataset.tone = "bad";
-      result.textContent = baseSaved ? `基本信息已保存，但凭据轮换失败：${error.message}` : error.message;
-      if (baseSaved) await KBotAIOpsPages.reload();
+      result.textContent = baseSaved
+        ? `基本信息已保存，但凭据轮换失败：${error.message}`
+        : versionSavedBeforeCredential
+          ? `数据库版本已保存，但后续操作失败：${error.message}`
+          : error.message;
+      if (baseSaved || versionSavedBeforeCredential) await KBotAIOpsPages.reload();
     } finally {
       submit.disabled = false;
       submit.textContent = editingTarget ? "保存修改" : "创建目标";

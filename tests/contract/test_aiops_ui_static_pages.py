@@ -404,6 +404,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('method: "PATCH"', script)
         self.assertIn("diagnostic-credential:rotate", script)
         self.assertIn("execution-credential:rotate", script)
+        version_patch = script.index(
+            "body: JSON.stringify({ version_code: version.value })"
+        )
+        credential_rotation = script.index("diagnostic-credential:rotate")
+        self.assertLess(version_patch, credential_rotation)
+        self.assertIn("version.value !== editingTarget.version_code", script)
         self.assertIn('name="execution_username"', page)
         self.assertIn('name="execution_password"', page)
         self.assertIn('name="controlled_change_enabled"', page)
