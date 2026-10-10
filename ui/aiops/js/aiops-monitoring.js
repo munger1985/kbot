@@ -14,6 +14,9 @@
     PARTIAL: "部分就绪", UNAVAILABLE: "不可用", AVAILABLE: "可用",
   };
   const qualityLabels = { GOOD: "正常", PARTIAL: "部分成功", NO_DATA: "无有效采样" };
+  const capacityMetricCodes = [
+    "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes",
+  ];
   const esc = shell.escape;
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
@@ -42,6 +45,13 @@
   function numericValue(value) {
     if (typeof value === "boolean") return value ? 1 : 0;
     return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+  function formatBytes(value) {
+    const number = numericValue(value);
+    if (number === null) return "—";
+    const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+    const index = number > 0 ? Math.min(Math.floor(Math.log(number) / Math.log(1024)), units.length - 1) : 0;
+    return `${(number / (1024 ** index)).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} ${units[index]}`;
   }
   function latestPoint(series) {
     return [...(series?.points || [])].reverse().find((point) => point.value !== null && point.value !== undefined) || null;
@@ -276,12 +286,70 @@
     if (delta === 0) return "较前值持平";
     return `较前值${delta > 0 ? "上升" : "下降"} ${Math.abs(delta).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
   }
+  function capacitySeriesIdentity(series) {
+    const dimensions = series.dimensions || {};
+    return JSON.stringify([
+      series.source_id || "", dimensions.database || "", dimensions.tablespace || "", dimensions.type || "",
+    ]);
+  }
+  function capacityRows(instance, panels) {
+    const rows = new Map();
+    panels.forEach((panel) => panel.series.filter((series) => series.instance_id === instance.instance_id).forEach((series) => {
+      const key = capacitySeriesIdentity(series);
+      const row = rows.get(key) || { dimensions: series.dimensions || {}, source: series.source_display_name, metrics: {} };
+      row.metrics[panel.metric_code] = { panel, series, point: latestPoint(series) };
+      rows.set(key, row);
+    }));
+    return [...rows.values()].sort((left, right) => {
+      const leftName = left.dimensions.tablespace || left.dimensions.database || left.dimensions.type || "";
+      const rightName = right.dimensions.tablespace || right.dimensions.database || right.dimensions.type || "";
+      return leftName.localeCompare(rightName, "zh-CN") || left.source.localeCompare(right.source, "zh-CN");
+    });
+  }
+  function capacityDeltaText(points) {
+    const valid = points.map((point) => numericValue(point.value)).filter((value) => value !== null);
+    if (valid.length < 2) return "暂无变化基线";
+    const delta = valid.at(-1) - valid.at(-2);
+    if (delta === 0) return "较前值持平";
+    return `较前值${delta > 0 ? "上升" : "下降"} ${formatBytes(Math.abs(delta))}`;
+  }
+  function capacityMetricCell(metric) {
+    if (!metric?.point) return '<span class="ops-monitoring-capacity-missing">无有效采样</span>';
+    return `<strong>${esc(formatBytes(metric.point.value))}</strong><small>${esc(capacityDeltaText(metric.series.points))}<br>${esc(shell.fmt(metric.point.observed_at))}</small>`;
+  }
+  function renderCapacitySummary(node, instance, panels) {
+    const rows = capacityRows(instance, panels);
+    const body = rows.length ? rows.map((row) => {
+      const used = row.metrics[capacityMetricCodes[0]];
+      const free = row.metrics[capacityMetricCodes[1]];
+      const maximum = row.metrics[capacityMetricCodes[2]];
+      const usedValue = numericValue(used?.point?.value);
+      const freeValue = numericValue(free?.point?.value);
+      const maximumValue = numericValue(maximum?.point?.value);
+      const usedPercent = maximumValue > 0 && usedValue !== null ? Math.max(0, Math.min(100, usedValue / maximumValue * 100)) : null;
+      const freePercent = maximumValue > 0 && freeValue !== null ? Math.max(0, Math.min(100, freeValue / maximumValue * 100)) : null;
+      const freeBarPercent = freePercent === null ? 0 : Math.min(100 - (usedPercent || 0), freePercent);
+      const comparison = usedPercent === null && freePercent === null
+        ? '<span class="ops-monitoring-capacity-missing">无法计算</span>'
+        : `<div class="ops-monitoring-capacity-bar" role="img" aria-label="已用 ${usedPercent?.toFixed(1) || "—"}%，可用 ${freePercent?.toFixed(1) || "—"}%"><i class="is-used" style="width:${usedPercent || 0}%"></i><i class="is-free" style="width:${freeBarPercent}%"></i></div><small>已用 ${usedPercent?.toFixed(1) || "—"}% · 可用 ${freePercent?.toFixed(1) || "—"}%</small>`;
+      const name = row.dimensions.tablespace || row.dimensions.database || "实例汇总";
+      const dimensions = [row.dimensions.database, row.dimensions.type, row.source].filter((value) => value && value !== name);
+      return `<tr><td><strong>${esc(name)}</strong><small>${esc(dimensions.join(" · "))}</small></td><td>${capacityMetricCell(used)}</td><td>${capacityMetricCell(free)}</td><td>${capacityMetricCell(maximum)}</td><td>${comparison}</td></tr>`;
+    }).join("") : '<tr><td colspan="5" class="ops-empty">当前查询未返回容量序列。</td></tr>';
+    node.innerHTML = `<div class="ops-table-wrap ops-monitoring-capacity-wrap"><table class="ops-table ops-monitoring-capacity-table"><caption>数据库容量对比 · ${esc(instance.display_name)}</caption><thead><tr><th>表空间</th><th>已用容量</th><th>可用容量</th><th>最大容量</th><th>容量构成</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
   function renderSingleSummary() {
     const node = document.getElementById("monitoring-single-summary");
     const panels = (state.view.panels || []).slice(0, 6);
     node.hidden = state.view.instances.length !== 1 || !panels.length;
     if (node.hidden) return;
     const instance = state.view.instances[0];
+    const isCapacity = state.view.profile.profile_id === "database-capacity";
+    node.classList.toggle("is-capacity", isCapacity);
+    if (isCapacity) {
+      renderCapacitySummary(node, instance, panels.filter((panel) => capacityMetricCodes.includes(panel.metric_code)));
+      return;
+    }
     node.innerHTML = panels.map((panel) => {
       const code = panel.metric_code;
       const series = panel.series.find((item) => item.instance_id === instance.instance_id);
