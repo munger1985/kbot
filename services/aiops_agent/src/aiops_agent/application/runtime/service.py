@@ -528,7 +528,6 @@ class AIOpsRuntimeService:
                 "controlled_change_enabled": bool(
                     target.controlled_change_enabled
                 ),
-                "security_level": int(target.security_level),
                 "capabilities": dict(target.capabilities_json or {}),
                 "row_version": int(target.row_version),
             }
@@ -3831,20 +3830,8 @@ class AIOpsRuntimeService:
         run,
         plan: dict[str, Any],
     ) -> int:
-        """优先使用 Run 快照；旧 Run 缺失时读取权威 Target。"""
-        target_snapshot = plan.get("target")
-        if (
-            isinstance(target_snapshot, dict)
-            and "security_level" in target_snapshot
-        ):
-            return int(target_snapshot["security_level"])
-        target = await uow.targets.get_scoped(
-            target_id=run.target_id,
-            domain_id=int(run.domain_id),
-        )
-        if target is None:
-            raise resource_not_found("Target")
-        return int(target.security_level)
+        """诊断产物使用自身的默认分类，不从运维目标继承知识等级。"""
+        return 1
 
     async def _publish_diagnosis_report(
         self,
@@ -4230,11 +4217,7 @@ class AIOpsRuntimeService:
                     "llm_used": False,
                 },
                 trust_level="SOURCE_VERIFIED",
-                security_level=int(
-                    (run.plan_snapshot_json or {})["target"][
-                        "security_level"
-                    ]
-                ),
+                security_level=1,
             )
         )
         source_payload = dict(source_result.payload_json or {})
@@ -4515,7 +4498,7 @@ class AIOpsRuntimeService:
                     "verification_status": verification.status,
                 },
                 trust_level="SOURCE_VERIFIED",
-                security_level=int(target_snapshot.get("security_level", 1)),
+                security_level=1,
             )
         )
         await self._materialize_advisory_proposal(
@@ -4932,9 +4915,7 @@ class AIOpsRuntimeService:
                     "llm_used": False,
                 },
                 trust_level="SOURCE_VERIFIED",
-                security_level=int(
-                    target_snapshot.get("security_level", 1)
-                ),
+                security_level=1,
             )
         )
         proposal = ChangeProposalEntity(
@@ -5762,11 +5743,7 @@ class AIOpsRuntimeService:
                                 "reason": "CALLBACK_TIMEOUT",
                             },
                             trust_level="SOURCE_VERIFIED",
-                            security_level=int(
-                                (run.plan_snapshot_json or {})[
-                                    "target"
-                                ]["security_level"]
-                            ),
+                            security_level=1,
                         )
                     )
                     execution.status = "UNKNOWN"

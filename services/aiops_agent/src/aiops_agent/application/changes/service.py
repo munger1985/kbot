@@ -524,7 +524,7 @@ class AIOpsChangeService:
                         "approver_id": actor_id,
                     },
                     trust_level="SOURCE_VERIFIED",
-                    security_level=int(target.security_level),
+                    security_level=1,
                 )
             )
             proposal.status = "APPROVED"
@@ -1187,11 +1187,7 @@ class AIOpsChangeService:
                             ),
                         },
                         trust_level="SOURCE_VERIFIED",
-                        security_level=int(
-                            (run.plan_snapshot_json or {})["target"][
-                                "security_level"
-                            ]
-                        ),
+                        security_level=1,
                     )
                 )
                 execution.status = event.status

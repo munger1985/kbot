@@ -143,7 +143,6 @@
       form.elements.version_code.value = target.version_code || "";
       form.elements.environment.value = target.environment;
       form.elements.db_role.value = target.db_role;
-      form.elements.security_level.value = target.security_level;
       form.elements.importance_level.value = target.importance_level;
       readonlyEnabled.checked = Boolean(target.readonly_connection_enabled);
       changeEnabled.checked = Boolean(target.controlled_change_enabled);
@@ -275,7 +274,6 @@
       readonly_connection_enabled: readonlyEnabled.checked,
       controlled_change_enabled: changeEnabled.checked,
       importance_level: Number(form.elements.importance_level.value),
-      security_level: Number(form.elements.security_level.value),
       ...oracleContainerPayload(),
     };
     if (readonlyEnabled.checked) fields.endpoint = endpointPayload();

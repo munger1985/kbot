@@ -2107,7 +2107,6 @@ BEGIN
             'KBOT_OPS_TARGET|ORACLE_PDB_NAME',
             'KBOT_OPS_TARGET|READONLY_CONNECTION_ENABLED',
             'KBOT_OPS_TARGET|ROW_VERSION',
-            'KBOT_OPS_TARGET|SECURITY_LEVEL',
             'KBOT_OPS_TARGET|STATUS',
             'KBOT_OPS_TARGET|TARGET_ID',
             'KBOT_OPS_TARGET|UPDATED_AT',
@@ -3168,7 +3167,6 @@ BEGIN
             'KBOT_OPS_TARGET|ORACLE_PDB_NAME',
             'KBOT_OPS_TARGET|READONLY_CONNECTION_ENABLED',
             'KBOT_OPS_TARGET|ROW_VERSION',
-            'KBOT_OPS_TARGET|SECURITY_LEVEL',
             'KBOT_OPS_TARGET|STATUS',
             'KBOT_OPS_TARGET|TARGET_ID',
             'KBOT_OPS_TARGET|UPDATED_AT',
@@ -3405,7 +3403,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1044 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1043 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3497,19 +3495,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 35
-           OR l_contract_version <> 'aiops-oracle-v25' THEN
+           OR l_schema_version <> 36
+           OR l_contract_version <> 'aiops-oracle-v26' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '35/aiops-oracle-v25'
+                || '36/aiops-oracle-v26'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/35/'
-                || 'aiops-oracle-v25'
+                '[通过] Schema 合同：AIOPS/36/'
+                || 'aiops-oracle-v26'
             );
         END IF;
     EXCEPTION
@@ -3537,7 +3535,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：62 张表、10 个视图、'
         || '262 个命名索引、229 个命名约束、'
-        || '1044 个表列；Schema 与当前规范一致。'
+        || '1043 个表列；Schema 与当前规范一致。'
     );
 END;
 /

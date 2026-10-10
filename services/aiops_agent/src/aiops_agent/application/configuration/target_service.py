@@ -280,7 +280,6 @@ class TargetConfigurationMixin:
                 diagnostic_credential_id=diagnostic_id,
                 execution_credential_id=execution_id,
                 importance_level=request.importance_level,
-                security_level=request.security_level,
                 capabilities_json=request.capabilities,
                 workload_snapshot_policy_json=(
                     request.workload_snapshot_policy.model_dump(mode="json")

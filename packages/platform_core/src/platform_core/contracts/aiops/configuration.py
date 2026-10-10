@@ -123,7 +123,6 @@ class TargetCreate(AIOpsContract):
     diagnostic_credential: DatabaseCredentialInput | None = None
     execution_credential: DatabaseCredentialInput | None = None
     importance_level: int = Field(default=3, ge=1, le=5)
-    security_level: int = Field(default=1, ge=0, le=999)
     capabilities: JsonObject = Field(default_factory=dict)
     workload_snapshot_policy: WorkloadPolicy = Field(
         default_factory=WorkloadPolicy
@@ -249,7 +248,6 @@ class TargetPatch(AIOpsContract):
     readonly_connection_enabled: bool | None = None
     controlled_change_enabled: bool | None = None
     importance_level: int | None = Field(default=None, ge=1, le=5)
-    security_level: int | None = Field(default=None, ge=0, le=999)
     capabilities: JsonObject | None = None
     workload_snapshot_policy: WorkloadPolicy | None = None
     activity_sampler_policy: ActivitySamplerPolicy | None = None
@@ -286,7 +284,6 @@ class TargetDetail(TargetSummary):
     endpoint: TargetEndpoint | None = None
     diagnostic_credential: DatabaseCredentialStatus
     execution_credential: DatabaseCredentialStatus
-    security_level: int
     capabilities: JsonObject
     workload_snapshot_policy: WorkloadPolicy
     activity_sampler_policy: ActivitySamplerPolicy

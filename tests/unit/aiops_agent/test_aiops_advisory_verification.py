@@ -1113,8 +1113,7 @@ class ProposalExpiryTest(unittest.TestCase):
             target_id=execution.target_id,
             plan_snapshot_json={
                 "target": {
-                                        "domain_id": 200,
-                    "security_level": 3,
+                    "domain_id": 200,
                 }
             },
         )

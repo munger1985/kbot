@@ -1888,9 +1888,7 @@ class ChatActionPlanHandlerTest(unittest.TestCase):
                 source_run=SimpleNamespace(
                     ops_run_id=run_id,
                     target_id=target_id,
-                    plan_snapshot_json={
-                        "target": {"row_version": 3, "security_level": 2}
-                    },
+                    plan_snapshot_json={"target": {"row_version": 3}},
                 ),
                 source_proposal=SimpleNamespace(
                     proposal_id=uuid7(),

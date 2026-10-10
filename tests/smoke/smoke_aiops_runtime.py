@@ -91,7 +91,6 @@ async def main() -> None:
                     db_type="ORACLE",
                     environment="DEV",
                     db_role="PRIMARY",
-                    security_level=1,
                     status="ACTIVE",
                     health_status="UNKNOWN",
                     created_by="runtime-smoke",

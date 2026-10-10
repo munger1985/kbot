@@ -46,7 +46,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             target_id=uuid7(),
             inspection_fire_id=uuid7(),
             plan_snapshot_json={
-                "target": {"security_level": 2},
+                "target": {},
                 "client_metadata": {
                     "inspection": {
                         "template_id": "database_custom",
@@ -147,7 +147,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             target_id=uuid7(),
             inspection_fire_id=uuid7(),
             plan_snapshot_json={
-                "target": {"security_level": 2},
+                "target": {},
                 "client_metadata": {
                     "inspection": {
                         "template_id": "database_daily",
@@ -252,7 +252,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             ops_run_id=uuid7(), actor_id="system:inspection-scheduler",
             target_id=uuid7(), inspection_fire_id=uuid7(),
             plan_snapshot_json={
-                "target": {"security_level": 2},
+                "target": {},
                 "client_metadata": {"inspection": {
                     "template_id": "database_daily",
                     "template_version": "1.0.0", "schedule_type": "DAILY",
@@ -772,7 +772,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             target_id=uuid7(),
             inspection_fire_id=uuid7(),
             plan_snapshot_json={
-                "target": {"security_level": 2},
+                "target": {},
                 "client_metadata": {
                     "inspection": {
                         "template_id": "database_daily",
@@ -923,7 +923,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
             target_id=target_id,
             inspection_fire_id=fire_id,
             plan_snapshot_json={
-                "target": {"security_level": 3},
+                "target": {},
                 "client_metadata": {
                     "inspection": {
                         "template_id": "database_daily",
@@ -1094,11 +1094,6 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
                 publish_report=AsyncMock(side_effect=publish_report),
                 add_report_sources=AsyncMock(),
             ),
-            targets=SimpleNamespace(
-                get_scoped=AsyncMock(
-                    return_value=SimpleNamespace(security_level=3)
-                ),
-            ),
             runs=SimpleNamespace(
                 add_artifact=AsyncMock(side_effect=add_artifact),
                 append_event=AsyncMock(),
@@ -1132,11 +1127,7 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
         self.assertEqual(report.report_type, "INCIDENT")
         self.assertEqual(report.template_id, "system:diagnosis.standard")
         self.assertEqual(report.status, "READY")
-        self.assertEqual(report.security_level, 3)
-        uow.targets.get_scoped.assert_awaited_once_with(
-            target_id=target_id,
-            domain_id=8,
-        )
+        self.assertEqual(report.security_level, 1)
         content = uow.runs.add_artifact.await_args.args[0]
         self.assertEqual(content.schema_version, "REPORT_CONTENT.v1")
         self.assertIn("锁等待导致响应时间升高", content.payload_json["summary"])
@@ -1228,7 +1219,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
             source_proposal_id=proposal_id,
             source_result_artifact_id=source_result_id,
             created_at=after_start,
-            plan_snapshot_json={"target": {"security_level": 4}},
+            plan_snapshot_json={"target": {}},
         )
         task = SimpleNamespace(ops_task_id=task_id)
 
@@ -1307,6 +1298,8 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         self.assertEqual(
             comparison_artifact.schema_version, "COMPARISON_RESULT.v1"
         )
+        self.assertEqual(comparison_artifact.security_level, 1)
+        self.assertEqual(report_artifact.security_level, 1)
         self.assertEqual(
             comparison_artifact.payload_json["result"], "RESOLVED"
         )

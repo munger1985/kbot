@@ -154,7 +154,6 @@ def _target_detail(entity: TargetEntity) -> TargetDetail:
         endpoint=entity.endpoint_json,
         diagnostic_credential=_credential_status(entity.diagnostic_credential_id, entity),
         execution_credential=_credential_status(entity.execution_credential_id, entity),
-        security_level=int(entity.security_level),
         capabilities=entity.capabilities_json or {},
         workload_snapshot_policy=entity.workload_snapshot_policy_json or {},
         activity_sampler_policy=entity.activity_sampler_policy_json or {},

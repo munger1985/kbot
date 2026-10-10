@@ -128,7 +128,6 @@ def test_import_registers_formal_report_without_promoting_trust(
         domain_id=domain_id,
         db_type="POSTGRESQL",
         display_name="生产PG",
-        security_level=2,
     )
     uow = SimpleNamespace(
         targets=SimpleNamespace(

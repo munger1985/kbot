@@ -48,9 +48,6 @@ class TargetEntity(BaseEntity):
     importance_level: Mapped[int] = mapped_column(
         Numeric(1, 0), nullable=False, default=3
     )
-    security_level: Mapped[int] = mapped_column(
-        Numeric(3, 0), nullable=False, default=1
-    )
     capabilities_json: Mapped[dict[str, Any] | None] = mapped_column(
         OracleNativeJSON
     )

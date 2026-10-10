@@ -5313,6 +5313,14 @@
             "title": "Db Type",
             "type": "string"
           },
+          "diagnostic_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Diagnostic Gaps",
+            "type": "array"
+          },
           "diagnostic_readiness": {
             "enum": [
               "READY",
@@ -5671,6 +5679,14 @@
               "$ref": "#/components/schemas/MonitoringGap"
             },
             "title": "Capability Gaps",
+            "type": "array"
+          },
+          "diagnostic_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Diagnostic Gaps",
             "type": "array"
           },
           "diagnostic_readiness": {
@@ -9645,10 +9661,21 @@
               }
             ],
             "title": "Oracle Pdb Name"
+          },
+          "version_code": {
+            "enum": [
+              "19c",
+              "26ai",
+              "8.4",
+              "16"
+            ],
+            "title": "Version Code",
+            "type": "string"
           }
         },
         "required": [
           "db_type",
+          "version_code",
           "endpoint",
           "diagnostic_credential"
         ],
@@ -9791,6 +9818,23 @@
               }
             ],
             "title": "Server Uuid"
+          },
+          "supported_version_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "19c",
+                  "26ai",
+                  "8.4",
+                  "16"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported Version Code"
           }
         },
         "required": [
@@ -9919,24 +9963,15 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "security_level": {
-            "default": 1,
-            "maximum": 999.0,
-            "minimum": 0.0,
-            "title": "Security Level",
-            "type": "integer"
-          },
           "version_code": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "19c",
+              "26ai",
+              "8.4",
+              "16"
             ],
-            "title": "Version Code"
+            "title": "Version Code",
+            "type": "string"
           },
           "workload_snapshot_policy": {
             "$ref": "#/components/schemas/WorkloadPolicy"
@@ -9945,6 +9980,7 @@
         "required": [
           "display_name",
           "db_type",
+          "version_code",
           "environment"
         ],
         "title": "TargetCreate",
@@ -10242,10 +10278,6 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "security_level": {
-            "title": "Security Level",
-            "type": "integer"
-          },
           "status": {
             "enum": [
               "ENABLED",
@@ -10342,7 +10374,6 @@
           "db_role",
           "diagnostic_credential",
           "execution_credential",
-          "security_level",
           "capabilities",
           "workload_snapshot_policy",
           "activity_sampler_policy",
@@ -10879,23 +10910,15 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "security_level": {
-            "anyOf": [
-              {
-                "maximum": 999.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Security Level"
-          },
           "version_code": {
             "anyOf": [
               {
-                "maxLength": 64,
+                "enum": [
+                  "19c",
+                  "26ai",
+                  "8.4",
+                  "16"
+                ],
                 "type": "string"
               },
               {

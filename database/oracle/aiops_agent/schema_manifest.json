@@ -1,13 +1,13 @@
 {
   "component": "aiops_agent",
-  "schema_version": 35,
-  "contract_version": "aiops-oracle-v25",
+  "schema_version": 36,
+  "contract_version": "aiops-oracle-v26",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
       "statements": 31,
-      "sha256": "80c62a8efb5d97a553902e65cf4db6175a72066652e492cc862c3d6a8e92a81d"
+      "sha256": "e4a0f119a80f2b7ae1d6acf4bf8504880cddf5fbbbe816963eb23d23a58d30ff"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "ba85725a29e6bf7337ea954ca72f02f784df83ea48eee56f690eed86f6f6d111"
+      "sha256": "f9d0077deefe32bedbc188817027723e6fd9638ec07245ca9a9cee1cae5a7e2e"
     },
     {
       "name": "007_ops_agents.sql",

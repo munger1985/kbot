@@ -128,7 +128,7 @@ class DiagnosisScopeHandler:
                 diagnosis.get("allowed_collection_ids", ())
             ),
             policy_snapshot_hash=diagnosis["policy_snapshot_hash"],
-            security_level=int(target["security_level"]),
+            security_level=1,
             budget_snapshot=dict(diagnosis["budget"]),
         )
 
@@ -193,7 +193,6 @@ class KnowledgeCitationHandler:
                     database_type=target.get("db_type"),
                     database_major_version=(target.get("version_code") or None),
                     topology=(target.get("topology") or target.get("deployment_type")),
-                    max_security_level=min(3, int(target["security_level"])),
                     max_results=8,
                 ),
             )

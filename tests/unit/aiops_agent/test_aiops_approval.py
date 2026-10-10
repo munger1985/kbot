@@ -181,7 +181,6 @@ class ApprovalServiceTest(unittest.TestCase):
             version_code="19.0.0",
             capabilities_json={"capabilities": []},
             environment="PROD",
-            security_level=3,
             endpoint_json={
                 "host": "oracle.internal",
                 "port": 1521,
@@ -518,8 +517,7 @@ class ExecutionCallbackTest(unittest.TestCase):
             target_id=target_id,
             plan_snapshot_json={
                 "target": {
-                                        "domain_id": 200,
-                    "security_level": 3,
+                    "domain_id": 200,
                 }
             },
         )

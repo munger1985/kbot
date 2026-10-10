@@ -723,7 +723,7 @@ class WorkloadService:
                     "validation_policy": "postgresql-pgbadger-artifact.v1",
                 },
                 trust_level="EXTERNAL_IMPORTED",
-                security_level=int(target.security_level),
+                security_level=1,
                 created_at=now,
             )
             content_artifact = _report_content_artifact(
@@ -738,7 +738,7 @@ class WorkloadService:
                 producer="aiops.postgresql-pgbadger-import",
                 producer_version="1",
                 trust_level="EXTERNAL_IMPORTED",
-                security_level=int(target.security_level),
+                security_level=1,
                 report_origin=ReportOrigin.EXTERNAL_IMPORTED,
                 now=now,
             )
@@ -752,7 +752,7 @@ class WorkloadService:
                 report_content=report_content,
                 content_artifact_id=content_artifact_id,
                 content_hash=report_content_hash,
-                security_level=int(target.security_level),
+                security_level=1,
                 period_start=period_start,
                 period_end=period_end,
                 result="READY",
@@ -1540,7 +1540,7 @@ class WorkloadService:
                 "file_name": file_name,
             },
             trust_level="SOURCE_VERIFIED",
-            security_level=int(target.security_level),
+            security_level=1,
             created_at=now,
         )
         content_artifact = _report_content_artifact(
@@ -1555,7 +1555,7 @@ class WorkloadService:
             producer="aiops.workload-report-builder",
             producer_version="2",
             trust_level="SOURCE_VERIFIED",
-            security_level=int(target.security_level),
+            security_level=1,
             report_origin=ReportOrigin.AIOPS_GENERATED,
             now=now,
         )
@@ -1569,7 +1569,7 @@ class WorkloadService:
             report_content=report_content,
             content_artifact_id=content_artifact_id,
             content_hash=report_content_hash,
-            security_level=int(target.security_level),
+            security_level=1,
             period_start=period_start,
             period_end=period_end,
             baseline_start=baseline_start,

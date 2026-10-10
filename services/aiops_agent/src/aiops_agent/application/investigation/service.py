@@ -3829,9 +3829,6 @@ class TurnPlanningService:
                                 target, "execution_credential_id", None
                             )
                         ),
-                        "security_level": int(
-                            getattr(target, "security_level", 1)
-                        ),
                         "capabilities": dict(
                             getattr(target, "capabilities_json", None) or {}
                         ),

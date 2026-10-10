@@ -73,9 +73,10 @@ class AIOpsContractTest(unittest.TestCase):
                 "username": "readonly",
                 "password": "secret",
             },
-            "security_level": 3,
         }
         TargetCreate.model_validate(payload)
+        with self.assertRaises(ValidationError):
+            TargetCreate.model_validate({**payload, "security_level": 3})
         with self.assertRaises(ValidationError):
             TargetCreate.model_validate(
                 {
@@ -310,7 +311,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
             hasattr(AIOpsDelegationClient, "create_delegation")
         )
 
-    def test_aiops_owns_nine_ordered_ddl_scripts(self) -> None:
+    def test_aiops_owns_twelve_ordered_ddl_scripts(self) -> None:
         root = Path(__file__).resolve().parents[3]
         sql_files = sorted(
             (root / "database" / "oracle" / "aiops_agent").glob(
@@ -330,6 +331,7 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
                 "009_ops_workload.sql",
                 "010_ops_knowledge.sql",
                 "011_ops_recovery.sql",
+                "012_ops_work_items.sql",
             ],
             [path.name for path in sql_files],
         )

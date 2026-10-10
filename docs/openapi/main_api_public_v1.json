@@ -5266,6 +5266,224 @@
         "title": "ExchangeAppPayload",
         "type": "object"
       },
+      "FindingCard": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmation": {
+            "$ref": "#/components/schemas/FindingConfirmation"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "fields": {
+            "additionalProperties": true,
+            "title": "Fields",
+            "type": "object"
+          },
+          "finding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "finding_type": {
+            "$ref": "#/components/schemas/FindingType"
+          },
+          "impact": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Impact",
+            "type": "string"
+          },
+          "object_ref": {
+            "$ref": "#/components/schemas/FindingObjectRef"
+          },
+          "playbook_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playbook Id"
+          },
+          "schema_version": {
+            "const": "AIOPS_FINDING.v1",
+            "default": "AIOPS_FINDING.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FindingThreshold"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "finding_id",
+          "finding_type",
+          "severity",
+          "confirmation",
+          "object_ref",
+          "impact"
+        ],
+        "title": "FindingCard",
+        "type": "object"
+      },
+      "FindingConfirmation": {
+        "enum": [
+          "CONFIRMED",
+          "LIKELY",
+          "POSSIBLE",
+          "UNKNOWN"
+        ],
+        "title": "FindingConfirmation",
+        "type": "string"
+      },
+      "FindingObjectRef": {
+        "additionalProperties": false,
+        "properties": {
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "object_kind": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Object Kind",
+            "type": "string"
+          },
+          "object_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Name"
+          },
+          "sql_id": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          }
+        },
+        "required": [
+          "object_kind"
+        ],
+        "title": "FindingObjectRef",
+        "type": "object"
+      },
+      "FindingSeverity": {
+        "enum": [
+          "CRITICAL",
+          "HIGH",
+          "MEDIUM",
+          "LOW",
+          "INFO"
+        ],
+        "title": "FindingSeverity",
+        "type": "string"
+      },
+      "FindingThreshold": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "title": "Current"
+          },
+          "limit": {
+            "title": "Limit"
+          },
+          "metric": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "operator": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Operator",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "operator"
+        ],
+        "title": "FindingThreshold",
+        "type": "object"
+      },
+      "FindingType": {
+        "enum": [
+          "LOCK_WAIT",
+          "LONG_SESSION",
+          "DG_LAG",
+          "WAIT_CLASS",
+          "TABLESPACE",
+          "SQL_STATS_STALE",
+          "EXACHECK_FAIL",
+          "EXACHECK_WARNING",
+          "REPLICATION_LAG",
+          "DEAD_TUPLES",
+          "AUTOVACUUM",
+          "IDLE_SESSION",
+          "CONNECTION_USAGE",
+          "QUERY_RATE",
+          "INVALID_OBJECT",
+          "ARCHIVE_HEADROOM",
+          "BACKUP_FAILED",
+          "LONG_TRANSACTION",
+          "TOP_SQL"
+        ],
+        "title": "FindingType",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -8743,6 +8961,14 @@
             "title": "Db Type",
             "type": "string"
           },
+          "diagnostic_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Diagnostic Gaps",
+            "type": "array"
+          },
           "diagnostic_readiness": {
             "enum": [
               "READY",
@@ -9101,6 +9327,14 @@
               "$ref": "#/components/schemas/MonitoringGap"
             },
             "title": "Capability Gaps",
+            "type": "array"
+          },
+          "diagnostic_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonitoringGap"
+            },
+            "title": "Diagnostic Gaps",
             "type": "array"
           },
           "diagnostic_readiness": {
@@ -13868,10 +14102,21 @@
               }
             ],
             "title": "Oracle Pdb Name"
+          },
+          "version_code": {
+            "enum": [
+              "19c",
+              "26ai",
+              "8.4",
+              "16"
+            ],
+            "title": "Version Code",
+            "type": "string"
           }
         },
         "required": [
           "db_type",
+          "version_code",
           "endpoint",
           "diagnostic_credential"
         ],
@@ -14014,6 +14259,23 @@
               }
             ],
             "title": "Server Uuid"
+          },
+          "supported_version_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "19c",
+                  "26ai",
+                  "8.4",
+                  "16"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported Version Code"
           }
         },
         "required": [
@@ -14142,24 +14404,15 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "security_level": {
-            "default": 1,
-            "maximum": 999.0,
-            "minimum": 0.0,
-            "title": "Security Level",
-            "type": "integer"
-          },
           "version_code": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "19c",
+              "26ai",
+              "8.4",
+              "16"
             ],
-            "title": "Version Code"
+            "title": "Version Code",
+            "type": "string"
           },
           "workload_snapshot_policy": {
             "$ref": "#/components/schemas/WorkloadPolicy"
@@ -14168,6 +14421,7 @@
         "required": [
           "display_name",
           "db_type",
+          "version_code",
           "environment"
         ],
         "title": "TargetCreate",
@@ -14465,10 +14719,6 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "security_level": {
-            "title": "Security Level",
-            "type": "integer"
-          },
           "status": {
             "enum": [
               "ENABLED",
@@ -14565,7 +14815,6 @@
           "db_role",
           "diagnostic_credential",
           "execution_credential",
-          "security_level",
           "capabilities",
           "workload_snapshot_policy",
           "activity_sampler_policy",
@@ -15102,23 +15351,15 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "security_level": {
-            "anyOf": [
-              {
-                "maximum": 999.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Security Level"
-          },
           "version_code": {
             "anyOf": [
               {
-                "maxLength": 64,
+                "enum": [
+                  "19c",
+                  "26ai",
+                  "8.4",
+                  "16"
+                ],
                 "type": "string"
               },
               {
@@ -16546,6 +16787,1039 @@
           "created_at"
         ],
         "title": "WebhookKeyRotation",
+        "type": "object"
+      },
+      "WorkItemActivityView": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_id": {
+            "format": "uuid",
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "activity_type": {
+            "title": "Activity Type",
+            "type": "string"
+          },
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "from_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemPhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemPhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "activity_id",
+          "activity_type",
+          "actor_id",
+          "created_at"
+        ],
+        "title": "WorkItemActivityView",
+        "type": "object"
+      },
+      "WorkItemAssignment": {
+        "additionalProperties": false,
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "assignment_group": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Group"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "WorkItemAssignment",
+        "type": "object"
+      },
+      "WorkItemCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "assignment_group": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Group"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/WorkItemPriority"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "summary": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "work_type": {
+            "$ref": "#/components/schemas/WorkItemType"
+          }
+        },
+        "required": [
+          "target_id",
+          "work_type",
+          "title",
+          "summary",
+          "severity",
+          "priority"
+        ],
+        "title": "WorkItemCreate",
+        "type": "object"
+      },
+      "WorkItemOccurrenceView": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "finding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FindingCard"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "finding_type": {
+            "title": "Finding Type",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "occurrence_id": {
+            "format": "uuid",
+            "title": "Occurrence Id",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "situation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Situation Id"
+          }
+        },
+        "required": [
+          "occurrence_id",
+          "ops_run_id",
+          "finding_id",
+          "finding_type",
+          "severity",
+          "confirmation",
+          "observed_at",
+          "created_at"
+        ],
+        "title": "WorkItemOccurrenceView",
+        "type": "object"
+      },
+      "WorkItemPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkItemSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "queue_summary": {
+            "$ref": "#/components/schemas/WorkItemQueueSummary"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "queue_summary"
+        ],
+        "title": "WorkItemPage",
+        "type": "object"
+      },
+      "WorkItemPhase": {
+        "enum": [
+          "TRIAGE",
+          "DIAGNOSIS",
+          "REMEDIATION",
+          "APPROVAL",
+          "EXECUTION",
+          "VERIFICATION"
+        ],
+        "title": "WorkItemPhase",
+        "type": "string"
+      },
+      "WorkItemPriority": {
+        "enum": [
+          "P1",
+          "P2",
+          "P3",
+          "P4"
+        ],
+        "title": "WorkItemPriority",
+        "type": "string"
+      },
+      "WorkItemQueueSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "my_open": {
+            "minimum": 0.0,
+            "title": "My Open",
+            "type": "integer"
+          },
+          "overdue": {
+            "minimum": 0.0,
+            "title": "Overdue",
+            "type": "integer"
+          },
+          "pending_verification": {
+            "minimum": 0.0,
+            "title": "Pending Verification",
+            "type": "integer"
+          },
+          "unassigned": {
+            "minimum": 0.0,
+            "title": "Unassigned",
+            "type": "integer"
+          },
+          "urgent": {
+            "minimum": 0.0,
+            "title": "Urgent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "my_open",
+          "unassigned",
+          "urgent",
+          "overdue",
+          "pending_verification"
+        ],
+        "title": "WorkItemQueueSummary",
+        "type": "object"
+      },
+      "WorkItemResolutionCode": {
+        "enum": [
+          "FIXED",
+          "MITIGATED",
+          "ACCEPTED_RISK",
+          "DUPLICATE",
+          "NO_ACTION",
+          "CANNOT_REPRODUCE"
+        ],
+        "title": "WorkItemResolutionCode",
+        "type": "string"
+      },
+      "WorkItemResourceKind": {
+        "enum": [
+          "RUN",
+          "SITUATION",
+          "REPORT",
+          "PROPOSAL",
+          "VERIFICATION"
+        ],
+        "title": "WorkItemResourceKind",
+        "type": "string"
+      },
+      "WorkItemResourceLinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_kind": {
+            "$ref": "#/components/schemas/WorkItemResourceKind"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "resource_kind",
+          "resource_id",
+          "role"
+        ],
+        "title": "WorkItemResourceLinkView",
+        "type": "object"
+      },
+      "WorkItemRouteRun": {
+        "additionalProperties": false,
+        "properties": {
+          "finding_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Finding Ids",
+            "type": "array"
+          },
+          "include_gaps": {
+            "default": true,
+            "title": "Include Gaps",
+            "type": "boolean"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ops_run_id"
+        ],
+        "title": "WorkItemRouteRun",
+        "type": "object"
+      },
+      "WorkItemSourceKind": {
+        "enum": [
+          "ALERT",
+          "INSPECTION",
+          "CHAT",
+          "MANUAL"
+        ],
+        "title": "WorkItemSourceKind",
+        "type": "string"
+      },
+      "WorkItemStatus": {
+        "enum": [
+          "PENDING_TRIAGE",
+          "OPEN",
+          "IN_PROGRESS",
+          "WAITING",
+          "PENDING_VERIFICATION",
+          "RESOLVED",
+          "CLOSED",
+          "CANCELLED"
+        ],
+        "title": "WorkItemStatus",
+        "type": "string"
+      },
+      "WorkItemSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgement_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgement Due At"
+          },
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "assignment_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Group"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "first_observed_at": {
+            "format": "date-time",
+            "title": "First Observed At",
+            "type": "string"
+          },
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "last_observed_at": {
+            "format": "date-time",
+            "title": "Last Observed At",
+            "type": "string"
+          },
+          "occurrence_count": {
+            "minimum": 1.0,
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/WorkItemPhase"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/WorkItemPriority"
+          },
+          "reopen_count": {
+            "minimum": 0.0,
+            "title": "Reopen Count",
+            "type": "integer"
+          },
+          "resolution_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemResolutionCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolution_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Due At"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "source_kind": {
+            "$ref": "#/components/schemas/WorkItemSourceKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkItemStatus"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verification_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Due At"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
+          },
+          "work_item_id": {
+            "format": "uuid",
+            "title": "Work Item Id",
+            "type": "string"
+          },
+          "work_type": {
+            "$ref": "#/components/schemas/WorkItemType"
+          }
+        },
+        "required": [
+          "work_item_id",
+          "item_key",
+          "target_id",
+          "target_name",
+          "work_type",
+          "source_kind",
+          "title",
+          "summary",
+          "severity",
+          "priority",
+          "status",
+          "phase",
+          "first_observed_at",
+          "last_observed_at",
+          "occurrence_count",
+          "reopen_count",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkItemSummary",
+        "type": "object"
+      },
+      "WorkItemTransition": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/WorkItemPhase"
+          },
+          "resolution_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemResolutionCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkItemStatus"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status",
+          "phase"
+        ],
+        "title": "WorkItemTransition",
+        "type": "object"
+      },
+      "WorkItemType": {
+        "enum": [
+          "INCIDENT_RESPONSE",
+          "RISK_REMEDIATION",
+          "PROBLEM_INVESTIGATION",
+          "OPTIMIZATION",
+          "OBSERVABILITY_GAP"
+        ],
+        "title": "WorkItemType",
+        "type": "string"
+      },
+      "WorkItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgement_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledgement Due At"
+          },
+          "activities": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkItemActivityView"
+            },
+            "title": "Activities",
+            "type": "array"
+          },
+          "assignee_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee User Id"
+          },
+          "assignment_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Group"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "first_observed_at": {
+            "format": "date-time",
+            "title": "First Observed At",
+            "type": "string"
+          },
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "last_observed_at": {
+            "format": "date-time",
+            "title": "Last Observed At",
+            "type": "string"
+          },
+          "links": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkItemResourceLinkView"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "occurrence_count": {
+            "minimum": 1.0,
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "occurrences": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkItemOccurrenceView"
+            },
+            "title": "Occurrences",
+            "type": "array"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/WorkItemPhase"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/WorkItemPriority"
+          },
+          "reopen_count": {
+            "minimum": 0.0,
+            "title": "Reopen Count",
+            "type": "integer"
+          },
+          "resolution_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemResolutionCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolution_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Due At"
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "source_kind": {
+            "$ref": "#/components/schemas/WorkItemSourceKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkItemStatus"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verification_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Due At"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Reason"
+          },
+          "work_item_id": {
+            "format": "uuid",
+            "title": "Work Item Id",
+            "type": "string"
+          },
+          "work_type": {
+            "$ref": "#/components/schemas/WorkItemType"
+          }
+        },
+        "required": [
+          "work_item_id",
+          "item_key",
+          "target_id",
+          "target_name",
+          "work_type",
+          "source_kind",
+          "title",
+          "summary",
+          "severity",
+          "priority",
+          "status",
+          "phase",
+          "first_observed_at",
+          "last_observed_at",
+          "occurrence_count",
+          "reopen_count",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkItemView",
         "type": "object"
       },
       "WorkflowKind": {
@@ -24609,6 +25883,386 @@
           }
         },
         "summary": "Command Source Binding",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items": {
+      "get": {
+        "operationId": "list_work_items_api_v1_apps_aiops_work_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "overdue",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Overdue",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Work Items",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "post": {
+        "operationId": "create_work_item_api_v1_apps_aiops_work_items_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}": {
+      "get": {
+        "operationId": "get_work_item_api_v1_apps_aiops_work_items__work_item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}/assignment": {
+      "patch": {
+        "operationId": "assign_work_item_api_v1_apps_aiops_work_items__work_item_id__assignment_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemAssignment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}/transitions": {
+      "post": {
+        "operationId": "transition_work_item_api_v1_apps_aiops_work_items__work_item_id__transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemTransition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transition Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items:route-run": {
+      "post": {
+        "operationId": "route_run_to_work_items_api_v1_apps_aiops_work_items_route_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemRouteRun"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkItemSummary"
+                  },
+                  "title": "Response Route Run To Work Items Api V1 Apps Aiops Work Items Route Run Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Route Run To Work Items",
         "tags": [
           "AIOps"
         ]
