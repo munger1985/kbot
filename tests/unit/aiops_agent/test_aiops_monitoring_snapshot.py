@@ -14,7 +14,9 @@ from aiops_agent.ports.diagnostic_source import CAPABILITY_METRIC_QUERY_RANGE
 
 
 class MonitoringSnapshotBuilderTest(unittest.IsolatedAsyncioTestCase):
-    def _fixtures(self, metric_codes: tuple[str, ...]):
+    def _fixtures(
+        self, metric_codes: tuple[str, ...], *, db_type: str = "ORACLE"
+    ):
         source_id = uuid4()
         binding_id = uuid4()
         monitor = SimpleNamespace(
@@ -54,7 +56,7 @@ class MonitoringSnapshotBuilderTest(unittest.IsolatedAsyncioTestCase):
                 get_scoped=AsyncMock(return_value=source)
             ),
         )
-        target = SimpleNamespace(target_id=uuid4(), db_type="ORACLE")
+        target = SimpleNamespace(target_id=uuid4(), db_type=db_type)
         return uow, target, str(binding_id)
 
     async def test_profile_metrics_are_intersected_with_binding_scope(
@@ -112,6 +114,41 @@ class MonitoringSnapshotBuilderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             "VISUALIZATION_METRICS_UNAVAILABLE",
             snapshot["initial_gaps"][0]["code"],
+        )
+
+    async def test_other_database_metrics_are_not_reported_as_unsupported(
+        self,
+    ) -> None:
+        uow, target, binding_id = self._fixtures(
+            (
+                "mysql.availability",
+                "mysql.transaction.throughput",
+                "postgresql.availability",
+                "postgresql.transaction.throughput",
+            ),
+            db_type="MYSQL",
+        )
+        snapshot = await MonitoringSnapshotBuilder(
+            metric_catalog=load_metric_catalog(),
+            default_window_seconds=3600,
+            max_response_bytes=1_000_000,
+        ).build(
+            uow=uow,
+            domain_id=7,
+            target=target,
+            now=datetime(2026, 10, 8, 1, 39, 11, tzinfo=UTC),
+        )
+
+        self.assertEqual([binding_id], snapshot["observation_binding_ids"])
+        self.assertEqual(
+            ["mysql.availability", "mysql.transaction.throughput"],
+            [
+                metric["metric_code"]
+                for metric in snapshot["bindings"][0]["metrics"]
+            ],
+        )
+        self.assertEqual(
+            [], snapshot["bindings"][0]["unsupported_metrics"]
         )
 
 

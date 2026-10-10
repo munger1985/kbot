@@ -125,6 +125,8 @@ class MonitoringSnapshotBuilder:
             supported = tuple(
                 item for item in selected if source.source_type in item.providers
             )
+            selected_codes = {item.metric_code for item in selected}
+            supported_codes = {item.metric_code for item in supported}
             declared = set((source.declared_capabilities_json or {}).keys())
             requested_capabilities = (monitor.capability_scope_json or {}).get(
                 "capabilities"
@@ -149,7 +151,7 @@ class MonitoringSnapshotBuilder:
                 CAPABILITY_EVENT_QUERY in effective
                 or (
                     CAPABILITY_METRIC_QUERY_RANGE in effective
-                    and bool(requested_codes)
+                    and bool(selected_codes)
                 )
             ):
                 observation_binding_ids.append(binding_id)
@@ -202,8 +204,7 @@ class MonitoringSnapshotBuilder:
                         if CAPABILITY_METRIC_QUERY_RANGE in effective
                     ],
                     "unsupported_metrics": sorted(
-                        set(requested_codes)
-                        - {item.metric_code for item in supported}
+                        selected_codes - supported_codes
                         if CAPABILITY_METRIC_QUERY_RANGE in effective
                         else ()
                     ),
