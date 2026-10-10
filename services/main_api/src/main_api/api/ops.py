@@ -167,7 +167,8 @@ def _route_permissions() -> dict[str, str]:
             "list_diagnostic_sources", "get_diagnostic_source",
             "patch_diagnostic_source", "delete_diagnostic_source",
             "check_diagnostic_source_connectivity",
-            "rotate_diagnostic_source_webhook_key", "command_diagnostic_source",
+            "rotate_diagnostic_source_webhook_key", "enable_diagnostic_source",
+            "disable_diagnostic_source",
             "list_source_target_bindings", "discover_source_instances",
             "map_source_instances",
             "list_source_bindings", "create_source_binding",
@@ -1612,17 +1613,14 @@ async def rotate_diagnostic_source_webhook_key(
     return WebhookKeyRotation.model_validate(payload)
 
 
-@router.post(
-    "/diagnostic-sources/{source_id}/{command}",
-    response_model=DiagnosticSourceDetail,
-)
-async def command_diagnostic_source(
+async def _command_diagnostic_source(
+    *,
     source_id: UUID,
-    command: Literal["enable", "disable"],
+    command: str,
     request: Request,
     response: Response,
-    if_match: IfMatch,
-    idempotency_key: IdempotencyKey,
+    if_match: str,
+    idempotency_key: str,
 ) -> DiagnosticSourceDetail:
     payload = await _client(request).command_diagnostic_source(
         source_id,
@@ -1632,6 +1630,48 @@ async def command_diagnostic_source(
         auth_context=request.state.auth_context,
     )
     return _validated(DiagnosticSourceDetail, payload, response)
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/enable",
+    response_model=DiagnosticSourceDetail,
+)
+async def enable_diagnostic_source(
+    source_id: UUID,
+    request: Request,
+    response: Response,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> DiagnosticSourceDetail:
+    return await _command_diagnostic_source(
+        source_id=source_id,
+        command="enable",
+        request=request,
+        response=response,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/disable",
+    response_model=DiagnosticSourceDetail,
+)
+async def disable_diagnostic_source(
+    source_id: UUID,
+    request: Request,
+    response: Response,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> DiagnosticSourceDetail:
+    return await _command_diagnostic_source(
+        source_id=source_id,
+        command="disable",
+        request=request,
+        response=response,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.get(

@@ -721,11 +721,7 @@ async def rotate_webhook_key(
     )
 
 
-@router.post(
-    "/diagnostic-sources/{source_id}/{command}",
-    response_model=DiagnosticSourceDetail,
-)
-async def command_diagnostic_source(
+async def _command_diagnostic_source(
     source_id: UUID,
     command: str,
     response: Response,
@@ -743,6 +739,40 @@ async def command_diagnostic_source(
     )
     _etag(response, result.row_version)
     return result
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/enable",
+    response_model=DiagnosticSourceDetail,
+)
+async def enable_diagnostic_source(
+    source_id: UUID,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> DiagnosticSourceDetail:
+    return await _command_diagnostic_source(
+        source_id, "enable", response, service, scope, idempotency_key, if_match
+    )
+
+
+@router.post(
+    "/diagnostic-sources/{source_id}/disable",
+    response_model=DiagnosticSourceDetail,
+)
+async def disable_diagnostic_source(
+    source_id: UUID,
+    response: Response,
+    service: Service,
+    scope: Scope,
+    idempotency_key: IdempotencyKey,
+    if_match: IfMatch = None,
+) -> DiagnosticSourceDetail:
+    return await _command_diagnostic_source(
+        source_id, "disable", response, service, scope, idempotency_key, if_match
+    )
 
 
 @router.get(
