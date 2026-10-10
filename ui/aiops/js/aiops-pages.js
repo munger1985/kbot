@@ -6,7 +6,7 @@
   let sourceReloadAttempts = 0;
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]], detail: "target-detail.html?id=" },
-    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "诊断源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
+    "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]], detail: "inspection-plan-detail.html?id=" },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
   };
@@ -15,13 +15,15 @@
     const value = item?.[key];
     if (type === "source-actions") {
       const checking = item.connectivity_check_pending;
+      const detailButton = '<button type="button" data-source-action="detail">详情</button>';
+      const editButton = '<button type="button" data-source-action="edit">编辑</button>';
       const healthButton = `<button type="button" data-source-action="connectivity" ${checking ? "disabled" : ""}>${checking ? "检查中" : "检查连通性"}</button>`;
       const lifecycleButton = item.status === "ENABLED"
         ? '<button type="button" data-source-action="disable">停用</button>'
         : ["CONNECTED", "DEGRADED"].includes(item.connectivity_status) && !checking
           ? '<button type="button" class="primary" data-source-action="enable">启用</button>'
           : "";
-      return `<div class="ops-actions">${healthButton}${lifecycleButton}</div>`;
+      return `<div class="ops-actions">${detailButton}${editButton}${healthButton}${lifecycleButton}</div>`;
     }
     if (type === "target-actions") {
       const checking = item.connectivity_check_pending;
@@ -142,6 +144,14 @@
   async function runSourceAction(button, item) {
     const action = button.dataset.sourceAction;
     const sourceId = encodeURIComponent(item.source_id);
+    if (action === "detail") {
+      location.href = `diagnostic-source-detail.html?id=${sourceId}`;
+      return;
+    }
+    if (action === "edit") {
+      globalThis.KBotAIOpsConfigurations?.openEdit("diagnostic-sources", item.source_id);
+      return;
+    }
     const path = action === "connectivity"
       ? `/diagnostic-sources/${sourceId}/connectivity-checks`
       : `/diagnostic-sources/${sourceId}/${action}`;
@@ -158,7 +168,7 @@
       const connectivityResult = action === "connectivity"
         ? `连通性检查结果：${result.connectivity_status || "UNKNOWN"}${result.last_error_code ? `（${result.last_error_code}）` : ""}`
         : "";
-      shell.toast(action === "connectivity" ? connectivityResult : action === "enable" ? "诊断源已启用" : "诊断源已停用");
+      shell.toast(action === "connectivity" ? connectivityResult : action === "enable" ? "监控源已启用" : "监控源已停用");
       await renderList("diagnostic-sources");
     } catch (error) {
       shell.toast(error.message);
@@ -234,7 +244,6 @@
         row.addEventListener("click", () => {
           const editors = {
             targets: globalThis.KBotAIOpsTargets,
-            "diagnostic-sources": globalThis.KBotAIOpsConfigurations,
             "inspection-plans": globalThis.KBotAIOpsConfigurations,
           };
           if (editors[page]?.openEdit) {
@@ -730,104 +739,158 @@
 
   function sourceDetailHtml(source) {
     const summary = `<dl class="ops-detail">${Object.entries(source).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(source, null, 2))}</pre>`;
-    if (!["PROMETHEUS", "ZABBIX"].includes(source.source_type)) return summary;
-    return `${summary}<section class="ops-panel ops-instance-mapping" id="source-instance-mapping"><div class="ops-panel-head"><div><small>监控接入</small><h2>实例发现与 Target 映射</h2><p>服务端只执行固定元数据查询；浏览器不会接收原始 Locator 或 Provider 查询。</p></div><button type="button" id="discover-source-instances">发现实例</button></div><div class="ops-panel-body"><p id="source-instance-result" class="ops-result"></p><h3>已配置映射</h3><div id="source-binding-list" class="ops-empty">正在读取…</div><h3>候选实例</h3><div id="source-candidate-list" class="ops-empty">点击“发现实例”读取受控候选。</div><div class="ops-actions"><button type="button" id="load-more-source-instances" hidden>加载更多</button><button type="button" class="primary" id="save-source-instance-mappings" disabled>保存所选映射</button></div></div></section>`;
+    return `${summary}<div class="ops-dialog-note">具体监控 label 与数据库对象的映射统一在“运维目标详情”中维护。</div>`;
   }
 
-  async function initializeSourceInstanceMappings(source) {
-    if (!["PROMETHEUS", "ZABBIX"].includes(source.source_type)) return;
-    const result = document.getElementById("source-instance-result");
-    const bindingList = document.getElementById("source-binding-list");
-    const candidateList = document.getElementById("source-candidate-list");
-    const discoverButton = document.getElementById("discover-source-instances");
-    const loadMoreButton = document.getElementById("load-more-source-instances");
-    const saveButton = document.getElementById("save-source-instance-mappings");
-    let targets = [];
+  async function initializeTargetMonitorMappings(targetId, target) {
+    const form = document.getElementById("target-monitor-binding-form");
+    if (!form) return;
+    const sourceSelect = document.getElementById("target-monitor-source");
+    const locatorField = document.getElementById("target-monitor-locator-field");
+    const locatorInput = document.getElementById("target-monitor-locator");
+    const locatorLabel = document.getElementById("target-monitor-locator-label");
+    const locatorHelp = document.getElementById("target-monitor-locator-help");
+    const jobField = document.getElementById("target-monitor-job-field");
+    const jobInput = document.getElementById("target-monitor-job");
+    const discovery = document.getElementById("target-monitor-discovery");
+    const discoverButton = document.getElementById("discover-target-monitor-labels");
+    const candidateList = document.getElementById("target-monitor-candidate-list");
+    const bindingList = document.getElementById("target-monitor-binding-list");
+    const result = document.getElementById("target-monitor-binding-result");
+    const state = document.getElementById("target-monitor-mapping-state");
+    const saveButton = document.getElementById("save-target-monitor-binding");
+    let sources = [];
     let bindings = [];
     let candidates = [];
-    let nextCursor = null;
 
-    const targetName = (targetId) => targets.find((item) => String(item.target_id) === String(targetId))?.display_name || "Target 已不可用";
+    const sourceById = (sourceId) => sources.find((item) => String(item.source_id) === String(sourceId));
     const renderBindings = () => {
+      state.textContent = bindings.length ? `${bindings.length} 条有效映射` : "未配置";
+      state.className = `ops-badge ${bindings.length ? "good" : "bad"}`;
       bindingList.innerHTML = bindings.length
-        ? `<table class="ops-table"><thead><tr><th>Target</th><th>外部定位</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => `<tr><td>${shell.escape(targetName(binding.target_id))}</td><td><code>${shell.escape(binding.locator_hint)}</code></td><td>${shell.badge(binding.status)}</td></tr>`).join("")}</tbody></table>`
-        : '<div class="ops-empty">尚未配置实例映射。</div>';
-    };
-    const renderCandidates = () => {
-      const boundTargets = new Set(bindings.map((binding) => String(binding.target_id)));
-      candidateList.innerHTML = candidates.length
-        ? `<table class="ops-table"><thead><tr><th>候选实例</th><th>数据库</th><th>状态</th><th>映射 Target</th></tr></thead><tbody>${candidates.map((candidate) => {
-          const options = targets.filter((target) => target.db_type === candidate.db_type && !boundTargets.has(String(target.target_id)));
-          const mapping = candidate.mapping_status === "MAPPED"
-            ? shell.escape(targetName(candidate.mapped_target_id))
-            : `<select data-candidate-ref="${shell.escape(candidate.candidate_ref)}"><option value="">暂不映射</option>${options.map((target) => `<option value="${shell.escape(target.target_id)}">${shell.escape(target.display_name)}</option>`).join("")}</select>`;
-          return `<tr><td><strong>${shell.escape(candidate.display_name)}</strong><small><code>${shell.escape(candidate.locator_hint)}</code></small></td><td>${shell.escape(candidate.db_type)}</td><td>${shell.badge(candidate.mapping_status)}</td><td>${mapping}</td></tr>`;
+        ? `<table class="ops-table"><thead><tr><th>监控源</th><th>类型</th><th>Label / 外部标识</th><th>状态</th></tr></thead><tbody>${bindings.map((binding) => {
+          const source = sourceById(binding.source_id);
+          return `<tr><td><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong></td><td>${shell.escape(source?.source_type || "—")}</td><td><code>${shell.escape(binding.locator_hint)}</code></td><td>${shell.badge(binding.status)}</td></tr>`;
         }).join("")}</tbody></table>`
-        : '<div class="ops-empty">当前过滤范围没有候选实例。</div>';
-      loadMoreButton.hidden = !nextCursor;
-      saveButton.disabled = !candidateList.querySelector("select[data-candidate-ref] option:not([value=''])");
+        : '<div class="ops-error">尚未绑定监控 Label；完成至少一条映射后才能启用该 Target。</div>';
     };
-    const loadCandidates = async (append = false) => {
+    const renderSourceOptions = () => {
+      const boundSourceIds = new Set(bindings.map((binding) => String(binding.source_id)));
+      const available = sources.filter((source) => source.status === "ENABLED" && !boundSourceIds.has(String(source.source_id)));
+      sourceSelect.innerHTML = available.length
+        ? '<option value="">请选择监控源</option>' + available.map((source) => `<option value="${shell.escape(source.source_id)}">${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}</option>`).join("")
+        : '<option value="">没有尚未绑定的已启用监控源</option>';
+      sourceSelect.disabled = !available.length;
+      saveButton.disabled = !available.length;
+    };
+    const configureSource = () => {
+      const source = sourceById(sourceSelect.value);
+      const discoverable = ["PROMETHEUS", "ZABBIX"].includes(source?.source_type);
+      discovery.hidden = !discoverable;
+      locatorField.hidden = discoverable || !source;
+      locatorInput.required = Boolean(source && !discoverable);
+      jobField.hidden = source?.source_type !== "LOKI";
+      candidates = [];
+      candidateList.innerHTML = '<div class="ops-empty">点击“发现可用 Label”读取当前数据库类型的候选。</div>';
+      result.textContent = "";
+      if (!source) return;
+      const presentation = {
+        ALERTMANAGER: ["target_key label 值", "必须与告警中的 target_key 完全一致。"],
+        LOKI: ["target_key label 值", "必须与日志流中的 target_key 完全一致。"],
+        OEM: ["OEM Target Name", "填写 OEM 中唯一的 Target Name。"],
+      }[source.source_type] || ["监控 Label 值", "填写监控系统中唯一标识当前数据库的值。"];
+      locatorLabel.textContent = presentation[0];
+      locatorHelp.textContent = presentation[1];
+    };
+    const loadCandidates = async () => {
+      const source = sourceById(sourceSelect.value);
+      if (!source || !["PROMETHEUS", "ZABBIX"].includes(source.source_type)) return;
       discoverButton.disabled = true;
-      loadMoreButton.disabled = true;
-      result.textContent = "正在从监控来源读取候选实例…";
+      result.textContent = "正在从监控源发现候选 Label…";
       result.dataset.tone = "";
       try {
         const page = await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-discoveries`, {
           method: "POST",
-          body: JSON.stringify({ page_size: 100, ...(append && nextCursor ? { cursor: nextCursor } : {}) }),
+          body: JSON.stringify({ db_types: [target.db_type], page_size: 100 }),
         });
-        candidates = append ? [...candidates, ...(page.items || [])] : (page.items || []);
-        nextCursor = page.next_cursor || null;
-        renderCandidates();
-        result.textContent = `已发现 ${candidates.length} 个候选；未保存的候选不会进入实时监控。`;
-        result.dataset.tone = "good";
+        candidates = (page.items || []).filter((item) => item.mapping_status !== "MAPPED");
+        candidateList.innerHTML = candidates.length
+          ? `<div class="target-monitor-candidates">${candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
+          : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
+        result.textContent = `已发现 ${candidates.length} 个可绑定候选。`;
+        result.dataset.tone = candidates.length ? "good" : "";
       } catch (error) {
         result.textContent = error.message;
         result.dataset.tone = "bad";
       } finally {
         discoverButton.disabled = false;
-        loadMoreButton.disabled = false;
       }
     };
-    try {
-      const [targetPage, bindingRows] = await Promise.all([
-        KBotAIOpsAuth.request(`${appApi}/targets?limit=200`),
-        KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/target-bindings`),
-      ]);
-      targets = Array.isArray(targetPage) ? targetPage : targetPage.items || [];
-      bindings = Array.isArray(bindingRows) ? bindingRows : [];
+    const reloadBindings = async () => {
+      const rows = await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/source-bindings`);
+      bindings = Array.isArray(rows) ? rows : [];
       renderBindings();
+      renderSourceOptions();
+      configureSource();
+    };
+
+    try {
+      const sourcePage = await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources?limit=200`);
+      sources = Array.isArray(sourcePage) ? sourcePage : sourcePage.items || [];
+      await reloadBindings();
     } catch (error) {
       bindingList.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`;
+      state.textContent = "读取失败";
+      state.className = "ops-badge bad";
+      return;
     }
-    discoverButton.addEventListener("click", () => loadCandidates(false));
-    loadMoreButton.addEventListener("click", () => loadCandidates(true));
-    candidateList.addEventListener("change", () => {
-      const selected = [...candidateList.querySelectorAll("select[data-candidate-ref]")].filter((select) => select.value);
-      const values = selected.map((select) => select.value);
-      saveButton.disabled = !selected.length || new Set(values).size !== values.length;
-    });
-    saveButton.addEventListener("click", async () => {
-      const mappings = [...candidateList.querySelectorAll("select[data-candidate-ref]")]
-        .filter((select) => select.value)
-        .map((select) => ({ candidate_ref: select.dataset.candidateRef, target_id: select.value }));
-      if (!mappings.length || new Set(mappings.map((item) => item.target_id)).size !== mappings.length) return;
+    sourceSelect.addEventListener("change", configureSource);
+    discoverButton.addEventListener("click", loadCandidates);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const source = sourceById(sourceSelect.value);
+      if (!source) return;
       saveButton.disabled = true;
+      result.textContent = "正在保存 Target 监控映射…";
+      result.dataset.tone = "";
       try {
-        const response = await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`, {
-          method: "POST",
-          headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-          body: JSON.stringify({ mappings }),
-        });
-        bindings = [...bindings, ...(response.items || [])];
-        renderBindings();
-        await loadCandidates(false);
-        shell.toast("实例与 Target 映射已保存");
+        if (["PROMETHEUS", "ZABBIX"].includes(source.source_type)) {
+          const candidateRef = form.elements.monitor_candidate_ref?.value;
+          if (!candidateRef) throw new Error("请先发现并选择一个监控 Label。");
+          await KBotAIOpsAuth.request(`${appApi}/diagnostic-sources/${encodeURIComponent(source.source_id)}/instance-mappings`, {
+            method: "POST",
+            headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+            body: JSON.stringify({ mappings: [{ candidate_ref: candidateRef, target_id: targetId }] }),
+          });
+        } else {
+          const locatorKey = locatorInput.value.trim();
+          if (!locatorKey) throw new Error("监控 Label 值不能为空。");
+          const labels = source.source_type === "LOKI"
+            ? { target_key: locatorKey, ...(jobInput.value.trim() ? { job: jobInput.value.trim() } : {}) }
+            : null;
+          await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/source-bindings`, {
+            method: "POST",
+            headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+            body: JSON.stringify({
+              source_id: source.source_id,
+              source_locator_key: locatorKey,
+              source_locator: labels ? { labels } : {},
+              role: "PRIMARY",
+              priority: 100,
+            }),
+          });
+        }
+        locatorInput.value = "";
+        jobInput.value = "";
+        await reloadBindings();
+        result.textContent = "监控源与当前 Target 的 Label 映射已保存。";
+        result.dataset.tone = "good";
+        shell.toast("Target 监控映射已保存");
       } catch (error) {
         result.textContent = error.message;
         result.dataset.tone = "bad";
-        saveButton.disabled = false;
+      } finally {
+        saveButton.disabled = sourceSelect.disabled;
       }
     });
   }
@@ -854,10 +917,9 @@
           editTargetAccess.href = `targets.html?edit=${encodeURIComponent(id)}`;
         }
         await initializeTargetSubscription(id, data);
+        await initializeTargetMonitorMappings(id, data);
         await initializeTargetRecovery(id, data);
         await initializeTargetFacts(id);
-      } else if (page === "diagnostic-source-detail") {
-        await initializeSourceInstanceMappings(data);
       }
     } catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }

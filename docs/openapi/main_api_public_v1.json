@@ -59,16 +59,6 @@
             ],
             "title": "Description"
           },
-          "diagnostic_source_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "maxItems": 16,
-            "minItems": 1,
-            "title": "Diagnostic Source Ids",
-            "type": "array"
-          },
           "display_name": {
             "maxLength": 256,
             "minLength": 1,
@@ -110,19 +100,19 @@
             "type": "string"
           },
           "target_ids": {
-            "default": [],
             "items": {
               "format": "uuid",
               "type": "string"
             },
             "maxItems": 32,
+            "minItems": 1,
             "title": "Target Ids",
             "type": "array"
           }
         },
         "required": [
           "display_name",
-          "diagnostic_source_ids"
+          "target_ids"
         ],
         "title": "AIOpsAgentCreatePayload",
         "type": "object"
@@ -222,23 +212,6 @@
             ],
             "title": "Description"
           },
-          "diagnostic_source_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "maxItems": 16,
-                "minItems": 1,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Diagnostic Source Ids"
-          },
           "display_name": {
             "anyOf": [
               {
@@ -321,6 +294,7 @@
                   "type": "string"
                 },
                 "maxItems": 32,
+                "minItems": 1,
                 "type": "array"
               },
               {

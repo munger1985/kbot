@@ -170,8 +170,7 @@ class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    diagnostic_source_ids: tuple[UUID, ...] = Field(min_length=1, max_length=16)
-    target_ids: tuple[UUID, ...] = Field(default=(), max_length=32)
+    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     controlled_action_execution: tuple[
         TargetControlledActionExecution, ...
     ] = ()
@@ -192,8 +191,6 @@ class CreateAIOpsAgentCommand(_Model):
 
     @model_validator(mode="after")
     def validate_resources(self):
-        if len(set(self.diagnostic_source_ids)) != len(self.diagnostic_source_ids):
-            raise ValueError("diagnostic_source_ids 不能重复")
         if len(set(self.target_ids)) != len(self.target_ids):
             raise ValueError("target_ids 不能重复")
         policy_targets = [item.target_id for item in self.controlled_action_execution]
@@ -210,10 +207,9 @@ class UpdateAIOpsAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    diagnostic_source_ids: tuple[UUID, ...] | None = Field(
-        default=None, min_length=1, max_length=16
+    target_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=32
     )
-    target_ids: tuple[UUID, ...] | None = Field(default=None, max_length=32)
     controlled_action_execution: tuple[
         TargetControlledActionExecution, ...
     ] | None = None
@@ -234,12 +230,6 @@ class UpdateAIOpsAgentCommand(_Model):
 
     @model_validator(mode="after")
     def validate_resources(self):
-        if (
-            self.diagnostic_source_ids is not None
-            and len(set(self.diagnostic_source_ids))
-            != len(self.diagnostic_source_ids)
-        ):
-            raise ValueError("diagnostic_source_ids 不能重复")
         if self.target_ids is not None and len(set(self.target_ids)) != len(
             self.target_ids
         ):
@@ -315,10 +305,6 @@ class AIOpsAgentService:
                         values=values,
                         actor_id=command.actor_id,
                     )
-                )
-                await uow.agents.add_version_sources(
-                    version_id=version_id,
-                    source_ids=command.diagnostic_source_ids,
                 )
                 await uow.agents.add_version_targets(
                     version_id=version_id,
@@ -442,9 +428,6 @@ class AIOpsAgentService:
                     "STATE_VERSION_CONFLICT", "Agent 配置版本已变化"
                 )
             current = await self._version(uow.agents, agent)
-            current_sources = await uow.agents.version_source_ids(
-                agent_version_id=current.agent_version_id
-            )
             current_targets = await uow.agents.version_target_ids(
                 agent_version_id=current.agent_version_id
             )
@@ -473,9 +456,6 @@ class AIOpsAgentService:
             ]
             effective = {
                 "domain_id": command.domain_id,
-                "diagnostic_source_ids": changes.get(
-                    "diagnostic_source_ids", tuple(current_sources)
-                ),
                 "target_ids": effective_target_ids,
                 "controlled_action_execution": changes.get(
                     "controlled_action_execution", current_controlled_actions
@@ -510,7 +490,6 @@ class AIOpsAgentService:
                 effective,
             )
             version_fields = {
-                "diagnostic_source_ids",
                 "target_ids",
                 "controlled_action_execution",
                 "auto_alert_enabled",
@@ -549,10 +528,6 @@ class AIOpsAgentService:
                         actor_id=command.actor_id,
                     )
                 )
-                await uow.agents.add_version_sources(
-                    version_id=version_id,
-                    source_ids=effective["diagnostic_source_ids"],
-                )
                 await uow.agents.add_version_targets(
                     version_id=version_id,
                     target_ids=effective["target_ids"],
@@ -588,7 +563,6 @@ class AIOpsAgentService:
             "instruction": row["instruction"],
             "resource_context": {
                 "policy_id": row["policy_id"],
-                "diagnostic_source_ids": row["diagnostic_source_ids"],
                 "target_ids": row["target_ids"],
                 "controlled_action_execution": row[
                     "controlled_action_execution"
@@ -685,32 +659,13 @@ class AIOpsAgentService:
             )
         if status == "ACTIVE":
             await self._validate_production_llm_providers(values)
-        source_ids = tuple(values.get("diagnostic_source_ids") or ())
-        if not source_ids:
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_SOURCE_REQUIRED", "Agent 至少需要选择一个监控源",
-                status_code=422,
-            )
-        sources = [
-            await uow.diagnostic_sources.get_scoped(
-                diagnostic_source_id=source_id, domain_id=domain_id
-            )
-            for source_id in source_ids
-        ]
-        if any(source is None for source in sources):
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的监控源不存在"
-            )
-        if status == "ACTIVE" and any(
-            source.status != "ENABLED"
-            for source in sources
-        ):
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_SOURCE_UNAVAILABLE",
-                "启用 Agent 前，所选监控源必须已启用",
-                status_code=422,
-            )
         target_ids = tuple(values.get("target_ids") or ())
+        if not target_ids:
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_TARGET_REQUIRED",
+                "Agent 至少需要关联一个 Target",
+                status_code=422,
+            )
         targets = [
             await uow.targets.get_scoped(target_id=target_id, domain_id=domain_id)
             for target_id in target_ids
@@ -732,13 +687,26 @@ class AIOpsAgentService:
                     domain_id=domain_id,
                     active_only=True,
                 )
-                bound_source_ids = {
-                    binding.diagnostic_source_id for binding in bindings
-                }
-                if not set(source_ids).issubset(bound_source_ids):
+                if not bindings:
                     raise AIOpsAgentError(
                         "AIOPS_AGENT_SOURCE_BINDING_REQUIRED",
-                        "启用 Agent 前，每个 Target 必须与全部所选监控源建立有效映射",
+                        "启用 Agent 前，每个 Target 必须至少配置一条有效监控 Label 映射",
+                        status_code=422,
+                    )
+                sources = [
+                    await uow.diagnostic_sources.get_scoped(
+                        diagnostic_source_id=binding.diagnostic_source_id,
+                        domain_id=domain_id,
+                    )
+                    for binding in bindings
+                ]
+                if any(
+                    source is None or source.status != "ENABLED"
+                    for source in sources
+                ):
+                    raise AIOpsAgentError(
+                        "AIOPS_AGENT_SOURCE_UNAVAILABLE",
+                        "启用 Agent 前，Target 的监控映射必须引用已启用的监控源",
                         status_code=422,
                     )
         policies = self._controlled_action_policies(values)
@@ -933,9 +901,6 @@ class AIOpsAgentService:
 
     @staticmethod
     async def _view(uow, agent, version):
-        source_ids = await uow.agents.version_source_ids(
-            agent_version_id=version.agent_version_id
-        )
         candidate_ids = set(await uow.agents.version_target_ids(
             agent_version_id=version.agent_version_id
         ))
@@ -979,7 +944,6 @@ class AIOpsAgentService:
             "agent_version_id": str(version.agent_version_id),
             "version_no": int(version.version_no),
             "policy_id": str(version.policy_id),
-            "diagnostic_source_ids": [str(item) for item in source_ids],
             "target_ids": [str(item) for item in sorted(candidate_ids, key=str)],
             "target_candidates": target_candidates,
             "controlled_action_execution": [

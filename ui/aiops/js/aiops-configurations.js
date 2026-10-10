@@ -68,7 +68,7 @@
     if (!editing) {
       document.getElementById("save-diagnostic-source").textContent = creatingAlertmanager
         ? "创建并生成接入凭据"
-        : "创建诊断源";
+        : "创建监控源";
     }
     const list = document.getElementById("source-capability-list");
     list.replaceChildren(...presentation.capabilities.map((label) => {
@@ -120,8 +120,8 @@
     form.elements.source_type.disabled = false;
     resetWebhookKeyResult();
     renderSourceType(form);
-    document.getElementById("diagnostic-source-dialog-title").textContent = "新增诊断源";
-    document.getElementById("save-diagnostic-source").textContent = "创建诊断源";
+    document.getElementById("diagnostic-source-dialog-title").textContent = "新增监控源";
+    document.getElementById("save-diagnostic-source").textContent = "创建监控源";
     showResult("source-test-result", "", "");
     document.getElementById("diagnostic-source-dialog").showModal();
     form.elements.display_name.focus();
@@ -146,7 +146,7 @@
       document.getElementById("rotate-source-webhook-key").textContent = source.webhook_configured
         ? "轮换 Webhook Key"
         : "生成 Webhook Key";
-      document.getElementById("diagnostic-source-dialog-title").textContent = "编辑诊断源";
+      document.getElementById("diagnostic-source-dialog-title").textContent = "编辑监控源";
       document.getElementById("save-diagnostic-source").textContent = "保存修改";
       showResult("source-test-result", "", "");
       document.getElementById("diagnostic-source-dialog").showModal();
@@ -197,8 +197,8 @@
       document.getElementById("diagnostic-source-dialog").close();
       shell.toast(
         saved.connectivity_check_pending
-          ? "诊断源已保存，正在执行连通性检查"
-          : editing ? "诊断源已更新" : "诊断源已创建"
+          ? "监控源已保存，正在执行连通性检查"
+          : editing ? "监控源已更新" : "监控源已创建"
       );
       editing = null;
       await KBotAIOpsPages.reload();
@@ -207,7 +207,7 @@
     } finally {
       button.disabled = false;
       if (document.getElementById("source-webhook-onboarding").hidden) {
-        button.textContent = editing ? "保存修改" : "创建诊断源";
+        button.textContent = editing ? "保存修改" : "创建监控源";
       }
     }
   }
@@ -218,13 +218,13 @@
     const button = document.getElementById("test-diagnostic-source");
     button.disabled = true;
     button.textContent = "测试中…";
-    showResult("source-test-result", "正在验证诊断源 API 和认证…", "");
+    showResult("source-test-result", "正在验证监控源 API 和认证…", "");
     try {
       const response = await KBotAIOpsAuth.request(`${api}/diagnostic-sources/test-connection`, {
         method: "POST",
         body: JSON.stringify(sourcePayload(form, true, true)),
       });
-      if (!response.ok) throw new Error(response.error_code || "诊断源连接测试失败。");
+      if (!response.ok) throw new Error(response.error_code || "监控源连接测试失败。");
       const count = (response.discovered_capabilities || []).length;
       showResult("source-test-result", `连接成功，已发现 ${count} 项系统能力。`, "good");
     } catch (error) {
@@ -288,13 +288,13 @@
     document.getElementById("source-created-webhook-secret").value = secret;
     document.getElementById("source-created-webhook-key").value = key;
     document.getElementById("source-created-webhook-ini").value = [
-      `kbot_webhook_key = ${key || "生成失败，请编辑诊断源后重试"}`,
+      `kbot_webhook_key = ${key || "生成失败，请编辑监控源后重试"}`,
       `kbot_webhook_secret = ${secret}`,
     ].join("\n");
     document.getElementById("copy-created-webhook-key").disabled = !key;
     document.getElementById("copy-created-webhook-ini").disabled = !key;
     document.getElementById("source-webhook-onboarding-note").textContent = errorMessage
-      ? `诊断源已创建，但 Webhook Key 生成失败：${errorMessage}。请先复制 Secret，关闭后编辑诊断源重试。`
+      ? `监控源已创建，但 Webhook Key 生成失败：${errorMessage}。请先复制 Secret，关闭后编辑监控源重试。`
       : "Secret和Key只显示一次；复制配置后即可关闭。";
     document.getElementById("source-webhook-onboarding").hidden = false;
     document.getElementById("test-diagnostic-source").hidden = true;

@@ -18,7 +18,6 @@ if __package__ in (None, ""):
 from aiops_agent.entities import (
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
-    AIOpsAgentVersionSourceEntity,
     OpsAnswerBlockEntity,
     OpsAnswerCitationEntity,
     ApprovalTokenEntity,
@@ -74,7 +73,6 @@ from tests.support.oracle_preflight import require_oracle_listener
 AIOPS_ENTITY_CLASSES = (
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
-    AIOpsAgentVersionSourceEntity,
     NotificationSubscriptionEntity,
     TargetEntity,
     PolicyEntity,

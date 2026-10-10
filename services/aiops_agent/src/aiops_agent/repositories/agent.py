@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiops_agent.entities import (
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
-    AIOpsAgentVersionSourceEntity,
     AIOpsAgentVersionTargetEntity,
     PolicyEntity,
     TargetEntity,
+    TargetSourceBindingEntity,
 )
 
 
@@ -30,19 +30,6 @@ class AIOpsAgentRepository:
     async def add_version(self, row: AIOpsAgentVersionEntity) -> None:
         self._write_guard()
         self._session.add(row)
-        await self._session.flush()
-
-    async def add_version_sources(
-        self, *, version_id: UUID, source_ids: tuple[UUID, ...]
-    ) -> None:
-        self._write_guard()
-        self._session.add_all(
-            AIOpsAgentVersionSourceEntity(
-                agent_version_id=version_id,
-                diagnostic_source_id=source_id,
-            )
-            for source_id in source_ids
-        )
         await self._session.flush()
 
     async def add_version_targets(
@@ -65,15 +52,30 @@ class AIOpsAgentRepository:
         )
         await self._session.flush()
 
-    async def version_source_ids(self, *, agent_version_id: UUID) -> list[UUID]:
-        rows = await self._session.scalars(
-            select(AIOpsAgentVersionSourceEntity.diagnostic_source_id)
-            .where(
-                AIOpsAgentVersionSourceEntity.agent_version_id
-                == agent_version_id
+    async def version_source_ids(
+        self, *, agent_version_id: UUID, target_id: UUID | None = None
+    ) -> list[UUID]:
+        """由 Agent 版本关联的 Target 动态解析有效监控源。"""
+        statement = (
+            select(TargetSourceBindingEntity.diagnostic_source_id)
+            .join(
+                AIOpsAgentVersionTargetEntity,
+                AIOpsAgentVersionTargetEntity.target_id
+                == TargetSourceBindingEntity.target_id,
             )
-            .order_by(AIOpsAgentVersionSourceEntity.diagnostic_source_id)
+            .where(
+                AIOpsAgentVersionTargetEntity.agent_version_id
+                == agent_version_id,
+                TargetSourceBindingEntity.status == "ACTIVE",
+            )
+            .distinct()
+            .order_by(TargetSourceBindingEntity.diagnostic_source_id)
         )
+        if target_id is not None:
+            statement = statement.where(
+                TargetSourceBindingEntity.target_id == target_id
+            )
+        rows = await self._session.scalars(statement)
         return list(rows)
 
     async def version_target_ids(self, *, agent_version_id: UUID) -> list[UUID]:
@@ -236,7 +238,8 @@ class AIOpsAgentRepository:
             return None
         agent, version = row
         source_ids = await self.version_source_ids(
-            agent_version_id=version.agent_version_id
+            agent_version_id=version.agent_version_id,
+            target_id=target_id,
         )
         target_ids = await self.version_target_ids(
             agent_version_id=version.agent_version_id
@@ -271,7 +274,8 @@ class AIOpsAgentRepository:
         if version is None:
             return None
         source_ids = await self.version_source_ids(
-            agent_version_id=agent_version_id
+            agent_version_id=agent_version_id,
+            target_id=target_id,
         )
         target_ids = await self.version_target_ids(
             agent_version_id=agent_version_id
@@ -295,34 +299,33 @@ class AIOpsAgentRepository:
     async def resolve_auto_alert(
         self, *, domain_id: int, source_id: UUID, target_id: UUID
     ):
-        """优先选择订阅告警源的 Agent，否则按 Target 安全回退。"""
-        for required_source_id in (source_id, None):
-            rows = await self._auto_alert_candidates(
-                domain_id=domain_id,
+        """按告警已定位的 Target 选择 Agent，监控源由 Target 映射决定。"""
+        rows = await self._auto_alert_candidates(
+            domain_id=domain_id,
+            target_id=target_id,
+        )
+        for agent, version, policy in rows:
+            if not bool(policy.rules_json.get("auto_alert_enabled", True)):
+                continue
+            source_ids = await self.version_source_ids(
+                agent_version_id=version.agent_version_id,
                 target_id=target_id,
-                source_id=required_source_id,
             )
-            for agent, version, policy in rows:
-                if not bool(policy.rules_json.get("auto_alert_enabled", True)):
-                    continue
-                source_ids = await self.version_source_ids(
-                    agent_version_id=version.agent_version_id
-                )
-                target_ids = await self.version_target_ids(
-                    agent_version_id=version.agent_version_id
-                )
-                target_policies = await self.version_target_policies(
-                    agent_version_id=version.agent_version_id
-                )
-                return _execution_binding(
-                    agent,
-                    version,
-                    source_ids,
-                    target_ids,
-                    target_policies,
-                    policy,
-                    selected_target_id=target_id,
-                ), policy
+            target_ids = await self.version_target_ids(
+                agent_version_id=version.agent_version_id
+            )
+            target_policies = await self.version_target_policies(
+                agent_version_id=version.agent_version_id
+            )
+            return _execution_binding(
+                agent,
+                version,
+                source_ids,
+                target_ids,
+                target_policies,
+                policy,
+                selected_target_id=target_id,
+            ), policy
         return None
 
     async def _auto_alert_candidates(
@@ -330,7 +333,6 @@ class AIOpsAgentRepository:
         *,
         domain_id: int,
         target_id: UUID,
-        source_id: UUID | None,
     ):
         """读取满足状态与 Target 边界的确定性自动告警候选。"""
         statement = (
@@ -354,14 +356,6 @@ class AIOpsAgentRepository:
             )
             .order_by(AIOpsAgentEntity.agent_id)
         )
-        if source_id is not None:
-            statement = statement.join(
-                AIOpsAgentVersionSourceEntity,
-                AIOpsAgentVersionSourceEntity.agent_version_id
-                == AIOpsAgentVersionEntity.agent_version_id,
-            ).where(
-                AIOpsAgentVersionSourceEntity.diagnostic_source_id == source_id
-            )
         return await self._session.execute(statement)
 
 

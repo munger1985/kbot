@@ -19,7 +19,6 @@ class _AgentRepository:
         self.agents = {}
         self.versions = {}
         self.current_version_at_agent_insert = "NOT_CAPTURED"
-        self.version_sources = {}
         self.version_targets = {}
         self.controlled_action_policies = {}
 
@@ -37,12 +36,6 @@ class _AgentRepository:
         if agent.current_version_id is not None:
             raise AssertionError("版本插入前不得写入 CURRENT_VERSION_ID")
         self.versions[row.agent_version_id] = row
-
-    async def add_version_sources(self, *, version_id, source_ids):
-        self.version_sources[version_id] = list(source_ids)
-
-    async def version_source_ids(self, *, agent_version_id):
-        return self.version_sources.get(agent_version_id, [])
 
     async def add_version_targets(
         self, *, version_id, target_ids, controlled_action_policies
@@ -89,7 +82,9 @@ class _UnitOfWork:
         self.policies = _PolicyRepository()
         self.source_id = source_id
         self.source_ids = set(source_ids or (source_id,))
-        self.bound_source_ids = tuple(bound_source_ids or (source_id,))
+        self.bound_source_ids = tuple(
+            (source_id,) if bound_source_ids is None else bound_source_ids
+        )
         self.target = target or SimpleNamespace(
             target_id=uuid7(), display_name="逻辑测试库", db_type="ORACLE",
             status="ENABLED", connectivity_status="UNKNOWN",
@@ -147,14 +142,14 @@ class _PolicyRepository:
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
-    async def test_active_agent_requires_complete_target_source_binding_matrix(self):
+    async def test_active_agent_requires_target_monitor_mapping(self):
         source_id = uuid7()
         missing_source_id = uuid7()
         unit_of_work = _UnitOfWork(
             _AgentRepository(),
             source_id,
             source_ids=(source_id, missing_source_id),
-            bound_source_ids=(source_id,),
+            bound_source_ids=(),
         )
         service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
 
@@ -163,7 +158,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 CreateAIOpsAgentCommand(
                     domain_id=100,
                     display_name="映射不完整的诊断助手",
-                    diagnostic_source_ids=(source_id, missing_source_id),
                     target_ids=(unit_of_work.target.target_id,),
                     models={
                         "planner_llm": uuid7(),
@@ -296,7 +290,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="非法重要程度 Agent",
-                diagnostic_source_ids=(uuid7(),),
                 target_ids=(uuid7(),),
                 auto_observe_min_target_level=0,
                 actor_id="kbotui_dev",
@@ -307,7 +300,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
-                diagnostic_source_ids=(uuid7(),),
+                target_ids=(uuid7(),),
                 controlled_action_execution=(
                     TargetControlledActionExecution(
                         target_id=uuid7(),
@@ -328,7 +321,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
                 actor_id="kbotui_dev",
             )
@@ -342,7 +334,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual({}, result["models"])
 
-    async def test_active_agent_exposes_selected_sources_and_logical_target(self):
+    async def test_active_agent_exposes_selected_targets(self):
         source_id = uuid7()
         unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
         service = AIOpsAgentService(
@@ -353,7 +345,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库诊断助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": uuid7(),
@@ -366,7 +357,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("ACTIVE", result["status"])
         self.assertEqual([str(unit_of_work.target.target_id)], result["target_ids"])
-        self.assertEqual([str(source_id)], result["diagnostic_source_ids"])
         self.assertEqual([], result["controlled_action_execution"])
         self.assertFalse(
             result["target_candidates"][0]["readonly_connection_enabled"]
@@ -389,7 +379,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 CreateAIOpsAgentCommand(
                     domain_id=100,
                     display_name="缺少模型的诊断助手",
-                    diagnostic_source_ids=(source_id,),
                     target_ids=(unit_of_work.target.target_id,),
                     status="ACTIVE",
                     actor_id="kbotui_dev",
@@ -409,7 +398,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="待配置模型的诊断助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
                 actor_id="kbotui_dev",
             )
@@ -440,7 +428,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 CreateAIOpsAgentCommand(
                     domain_id=100,
                     display_name="缺少规划模型的诊断助手",
-                    diagnostic_source_ids=(source_id,),
                     target_ids=(unit_of_work.target.target_id,),
                     models={"diagnosis_llm": uuid7()},
                     status="ACTIVE",
@@ -452,23 +439,17 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             "AIOPS_AGENT_PLANNER_MODEL_REQUIRED", raised.exception.code
         )
 
-    async def test_agent_allows_monitoring_sources_without_logical_target(self):
+    async def test_agent_requires_at_least_one_target(self):
         source_id = uuid7()
         unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
         service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
 
-        result = await service.create(
+        with self.assertRaises(ValidationError):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="监控诊断助手",
-                diagnostic_source_ids=(source_id,),
                 actor_id="kbotui_dev",
             )
-        )
-
-        self.assertEqual([], result["target_ids"])
-        self.assertEqual([], result["target_candidates"])
-        self.assertEqual([str(source_id)], result["diagnostic_source_ids"])
 
     async def test_target_without_change_capability_creates_agent_without_actions(self):
         source_id = uuid7()
@@ -495,7 +476,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库变更助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(target_id,),
                 actor_id="kbotui_dev",
             )
@@ -536,7 +516,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库变更助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(target.target_id,),
                 actor_id="kbotui_dev",
             )
@@ -578,7 +557,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="数据库变更助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(target.target_id,),
                 controlled_action_execution=(
                     TargetControlledActionExecution(
@@ -629,7 +607,6 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 CreateAIOpsAgentCommand(
                     domain_id=100,
                     display_name="参数变更助手",
-                    diagnostic_source_ids=(source_id,),
                     target_ids=(target.target_id,),
                     controlled_action_execution=(
                         TargetControlledActionExecution(

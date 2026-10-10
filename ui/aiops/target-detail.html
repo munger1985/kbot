@@ -10,7 +10,7 @@
 <body data-page="target-detail">
   <main class="ops-main">
     <header class="ops-head">
-      <div><h1>运维目标详情</h1><p>查看目标连接、凭据状态、诊断源绑定与运行概况。</p></div>
+      <div><h1>运维目标详情</h1><p>Target 唯一代表一个受运维数据库；监控 label 必须配置，数据库连接信息可选。</p></div>
       <div class="ops-actions">
         <a id="edit-target-access" class="ops-button" href="./targets.html" data-write-ready>编辑访问策略</a>
         <button id="open-target-subscription" type="button" data-write-ready>通知设置</button>
@@ -20,6 +20,31 @@
 
     <div class="ops-grid target-detail-grid">
       <section id="ops-detail" class="ops-panel span-12"><div class="ops-panel-body">正在加载…</div></section>
+
+      <section id="target-monitor-mapping" class="ops-panel span-12 ops-instance-mapping" aria-labelledby="target-monitor-mapping-title">
+        <div class="ops-panel-head">
+          <div>
+            <small>必需配置</small>
+            <h2 id="target-monitor-mapping-title">监控源与 Label 映射</h2>
+            <p>一个 Target 可以绑定多个监控源；Agent 只关联 Target，并自动继承这里的监控能力。</p>
+          </div>
+          <span id="target-monitor-mapping-state" class="ops-badge">读取中</span>
+        </div>
+        <div class="ops-panel-body">
+          <div id="target-monitor-binding-list" class="ops-empty">正在读取已配置映射…</div>
+          <form id="target-monitor-binding-form" class="ops-form target-monitor-binding-form">
+            <div class="ops-field span-4"><label for="target-monitor-source">监控源</label><select id="target-monitor-source" name="source_id" required></select></div>
+            <div class="ops-field span-4" id="target-monitor-locator-field"><label id="target-monitor-locator-label" for="target-monitor-locator">监控 Label 值</label><input id="target-monitor-locator" name="locator_key" maxlength="512"><small id="target-monitor-locator-help"></small></div>
+            <div class="ops-field span-4" id="target-monitor-job-field" hidden><label for="target-monitor-job">Loki job label（可选）</label><input id="target-monitor-job" name="job_label" maxlength="256"><small>填写后同时使用 <code>target_key</code> 与 <code>job</code> 精确定位日志流。</small></div>
+            <div id="target-monitor-discovery" class="span-12" hidden>
+              <div class="ops-actions"><button id="discover-target-monitor-labels" type="button">发现可用 Label</button></div>
+              <div id="target-monitor-candidate-list" class="ops-empty">选择监控源后发现候选。</div>
+            </div>
+            <div class="ops-filter-actions"><button id="save-target-monitor-binding" class="primary" type="submit">绑定到当前 Target</button></div>
+          </form>
+          <p id="target-monitor-binding-result" class="ops-connection-result" role="status"></p>
+        </div>
+      </section>
 
       <section id="target-recovery" class="ops-panel span-12" aria-labelledby="target-recovery-title">
         <div class="ops-panel-head">
@@ -123,6 +148,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-pages.js?v=20261009-4"></script>
+  <script src="./js/aiops-pages.js?v=20261010-5"></script>
 </body>
 </html>

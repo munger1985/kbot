@@ -30,12 +30,12 @@ BEGIN
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 36
-       OR l_contract_version <> 'aiops-oracle-v26' THEN
+       OR l_schema_version <> 37
+       OR l_contract_version <> 'aiops-oracle-v27' THEN
         raise_application_error(
             -20100,
-            '仅支持 AIOPS/36/'
-            || 'aiops-oracle-v26，当前为 '
+            '仅支持 AIOPS/37/'
+            || 'aiops-oracle-v27，当前为 '
             || l_component || '/' || l_schema_version || '/' || l_contract_version
         );
     END IF;
@@ -1902,8 +1902,8 @@ WHERE r.TRIGGER_TYPE IN ('CHAT', 'ROOT')
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    36 AS SCHEMA_VERSION,
-    'aiops-oracle-v26' AS CONTRACT_VERSION
+    37 AS SCHEMA_VERSION,
+    'aiops-oracle-v27' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -1958,21 +1958,6 @@ CREATE TABLE KBOT_OPS_AGENT_VERSION (
 CREATE INDEX IX_OPS_AGENT_VERSION_AGENT ON KBOT_OPS_AGENT_VERSION (AGENT_ID);
 CREATE INDEX IX_OPS_AGENT_VERSION_POLICY
     ON KBOT_OPS_AGENT_VERSION (POLICY_ID);
-CREATE TABLE KBOT_OPS_AGENT_VERSION_SOURCE (
-    AGENT_VERSION_ID RAW(16) NOT NULL,
-    DIAGNOSTIC_SOURCE_ID RAW(16) NOT NULL,
-    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT PK_OPS_AGENT_VERSION_SOURCE
-        PRIMARY KEY (AGENT_VERSION_ID, DIAGNOSTIC_SOURCE_ID),
-    CONSTRAINT FK_OPS_AGENT_VER_SOURCE_VER FOREIGN KEY (AGENT_VERSION_ID)
-        REFERENCES KBOT_OPS_AGENT_VERSION (AGENT_VERSION_ID) ON DELETE CASCADE,
-    CONSTRAINT FK_OPS_AGENT_VER_SOURCE_SRC FOREIGN KEY (DIAGNOSTIC_SOURCE_ID)
-        REFERENCES KBOT_OPS_DIAGNOSTIC_SOURCE (DIAGNOSTIC_SOURCE_ID)
-);
-
-CREATE INDEX IX_OPS_AGENT_VER_SOURCE_SRC
-    ON KBOT_OPS_AGENT_VERSION_SOURCE (DIAGNOSTIC_SOURCE_ID);
-
 CREATE TABLE KBOT_OPS_AGENT_VERSION_TARGET (
     AGENT_VERSION_ID RAW(16) NOT NULL,
     TARGET_ID RAW(16) NOT NULL,
@@ -3504,7 +3489,6 @@ BEGIN
           'KBOT_OPS_OUTBOX',
           'KBOT_OPS_AGENT',
           'KBOT_OPS_AGENT_VERSION',
-          'KBOT_OPS_AGENT_VERSION_SOURCE',
           'KBOT_OPS_AGENT_VERSION_TARGET',
           'KBOT_OPS_REPORT_TEMPLATE',
           'KBOT_OPS_REPORT_TEMPLATE_VER',
@@ -3671,7 +3655,7 @@ BEGIN
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-    IF l_table_count <> 62 OR l_view_count <> 10 THEN
+    IF l_table_count <> 61 OR l_view_count <> 10 THEN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
@@ -3697,7 +3681,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 36 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 37 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3706,8 +3690,8 @@ BEGIN
         raise_application_error(-20009, 'AIOps 业务表不得包含命名 CHECK 约束。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 36
-       OR l_contract_version <> 'aiops-oracle-v26' THEN
+       OR l_schema_version <> 37
+       OR l_contract_version <> 'aiops-oracle-v27' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3716,8 +3700,8 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：62 张表、10 个视图，Schema Version '
-        || '36，合同 aiops-oracle-v26。'
+        '验证通过：61 张表、10 个视图，Schema Version '
+        || '37，合同 aiops-oracle-v27。'
     );
 END;
 /

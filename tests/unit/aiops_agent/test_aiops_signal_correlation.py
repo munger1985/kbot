@@ -104,7 +104,7 @@ class SituationCorrelationTest(unittest.TestCase):
 
 
 class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
-    async def test_target_agent_is_fallback_when_transport_source_is_not_selected(
+    async def test_target_agent_inherits_monitor_sources_from_target(
         self,
     ) -> None:
         alertmanager_source_id = uuid7()
@@ -124,12 +124,10 @@ class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
             policy_id=version.policy_id,
             rules_json={"auto_alert_enabled": True},
         )
-        exact = MagicMock()
-        exact.__iter__.return_value = iter(())
-        fallback = MagicMock()
-        fallback.__iter__.return_value = iter(((agent, version, policy),))
+        candidates = MagicMock()
+        candidates.__iter__.return_value = iter(((agent, version, policy),))
         session = MagicMock()
-        session.execute = AsyncMock(side_effect=(exact, fallback))
+        session.execute = AsyncMock(return_value=candidates)
         session.scalars = AsyncMock(
             side_effect=([evidence_source_id], [target_id], [])
         )
@@ -146,20 +144,14 @@ class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent.agent_id, binding.agent_id)
         self.assertEqual((evidence_source_id,), binding.diagnostic_source_ids)
         self.assertEqual(policy, resolved_policy)
-        self.assertEqual(2, session.execute.await_count)
-        exact_sql = str(
+        self.assertEqual(1, session.execute.await_count)
+        candidate_sql = str(
             session.execute.await_args_list[0].args[0].compile(
                 dialect=oracle.dialect()
             )
         ).upper()
-        fallback_sql = str(
-            session.execute.await_args_list[1].args[0].compile(
-                dialect=oracle.dialect()
-            )
-        ).upper()
-        self.assertIn("KBOT_OPS_AGENT_VERSION_SOURCE", exact_sql)
-        self.assertNotIn("KBOT_OPS_AGENT_VERSION_SOURCE", fallback_sql)
-        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", fallback_sql)
+        self.assertNotIn("KBOT_OPS_AGENT_VERSION_SOURCE", candidate_sql)
+        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", candidate_sql)
 
 
 class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):

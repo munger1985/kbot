@@ -10,39 +10,28 @@ PAGE = ROOT / "ui" / "aiops" / "agents.html"
 
 
 class AIOpsAgentEditorUiTest(unittest.TestCase):
-    def test_source_mapping_only_traverses_monitoring_source_cards(self) -> None:
+    def test_agent_only_selects_targets_for_resource_scope(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
+        page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn(
-            'document.querySelectorAll("#agent-sources '
-            '.agent-source-card[data-source-id]")',
-            script,
-        )
-        self.assertIn("sourceCards().forEach", script)
-        self.assertIn("const choice = card.querySelector", script)
-        self.assertIn("if (!choice || !mapping) return", script)
-        self.assertNotIn(
-            'document.querySelectorAll(".agent-source-card").forEach',
-            script,
-        )
+        self.assertIn('name="target_ids"', script)
+        self.assertIn("至少选择一个 Target", script)
+        self.assertNotIn("diagnostic_source_ids", script)
+        self.assertNotIn('id="agent-sources"', page)
 
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20261010-1", page)
+        self.assertIn("aiops-agents.js?v=20261010-2", page)
 
-    def test_agent_only_validates_preconfigured_source_bindings(self) -> None:
+    def test_agent_does_not_maintain_monitor_mappings(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn("assertExistingBindings", script)
-        self.assertIn("Agent 不会创建或修改映射", script)
+        self.assertNotIn("assertExistingBindings", script)
         self.assertNotIn("source_locator_key", script)
         self.assertNotIn("source_locator:", script)
         self.assertNotIn("ensureSourceBindings", script)
-        self.assertNotIn(
-            '`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`, {',
-            script,
-        )
+        self.assertNotIn("/source-bindings", script)
 
     def test_image_capability_selects_use_catalog_categories(self) -> None:
         page = PAGE.read_text(encoding="utf-8")

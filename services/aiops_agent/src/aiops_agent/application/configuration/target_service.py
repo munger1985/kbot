@@ -690,6 +690,7 @@ class TargetConfigurationMixin:
             uow: AIOpsUnitOfWork, now: datetime
         ) -> TargetDetail:
             assert uow.targets is not None
+            assert uow.diagnostic_sources is not None
             entity = await uow.targets.get_scoped(
                 target_id=target_id,
                 domain_id=scope.domain_id,
@@ -702,6 +703,30 @@ class TargetConfigurationMixin:
                 raise state_conflict(
                     f"Target 不能从 {entity.status} 执行 {command}"
                 )
+            if destination == "ENABLED":
+                monitor_bindings = await uow.targets.list_source_bindings(
+                    target_id=entity.target_id,
+                    domain_id=scope.domain_id,
+                    active_only=True,
+                )
+                if not monitor_bindings:
+                    raise state_conflict(
+                        "Target 必须先绑定至少一个有效监控 Label 才能启用"
+                    )
+                monitor_sources = [
+                    await uow.diagnostic_sources.get_scoped(
+                        diagnostic_source_id=binding.diagnostic_source_id,
+                        domain_id=scope.domain_id,
+                    )
+                    for binding in monitor_bindings
+                ]
+                if any(
+                    source is None or source.status != "ENABLED"
+                    for source in monitor_sources
+                ):
+                    raise state_conflict(
+                        "Target 的全部有效监控映射必须引用已启用的监控源"
+                    )
             if (
                 destination == "ENABLED"
                 and entity.readonly_connection_enabled

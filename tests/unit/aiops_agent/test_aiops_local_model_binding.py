@@ -70,7 +70,6 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="开发诊断助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": uuid7(),
@@ -94,7 +93,6 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="生产草稿",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": uuid7(),
@@ -119,7 +117,6 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                 CreateAIOpsAgentCommand(
                     domain_id=100,
                     display_name="生产诊断助手",
-                    diagnostic_source_ids=(source_id,),
                     target_ids=(unit_of_work.target.target_id,),
                     models={
                         "planner_llm": uuid7(),
@@ -157,7 +154,6 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                 CreateAIOpsAgentCommand(
                     domain_id=100,
                     display_name="生产诊断助手",
-                    diagnostic_source_ids=(source_id,),
                     target_ids=(unit_of_work.target.target_id,),
                     models={
                         "planner_llm": planner_id,
@@ -194,7 +190,6 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
             CreateAIOpsAgentCommand(
                 domain_id=100,
                 display_name="生产诊断助手",
-                diagnostic_source_ids=(source_id,),
                 target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": planner_id,

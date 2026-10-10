@@ -64,22 +64,6 @@ class AIOpsAgentVersionEntity(BaseEntity):
     )
 
 
-class AIOpsAgentVersionSourceEntity(BaseEntity):
-    """固定一个 Agent 版本可以消费的监控源集合。"""
-
-    __tablename__ = "KBOT_OPS_AGENT_VERSION_SOURCE"
-
-    agent_version_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), primary_key=True
-    )
-    diagnostic_source_id: Mapped[UUID] = mapped_column(
-        UUIDv7Type(), primary_key=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
-    )
-
-
 class AIOpsAgentVersionTargetEntity(BaseEntity):
     """固定一个 Agent 版本可以运维的逻辑数据库 Target 集合。"""
 

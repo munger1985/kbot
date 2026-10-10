@@ -3618,7 +3618,8 @@ class TurnPlanningService:
                     }
                 )
             source_ids = await uow.agents.version_source_ids(
-                agent_version_id=agent_version.agent_version_id
+                agent_version_id=agent_version.agent_version_id,
+                target_id=target.target_id,
             )
             sources = []
             for source_id in source_ids:

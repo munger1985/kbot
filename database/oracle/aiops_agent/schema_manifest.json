@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 36,
-  "contract_version": "aiops-oracle-v26",
+  "schema_version": 37,
+  "contract_version": "aiops-oracle-v27",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,12 +32,12 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "f9d0077deefe32bedbc188817027723e6fd9638ec07245ca9a9cee1cae5a7e2e"
+      "sha256": "56cc4e5abd4ac57443d0536e050b69e2755110a1ffa36f491b199c973d16fff4"
     },
     {
       "name": "007_ops_agents.sql",
-      "statements": 13,
-      "sha256": "caebafc26264e1a7516b27c9262a096185958d5b35a4a814fd2cccd3cbc470f7"
+      "statements": 11,
+      "sha256": "18ef2dfa794fc5ea6915a597026c1b31bc17638be4123cfea94de0272d695e94"
     },
     {
       "name": "008_ops_conversations_reports.sql",
@@ -94,7 +94,6 @@
     "KBOT_OPS_OUTBOX",
     "KBOT_OPS_AGENT",
     "KBOT_OPS_AGENT_VERSION",
-    "KBOT_OPS_AGENT_VERSION_SOURCE",
     "KBOT_OPS_AGENT_VERSION_TARGET",
     "KBOT_OPS_REPORT_TEMPLATE",
     "KBOT_OPS_REPORT_TEMPLATE_VER",
@@ -217,14 +216,6 @@
       "table": "KBOT_OPS_AGENT_VERSION",
       "columns": [
         "POLICY_ID"
-      ]
-    },
-    {
-      "constraint": "FK_OPS_AGENT_VER_SOURCE_SRC",
-      "index": "IX_OPS_AGENT_VER_SOURCE_SRC",
-      "table": "KBOT_OPS_AGENT_VERSION_SOURCE",
-      "columns": [
-        "DIAGNOSTIC_SOURCE_ID"
       ]
     },
     {

@@ -4,18 +4,13 @@
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
   let agents = [];
-  let sources = [];
   let targets = [];
   let models = [];
-  let sourceBindings = [];
-  let bindingTargetId = "";
-  const bindingsByTarget = new Map();
   const actionDraftsByTarget = new Map();
   const actionCatalogsByTarget = new Map();
   let editing = null;
 
   const escape = (value) => shell.escape(value ?? "—");
-  const sourceName = (id) => sources.find((item) => item.source_id === id)?.display_name || shell.short(id);
   const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
 
   const scopeLabels = {
@@ -95,7 +90,7 @@
     document.getElementById("agent-summary").innerHTML = [
       `<span><strong>${agents.length}</strong> 全部</span>`,
       `<span><strong>${active}</strong> 已启用</span>`,
-      `<span><strong>${sources.length}</strong> 可用监控源</span>`,
+      `<span><strong>${targets.length}</strong> 可用 Target</span>`,
     ].join("");
   }
 
@@ -107,14 +102,13 @@
       return;
     }
     body.innerHTML = agents.map((agent) => {
-      const sourceNames = (agent.diagnostic_source_ids || []).map((id) => escape(sourceName(id)));
       const targetNames = (agent.target_ids || []).map((id) => escape(targetName(id)));
       const actionCount = (agent.controlled_action_execution || []).reduce((count, item) => count + (item.allowed_action_ids || []).length, 0);
       const access = actionCount ? `诊断 + ${actionCount} 个受控动作` : "仅诊断";
       return `<tr>
         <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
         <td>${shell.badge(agent.status)}</td>
-        <td><strong>${sourceNames.length} 个监控源</strong><small class="agent-row-description">${sourceNames.join("、") || "—"}</small></td>
+        <td><strong>${targetNames.length} 个 Target</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td><strong>${access}</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起 · Target L${escape(agent.auto_observe_min_target_level)}+</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
         <td><button type="button" data-agent-id="${escape(agent.agent_id)}">编辑</button></td>
@@ -164,28 +158,10 @@
     return local ? local.model_id : "";
   }
 
-  function sourceCard(source) {
-    const sourceId = escape(source.source_id);
-    return `<article class="agent-source-card" data-source-id="${sourceId}" data-source-type="${escape(source.source_type)}">
-      <label class="agent-source-choice">
-        <input type="checkbox" name="diagnostic_source_ids" value="${sourceId}">
-        <span class="agent-source-identity"><strong>${escape(source.display_name)}</strong><small>${escape(source.source_type)}</small></span>
-        <span class="agent-source-health">${escape(source.connectivity_status)}</span>
-      </label>
-      <div class="agent-source-mapping" hidden>
-        <div class="agent-mapping-head"><strong>Target 映射</strong><span data-binding-state>尚未配置</span></div>
-        <div class="ops-empty">Agent 只使用已配置映射，不创建或修改监控 Locator。 <a href="diagnostic-source-detail.html?id=${sourceId}">前往诊断源配置</a></div>
-      </div>
-    </article>`;
-  }
-
   function renderResources() {
-    document.getElementById("agent-sources").innerHTML = sources.length
-      ? sources.map(sourceCard).join("")
-      : '<div class="ops-error">没有已启用的监控源，请先完成监控源配置。</div>';
     document.getElementById("agent-targets").innerHTML = targets.length
       ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
-      : '<div class="ops-empty">暂无可选 Target；Agent 仍可仅使用已选监控源。</div>';
+      : '<div class="ops-error">暂无已启用的 Target。请先创建 Target，并完成监控 Label 映射后启用。</div>';
     const diagnosisModels = sortedDiagnosisModels();
     document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
@@ -204,81 +180,11 @@
       : `<option value="">没有已启用的 ${capabilityName} 模型</option>`;
   }
 
-  function bindingFor(sourceId) {
-    const matches = sourceBindings.filter((item) => item.source_id === sourceId);
-    return matches.find((item) => item.status === "ACTIVE") || matches[0] || null;
-  }
-
-  function sourceCards() {
-    return [...document.querySelectorAll("#agent-sources .agent-source-card[data-source-id]")];
-  }
-
-  function resetMappingInputs() {
-    sourceCards().forEach((card) => {
-      card.querySelector("[data-binding-state]").textContent = "尚未配置";
-      card.dataset.bindingId = "";
-    });
-  }
-
-  function applyBindings() {
-    sourceCards().forEach((card) => {
-      const binding = bindingFor(card.dataset.sourceId);
-      if (!binding) return;
-      card.dataset.bindingId = binding.binding_id;
-      const health = binding.health_status && binding.health_status !== "UNKNOWN" ? ` · ${binding.health_status}` : "";
-      card.querySelector("[data-binding-state]").textContent = `${binding.status === "ACTIVE" ? "已映射" : "已停用"}${health} · ${binding.locator_hint || "已脱敏"}`;
-    });
-  }
-
-  async function loadBindings(targetId) {
-    resetMappingInputs();
-    sourceBindings = [];
-    bindingTargetId = "";
-    if (!targetId) {
-      syncSourceMappingVisibility();
-      return;
-    }
-    const expectedTarget = targetId;
-    document.getElementById("agent-binding-summary").textContent = "正在读取该 Target 的监控源映射…";
-    const bindings = bindingsByTarget.has(targetId)
-      ? bindingsByTarget.get(targetId)
-      : await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}/source-bindings`);
-    if (document.getElementById("agent-mapping-target").value !== expectedTarget) return;
-    sourceBindings = Array.isArray(bindings) ? bindings : [];
-    bindingsByTarget.set(targetId, sourceBindings);
-    bindingTargetId = targetId;
-    applyBindings();
-    syncSourceMappingVisibility();
-  }
-
-  function syncSourceMappingVisibility() {
-    const targetId = document.getElementById("agent-mapping-target").value;
-    let selectedCount = 0;
-    let mappedCount = 0;
-    sourceCards().forEach((card) => {
-      const choice = card.querySelector('[name="diagnostic_source_ids"]');
-      const mapping = card.querySelector(".agent-source-mapping");
-      if (!choice || !mapping) return;
-      const checked = choice.checked;
-      const show = Boolean(targetId && checked);
-      card.classList.toggle("selected", checked);
-      mapping.hidden = !show;
-      if (checked) selectedCount += 1;
-      if (show && bindingFor(card.dataset.sourceId)?.status === "ACTIVE") mappedCount += 1;
-    });
-    const summary = document.getElementById("agent-binding-summary");
-    if (!targetId) summary.textContent = selectedCount
-      ? `已选择 ${selectedCount} 个监控源；如需数据库直连或精确映射，可继续选择 Target。`
-      : "请先选择至少一个监控源；数据库 Target 为可选项。";
-    else if (!selectedCount) summary.textContent = "请选择监控源，系统将校验该 Target 的既有映射。";
-    else summary.textContent = `${selectedCount} 个监控源已选择，${mappedCount} 个已有有效 Target 映射；Agent 不会创建或修改映射。`;
-  }
-
   function toggleTargetFields() {
     const selected = selectedTargetIds();
     const changeTargets = targets.filter((item) => selected.includes(item.target_id) && item.controlled_change_enabled);
     document.getElementById("agent-change-help").textContent = !selected.length
-      ? "未选择 Target，Agent 仅使用监控证据。"
+      ? "请选择至少一个 Target。"
       : changeTargets.length
         ? `当前有 ${changeTargets.length} 个 Target 可配置；未选择动作时保持只读诊断。`
         : "所选 Target 均未启用受控变更，Agent 保持只读诊断。";
@@ -286,8 +192,6 @@
     loadActionCatalogs(changeTargets.map((item) => item.target_id))
       .then(renderControlledActions)
       .catch((error) => showResult(`读取动作目录失败：${error.message}`, "bad"));
-    syncMappingTargetOptions();
-    syncSourceMappingVisibility();
   }
 
   async function loadActionCatalogs(targetIds) {
@@ -393,18 +297,6 @@
     return [...document.querySelectorAll('[name="target_ids"]:checked')].map((input) => input.value);
   }
 
-  function syncMappingTargetOptions() {
-    const select = document.getElementById("agent-mapping-target");
-    const selected = selectedTargetIds();
-    const previous = selected.includes(select.value) ? select.value : selected[0] || "";
-    select.disabled = !selected.length;
-    select.innerHTML = selected.length
-      ? '<option value="">请选择要校验映射的 Target</option>' + selected.map((id) => `<option value="${escape(id)}">${escape(targetName(id))}</option>`).join("")
-      : '<option value="">未选择 Target，仅使用监控证据</option>';
-    select.value = previous;
-    if (previous && previous !== bindingTargetId) loadBindings(previous).catch((error) => showResult(error.message, "bad"));
-  }
-
   function toggleAlertSettings() {
     const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
     document.getElementById("agent-alert-settings").classList.toggle("agent-settings-disabled", !enabled);
@@ -415,15 +307,11 @@
 
   function openCreate() {
     editing = null;
-    sourceBindings = [];
-    bindingTargetId = "";
-    bindingsByTarget.clear();
     actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
     document.getElementById("agent-controlled-actions").innerHTML = "";
     const form = document.getElementById("agent-form");
     form.reset();
-    resetMappingInputs();
     form.elements.status.value = "DRAFT";
     form.elements.alert_cooldown_minutes.value = 15;
     form.elements.auto_observe_min_target_level.value = 1;
@@ -444,15 +332,11 @@
   async function openEdit(agentId) {
     editing = agents.find((item) => item.agent_id === agentId);
     if (!editing) return;
-    sourceBindings = [];
-    bindingTargetId = "";
-    bindingsByTarget.clear();
     actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
     document.getElementById("agent-controlled-actions").innerHTML = "";
     const form = document.getElementById("agent-form");
     form.reset();
-    resetMappingInputs();
     form.elements.status.disabled = false;
     form.elements.display_name.value = editing.display_name;
     form.elements.description.value = editing.description || "";
@@ -466,28 +350,16 @@
     form.elements.ocr_model_id.value = editing.image_capabilities?.ocr?.default_model_id || "";
     form.elements.vlm_model_id.value = editing.image_capabilities?.vlm?.default_model_id || "";
     form.elements.instruction.value = editing.instruction || "";
-    form.querySelectorAll('[name="diagnostic_source_ids"]').forEach((input) => {
-      input.checked = (editing.diagnostic_source_ids || []).includes(input.value);
-    });
     form.querySelectorAll('[name="target_ids"]').forEach((input) => {
       input.checked = (editing.target_ids || []).includes(input.value);
     });
-    document.getElementById("agent-status-help").textContent = "启用前会检查监控源；已选择 Target 时会检查与全部所选监控源的有效映射。运行时连接异常不会阻止 Agent 使用已有监控证据诊断。";
+    document.getElementById("agent-status-help").textContent = "启用前会检查每个 Target 均已启用，并至少存在一条引用已启用监控源的有效 Label 映射。";
     toggleTargetFields();
     toggleAlertSettings();
     showResult();
     document.getElementById("agent-dialog-title").textContent = "修改 Agent";
     document.getElementById("save-agent").textContent = "保存修改";
     document.getElementById("agent-dialog").showModal();
-    const firstTargetId = editing.target_ids?.[0];
-    if (firstTargetId) {
-      try {
-        document.getElementById("agent-mapping-target").value = firstTargetId;
-        await loadBindings(firstTargetId);
-      } catch (error) {
-        showResult(`读取 Target 映射失败：${error.message}`, "bad");
-      }
-    }
   }
 
   function selectedScopeValues(card, kind) {
@@ -511,9 +383,8 @@
   }
 
   function payload(form) {
-    const selectedSources = [...form.querySelectorAll('[name="diagnostic_source_ids"]:checked')].map((input) => input.value);
     const targetIds = selectedTargetIds();
-    if (!selectedSources.length) throw new Error("至少选择一个监控源。");
+    if (!targetIds.length) throw new Error("至少选择一个 Target。");
     const plannerModelId = form.elements.planner_model_id.value.trim();
     const diagnosisModelId = form.elements.diagnosis_model_id.value.trim();
     const ocrModelId = form.elements.ocr_model_id.value.trim();
@@ -569,7 +440,6 @@
       display_name: form.elements.display_name.value.trim(),
       description: form.elements.description.value.trim() || null,
       status: editing ? form.elements.status.value : "DRAFT",
-      diagnostic_source_ids: selectedSources,
       target_ids: targetIds,
       controlled_action_execution: controlledActionExecution,
       auto_alert_enabled: autoAlertEnabled,
@@ -586,18 +456,6 @@
     };
   }
 
-  function assertExistingBindings(targetId, selectedSourceIds) {
-    if (!targetId) return;
-    selectedSourceIds.forEach((sourceId) => {
-      const source = sources.find((item) => item.source_id === sourceId);
-      if (!source) throw new Error("监控源配置已经变化，请刷新页面后重试。");
-      const existing = bindingFor(sourceId);
-      if (!existing || existing.status !== "ACTIVE") {
-        throw new Error(`${source.display_name}：请先在诊断源详情中完成当前 Target 的映射。`);
-      }
-    });
-  }
-
   async function save(event) {
     event.preventDefault();
     const button = document.getElementById("save-agent");
@@ -607,11 +465,6 @@
     showResult(editing ? "正在校验 Agent 配置…" : "正在创建 Agent…");
     try {
       const body = payload(event.currentTarget);
-      for (const targetId of body.target_ids) {
-        document.getElementById("agent-mapping-target").value = targetId;
-        await loadBindings(targetId);
-        assertExistingBindings(targetId, body.diagnostic_source_ids);
-      }
       if (editing) body.expected_row_version = editing.row_version;
       await KBotAIOpsAuth.request(editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`, {
         method: editing ? "PATCH" : "POST",
@@ -630,14 +483,12 @@
   }
 
   async function load() {
-    const [agentRows, sourcePage, targetPage, modelRows] = await Promise.all([
+    const [agentRows, targetPage, modelRows] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
-      KBotAIOpsAuth.request(`${api}/diagnostic-sources?status=ENABLED&limit=200`),
       KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
       KBotAIOpsAuth.request("/api/v1/model-catalog"),
     ]);
     agents = Array.isArray(agentRows) ? agentRows : [];
-    sources = sourcePage.items || [];
     targets = targetPage.items || [];
     models = Array.isArray(modelRows) ? modelRows : [];
     renderResources();
@@ -662,16 +513,6 @@
       panel.querySelectorAll("[data-option-label]").forEach((option) => {
         option.hidden = Boolean(query && !option.dataset.optionLabel.includes(query));
       });
-    });
-    document.getElementById("agent-mapping-target").addEventListener("change", async (event) => {
-      try {
-        await loadBindings(event.currentTarget.value);
-      } catch (error) {
-        showResult(`读取 Target 映射失败：${error.message}`, "bad");
-      }
-    });
-    document.getElementById("agent-sources").addEventListener("change", (event) => {
-      if (event.target.matches('[name="diagnostic_source_ids"]')) syncSourceMappingVisibility();
     });
     document.querySelector('[name="auto_alert_enabled"]').addEventListener("change", toggleAlertSettings);
     document.getElementById("agent-form").addEventListener("submit", save);

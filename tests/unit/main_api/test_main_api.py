@@ -1917,29 +1917,18 @@ class MainApiTest(unittest.TestCase):
             self.aiops.last_start_payload["conversation"]["source"],
         )
 
-    def test_aiops_agent_allows_monitoring_source_without_target(self) -> None:
-        source_id = "019f8eae-2c25-7d48-b044-350ec3f5a114"
-
+    def test_aiops_agent_requires_target(self) -> None:
         response = self.client.post(
             "/api/v1/apps/aiops/agents",
             headers=self._headers(),
             json={
                 "display_name": "监控诊断 Agent",
-                "diagnostic_source_ids": [source_id],
             },
         )
 
-        self.assertEqual(201, response.status_code, response.text)
-        self.assertEqual([source_id], self.aiops.last_agent_payload[
-            "diagnostic_source_ids"
-        ])
-        self.assertEqual([], self.aiops.last_agent_payload["target_ids"])
-        self.assertEqual(
-            [], self.aiops.last_agent_payload["controlled_action_execution"]
-        )
+        self.assertEqual(422, response.status_code, response.text)
 
     def test_aiops_agent_forwards_explicit_controlled_actions(self) -> None:
-        source_id = "019f8eae-2c25-7d48-b044-350ec3f5a114"
         target_id = "019f8eae-2c25-7d48-b044-350ec3f5a115"
 
         response = self.client.post(
@@ -1947,7 +1936,6 @@ class MainApiTest(unittest.TestCase):
             headers=self._headers(),
             json={
                 "display_name": "数据库诊断 Agent",
-                "diagnostic_source_ids": [source_id],
                 "target_ids": [target_id],
                 "controlled_action_execution": [{
                     "target_id": target_id,

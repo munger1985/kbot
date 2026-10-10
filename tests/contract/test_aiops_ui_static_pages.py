@@ -70,6 +70,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('["dashboard", "Dashboard"]', shell)
+        self.assertLess(
+            shell.index('["diagnostic-sources", "监控源"]'),
+            shell.index('["targets", "运维目标"]'),
+        )
         self.assertNotIn('["fleet", "库群总览"]', shell)
         self.assertIn('href="./dashboard.html"', shell)
         self.assertIn("location.replace('./dashboard.html')", (
@@ -602,6 +606,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         self.assertIn('data-source-action="connectivity"', pages_script)
+        self.assertIn('data-source-action="detail"', pages_script)
+        self.assertIn('data-source-action="edit"', pages_script)
         self.assertIn('data-source-action="enable"', pages_script)
         self.assertIn('data-source-action="disable"', pages_script)
         self.assertIn("connectivity_check_pending", pages_script)
@@ -675,17 +681,15 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         script = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('name="diagnostic_source_ids"', script)
+        self.assertNotIn('name="diagnostic_source_ids"', script)
         self.assertIn('name="target_ids"', script)
         self.assertIn('id="agent-targets"', page)
-        self.assertIn("监控源必选；数据库 Target 可选", page)
-        self.assertIn("数据库 Target 为可选项", script)
-        self.assertNotIn("至少选择一个逻辑 Target", script)
+        self.assertIn("Target 必选且可多选", page)
+        self.assertIn("至少选择一个 Target", script)
         self.assertNotIn('name="allow_change_execution"', page)
         self.assertIn('id="agent-controlled-actions"', page)
         self.assertIn("controlled_action_execution:", script)
         self.assertIn('/action-catalog/', script)
-        self.assertIn("与全部所选监控源的有效映射", script)
         self.assertIn("默认仅允许只读诊断", page)
         self.assertIn('data-scope-kind="dynamic_parameters"', script)
         self.assertIn("selectedDynamicParameters", script)
@@ -706,12 +710,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('`${api}/model-catalog`', script)
         self.assertNotIn('models: modelId ? { diagnosis:', script)
         self.assertIn("只适用于自动触发", page)
-        self.assertIn('id="agent-binding-summary"', page)
+        self.assertNotIn('id="agent-binding-summary"', page)
         self.assertIn('class="agent-form-section"', page)
-        self.assertIn("/source-bindings", script)
-        self.assertIn("assertExistingBindings", script)
-        self.assertIn("Agent 不会创建或修改映射", script)
-        self.assertIn("locator_hint", script)
+        self.assertNotIn("/source-bindings", script)
+        self.assertNotIn("assertExistingBindings", script)
         self.assertNotIn("ensureSourceBindings", script)
         self.assertNotIn("source_locator_key", script)
         self.assertNotIn("data-loki-target-label", script)
@@ -720,6 +722,22 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="policy_id"', page)
         self.assertNotIn("max_risk_level", page)
         self.assertNotIn("allowed_action_types", page)
+
+    def test_target_owns_monitor_source_label_mapping(self):
+        page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="target-monitor-binding-form"', page)
+        self.assertIn("监控源与 Label 映射", page)
+        self.assertIn("initializeTargetMonitorMappings", script)
+        self.assertIn("target_key label 值", script)
+        self.assertIn("OEM Target Name", script)
+        self.assertIn("monitor_candidate_ref", script)
+        self.assertIn("/instance-discoveries", script)
+        self.assertIn("/instance-mappings", script)
+        self.assertIn("/source-bindings", script)
 
     def test_workspace_separates_approval_and_manual_actions(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(

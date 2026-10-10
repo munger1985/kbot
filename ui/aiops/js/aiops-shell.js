@@ -20,7 +20,7 @@
       ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "报告中心"],
     ]],
     ["资源配置", [
-      ["targets", "运维目标"], ["diagnostic-sources", "诊断源"],
+      ["diagnostic-sources", "监控源"], ["targets", "运维目标"],
       ["operations-knowledge", "运维知识库"], ["agents", "AIOps Agent"],
       ["inspection-plans", "巡检计划"], ["report-templates", "模板管理"],
       ["api-clients", "API 客户端"],
