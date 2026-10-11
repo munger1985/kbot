@@ -457,6 +457,73 @@
       : `<tr><td colspan="${panel.series.length + 1}" class="ops-empty">当前指标没有返回采样数据。</td></tr>`;
     return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(seriesLabel(series))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
   }
+  function sortedPoints(series) {
+    return [...(series.points || [])].sort((left, right) => left.observed_at.localeCompare(right.observed_at));
+  }
+  function changeLabel(values, unit) {
+    if (values.length < 2) return "暂无变化基线";
+    if (unit === "state") {
+      const before = formatValue(values[0], unit);
+      const after = formatValue(values.at(-1), unit);
+      return before === after ? `状态保持${after}` : `由${before}变为${after}`;
+    }
+    const difference = values.at(-1) - values[0];
+    if (difference === 0) return "较区间起点持平";
+    return `较区间起点${difference > 0 ? "上升" : "下降"} ${formatValue(Math.abs(difference), unit)}`;
+  }
+  function rangeLabel(values, unit) {
+    if (!values.length) return "—";
+    if (unit === "state") return `${values.filter((value) => value > 0).length} / ${values.length} 次可用`;
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    return minimum === maximum ? `保持 ${formatValue(minimum, unit)}` : `${formatValue(minimum, unit)} – ${formatValue(maximum, unit)}`;
+  }
+  function averageLabel(values, unit) {
+    if (!values.length) return "无有效采样";
+    const average = values.reduce((total, value) => total + value, 0) / values.length;
+    return unit === "state" ? `可用率 ${formatValue(average * 100, "percent")}` : formatValue(average, unit);
+  }
+  function seriesInsightsHtml(panel) {
+    return panel.series.map((series) => {
+      const points = sortedPoints(series);
+      const valid = points.map((point) => ({ point, value: numericValue(point.value) })).filter((item) => item.value !== null);
+      const values = valid.map((item) => item.value);
+      const latest = valid.at(-1);
+      return `<article><header><span>${esc(seriesLabel(series))}</span><strong>${esc(latest ? formatValue(latest.value, panel.unit) : "无有效采样")}</strong><small>当前值 · ${esc(latest ? shell.fmt(latest.point.observed_at) : "—")}</small></header><dl><div><dt>区间均值</dt><dd>${esc(averageLabel(values, panel.unit))}</dd></div><div><dt>波动范围</dt><dd>${esc(rangeLabel(values, panel.unit))}</dd></div><div><dt>整体变化</dt><dd>${esc(changeLabel(values, panel.unit))}</dd></div><div><dt>采样覆盖</dt><dd>${values.length} / ${points.length} 条有效 · 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)} %</dd></div></dl></article>`;
+    }).join("");
+  }
+  function analysisBuckets(points) {
+    const runs = [];
+    points.forEach((point) => {
+      const previous = runs.at(-1);
+      const previousPoint = previous?.at(-1);
+      if (previousPoint && numericValue(previousPoint.value) === numericValue(point.value) && previousPoint.quality === point.quality) previous.push(point);
+      else runs.push([point]);
+    });
+    if (runs.length <= 12) return runs;
+    const bucketSize = Math.max(1, Math.ceil(points.length / 12));
+    const buckets = [];
+    for (let index = 0; index < points.length; index += bucketSize) buckets.push(points.slice(index, index + bucketSize));
+    return buckets;
+  }
+  function intervalTableHtml(panel) {
+    const rows = panel.series.flatMap((series) => {
+      const points = sortedPoints(series);
+      const buckets = [];
+      for (const bucket of analysisBuckets(points)) {
+        const values = bucket.map((point) => numericValue(point.value)).filter((value) => value !== null);
+        const abnormal = bucket.filter((point) => point.quality !== "GOOD").length;
+        const start = shell.fmt(bucket[0].observed_at);
+        const end = shell.fmt(bucket.at(-1).observed_at);
+        buckets.push(`<tr><td>${esc(start === end ? start : `${start} 至 ${end}`)}</td><td>${esc(seriesLabel(series))}</td><td><strong>${esc(averageLabel(values, panel.unit))}</strong></td><td>${esc(rangeLabel(values, panel.unit))}</td><td>${esc(changeLabel(values, panel.unit))}</td><td>${esc(abnormal ? `${abnormal} 条异常 · ${values.length} / ${bucket.length} 条有效` : `正常 · ${values.length} 条采样`)}</td></tr>`);
+      }
+      return buckets;
+    });
+    const body = rows.join("") || '<tr><td colspan="6" class="ops-empty">当前指标没有返回采样数据。</td></tr>';
+    const averageHeading = panel.unit === "state" ? "可用情况" : "区间均值";
+    const rangeHeading = panel.unit === "state" ? "状态分布" : "波动范围";
+    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>时间区间</th><th>实例与来源</th><th>${averageHeading}</th><th>${rangeHeading}</th><th>区间变化</th><th>采样质量</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
   function fillDataDrawer(panel) {
     document.getElementById("monitoring-data-drawer-title").textContent = panel.title;
     document.getElementById("monitoring-data-drawer-description").textContent = panel.description;
@@ -465,7 +532,11 @@
     document.getElementById("monitoring-data-drawer-unit").textContent = unitLabel(panel.unit) || "无量纲";
     const sources = [...new Set(panel.series.map((series) => series.source_display_name).filter(Boolean))];
     document.getElementById("monitoring-data-drawer-source").textContent = sources.join(" / ") || sourceById()?.display_name || "—";
-    document.getElementById("monitoring-data-drawer-table").innerHTML = tableHtml(panel);
+    document.getElementById("monitoring-data-drawer-insights").innerHTML = seriesInsightsHtml(panel);
+    document.getElementById("monitoring-data-drawer-intervals").innerHTML = intervalTableHtml(panel);
+    const rawSampleCount = panel.series.reduce((total, series) => total + series.points.length, 0);
+    document.getElementById("monitoring-data-drawer-raw-summary").textContent = `查看 ${rawSampleCount} 条原始采样`;
+    document.getElementById("monitoring-data-drawer-raw-table").innerHTML = tableHtml(panel);
   }
   function openDataDrawer(panel, trigger) {
     const drawer = document.getElementById("monitoring-data-drawer");
