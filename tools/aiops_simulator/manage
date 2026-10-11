@@ -1,0 +1,287 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+tool_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${tool_root}/../.." && pwd)"
+runtime_root="${AIOPS_SIMULATOR_RUNTIME_DIR:-${repo_root}/var/aiops-simulator}"
+config_file="${runtime_root}/simulator.ini"
+pid_file="${runtime_root}/simulator.pid"
+log_file="${runtime_root}/simulator.log"
+python_bin="${AIOPS_SIMULATOR_PYTHON:-python3}"
+
+usage() {
+    echo "用法：tools/aiops_simulator/manage {init-config|prepare|validate|start|stop|status|logs}"
+    echo "      tools/aiops_simulator/manage fault {oracle|postgres|mysql} start {slow_query|blocking_lock|deadlock|long_transaction|connection_surge|temp_pressure}"
+    echo "      tools/aiops_simulator/manage fault {oracle|postgres|mysql} {stop|status}"
+}
+
+require_config() {
+    if [[ ! -f "${config_file}" ]]; then
+        echo "配置文件不存在：${config_file}" >&2
+        echo "请先执行：tools/aiops_simulator/manage init-config" >&2
+        exit 1
+    fi
+    local mode
+    mode="$(stat -c '%a' "${config_file}")"
+    if [[ "${mode}" != "600" && "${mode}" != "400" ]]; then
+        echo "配置文件权限必须是0600或0400，当前为${mode}" >&2
+        exit 1
+    fi
+}
+
+run_python() {
+    PYTHONPATH="${tool_root}${PYTHONPATH:+:${PYTHONPATH}}" \
+        "${python_bin}" -m aiops_simulator "$@"
+}
+
+read_pid() {
+    [[ -f "${pid_file}" ]] || return 1
+    local pid
+    pid="$(tr -d '[:space:]' <"${pid_file}")"
+    [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
+    printf '%s' "${pid}"
+}
+
+is_simulator_process() {
+    local pid="$1"
+    [[ -r "/proc/${pid}/cmdline" ]] || return 1
+    local command_line
+    command_line="$(tr '\0' ' ' <"/proc/${pid}/cmdline")"
+    [[ "${command_line}" == *"-m aiops_simulator run"* ]] && \
+        [[ "${command_line}" == *"${config_file}"* ]]
+}
+
+running_pid() {
+    local pid
+    pid="$(read_pid)" || return 1
+    kill -0 "${pid}" 2>/dev/null || return 1
+    is_simulator_process "${pid}" || return 1
+    printf '%s' "${pid}"
+}
+
+fault_command() {
+    local database="${1:-}"
+    local action="${2:-}"
+    local fault_type="${3:-}"
+    case "${database}" in
+        oracle|postgres|mysql) ;;
+        *)
+            echo "数据库必须是oracle、postgres或mysql。" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+
+    local fault_root="${runtime_root}/faults/${database}"
+    local fault_pid_file="${fault_root}/fault.pid"
+    local fault_state_file="${fault_root}/state.json"
+    local fault_log_file="${fault_root}/fault.log"
+
+    fault_read_pid() {
+        [[ -f "${fault_pid_file}" ]] || return 1
+        local candidate
+        candidate="$(tr -d '[:space:]' <"${fault_pid_file}")"
+        [[ "${candidate}" =~ ^[0-9]+$ ]] || return 1
+        printf '%s' "${candidate}"
+    }
+
+    fault_process_matches() {
+        local candidate="$1"
+        [[ -r "/proc/${candidate}/cmdline" ]] || return 1
+        local command_line
+        command_line="$(tr '\0' ' ' <"/proc/${candidate}/cmdline")"
+        [[ "${command_line}" == *"-m aiops_simulator fault-run"* ]] && \
+            [[ "${command_line}" == *"--database ${database}"* ]] && \
+            [[ "${command_line}" == *"--state-file ${fault_state_file}"* ]]
+    }
+
+    fault_running_pid() {
+        local candidate
+        candidate="$(fault_read_pid)" || return 1
+        kill -0 "${candidate}" 2>/dev/null || return 1
+        fault_process_matches "${candidate}" || return 1
+        printf '%s' "${candidate}"
+    }
+
+    case "${action}" in
+        start)
+            [[ "$#" -eq 3 ]] || {
+                echo "启动故障时必须指定故障类型。" >&2
+                usage >&2
+                exit 2
+            }
+            case "${fault_type}" in
+                slow_query|blocking_lock|deadlock|long_transaction|connection_surge|temp_pressure) ;;
+                *)
+                    echo "不支持的故障类型：${fault_type}" >&2
+                    usage >&2
+                    exit 2
+                    ;;
+            esac
+            require_config
+            if fault_pid="$(fault_running_pid)"; then
+                echo "${database}已经存在运行中的故障，PID=${fault_pid}。请先停止。" >&2
+                exit 1
+            fi
+            mkdir -p "${fault_root}"
+            rm -f "${fault_pid_file}" "${fault_state_file}"
+            touch "${fault_log_file}"
+            chmod 0600 "${fault_log_file}"
+            nohup env PYTHONPATH="${tool_root}${PYTHONPATH:+:${PYTHONPATH}}" \
+                "${python_bin}" -m aiops_simulator fault-run \
+                --config "${config_file}" \
+                --database "${database}" \
+                --fault-type "${fault_type}" \
+                --state-file "${fault_state_file}" \
+                >>"${fault_log_file}" 2>&1 </dev/null &
+            fault_pid="$!"
+            printf '%s\n' "${fault_pid}" >"${fault_pid_file}"
+            chmod 0600 "${fault_pid_file}"
+            for _ in $(seq 1 30); do
+                if ! kill -0 "${fault_pid}" 2>/dev/null; then
+                    echo "${database}故障启动失败，最近日志如下：" >&2
+                    tail -n 40 "${fault_log_file}" >&2 || true
+                    rm -f "${fault_pid_file}"
+                    exit 1
+                fi
+                if [[ -f "${fault_state_file}" ]] && \
+                    grep -q '"status": "active"' "${fault_state_file}"; then
+                    echo "${database}故障已启动：${fault_type}，PID=${fault_pid}，最多持续10分钟。"
+                    return
+                fi
+                sleep 1
+            done
+            echo "${database}故障进程仍在启动，PID=${fault_pid}；请执行status确认。"
+            ;;
+        stop)
+            [[ "$#" -eq 2 ]] || {
+                usage >&2
+                exit 2
+            }
+            if ! fault_pid="$(fault_running_pid)"; then
+                rm -f "${fault_pid_file}"
+                echo "${database}当前没有运行中的故障。"
+                run_python fault-status \
+                    --database "${database}" --state-file "${fault_state_file}"
+                return
+            fi
+            kill -TERM "${fault_pid}"
+            for _ in $(seq 1 20); do
+                if ! kill -0 "${fault_pid}" 2>/dev/null; then
+                    rm -f "${fault_pid_file}"
+                    echo "${database}故障已停止，事务已回滚且连接已关闭。"
+                    return
+                fi
+                sleep 1
+            done
+            echo "${database}故障进程在20秒内未退出；未发送强制终止信号。" >&2
+            exit 1
+            ;;
+        status)
+            [[ "$#" -eq 2 ]] || {
+                usage >&2
+                exit 2
+            }
+            if fault_pid="$(fault_running_pid)"; then
+                run_python fault-status --database "${database}" \
+                    --state-file "${fault_state_file}" --running
+            else
+                rm -f "${fault_pid_file}"
+                run_python fault-status --database "${database}" \
+                    --state-file "${fault_state_file}"
+            fi
+            ;;
+        *)
+            usage >&2
+            exit 2
+            ;;
+    esac
+}
+
+command="${1:-}"
+case "${command}" in
+    fault)
+        fault_command "${@:2}"
+        ;;
+    init-config)
+        mkdir -p "${runtime_root}"
+        if [[ -e "${config_file}" ]]; then
+            echo "配置文件已经存在，未覆盖：${config_file}"
+            exit 0
+        fi
+        install -m 0600 "${tool_root}/simulator.example.ini" "${config_file}"
+        echo "已生成配置：${config_file}"
+        echo "请填写三库密码后再执行prepare。"
+        ;;
+    prepare)
+        require_config
+        run_python prepare --config "${config_file}"
+        ;;
+    validate)
+        require_config
+        run_python validate --config "${config_file}"
+        ;;
+    start)
+        require_config
+        if pid="$(running_pid)"; then
+            echo "日常流量模拟程序已经运行，PID=${pid}"
+            exit 0
+        fi
+        rm -f "${pid_file}"
+        run_python validate --config "${config_file}"
+        mkdir -p "${runtime_root}"
+        touch "${log_file}"
+        chmod 0600 "${log_file}"
+        nohup env PYTHONPATH="${tool_root}${PYTHONPATH:+:${PYTHONPATH}}" \
+            "${python_bin}" -m aiops_simulator run --config "${config_file}" \
+            >>"${log_file}" 2>&1 </dev/null &
+        pid="$!"
+        printf '%s\n' "${pid}" >"${pid_file}"
+        chmod 0600 "${pid_file}"
+        sleep 2
+        if ! running_pid >/dev/null; then
+            echo "模拟程序启动失败，最近日志如下：" >&2
+            tail -n 40 "${log_file}" >&2 || true
+            rm -f "${pid_file}"
+            exit 1
+        fi
+        echo "日常流量模拟程序已手动启动。"
+        ;;
+    stop)
+        require_config
+        if ! pid="$(running_pid)"; then
+            rm -f "${pid_file}"
+            echo "日常流量模拟程序当前未运行。"
+            exit 0
+        fi
+        kill -TERM "${pid}"
+        for _ in $(seq 1 35); do
+            if ! kill -0 "${pid}" 2>/dev/null; then
+                rm -f "${pid_file}"
+                echo "日常流量模拟程序已手动停止。"
+                exit 0
+            fi
+            sleep 1
+        done
+        echo "模拟程序在35秒内未退出，请检查日志；未发送强制终止信号。" >&2
+        exit 1
+        ;;
+    status)
+        require_config
+        if pid="$(running_pid)"; then
+            echo "日常流量模拟程序正在运行，PID=${pid}"
+        else
+            echo "日常流量模拟程序未运行。"
+        fi
+        ;;
+    logs)
+        require_config
+        touch "${log_file}"
+        chmod 0600 "${log_file}"
+        tail -n 200 -f "${log_file}"
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
