@@ -30,7 +30,11 @@ class ResponsibilityGroupService:
     async def list_groups(self, *, scope) -> ResponsibilityGroupPage:
         async with self._uow_factory() as uow:
             rows = await uow.work_items.list_groups(domain_id=scope.domain_id)
-            items = [await self._summary(uow, row) for row in rows]
+            items = [
+                await self._summary(uow, row)
+                for row in rows
+                if row.status == "ACTIVE"
+            ]
         return ResponsibilityGroupPage(items=tuple(items), has_more=False)
 
     async def get_group(self, *, group_id: UUID, scope) -> ResponsibilityGroupView:

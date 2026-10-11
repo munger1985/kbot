@@ -61,7 +61,7 @@
     const body = document.getElementById("groups-body");
     try {
       const page = await KBotAIOpsAuth.request(api);
-      groups = values(page.items);
+      groups = values(page.items).filter((item) => item.status === "ACTIVE");
       renderGroups();
     } catch (error) {
       body.innerHTML = `<tr><td colspan="7" class="ops-empty">${shell.escape(error.message)}</td></tr>`;
@@ -74,10 +74,8 @@
     form.reset();
     form.elements.name.value = editing?.name || "";
     form.elements.description.value = editing?.description || "";
-    form.elements.status.value = editing?.status || "ACTIVE";
     document.getElementById("group-editor-title").textContent = editing ? "修改责任组" : "新增责任组";
-    document.getElementById("group-editor-hint").textContent = editing ? "修改名称、说明或可用状态；既有工作项历史不会改变。" : "建立 DBA 工作路由边界，创建后再添加具体人员。";
-    document.getElementById("group-editor-status-field").hidden = !editing;
+    document.getElementById("group-editor-hint").textContent = editing ? "修改责任组名称或说明；既有工作项历史不会改变。" : "建立 DBA 工作路由边界，创建后再添加具体人员。";
     document.getElementById("group-editor-submit").textContent = editing ? "保存修改" : "创建责任组";
     document.getElementById("group-editor-dialog").showModal();
   }
@@ -87,7 +85,6 @@
     const payload = { name: fields.name.trim(), description: fields.description.trim() || null };
     if (editing) {
       payload.expected_row_version = editing.row_version;
-      payload.status = fields.status;
     }
     try {
       await KBotAIOpsAuth.request(editing ? `${api}/${encodeURIComponent(editing.responsibility_group_id)}` : api, {

@@ -100,6 +100,11 @@ class ResponsibilityGroupServiceTest(unittest.TestCase):
         self.assertEqual(3, result.target_binding_count)
         self.assertEqual(4, result.unassigned_work_item_count)
 
+    def test_inactive_groups_are_hidden_from_manageable_list(self):
+        self.group.status = "INACTIVE"
+        result = asyncio.run(self.service.list_groups(scope=self.scope))
+        self.assertEqual((), result.items)
+
     def test_new_lead_is_automatically_added_and_previous_lead_demoted(self):
         asyncio.run(self.service.patch_group(
             group_id=self.group.responsibility_group_id,
