@@ -43,7 +43,7 @@
 
 - 双向吸收：A-01～A-07；
 - 实时监控一期：Prometheus、外部 Zabbix，覆盖 Oracle、MySQL、PostgreSQL；
-- 原生多实例监控页为主，Prometheus Grafana 只做满足安全条件后的受控高级下钻；
+- 原生多实例监控页是唯一监控展示入口，不再部署或集成 Grafana Server；
 - 时间窗固定为 `15m`、`1h`、`6h`、`24h`，单请求最多 12 个实例；
 - “完整接入”必须同时满足 `monitoring_readiness=READY` 与
   `diagnostic_readiness=READY`。
@@ -102,7 +102,7 @@
 
 新建模块时优先采用清晰的监控子域，例如 `contracts/monitoring.py`、
 `application/monitoring/`、`api/monitoring.py` 和
-`resources/monitoring/dashboard_profiles.v1.json`；最终文件名可以按现有包结构微调，但不得把业务
+`resources/monitoring/monitoring_profiles.v1.json`；不得把业务
 逻辑塞入 API 路由、Repository 或前端。
 
 ### 4.2 Ammolite Cube 平台适配
@@ -127,7 +127,7 @@
 
 ### 4.4 外部接入和部署资产
 
-- Prometheus/Grafana 资产继续位于 `scripts/deployment/aiops_observability/`，入口仍是无参数
+- Prometheus、Alertmanager、Loki、Alloy和Exporter资产位于 `scripts/deployment/aiops_observability/`，入口仍是无参数
   `scripts/aiops-stack` 和唯一可编辑 `aiops-stack.ini`；
 - Zabbix 参考 Template、Metric Mapping 与接入说明位于 `configuration/zabbix/`，不进入观测栈
   Compose，也不由部署脚本自动导入；
@@ -185,7 +185,7 @@ API/前端合同和真实 Oracle 受控动作。
 
 1. 新增并校验 `MonitoringProfileSummary`、`MonitoringView`、Source/Instance、Window、Panel、
    Series、Point、Gap、Readiness 等合同；
-2. 建立 `dashboard_profiles.v1.json`，复用唯一 Metric Catalog，不创建第二套指标定义；
+2. 建立按 `db_type + version_code` 精确解析的 `monitoring_profiles.v1.json`，复用唯一 Metric Catalog；
 3. 实现 Source/Instance 目录、实例发现候选、批量映射、Profile 过滤、Snapshot Builder 和 View
    Builder；
 4. 实施 15 秒短缓存、Domain/版本缓存键、最多 12 实例/8 指标/96 Series/240 点、字节和超时预算；
@@ -230,7 +230,7 @@ Prometheus/Zabbix 对三种数据库的 Profile 与 Metric Code 集合一致。
 
 完成条件：公共 API 和内部 API 在两个项目具有相同业务合同；数据库差异只存在于适配层。
 
-### 5.5 批次 4：两个前端与 Grafana 受控下钻
+### 5.5 批次 4：两个原生实时监控前端
 
 目标：以两套技术栈实现同一页面任务、状态和安全语义。
 
@@ -247,14 +247,13 @@ Prometheus/Zabbix 对三种数据库的 Profile 与 Metric Code 集合一致。
 Ammolite 实现 `AIOpsMonitoringView.vue` 及复用组件、Token、路由、导航和 API Service；KBot4 在
 `ui/aiops/` 实现等价静态页面/脚本/样式并更新资源版本，禁止修改 APEX 集成目录。
 
-Grafana 仅允许详细设计列出的固定 UID。启用 Embed 前必须完成短期 HttpOnly Session、非管理员身份、
-禁用 Explore/编辑/数据源配置、Target 锁定、Domain 隔离、CSP 和审计。任一条件不满足时只提供受控
-`LINK` 或 `DISABLED`，不得降级成匿名、共享管理员或 URL Token。
+两个前端只消费标准化 Monitoring View。缺少的专业监控能力继续扩展原生页面和统一 Profile，
+不得新增 Grafana 下钻、浏览器直连 Provider 或第二套指标定义。
 
 依赖：批次 3 公共 API 和错误语义通过合同测试。
 
 测试：组件/静态页面合同、权限、空状态、部分成功、响应式/可访问性、本地资源/CSP、Portal 生产
-构建、KBot4 静态资源检查和 Grafana 安全场景。
+构建、KBot4 静态资源检查和 Profile 版本选择场景。
 
 完成条件：相同用户任务在两个前端得到相同状态、筛选、图表、错误、权限和深链结果。
 
@@ -291,8 +290,8 @@ Grafana 仅允许详细设计列出的固定 UID。启用 Embed 前必须完成�
 
 每个组合验证正常、认证失败、端点不可达、无采样、部分指标失败、重复事件、恢复事件、跨 Domain
 越权和未映射实例。Zabbix 必须真实调用 `host.get`、`problem.get`、`item.get`、`history.get`；
-Prometheus 必须真实调用 `query_range`。Grafana 单独记录 `EMBED`、`LINK` 或 `DISABLED` 以及证据，
-不能从 Prometheus 成功推断 Grafana 安全验收成功。
+Prometheus 必须真实调用 `query_range`；部署渲染必须证明不存在 Grafana Server及其Secret、端口、
+Volume和Dashboard资产。
 
 依赖：批次 1～5 在两个仓库均通过静态、单元、合同和集成测试。
 
@@ -350,7 +349,7 @@ A/M 编号。
 | M-14 | 篡改 Source/Instance 不越权 | 1、3、6 | 授权单测和跨 Domain Smoke |
 | M-15 | 浏览器无凭据、Locator、任意查询和内部路由 | 3、4 | DTO、网络请求和安全测试 |
 | M-16 | 监控上下文可进入智能运维 | 3、4、6 | 深链与诊断 Run 证据 |
-| M-17 | Grafana 不安全时不内嵌/匿名暴露 | 4、6 | 安全门禁和部署检查 |
+| M-17 | Grafana Server及其集成合同完全移除 | 4、6 | 部署、OpenAPI和页面合同检查 |
 | M-18 | 两类来源查询事件并触发相同诊断 | 2、6 | 事件查询/Webhook E2E |
 | M-19 | 故障、恢复、幂等、严重度、Target、证据语义一致 | 2、6 | 黄金合同和双 Provider E2E |
 | M-20 | PostgreSQL/Zabbix 图表到恢复闭环 | 2、6 | 真实专项 E2E |
@@ -373,7 +372,7 @@ M-27 的证据，不能只写“测试通过”。
 4. Schema 变更只通过各自规范 Schema/初始化流程重建或重新发布；不得临时创建影子表、兼容列或
    回填路径；执行任何破坏性数据库操作前必须另行审批和备份；
 5. Provider 故障通过 Readiness、Gap 和部分成功降级，不回退为浏览器直连或放宽 Target Scope；
-6. Grafana 安全条件失败时回退到 `LINK` 或 `DISABLED`，不影响原生监控页；
+6. 原生监控能力不足时补充统一 Profile 和页面，不恢复 Grafana 兼容入口；
 7. Zabbix 真实验收失败时保留外部接入配置和稳定错误证据，但产品状态不得显示“完整接入”；
 8. 单边失败时另一边不得自行演进合同；修复仍须同步进入两个仓库并重新执行差异门禁。
 
@@ -386,7 +385,7 @@ M-27 的证据，不能只写“测试通过”。
 - 两个项目的内部/公共 OpenAPI、Metric/Profile 资源、错误码和状态机等价；
 - Ammolite PostgreSQL 与 KBot4 Oracle 的规范 Schema、初始化和持久化验证均通过；
 - 两个前端具有等价任务、状态、权限和深链，且构建/静态检查通过；
-- Grafana 状态被如实标记为 `EMBED`、`LINK` 或 `DISABLED`，OEM 明确标记为一期未实施；
+- Grafana Server及其合同和部署资产已移除，Grafana Alloy仅作为日志采集器保留；
 - 两个仓库均有对应提交和完整实施报告，报告明确列出未执行项、部署、重启和在线验证事实。
 
 文档、编译、HTTP 200、配置保存成功或单一 Provider 有数据，都不能单独作为整体完成证据。

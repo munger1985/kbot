@@ -17,7 +17,7 @@ OCI Container Registry（OCIR）的统一入口。开发机阶段不需要 OCI �
 - `kbot-installer` 仅在 `tools` Profile 下按需运行数据库初始化或校验工具；
 - Oracle 密码和 KBot 主密钥从 Docker Secret 文件注入，生成目录内的副本固定为 `0600`。
 - 选择 AIOps App 后可在同一配置单启用 Prometheus、Alertmanager、Loki、Alloy、
-  Grafana、Node Exporter 及数据库 Exporter；OEM 仍只在 AIOps App 内配置。
+  Node Exporter 及数据库 Exporter；实时图表由 AIOps 原生页面提供，OEM 仍只在 App 内配置。
 
 KBot 与 AIOps 观测栈保持两个独立 Compose Project，避免混淆业务生命周期和监控
 生命周期；统一配置单和 `kbot-deploy` 会在变更容器前完成两套配置校验，再按顺序应用。

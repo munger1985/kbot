@@ -198,6 +198,7 @@ def _fixture(*, connected=True, secret_ref=None):
         domain_id=domain_id,
         display_name="核心库",
         db_type="ORACLE",
+        version_code="19c",
         status="ENABLED",
         observed_status="UNKNOWN",
         last_observed_at=None,
@@ -302,6 +303,26 @@ def test_unmapped_instance_is_hidden_as_not_found():
         )
     assert caught.value.status_code == 404
     assert registry.create_calls == 0
+
+
+def test_profile_rejects_target_database_version_mismatch_before_query():
+    service, scope, source, target, *_rest, registry, snapshot, request = _fixture()
+    target.version_code = "26ai"
+    incompatible = request.model_copy(update={"profile_id": "mysql-overview"})
+
+    with pytest.raises(AIOpsApplicationError) as caught:
+        asyncio.run(
+            service.get_view(
+                scope=scope,
+                source_id=source.diagnostic_source_id,
+                request=incompatible,
+            )
+        )
+
+    assert caught.value.code == "MONITORING_PROFILE_INCOMPATIBLE"
+    assert caught.value.status_code == 422
+    assert registry.create_calls == 0
+    assert snapshot.calls == 0
 
 
 def test_cache_is_invalidated_by_binding_version():

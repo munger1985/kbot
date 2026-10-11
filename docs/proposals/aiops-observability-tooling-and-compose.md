@@ -3,7 +3,7 @@
 ## 状态与范围
 
 本文既是已经确认的目标态设计基线，也是轻量观测栈当前实现说明。仓库已经交付
-`metrics`、`logs`、`dashboard`、`host`、`oracle`、`mysql` 和 `postgres` Profile，
+`metrics`、`logs`、`host`、`oracle`、`mysql` 和 `postgres` Profile，
 并通过一份INI配置和一个零参数入口完成选择、配置、校验与启动。当前实现还支持
 Central/Collector角色、同一部署中的多数据库目标、动态Prometheus目标发现，以及
 Alertmanager到KBot的HMAC签名桥。托管Zabbix Overlay、生产级多节点Loki和完整的
@@ -18,7 +18,7 @@ Alertmanager到KBot的HMAC签名桥。托管Zabbix Overlay、生产级多节点L
 1. KBot 提供一个模块化 Docker Compose 项目，通过 Profile 和部署预设按需启动
    观测组件，不要求所有客户安装同一套工具。
 2. 默认推荐栈是 Prometheus、Alertmanager、Loki 和 Grafana Alloy。
-3. Grafana、Node Exporter 和各数据库 Exporter 均为可选组件。
+3. Grafana Server不随包部署；Node Exporter 和各数据库 Exporter 均为可选组件。
 4. Prometheus 是可选 Metrics/Event Provider，不是 KBot AIOps 的运行时强依赖。
 5. Alertmanager 只负责 Prometheus 告警链路，不作为 Zabbix、OEM 和其他来源的
    通用事件总线。
@@ -42,7 +42,6 @@ Alertmanager到KBot的HMAC签名桥。托管Zabbix Overlay、生产级多节点L
 | Alertmanager | Prometheus 告警分组、抑制和路由 | 是 | 随 Prometheus 启用 |
 | Loki | 日志存储和按时间窗检索 | 是 | 推荐启用 |
 | Grafana Alloy | 文件、容器和遥测数据采集 | 是 | 随日志能力启用 |
-| Grafana | 人工 Dashboard、指标和日志探索 | 是 | 可选 |
 | Node Exporter | 主机 CPU、内存、磁盘、网络和进程基础指标 | 是 | 可选 |
 | Oracle Exporter | Oracle 标准/自定义 Prometheus 指标 | 是 | Oracle Profile 可选 |
 | Oracle Alert Collector | 查询诊断视图并输出可断点续采的 JSONL | 是 | 随 Oracle 日志能力启用 |
@@ -66,7 +65,7 @@ Docker Host
 ├── KBot AIOps
 ├── Prometheus / Alertmanager
 ├── Loki / Alloy
-├── Grafana
+├── AIOps原生实时监控
 ├── Node Exporter
 └── Selected Database Exporter
         └── Remote or Local Database
@@ -107,13 +106,12 @@ Alertmanager 和 Exporter默认不绑定公网地址。
 | --- | --- |
 | `metrics` | Prometheus、Alertmanager及规则配置 |
 | `logs` | Loki、Alloy及日志采集配置 |
-| `dashboard` | Grafana及预置数据源/Dashboard |
 | `host` | Node Exporter |
 | `oracle` | Oracle Exporter及 Oracle采集配置 |
 | `mysql` | MySQL Exporter及 MySQL采集配置 |
 | `postgres` | PostgreSQL Exporter及 PostgreSQL采集配置 |
 | `zabbix-managed` | 独立 Zabbix Server、Web和数据库 Overlay |
-| `demo` | 仅用于测试的示例数据、规则和 Dashboard |
+| `demo` | 仅用于测试的示例数据和规则 |
 
 Profile 仍是 Compose 内部组件集合。用户不直接传递 Profile参数，而是在唯一配置
 文件中取消对应模块的 `enabled = true` 注释。数据库密码和 API Token也集中写入该
@@ -235,7 +233,7 @@ Compose Secret。该简化模式适合当前单机交付，后续接入外部 Se
 - Prometheus、Alertmanager、Loki和 Exporter默认仅在内部 Network可见；
 - 需要人工访问时统一通过带 TLS、认证和授权的反向代理；
 - Collector到 Central的连接必须经过身份认证和传输加密；
-- Prometheus、Loki、Grafana和托管 Zabbix使用独立持久化 Volume；
+- Prometheus、Loki和托管 Zabbix使用独立持久化 Volume；
 - 指标、日志和告警历史分别配置保留周期，不能无限增长；
 - 删除容器不删除持久化数据，清除数据必须使用显式的破坏性命令并二次确认；
 - 单机文件存储只用于测试或明确接受单点风险的小规模环境；

@@ -29,7 +29,6 @@ from aiops_agent.monitoring import (
     MonitoringViewBuilder,
     build_monitoring_cache_key,
     project_source_readiness,
-    resolve_grafana_integration,
     resolve_metric_definitions,
     resolve_monitoring_window,
 )
@@ -188,11 +187,26 @@ class MonitoringApplicationService:
             )
 
     async def list_profiles(self, *, scope, source_id: UUID):
-        instances = await self.list_instances(scope=scope, source_id=source_id)
-        db_types = tuple(sorted({item.db_type for item in instances}))
-        if not db_types:
+        async with self._uow_factory() as uow:
+            await self._source(uow, scope.domain_id, source_id)
+            bindings = await uow.targets.list_source_bindings_by_source(
+                diagnostic_source_id=source_id,
+                domain_id=scope.domain_id,
+            )
+            databases = []
+            for binding in bindings:
+                if binding.status != "ACTIVE":
+                    continue
+                target = await uow.targets.get_scoped(
+                    target_id=binding.target_id,
+                    domain_id=scope.domain_id,
+                )
+                if target is None or target.status != "ENABLED":
+                    continue
+                databases.append((target.db_type, target.version_code or ""))
+        if not databases:
             return ()
-        return self._profile_catalog.list_for_db_types(db_types)
+        return self._profile_catalog.list_for_databases(tuple(databases))
 
     async def list_target_profiles(self, *, scope, target_id: UUID):
         async with self._uow_factory() as uow:
@@ -201,7 +215,9 @@ class MonitoringApplicationService:
             )
             if target is None or target.status != "ENABLED":
                 raise resource_not_found("Monitoring Instance")
-            return self._profile_catalog.list_for_db_types((target.db_type,))
+            return self._profile_catalog.list_for_databases(
+                ((target.db_type, target.version_code or ""),)
+            )
 
     async def get_target_view(
         self,
@@ -267,14 +283,6 @@ class MonitoringApplicationService:
         window_override: MonitoringWindow | None = None,
     ) -> MonitoringView:
         generated_at = (now or datetime.now(UTC)).astimezone(UTC)
-        try:
-            profile = self._profile_catalog.get(request.profile_id)
-        except KeyError as exc:
-            raise AIOpsApplicationError(
-                code="MONITORING_PROFILE_NOT_FOUND",
-                message="Monitoring Profile 不存在",
-                status_code=404,
-            ) from exc
         requested = set(request.instance_ids)
         window = window_override or resolve_monitoring_window(
             request.window, now=generated_at
@@ -300,6 +308,26 @@ class MonitoringApplicationService:
                 if target is None or target.status != "ENABLED":
                     raise resource_not_found("Monitoring Instance")
                 targets.append((target, binding))
+            try:
+                profile = self._profile_catalog.resolve(
+                    request.profile_id,
+                    tuple(
+                        (target.db_type, target.version_code or "")
+                        for target, _ in targets
+                    ),
+                )
+            except KeyError as exc:
+                raise AIOpsApplicationError(
+                    code="MONITORING_PROFILE_NOT_FOUND",
+                    message="Monitoring Profile 不存在",
+                    status_code=404,
+                ) from exc
+            except LookupError as exc:
+                raise AIOpsApplicationError(
+                    code="MONITORING_PROFILE_INCOMPATIBLE",
+                    message="Monitoring Profile 与数据库类型或版本不兼容",
+                    status_code=422,
+                ) from exc
             alert_ingress_targets = await self._alert_ingress_target_ids(
                 uow=uow,
                 domain_id=scope.domain_id,
@@ -318,6 +346,8 @@ class MonitoringApplicationService:
                 source_id=source_id,
                 instance_ids=request.instance_ids,
                 profile_id=profile.profile_id,
+                profile_version=profile.version,
+                profile_variant_ids=profile.resolved_variant_ids,
                 window=(
                     request.window
                     if window.name is not None
@@ -402,15 +432,6 @@ class MonitoringApplicationService:
                 gaps=tuple(gaps),
                 generated_at=generated_at,
             )
-            view = view.model_copy(
-                update={
-                    "dashboard": resolve_grafana_integration(
-                        source_type=source_summary.source_type,
-                        profile_dashboard_uid=profile.grafana_dashboard_uid,
-                        instance_count=len(instances),
-                    )
-                }
-            )
         except MonitoringQueryError as exc:
             raise AIOpsApplicationError(
                 code=exc.code,
@@ -451,13 +472,14 @@ class MonitoringApplicationService:
             )
             if target is None or target.status != "ENABLED":
                 return False
-            requested_codes = {
-                "MYSQL": ("db.availability", "mysql.availability"),
-                "POSTGRESQL": (
-                    "db.availability",
-                    "postgresql.availability",
-                ),
-            }.get(target.db_type, ("db.availability",))
+            profile = self._profile_catalog.overview_for_database(
+                target.db_type, target.version_code or ""
+            )
+            requested_codes = tuple(
+                code
+                for code in profile.metric_codes
+                if code in _AVAILABILITY_METRIC_CODES
+            )
             snapshot = await self._snapshot_builder.build(
                 uow=uow,
                 domain_id=domain_id,

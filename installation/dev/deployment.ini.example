@@ -59,13 +59,6 @@ loki_url = http://loki:3100/loki/api/v1/push
 loki_tenant = kbot
 # loki_token = 仅远程Loki必填
 
-[observability.dashboard]
-# enabled = true
-grafana_bind_address = 127.0.0.1
-grafana_port = 3000
-grafana_admin_user = kbot-admin
-# grafana_admin_password = CHANGE_ME
-
 [observability.host]
 # enabled = true
 # target_key = host-prod-01

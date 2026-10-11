@@ -16,8 +16,8 @@
 - Grafana Alloy：采集 Collector 输出的 JSONL；
 - Loki：保存并查询 Oracle Alert Log。
 
-Zabbix、OEM 和 Grafana不在本文范围内。OEM只在 AIOps App内配置，不能由本文步骤
-安装。本文以单机开发拓扑为基线，生产环境还必须补充 TLS反向代理、认证、容量、备份、
+Zabbix和OEM不在本文范围内。OEM只在 AIOps App内配置，不能由本文步骤安装；Grafana
+Server不再部署，实时监控由 AIOps原生页面承担。本文以单机开发拓扑为基线，生产环境还必须补充 TLS反向代理、认证、容量、备份、
 对象存储和高可用设计。
 
 ## 2. 当前开发设备基线

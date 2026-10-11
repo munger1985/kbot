@@ -3,6 +3,8 @@
 from .catalog import (
     MonitoringProfileCatalog,
     MonitoringProfileDefinition,
+    MonitoringProfileVariant,
+    ResolvedMonitoringProfile,
     load_monitoring_profile_catalog,
     resolve_metric_definitions,
 )
@@ -16,7 +18,6 @@ from .query_policy import (
     ValidatedLogQuery,
     ValidatedPromQuery,
 )
-from .grafana import GrafanaLinkSecurity, resolve_grafana_integration
 from .view import (
     MonitoringQueryError,
     MonitoringViewBuilder,
@@ -28,9 +29,10 @@ from .view import (
 __all__ = [
     "LogQueryPolicy",
     "LogQueryPolicySnapshot",
-    "GrafanaLinkSecurity",
     "MonitoringProfileCatalog",
     "MonitoringProfileDefinition",
+    "MonitoringProfileVariant",
+    "ResolvedMonitoringProfile",
     "MonitoringQueryError",
     "MonitoringQueryRejected",
     "MonitoringViewBuilder",
@@ -42,6 +44,5 @@ __all__ = [
     "load_monitoring_profile_catalog",
     "project_source_readiness",
     "resolve_metric_definitions",
-    "resolve_grafana_integration",
     "resolve_monitoring_window",
 ]

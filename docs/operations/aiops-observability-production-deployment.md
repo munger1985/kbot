@@ -25,7 +25,7 @@ Prometheus目标文件、规则和部署清单，再应用选中的服务。配�
 ```text
 Collector节点                         Central节点
 Oracle/MySQL/PostgreSQL               Prometheus / Alertmanager
-        │                             Loki / 可选Grafana
+        │                             Loki
 独立Exporter ─── 内部受控网络 ───────▶ Prometheus
 Oracle Alert Collector ── Alloy ─────▶ Loki TLS入口
 MySQL/PostgreSQL容器日志 ─ Alloy ───▶ Loki TLS入口
@@ -33,7 +33,7 @@ MySQL/PostgreSQL容器日志 ─ Alloy ───▶ Loki TLS入口
                                       Alertmanager ── 签名桥 ──▶ KBot
 ```
 
-- `central`：运行Prometheus、Alertmanager、Loki和可选Grafana；
+- `central`：运行Prometheus、Alertmanager和Loki；
 - `collector`：运行Exporter、Oracle Alert Collector、Alloy和Node Exporter；
 - 每个节点使用自己的INI和`deployment_id`，各执行一次同一个脚本；
 - Collector到Central只能经过客户批准的受控网络；远程Loki必须使用TLS和Token；
@@ -74,17 +74,6 @@ alertmanager_retention = 120h
 [logs]
 enabled = true
 loki_retention = 720h
-
-[dashboard]
-enabled = true
-# 仅允许本机访问时使用127.0.0.1；管理网直连时填写部署节点的管理网IPv4地址。
-grafana_bind_address = 10.10.1.10
-grafana_port = 3000
-grafana_admin_user = kbot-admin
-grafana_admin_password = 填写实际强密码
-
-# 启用后自动加载Oracle总览、存储、异常、Alert Log和主机资源看板，
-# 无需在Grafana中手工创建Dashboard。
 
 [oracle:oracle-prod-01]
 enabled = true

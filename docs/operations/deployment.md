@@ -15,7 +15,8 @@
 
 容器部署必须先填写权限为 `0600` 的 `installation/dev/deployment.ini`。
 `[apps]` 开关决定实际启动的 App 进程及空库 Schema 初始化范围；选择 AIOps 后还可在
-同一配置单的 `[observability.*]` 段选择 Prometheus、Loki、Grafana 和 Exporter。
+同一配置单的 `[observability.*]` 段选择 Prometheus、Loki、Alloy 和 Exporter；
+实时图表统一由 AIOps 原生监控页面提供。
 确认配置后使用无参数 `installation/dev/kbot-deploy`，不要分别手工拼接 Compose 命令。
 
 ## 单机容器部署的 Oracle Secret

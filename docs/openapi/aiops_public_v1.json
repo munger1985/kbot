@@ -3385,71 +3385,6 @@
         "title": "ManualResultReceipt",
         "type": "object"
       },
-      "MonitoringDashboardIntegration": {
-        "additionalProperties": false,
-        "properties": {
-          "dashboard_uid": {
-            "anyOf": [
-              {
-                "enum": [
-                  "kbot-database-fleet",
-                  "kbot-oracle-overview",
-                  "kbot-oracle-storage",
-                  "kbot-oracle-alerts",
-                  "kbot-oracle-alert-log",
-                  "kbot-mysql-overview",
-                  "kbot-postgresql-overview",
-                  "kbot-host-overview"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dashboard Uid"
-          },
-          "integration_mode": {
-            "enum": [
-              "LINK",
-              "DISABLED"
-            ],
-            "title": "Integration Mode",
-            "type": "string"
-          },
-          "launch_url": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Launch Url"
-          },
-          "reason_code": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason Code"
-          }
-        },
-        "required": [
-          "integration_mode"
-        ],
-        "title": "MonitoringDashboardIntegration",
-        "type": "object"
-      },
       "MonitoringGap": {
         "additionalProperties": false,
         "properties": {
@@ -3762,27 +3697,6 @@
             "title": "Display Name",
             "type": "string"
           },
-          "grafana_dashboard_uid": {
-            "anyOf": [
-              {
-                "enum": [
-                  "kbot-database-fleet",
-                  "kbot-oracle-overview",
-                  "kbot-oracle-storage",
-                  "kbot-oracle-alerts",
-                  "kbot-oracle-alert-log",
-                  "kbot-mysql-overview",
-                  "kbot-postgresql-overview",
-                  "kbot-host-overview"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grafana Dashboard Uid"
-          },
           "metric_codes": {
             "items": {
               "type": "string"
@@ -3796,6 +3710,24 @@
             "pattern": "^[a-z][a-z0-9-]{2,63}$",
             "title": "Profile Id",
             "type": "string"
+          },
+          "resolved_variant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Resolved Variant Ids",
+            "type": "array"
+          },
+          "supported_database_versions": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Supported Database Versions",
+            "type": "object"
           },
           "supported_db_types": {
             "items": {
@@ -3822,6 +3754,8 @@
           "display_name",
           "description",
           "supported_db_types",
+          "supported_database_versions",
+          "resolved_variant_ids",
           "metric_codes"
         ],
         "title": "MonitoringProfileSummary",
@@ -3976,16 +3910,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MonitoringSourceSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "dashboard": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MonitoringDashboardIntegration"
               },
               {
                 "type": "null"

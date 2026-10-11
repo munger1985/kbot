@@ -29,7 +29,6 @@ CONFIG_FILE = Path(
 MODULE_PROFILES = {
     "metrics": "metrics",
     "logs": "logs",
-    "dashboard": "dashboard",
     "host": "host",
     "containers": "containers",
 }
@@ -37,13 +36,12 @@ MODULE_PROFILES = {
 PROFILE_SERVICES: dict[str, set[str]] = {
     "metrics": {"prometheus", "alertmanager"},
     "logs": {"loki", "alloy"},
-    "dashboard": {"grafana"},
     "host": {"node-exporter"},
     "containers": {"cadvisor"},
 }
 
 ROLE_SERVICES: dict[str, set[str]] = {
-    "central": {"prometheus", "alertmanager", "loki", "grafana"},
+    "central": {"prometheus", "alertmanager", "loki"},
     "collector": {
         "alloy",
         "node-exporter",
@@ -73,7 +71,7 @@ CONFIG_TEMPLATE = """# KBot AIOps观测工具唯一部署配置
 deployment_id = CHANGE_ME
 # 必填：all-in-one、central或collector。
 role = all-in-one
-# 必填：true时发布Central维护端口；默认仅绑定127.0.0.1，Grafana可单独指定管理网IP。
+# 必填：true 时发布 Central 维护端口；默认仅绑定 127.0.0.1。
 local_access = false
 # minimum_free_gb = 10
 
@@ -104,14 +102,6 @@ local_access = false
 # loki_token =
 # 仅开发/演示环境可显式允许RFC1918私网HTTP；生产Collector不得启用。
 # allow_insecure_private_loki = true
-
-[dashboard]
-# enabled = true
-# 默认127.0.0.1；需要从管理网直连时填写本机管理网IPv4地址，不建议使用0.0.0.0。
-# grafana_bind_address = 127.0.0.1
-# grafana_port = 3000
-# grafana_admin_user = kbot-admin
-# grafana_admin_password = CHANGE_ME
 
 [host]
 # enabled = true
@@ -420,10 +410,6 @@ def _load_settings(path: Path) -> DeploymentSettings:
 
 def _validate_module_settings(settings: DeploymentSettings) -> None:
     parser = settings.values
-    if "dashboard" in settings.profiles:
-        _required(parser, "dashboard", "grafana_admin_user")
-        _required(parser, "dashboard", "grafana_admin_password")
-        _ipv4_address(parser, "dashboard", "grafana_bind_address", "127.0.0.1")
     if "host" in settings.profiles:
         _required(parser, "host", "target_key")
         if settings.role == "collector":
@@ -1690,25 +1676,6 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             _write_text(loki_rule_path, loki_rules)
         else:
             loki_rule_path.unlink(missing_ok=True)
-
-    if "dashboard" in settings.profiles:
-        env_lines.extend(
-            [
-                "GRAFANA_BIND_ADDRESS="
-                + _ipv4_address(
-                    parser, "dashboard", "grafana_bind_address", "127.0.0.1"
-                ),
-                f"GRAFANA_PORT={_bounded_int(parser, 'dashboard', 'grafana_port', 3000, 1, 65535)}",
-            ]
-        )
-        _write_secret(
-            secrets / "grafana_admin_user",
-            _required(parser, "dashboard", "grafana_admin_user"),
-        )
-        _write_secret(
-            secrets / "grafana_admin_password",
-            _required(parser, "dashboard", "grafana_admin_password"),
-        )
 
     if "host" in settings.profiles:
         targets.append(

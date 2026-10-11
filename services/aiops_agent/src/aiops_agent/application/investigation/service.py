@@ -3881,15 +3881,17 @@ class TurnPlanningService:
             if target is None:
                 raise resource_not_found("Turn Target")
             now = await uow.runs.database_now()
+            realtime_profile = None
             if (
                 align_with_realtime_profile
                 and self._monitoring_profile_catalog is not None
             ):
-                requested_metric_codes = (
-                    self._monitoring_profile_catalog.overview_for_db_type(
-                        str(target.db_type)
-                    ).metric_codes
+                realtime_profile = (
+                    self._monitoring_profile_catalog.overview_for_database(
+                        str(target.db_type), str(target.version_code or "")
+                    )
                 )
+                requested_metric_codes = realtime_profile.metric_codes
             monitor_window_seconds = (
                 min(
                     int(requested_window_seconds),
@@ -3914,6 +3916,10 @@ class TurnPlanningService:
                 ),
                 requested_metric_codes=requested_metric_codes,
             )
+            if realtime_profile is not None:
+                snapshot["monitoring_profile"] = realtime_profile.model_dump(
+                    mode="json"
+                )
             if not any(
                 CAPABILITY_METRIC_QUERY_RANGE
                 in item.get("effective_capabilities", ())

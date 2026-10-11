@@ -29,14 +29,6 @@ Oracle DBA在目标PDB创建专用数据库诊断用户时，使用
 `V$`/`GV$`、`DBA_`/`CDB_`以及AWR/ASH等系统诊断视图。AIOps不根据Oracle许可证
 裁剪数据库诊断能力；许可证管理由部署和使用该数据库的组织负责。
 
-OEM不属于此安装包，部署完成后在AIOps App内配置。
-
-启用`[dashboard]`且`local_access = true`时，Grafana默认只发布到
-`127.0.0.1:3000`。需要从管理网直接访问时，通过唯一INI中的
-`grafana_bind_address`填写本机管理网IPv4地址；不要手工修改Compose文件，也不建议
-在客户生产环境使用`0.0.0.0`。
-
-Grafana启用后会自动配置固定UID的Prometheus、Loki和Alertmanager数据源，并从
-`configuration/grafana/dashboards`加载KBot AIOps只读看板。看板以`target_key`作为
-数据库或主机切换变量；不要在Grafana UI中复制一套客户私有版本，通用修改应回写仓库
-中的JSON并通过部署脚本发布。
+OEM不属于此安装包，部署完成后在AIOps App内配置。Grafana Server及其Dashboard资产
+不再随观测栈部署；Prometheus、Zabbix的标准时序统一由AIOps原生实时监控页面展示。
+Grafana Alloy仍作为日志采集器保留，与Grafana Server没有运行依赖。

@@ -18,18 +18,6 @@ MonitoringReadiness = Literal[
 ]
 DiagnosticReadiness = Literal["READY", "PARTIAL", "UNAVAILABLE"]
 MonitoringWindowName = Literal["15m", "1h", "6h", "24h"]
-GrafanaDashboardUid = Literal[
-    "kbot-database-fleet",
-    "kbot-oracle-overview",
-    "kbot-oracle-storage",
-    "kbot-oracle-alerts",
-    "kbot-oracle-alert-log",
-    "kbot-mysql-overview",
-    "kbot-postgresql-overview",
-    "kbot-host-overview",
-]
-
-
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -81,24 +69,9 @@ class MonitoringProfileSummary(_Contract):
     supported_db_types: tuple[
         Literal["ORACLE", "MYSQL", "POSTGRESQL"], ...
     ]
+    supported_database_versions: dict[str, tuple[str, ...]]
+    resolved_variant_ids: tuple[str, ...] = Field(min_length=1)
     metric_codes: tuple[str, ...] = Field(min_length=1, max_length=8)
-    grafana_dashboard_uid: GrafanaDashboardUid | None = None
-
-
-class MonitoringDashboardIntegration(_Contract):
-    integration_mode: Literal["LINK", "DISABLED"]
-    dashboard_uid: GrafanaDashboardUid | None = None
-    launch_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    reason_code: str | None = Field(default=None, min_length=1, max_length=64)
-
-    @model_validator(mode="after")
-    def validate_mode(self):
-        if self.integration_mode == "LINK":
-            if self.dashboard_uid is None or self.launch_url is None:
-                raise ValueError("LINK 模式必须包含固定 Dashboard UID 与受控入口")
-        elif self.launch_url is not None:
-            raise ValueError("DISABLED 模式不能返回 Grafana 入口")
-        return self
 
 
 class MonitoringWindow(_Contract):
@@ -154,7 +127,6 @@ class MonitoringView(_Contract):
     refresh_after_seconds: int = Field(default=30, ge=15, le=300)
     source: MonitoringSourceSummary
     compare_source: MonitoringSourceSummary | None = None
-    dashboard: MonitoringDashboardIntegration | None = None
     profile: MonitoringProfileSummary
     window: MonitoringWindow
     instances: tuple[MonitoringInstanceSummary, ...] = Field(

@@ -95,27 +95,6 @@ services:
     networks: [observability, outbound]
     expose: ["12345"]
 
-  grafana:
-    <<: *service-defaults
-    image: ${GRAFANA_IMAGE}
-    profiles: [dashboard]
-    environment:
-      GF_SECURITY_ADMIN_USER__FILE: /run/secrets/grafana_admin_user
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/oracle-overview.json
-    volumes:
-      - ./configuration/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./configuration/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana-data:/var/lib/grafana
-    secrets:
-      - source: grafana-admin-user
-        target: grafana_admin_user
-      - source: grafana-admin-password
-        target: grafana_admin_password
-    group_add: ["${AIOPS_SECRET_GID}"]
-    expose: ["3000"]
-
   node-exporter:
     <<: *service-defaults
     image: ${NODE_EXPORTER_IMAGE}
@@ -157,14 +136,9 @@ networks:
 secrets:
   loki-authorization:
     file: ${AIOPS_STACK_SECRET_DIR}/loki_authorization
-  grafana-admin-user:
-    file: ${AIOPS_STACK_SECRET_DIR}/grafana_admin_user
-  grafana-admin-password:
-    file: ${AIOPS_STACK_SECRET_DIR}/grafana_admin_password
 
 volumes:
   prometheus-data:
   alertmanager-data:
   loki-data:
   alloy-data:
-  grafana-data:

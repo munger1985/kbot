@@ -48,6 +48,10 @@ def test_upstream_images_are_version_and_digest_locked() -> None:
 def test_compose_keeps_oem_external_and_has_no_public_default_ports() -> None:
     compose = (STACK / "compose.yaml").read_text(encoding="utf-8")
     assert "oem:" not in compose.lower()
+    assert "grafana:" not in compose.lower()
+    assert "GRAFANA_IMAGE=" not in (STACK / "images.env").read_text(
+        encoding="utf-8"
+    )
     assert "ports:" not in compose
     assert "profiles: [metrics]" in compose
     assert "profiles: [logs]" in compose
@@ -139,7 +143,7 @@ def test_template_has_one_required_section_and_modules_are_disabled() -> None:
     assert "[deployment]" in stack.CONFIG_TEMPLATE
     assert "deployment_id = CHANGE_ME" in stack.CONFIG_TEMPLATE
     assert "OEM不在此部署文件中配置" in stack.CONFIG_TEMPLATE
-    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 9
+    assert stack.CONFIG_TEMPLATE.count("# enabled = true") == 8
 
 
 def test_single_config_generates_every_enabled_module(tmp_path: Path) -> None:
@@ -160,11 +164,6 @@ kbot_webhook_secret = actual-webhook-credential-value
 [logs]
 enabled = true
 loki_retention = 168h
-
-[dashboard]
-enabled = true
-grafana_admin_user = kbot-admin
-grafana_admin_password = grafana-secret
 
 [host]
 enabled = true
@@ -207,9 +206,6 @@ password = postgres-secret
         "mysql",
         "postgres",
     }
-    assert (
-        settings.runtime_dir / "secrets/grafana_admin_password"
-    ).read_text().strip() == "grafana-secret"
     assert "mysql-secret" in (
         settings.runtime_dir / "secrets/mysql-mysql-all-modules-01_exporter_cnf"
     ).read_text()
