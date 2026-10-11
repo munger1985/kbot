@@ -179,6 +179,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("事实与发生记录", detail)
         self.assertIn("关联资源", detail)
         self.assertIn("活动时间线", detail)
+        self.assertIn('class="ops-button ops-back-link"', detail)
+        self.assertIn("返回工作项列表", detail)
         self.assertIn("/api/v1/apps/aiops/work-items", script)
         self.assertIn('PENDING_VERIFICATION: "处理完成"', script)
         self.assertIn('data-handle-id', script)
