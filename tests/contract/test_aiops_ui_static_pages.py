@@ -180,11 +180,15 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("关联资源", detail)
         self.assertIn("活动时间线", detail)
         self.assertIn("/api/v1/apps/aiops/work-items", script)
-        self.assertIn('PENDING_VERIFICATION: []', script)
+        self.assertIn('PENDING_VERIFICATION: "处理完成"', script)
+        self.assertIn('data-handle-id', script)
+        self.assertIn('>详情</a>', script)
         self.assertIn("loadAssignmentMembers", script)
         self.assertIn(":return-to-group", script)
         self.assertIn(':complete', script)
         self.assertIn('由组内 DBA 领取', script)
+        self.assertNotIn('id="work-item-transition"', detail)
+        self.assertNotIn('/transitions', script)
         self.assertNotIn("fake", script.lower())
 
     def test_responsibility_groups_and_default_routing_are_manageable(self):

@@ -23,8 +23,10 @@ from platform_core.contracts.aiops import (
     FindingCard,
     FindingCompilation,
     WorkItemPriority,
+    WorkItemCompletion,
     WorkItemStatus,
     WorkItemTransition,
+    WorkItemVersionCommand,
 )
 from platform_core.identity import uuid7
 
@@ -103,6 +105,9 @@ class FakeWorkItemRepository:
         if self.item is not None and self.item.work_item_id == work_item_id:
             return self.item
         return None
+
+    async def get_group_member(self, **kwargs):
+        return SimpleNamespace(status="ACTIVE")
 
 
 class _FakeUowContext:
@@ -201,6 +206,70 @@ def fake_run(*, run_id, trigger_type: str = "ALERT"):
 
 
 class WorkItemContractTest(unittest.TestCase):
+    def test_claim_starts_processing_and_completion_needs_no_manual_transition(self):
+        now = datetime(2026, 10, 11, tzinfo=UTC)
+        actor_id = "dba:test"
+        repository = FakeWorkItemRepository()
+        repository.item = SimpleNamespace(
+            work_item_id=uuid7(), row_version=1,
+            responsibility_group_id=uuid7(), assignee_user_id=None,
+            assignment_source=None, assigned_by=None, assigned_at=None,
+            status="OPEN", phase="TRIAGE", wait_reason=None,
+            resolution_code=None, completion_note=None,
+            completed_by=None, completed_at=None,
+            updated_by=None, updated_at=None,
+        )
+        uow = SimpleNamespace(
+            work_items=repository,
+            runs=SimpleNamespace(database_now=lambda: asyncio.sleep(0, result=now)),
+            commit=lambda: asyncio.sleep(0),
+        )
+        service = WorkItemService(
+            uow_factory=lambda: _FakeUowContext(uow),
+            cursor_codec=SimpleNamespace(),
+        )
+        service.get_item = lambda **kwargs: asyncio.sleep(0, result=repository.item)
+        scope = ConfigurationScope(
+            domain_id=7, principal_id=actor_id, actor_id=actor_id,
+            request_id="request-test", trace_id="trace-test",
+        )
+
+        asyncio.run(service.claim(
+            work_item_id=repository.item.work_item_id,
+            body=WorkItemVersionCommand(expected_row_version=1), scope=scope,
+        ))
+        self.assertEqual(actor_id, repository.item.assignee_user_id)
+        self.assertEqual("IN_PROGRESS", repository.item.status)
+        self.assertEqual("REMEDIATION", repository.item.phase)
+        self.assertEqual("OPEN", repository.activities[-1].from_status)
+        self.assertEqual("IN_PROGRESS", repository.activities[-1].to_status)
+
+        asyncio.run(service.return_to_group(
+            work_item_id=repository.item.work_item_id,
+            body=WorkItemVersionCommand(expected_row_version=1), scope=scope,
+        ))
+        self.assertIsNone(repository.item.assignee_user_id)
+        self.assertEqual("OPEN", repository.item.status)
+        self.assertEqual("TRIAGE", repository.item.phase)
+        self.assertEqual("IN_PROGRESS", repository.activities[-1].from_status)
+        self.assertEqual("OPEN", repository.activities[-1].to_status)
+
+        asyncio.run(service.claim(
+            work_item_id=repository.item.work_item_id,
+            body=WorkItemVersionCommand(expected_row_version=1), scope=scope,
+        ))
+        asyncio.run(service.complete(
+            work_item_id=repository.item.work_item_id,
+            body=WorkItemCompletion(
+                expected_row_version=1, resolution_code="FIXED",
+                completion_note="已完成修复并观察稳定。",
+            ),
+            scope=scope,
+        ))
+        self.assertEqual("PENDING_VERIFICATION", repository.item.status)
+        self.assertEqual(actor_id, repository.item.completed_by)
+        self.assertEqual("DBA_COMPLETED", repository.activities[-1].activity_type)
+
     def test_list_materializes_summary_before_unit_of_work_closes(self):
         now = datetime(2026, 10, 11, tzinfo=UTC)
         item = _SessionBoundItem(

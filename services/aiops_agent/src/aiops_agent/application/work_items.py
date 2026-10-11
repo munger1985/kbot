@@ -388,11 +388,30 @@ class WorkItemService:
             member = await uow.work_items.get_group_member(group_id=item.responsibility_group_id, user_id=scope.actor_id)
             if member is None or member.status != "ACTIVE":
                 raise state_conflict("当前用户不是该责任组的有效成员")
+            if item.assignee_user_id not in {None, scope.actor_id}:
+                raise state_conflict("工作项已由其他用户处理")
+            if item.status not in {
+                WorkItemStatus.PENDING_TRIAGE.value,
+                WorkItemStatus.OPEN.value,
+                WorkItemStatus.WAITING.value,
+            }:
+                raise state_conflict("当前状态不能开始处理")
             now = _utc(await uow.runs.database_now())
+            old_status, old_phase = item.status, item.phase
             item.assignee_user_id, item.assignment_source = scope.actor_id, "CLAIM"
             item.assigned_by, item.assigned_at = scope.actor_id, now
+            item.status, item.phase, item.wait_reason = (
+                WorkItemStatus.IN_PROGRESS.value,
+                WorkItemPhase.REMEDIATION.value,
+                None,
+            )
             item.updated_by, item.updated_at = scope.actor_id, now
-            await self._activity(uow, item=item, activity_type="CLAIMED", actor_id=scope.actor_id, detail={}, now=now)
+            await self._activity(
+                uow, item=item, activity_type="CLAIMED",
+                actor_id=scope.actor_id, detail={"assignment_source": "CLAIM"},
+                now=now, from_status=old_status, to_status=item.status,
+                from_phase=old_phase, to_phase=item.phase,
+            )
             await uow.commit()
         return await self.get_item(work_item_id=work_item_id, scope=scope)
 
@@ -405,10 +424,23 @@ class WorkItemService:
                 raise row_version_changed()
             if item.assignee_user_id != scope.actor_id:
                 raise state_conflict("只能退回自己领取的工作项")
+            if item.status != WorkItemStatus.IN_PROGRESS.value:
+                raise state_conflict("只有处理中的工作项可以退回责任组")
             now = _utc(await uow.runs.database_now())
+            old_status, old_phase = item.status, item.phase
             item.assignee_user_id, item.assigned_by, item.assigned_at = None, scope.actor_id, now
+            item.status, item.phase, item.wait_reason = (
+                WorkItemStatus.OPEN.value,
+                WorkItemPhase.TRIAGE.value,
+                None,
+            )
             item.updated_by, item.updated_at = scope.actor_id, now
-            await self._activity(uow, item=item, activity_type="RETURNED_TO_GROUP", actor_id=scope.actor_id, detail={}, now=now)
+            await self._activity(
+                uow, item=item, activity_type="RETURNED_TO_GROUP",
+                actor_id=scope.actor_id, detail={}, now=now,
+                from_status=old_status, to_status=item.status,
+                from_phase=old_phase, to_phase=item.phase,
+            )
             await uow.commit()
         return await self.get_item(work_item_id=work_item_id, scope=scope)
 
@@ -419,7 +451,9 @@ class WorkItemService:
                 raise resource_not_found("工作项")
             if int(item.row_version) != body.expected_row_version:
                 raise row_version_changed()
-            if item.status not in {"OPEN", "IN_PROGRESS", "WAITING"}:
+            if item.assignee_user_id != scope.actor_id:
+                raise state_conflict("只能完成分派给自己的工作项")
+            if item.status != WorkItemStatus.IN_PROGRESS.value:
                 raise state_conflict("当前状态不能标记工作完成")
             now, old_status, old_phase = _utc(await uow.runs.database_now()), item.status, item.phase
             item.status, item.phase = "PENDING_VERIFICATION", "VERIFICATION"
