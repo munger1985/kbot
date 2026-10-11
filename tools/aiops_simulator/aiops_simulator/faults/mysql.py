@@ -19,6 +19,7 @@ class MySQLFaultAdapter(FaultAdapter):
         self._driver: Any = None
         self._connections: list[Any] = []
         self._children: set[asyncio.Task[Any]] = set()
+        self._principal_validated = False
 
     async def _connect(self, label: str) -> Any:
         if self._driver is None:
@@ -35,6 +36,37 @@ class MySQLFaultAdapter(FaultAdapter):
         )
         self._connections.append(connection)
         async with connection.cursor() as cursor:
+            if not self._principal_validated:
+                await cursor.execute(
+                    """
+                    SELECT privilege_type
+                      FROM information_schema.schema_privileges
+                     WHERE table_schema = %s
+                       AND grantee = CONCAT(
+                           QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', 1)),
+                           '@',
+                           QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', -1))
+                       )
+                    """,
+                    (self.database.database,),
+                )
+                actual = {
+                    str(row[0]).upper() for row in await cursor.fetchall()
+                }
+                required = {
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE",
+                    "CREATE",
+                    "ALTER",
+                    "INDEX",
+                }
+                if not required.issubset(actual):
+                    raise RuntimeError(
+                        "MySQL故障模拟必须使用业务Schema应用账号，不能使用诊断账号"
+                    )
+                self._principal_validated = True
             await cursor.execute("SET SESSION innodb_lock_wait_timeout = 200")
             await cursor.execute("SET SESSION MAX_EXECUTION_TIME = 200000")
             await cursor.execute(

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from aiops_simulator.config import load_config
+from aiops_simulator.config_generation import generate_runtime_config
 from aiops_simulator.engine import SimulatorEngine
 from aiops_simulator.faults import print_fault_status, run_fault
 from aiops_simulator.modes import load_mode
@@ -38,6 +39,21 @@ def _parser() -> argparse.ArgumentParser:
     fault_status.add_argument("--database", required=True)
     fault_status.add_argument("--state-file", required=True, type=Path)
     fault_status.add_argument("--running", action="store_true")
+
+    render_config = commands.add_parser(
+        "render-config", help="从数据库部署密码文件生成运行配置"
+    )
+    render_config.add_argument("--template", required=True, type=Path)
+    render_config.add_argument("--output", required=True, type=Path)
+    render_config.add_argument(
+        "--oracle-password-file", required=True, type=Path
+    )
+    render_config.add_argument(
+        "--postgresql-password-file", required=True, type=Path
+    )
+    render_config.add_argument(
+        "--mysql-password-file", required=True, type=Path
+    )
     return parser
 
 
@@ -81,6 +97,19 @@ def main() -> int:
                 arguments.state_file,
                 arguments.database,
                 arguments.running,
+            )
+        elif arguments.command == "render-config":
+            output = generate_runtime_config(
+                arguments.template,
+                arguments.output,
+                {
+                    "oracle": arguments.oracle_password_file,
+                    "postgresql": arguments.postgresql_password_file,
+                    "mysql": arguments.mysql_password_file,
+                },
+            )
+            logging.getLogger("aiops_simulator").info(
+                "模拟器运行配置已安全生成：%s", output
             )
         else:
             asyncio.run(_main_async(arguments.command, arguments.config))

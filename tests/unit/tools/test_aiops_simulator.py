@@ -21,6 +21,7 @@ TOOL_ROOT = REPO_ROOT / "tools" / "aiops_simulator"
 sys.path.insert(0, str(TOOL_ROOT))
 
 from aiops_simulator.config import load_config, parse_schedule  # noqa: E402
+from aiops_simulator.config_generation import generate_runtime_config  # noqa: E402
 from aiops_simulator.faults.base import (  # noqa: E402
     CONNECTION_SURGE_SIZE,
     FAULT_TTL_SECONDS,
@@ -61,6 +62,14 @@ class AIOpsSimulatorTest(unittest.TestCase):
         }
         self.assertEqual(
             {"oracle": 3.0, "postgresql": 3.5, "mysql": 3.0}, rates
+        )
+        self.assertEqual(
+            {
+                "oracle": "AIOPS_TEST",
+                "postgresql": "aiops_test",
+                "mysql": "aiops_test",
+            },
+            {item.engine: item.username for item in config.databases},
         )
 
     def test_schedule_must_cover_complete_day_without_gaps(self) -> None:
@@ -106,6 +115,54 @@ class AIOpsSimulatorTest(unittest.TestCase):
     def test_secret_config_rejects_group_or_other_access(self) -> None:
         with self.assertRaisesRegex(ValueError, "权限"):
             load_config(self._config_file(mode=0o640))
+
+    def test_database_deployment_generates_complete_protected_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            password_files: dict[str, Path] = {}
+            expected = {
+                "oracle": "oracle-app-password",
+                "postgresql": "postgresql-app-password",
+                "mysql": "mysql-app-password",
+            }
+            for database_name, password in expected.items():
+                path = root / f"{database_name}.password"
+                path.write_text(password + "\n", encoding="utf-8")
+                os.chmod(path, 0o600)
+                password_files[database_name] = path
+            output = root / "deployment" / "simulator.ini"
+
+            generated = generate_runtime_config(
+                TOOL_ROOT / "simulator.example.ini",
+                output,
+                password_files,
+            )
+            config = load_config(generated)
+            generated_mode = generated.stat().st_mode & 0o777
+
+        self.assertEqual(0o600, generated_mode)
+        self.assertEqual(
+            expected,
+            {item.engine: item.password for item in config.databases},
+        )
+
+    def test_config_generation_rejects_exposed_password_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            password_files = {}
+            for database_name in ("oracle", "postgresql", "mysql"):
+                path = root / f"{database_name}.password"
+                path.write_text("secret\n", encoding="utf-8")
+                os.chmod(path, 0o600)
+                password_files[database_name] = path
+            os.chmod(password_files["mysql"], 0o640)
+
+            with self.assertRaisesRegex(ValueError, "权限"):
+                generate_runtime_config(
+                    TOOL_ROOT / "simulator.example.ini",
+                    root / "simulator.ini",
+                    password_files,
+                )
 
     def test_daily_adapter_sources_exclude_destructive_database_actions(self) -> None:
         adapter_root = TOOL_ROOT / "aiops_simulator" / "adapters"
@@ -222,6 +279,25 @@ class AIOpsSimulatorTest(unittest.TestCase):
             "pg_terminate_backend",
         ):
             self.assertNotIn(forbidden, source)
+
+    def test_all_runtime_paths_validate_business_schema_account(self) -> None:
+        adapter_root = TOOL_ROOT / "aiops_simulator" / "adapters"
+        fault_root = TOOL_ROOT / "aiops_simulator" / "faults"
+        daily_sources = {
+            path.stem: path.read_text(encoding="utf-8")
+            for path in adapter_root.glob("*.py")
+        }
+        fault_sources = {
+            path.stem: path.read_text(encoding="utf-8")
+            for path in fault_root.glob("*.py")
+        }
+
+        self.assertIn("CURRENT_USER", daily_sources["oracle"])
+        self.assertIn("pg_get_userbyid", daily_sources["postgresql"])
+        self.assertIn("schema_privileges", daily_sources["mysql"])
+        self.assertIn("CURRENT_USER", fault_sources["oracle"])
+        self.assertIn("pg_get_userbyid", fault_sources["postgresql"])
+        self.assertIn("schema_privileges", fault_sources["mysql"])
 
     def test_fault_automatically_expires_and_closes_adapter(self) -> None:
         async def exercise(state_path: Path) -> tuple[dict[str, object], bool]:

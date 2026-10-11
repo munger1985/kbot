@@ -19,6 +19,7 @@ class OracleFaultAdapter(FaultAdapter):
         self._driver: Any = None
         self._connections: list[Any] = []
         self._children: set[asyncio.Task[Any]] = set()
+        self._principal_validated = False
 
     async def _connect(self, action: str) -> Any:
         if self._driver is None:
@@ -37,6 +38,26 @@ class OracleFaultAdapter(FaultAdapter):
         connection.module = "KBot AIOps Fault Simulator"
         connection.action = action
         self._connections.append(connection)
+        if not self._principal_validated:
+            with connection.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    SELECT SYS_CONTEXT('USERENV', 'CURRENT_USER'),
+                           SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+                      FROM DUAL
+                    """
+                )
+                row = await cursor.fetchone()
+            expected = self.database.schema.upper()
+            if (
+                row is None
+                or str(row[0]).upper() != expected
+                or str(row[1]).upper() != expected
+            ):
+                raise RuntimeError(
+                    "Oracle故障模拟必须使用业务Schema所有者账号，不能使用诊断账号"
+                )
+            self._principal_validated = True
         return connection
 
     async def run(self) -> None:

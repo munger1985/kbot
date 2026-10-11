@@ -89,7 +89,25 @@ class OracleAdapter(DatabaseAdapter):
                 )
                 return {str(row[0]).upper() for row in await cursor.fetchall()}
 
+    async def _validate_schema_owner(self) -> None:
+        async with self._pool.acquire() as connection:
+            with connection.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    SELECT SYS_CONTEXT('USERENV', 'CURRENT_USER'),
+                           SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+                      FROM DUAL
+                    """
+                )
+                row = await cursor.fetchone()
+        expected = self.database.schema.upper()
+        if row is None or str(row[0]).upper() != expected or str(row[1]).upper() != expected:
+            raise RuntimeError(
+                "Oracle流量模拟必须使用业务Schema所有者账号，不能使用诊断账号"
+            )
+
     async def validate(self, *, require_runtime_table: bool) -> None:
+        await self._validate_schema_owner()
         for table_name, expected in self._base_columns.items():
             actual = await self._columns(table_name)
             missing = expected - actual

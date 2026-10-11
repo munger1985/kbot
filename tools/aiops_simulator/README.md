@@ -29,6 +29,16 @@
 实际配置包含数据库密码，`manage`要求权限为`0600`或`0400`。密码不会进入命令行、
 日志或Git。
 
+模拟器会写入自有活动表并为故障场景持有事务，因此三个密码必须属于业务Schema账号：
+
+- Oracle：`AIOPS_TEST`，即ERP对象所有者；
+- PostgreSQL：`aiops_test`，即`mes` Schema所有者；
+- MySQL：`aiops_test`，即`aiops_demo`业务应用账号。
+
+不得复用AIOps Target的`AIOPS_DIAG`或`aiops_diag`诊断密码。Oracle和PostgreSQL会核对
+当前账号与Schema所有者，MySQL会核对业务库级完整读写及DDL权限；身份不符合时，
+`prepare`、日常流量和故障模式都会拒绝运行。
+
 运行环境需要Python 3.10或更高版本，并安装`requirements.txt`中的三个数据库驱动。
 KBot4标准Python环境已经包含这些固定版本；如果使用独立虚拟环境，可执行：
 
@@ -36,11 +46,29 @@ KBot4标准Python环境已经包含这些固定版本；如果使用独立虚拟
 python3 -m pip install -r tools/aiops_simulator/requirements.txt
 ```
 
-## 首次准备
+## 部署时生成运行配置
+
+正式环境不要求演示人员再次填写密码。三库部署/装填数据流程在生成业务账号密码后，必须
+调用配置生成入口，直接读取权限受控的密码文件：
 
 ```bash
-tools/aiops_simulator/manage init-config
-vi var/aiops-simulator/simulator.ini
+PYTHONPATH=tools/aiops_simulator python3 -m aiops_simulator render-config \
+  --template tools/aiops_simulator/simulator.example.ini \
+  --oracle-password-file /opt/aiops-oracle19c/secrets/aiops_test_pwd \
+  --postgresql-password-file /opt/aiops-databases/secrets/postgres_app_password \
+  --mysql-password-file /opt/aiops-databases/secrets/mysql_app_password \
+  --output /opt/aiops-demo-data/aiops-simulator/simulator.ini
+```
+
+生成器不会把密码写入命令行或日志，要求三个源密码文件权限不宽于`0600`，并以原子替换
+方式生成`0600`配置。数据库部署流程随后把该文件安全安装到kbotdev的
+`var/aiops-simulator/simulator.ini`；该传递过程不得经过Git或普通日志。
+
+`manage init-config`只为没有数据库部署流程的本地开发生成空白模板，不是正式部署步骤。
+
+## 首次准备数据库对象
+
+```bash
 tools/aiops_simulator/manage prepare
 tools/aiops_simulator/manage validate
 ```

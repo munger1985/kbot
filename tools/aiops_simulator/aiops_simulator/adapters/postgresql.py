@@ -94,7 +94,24 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             return {str(row["column_name"]).lower() for row in rows}
 
+    async def _validate_schema_owner(self) -> None:
+        async with self._pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT current_user AS current_name,
+                       pg_get_userbyid(nspowner) AS owner_name
+                  FROM pg_namespace
+                 WHERE nspname = $1
+                """,
+                self.database.schema,
+            )
+        if row is None or str(row["current_name"]) != str(row["owner_name"]):
+            raise RuntimeError(
+                "PostgreSQL流量模拟必须使用业务Schema所有者账号，不能使用诊断账号"
+            )
+
     async def validate(self, *, require_runtime_table: bool) -> None:
+        await self._validate_schema_owner()
         for table_name, expected in self._base_columns.items():
             actual = await self._columns(table_name)
             missing = expected - actual

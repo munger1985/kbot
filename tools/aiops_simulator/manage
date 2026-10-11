@@ -211,7 +211,8 @@ case "${command}" in
         fi
         install -m 0600 "${tool_root}/simulator.example.ini" "${config_file}"
         echo "已生成配置：${config_file}"
-        echo "请填写三库密码后再执行prepare。"
+        echo "这是仅供本地开发的空白模板。"
+        echo "正式环境必须安装三库部署过程自动生成的配置，不得人工重复填写密码。"
         ;;
     prepare)
         require_config

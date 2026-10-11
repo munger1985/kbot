@@ -19,6 +19,7 @@ class PostgreSQLFaultAdapter(FaultAdapter):
         self._driver: Any = None
         self._connections: list[Any] = []
         self._children: set[asyncio.Task[Any]] = set()
+        self._principal_validated = False
 
     @property
     def qualified_fault_table(self) -> str:
@@ -41,6 +42,21 @@ class PostgreSQLFaultAdapter(FaultAdapter):
             },
         )
         self._connections.append(connection)
+        if not self._principal_validated:
+            row = await connection.fetchrow(
+                """
+                SELECT current_user AS current_name,
+                       pg_get_userbyid(nspowner) AS owner_name
+                  FROM pg_namespace
+                 WHERE nspname = $1
+                """,
+                self.database.schema,
+            )
+            if row is None or str(row["current_name"]) != str(row["owner_name"]):
+                raise RuntimeError(
+                    "PostgreSQL故障模拟必须使用业务Schema所有者账号，不能使用诊断账号"
+                )
+            self._principal_validated = True
         return connection
 
     async def run(self) -> None:
