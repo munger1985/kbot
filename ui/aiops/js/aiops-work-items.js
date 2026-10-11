@@ -8,7 +8,7 @@
   const state = {
     access: null, cursor: null, filters: { visibility: "SCOPE" }, item: null,
     items: new Map(), processingItem: null, processingContext: null, assignmentItem: null,
-    handling: false, assigning: false, suppressReset: false,
+    scopedAgents: [], handling: false, assigning: false, suppressReset: false,
   };
   const labels = {
     PENDING_TRIAGE: "待研判", OPEN: "待处理", IN_PROGRESS: "处理中",
@@ -158,6 +158,25 @@
       `<button type="button" data-queue="${filter}"><span>${label}</span><strong>${Number(summary?.[key] || 0)}</strong></button>`
     ).join("");
   }
+  async function loadScopedAgents() {
+    const [agents, groupPage] = await Promise.all([
+      KBotAIOpsAuth.request(`${rootApi}/agents`),
+      KBotAIOpsAuth.request(groupApi),
+    ]);
+    const groups = values(groupPage?.items).filter((group) => group.status === "ACTIVE");
+    const details = await Promise.all(groups.map((group) =>
+      KBotAIOpsAuth.request(`${groupApi}/${encodeURIComponent(group.responsibility_group_id)}`)
+    ));
+    const userGroupIds = new Set(details.filter((group) =>
+      values(group.members).some((member) => member.status === "ACTIVE"
+        && String(member.user_id) === String(state.access.user_id))
+    ).map((group) => String(group.responsibility_group_id)));
+    state.scopedAgents = values(agents).filter((agent) => agent.status === "ACTIVE"
+      && userGroupIds.has(String(agent.default_responsibility_group_id)));
+    const select = document.getElementById("work-item-agent-filter");
+    select.innerHTML = '<option value="">责任组内全部 Agent</option>'
+      + state.scopedAgents.map((agent) => `<option value="${shell.escape(agent.agent_id)}">${shell.escape(agent.display_name || agent.agent_key || shell.short(agent.agent_id))}</option>`).join("");
+  }
   function listRow(item) {
     const assignee = item.assignee_user_id || item.responsibility_group_name || item.responsibility_group_id || "未分派";
     const detail = `./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}&visibility=${encodeURIComponent(state.filters.visibility || "SCOPE")}`;
@@ -259,10 +278,17 @@
   }
   function applyQueue(value) {
     const form = document.getElementById("work-item-filters");
+    const agentId = state.filters.agent_id || "";
+    const visibility = state.filters.visibility || "SCOPE";
     state.suppressReset = true;
     form.reset();
     state.suppressReset = false;
-    state.filters = { visibility: state.filters.visibility || "SCOPE" };
+    form.elements.agent_id.value = agentId;
+    form.elements.visibility.value = visibility;
+    state.filters = {
+      visibility,
+      agent_id: agentId,
+    };
     if (value === "mine") state.filters.assignee_user_id = state.access.user_id;
     if (value === "unassigned") state.filters.unassigned = true;
     if (value === "urgent") state.filters.priority = "P1,P2";
@@ -276,7 +302,7 @@
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form));
       state.filters = {
-        status: values.status, priority: values.priority,
+        agent_id: values.agent_id, status: values.status, priority: values.priority,
         assignee_user_id: values.ownership === "mine" ? state.access.user_id : "",
         unassigned: values.ownership === "unassigned",
         visibility: values.visibility || "SCOPE",
@@ -421,7 +447,10 @@
         visibility.closest("label").hidden = !canManage;
         visibility.value = state.filters.visibility;
       }
-      bindList(); loadList();
+      bindList();
+      void loadScopedAgents()
+        .catch((error) => shell.toast(`无法读取责任组 Agent：${error.message}`))
+        .finally(() => loadList());
     }
     if (document.body.dataset.page === "work-item-detail") { bindDetail(); loadDetail(); }
   });

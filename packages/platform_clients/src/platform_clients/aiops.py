@@ -1406,7 +1406,8 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     async def list_work_items(
         self, *, status: str | None, priority: str | None,
-        target_id: UUID | None, assignee_user_id: str | None,
+        agent_id: UUID | None, target_id: UUID | None,
+        assignee_user_id: str | None,
         unassigned: bool, overdue: bool, cursor: str | None, limit: int,
         visibility: str = "SCOPE",
         auth_context: AuthContext,
@@ -1419,6 +1420,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         }
         for key, value in (
             ("status", status), ("priority", priority),
+            ("agent_id", agent_id),
             ("target_id", target_id), ("assignee_user_id", assignee_user_id),
             ("cursor", cursor),
         ):

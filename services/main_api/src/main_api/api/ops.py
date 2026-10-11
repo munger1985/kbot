@@ -763,6 +763,7 @@ async def list_work_items(
     request: Request,
     status: str | None = None,
     priority: str | None = None,
+    agent_id: UUID | None = None,
     target_id: UUID | None = None,
     assignee_user_id: str | None = None,
     unassigned: bool = False,
@@ -772,7 +773,8 @@ async def list_work_items(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> WorkItemPage:
     payload = await _client(request).list_work_items(
-        status=status, priority=priority, target_id=target_id,
+        status=status, priority=priority, agent_id=agent_id,
+        target_id=target_id,
         assignee_user_id=assignee_user_id, unassigned=unassigned,
         overdue=overdue,
         visibility=_resolve_work_item_visibility(request, visibility),

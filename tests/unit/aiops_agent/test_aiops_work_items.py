@@ -36,6 +36,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class _CapturedResult:
+    def all(self):
+        return []
+
     def scalars(self):
         return self
 
@@ -57,6 +60,7 @@ class FakeWorkItemRepository:
         self.occurrences = []
         self.links = []
         self.activities = []
+        self.default_group_id = uuid7()
 
     async def get_open_by_fingerprint(self, **kwargs):
         if self.item is not None and self.item.fingerprint == kwargs["fingerprint"]:
@@ -113,6 +117,9 @@ class FakeWorkItemRepository:
     async def get_group_member(self, **kwargs):
         return SimpleNamespace(status="ACTIVE")
 
+    async def default_responsibility_group(self, **kwargs):
+        return self.default_group_id, "AGENT_DEFAULT"
+
 
 class _FakeUowContext:
     def __init__(self, uow):
@@ -140,11 +147,16 @@ class _SessionBoundItem(SimpleNamespace):
 class _ListWorkItemRepository:
     def __init__(self, item):
         self.item = item
+        self.default_group_id = uuid7()
+        self.page_kwargs = None
+        self.summary_kwargs = None
 
     async def page(self, **kwargs):
+        self.page_kwargs = kwargs
         return [(self.item, "测试实例", None, "测试 Agent")]
 
     async def queue_summary(self, **kwargs):
+        self.summary_kwargs = kwargs
         return {
             "my_open": 0,
             "unassigned": 1,
@@ -152,6 +164,12 @@ class _ListWorkItemRepository:
             "overdue": 0,
             "pending_verification": 0,
         }
+
+    async def default_responsibility_group(self, **kwargs):
+        return self.default_group_id, "AGENT_DEFAULT"
+
+    async def group_name(self, **kwargs):
+        return "测试责任组"
 
 
 class _ListUowContext:
@@ -258,10 +276,15 @@ class WorkItemContractTest(unittest.TestCase):
         self.assertEqual("IN_PROGRESS", repository.activities[-1].from_status)
         self.assertEqual("OPEN", repository.activities[-1].to_status)
 
+        repository.item.responsibility_group_id = None
+        repository.item.agent_id = uuid7()
+        repository.item.target_id = uuid7()
         asyncio.run(service.claim(
             work_item_id=repository.item.work_item_id,
             body=WorkItemVersionCommand(expected_row_version=1), scope=scope,
         ))
+        self.assertEqual(repository.default_group_id, repository.item.responsibility_group_id)
+        self.assertTrue(repository.activities[-1].detail_json["routing_materialized"])
         asyncio.run(service.complete(
             work_item_id=repository.item.work_item_id,
             body=WorkItemCompletion(
@@ -292,8 +315,9 @@ class WorkItemContractTest(unittest.TestCase):
             resolved_at=None, closed_at=None, row_version=1,
             created_at=now, updated_at=now,
         )
+        context = _ListUowContext(item, now)
         service = WorkItemService(
-            uow_factory=lambda: _ListUowContext(item, now),
+            uow_factory=lambda: context,
             cursor_codec=SimpleNamespace(),
         )
         scope = ConfigurationScope(
@@ -302,13 +326,18 @@ class WorkItemContractTest(unittest.TestCase):
         )
 
         page = asyncio.run(service.list_items(
-            scope=scope, status=None, priority=None, target_id=None,
+            scope=scope, status=None, priority=None, agent_id=item.agent_id,
+            target_id=None,
             assignee_user_id=None, unassigned=False, overdue=False,
             visibility="SCOPE", cursor=None, limit=50,
         ))
 
         self.assertFalse(item.active)
         self.assertEqual("WI-TEST", page.items[0].item_key)
+        self.assertEqual(context.uow.work_items.default_group_id, page.items[0].responsibility_group_id)
+        self.assertEqual("测试责任组", page.items[0].responsibility_group_name)
+        self.assertEqual(page.items[0].agent_id, context.uow.work_items.page_kwargs["agent_id"])
+        self.assertEqual(page.items[0].agent_id, context.uow.work_items.summary_kwargs["agent_id"])
 
     def test_locked_fingerprint_lookup_avoids_oracle_row_limit_view(self):
         session = _CapturingSession()
@@ -325,6 +354,23 @@ class WorkItemContractTest(unittest.TestCase):
         sql = str(session.statement.compile(dialect=oracle.dialect())).upper()
         self.assertIn("FOR UPDATE", sql)
         self.assertNotIn("FETCH FIRST", sql)
+
+    def test_agent_filter_is_applied_to_work_item_page(self):
+        session = _CapturingSession()
+        repository = WorkItemRepository(session)
+        agent_id = uuid7()
+
+        asyncio.run(repository.page(
+            domain_id=7,
+            actor_id="user:dba-1",
+            visibility="ALL",
+            agent_id=agent_id,
+        ))
+
+        compiled = session.statement.compile(dialect=oracle.dialect())
+        sql = str(compiled).upper()
+        self.assertIn("AGENT_ID", sql)
+        self.assertIn(agent_id, compiled.params.values())
 
     def test_scope_visibility_follows_member_agent_current_version_and_target(self):
         actor_id = "user:dba-1"
@@ -347,6 +393,7 @@ class WorkItemContractTest(unittest.TestCase):
         self.assertIn("DEFAULT_RESPONSIBILITY_GROUP_ID", sql)
         self.assertIn('"KBOT_OPS_WORK_ITEM".AGENT_ID', sql)
         self.assertIn('"KBOT_OPS_WORK_ITEM".TARGET_ID', sql)
+        self.assertIn("RESPONSIBILITY_GROUP_ID IS NULL", sql)
         self.assertIn(actor_id.upper(), sql)
         self.assertNotIn("MONITOR", sql)
 

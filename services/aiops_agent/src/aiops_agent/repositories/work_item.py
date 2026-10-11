@@ -34,12 +34,13 @@ class WorkItemRepository(AIOpsRepository):
         super().__init__(session, assert_active)
 
     @staticmethod
-    def _valid_routing_condition():
+    def _valid_routing_condition(*, actor_id: str | None = None):
         agent = aliased(AIOpsAgentEntity)
         version_target = aliased(AIOpsAgentVersionTargetEntity)
         target = aliased(TargetEntity)
         group = aliased(ResponsibilityGroupEntity)
         override_group = aliased(ResponsibilityGroupEntity)
+        member = aliased(ResponsibilityGroupMemberEntity)
         active_override = exists(
             select(1).select_from(override_group).where(
                 override_group.responsibility_group_id
@@ -48,7 +49,14 @@ class WorkItemRepository(AIOpsRepository):
                 override_group.status == "ACTIVE",
             )
         ).correlate(target, WorkItemEntity)
-        return exists(
+        routed_group_id = case(
+            (
+                active_override,
+                target.default_responsibility_group_id,
+            ),
+            else_=agent.default_responsibility_group_id,
+        )
+        statement = (
             select(1)
             .select_from(agent)
             .join(
@@ -58,8 +66,7 @@ class WorkItemRepository(AIOpsRepository):
             .join(target, target.target_id == version_target.target_id)
             .join(
                 group,
-                group.responsibility_group_id
-                == WorkItemEntity.responsibility_group_id,
+                group.responsibility_group_id == routed_group_id,
             )
             .where(
                 agent.agent_id == WorkItemEntity.agent_id,
@@ -70,16 +77,22 @@ class WorkItemRepository(AIOpsRepository):
                 group.domain_id == WorkItemEntity.domain_id,
                 group.status == "ACTIVE",
                 or_(
-                    target.default_responsibility_group_id
-                    == WorkItemEntity.responsibility_group_id,
-                    and_(
-                        not_(active_override),
-                        agent.default_responsibility_group_id
-                        == WorkItemEntity.responsibility_group_id,
-                    ),
+                    WorkItemEntity.responsibility_group_id.is_(None),
+                    WorkItemEntity.responsibility_group_id
+                    == group.responsibility_group_id,
                 ),
             )
-        ).correlate(WorkItemEntity)
+        )
+        if actor_id is not None:
+            statement = statement.join(
+                member,
+                member.responsibility_group_id
+                == group.responsibility_group_id,
+            ).where(
+                member.user_id == actor_id,
+                member.status == "ACTIVE",
+            )
+        return exists(statement).correlate(WorkItemEntity)
 
     @classmethod
     def _visibility_condition(cls, *, actor_id: str, visibility: str):
@@ -88,19 +101,12 @@ class WorkItemRepository(AIOpsRepository):
             return None
         if visibility == "EXCEPTIONS":
             return not_(valid_routing)
-        active_member = exists(
-            select(1).select_from(ResponsibilityGroupMemberEntity).where(
-                ResponsibilityGroupMemberEntity.responsibility_group_id
-                == WorkItemEntity.responsibility_group_id,
-                ResponsibilityGroupMemberEntity.user_id == actor_id,
-                ResponsibilityGroupMemberEntity.status == "ACTIVE",
-            )
-        ).correlate(WorkItemEntity)
+        scoped_routing = cls._valid_routing_condition(actor_id=actor_id)
         processing_continuity = and_(
             WorkItemEntity.assignee_user_id == actor_id,
             WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
         )
-        return or_(and_(valid_routing, active_member), processing_continuity)
+        return or_(scoped_routing, processing_continuity)
 
     async def add(self, entity: WorkItemEntity) -> WorkItemEntity:
         return await self._add(entity)
@@ -393,6 +399,7 @@ class WorkItemRepository(AIOpsRepository):
         visibility: str = "SCOPE",
         status: str | None = None,
         priority: str | None = None,
+        agent_id: UUID | None = None,
         target_id: UUID | None = None,
         assignee_user_id: str | None = None,
         unassigned: bool = False,
@@ -435,6 +442,8 @@ class WorkItemRepository(AIOpsRepository):
         if priority is not None:
             priorities = tuple(value for value in priority.split(",") if value)
             statement = statement.where(WorkItemEntity.priority.in_(priorities))
+        if agent_id is not None:
+            statement = statement.where(WorkItemEntity.agent_id == agent_id)
         if target_id is not None:
             statement = statement.where(WorkItemEntity.target_id == target_id)
         if assignee_user_id is not None:
@@ -465,6 +474,7 @@ class WorkItemRepository(AIOpsRepository):
     async def queue_summary(
         self, *, domain_id: int, actor_id: str, now: datetime,
         visibility: str = "SCOPE",
+        agent_id: UUID | None = None,
     ) -> dict[str, int]:
         self._check_active()
         open_condition = WorkItemEntity.status.not_in(_TERMINAL_STATUSES)
@@ -480,6 +490,8 @@ class WorkItemRepository(AIOpsRepository):
         )
         if visibility_condition is not None:
             statement = statement.where(visibility_condition)
+        if agent_id is not None:
+            statement = statement.where(WorkItemEntity.agent_id == agent_id)
         row = (
             await self._session.execute(statement)
         ).one()

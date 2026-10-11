@@ -57,6 +57,7 @@ async def list_work_items(
     context: Auth,
     status: str | None = None,
     priority: str | None = None,
+    agent_id: UUID | None = None,
     target_id: UUID | None = None,
     assignee_user_id: str | None = None,
     unassigned: bool = False,
@@ -68,7 +69,8 @@ async def list_work_items(
     require_service_scope(request, "aiops.run")
     return await _service(request).list_items(
         scope=_scope(context), status=status, priority=priority,
-        target_id=target_id, assignee_user_id=assignee_user_id,
+        agent_id=agent_id, target_id=target_id,
+        assignee_user_id=assignee_user_id,
         unassigned=unassigned, cursor=cursor, limit=limit,
         overdue=overdue, visibility=visibility,
     )

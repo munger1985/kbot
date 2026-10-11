@@ -160,7 +160,7 @@ class WorkItemService:
 
     async def list_items(
         self, *, scope: ConfigurationScope, status: str | None,
-        priority: str | None, target_id: UUID | None,
+        priority: str | None, agent_id: UUID | None, target_id: UUID | None,
         assignee_user_id: str | None, unassigned: bool,
         overdue: bool, visibility: str,
         cursor: str | None, limit: int,
@@ -168,6 +168,7 @@ class WorkItemService:
         filters = {
             "status": status,
             "priority": priority,
+            "agent_id": str(agent_id) if agent_id else None,
             "target_id": str(target_id) if target_id else None,
             "assignee_user_id": assignee_user_id,
             "unassigned": unassigned,
@@ -188,6 +189,7 @@ class WorkItemService:
                 visibility=visibility,
                 status=status,
                 priority=priority,
+                agent_id=agent_id,
                 target_id=target_id,
                 assignee_user_id=assignee_user_id,
                 unassigned=unassigned,
@@ -198,7 +200,7 @@ class WorkItemService:
             )
             counts = await uow.work_items.queue_summary(
                 domain_id=scope.domain_id, actor_id=scope.actor_id, now=now,
-                visibility=visibility,
+                visibility=visibility, agent_id=agent_id,
             )
             has_more = len(rows) > limit
             selected = rows[:limit]
@@ -211,10 +213,29 @@ class WorkItemService:
                     resource_id=last.work_item_id,
                     filters=filters,
                 )
-            summaries = tuple(
-                self._summary(item, target_name, group_name, agent_name)
-                for item, target_name, group_name, agent_name in selected
-            )
+            summaries = []
+            for item, target_name, group_name, agent_name in selected:
+                effective_group_id = item.responsibility_group_id
+                effective_assignment_source = item.assignment_source
+                if effective_group_id is None:
+                    effective_group_id, effective_assignment_source = (
+                        await uow.work_items.default_responsibility_group(
+                            target_id=item.target_id,
+                            agent_id=item.agent_id,
+                        )
+                    )
+                    group_name = await uow.work_items.group_name(
+                        group_id=effective_group_id
+                    )
+                summaries.append(self._summary(
+                    item,
+                    target_name,
+                    group_name,
+                    agent_name,
+                    effective_group_id=effective_group_id,
+                    effective_assignment_source=effective_assignment_source,
+                ))
+            summaries = tuple(summaries)
         return WorkItemPage(
             items=summaries,
             queue_summary=WorkItemQueueSummary(**counts),
@@ -408,8 +429,19 @@ class WorkItemService:
                 raise resource_not_found("工作项")
             if int(item.row_version) != body.expected_row_version:
                 raise row_version_changed()
+            routing_materialized = False
+            routing_source = item.assignment_source
             if item.responsibility_group_id is None:
-                raise state_conflict("未分配责任组的工作项不能领取")
+                group_id, routing_source = (
+                    await uow.work_items.default_responsibility_group(
+                        target_id=item.target_id,
+                        agent_id=item.agent_id,
+                    )
+                )
+                if group_id is None:
+                    raise state_conflict("未分配责任组的工作项不能领取")
+                item.responsibility_group_id = group_id
+                routing_materialized = True
             member = await uow.work_items.get_group_member(group_id=item.responsibility_group_id, user_id=scope.actor_id)
             if member is None or member.status != "ACTIVE":
                 raise state_conflict("当前用户不是该责任组的有效成员")
@@ -433,7 +465,11 @@ class WorkItemService:
             item.updated_by, item.updated_at = scope.actor_id, now
             await self._activity(
                 uow, item=item, activity_type="CLAIMED",
-                actor_id=scope.actor_id, detail={"assignment_source": "CLAIM"},
+                actor_id=scope.actor_id, detail={
+                    "assignment_source": "CLAIM",
+                    "routing_materialized": routing_materialized,
+                    "routing_source": routing_source,
+                },
                 now=now, from_status=old_status, to_status=item.status,
                 from_phase=old_phase, to_phase=item.phase,
             )
@@ -584,9 +620,16 @@ class WorkItemService:
         target_name = await uow.work_items.target_name(
             target_id=item.target_id, domain_id=scope.domain_id
         ) or "未知实例"
-        group_name = await uow.work_items.group_name(
-            group_id=item.responsibility_group_id
-        )
+        effective_group_id = item.responsibility_group_id
+        effective_assignment_source = item.assignment_source
+        if effective_group_id is None:
+            effective_group_id, effective_assignment_source = (
+                await uow.work_items.default_responsibility_group(
+                    target_id=item.target_id,
+                    agent_id=item.agent_id,
+                )
+            )
+        group_name = await uow.work_items.group_name(group_id=effective_group_id)
         agent_name = await uow.work_items.agent_name(
             agent_id=item.agent_id, domain_id=scope.domain_id
         )
@@ -594,7 +637,14 @@ class WorkItemService:
         links = await uow.work_items.list_links(work_item_id=work_item_id)
         activities = await uow.work_items.list_activities(work_item_id=work_item_id)
         return WorkItemView(
-            **self._summary(item, target_name, group_name, agent_name).model_dump(),
+            **self._summary(
+                item,
+                target_name,
+                group_name,
+                agent_name,
+                effective_group_id=effective_group_id,
+                effective_assignment_source=effective_assignment_source,
+            ).model_dump(),
             resolution_note=item.resolution_note,
             routing_decision=item.routing_decision_json,
             occurrences=tuple(
@@ -644,6 +694,8 @@ class WorkItemService:
         target_name: str,
         responsibility_group_name: str | None = None,
         agent_name: str | None = None,
+        effective_group_id: UUID | None = None,
+        effective_assignment_source: str | None = None,
     ) -> WorkItemSummary:
         return WorkItemSummary(
             work_item_id=item.work_item_id,
@@ -661,10 +713,14 @@ class WorkItemService:
             status=item.status,
             phase=item.phase,
             wait_reason=item.wait_reason,
-            responsibility_group_id=item.responsibility_group_id,
+            responsibility_group_id=(
+                effective_group_id or item.responsibility_group_id
+            ),
             responsibility_group_name=responsibility_group_name,
             assignee_user_id=item.assignee_user_id,
-            assignment_source=item.assignment_source,
+            assignment_source=(
+                effective_assignment_source or item.assignment_source
+            ),
             assigned_by=item.assigned_by,
             assigned_at=_utc(item.assigned_at) if item.assigned_at else None,
             acknowledgement_due_at=(_utc(item.acknowledgement_due_at)
