@@ -86,6 +86,10 @@ local_access = false
 # kbot_webhook_url = https://kbot.example.com
 # kbot_webhook_key = CHANGE_ME
 # kbot_webhook_secret = CHANGE_ME
+# 可选：共享同一Alertmanager时，三项同时配置后另外推送到Ammolite。
+# ammolite_webhook_url = https://ammolite.example.com
+# ammolite_webhook_key = CHANGE_ME
+# ammolite_webhook_secret = CHANGE_ME
 
 [logs]
 # enabled = true
@@ -487,29 +491,41 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
                 raise ValueError(f"采集端Exporter监听地址重复：{bind_address}:{exporter_port}")
             seen_ports.add(endpoint)
     if "metrics" in settings.profiles:
-        webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
-        webhook_key = parser.get(
-            "metrics", "kbot_webhook_key", fallback=""
-        ).strip()
-        webhook_secret = parser.get(
-            "metrics", "kbot_webhook_secret", fallback=""
-        ).strip()
-        if len({bool(webhook_url), bool(webhook_key), bool(webhook_secret)}) != 1:
-            raise ValueError(
-                "[metrics] kbot_webhook_url、kbot_webhook_key和kbot_webhook_secret必须同时配置或同时注释"
-            )
-        if "CHANGE_ME" in {webhook_key, webhook_secret}:
-            raise ValueError("[metrics] KBot Webhook配置仍为CHANGE_ME")
-        if webhook_key and not 32 <= len(webhook_key) <= 256:
-            raise ValueError("[metrics] kbot_webhook_key长度必须介于32和256之间")
-        if webhook_url:
-            parsed = urllib.parse.urlparse(webhook_url)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ValueError("[metrics] kbot_webhook_url必须是有效HTTP(S)根地址")
-            if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-                raise ValueError("[metrics] kbot_webhook_url只能填写Main API根地址")
-            if settings.role == "central" and parsed.scheme != "https":
-                raise ValueError("central角色的KBot Webhook必须使用HTTPS")
+        for product, display_name in (("kbot", "KBot"), ("ammolite", "Ammolite")):
+            webhook_url = parser.get(
+                "metrics", f"{product}_webhook_url", fallback=""
+            ).strip()
+            webhook_key = parser.get(
+                "metrics", f"{product}_webhook_key", fallback=""
+            ).strip()
+            webhook_secret = parser.get(
+                "metrics", f"{product}_webhook_secret", fallback=""
+            ).strip()
+            if len({bool(webhook_url), bool(webhook_key), bool(webhook_secret)}) != 1:
+                raise ValueError(
+                    f"[metrics] {product}_webhook_url、{product}_webhook_key和"
+                    f"{product}_webhook_secret必须同时配置或同时注释"
+                )
+            if "CHANGE_ME" in {webhook_key, webhook_secret}:
+                raise ValueError(f"[metrics] {display_name} Webhook配置仍为CHANGE_ME")
+            if webhook_key and not 32 <= len(webhook_key) <= 256:
+                raise ValueError(
+                    f"[metrics] {product}_webhook_key长度必须介于32和256之间"
+                )
+            if webhook_url:
+                parsed = urllib.parse.urlparse(webhook_url)
+                if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                    raise ValueError(
+                        f"[metrics] {product}_webhook_url必须是有效HTTP(S)根地址"
+                    )
+                if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+                    raise ValueError(
+                        f"[metrics] {product}_webhook_url只能填写Main API根地址"
+                    )
+                if settings.role == "central" and parsed.scheme != "https":
+                    raise ValueError(
+                        f"central角色的{display_name} Webhook必须使用HTTPS"
+                    )
     for section in _prometheus_target_sections(parser):
         engine = _required(parser, section, "engine")
         if engine not in {"oracle", "mysql", "postgres", "node", "cadvisor"}:
@@ -1021,8 +1037,11 @@ def _prometheus_query_overrides() -> str:
     ) + "\n"
 
 
-def _alertmanager_config(webhook_enabled: bool) -> str:
-    receiver = "kbot" if webhook_enabled else "discard"
+def _alertmanager_config(
+    *, kbot_webhook_enabled: bool, ammolite_webhook_enabled: bool
+) -> str:
+    webhook_enabled = kbot_webhook_enabled or ammolite_webhook_enabled
+    receiver = "aiops" if webhook_enabled else "discard"
     lines = [
         "route:",
         f"  receiver: {receiver}",
@@ -1034,14 +1053,21 @@ def _alertmanager_config(webhook_enabled: bool) -> str:
         "  - name: discard",
     ]
     if webhook_enabled:
-        lines.extend(
-            [
-                "  - name: kbot",
-                "    webhook_configs:",
-                '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
-                "        send_resolved: true",
-            ]
-        )
+        lines.extend(["  - name: aiops", "    webhook_configs:"])
+        if kbot_webhook_enabled:
+            lines.extend(
+                [
+                    '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
+                    "        send_resolved: true",
+                ]
+            )
+        if ammolite_webhook_enabled:
+            lines.extend(
+                [
+                    '      - url: "http://ammolite-webhook-signer:8080/alertmanager"',
+                    "        send_resolved: true",
+                ]
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -1561,13 +1587,20 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
     )
     targets: list[dict[str, object]] = []
     webhook_url = ""
+    ammolite_webhook_url = ""
 
     if "metrics" in settings.profiles:
         prometheus_revision = hashlib.sha256(
             (_prometheus_config() + _prometheus_rules()).encode("utf-8")
         ).hexdigest()
         webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
-        alertmanager_config = _alertmanager_config(bool(webhook_url))
+        ammolite_webhook_url = parser.get(
+            "metrics", "ammolite_webhook_url", fallback=""
+        ).strip()
+        alertmanager_config = _alertmanager_config(
+            kbot_webhook_enabled=bool(webhook_url),
+            ammolite_webhook_enabled=bool(ammolite_webhook_url),
+        )
         alertmanager_revision = hashlib.sha256(
             alertmanager_config.encode("utf-8")
         ).hexdigest()
@@ -1608,6 +1641,33 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             )
             _write_secret(secrets / "kbot_webhook_key", webhook_key)
             _write_secret(secrets / "kbot_webhook_secret", webhook_secret)
+        ammolite_webhook_key = parser.get(
+            "metrics", "ammolite_webhook_key", fallback=""
+        ).strip()
+        ammolite_webhook_secret = parser.get(
+            "metrics", "ammolite_webhook_secret", fallback=""
+        ).strip()
+        if ammolite_webhook_url:
+            ammolite_signer_revision = hashlib.sha256(
+                (
+                    f"{ammolite_webhook_url.rstrip('/')}\0"
+                    f"{ammolite_webhook_key}\0{ammolite_webhook_secret}"
+                ).encode("utf-8")
+            ).hexdigest()
+            env_lines.extend(
+                [
+                    "AMMOLITE_WEBHOOK_BASE_URL="
+                    + ammolite_webhook_url.rstrip("/"),
+                    "AIOPS_AMMOLITE_WEBHOOK_SIGNER_CONFIG_REVISION="
+                    + ammolite_signer_revision,
+                ]
+            )
+            _write_secret(
+                secrets / "ammolite_webhook_key", ammolite_webhook_key
+            )
+            _write_secret(
+                secrets / "ammolite_webhook_secret", ammolite_webhook_secret
+            )
         _write_text(
             runtime / "alertmanager/alertmanager.yml",
             alertmanager_config,
@@ -1742,6 +1802,50 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             }
         )
 
+    if ammolite_webhook_url:
+        generated_compose.setdefault("services", {})["ammolite-webhook-signer"] = {
+            "restart": "unless-stopped",
+            "security_opt": ["no-new-privileges:true"],
+            "image": "${KBOT_WEBHOOK_SIGNER_IMAGE}",
+            "build": {"context": str(STACK_ROOT / "webhook_signer")},
+            "environment": {
+                "AIOPS_WEBHOOK_PRODUCT": "ammolite",
+                "AMMOLITE_WEBHOOK_BASE_URL": "${AMMOLITE_WEBHOOK_BASE_URL}",
+                "AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION": (
+                    "${AIOPS_AMMOLITE_WEBHOOK_SIGNER_CONFIG_REVISION}"
+                ),
+            },
+            "secrets": [
+                {
+                    "source": "ammolite-webhook-key",
+                    "target": "ammolite_webhook_key",
+                },
+                {
+                    "source": "ammolite-webhook-secret",
+                    "target": "ammolite_webhook_secret",
+                },
+            ],
+            "group_add": ["${AIOPS_SECRET_GID}"],
+            "networks": ["observability", "outbound"],
+            "expose": ["8080"],
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/healthcheck.py"],
+                "interval": "15s",
+                "timeout": "5s",
+                "retries": 12,
+            },
+        }
+        generated_compose.setdefault("secrets", {}).update(
+            {
+                "ammolite-webhook-key": {
+                    "file": str(secrets / "ammolite_webhook_key")
+                },
+                "ammolite-webhook-secret": {
+                    "file": str(secrets / "ammolite_webhook_secret")
+                },
+            }
+        )
+
     _write_text(runtime / "stack.env", "\n".join(env_lines) + "\n")
     _write_text(runtime / "prometheus/prometheus.yml", _prometheus_config())
     _write_text(
@@ -1802,6 +1906,13 @@ def _selected_services(settings: DeploymentSettings) -> list[str]:
         and settings.values.get("metrics", "kbot_webhook_url", fallback="").strip()
     ):
         selected.add("kbot-webhook-signer")
+    if (
+        settings.role != "collector"
+        and settings.values.get(
+            "metrics", "ammolite_webhook_url", fallback=""
+        ).strip()
+    ):
+        selected.add("ammolite-webhook-signer")
     if not selected:
         raise ValueError(f"当前启用模块在{settings.role}角色下没有可启动服务")
     return sorted(selected)

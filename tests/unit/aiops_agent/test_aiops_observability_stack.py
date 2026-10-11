@@ -160,6 +160,9 @@ enabled = true
 kbot_webhook_url = https://kbot.example.com
 kbot_webhook_key = whk-acceptance-key-long-enough-for-kbot
 kbot_webhook_secret = actual-webhook-credential-value
+ammolite_webhook_url = https://ammolite.example.com
+ammolite_webhook_key = whk-acceptance-key-long-enough-for-ammolite
+ammolite_webhook_secret = actual-ammolite-webhook-credential-value
 
 [logs]
 enabled = true
@@ -239,7 +242,12 @@ password = postgres-secret
     alertmanager_config = (
         settings.runtime_dir / "alertmanager/alertmanager.yml"
     ).read_text()
-    assert "receiver: kbot" in alertmanager_config
+    assert "receiver: aiops" in alertmanager_config
+    assert "http://kbot-webhook-signer:8080/alertmanager" in alertmanager_config
+    assert (
+        "http://ammolite-webhook-signer:8080/alertmanager"
+        in alertmanager_config
+    )
     assert (
         "group_by: [alertname, target_key, event_class, source_event_id]"
         in alertmanager_config
@@ -251,6 +259,14 @@ password = postgres-secret
         signer_environment["AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION"]
         == "${AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION}"
     )
+    ammolite_signer = generated["services"]["ammolite-webhook-signer"]
+    assert ammolite_signer["environment"]["AMMOLITE_WEBHOOK_BASE_URL"] == (
+        "${AMMOLITE_WEBHOOK_BASE_URL}"
+    )
+    assert {item["target"] for item in ammolite_signer["secrets"]} == {
+        "ammolite_webhook_key",
+        "ammolite_webhook_secret",
+    }
     alloy_config = (
         settings.runtime_dir / "alloy/config.alloy"
     ).read_text()
@@ -636,8 +652,10 @@ environment = development
 def test_webhook_signer_uses_dynamic_hmac_headers() -> None:
     signer = (STACK / "webhook_signer/signer.py").read_text(encoding="utf-8")
     assert 'timestamp.encode("ascii") + b"." + body' in signer
-    assert '"X-KBot-Timestamp": timestamp' in signer
-    assert '"X-KBot-Signature": f"sha256={signature}"' in signer
+    assert 'TIMESTAMP_HEADER = "X-KBot-Timestamp"' in signer
+    assert 'SIGNATURE_HEADER = "X-KBot-Signature"' in signer
+    assert 'TIMESTAMP_HEADER = "X-Ammolite-Timestamp"' in signer
+    assert 'SIGNATURE_HEADER = "X-Ammolite-Signature"' in signer
     assert "Authorization" not in signer
 
 

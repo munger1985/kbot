@@ -20,14 +20,34 @@ def _read_secret(name: str) -> str:
     return value
 
 
-WEBHOOK_KEY = _read_secret("kbot_webhook_key")
-WEBHOOK_SECRET = _read_secret("kbot_webhook_secret")
-BASE_URL = os.environ["KBOT_WEBHOOK_BASE_URL"].rstrip("/")
-DESTINATION = f"{BASE_URL}/api/v1/integrations/aiops/signals/{WEBHOOK_KEY}"
+PRODUCT = os.environ.get("AIOPS_WEBHOOK_PRODUCT", "kbot").strip().lower()
+if PRODUCT == "kbot":
+    WEBHOOK_KEY = _read_secret("kbot_webhook_key")
+    WEBHOOK_SECRET = _read_secret("kbot_webhook_secret")
+    BASE_URL = os.environ["KBOT_WEBHOOK_BASE_URL"].rstrip("/")
+    DESTINATION = f"{BASE_URL}/api/v1/integrations/aiops/signals/{WEBHOOK_KEY}"
+    TIMESTAMP_HEADER = "X-KBot-Timestamp"
+    SIGNATURE_HEADER = "X-KBot-Signature"
+    SERVER_VERSION = "KBotWebhookSigner/1.0"
+    DESTINATION_NAME = "KBot"
+elif PRODUCT == "ammolite":
+    WEBHOOK_KEY = _read_secret("ammolite_webhook_key")
+    WEBHOOK_SECRET = _read_secret("ammolite_webhook_secret")
+    BASE_URL = os.environ["AMMOLITE_WEBHOOK_BASE_URL"].rstrip("/")
+    DESTINATION = (
+        f"{BASE_URL}/api/v1/integrations/diagnostic-sources/"
+        f"{WEBHOOK_KEY}/events"
+    )
+    TIMESTAMP_HEADER = "X-Ammolite-Timestamp"
+    SIGNATURE_HEADER = "X-Ammolite-Signature"
+    SERVER_VERSION = "AmmoliteWebhookSigner/1.0"
+    DESTINATION_NAME = "Ammolite"
+else:
+    raise ValueError("AIOPS_WEBHOOK_PRODUCT只支持kbot或ammolite")
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "KBotWebhookSigner/1.0"
+    server_version = SERVER_VERSION
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path != "/healthz":
@@ -62,8 +82,8 @@ class Handler(BaseHTTPRequestHandler):
             method="POST",
             headers={
                 "Content-Type": "application/json",
-                "X-KBot-Timestamp": timestamp,
-                "X-KBot-Signature": f"sha256={signature}",
+                TIMESTAMP_HEADER: timestamp,
+                SIGNATURE_HEADER: f"sha256={signature}",
             },
         )
         try:
@@ -80,8 +100,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(exc.read())
         except (OSError, urllib.error.URLError) as exc:
             # 不输出目标URL、Webhook Key或Secret，只报告异常类型。
-            print(f"KBot Webhook转发失败：{type(exc).__name__}", flush=True)
-            self.send_error(502, "KBot事件入口暂时不可用")
+            print(
+                f"{DESTINATION_NAME} Webhook转发失败：{type(exc).__name__}",
+                flush=True,
+            )
+            self.send_error(502, f"{DESTINATION_NAME}事件入口暂时不可用")
 
     def log_message(self, format: str, *args: object) -> None:
         # 避免默认访问日志记录包含Webhook路由或其他敏感信息。
