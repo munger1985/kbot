@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>实时监控 · KBot AIOps</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261010_3">
+  <link rel="stylesheet" href="./css/aiops.css?v=20261011_4">
 </head>
 <body data-page="monitoring">
   <main class="ops-main ops-monitoring-main">
@@ -52,10 +52,31 @@
       </section>
     </div>
   </main>
+  <dialog id="monitoring-data-drawer" class="ops-monitoring-data-drawer" aria-labelledby="monitoring-data-drawer-title">
+    <div class="ops-monitoring-data-drawer-shell">
+      <header>
+        <div><span>实时监控数据</span><h2 id="monitoring-data-drawer-title">指标数据</h2><p id="monitoring-data-drawer-description"></p></div>
+        <button id="close-monitoring-data-drawer" type="button" aria-label="关闭指标数据">关闭</button>
+      </header>
+      <div class="ops-monitoring-data-drawer-body">
+        <section class="ops-monitoring-data-context" aria-label="指标上下文">
+          <article><span>数据质量</span><strong id="monitoring-data-drawer-quality"></strong></article>
+          <article><span>指标代码</span><strong id="monitoring-data-drawer-metric"></strong></article>
+          <article><span>单位</span><strong id="monitoring-data-drawer-unit"></strong></article>
+          <article><span>监控来源</span><strong id="monitoring-data-drawer-source"></strong></article>
+        </section>
+        <section class="ops-monitoring-data-samples">
+          <div><h3>完整采样数据</h3><p>缺失采样保持为空，不按 0 填充。</p></div>
+          <div id="monitoring-data-drawer-table"></div>
+        </section>
+      </div>
+      <footer><button id="finish-monitoring-data-drawer" type="button">关闭</button></footer>
+    </div>
+  </dialog>
   <script src="../runtime-config.js"></script>
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261010_1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261011_3"></script>
+  <script src="./js/aiops-monitoring.js?v=20261011_4"></script>
 </body>
 </html>

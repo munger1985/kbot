@@ -7,6 +7,7 @@
     sources: [], instances: [], profiles: [], view: null,
     sourceId: "", compareSourceId: "", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
+    visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
   };
   const readinessLabels = {
     READY: "就绪", DISABLED: "已停用", DISCONNECTED: "连接失败",
@@ -24,6 +25,9 @@
   const seriesLabel = (series) => `${series.instance_display_name} · ${series.source_display_name}`;
 
   function label(value) { return readinessLabels[value] || value || "不可用"; }
+  function pointQualityLabel(value) {
+    return ({ GOOD: "正常", INVALID: "无效", STALE: "已过期", ESTIMATED: "估算" })[value] || value || "未知";
+  }
   function tone(value) {
     if (["READY", "AVAILABLE", "GOOD"].includes(value)) return "good";
     if (["DISCONNECTED", "UNAVAILABLE", "NO_DATA"].includes(value)) return "bad";
@@ -448,7 +452,32 @@
   }
   function tableHtml(panel) {
     const times = [...new Set(panel.series.flatMap((series) => series.points.map((point) => point.observed_at)))].sort();
-    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(seriesLabel(series))}</th>`).join("")}</tr></thead><tbody>${times.map((time) => `<tr><td>${esc(shell.fmt(time))}</td>${panel.series.map((series) => { const point = series.points.find((item) => item.observed_at === time); return `<td>${point ? `${esc(formatValue(point.value, panel.unit))} · ${esc(point.quality)}` : "—"}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
+    const rows = times.length
+      ? times.map((time) => `<tr><td>${esc(shell.fmt(time))}</td>${panel.series.map((series) => { const point = series.points.find((item) => item.observed_at === time); return `<td>${point ? `${esc(formatValue(point.value, panel.unit))} · ${esc(pointQualityLabel(point.quality))}` : "—"}</td>`; }).join("")}</tr>`).join("")
+      : `<tr><td colspan="${panel.series.length + 1}" class="ops-empty">当前指标没有返回采样数据。</td></tr>`;
+    return `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>采样时间</th>${panel.series.map((series) => `<th>${esc(seriesLabel(series))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  function fillDataDrawer(panel) {
+    document.getElementById("monitoring-data-drawer-title").textContent = panel.title;
+    document.getElementById("monitoring-data-drawer-description").textContent = panel.description;
+    document.getElementById("monitoring-data-drawer-quality").innerHTML = badge(panel.quality, qualityLabels[panel.quality]);
+    document.getElementById("monitoring-data-drawer-metric").textContent = panel.metric_code;
+    document.getElementById("monitoring-data-drawer-unit").textContent = unitLabel(panel.unit) || "无量纲";
+    const sources = [...new Set(panel.series.map((series) => series.source_display_name).filter(Boolean))];
+    document.getElementById("monitoring-data-drawer-source").textContent = sources.join(" / ") || sourceById()?.display_name || "—";
+    document.getElementById("monitoring-data-drawer-table").innerHTML = tableHtml(panel);
+  }
+  function openDataDrawer(panel, trigger) {
+    const drawer = document.getElementById("monitoring-data-drawer");
+    state.dataDrawerPanelId = panel.panel_id;
+    state.dataDrawerTrigger = trigger;
+    fillDataDrawer(panel);
+    if (!drawer.open) drawer.showModal();
+    document.getElementById("close-monitoring-data-drawer").focus();
+  }
+  function closeDataDrawer() {
+    const drawer = document.getElementById("monitoring-data-drawer");
+    if (drawer.open) drawer.close();
   }
   function renderPanels() {
     const node = document.getElementById("monitoring-panels");
@@ -457,16 +486,19 @@
     const panels = isCapacity
       ? state.view.panels
       : state.view.panels.filter((panel) => panel.semantic_role !== "AVAILABILITY");
+    state.visiblePanels = isCapacity ? [] : panels;
     node.classList.toggle("is-capacity", isCapacity);
     if (!panels.length) {
+      closeDataDrawer();
       node.innerHTML = '<div class="ops-panel ops-empty">当前 Profile 没有可展示 Panel。无采样不会显示为 0 或健康。</div>';
       return;
     }
     if (isCapacity) {
+      closeDataDrawer();
       renderCapacityTable(node, state.view.instances, panels.filter((panel) => capacityMetricRoles.includes(panel.semantic_role)));
       return;
     }
-    node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");
+    node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)} %</span>`).join("")}</div></article>`).join("");
     panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
       if (!container) return;
@@ -481,6 +513,11 @@
       });
       state.charts.set(panel.panel_id, chart);
     });
+    const drawer = document.getElementById("monitoring-data-drawer");
+    if (drawer.open) {
+      const activePanel = panels.find((panel) => panel.panel_id === state.dataDrawerPanelId);
+      if (activePanel) fillDataDrawer(activePanel); else closeDataDrawer();
+    }
   }
   function renderQuality() {
     const gaps = allGaps();
@@ -541,7 +578,23 @@
     void selectInstance(input.dataset.instanceId);
   };
   document.getElementById("monitoring-instance-list").onclick = (event) => { const button = event.target.closest("[data-drill-instance]"); if (button && !button.disabled) drillInto(button.dataset.drillInstance); };
-  document.getElementById("monitoring-panels").onclick = (event) => { const button = event.target.closest("[data-panel-table]"); if (!button) return; const table = document.querySelector(`[data-panel-data="${button.dataset.panelTable}"]`); table.hidden = !table.hidden; button.textContent = table.hidden ? "查看数据" : "收起数据"; };
+  document.getElementById("monitoring-panels").onclick = (event) => {
+    const button = event.target.closest("[data-panel-id]");
+    if (!button) return;
+    const panel = state.visiblePanels.find((item) => item.panel_id === button.dataset.panelId);
+    if (panel) openDataDrawer(panel, button);
+  };
+  document.getElementById("close-monitoring-data-drawer").onclick = closeDataDrawer;
+  document.getElementById("finish-monitoring-data-drawer").onclick = closeDataDrawer;
+  document.getElementById("monitoring-data-drawer").onclick = (event) => { if (event.target === event.currentTarget) closeDataDrawer(); };
+  document.getElementById("monitoring-data-drawer").addEventListener("close", () => {
+    const currentTrigger = [...document.querySelectorAll("[data-panel-id]")]
+      .find((button) => button.dataset.panelId === state.dataDrawerPanelId);
+    const trigger = state.dataDrawerTrigger?.isConnected ? state.dataDrawerTrigger : currentTrigger;
+    state.dataDrawerPanelId = "";
+    state.dataDrawerTrigger = null;
+    trigger?.focus();
+  });
   document.getElementById("refresh-monitoring").onclick = loadView;
   document.getElementById("monitoring-refresh-interval").onchange = scheduleRefresh;
   addEventListener("resize", () => state.charts.forEach((chart) => chart.resize()));
