@@ -558,9 +558,10 @@ async def _probe_postgresql_capabilities(
         "AS database_oid"
     )
     database_version = str(identity["server_version"])
+    server_version_num = int(identity["server_version_num"])
     server_started_at = _postgresql_datetime(identity["server_started_at"])
     details: dict[str, object] = {
-        "server_version_num": str(identity["server_version_num"]),
+        "server_version_num": str(server_version_num),
         "database_role": (
             "STANDBY" if bool(identity["in_recovery"]) else "PRIMARY"
         ),
@@ -615,7 +616,19 @@ async def _probe_postgresql_capabilities(
             "FROM pg_catalog.pg_tablespace LIMIT 0",
         ),
     )
+    # 不用 UndefinedTableError 探测版本能力；该错误会进入数据库日志并
+    # 被告警链路误判为真实故障。
+    minimum_server_versions = {
+        "pg_stat_progress_vacuum": 120000,
+        "pg_stat_progress_analyze": 130000,
+        "pg_stat_wal": 140000,
+        "pg_stat_io": 160000,
+        "pg_stat_checkpointer": 170000,
+    }
     for capability, sql in probes:
+        if server_version_num < minimum_server_versions.get(capability, 0):
+            details[capability] = "NOT_PRESENT"
+            continue
         status = await _postgresql_probe_status(connection, sql)
         details[capability] = status
         if status == "AVAILABLE":

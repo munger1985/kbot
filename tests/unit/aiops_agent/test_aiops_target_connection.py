@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from aiops_agent.application.configuration.connection_test import (
     _probe_oracle_controlled_action_options,
+    _probe_postgresql_capabilities,
     test_target_connection as run_connection_test,
 )
 from aiops_agent.application.targets.connectivity_check import (
@@ -187,6 +188,24 @@ class _ConnectivityUow:
 
 
 class AIOpsTargetConnectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_postgresql_16_skips_postgresql_17_only_probe(self):
+        class TrackingConnection(_PostgreSQLConnection):
+            def __init__(self):
+                super().__init__()
+                self.executed_sql: list[str] = []
+
+            async def execute(self, sql):
+                self.executed_sql.append(sql)
+                return "SELECT 0"
+
+        connection = TrackingConnection()
+        result = await _probe_postgresql_capabilities(connection)
+
+        self.assertEqual("NOT_PRESENT", result[5]["pg_stat_checkpointer"])
+        self.assertFalse(
+            any("pg_stat_checkpointer" in sql for sql in connection.executed_sql)
+        )
+
     async def test_oracle_controlled_options_are_discovered_as_choices(self):
         class CatalogCursor:
             sql = ""
