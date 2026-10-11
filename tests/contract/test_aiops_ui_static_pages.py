@@ -200,6 +200,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("group-status-toggle", page)
         self.assertIn("/member-candidates", script)
         self.assertIn("/members/${encodeURIComponent", script)
+        self.assertIn("const form = event.currentTarget", script)
+        self.assertNotIn("event.currentTarget.reset()", script)
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(encoding="utf-8")
+        business_workspace, resource_configuration = shell.split('["资源配置"', 1)
+        self.assertNotIn('["responsibility-groups", "责任组"]', business_workspace)
+        self.assertIn('["responsibility-groups", "责任组"]', resource_configuration)
         for markup, source in ((agents, agent_script), (targets, target_script)):
             self.assertIn("default_responsibility_group_id", markup)
             self.assertIn("default_responsibility_group_id", source)

@@ -83,13 +83,14 @@
   async function addMember(event) {
     event.preventDefault();
     if (!selected) return;
-    const fields = Object.fromEntries(new FormData(event.currentTarget));
+    const form = event.currentTarget;
+    const fields = Object.fromEntries(new FormData(form));
     try {
       await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(selected.responsibility_group_id)}/members/${encodeURIComponent(fields.user_id)}`, {
         method: "PUT",
         body: JSON.stringify({ member_role: fields.member_role }),
       });
-      event.currentTarget.reset();
+      form.reset();
       shell.toast(fields.member_role === "LEAD" ? "组长已更新" : "成员已加入责任组");
       await load();
     } catch (error) {
@@ -129,13 +130,14 @@
     document.getElementById("group-status-toggle").addEventListener("click", () => void toggleStatus());
     document.getElementById("group-create").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const fields = Object.fromEntries(new FormData(event.currentTarget));
+      const form = event.currentTarget;
+      const fields = Object.fromEntries(new FormData(form));
       try {
         await KBotAIOpsAuth.request(api, {
           method: "POST",
           body: JSON.stringify({ name: fields.name.trim(), description: fields.description.trim() || null }),
         });
-        event.currentTarget.reset();
+        form.reset();
         shell.toast("责任组已创建");
         await load();
       } catch (error) {

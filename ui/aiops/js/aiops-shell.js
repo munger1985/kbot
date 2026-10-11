@@ -16,11 +16,11 @@
   };
   const sections = [
     ["业务工作区", [
-      ["dashboard", "Dashboard"], ["work-items", "工作项中心"], ["responsibility-groups", "责任组"], ["monitoring", "实时监控"], ["chat", "智能运维"], ["situations", "告警诊断"],
+      ["dashboard", "Dashboard"], ["work-items", "工作项中心"], ["monitoring", "实时监控"], ["chat", "智能运维"], ["situations", "告警诊断"],
       ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "报告中心"],
     ]],
     ["资源配置", [
-      ["diagnostic-sources", "监控源"], ["targets", "运维目标"],
+      ["diagnostic-sources", "监控源"], ["targets", "运维目标"], ["responsibility-groups", "责任组"],
       ["operations-knowledge", "运维知识库"], ["agents", "AIOps Agent"],
       ["inspection-plans", "巡检计划"], ["report-templates", "模板管理"],
       ["api-clients", "API 客户端"],
