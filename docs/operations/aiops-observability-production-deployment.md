@@ -296,9 +296,11 @@ sed -n '1,80p' var/aiops-stack/generated/alertmanager/alertmanager.yml
 
 同一Central或`all-in-one`节点同时启用`metrics`和`logs`时，脚本还会启用Loki
 Ruler。Oracle Alert Collector依据`V$DIAG_ALERT_EXT.MESSAGE_TYPE`和
-`MESSAGE_LEVEL`生成统一严重度，Incident Error、Error、Critical和Severe归为
-`critical`，Warning归为`warning`。Ruler转发所有这两类结构化异常，不维护ORA错误码
-白名单。部分Oracle错误会被ADR标为普通Notification或Important，因此Collector还会
+`MESSAGE_LEVEL`生成统一严重度，Incident Error、Critical和Severe归为`critical`，
+Warning归为`warning`。Error类型通常归为`critical`，但Oracle也会把已经成功完成的
+操作记录为Error类型、Notification级别；这类没有`PROBLEM_KEY`和标准诊断码的记录归为
+`info`，不会触发异常告警。Ruler转发所有`critical`和`warning`结构化异常，不维护ORA
+错误码白名单。部分Oracle错误会被ADR标为普通Notification或Important，因此Collector还会
 识别Oracle通用的“组件前缀-数字”标准诊断码格式；它同样不枚举ORA编号。因此新出现
 的ORA、TNS或其他Oracle组件错误无需修改规则。没有诊断码的普通Notification、Trace
 和Dump只保留在Loki供诊断查询，避免正常启动信息造成告警风暴。

@@ -50,10 +50,13 @@ _ALERT_QUERIES = {
 }
 
 # Oracle ADR的MESSAGE_TYPE枚举：2为Incident Error、3为Error、4为Warning。
-_ERROR_MESSAGE_TYPES = {2, 3}
+_INCIDENT_MESSAGE_TYPES = {2}
+_ERROR_MESSAGE_TYPES = {3}
 _WARNING_MESSAGE_TYPES = {4}
 # MESSAGE_LEVEL中1为Critical、2为Severe，用于覆盖类型未知但级别明确的记录。
 _CRITICAL_MESSAGE_LEVELS = {1, 2}
+# Oracle会为已成功完成的操作保留Error类型，但以Notification级别发布。
+_NOTIFICATION_MESSAGE_LEVELS = {32}
 # Oracle组件统一使用“组件前缀-数字”诊断码；匹配格式而非维护具体错误码清单。
 _DIAGNOSTIC_CODE = re.compile(
     r"(?<![A-Z0-9_])[A-Z][A-Z0-9_]{1,15}-\d{3,6}\b",
@@ -141,6 +144,7 @@ def _diagnostic_severity(
     message_type: Any,
     message_level: Any,
     message_text: Any = None,
+    problem_key: Any = None,
 ) -> str:
     """依据ADR字段及标准诊断码格式归一化严重度。"""
     try:
@@ -151,14 +155,23 @@ def _diagnostic_severity(
         normalized_level = int(message_level)
     except (TypeError, ValueError):
         normalized_level = 16
+    has_problem_key = bool(str(problem_key or "").strip())
+    has_diagnostic_code = (
+        _DIAGNOSTIC_CODE.search(str(message_text or "")) is not None
+    )
     if (
-        normalized_type in _ERROR_MESSAGE_TYPES
+        normalized_type in _INCIDENT_MESSAGE_TYPES
         or normalized_level in _CRITICAL_MESSAGE_LEVELS
-        or _DIAGNOSTIC_CODE.search(str(message_text or "")) is not None
+        or has_problem_key
+        or has_diagnostic_code
     ):
         return "critical"
     if normalized_type in _WARNING_MESSAGE_TYPES:
         return "warning"
+    if normalized_level in _NOTIFICATION_MESSAGE_LEVELS:
+        return "info"
+    if normalized_type in _ERROR_MESSAGE_TYPES:
+        return "critical"
     return "info"
 
 
@@ -241,6 +254,7 @@ def _append_rows(
                         payload.get("message_type"),
                         payload.get("message_level"),
                         payload.get("message_text"),
+                        payload.get("problem_key"),
                     ),
                     "collected_at": datetime.now(timezone.utc).isoformat(),
                 }

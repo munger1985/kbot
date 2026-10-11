@@ -693,6 +693,20 @@ def test_oracle_collector_classifies_all_structured_alert_types() -> None:
     assert collector._diagnostic_severity(5, 16) == "info"
     assert (
         collector._diagnostic_severity(
+            3,
+            32,
+            "Resize operation completed for file# 13",
+        )
+        == "info"
+    )
+    assert collector._diagnostic_severity(3, 32, problem_key="ORA 600") == (
+        "critical"
+    )
+    assert collector._diagnostic_severity(3, 32, "ORA-00600: internal error") == (
+        "critical"
+    )
+    assert (
+        collector._diagnostic_severity(
             5,
             16,
             'ORA-12012: error on auto execute of job "SYS"."DBMS_JOB$_5"',
