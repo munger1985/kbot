@@ -80,6 +80,8 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_REVIEW',
             'KBOT_OPS_RECOVERY_PROFILE',
             'KBOT_OPS_RECOVERY_DRILL',
+            'KBOT_OPS_RESPONSIBILITY_GROUP',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER',
             'KBOT_OPS_WORK_ITEM',
             'KBOT_OPS_WORK_ITEM_OCCURRENCE',
             'KBOT_OPS_WORK_ITEM_LINK',
@@ -158,6 +160,8 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_REVIEW',
             'KBOT_OPS_RECOVERY_PROFILE',
             'KBOT_OPS_RECOVERY_DRILL',
+            'KBOT_OPS_RESPONSIBILITY_GROUP',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER',
             'KBOT_OPS_WORK_ITEM',
             'KBOT_OPS_WORK_ITEM_OCCURRENCE',
             'KBOT_OPS_WORK_ITEM_LINK',
@@ -173,7 +177,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 61 项。');
+        dbms_output.put_line('[通过] AIOps 表: 63 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -237,6 +241,7 @@ BEGIN
             'IX_OPS_ACTIVITY_SCOPE_TIME',
             'IX_OPS_ACTIVITY_TARGET',
             'IX_OPS_AGENT_CURRENT_VERSION',
+            'IX_OPS_AGENT_RESP_GROUP',
             'IX_OPS_AGENT_SCOPE_STATUS',
             'IX_OPS_AGENT_VERSION_AGENT',
             'IX_OPS_AGENT_VERSION_POLICY',
@@ -347,6 +352,8 @@ BEGIN
             'IX_OPS_REPORT_TARGET',
             'IX_OPS_REPORT_TASK',
             'IX_OPS_REPORT_TEMPLATE_SCOPE',
+            'IX_OPS_RESP_GROUP_SCOPE',
+            'IX_OPS_RESP_MEMBER_USER',
             'IX_OPS_RPT_SOURCE_ART',
             'IX_OPS_RPT_SOURCE_RUN',
             'IX_OPS_RPT_TPL_CURRENT_VERSION',
@@ -382,6 +389,7 @@ BEGIN
             'IX_OPS_TARGET_EXEC_CRED',
             'IX_OPS_TARGET_FACT_DOMAIN',
             'IX_OPS_TARGET_FACT_TARGET',
+            'IX_OPS_TARGET_RESP_GROUP',
             'IX_OPS_TARGET_SCOPE',
             'IX_OPS_TARGET_TYPE',
             'IX_OPS_TARGET_WORKLOAD_DUE',
@@ -431,6 +439,7 @@ BEGIN
             'IX_OPS_WORKLOAD_STMT_TARGET',
             'IX_OPS_WORK_ITEM_ASSIGNEE',
             'IX_OPS_WORK_ITEM_FINGERPRINT',
+            'IX_OPS_WORK_ITEM_GROUP',
             'IX_OPS_WORK_ITEM_QUEUE',
             'IX_OPS_WORK_ITEM_SLA',
             'IX_OPS_WORK_ITEM_TARGET',
@@ -516,6 +525,7 @@ BEGIN
             'IX_OPS_ACTIVITY_SCOPE_TIME',
             'IX_OPS_ACTIVITY_TARGET',
             'IX_OPS_AGENT_CURRENT_VERSION',
+            'IX_OPS_AGENT_RESP_GROUP',
             'IX_OPS_AGENT_SCOPE_STATUS',
             'IX_OPS_AGENT_VERSION_AGENT',
             'IX_OPS_AGENT_VERSION_POLICY',
@@ -626,6 +636,8 @@ BEGIN
             'IX_OPS_REPORT_TARGET',
             'IX_OPS_REPORT_TASK',
             'IX_OPS_REPORT_TEMPLATE_SCOPE',
+            'IX_OPS_RESP_GROUP_SCOPE',
+            'IX_OPS_RESP_MEMBER_USER',
             'IX_OPS_RPT_SOURCE_ART',
             'IX_OPS_RPT_SOURCE_RUN',
             'IX_OPS_RPT_TPL_CURRENT_VERSION',
@@ -661,6 +673,7 @@ BEGIN
             'IX_OPS_TARGET_EXEC_CRED',
             'IX_OPS_TARGET_FACT_DOMAIN',
             'IX_OPS_TARGET_FACT_TARGET',
+            'IX_OPS_TARGET_RESP_GROUP',
             'IX_OPS_TARGET_SCOPE',
             'IX_OPS_TARGET_TYPE',
             'IX_OPS_TARGET_WORKLOAD_DUE',
@@ -710,6 +723,7 @@ BEGIN
             'IX_OPS_WORKLOAD_STMT_TARGET',
             'IX_OPS_WORK_ITEM_ASSIGNEE',
             'IX_OPS_WORK_ITEM_FINGERPRINT',
+            'IX_OPS_WORK_ITEM_GROUP',
             'IX_OPS_WORK_ITEM_QUEUE',
             'IX_OPS_WORK_ITEM_SLA',
             'IX_OPS_WORK_ITEM_TARGET',
@@ -783,7 +797,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 260 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 265 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -793,6 +807,7 @@ BEGIN
             'FK_OPS_ACTIVITY_TARGET',
             'FK_OPS_AGENT_CURRENT_VERSION',
             'FK_OPS_AGENT_DOMAIN',
+            'FK_OPS_AGENT_RESP_GROUP',
             'FK_OPS_AGENT_VERSION_AGENT',
             'FK_OPS_AGENT_VERSION_POLICY',
             'FK_OPS_AGENT_VER_TARGET_TARGET',
@@ -892,6 +907,8 @@ BEGIN
             'FK_OPS_REPORT_SUPERSEDES',
             'FK_OPS_REPORT_TARGET',
             'FK_OPS_REPORT_TASK',
+            'FK_OPS_RESP_GROUP_DOMAIN',
+            'FK_OPS_RESP_MEMBER_GROUP',
             'FK_OPS_RPT_SOURCE_ART',
             'FK_OPS_RPT_SOURCE_REPORT',
             'FK_OPS_RPT_SOURCE_RUN',
@@ -926,6 +943,7 @@ BEGIN
             'FK_OPS_TARGET_FACT_DOMAIN',
             'FK_OPS_TARGET_FACT_OWNER',
             'FK_OPS_TARGET_FACT_TARGET',
+            'FK_OPS_TARGET_RESP_GROUP',
             'FK_OPS_TASK_OUTPUT_ART',
             'FK_OPS_TASK_PARENT',
             'FK_OPS_TASK_RUN',
@@ -968,6 +986,7 @@ BEGIN
             'FK_OPS_WORKLOAD_STMT_TARGET',
             'FK_OPS_WORKLOAD_TARGET',
             'FK_OPS_WORK_ITEM_DOMAIN',
+            'FK_OPS_WORK_ITEM_GROUP',
             'FK_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_TARGET',
             'PK_OPS_ANSWER_CITATION',
@@ -1038,6 +1057,7 @@ BEGIN
             'FK_OPS_ACTIVITY_TARGET',
             'FK_OPS_AGENT_CURRENT_VERSION',
             'FK_OPS_AGENT_DOMAIN',
+            'FK_OPS_AGENT_RESP_GROUP',
             'FK_OPS_AGENT_VERSION_AGENT',
             'FK_OPS_AGENT_VERSION_POLICY',
             'FK_OPS_AGENT_VER_TARGET_TARGET',
@@ -1137,6 +1157,8 @@ BEGIN
             'FK_OPS_REPORT_SUPERSEDES',
             'FK_OPS_REPORT_TARGET',
             'FK_OPS_REPORT_TASK',
+            'FK_OPS_RESP_GROUP_DOMAIN',
+            'FK_OPS_RESP_MEMBER_GROUP',
             'FK_OPS_RPT_SOURCE_ART',
             'FK_OPS_RPT_SOURCE_REPORT',
             'FK_OPS_RPT_SOURCE_RUN',
@@ -1171,6 +1193,7 @@ BEGIN
             'FK_OPS_TARGET_FACT_DOMAIN',
             'FK_OPS_TARGET_FACT_OWNER',
             'FK_OPS_TARGET_FACT_TARGET',
+            'FK_OPS_TARGET_RESP_GROUP',
             'FK_OPS_TASK_OUTPUT_ART',
             'FK_OPS_TASK_PARENT',
             'FK_OPS_TASK_RUN',
@@ -1213,6 +1236,7 @@ BEGIN
             'FK_OPS_WORKLOAD_STMT_TARGET',
             'FK_OPS_WORKLOAD_TARGET',
             'FK_OPS_WORK_ITEM_DOMAIN',
+            'FK_OPS_WORK_ITEM_GROUP',
             'FK_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_TARGET',
             'PK_OPS_ANSWER_CITATION',
@@ -1271,7 +1295,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 226 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 231 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1906,6 +1930,26 @@ BEGIN
             'KBOT_OPS_REPORT|TEMPLATE_VERSION',
             'KBOT_OPS_REPORT|TITLE',
             'KBOT_OPS_REPORT|UPDATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_BY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|MEMBER_ROLE',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|PRIMARY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|RESPONSIBILITY_GROUP_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|STATUS',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|UPDATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|UPDATED_BY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|USER_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|CREATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|CREATED_BY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|DESCRIPTION',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|DOMAIN_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|LEAD_USER_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|NAME',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|RESPONSIBILITY_GROUP_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|ROW_VERSION',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|STATUS',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|UPDATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|UPDATED_BY',
             'KBOT_OPS_RUN_EVENT|CREATED_AT',
             'KBOT_OPS_RUN_EVENT|EVENT_KEY',
             'KBOT_OPS_RUN_EVENT|EVENT_TYPE',
@@ -2286,9 +2330,14 @@ BEGIN
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|SITUATION_ID',
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|WORK_ITEM_ID',
             'KBOT_OPS_WORK_ITEM|ACKNOWLEDGEMENT_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|ASSIGNED_AT',
+            'KBOT_OPS_WORK_ITEM|ASSIGNED_BY',
             'KBOT_OPS_WORK_ITEM|ASSIGNEE_USER_ID',
-            'KBOT_OPS_WORK_ITEM|ASSIGNMENT_GROUP',
+            'KBOT_OPS_WORK_ITEM|ASSIGNMENT_SOURCE',
             'KBOT_OPS_WORK_ITEM|CLOSED_AT',
+            'KBOT_OPS_WORK_ITEM|COMPLETED_AT',
+            'KBOT_OPS_WORK_ITEM|COMPLETED_BY',
+            'KBOT_OPS_WORK_ITEM|COMPLETION_NOTE',
             'KBOT_OPS_WORK_ITEM|CREATED_AT',
             'KBOT_OPS_WORK_ITEM|CREATED_BY',
             'KBOT_OPS_WORK_ITEM|DOMAIN_ID',
@@ -2304,6 +2353,8 @@ BEGIN
             'KBOT_OPS_WORK_ITEM|RESOLUTION_DUE_AT',
             'KBOT_OPS_WORK_ITEM|RESOLUTION_NOTE',
             'KBOT_OPS_WORK_ITEM|RESOLVED_AT',
+            'KBOT_OPS_WORK_ITEM|RESPONSIBILITY_GROUP_ID',
+            'KBOT_OPS_WORK_ITEM|ROUTING_DECISION_JSON',
             'KBOT_OPS_WORK_ITEM|ROW_VERSION',
             'KBOT_OPS_WORK_ITEM|SEVERITY',
             'KBOT_OPS_WORK_ITEM|SOURCE_KIND',
@@ -2314,6 +2365,10 @@ BEGIN
             'KBOT_OPS_WORK_ITEM|UPDATED_AT',
             'KBOT_OPS_WORK_ITEM|UPDATED_BY',
             'KBOT_OPS_WORK_ITEM|VERIFICATION_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|VERIFICATION_NOTE',
+            'KBOT_OPS_WORK_ITEM|VERIFICATION_RESULT',
+            'KBOT_OPS_WORK_ITEM|VERIFIED_AT',
+            'KBOT_OPS_WORK_ITEM|VERIFIED_BY',
             'KBOT_OPS_WORK_ITEM|WAIT_REASON',
             'KBOT_OPS_WORK_ITEM|WORK_ITEM_ID',
             'KBOT_OPS_WORK_ITEM|WORK_TYPE'
@@ -2963,6 +3018,26 @@ BEGIN
             'KBOT_OPS_REPORT|TEMPLATE_VERSION',
             'KBOT_OPS_REPORT|TITLE',
             'KBOT_OPS_REPORT|UPDATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|CREATED_BY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|MEMBER_ROLE',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|PRIMARY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|RESPONSIBILITY_GROUP_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|STATUS',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|UPDATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|UPDATED_BY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER|USER_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|CREATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|CREATED_BY',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|DESCRIPTION',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|DOMAIN_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|LEAD_USER_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|NAME',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|RESPONSIBILITY_GROUP_ID',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|ROW_VERSION',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|STATUS',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|UPDATED_AT',
+            'KBOT_OPS_RESPONSIBILITY_GROUP|UPDATED_BY',
             'KBOT_OPS_RUN_EVENT|CREATED_AT',
             'KBOT_OPS_RUN_EVENT|EVENT_KEY',
             'KBOT_OPS_RUN_EVENT|EVENT_TYPE',
@@ -3343,9 +3418,14 @@ BEGIN
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|SITUATION_ID',
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|WORK_ITEM_ID',
             'KBOT_OPS_WORK_ITEM|ACKNOWLEDGEMENT_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|ASSIGNED_AT',
+            'KBOT_OPS_WORK_ITEM|ASSIGNED_BY',
             'KBOT_OPS_WORK_ITEM|ASSIGNEE_USER_ID',
-            'KBOT_OPS_WORK_ITEM|ASSIGNMENT_GROUP',
+            'KBOT_OPS_WORK_ITEM|ASSIGNMENT_SOURCE',
             'KBOT_OPS_WORK_ITEM|CLOSED_AT',
+            'KBOT_OPS_WORK_ITEM|COMPLETED_AT',
+            'KBOT_OPS_WORK_ITEM|COMPLETED_BY',
+            'KBOT_OPS_WORK_ITEM|COMPLETION_NOTE',
             'KBOT_OPS_WORK_ITEM|CREATED_AT',
             'KBOT_OPS_WORK_ITEM|CREATED_BY',
             'KBOT_OPS_WORK_ITEM|DOMAIN_ID',
@@ -3361,6 +3441,8 @@ BEGIN
             'KBOT_OPS_WORK_ITEM|RESOLUTION_DUE_AT',
             'KBOT_OPS_WORK_ITEM|RESOLUTION_NOTE',
             'KBOT_OPS_WORK_ITEM|RESOLVED_AT',
+            'KBOT_OPS_WORK_ITEM|RESPONSIBILITY_GROUP_ID',
+            'KBOT_OPS_WORK_ITEM|ROUTING_DECISION_JSON',
             'KBOT_OPS_WORK_ITEM|ROW_VERSION',
             'KBOT_OPS_WORK_ITEM|SEVERITY',
             'KBOT_OPS_WORK_ITEM|SOURCE_KIND',
@@ -3371,6 +3453,10 @@ BEGIN
             'KBOT_OPS_WORK_ITEM|UPDATED_AT',
             'KBOT_OPS_WORK_ITEM|UPDATED_BY',
             'KBOT_OPS_WORK_ITEM|VERIFICATION_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|VERIFICATION_NOTE',
+            'KBOT_OPS_WORK_ITEM|VERIFICATION_RESULT',
+            'KBOT_OPS_WORK_ITEM|VERIFIED_AT',
+            'KBOT_OPS_WORK_ITEM|VERIFIED_BY',
             'KBOT_OPS_WORK_ITEM|WAIT_REASON',
             'KBOT_OPS_WORK_ITEM|WORK_ITEM_ID',
             'KBOT_OPS_WORK_ITEM|WORK_TYPE'
@@ -3385,7 +3471,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1040 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1071 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3477,19 +3563,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 37
-           OR l_contract_version <> 'aiops-oracle-v27' THEN
+           OR l_schema_version <> 38
+           OR l_contract_version <> 'aiops-oracle-v28' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '37/aiops-oracle-v27'
+                || '38/aiops-oracle-v28'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/37/'
-                || 'aiops-oracle-v27'
+                '[通过] Schema 合同：AIOPS/38/'
+                || 'aiops-oracle-v28'
             );
         END IF;
     EXCEPTION
@@ -3515,9 +3601,9 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：61 张表、10 个视图、'
-        || '260 个命名索引、226 个命名约束、'
-        || '1040 个表列；Schema 与当前规范一致。'
+        '验证通过：63 张表、10 个视图、'
+        || '265 个命名索引、231 个命名约束、'
+        || '1071 个表列；Schema 与当前规范一致。'
     );
 END;
 /
