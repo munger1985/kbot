@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -61,6 +61,7 @@ async def list_work_items(
     assignee_user_id: str | None = None,
     unassigned: bool = False,
     overdue: bool = False,
+    visibility: Literal["SCOPE", "ALL", "EXCEPTIONS"] = "SCOPE",
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> WorkItemPage:
@@ -69,7 +70,7 @@ async def list_work_items(
         scope=_scope(context), status=status, priority=priority,
         target_id=target_id, assignee_user_id=assignee_user_id,
         unassigned=unassigned, cursor=cursor, limit=limit,
-        overdue=overdue,
+        overdue=overdue, visibility=visibility,
     )
 
 
@@ -92,10 +93,11 @@ async def route_run_to_work_items(
 @router.get("/{work_item_id}", response_model=WorkItemView)
 async def get_work_item(
     work_item_id: UUID, request: Request, context: Auth,
+    visibility: Literal["SCOPE", "ALL", "EXCEPTIONS"] = "SCOPE",
 ) -> WorkItemView:
     require_service_scope(request, "aiops.run")
     return await _service(request).get_item(
-        work_item_id=work_item_id, scope=_scope(context)
+        work_item_id=work_item_id, scope=_scope(context), visibility=visibility
     )
 
 

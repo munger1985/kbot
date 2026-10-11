@@ -5,7 +5,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_38.sql"
+SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_39.sql"
 
 
 class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
@@ -15,20 +15,19 @@ class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
         cls.upper = cls.sql.upper()
 
     def test_upgrade_is_version_guarded(self) -> None:
-        self.assertIn("L_SCHEMA_VERSION <> 37", self.upper)
-        self.assertIn("AIOPS-ORACLE-V27", self.upper)
-        self.assertIn("38 AS SCHEMA_VERSION", self.upper)
+        self.assertIn("L_SCHEMA_VERSION <> 38", self.upper)
         self.assertIn("AIOPS-ORACLE-V28", self.upper)
+        self.assertIn("39 AS SCHEMA_VERSION", self.upper)
+        self.assertIn("AIOPS-ORACLE-V29", self.upper)
 
-    def test_legacy_assignment_groups_are_migrated_before_column_drop(self) -> None:
-        insert_at = self.upper.index("INSERT INTO KBOT_OPS_RESPONSIBILITY_GROUP")
-        update_at = self.upper.index("UPDATE KBOT_OPS_WORK_ITEM ITEM")
-        guard_at = self.upper.index("历史 ASSIGNMENT_GROUP 未完整转换")
-        drop_at = self.upper.index("DROP COLUMN ASSIGNMENT_GROUP")
-        self.assertLess(insert_at, update_at)
-        self.assertLess(update_at, guard_at)
-        self.assertLess(guard_at, drop_at)
-        self.assertIn("ASSIGNMENT_SOURCE = 'SCHEMA_UPGRADE'", self.upper)
+    def test_work_item_agent_is_backfilled_before_foreign_key(self) -> None:
+        add_at = self.upper.index("ADD AGENT_ID RAW(16)")
+        merge_at = self.upper.index("MERGE INTO KBOT_OPS_WORK_ITEM")
+        foreign_key_at = self.upper.index("ADD CONSTRAINT FK_OPS_WORK_ITEM_AGENT")
+        self.assertLess(add_at, merge_at)
+        self.assertLess(merge_at, foreign_key_at)
+        self.assertIn("ROW_NUMBER() OVER", self.upper)
+        self.assertIn("JOIN KBOT_OPS_RUN RUN", self.upper)
 
     def test_upgrade_does_not_delete_business_rows(self) -> None:
         self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)

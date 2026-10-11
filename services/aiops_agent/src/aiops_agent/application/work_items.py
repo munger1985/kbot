@@ -128,11 +128,12 @@ def _work_type(*, trigger_type: str, finding_type: str) -> str:
 
 
 def _fingerprint(
-    *, domain_id: int, target_id: UUID,
+    *, domain_id: int, agent_id: UUID, target_id: UUID,
     finding_type: str, object_ref: dict[str, Any], condition_code: str,
 ) -> str:
     material = {
         "domain_id": domain_id,
+        "agent_id": str(agent_id),
         "target_id": str(target_id),
         "finding_type": finding_type,
         "object_ref": object_ref,
@@ -161,7 +162,7 @@ class WorkItemService:
         self, *, scope: ConfigurationScope, status: str | None,
         priority: str | None, target_id: UUID | None,
         assignee_user_id: str | None, unassigned: bool,
-        overdue: bool,
+        overdue: bool, visibility: str,
         cursor: str | None, limit: int,
     ) -> WorkItemPage:
         filters = {
@@ -171,6 +172,7 @@ class WorkItemService:
             "assignee_user_id": assignee_user_id,
             "unassigned": unassigned,
             "overdue": overdue,
+            "visibility": visibility,
         }
         after_at = after_id = None
         if cursor:
@@ -182,6 +184,8 @@ class WorkItemService:
             now = _utc(await uow.runs.database_now())
             rows = await uow.work_items.page(
                 domain_id=scope.domain_id,
+                actor_id=scope.actor_id,
+                visibility=visibility,
                 status=status,
                 priority=priority,
                 target_id=target_id,
@@ -193,7 +197,8 @@ class WorkItemService:
                 limit=limit + 1,
             )
             counts = await uow.work_items.queue_summary(
-                domain_id=scope.domain_id, actor_id=scope.actor_id, now=now
+                domain_id=scope.domain_id, actor_id=scope.actor_id, now=now,
+                visibility=visibility,
             )
             has_more = len(rows) > limit
             selected = rows[:limit]
@@ -207,8 +212,8 @@ class WorkItemService:
                     filters=filters,
                 )
             summaries = tuple(
-                self._summary(item, target_name, group_name)
-                for item, target_name, group_name in selected
+                self._summary(item, target_name, group_name, agent_name)
+                for item, target_name, group_name, agent_name in selected
             )
         return WorkItemPage(
             items=summaries,
@@ -218,33 +223,36 @@ class WorkItemService:
         )
 
     async def get_item(
-        self, *, work_item_id: UUID, scope: ConfigurationScope
+        self, *, work_item_id: UUID, scope: ConfigurationScope,
+        visibility: str = "SCOPE",
     ) -> WorkItemView:
         async with self._uow_factory() as uow:
-            return await self._detail(uow, work_item_id=work_item_id, scope=scope)
+            return await self._detail(
+                uow, work_item_id=work_item_id, scope=scope,
+                visibility=visibility,
+            )
 
     async def create_item(
         self, *, body: WorkItemCreate, scope: ConfigurationScope
     ) -> WorkItemView:
         async with self._uow_factory() as uow:
             assert uow.work_items is not None
-            target_name = await uow.work_items.target_name(
-                target_id=body.target_id, domain_id=scope.domain_id
+            routing = await uow.work_items.manual_work_item_routing(
+                domain_id=scope.domain_id,
+                agent_id=body.agent_id,
+                target_id=body.target_id,
             )
-            if target_name is None:
-                raise resource_not_found("数据库实例")
-            if body.responsibility_group_id is not None:
-                group = await uow.work_items.get_group(
-                    group_id=body.responsibility_group_id,
-                    domain_id=scope.domain_id,
-                )
-                if group is None or group.status != "ACTIVE":
-                    raise state_conflict("责任组无效或已停用")
+            if routing is None:
+                raise state_conflict("所选 Agent、数据库实例或责任组不在有效运维范围内")
+            group_id, assignment_source, agent_name = routing
+            if (
+                body.responsibility_group_id is not None
+                and body.responsibility_group_id != group_id
+            ):
+                raise state_conflict("责任组必须与 Agent 和数据库实例的有效路由一致")
             if body.assignee_user_id is not None:
-                if body.responsibility_group_id is None:
-                    raise state_conflict("指派责任人前必须选择责任组")
                 member = await uow.work_items.get_group_member(
-                    group_id=body.responsibility_group_id,
+                    group_id=group_id,
                     user_id=body.assignee_user_id,
                 )
                 if member is None or member.status != "ACTIVE":
@@ -257,6 +265,7 @@ class WorkItemService:
                     work_item_id=item_id,
                     domain_id=scope.domain_id,
                     item_key=f"WI-{item_id.hex[:12].upper()}",
+                    agent_id=body.agent_id,
                     target_id=body.target_id,
                     work_type=body.work_type,
                     source_kind=WorkItemSourceKind.MANUAL.value,
@@ -267,9 +276,9 @@ class WorkItemService:
                     priority=body.priority,
                     status=WorkItemStatus.OPEN.value,
                     phase=WorkItemPhase.TRIAGE.value,
-                    responsibility_group_id=body.responsibility_group_id,
+                    responsibility_group_id=group_id,
                     assignee_user_id=body.assignee_user_id,
-                    assignment_source="MANUAL",
+                    assignment_source=assignment_source,
                     assigned_by=scope.actor_id,
                     assigned_at=now,
                     acknowledgement_due_at=ack_due,
@@ -288,10 +297,17 @@ class WorkItemService:
             )
             await self._activity(
                 uow, item=item, activity_type="CREATED", actor_id=scope.actor_id,
-                detail={"source": "MANUAL"}, now=now,
+                detail={
+                    "source": "MANUAL",
+                    "agent_id": str(body.agent_id),
+                    "agent_name": agent_name,
+                    "assignment_source": assignment_source,
+                }, now=now,
             )
             await uow.commit()
-        return await self.get_item(work_item_id=item_id, scope=scope)
+        return await self.get_item(
+            work_item_id=item_id, scope=scope, visibility="ALL"
+        )
 
     async def assign(
         self, *, work_item_id: UUID, body: WorkItemAssignment,
@@ -299,8 +315,9 @@ class WorkItemService:
     ) -> WorkItemView:
         async with self._uow_factory() as uow:
             assert uow.work_items is not None
-            item = await uow.work_items.get_scoped(
-                work_item_id=work_item_id, domain_id=scope.domain_id, lock=True
+            item = await uow.work_items.get_visible(
+                work_item_id=work_item_id, domain_id=scope.domain_id,
+                actor_id=scope.actor_id, visibility="ALL", lock=True,
             )
             if item is None:
                 raise resource_not_found("工作项")
@@ -334,7 +351,9 @@ class WorkItemService:
                 now=now,
             )
             await uow.commit()
-        return await self.get_item(work_item_id=work_item_id, scope=scope)
+        return await self.get_item(
+            work_item_id=work_item_id, scope=scope, visibility="ALL"
+        )
 
     async def transition(
         self, *, work_item_id: UUID, body: WorkItemTransition,
@@ -342,8 +361,9 @@ class WorkItemService:
     ) -> WorkItemView:
         async with self._uow_factory() as uow:
             assert uow.work_items is not None
-            item = await uow.work_items.get_scoped(
-                work_item_id=work_item_id, domain_id=scope.domain_id, lock=True
+            item = await uow.work_items.get_visible(
+                work_item_id=work_item_id, domain_id=scope.domain_id,
+                actor_id=scope.actor_id, visibility="ALL", lock=True,
             )
             if item is None:
                 raise resource_not_found("工作项")
@@ -374,11 +394,16 @@ class WorkItemService:
                 }, now=now,
             )
             await uow.commit()
-        return await self.get_item(work_item_id=work_item_id, scope=scope)
+        return await self.get_item(
+            work_item_id=work_item_id, scope=scope, visibility="ALL"
+        )
 
     async def claim(self, *, work_item_id: UUID, body: WorkItemVersionCommand, scope: ConfigurationScope) -> WorkItemView:
         async with self._uow_factory() as uow:
-            item = await uow.work_items.get_scoped(work_item_id=work_item_id, domain_id=scope.domain_id, lock=True)
+            item = await uow.work_items.get_visible(
+                work_item_id=work_item_id, domain_id=scope.domain_id,
+                actor_id=scope.actor_id, visibility="SCOPE", lock=True,
+            )
             if item is None:
                 raise resource_not_found("工作项")
             if int(item.row_version) != body.expected_row_version:
@@ -417,7 +442,10 @@ class WorkItemService:
 
     async def return_to_group(self, *, work_item_id: UUID, body: WorkItemVersionCommand, scope: ConfigurationScope) -> WorkItemView:
         async with self._uow_factory() as uow:
-            item = await uow.work_items.get_scoped(work_item_id=work_item_id, domain_id=scope.domain_id, lock=True)
+            item = await uow.work_items.get_visible(
+                work_item_id=work_item_id, domain_id=scope.domain_id,
+                actor_id=scope.actor_id, visibility="SCOPE", lock=True,
+            )
             if item is None:
                 raise resource_not_found("工作项")
             if int(item.row_version) != body.expected_row_version:
@@ -446,7 +474,10 @@ class WorkItemService:
 
     async def complete(self, *, work_item_id: UUID, body: WorkItemCompletion, scope: ConfigurationScope) -> WorkItemView:
         async with self._uow_factory() as uow:
-            item = await uow.work_items.get_scoped(work_item_id=work_item_id, domain_id=scope.domain_id, lock=True)
+            item = await uow.work_items.get_visible(
+                work_item_id=work_item_id, domain_id=scope.domain_id,
+                actor_id=scope.actor_id, visibility="SCOPE", lock=True,
+            )
             if item is None:
                 raise resource_not_found("工作项")
             if int(item.row_version) != body.expected_row_version:
@@ -466,7 +497,10 @@ class WorkItemService:
 
     async def verify(self, *, work_item_id: UUID, body: WorkItemVerification, scope: ConfigurationScope) -> WorkItemView:
         async with self._uow_factory() as uow:
-            item = await uow.work_items.get_scoped(work_item_id=work_item_id, domain_id=scope.domain_id, lock=True)
+            item = await uow.work_items.get_visible(
+                work_item_id=work_item_id, domain_id=scope.domain_id,
+                actor_id=scope.actor_id, visibility="ALL", lock=True,
+            )
             if item is None:
                 raise resource_not_found("工作项")
             if int(item.row_version) != body.expected_row_version:
@@ -483,7 +517,9 @@ class WorkItemService:
             item.updated_by, item.updated_at = scope.actor_id, now
             await self._activity(uow, item=item, activity_type="VERIFICATION_PASSED" if body.passed else "VERIFICATION_FAILED", actor_id=scope.actor_id, detail={"note": body.note, "verification_id": str(body.verification_id) if body.verification_id else None}, now=now, from_status="PENDING_VERIFICATION", to_status=item.status)
             await uow.commit()
-        return await self.get_item(work_item_id=work_item_id, scope=scope)
+        return await self.get_item(
+            work_item_id=work_item_id, scope=scope, visibility="ALL"
+        )
 
     async def route_run(
         self, *, body: WorkItemRouteRun, scope: ConfigurationScope
@@ -517,23 +553,31 @@ class WorkItemService:
                 )
                 for item in items
             }
+            agent_names = {
+                item.work_item_id: await uow.work_items.agent_name(
+                    agent_id=item.agent_id, domain_id=scope.domain_id
+                )
+                for item in items
+            }
             await uow.commit()
         return tuple(
             self._summary(
                 item,
                 names[item.target_id],
                 group_names[item.work_item_id],
+                agent_names[item.work_item_id],
             )
             for item in items
         )
 
     async def _detail(
         self, uow: AIOpsUnitOfWork, *, work_item_id: UUID,
-        scope: ConfigurationScope,
+        scope: ConfigurationScope, visibility: str = "SCOPE",
     ) -> WorkItemView:
         assert uow.work_items is not None
-        item = await uow.work_items.get_scoped(
-            work_item_id=work_item_id, domain_id=scope.domain_id
+        item = await uow.work_items.get_visible(
+            work_item_id=work_item_id, domain_id=scope.domain_id,
+            actor_id=scope.actor_id, visibility=visibility,
         )
         if item is None:
             raise resource_not_found("工作项")
@@ -543,11 +587,14 @@ class WorkItemService:
         group_name = await uow.work_items.group_name(
             group_id=item.responsibility_group_id
         )
+        agent_name = await uow.work_items.agent_name(
+            agent_id=item.agent_id, domain_id=scope.domain_id
+        )
         occurrences = await uow.work_items.list_occurrences(work_item_id=work_item_id)
         links = await uow.work_items.list_links(work_item_id=work_item_id)
         activities = await uow.work_items.list_activities(work_item_id=work_item_id)
         return WorkItemView(
-            **self._summary(item, target_name, group_name).model_dump(),
+            **self._summary(item, target_name, group_name, agent_name).model_dump(),
             resolution_note=item.resolution_note,
             routing_decision=item.routing_decision_json,
             occurrences=tuple(
@@ -596,10 +643,13 @@ class WorkItemService:
         item: WorkItemEntity,
         target_name: str,
         responsibility_group_name: str | None = None,
+        agent_name: str | None = None,
     ) -> WorkItemSummary:
         return WorkItemSummary(
             work_item_id=item.work_item_id,
             item_key=item.item_key,
+            agent_id=item.agent_id,
+            agent_name=agent_name,
             target_id=item.target_id,
             target_name=target_name,
             work_type=item.work_type,
@@ -891,7 +941,7 @@ async def _apply_inspection_health_evidence(
     if not healthy_types:
         return []
     item_ids = await uow.work_items.work_item_ids_for_target_finding_types(
-        domain_id=int(run.domain_id),
+        domain_id=int(run.domain_id), agent_id=run.agent_id,
         target_id=run.target_id,
         finding_types=healthy_types,
     )
@@ -984,7 +1034,8 @@ async def _route_finding(
         if finding.threshold else finding.finding_type
     )
     fingerprint = _fingerprint(
-        domain_id=int(run.domain_id), target_id=run.target_id,
+        domain_id=int(run.domain_id), agent_id=run.agent_id,
+        target_id=run.target_id,
         finding_type=finding.finding_type,
         object_ref=object_ref, condition_code=condition_code,
     )
@@ -1023,7 +1074,8 @@ async def _route_alert_without_finding(
         finding_id=f"alert-diagnosis:{run.ops_run_id}", finding_type=situation.situation_type,
         severity="CRITICAL", confirmation="UNKNOWN", finding_snapshot=None, evidence_refs=[],
         work_type="RECOVERY_OBSERVATION" if resolved else "INCIDENT_RESPONSE",
-        fingerprint=_fingerprint(domain_id=int(run.domain_id), target_id=run.target_id,
+        fingerprint=_fingerprint(domain_id=int(run.domain_id), agent_id=run.agent_id,
+            target_id=run.target_id,
             finding_type=situation.situation_type, object_ref={"correlation_key": situation.correlation_key},
             condition_code=situation.correlation_hash),
         title=situation.title, summary=situation.summary or "自动诊断未形成有效 Finding，需要 DBA 人工核验。",
@@ -1047,7 +1099,8 @@ async def _route_gap(
         evidence_refs=[gap.evidence_ref] if gap.evidence_ref else [],
         work_type=work_type,
         fingerprint=_fingerprint(
-            domain_id=int(run.domain_id), target_id=run.target_id,
+            domain_id=int(run.domain_id), agent_id=run.agent_id,
+            target_id=run.target_id,
             finding_type="OBSERVABILITY_GAP",
             object_ref=object_ref, condition_code=gap.code,
         ),
@@ -1065,7 +1118,8 @@ async def _upsert_occurrence(
 ) -> WorkItemEntity:
     assert uow.work_items is not None
     item = await uow.work_items.get_open_by_fingerprint(
-        domain_id=int(run.domain_id), target_id=run.target_id,
+        domain_id=int(run.domain_id), agent_id=run.agent_id,
+        target_id=run.target_id,
         fingerprint=fingerprint, lock=True,
     )
     priority = priority_override or _priority(severity)
@@ -1083,7 +1137,8 @@ async def _upsert_occurrence(
         )
         item = await uow.work_items.add(WorkItemEntity(
             work_item_id=item_id, domain_id=int(run.domain_id),
-            item_key=f"WI-{item_id.hex[:12].upper()}", target_id=run.target_id,
+            item_key=f"WI-{item_id.hex[:12].upper()}", agent_id=run.agent_id,
+            target_id=run.target_id,
             work_type=work_type, source_kind=_source_kind(run.trigger_type),
             fingerprint=fingerprint, title=title, summary=summary,
             severity=severity, priority=priority, status=initial_status,

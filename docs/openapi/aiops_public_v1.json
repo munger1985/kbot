@@ -9419,6 +9419,11 @@
       "WorkItemCreate": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "assignee_user_id": {
             "anyOf": [
               {
@@ -9471,6 +9476,7 @@
           }
         },
         "required": [
+          "agent_id",
           "target_id",
           "work_type",
           "title",
@@ -9910,6 +9916,29 @@
               }
             ],
             "title": "Acknowledgement Due At"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
           },
           "assigned_at": {
             "anyOf": [
@@ -10369,6 +10398,29 @@
             },
             "title": "Activities",
             "type": "array"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
           },
           "assigned_at": {
             "anyOf": [
@@ -16858,6 +16910,21 @@
           },
           {
             "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "default": "SCOPE",
+              "enum": [
+                "SCOPE",
+                "ALL",
+                "EXCEPTIONS"
+              ],
+              "title": "Visibility",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "cursor",
             "required": false,
             "schema": {
@@ -16964,6 +17031,21 @@
             "schema": {
               "format": "uuid",
               "title": "Work Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "default": "SCOPE",
+              "enum": [
+                "SCOPE",
+                "ALL",
+                "EXCEPTIONS"
+              ],
+              "title": "Visibility",
               "type": "string"
             }
           }

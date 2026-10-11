@@ -3,7 +3,7 @@
   const api = "/api/v1/apps/aiops/work-items";
   const groupApi = "/api/v1/apps/aiops/responsibility-groups";
   const shell = globalThis.KBotAIOpsShell;
-  const state = { access: null, cursor: null, filters: {}, item: null, groups: [], handling: false };
+  const state = { access: null, cursor: null, filters: { visibility: "SCOPE" }, item: null, groups: [], handling: false, suppressReset: false };
   const labels = {
     PENDING_TRIAGE: "待研判", OPEN: "待处理", IN_PROGRESS: "处理中",
     WAITING: "等待中", PENDING_VERIFICATION: "处理完成", RESOLVED: "已解决",
@@ -41,7 +41,7 @@
   }
   function listRow(item) {
     const assignee = item.assignee_user_id || item.responsibility_group_name || item.responsibility_group_id || "未分派";
-    const detail = `./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}`;
+    const detail = `./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}&visibility=${encodeURIComponent(state.filters.visibility || "SCOPE")}`;
     const canHandle = new Set(state.access.permissions || []).has("aiops:work_item_handle");
     const isMine = item.assignee_user_id === state.access.user_id;
     const canStart = canHandle && item.responsibility_group_id
@@ -51,7 +51,7 @@
       ? `<a class="ops-button primary" href="${detail}">继续处理</a>` : "";
     const startAction = canStart
       ? `<button class="primary" type="button" data-handle-id="${shell.escape(item.work_item_id)}" data-row-version="${Number(item.row_version)}">处理</button>` : "";
-    return `<tr><td>${priority(item.priority)}</td><td><a href="${detail}"><strong>${shell.escape(item.title)}</strong></a><small>${shell.escape(item.item_key)} · ${shell.escape(text(item.source_kind))}</small></td><td><strong>${shell.escape(item.target_name)}</strong><small>${shell.escape(shell.short(item.target_id))}</small></td><td>${shell.badge(text(item.status))}<small>${shell.escape(text(item.phase))}</small></td><td>${shell.escape(assignee)}</td><td>${shell.escape(shell.fmt(item.last_observed_at))}</td><td>${due(item.resolution_due_at)}</td><td>${Number(item.occurrence_count || 0)}</td><td><div class="ops-actions"><a class="ops-button" href="${detail}">详情</a>${startAction}${continueAction}</div></td></tr>`;
+    return `<tr><td>${priority(item.priority)}</td><td><a href="${detail}"><strong>${shell.escape(item.title)}</strong></a><small>${shell.escape(item.item_key)} · ${shell.escape(text(item.source_kind))}</small></td><td><strong>${shell.escape(item.agent_name || "来源 Agent 待归属")}</strong><small>${shell.escape(item.target_name)} · ${shell.escape(shell.short(item.target_id))}</small></td><td>${shell.badge(text(item.status))}<small>${shell.escape(text(item.phase))}</small></td><td>${shell.escape(assignee)}</td><td>${shell.escape(shell.fmt(item.last_observed_at))}</td><td>${due(item.resolution_due_at)}</td><td>${Number(item.occurrence_count || 0)}</td><td><div class="ops-actions"><a class="ops-button" href="${detail}">详情</a>${startAction}${continueAction}</div></td></tr>`;
   }
   async function handleItem(button) {
     if (state.handling) return;
@@ -61,7 +61,7 @@
       const item = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(button.dataset.handleId)}:claim`, jsonBody({
         expected_row_version: Number(button.dataset.rowVersion),
       }));
-      location.href = `./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}`;
+      location.href = `./work-item-detail.html?id=${encodeURIComponent(item.work_item_id)}&visibility=${encodeURIComponent(state.filters.visibility || "SCOPE")}`;
     } catch (error) {
       shell.toast(error.message);
       button.disabled = false;
@@ -87,8 +87,10 @@
   }
   function applyQueue(value) {
     const form = document.getElementById("work-item-filters");
+    state.suppressReset = true;
     form.reset();
-    state.filters = {};
+    state.suppressReset = false;
+    state.filters = { visibility: state.filters.visibility || "SCOPE" };
     if (value === "mine") state.filters.assignee_user_id = state.access.user_id;
     if (value === "unassigned") state.filters.unassigned = true;
     if (value === "urgent") state.filters.priority = "P1,P2";
@@ -105,10 +107,14 @@
         status: values.status, priority: values.priority,
         assignee_user_id: values.ownership === "mine" ? state.access.user_id : "",
         unassigned: values.ownership === "unassigned",
+        visibility: values.visibility || "SCOPE",
       };
       loadList();
     });
-    form.addEventListener("reset", () => setTimeout(() => { state.filters = {}; loadList(); }, 0));
+    form.addEventListener("reset", () => {
+      if (state.suppressReset) return;
+      setTimeout(() => { state.filters = { visibility: "SCOPE" }; loadList(); }, 0);
+    });
     document.getElementById("work-items-refresh").onclick = () => loadList();
     document.getElementById("work-item-more").onclick = () => loadList({ append: true });
     document.getElementById("work-item-queues").onclick = (event) => {
@@ -121,7 +127,7 @@
     };
   }
   function overview(item) {
-    return `<article><span>优先级</span>${priority(item.priority)}</article><article><span>状态</span><strong>${shell.escape(text(item.status))}</strong><small>${shell.escape(text(item.phase))}</small></article><article><span>数据库实例</span><strong>${shell.escape(item.target_name)}</strong><small>${shell.escape(shell.short(item.target_id))}</small></article><article><span>责任人</span><strong>${shell.escape(item.assignee_user_id || "未领取")}</strong><small>${shell.escape(item.responsibility_group_name || item.responsibility_group_id || "未设置责任组")}</small></article><article><span>最后发现</span><strong>${shell.escape(shell.fmt(item.last_observed_at))}</strong><small>累计 ${Number(item.occurrence_count)} 次</small></article><article><span>解决 SLA</span><strong>${due(item.resolution_due_at)}</strong><small>验证期限 ${shell.escape(shell.fmt(item.verification_due_at))}</small></article>`;
+    return `<article><span>优先级</span>${priority(item.priority)}</article><article><span>状态</span><strong>${shell.escape(text(item.status))}</strong><small>${shell.escape(text(item.phase))}</small></article><article><span>来源 Agent</span><strong>${shell.escape(item.agent_name || "待归属")}</strong><small>${shell.escape(item.agent_id ? shell.short(item.agent_id) : "历史工作项")}</small></article><article><span>数据库实例</span><strong>${shell.escape(item.target_name)}</strong><small>${shell.escape(shell.short(item.target_id))}</small></article><article><span>责任人</span><strong>${shell.escape(item.assignee_user_id || "未领取")}</strong><small>${shell.escape(item.responsibility_group_name || item.responsibility_group_id || "未设置责任组")}</small></article><article><span>最后发现</span><strong>${shell.escape(shell.fmt(item.last_observed_at))}</strong><small>累计 ${Number(item.occurrence_count)} 次</small></article><article><span>解决 SLA</span><strong>${due(item.resolution_due_at)}</strong><small>验证期限 ${shell.escape(shell.fmt(item.verification_due_at))}</small></article>`;
   }
   function occurrenceRow(row) {
     const finding = row.finding || {};
@@ -188,17 +194,22 @@
     document.getElementById("work-item-completion").hidden = !(isMine && item.status === "IN_PROGRESS");
   }
   async function loadDetail() {
-    const id = new URLSearchParams(location.search).get("id");
+    const params = new URLSearchParams(location.search);
+    const id = params.get("id");
+    const canManage = new Set(state.access.permissions || []).has("aiops:work_item_manage");
+    const requestedVisibility = params.get("visibility") || "SCOPE";
+    const visibility = canManage && ["ALL", "EXCEPTIONS"].includes(requestedVisibility) ? requestedVisibility : "SCOPE";
     if (!id) {
       document.getElementById("work-item-overview").innerHTML = '<div class="ops-empty">缺少工作项 ID</div>';
       return;
     }
     try {
       const [item, groupPage] = await Promise.all([
-        KBotAIOpsAuth.request(`${api}/${encodeURIComponent(id)}`),
+        KBotAIOpsAuth.request(`${api}/${encodeURIComponent(id)}?visibility=${encodeURIComponent(visibility)}`),
         KBotAIOpsAuth.request(groupApi),
       ]);
       state.groups = groupPage.items || [];
+      document.querySelector(".ops-back-link").href = `./work-items.html?visibility=${encodeURIComponent(visibility)}`;
       renderDetail(item);
     } catch (error) {
       document.getElementById("work-item-overview").innerHTML = `<div class="ops-empty">${shell.escape(error.message)}</div>`;
@@ -235,7 +246,17 @@
   }
   shell.ready.then((access) => {
     state.access = access;
-    if (document.body.dataset.page === "work-items") { bindList(); loadList(); }
+    if (document.body.dataset.page === "work-items") {
+      const canManage = new Set(access.permissions || []).has("aiops:work_item_manage");
+      const requested = new URLSearchParams(location.search).get("visibility") || "SCOPE";
+      state.filters.visibility = canManage && ["ALL", "EXCEPTIONS"].includes(requested) ? requested : "SCOPE";
+      const visibility = document.querySelector("[name=visibility]");
+      if (visibility) {
+        visibility.closest("label").hidden = !canManage;
+        visibility.value = state.filters.visibility;
+      }
+      bindList(); loadList();
+    }
     if (document.body.dataset.page === "work-item-detail") { bindDetail(); loadDetail(); }
   });
 })();

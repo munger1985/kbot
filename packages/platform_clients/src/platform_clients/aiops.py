@@ -1408,12 +1408,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         self, *, status: str | None, priority: str | None,
         target_id: UUID | None, assignee_user_id: str | None,
         unassigned: bool, overdue: bool, cursor: str | None, limit: int,
+        visibility: str = "SCOPE",
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         query = {
             "limit": str(limit),
             "unassigned": str(unassigned).lower(),
             "overdue": str(overdue).lower(),
+            "visibility": visibility,
         }
         for key, value in (
             ("status", status), ("priority", priority),
@@ -1429,10 +1431,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def get_work_item(
-        self, work_item_id: UUID, *, auth_context: AuthContext
+        self, work_item_id: UUID, *, visibility: str = "SCOPE",
+        auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
-            "GET", f"{INTERNAL_API_V1}/aiops/work-items/{work_item_id}",
+            "GET", (
+                f"{INTERNAL_API_V1}/aiops/work-items/{work_item_id}"
+                f"?{urlencode({'visibility': visibility})}"
+            ),
             auth_context=auth_context,
         )
 

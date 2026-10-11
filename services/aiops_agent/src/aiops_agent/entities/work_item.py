@@ -24,6 +24,7 @@ class WorkItemEntity(BaseEntity):
     )
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     item_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    agent_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     work_type: Mapped[str] = mapped_column(String(32), nullable=False)
     source_kind: Mapped[str] = mapped_column(String(24), nullable=False)

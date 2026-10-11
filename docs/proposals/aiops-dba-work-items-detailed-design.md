@@ -10,7 +10,7 @@ DBA 工作项中心用于承接告警分析、日常巡检和人工诊断后需�
 
 ## 2. 一期领域模型
 
-- `aiops_work_item`：聚合根，保存优先级、责任组、责任人、SLA 和生命周期。
+- `aiops_work_item`：聚合根，保存来源 Agent、Target、优先级、责任组、责任人、SLA 和生命周期。
 - `aiops_work_item_occurrence`：相同问题再次出现的事实，保存 Finding 快照和证据引用。
 - `aiops_work_item_link`：关联 Run、Situation、Report、Proposal 与 Verification。
 - `aiops_work_item_activity`：创建、归并、分派、状态变化和验证完成的审计时间线。
@@ -18,7 +18,7 @@ DBA 工作项中心用于承接告警分析、日常巡检和人工诊断后需�
 - `aiops_responsibility_group_member`：责任组与已有 AIOps App 用户的成员关系，只保存稳定 `user_id` 和组内角色，不复制用户名、邮箱、密码或 App 权限。
 - `WorkItemRoutingDecision`：应用层结构化决策值，不直接作为可变数据库实体。至少包含 `decision`、`recommended_priority`、`reason_codes`、`action_summary`、`impact`、`confirmation`、`evidence_refs`、`recommended_playbook_id` 和 `observation_window`；决策快照写入 Activity，禁止只保存模型自由文本。
 
-所有内部标识使用 PostgreSQL `uuid`、Python `UUID` 和 UUIDv7。子记录以正式外键关联工作项，工作项以正式外键关联 AIOps Target；业务状态、组合规则和业务唯一性仍由应用层负责，不使用业务 `CHECK`、`UNIQUE` 或唯一索引。
+所有内部标识使用平台规范的 UUIDv7 表达。子记录以正式外键关联工作项，工作项以正式外键关联 AIOps Agent 与 Target；业务状态、组合规则和业务唯一性仍由应用层负责，不使用业务 `CHECK`、`UNIQUE` 或唯一索引。
 
 ## 3. 生命周期与 SLA
 
@@ -88,9 +88,9 @@ Situation 从活动转为恢复时发布事务 Outbox 事件。消费者按 Situ
 
 稳定指纹为：
 
-`tenant_id + domain_id + target_id + finding_type + normalized_object_ref + condition_code`
+`tenant_id + domain_id + agent_id + target_id + finding_type + normalized_object_ref + condition_code`
 
-对象引用规范化后计算 SHA-256。来源类型和处理模式不进入问题身份，避免同一数据库问题分别从告警和其他来源产生两张工作项；`source_kind`、`work_type` 和路由决策保留在 Occurrence、Link、Activity 及聚合根当前视图中。相同指纹且非终态时新增 Occurrence、Link 与 Activity，不新建聚合根。数据库不以唯一约束表达该业务规则，应用事务必须通过锁和幂等键抵御并发重复创建。
+对象引用规范化后计算 SHA-256。来源类型和处理模式不进入问题身份，避免同一 Agent 对同一数据库问题分别从告警和其他来源产生两张工作项；不同 Agent 的责任边界不得因 Target 相同而错误归并。`source_kind`、`work_type` 和路由决策保留在 Occurrence、Link、Activity 及聚合根当前视图中。相同指纹且非终态时新增 Occurrence、Link 与 Activity，不新建聚合根。数据库不以唯一约束表达该业务规则，应用事务必须通过锁和幂等键抵御并发重复创建。
 
 ## 5. 责任组、成员与工单分派
 
@@ -129,7 +129,17 @@ Target 可覆盖 Agent 的默认责任组，以支持同一 Agent 管理多个�
 
 成员移出责任组前，页面必须显示其活动工单数量，并要求选择替代责任人或将这些工单退回原责任组队列；历史 Activity 中的原责任人保持不变。
 
-### 5.4 权限与 API
+### 5.4 工作项可见范围
+
+普通 DBA 的默认可见范围按当前配置实时计算：`当前用户 → 有效责任组成员 → Agent 当前版本 → Target → 工作项`。工作项必须同时满足来源 `agent_id` 与 Agent、Target、责任组的有效路由关系；Target 的有效默认责任组优先于 Agent 默认责任组。监控源和 Prometheus、OEM、Zabbix 实例映射只负责观测接入，不参与工单权限判断。
+
+配置变化不改写历史工作项。已分派给当前用户且尚未结束的工作项继续可见并允许完成，避免处理中事项因成员或绑定调整突然消失。除此以外，旧数据缺少 Agent、Target 已移出 Agent 当前版本、责任组停用或路由不一致的记录不进入普通列表、汇总、详情和处理动作。
+
+具有 `aiops:work_item_manage` 的管理员可以显式切换 `SCOPE / ALL / EXCEPTIONS`：默认仍为“我的责任范围”，`ALL` 用于全局治理，`EXCEPTIONS` 只显示缺少或违反当前路由的异常归属。非管理员请求 `ALL / EXCEPTIONS` 必须返回拒绝，不能由前端隐藏代替服务端授权。旧 Oracle 等历史工单不删除，进入异常归属等待管理员修正。
+
+人工创建必须先选择 Agent，再从该 Agent 当前版本中选择 Target；责任组由服务端按 Target 覆盖、Agent 默认的顺序计算，前端不得让用户任意指定。所有自动建单直接写入 `run.agent_id`；升级时只从 Occurrence 关联 Run 无损回填，无法可靠归属的历史工作项保持空值并进入异常归属。
+
+### 5.5 权限与 API
 
 新增 `aiops:work_item_handle` 和 `aiops:work_item_manage`：AIOps 操作员拥有处理、领取本人可见工单的权限；AIOps 管理员同时拥有责任组维护、跨用户分派和改派权限。`aiops:member_manage` 继续只管理 AIOps App 成员与角色，不用来隐式授予工单治理权限。
 

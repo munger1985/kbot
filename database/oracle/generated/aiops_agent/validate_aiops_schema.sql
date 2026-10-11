@@ -437,10 +437,12 @@ BEGIN
             'IX_OPS_WORKLOAD_STMT_SNAPSHOT',
             'IX_OPS_WORKLOAD_STMT_SUBJECT',
             'IX_OPS_WORKLOAD_STMT_TARGET',
+            'IX_OPS_WORK_ITEM_AGENT',
             'IX_OPS_WORK_ITEM_ASSIGNEE',
             'IX_OPS_WORK_ITEM_FINGERPRINT',
             'IX_OPS_WORK_ITEM_GROUP',
             'IX_OPS_WORK_ITEM_QUEUE',
+            'IX_OPS_WORK_ITEM_SCOPE',
             'IX_OPS_WORK_ITEM_SLA',
             'IX_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_TARGET',
@@ -721,10 +723,12 @@ BEGIN
             'IX_OPS_WORKLOAD_STMT_SNAPSHOT',
             'IX_OPS_WORKLOAD_STMT_SUBJECT',
             'IX_OPS_WORKLOAD_STMT_TARGET',
+            'IX_OPS_WORK_ITEM_AGENT',
             'IX_OPS_WORK_ITEM_ASSIGNEE',
             'IX_OPS_WORK_ITEM_FINGERPRINT',
             'IX_OPS_WORK_ITEM_GROUP',
             'IX_OPS_WORK_ITEM_QUEUE',
+            'IX_OPS_WORK_ITEM_SCOPE',
             'IX_OPS_WORK_ITEM_SLA',
             'IX_OPS_WORK_ITEM_TARGET',
             'PK_OPS_AGENT_VERSION_TARGET',
@@ -797,7 +801,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 265 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 267 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -985,6 +989,7 @@ BEGIN
             'FK_OPS_WORKLOAD_STMT_SNAPSHOT',
             'FK_OPS_WORKLOAD_STMT_TARGET',
             'FK_OPS_WORKLOAD_TARGET',
+            'FK_OPS_WORK_ITEM_AGENT',
             'FK_OPS_WORK_ITEM_DOMAIN',
             'FK_OPS_WORK_ITEM_GROUP',
             'FK_OPS_WORK_ITEM_TARGET',
@@ -1235,6 +1240,7 @@ BEGIN
             'FK_OPS_WORKLOAD_STMT_SNAPSHOT',
             'FK_OPS_WORKLOAD_STMT_TARGET',
             'FK_OPS_WORKLOAD_TARGET',
+            'FK_OPS_WORK_ITEM_AGENT',
             'FK_OPS_WORK_ITEM_DOMAIN',
             'FK_OPS_WORK_ITEM_GROUP',
             'FK_OPS_WORK_ITEM_TARGET',
@@ -1295,7 +1301,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 231 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 232 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -2330,6 +2336,7 @@ BEGIN
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|SITUATION_ID',
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|WORK_ITEM_ID',
             'KBOT_OPS_WORK_ITEM|ACKNOWLEDGEMENT_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|AGENT_ID',
             'KBOT_OPS_WORK_ITEM|ASSIGNED_AT',
             'KBOT_OPS_WORK_ITEM|ASSIGNED_BY',
             'KBOT_OPS_WORK_ITEM|ASSIGNEE_USER_ID',
@@ -3418,6 +3425,7 @@ BEGIN
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|SITUATION_ID',
             'KBOT_OPS_WORK_ITEM_OCCURRENCE|WORK_ITEM_ID',
             'KBOT_OPS_WORK_ITEM|ACKNOWLEDGEMENT_DUE_AT',
+            'KBOT_OPS_WORK_ITEM|AGENT_ID',
             'KBOT_OPS_WORK_ITEM|ASSIGNED_AT',
             'KBOT_OPS_WORK_ITEM|ASSIGNED_BY',
             'KBOT_OPS_WORK_ITEM|ASSIGNEE_USER_ID',
@@ -3471,7 +3479,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1071 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1072 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3563,19 +3571,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 38
-           OR l_contract_version <> 'aiops-oracle-v28' THEN
+           OR l_schema_version <> 39
+           OR l_contract_version <> 'aiops-oracle-v29' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '38/aiops-oracle-v28'
+                || '39/aiops-oracle-v29'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/38/'
-                || 'aiops-oracle-v28'
+                '[通过] Schema 合同：AIOPS/39/'
+                || 'aiops-oracle-v29'
             );
         END IF;
     EXCEPTION
@@ -3602,8 +3610,8 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：63 张表、10 个视图、'
-        || '265 个命名索引、231 个命名约束、'
-        || '1071 个表列；Schema 与当前规范一致。'
+        || '267 个命名索引、232 个命名约束、'
+        || '1072 个表列；Schema 与当前规范一致。'
     );
 END;
 /

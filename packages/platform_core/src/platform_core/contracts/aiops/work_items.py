@@ -128,6 +128,8 @@ class WorkItemSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     work_item_id: UUIDv7
     item_key: str
+    agent_id: UUIDv7 | None = None
+    agent_name: str | None = None
     target_id: UUIDv7
     target_name: str
     work_type: WorkItemType
@@ -216,6 +218,7 @@ class WorkItemPage(CursorPage):
 
 
 class WorkItemCreate(AIOpsContract):
+    agent_id: UUIDv7
     target_id: UUIDv7
     work_type: WorkItemType
     title: str = Field(min_length=1, max_length=512)

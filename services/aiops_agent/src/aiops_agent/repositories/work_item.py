@@ -4,13 +4,15 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from aiops_agent.entities import (
     ResponsibilityGroupEntity,
     ResponsibilityGroupMemberEntity,
     AIOpsAgentEntity,
+    AIOpsAgentVersionTargetEntity,
     TargetEntity,
     WorkItemActivityEntity,
     WorkItemEntity,
@@ -30,6 +32,75 @@ class WorkItemRepository(AIOpsRepository):
         assert_active: Callable[[], None] | None = None,
     ):
         super().__init__(session, assert_active)
+
+    @staticmethod
+    def _valid_routing_condition():
+        agent = aliased(AIOpsAgentEntity)
+        version_target = aliased(AIOpsAgentVersionTargetEntity)
+        target = aliased(TargetEntity)
+        group = aliased(ResponsibilityGroupEntity)
+        override_group = aliased(ResponsibilityGroupEntity)
+        active_override = exists(
+            select(1).select_from(override_group).where(
+                override_group.responsibility_group_id
+                == target.default_responsibility_group_id,
+                override_group.domain_id == WorkItemEntity.domain_id,
+                override_group.status == "ACTIVE",
+            )
+        ).correlate(target, WorkItemEntity)
+        return exists(
+            select(1)
+            .select_from(agent)
+            .join(
+                version_target,
+                version_target.agent_version_id == agent.current_version_id,
+            )
+            .join(target, target.target_id == version_target.target_id)
+            .join(
+                group,
+                group.responsibility_group_id
+                == WorkItemEntity.responsibility_group_id,
+            )
+            .where(
+                agent.agent_id == WorkItemEntity.agent_id,
+                agent.domain_id == WorkItemEntity.domain_id,
+                agent.status.in_(("ACTIVE", "DISABLED")),
+                target.target_id == WorkItemEntity.target_id,
+                target.domain_id == WorkItemEntity.domain_id,
+                group.domain_id == WorkItemEntity.domain_id,
+                group.status == "ACTIVE",
+                or_(
+                    target.default_responsibility_group_id
+                    == WorkItemEntity.responsibility_group_id,
+                    and_(
+                        not_(active_override),
+                        agent.default_responsibility_group_id
+                        == WorkItemEntity.responsibility_group_id,
+                    ),
+                ),
+            )
+        ).correlate(WorkItemEntity)
+
+    @classmethod
+    def _visibility_condition(cls, *, actor_id: str, visibility: str):
+        valid_routing = cls._valid_routing_condition()
+        if visibility == "ALL":
+            return None
+        if visibility == "EXCEPTIONS":
+            return not_(valid_routing)
+        active_member = exists(
+            select(1).select_from(ResponsibilityGroupMemberEntity).where(
+                ResponsibilityGroupMemberEntity.responsibility_group_id
+                == WorkItemEntity.responsibility_group_id,
+                ResponsibilityGroupMemberEntity.user_id == actor_id,
+                ResponsibilityGroupMemberEntity.status == "ACTIVE",
+            )
+        ).correlate(WorkItemEntity)
+        processing_continuity = and_(
+            WorkItemEntity.assignee_user_id == actor_id,
+            WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
+        )
+        return or_(and_(valid_routing, active_member), processing_continuity)
 
     async def add(self, entity: WorkItemEntity) -> WorkItemEntity:
         return await self._add(entity)
@@ -140,6 +211,60 @@ class WorkItemRepository(AIOpsRepository):
         )
         return (agent_group, "AGENT_DEFAULT") if agent_group is not None else (None, None)
 
+    async def manual_work_item_routing(
+        self, *, domain_id: int, agent_id: UUID, target_id: UUID
+    ) -> tuple[UUID, str, str] | None:
+        row = (
+            await self._session.execute(
+                select(
+                    AIOpsAgentEntity.default_responsibility_group_id,
+                    TargetEntity.default_responsibility_group_id,
+                    AIOpsAgentEntity.display_name,
+                )
+                .join(
+                    AIOpsAgentVersionTargetEntity,
+                    AIOpsAgentVersionTargetEntity.agent_version_id
+                    == AIOpsAgentEntity.current_version_id,
+                )
+                .join(
+                    TargetEntity,
+                    TargetEntity.target_id
+                    == AIOpsAgentVersionTargetEntity.target_id,
+                )
+                .where(
+                    AIOpsAgentEntity.agent_id == agent_id,
+                    AIOpsAgentEntity.domain_id == domain_id,
+                    AIOpsAgentEntity.status == "ACTIVE",
+                    TargetEntity.target_id == target_id,
+                    TargetEntity.domain_id == domain_id,
+                    TargetEntity.status == "ENABLED",
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        agent_group_id, target_group_id, agent_name = row
+        group_id = target_group_id or agent_group_id
+        if group_id is None:
+            return None
+        group = await self.get_group(group_id=group_id, domain_id=domain_id)
+        if group is None or group.status != "ACTIVE":
+            return None
+        source = "TARGET_DEFAULT" if target_group_id is not None else "AGENT_DEFAULT"
+        return group_id, source, str(agent_name)
+
+    async def agent_name(
+        self, *, agent_id: UUID | None, domain_id: int
+    ) -> str | None:
+        if agent_id is None:
+            return None
+        return await self._session.scalar(
+            select(AIOpsAgentEntity.display_name).where(
+                AIOpsAgentEntity.agent_id == agent_id,
+                AIOpsAgentEntity.domain_id == domain_id,
+            )
+        )
+
     async def group_name(self, *, group_id: UUID | None) -> str | None:
         if group_id is None:
             return None
@@ -163,6 +288,7 @@ class WorkItemRepository(AIOpsRepository):
         self,
         *,
         domain_id: int,
+        agent_id: UUID,
         target_id: UUID,
         finding_types: set[str],
     ) -> list[UUID]:
@@ -176,6 +302,7 @@ class WorkItemRepository(AIOpsRepository):
             )
             .where(
                 WorkItemEntity.domain_id == domain_id,
+                WorkItemEntity.agent_id == agent_id,
                 WorkItemEntity.target_id == target_id,
                 WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
                 WorkItemOccurrenceEntity.finding_type.in_(tuple(finding_types)),
@@ -210,10 +337,29 @@ class WorkItemRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_visible(
+        self, *, work_item_id: UUID, domain_id: int, actor_id: str,
+        visibility: str = "SCOPE", lock: bool = False,
+    ) -> WorkItemEntity | None:
+        self._check_active()
+        statement = select(WorkItemEntity).where(
+            WorkItemEntity.work_item_id == work_item_id,
+            WorkItemEntity.domain_id == domain_id,
+        )
+        condition = self._visibility_condition(
+            actor_id=actor_id, visibility=visibility
+        )
+        if condition is not None:
+            statement = statement.where(condition)
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_open_by_fingerprint(
         self,
         *,
         domain_id: int,
+        agent_id: UUID,
         target_id: UUID,
         fingerprint: str,
         lock: bool = False,
@@ -223,6 +369,7 @@ class WorkItemRepository(AIOpsRepository):
             select(WorkItemEntity)
             .where(
                 WorkItemEntity.domain_id == domain_id,
+                WorkItemEntity.agent_id == agent_id,
                 WorkItemEntity.target_id == target_id,
                 WorkItemEntity.fingerprint == fingerprint,
                 WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
@@ -242,6 +389,8 @@ class WorkItemRepository(AIOpsRepository):
         self,
         *,
         domain_id: int,
+        actor_id: str,
+        visibility: str = "SCOPE",
         status: str | None = None,
         priority: str | None = None,
         target_id: UUID | None = None,
@@ -251,13 +400,14 @@ class WorkItemRepository(AIOpsRepository):
         after_due_at: datetime | None = None,
         after_id: UUID | None = None,
         limit: int = 51,
-    ) -> list[tuple[WorkItemEntity, str, str | None]]:
+    ) -> list[tuple[WorkItemEntity, str, str | None, str | None]]:
         self._check_active()
         statement = (
             select(
                 WorkItemEntity,
                 TargetEntity.display_name,
                 ResponsibilityGroupEntity.name,
+                AIOpsAgentEntity.display_name,
             )
             .join(TargetEntity, TargetEntity.target_id == WorkItemEntity.target_id)
             .outerjoin(
@@ -265,8 +415,17 @@ class WorkItemRepository(AIOpsRepository):
                 ResponsibilityGroupEntity.responsibility_group_id
                 == WorkItemEntity.responsibility_group_id,
             )
+            .outerjoin(
+                AIOpsAgentEntity,
+                AIOpsAgentEntity.agent_id == WorkItemEntity.agent_id,
+            )
             .where(WorkItemEntity.domain_id == domain_id)
         )
+        visibility_condition = self._visibility_condition(
+            actor_id=actor_id, visibility=visibility
+        )
+        if visibility_condition is not None:
+            statement = statement.where(visibility_condition)
         if status is None:
             statement = statement.where(
                 WorkItemEntity.status.not_in(_TERMINAL_STATUSES)
@@ -304,20 +463,25 @@ class WorkItemRepository(AIOpsRepository):
         return list((await self._session.execute(statement)).all())
 
     async def queue_summary(
-        self, *, domain_id: int, actor_id: str, now: datetime
+        self, *, domain_id: int, actor_id: str, now: datetime,
+        visibility: str = "SCOPE",
     ) -> dict[str, int]:
         self._check_active()
         open_condition = WorkItemEntity.status.not_in(_TERMINAL_STATUSES)
+        statement = select(
+            func.sum(case((open_condition & (WorkItemEntity.assignee_user_id == actor_id), 1), else_=0)),
+            func.sum(case((open_condition & WorkItemEntity.assignee_user_id.is_(None), 1), else_=0)),
+            func.sum(case((open_condition & WorkItemEntity.priority.in_(("P1", "P2")), 1), else_=0)),
+            func.sum(case((open_condition & (WorkItemEntity.resolution_due_at < now), 1), else_=0)),
+            func.sum(case((WorkItemEntity.status == "PENDING_VERIFICATION", 1), else_=0)),
+        ).where(WorkItemEntity.domain_id == domain_id)
+        visibility_condition = self._visibility_condition(
+            actor_id=actor_id, visibility=visibility
+        )
+        if visibility_condition is not None:
+            statement = statement.where(visibility_condition)
         row = (
-            await self._session.execute(
-                select(
-                    func.sum(case((open_condition & (WorkItemEntity.assignee_user_id == actor_id), 1), else_=0)),
-                    func.sum(case((open_condition & WorkItemEntity.assignee_user_id.is_(None), 1), else_=0)),
-                    func.sum(case((open_condition & WorkItemEntity.priority.in_(("P1", "P2")), 1), else_=0)),
-                    func.sum(case((open_condition & (WorkItemEntity.resolution_due_at < now), 1), else_=0)),
-                    func.sum(case((WorkItemEntity.status == "PENDING_VERIFICATION", 1), else_=0)),
-                ).where(WorkItemEntity.domain_id == domain_id)
-            )
+            await self._session.execute(statement)
         ).one()
         return {
             "my_open": int(row[0] or 0),

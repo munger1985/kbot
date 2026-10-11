@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 38,
-  "contract_version": "aiops-oracle-v28",
+  "schema_version": 39,
+  "contract_version": "aiops-oracle-v29",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "1ed4f1c16cad52c5d3e44f0cdec57af634819f957a5cdc18db28960d0e1baa70"
+      "sha256": "15addf50dc9f074bf7afffa697cf075e086587e3c2d83142aa489a4b7c146c9e"
     },
     {
       "name": "007_ops_agents.sql",
@@ -61,8 +61,8 @@
     },
     {
       "name": "012_ops_work_items.sql",
-      "statements": 26,
-      "sha256": "85ebf230da1b9ff60d7806c0e0e15646986c36b3067dac597d62ddf669a9e778"
+      "statements": 28,
+      "sha256": "084b722a5e13cb7b62b9ccd0c1a762fcfd43fc450f18efbf0696379283fb8c02"
     }
   ],
   "tables": [
@@ -805,6 +805,16 @@
         "DOMAIN_ID",
         "STATUS",
         "PRIORITY",
+        "UPDATED_AT"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_WORK_ITEM_AGENT",
+      "index": "IX_OPS_WORK_ITEM_AGENT",
+      "table": "KBOT_OPS_WORK_ITEM",
+      "columns": [
+        "AGENT_ID",
+        "STATUS",
         "UPDATED_AT"
       ]
     },

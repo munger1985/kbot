@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import unittest
 
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.dialects import oracle
 
 from aiops_agent.application.configuration.common import ConfigurationScope
@@ -106,6 +107,9 @@ class FakeWorkItemRepository:
             return self.item
         return None
 
+    async def get_visible(self, *, work_item_id, **kwargs):
+        return await self.get_scoped(work_item_id=work_item_id, **kwargs)
+
     async def get_group_member(self, **kwargs):
         return SimpleNamespace(status="ACTIVE")
 
@@ -138,7 +142,7 @@ class _ListWorkItemRepository:
         self.item = item
 
     async def page(self, **kwargs):
-        return [(self.item, "测试实例", None)]
+        return [(self.item, "测试实例", None, "测试 Agent")]
 
     async def queue_summary(self, **kwargs):
         return {
@@ -273,7 +277,7 @@ class WorkItemContractTest(unittest.TestCase):
     def test_list_materializes_summary_before_unit_of_work_closes(self):
         now = datetime(2026, 10, 11, tzinfo=UTC)
         item = _SessionBoundItem(
-            work_item_id=uuid7(), item_key="WI-TEST", target_id=uuid7(),
+            work_item_id=uuid7(), item_key="WI-TEST", agent_id=uuid7(), target_id=uuid7(),
             work_type="PROBLEM_INVESTIGATION", source_kind="ALERT",
             title="联调工作项", summary="验证工作项列表事务边界。",
             severity="HIGH", priority="P2", status="OPEN", phase="TRIAGE",
@@ -300,7 +304,7 @@ class WorkItemContractTest(unittest.TestCase):
         page = asyncio.run(service.list_items(
             scope=scope, status=None, priority=None, target_id=None,
             assignee_user_id=None, unassigned=False, overdue=False,
-            cursor=None, limit=50,
+            visibility="SCOPE", cursor=None, limit=50,
         ))
 
         self.assertFalse(item.active)
@@ -312,6 +316,7 @@ class WorkItemContractTest(unittest.TestCase):
 
         asyncio.run(repository.get_open_by_fingerprint(
             domain_id=7,
+            agent_id=uuid7(),
             target_id=uuid7(),
             fingerprint="fingerprint",
             lock=True,
@@ -321,16 +326,74 @@ class WorkItemContractTest(unittest.TestCase):
         self.assertIn("FOR UPDATE", sql)
         self.assertNotIn("FETCH FIRST", sql)
 
+    def test_scope_visibility_follows_member_agent_current_version_and_target(self):
+        actor_id = "user:dba-1"
+        condition = WorkItemRepository._visibility_condition(
+            actor_id=actor_id,
+            visibility="SCOPE",
+        )
+        sql = str(
+            select(1)
+            .where(condition)
+            .compile(
+                dialect=oracle.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).upper()
+
+        self.assertIn("KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER", sql)
+        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", sql)
+        self.assertIn("CURRENT_VERSION_ID", sql)
+        self.assertIn("DEFAULT_RESPONSIBILITY_GROUP_ID", sql)
+        self.assertIn('"KBOT_OPS_WORK_ITEM".AGENT_ID', sql)
+        self.assertIn('"KBOT_OPS_WORK_ITEM".TARGET_ID', sql)
+        self.assertIn(actor_id.upper(), sql)
+        self.assertNotIn("MONITOR", sql)
+
+    def test_exception_visibility_and_processing_continuity_are_explicit(self):
+        actor_id = "user:dba-1"
+        scope_sql = str(
+            select(1)
+            .where(WorkItemRepository._visibility_condition(
+                actor_id=actor_id,
+                visibility="SCOPE",
+            ))
+            .compile(
+                dialect=oracle.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).upper()
+        exception_sql = str(
+            select(1)
+            .where(WorkItemRepository._visibility_condition(
+                actor_id=actor_id,
+                visibility="EXCEPTIONS",
+            ))
+            .compile(
+                dialect=oracle.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).upper()
+
+        self.assertIn("ASSIGNEE_USER_ID", scope_sql)
+        self.assertIn("NOT IN", scope_sql)
+        self.assertIn("NOT (EXISTS", exception_sql)
+        self.assertNotIn("KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER", exception_sql)
+        self.assertIsNone(WorkItemRepository._visibility_condition(
+            actor_id=actor_id,
+            visibility="ALL",
+        ))
+
     def test_fingerprint_is_stable_for_semantically_equal_object_refs(self):
-        target_id = uuid7()
+        agent_id, target_id = uuid7(), uuid7()
         first = _fingerprint(
-            domain_id=7, target_id=target_id,
+            domain_id=7, agent_id=agent_id, target_id=target_id,
             finding_type="TABLESPACE",
             object_ref={"object_kind": "TABLESPACE", "object_name": "USERS"},
             condition_code="usage_percent:>=",
         )
         second = _fingerprint(
-            domain_id=7, target_id=target_id,
+            domain_id=7, agent_id=agent_id, target_id=target_id,
             finding_type="TABLESPACE",
             object_ref={"object_name": "USERS", "object_kind": "TABLESPACE"},
             condition_code="usage_percent:>=",
@@ -375,6 +438,7 @@ class WorkItemContractTest(unittest.TestCase):
         second_run = fake_run(run_id=uuid7())
         second_run.domain_id = first_run.domain_id
         second_run.target_id = first_run.target_id
+        second_run.agent_id = first_run.agent_id
 
         first = asyncio.run(route_completed_run_work_items(
             uow=fake_uow(repository, payload), run=first_run,

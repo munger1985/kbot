@@ -144,8 +144,7 @@ def _route_permissions() -> dict[str, str]:
             "list_monitoring_profiles", "get_monitoring_view",
             "list_target_monitoring_profiles", "get_target_monitoring_view",
             "list_situations", "get_situation", "get_ops_run",
-            "list_work_items", "get_work_item",
-            "transition_work_item", "route_run_to_work_items",
+            "list_work_items", "get_work_item", "route_run_to_work_items",
             "list_responsibility_groups", "get_responsibility_group",
             "responsibility_group_member_candidates",
             "get_ops_run_result", "get_pending_input", "get_hitl_input",
@@ -158,6 +157,7 @@ def _route_permissions() -> dict[str, str]:
         },
         "aiops:work_item_manage": {
             "assign_work_item", "create_work_item", "verify_work_item",
+            "transition_work_item",
             "create_responsibility_group", "patch_responsibility_group",
             "put_responsibility_group_member", "remove_responsibility_group_member",
         },
@@ -234,6 +234,22 @@ router = APIRouter(
 )
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key")]
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+def _resolve_work_item_visibility(request: Request, visibility: str) -> str:
+    """仅工作项管理员可越过本人责任范围查看全部或异常归属。"""
+    if visibility == "SCOPE":
+        return visibility
+    snapshot = request.state.aiops_access_snapshot
+    if "aiops:work_item_manage" not in snapshot.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "WORK_ITEM_VISIBILITY_FORBIDDEN",
+                "message": "只有工作项管理员可以查看全部工作项或异常归属",
+            },
+        )
+    return visibility
 
 
 def require_if_match(
@@ -751,6 +767,7 @@ async def list_work_items(
     assignee_user_id: str | None = None,
     unassigned: bool = False,
     overdue: bool = False,
+    visibility: Literal["SCOPE", "ALL", "EXCEPTIONS"] = "SCOPE",
     cursor: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> WorkItemPage:
@@ -758,6 +775,7 @@ async def list_work_items(
         status=status, priority=priority, target_id=target_id,
         assignee_user_id=assignee_user_id, unassigned=unassigned,
         overdue=overdue,
+        visibility=_resolve_work_item_visibility(request, visibility),
         cursor=cursor, limit=limit,
         auth_context=request.state.auth_context,
     )
@@ -796,9 +814,12 @@ async def route_run_to_work_items(
 @router.get("/work-items/{work_item_id}", response_model=WorkItemView)
 async def get_work_item(
     work_item_id: UUID, request: Request, response: Response,
+    visibility: Literal["SCOPE", "ALL", "EXCEPTIONS"] = "SCOPE",
 ) -> WorkItemView:
     payload = await _client(request).get_work_item(
-        work_item_id, auth_context=request.state.auth_context
+        work_item_id,
+        visibility=_resolve_work_item_visibility(request, visibility),
+        auth_context=request.state.auth_context,
     )
     result = WorkItemView.model_validate(payload)
     response.headers["ETag"] = f'"rv-{result.row_version}"'
