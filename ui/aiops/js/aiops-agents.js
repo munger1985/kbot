@@ -10,6 +10,7 @@
   const actionDraftsByTarget = new Map();
   const actionCatalogsByTarget = new Map();
   let editing = null;
+  let expandedActionTargetId = null;
 
   const escape = (value) => shell.escape(value ?? "—");
   const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
@@ -233,6 +234,7 @@
   function renderControlledActions() {
     captureActionDrafts();
     const selected = selectedTargetIds();
+    if (!selected.includes(expandedActionTargetId)) expandedActionTargetId = null;
     const container = document.getElementById("agent-controlled-actions");
     if (!selected.length) {
       container.innerHTML = '<div class="ops-empty">未选择数据库 Target，无数据库直连或变更权限。</div>';
@@ -249,6 +251,7 @@
         || (editing?.controlled_action_execution || []).find((item) => item.target_id === targetId)
         || {};
       const selectedActions = new Set(configured.allowed_action_ids || []);
+      const expanded = expandedActionTargetId === targetId;
       const actions = groupedActions(catalog);
       const choices = actions.length
         ? actions.map((action) => `<label class="agent-switch-row agent-action-choice">
@@ -259,17 +262,20 @@
       const scopes = configured.object_scopes || {};
       const options = catalog.scope_options || {};
       return `<article class="agent-source-card agent-action-policy" data-action-policy-target="${escape(targetId)}">
-        <div class="agent-policy-head"><div><strong>${escape(target.display_name)}</strong><small>默认只读；勾选的动作仍须逐条人工审批，范围按所选动作展开。</small></div><span>只读为默认</span></div>
-        <div class="agent-action-list">${choices}</div>
-        <div class="agent-policy-settings" data-action-policy-settings hidden>
-          <div class="agent-execution-limit"><div><strong>执行频率</strong><small>限制此 Agent 在当前 Target 上每天最多执行的受控动作次数。</small></div><label>每日上限 <input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></label></div>
-          <div class="agent-scope-grid">
-            ${optionPicker("schemas", "允许操作的 Schema", options.schemas || [], scopes.schemas || [], "来自 Target 最近一次只读目录探测，可多选。")}
-            ${dynamicParameterPicker(options.dynamic_parameters || [], scopes.dynamic_parameters || [])}
-            ${optionPicker("resource_manager_plans", "Resource Manager Plan", options.resource_manager_plans || [], scopes.resource_manager_plans || [], "只显示数据库中可发现的有效 Plan。")}
-            ${optionPicker("privilege_grantees", "允许授权的本地用户", options.privilege_grantees || [], scopes.privilege_grantees || [], "排除 Oracle 维护用户与公共用户。")}
-            ${optionPicker("system_privileges", "系统权限", options.system_privileges || [], scopes.system_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
-            ${optionPicker("object_privileges", "对象权限", options.object_privileges || [], scopes.object_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
+        <div class="agent-policy-head"><div><strong>${escape(target.display_name)}</strong><small><span data-action-summary>已授权 ${selectedActions.size} 项</span> · 默认保持只读诊断</small></div><div class="agent-policy-head-actions"><span>只读为默认</span><button type="button" data-action-panel-toggle="${escape(targetId)}" aria-expanded="${expanded}">${expanded ? "收起权限" : "配置权限"}</button></div></div>
+        <div class="agent-action-details" data-action-policy-details ${expanded ? "" : "hidden"}>
+          <p>只有这里明确选择并限定范围的动作才可进入逐条人工审批。</p>
+          <div class="agent-action-list">${choices}</div>
+          <div class="agent-policy-settings" data-action-policy-settings hidden>
+            <div class="agent-execution-limit"><div><strong>执行频率</strong><small>限制此 Agent 在当前 Target 上每天最多执行的受控动作次数。</small></div><label>每日上限 <input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></label></div>
+            <div class="agent-scope-grid">
+              ${optionPicker("schemas", "允许操作的 Schema", options.schemas || [], scopes.schemas || [], "来自 Target 最近一次只读目录探测，可多选。")}
+              ${dynamicParameterPicker(options.dynamic_parameters || [], scopes.dynamic_parameters || [])}
+              ${optionPicker("resource_manager_plans", "Resource Manager Plan", options.resource_manager_plans || [], scopes.resource_manager_plans || [], "只显示数据库中可发现的有效 Plan。")}
+              ${optionPicker("privilege_grantees", "允许授权的本地用户", options.privilege_grantees || [], scopes.privilege_grantees || [], "排除 Oracle 维护用户与公共用户。")}
+              ${optionPicker("system_privileges", "系统权限", options.system_privileges || [], scopes.system_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
+              ${optionPicker("object_privileges", "对象权限", options.object_privileges || [], scopes.object_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
+            </div>
           </div>
         </div>
       </article>`;
@@ -310,6 +316,8 @@
 
   function syncActionScopeVisibility(card) {
     const selectedActions = card.querySelectorAll("[data-action-target]:checked");
+    const summary = card.querySelector("[data-action-summary]");
+    if (summary) summary.textContent = `已授权 ${selectedActions.length} 项`;
     const settings = card.querySelector("[data-action-policy-settings]");
     if (!settings) return;
     settings.hidden = !selectedActions.length;
@@ -335,6 +343,7 @@
 
   function openCreate() {
     editing = null;
+    expandedActionTargetId = null;
     actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
     document.getElementById("agent-controlled-actions").innerHTML = "";
@@ -361,6 +370,7 @@
   async function openEdit(agentId) {
     editing = agents.find((item) => item.agent_id === agentId);
     if (!editing) return;
+    expandedActionTargetId = null;
     actionDraftsByTarget.clear();
     actionCatalogsByTarget.clear();
     document.getElementById("agent-controlled-actions").innerHTML = "";
@@ -538,6 +548,18 @@
       if (!card) return;
       if (event.target.matches("[data-action-target]")) syncActionScopeVisibility(card);
       else if (event.target.matches('[type="checkbox"]')) updateScopeCounts(card);
+    });
+    document.getElementById("agent-controlled-actions").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action-panel-toggle]");
+      if (!button) return;
+      expandedActionTargetId = expandedActionTargetId === button.dataset.actionPanelToggle ? null : button.dataset.actionPanelToggle;
+      document.querySelectorAll("[data-action-policy-target]").forEach((card) => {
+        const expanded = card.dataset.actionPolicyTarget === expandedActionTargetId;
+        card.querySelector("[data-action-policy-details]").hidden = !expanded;
+        const toggle = card.querySelector("[data-action-panel-toggle]");
+        toggle.setAttribute("aria-expanded", String(expanded));
+        toggle.textContent = expanded ? "收起权限" : "配置权限";
+      });
     });
     document.getElementById("agent-controlled-actions").addEventListener("input", (event) => {
       if (!event.target.matches("[data-scope-search]")) return;
