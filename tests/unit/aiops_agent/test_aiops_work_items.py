@@ -9,8 +9,10 @@ import unittest
 from pydantic import ValidationError
 from sqlalchemy.dialects import oracle
 
+from aiops_agent.application.configuration.common import ConfigurationScope
 from aiops_agent.application.work_items import (
     SituationRecoveryProjector,
+    WorkItemService,
     _apply_inspection_health_evidence,
     _fingerprint,
     _sla,
@@ -114,6 +116,50 @@ class _FakeUowContext:
         return None
 
 
+class _SessionBoundItem(SimpleNamespace):
+    active = True
+
+    def __getattribute__(self, name):
+        if (
+            name not in {"active", "__dict__", "__class__"}
+            and not object.__getattribute__(self, "active")
+        ):
+            raise AssertionError("工作项不能在 Unit of Work 关闭后读取")
+        return object.__getattribute__(self, name)
+
+
+class _ListWorkItemRepository:
+    def __init__(self, item):
+        self.item = item
+
+    async def page(self, **kwargs):
+        return [(self.item, "测试实例", None)]
+
+    async def queue_summary(self, **kwargs):
+        return {
+            "my_open": 0,
+            "unassigned": 1,
+            "urgent": 1,
+            "overdue": 0,
+            "pending_verification": 0,
+        }
+
+
+class _ListUowContext:
+    def __init__(self, item, now):
+        self.item = item
+        self.uow = SimpleNamespace(
+            work_items=_ListWorkItemRepository(item),
+            runs=SimpleNamespace(database_now=lambda: asyncio.sleep(0, result=now)),
+        )
+
+    async def __aenter__(self):
+        return self.uow
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        self.item.active = False
+
+
 def finding(*, severity: str = "HIGH") -> FindingCard:
     return FindingCard(
         finding_id="tablespace-users",
@@ -155,6 +201,42 @@ def fake_run(*, run_id, trigger_type: str = "ALERT"):
 
 
 class WorkItemContractTest(unittest.TestCase):
+    def test_list_materializes_summary_before_unit_of_work_closes(self):
+        now = datetime(2026, 10, 11, tzinfo=UTC)
+        item = _SessionBoundItem(
+            work_item_id=uuid7(), item_key="WI-TEST", target_id=uuid7(),
+            work_type="PROBLEM_INVESTIGATION", source_kind="ALERT",
+            title="联调工作项", summary="验证工作项列表事务边界。",
+            severity="HIGH", priority="P2", status="OPEN", phase="TRIAGE",
+            wait_reason=None, responsibility_group_id=None,
+            assignee_user_id=None, assignment_source=None, assigned_by=None,
+            assigned_at=None, acknowledgement_due_at=now,
+            resolution_due_at=now, verification_due_at=now,
+            first_observed_at=now, last_observed_at=now,
+            occurrence_count=1, reopen_count=0, resolution_code=None,
+            completion_note=None, completed_by=None, completed_at=None,
+            verification_result=None, verified_by=None, verified_at=None,
+            resolved_at=None, closed_at=None, row_version=1,
+            created_at=now, updated_at=now,
+        )
+        service = WorkItemService(
+            uow_factory=lambda: _ListUowContext(item, now),
+            cursor_codec=SimpleNamespace(),
+        )
+        scope = ConfigurationScope(
+            domain_id=7, principal_id="user:test", actor_id="user:test",
+            request_id="request-test", trace_id="trace-test",
+        )
+
+        page = asyncio.run(service.list_items(
+            scope=scope, status=None, priority=None, target_id=None,
+            assignee_user_id=None, unassigned=False, overdue=False,
+            cursor=None, limit=50,
+        ))
+
+        self.assertFalse(item.active)
+        self.assertEqual("WI-TEST", page.items[0].item_key)
+
     def test_locked_fingerprint_lookup_avoids_oracle_row_limit_view(self):
         session = _CapturingSession()
         repository = WorkItemRepository(session)

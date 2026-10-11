@@ -195,22 +195,23 @@ class WorkItemService:
             counts = await uow.work_items.queue_summary(
                 domain_id=scope.domain_id, actor_id=scope.actor_id, now=now
             )
-        has_more = len(rows) > limit
-        selected = rows[:limit]
-        next_cursor = None
-        if has_more and selected:
-            last = selected[-1][0]
-            next_cursor = self._cursor_codec.encode(
-                scope=scope,
-                sort_at=_utc(last.resolution_due_at),
-                resource_id=last.work_item_id,
-                filters=filters,
-            )
-        return WorkItemPage(
-            items=tuple(
+            has_more = len(rows) > limit
+            selected = rows[:limit]
+            next_cursor = None
+            if has_more and selected:
+                last = selected[-1][0]
+                next_cursor = self._cursor_codec.encode(
+                    scope=scope,
+                    sort_at=_utc(last.resolution_due_at),
+                    resource_id=last.work_item_id,
+                    filters=filters,
+                )
+            summaries = tuple(
                 self._summary(item, target_name, group_name)
                 for item, target_name, group_name in selected
-            ),
+            )
+        return WorkItemPage(
+            items=summaries,
             queue_summary=WorkItemQueueSummary(**counts),
             has_more=has_more,
             next_cursor=next_cursor,
