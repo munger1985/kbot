@@ -15,6 +15,8 @@
     DIAGNOSIS: "诊断", REMEDIATION: "处置", APPROVAL: "审批",
     EXECUTION: "执行", VERIFICATION: "验证", P1: "P1 紧急",
     P2: "P2 高", P3: "P3 中", P4: "P4 低",
+    FIXED: "已修复", MITIGATED: "已缓解", OBSERVED_STABLE: "观察稳定",
+    ACCEPTED_RISK: "风险已接受", FALSE_POSITIVE: "误报", DUPLICATE: "重复事项",
   };
   const text = (value) => labels[value] || value || "—";
   const jsonBody = (value) => ({ method: "POST", body: JSON.stringify(value) });
@@ -263,7 +265,7 @@
     const result = document.getElementById("work-item-result");
     result.hidden = !item.completed_at;
     if (item.completed_at) {
-      document.getElementById("work-item-result-body").innerHTML = `<dl class="ops-detail"><dt>完成代码</dt><dd>${shell.escape(item.resolution_code || "—")}</dd><dt>处理结果</dt><dd>${shell.escape(item.completion_note || "—")}</dd><dt>完成人</dt><dd>${shell.escape(item.completed_by || "—")}</dd><dt>完成时间</dt><dd>${shell.escape(shell.fmt(item.completed_at))}</dd></dl>`;
+      document.getElementById("work-item-result-body").innerHTML = `<dl class="ops-detail"><dt>处理结论</dt><dd>${shell.escape(text(item.resolution_code))}</dd><dt>处理结果</dt><dd>${shell.escape(item.completion_note || "—")}</dd><dt>完成人</dt><dd>${shell.escape(item.completed_by || "—")}</dd><dt>完成时间</dt><dd>${shell.escape(shell.fmt(item.completed_at))}</dd></dl>`;
     }
   }
   async function loadDetail() {
