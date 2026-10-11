@@ -35,8 +35,8 @@
       state: "状态", percent: "%", count: "个", milliseconds: "毫秒",
       seconds: "秒", transactions_per_second: "次/秒",
       queries_per_second: "次/秒", waits_per_second: "次/秒",
-      errors_per_second: "次/秒", bytes_per_second: "字节/秒",
-      bytes: "字节", "1": "",
+      errors_per_second: "次/秒", bytes_per_second: "GB/秒",
+      bytes: "GB", "1": "",
     })[unit] ?? unit;
   }
   function formatValue(value, unit = "") {
@@ -60,9 +60,16 @@
   function formatBytes(value) {
     const number = numericValue(value);
     if (number === null) return "—";
-    const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
-    const index = number > 0 ? Math.min(Math.floor(Math.log(number) / Math.log(1024)), units.length - 1) : 0;
-    return `${(number / (1024 ** index)).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} ${units[index]}`;
+    const gigabytes = number / (1024 ** 3);
+    if (number > 0 && gigabytes < 0.01) return "<0.01 GB";
+    return `${gigabytes.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} GB`;
+  }
+  function axisValueLabel(value, unit) {
+    if (unit === "state") return Number(value) > 0 ? "可用" : "不可用";
+    if (unit === "bytes" || unit === "bytes_per_second") {
+      return (Number(value) / (1024 ** 3)).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    }
+    return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
   function latestPoint(series) {
     return [...(series?.points || [])].reverse().find((point) => point.value !== null && point.value !== undefined) || null;
@@ -426,13 +433,13 @@
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
       xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
-      yAxis: { type: "value", name: unitLabel(panel.unit), scale: true },
+      yAxis: { type: "value", name: unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
       series: [{ type: "bar", name: panel.title, barMaxWidth: 28, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
     return {
       ...common, tooltip,
       xAxis: { type: "time", axisLabel: { hideOverlap: true } },
-      yAxis: { type: "value", name: unitLabel(panel.unit), scale: true },
+      yAxis: { type: "value", name: unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
       series: series.map((item) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]) })),
     };
   }
