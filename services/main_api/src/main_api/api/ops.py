@@ -630,7 +630,10 @@ async def _eligible_aiops_group_members(request: Request) -> list[dict[str, Any]
             user_id=str(row["user_id"]),
         )
         if "aiops:use" in snapshot.permissions:
-            eligible.append(row)
+            eligible.append({
+                "user_id": str(row["user_id"]),
+                "display_name": row.get("display_name") or str(row["user_id"]),
+            })
     return eligible
 
 

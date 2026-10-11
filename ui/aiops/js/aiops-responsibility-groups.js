@@ -41,13 +41,17 @@
     const memberContainer = document.getElementById("group-members");
     memberContainer.innerHTML = values(selected.members).map((member) => `<div class="ops-responsibility-group-member">
       <span><strong>${shell.escape(candidateName(member.user_id))}</strong><small>${member.member_role === "LEAD" ? "组长" : "成员"} · ${Number(member.active_work_item_count || 0)} 个活动工作项${member.status === "ACTIVE" ? "" : " · 已停用"}</small></span>
-      <button type="button" class="danger" data-remove-user="${shell.escape(member.user_id)}" ${Number(member.active_work_item_count || 0) > 0 || member.status !== "ACTIVE" ? "disabled" : ""}>移出</button>
+      <span class="ops-actions">${member.member_role === "LEAD" || member.status !== "ACTIVE" ? "" : `<button type="button" data-lead-user="${shell.escape(member.user_id)}">设为组长</button>`}<button type="button" class="danger" data-remove-user="${shell.escape(member.user_id)}" ${Number(member.active_work_item_count || 0) > 0 || member.status !== "ACTIVE" ? "disabled" : ""}>移出</button></span>
     </div>`).join("") || '<p class="ops-empty">尚未添加成员</p>';
+    memberContainer.querySelectorAll("[data-lead-user]").forEach((button) => {
+      button.addEventListener("click", () => void setLead(button.dataset.leadUser));
+    });
     memberContainer.querySelectorAll("[data-remove-user]").forEach((button) => {
       button.addEventListener("click", () => void removeMember(button.dataset.removeUser));
     });
     const memberSelect = document.getElementById("group-member-form").elements.user_id;
-    memberSelect.innerHTML = '<option value="">请选择</option>' + candidates.map((candidate) => `<option value="${shell.escape(candidate.user_id)}">${shell.escape(candidate.display_name || candidate.username || candidate.user_id)}</option>`).join("");
+    const activeUserIds = new Set(values(selected.members).filter((member) => member.status === "ACTIVE").map((member) => String(member.user_id)));
+    memberSelect.innerHTML = '<option value="">请选择人员</option>' + candidates.filter((candidate) => !activeUserIds.has(String(candidate.user_id))).map((candidate) => `<option value="${shell.escape(candidate.user_id)}">${shell.escape(candidate.display_name || candidate.user_id)}</option>`).join("");
     const toggle = document.getElementById("group-status-toggle");
     toggle.textContent = selected.status === "ACTIVE" ? "停用责任组" : "启用责任组";
   }
@@ -80,18 +84,30 @@
     }
   }
 
-  async function addMember(event) {
-    event.preventDefault();
+  async function addMember(form) {
     if (!selected) return;
-    const form = event.currentTarget;
     const fields = Object.fromEntries(new FormData(form));
     try {
       await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(selected.responsibility_group_id)}/members/${encodeURIComponent(fields.user_id)}`, {
         method: "PUT",
-        body: JSON.stringify({ member_role: fields.member_role }),
+        body: JSON.stringify({ member_role: "MEMBER" }),
       });
       form.reset();
-      shell.toast(fields.member_role === "LEAD" ? "组长已更新" : "成员已加入责任组");
+      shell.toast("人员已加入责任组；其 AIOps 权限未发生变化");
+      await load();
+    } catch (error) {
+      shell.toast(error.message);
+    }
+  }
+
+  async function setLead(userId) {
+    if (!selected) return;
+    try {
+      await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(selected.responsibility_group_id)}/members/${encodeURIComponent(userId)}`, {
+        method: "PUT",
+        body: JSON.stringify({ member_role: "LEAD" }),
+      });
+      shell.toast("责任组组长已更新");
       await load();
     } catch (error) {
       shell.toast(error.message);
@@ -126,11 +142,16 @@
 
   shell.ready.then(() => {
     document.getElementById("groups-refresh").addEventListener("click", () => void load());
-    document.getElementById("group-member-form").addEventListener("submit", addMember);
-    document.getElementById("group-status-toggle").addEventListener("click", () => void toggleStatus());
-    document.getElementById("group-create").addEventListener("submit", async (event) => {
+    document.getElementById("group-member-form").addEventListener("submit", (event) => {
       event.preventDefault();
-      const form = event.currentTarget;
+      void addMember(event.currentTarget);
+    });
+    document.getElementById("group-status-toggle").addEventListener("click", () => void toggleStatus());
+    document.getElementById("group-create").addEventListener("submit", (event) => {
+      event.preventDefault();
+      void createGroup(event.currentTarget);
+    });
+    async function createGroup(form) {
       const fields = Object.fromEntries(new FormData(form));
       try {
         await KBotAIOpsAuth.request(api, {
@@ -143,7 +164,7 @@
       } catch (error) {
         shell.toast(error.message);
       }
-    });
+    }
     void load();
   });
 })();

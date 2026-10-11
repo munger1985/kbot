@@ -142,7 +142,7 @@ Target 可覆盖 Agent 的默认责任组，以支持同一 Agent 管理多个�
 - `POST /work-items/{work_item_id}:claim`
 - `PATCH /work-items/{work_item_id}/assignment`
 
-候选接口只返回当前 Domain 符合资格的已有 AIOps 用户。写接口使用 `If-Match`、`Idempotency-Key` 和服务端资格复核，不能信任前端传入的用户名、角色或 Domain 范围。
+候选接口只返回当前 Domain 符合资格的已有 AIOps 用户身份字段（`user_id`、显示名和可选用户名），不得返回或保存 App 角色、权限组和角色绑定。添加人员时固定建立 `MEMBER` 成员关系；组长只能在已加入的具体人员上通过“设为组长”动作调整。该动作只改变责任组内职责，不修改 IAM 权限。写接口使用 `If-Match`、`Idempotency-Key` 和服务端资格复核，不能信任前端传入的用户名、角色或 Domain 范围。
 
 ## 6. 一期 Portal
 

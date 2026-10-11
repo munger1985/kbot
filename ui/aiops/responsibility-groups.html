@@ -42,9 +42,9 @@
           <div class="ops-panel-body ops-responsibility-group-maintenance">
             <div id="group-members" class="ops-responsibility-group-members"></div>
             <form id="group-member-form" class="ops-work-item-action-form">
-              <label>已有 AIOps 用户<select name="user_id" required><option value="">请选择</option></select></label>
-              <label>组内角色<select name="member_role"><option value="MEMBER">成员</option><option value="LEAD">组长</option></select></label>
-              <button class="primary" type="submit">保存成员</button>
+              <label>选择人员<select name="user_id" required><option value="">请选择</option></select></label>
+              <small>这里只维护责任组与人员的关系，不修改该用户的 AIOps 角色或权限。</small>
+              <button class="primary" type="submit">添加人员</button>
             </form>
             <button id="group-status-toggle" type="button"></button>
           </div>
@@ -55,6 +55,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261011_2"></script>
-  <script src="./js/aiops-responsibility-groups.js?v=20261011_3"></script>
+  <script src="./js/aiops-responsibility-groups.js?v=20261011_4"></script>
 </body>
 </html>
