@@ -9056,6 +9056,11 @@
             "title": "Quality",
             "type": "string"
           },
+          "semantic_role": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "title": "Semantic Role",
+            "type": "string"
+          },
           "series": {
             "default": [],
             "items": {
@@ -9122,6 +9127,7 @@
           "description",
           "visualization",
           "metric_code",
+          "semantic_role",
           "unit",
           "value_kind",
           "quality"
@@ -9188,6 +9194,10 @@
             "title": "Display Name",
             "type": "string"
           },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
           "metric_codes": {
             "items": {
               "type": "string"
@@ -9200,6 +9210,16 @@
           "profile_id": {
             "pattern": "^[a-z][a-z0-9-]{2,63}$",
             "title": "Profile Id",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "OVERVIEW",
+              "REPLICATION",
+              "CAPACITY",
+              "HOST"
+            ],
+            "title": "Purpose",
             "type": "string"
           },
           "resolved_variant_ids": {
@@ -9244,6 +9264,8 @@
           "version",
           "display_name",
           "description",
+          "purpose",
+          "is_default",
           "supported_db_types",
           "supported_database_versions",
           "resolved_variant_ids",

@@ -28,6 +28,9 @@ from aiops_agent.ports.diagnostic_source import (
     MetricsEvidenceRequest,
     SourceHealthRequest,
 )
+from aiops_agent.workers.evidence_handlers import (
+    _availability_metric_summaries,
+)
 from platform_core.identity import uuid7
 
 
@@ -81,6 +84,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             "oracle-overview",
             self.profiles.list_for_databases((("ORACLE", "19c"),))[0].profile_id,
         )
+        for profile in mysql:
+            self.assertEqual(profile.purpose == "OVERVIEW", profile.is_default)
         for profile in self.profiles._profiles.values():
             for variant in profile.variants:
                 self.assertLessEqual(len(variant.metric_codes), 8)
@@ -363,6 +368,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             version="1.0.0",
             display_name="MySQL 状态",
             description="MySQL 可用性状态。",
+            purpose="OVERVIEW",
+            is_default=True,
             supported_db_types=("MYSQL",),
             supported_database_versions={"MYSQL": ("8.4",)},
             resolved_variant_ids=("mysql-8-4",),
@@ -400,9 +407,25 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertEqual(source_id, available.series[0].source_id)
         self.assertEqual("Prometheus", available.series[0].source_display_name)
         self.assertEqual("PROMETHEUS", available.series[0].source_type)
+        self.assertEqual("AVAILABILITY", available.semantic_role)
         dumped = view.model_dump_json()
         self.assertNotIn("source_locator", dumped)
         self.assertNotIn("query_template", dumped)
+
+    def test_availability_summary_uses_catalog_semantics_not_metric_code(self):
+        summaries = (
+            {
+                "metric_code": "vendor.database.health",
+                "semantic_role": "AVAILABILITY",
+            },
+            {
+                "metric_code": "db.cpu.utilization",
+                "semantic_role": "CPU_UTILIZATION",
+            },
+        )
+        self.assertEqual(
+            (summaries[0],), _availability_metric_summaries(summaries)
+        )
 
     def test_zabbix_item_key_override_is_exact(self):
         definition = self.metrics.get("mysql.availability")

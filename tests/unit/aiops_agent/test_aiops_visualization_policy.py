@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
+from aiops_agent.adapters.diagnostic_sources.catalog import load_metric_catalog
 from aiops_agent.application.visualization import AIOpsChartSelectionPolicy
 from aiops_agent.contracts.evidence import ObservationSet
 
@@ -21,6 +22,7 @@ def _observation(
 ) -> dict:
     return {
         "metric_code": metric_code,
+        "semantic_role": load_metric_catalog().get(metric_code).semantic_role,
         "semantic_version": "1.0.0",
         "unit": unit,
         "value_kind": "GAUGE",

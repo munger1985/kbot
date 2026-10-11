@@ -12,6 +12,10 @@ from .events import (
 )
 from .metrics import (
     DEFAULT_BASELINE_METRICS,
+    METRIC_ROLE_AVAILABILITY,
+    METRIC_ROLE_STORAGE_MAX,
+    METRIC_ROLE_STORAGE_USED,
+    METRIC_ROLE_STORAGE_UTILIZATION,
 )
 from .observations import (
     summarize_points,
@@ -20,6 +24,10 @@ from .trends import extract_metric_trend_rows, summarize_numeric_trend
 
 __all__ = [
     "DEFAULT_BASELINE_METRICS",
+    "METRIC_ROLE_AVAILABILITY",
+    "METRIC_ROLE_STORAGE_MAX",
+    "METRIC_ROLE_STORAGE_USED",
+    "METRIC_ROLE_STORAGE_UTILIZATION",
     "SignalEventStatus",
     "SignalSeverity",
     "SituationCorrelationDecision",

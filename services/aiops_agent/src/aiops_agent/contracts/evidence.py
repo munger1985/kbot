@@ -74,6 +74,7 @@ class MetricDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     metric_code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,127}$")
+    semantic_role: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
     semantic_version: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=1000)
@@ -167,6 +168,7 @@ class MetricObservation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     metric_code: str
+    semantic_role: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
     semantic_version: str
     unit: str
     value_kind: str

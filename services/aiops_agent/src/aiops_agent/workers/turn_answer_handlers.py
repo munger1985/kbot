@@ -63,6 +63,9 @@ from aiops_agent.contracts.turn_answer import (
     TurnEvidenceGap,
 )
 from aiops_agent.domain.evidence import (
+    METRIC_ROLE_STORAGE_MAX,
+    METRIC_ROLE_STORAGE_USED,
+    METRIC_ROLE_STORAGE_UTILIZATION,
     extract_metric_trend_rows,
     summarize_numeric_trend,
 )
@@ -920,7 +923,7 @@ class DbaEvidenceAssessmentHandler:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
         rows: list[tuple[Any, ...]] = []
         warnings: list[str] = []
-        latest_by_metric_and_dimensions: dict[
+        latest_by_role_and_dimensions: dict[
             tuple[str, tuple[tuple[str, str], ...]], float
         ] = {}
         for observation in result.observations:
@@ -936,9 +939,9 @@ class DbaEvidenceAssessmentHandler:
                     None,
                 )
                 if latest is not None:
-                    latest_by_metric_and_dimensions[
+                    latest_by_role_and_dimensions[
                         (
-                            observation.metric_code,
+                            observation.semantic_role,
                             tuple(sorted(series.dimensions.items())),
                         )
                     ] = float(latest)
@@ -999,15 +1002,15 @@ class DbaEvidenceAssessmentHandler:
                 estimated_days_to_limit = None
                 forecast_utilization_percent = None
                 if (
-                    observation.metric_code == "db.storage.used_bytes"
+                    observation.semantic_role == METRIC_ROLE_STORAGE_USED
                     and trend is not None
                     and forecast_confidence is not None
                     and float(trend["trend_slope_per_day"]) > 0
                     and float(trend["positive_change_ratio"]) >= 0.6
                 ):
-                    maximum = latest_by_metric_and_dimensions.get(
+                    maximum = latest_by_role_and_dimensions.get(
                         (
-                            "db.storage.max_bytes",
+                            METRIC_ROLE_STORAGE_MAX,
                             tuple(sorted(series.dimensions.items())),
                         )
                     )
@@ -1024,7 +1027,8 @@ class DbaEvidenceAssessmentHandler:
                             float(forecast_value) / maximum * 100
                         )
                 elif (
-                    observation.metric_code == "db.storage.utilization"
+                    observation.semantic_role
+                    == METRIC_ROLE_STORAGE_UTILIZATION
                     and trend is not None
                     and isinstance(trend.get("forecast_value"), (int, float))
                 ):

@@ -601,6 +601,7 @@ def _monitoring_artifact() -> dict:
             "observations": [
                 {
                     "metric_code": "host.cpu.utilization",
+                    "semantic_role": "CPU_UTILIZATION",
                     "semantic_version": "1.0.0",
                     "unit": "percent",
                     "value_kind": "GAUGE",
@@ -1530,6 +1531,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         observation.update(
             {
                 "metric_code": "db.storage.used_bytes",
+                "semantic_role": "STORAGE_USED",
                 "unit": "bytes",
                 "window_start": start.isoformat(),
                 "series": [
@@ -1542,6 +1544,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         maximum = {
             **observation,
             "metric_code": "db.storage.max_bytes",
+            "semantic_role": "STORAGE_MAX",
             "series": [
                 {
                     "dimensions": dimensions,

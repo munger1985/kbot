@@ -14,12 +14,7 @@
     PARTIAL: "部分就绪", UNAVAILABLE: "不可用", AVAILABLE: "可用",
   };
   const qualityLabels = { GOOD: "正常", PARTIAL: "部分成功", NO_DATA: "无有效采样" };
-  const capacityMetricCodes = [
-    "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes",
-  ];
-  const summaryOnlyMetricCodes = new Set([
-    "db.availability", "mysql.availability", "postgresql.availability",
-  ]);
+  const capacityMetricRoles = ["STORAGE_USED", "STORAGE_FREE", "STORAGE_MAX"];
   const esc = shell.escape;
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
@@ -242,6 +237,7 @@
     if (signal.aborted) return;
     state.profiles = profiles;
     state.profileId = state.profiles.find((item) => item.profile_id === preferredProfileId)?.profile_id
+      || state.profiles.find((item) => item.is_default)?.profile_id
       || state.profiles[0]?.profile_id || "";
   }
   async function loadView() {
@@ -363,7 +359,7 @@
     panels.forEach((panel) => panel.series.filter((series) => instanceIds.has(series.instance_id)).forEach((series) => {
       const key = capacitySeriesIdentity(series);
       const row = rows.get(key) || { instance: series.instance_display_name, dimensions: series.dimensions || {}, source: series.source_display_name, metrics: {} };
-      row.metrics[panel.metric_code] = { panel, series, point: latestPoint(series) };
+      row.metrics[panel.semantic_role] = { panel, series, point: latestPoint(series) };
       rows.set(key, row);
     }));
     return [...rows.values()].sort((left, right) => {
@@ -386,9 +382,9 @@
   function renderCapacityTable(node, instances, panels) {
     const rows = capacityRows(instances, panels);
     const body = rows.length ? rows.map((row) => {
-      const used = row.metrics[capacityMetricCodes[0]];
-      const free = row.metrics[capacityMetricCodes[1]];
-      const maximum = row.metrics[capacityMetricCodes[2]];
+      const used = row.metrics[capacityMetricRoles[0]];
+      const free = row.metrics[capacityMetricRoles[1]];
+      const maximum = row.metrics[capacityMetricRoles[2]];
       const usedValue = numericValue(used?.point?.value);
       const freeValue = numericValue(free?.point?.value);
       const maximumValue = numericValue(maximum?.point?.value);
@@ -407,7 +403,7 @@
   function renderSingleSummary() {
     const node = document.getElementById("monitoring-single-summary");
     const panels = (state.view.panels || []).slice(0, 6);
-    node.hidden = state.view.profile.profile_id === "database-capacity" || state.view.instances.length !== 1 || !panels.length;
+    node.hidden = state.view.profile.purpose === "CAPACITY" || state.view.instances.length !== 1 || !panels.length;
     if (node.hidden) return;
     const instance = state.view.instances[0];
     node.innerHTML = panels.map((panel) => {
@@ -450,17 +446,17 @@
   function renderPanels() {
     const node = document.getElementById("monitoring-panels");
     disposeCharts();
-    const isCapacity = state.view.profile.profile_id === "database-capacity";
+    const isCapacity = state.view.profile.purpose === "CAPACITY";
     const panels = isCapacity
       ? state.view.panels
-      : state.view.panels.filter((panel) => !summaryOnlyMetricCodes.has(panel.metric_code));
+      : state.view.panels.filter((panel) => panel.semantic_role !== "AVAILABILITY");
     node.classList.toggle("is-capacity", isCapacity);
     if (!panels.length) {
       node.innerHTML = '<div class="ops-panel ops-empty">当前 Profile 没有可展示 Panel。无采样不会显示为 0 或健康。</div>';
       return;
     }
     if (isCapacity) {
-      renderCapacityTable(node, state.view.instances, panels.filter((panel) => capacityMetricCodes.includes(panel.metric_code)));
+      renderCapacityTable(node, state.view.instances, panels.filter((panel) => capacityMetricRoles.includes(panel.semantic_role)));
       return;
     }
     node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" data-panel-table="${index}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)}%</span>`).join("")}</div><div class="ops-monitoring-data-table" data-panel-data="${index}" hidden>${tableHtml(panel)}</div></article>`).join("");

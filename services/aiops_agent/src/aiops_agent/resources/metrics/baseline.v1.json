@@ -2,7 +2,7 @@
   "catalog_version": "baseline.v1",
   "metrics": [
     {
-      "metric_code": "mysql.availability", "semantic_version": "1.0.0",
+      "metric_code": "mysql.availability", "semantic_role": "AVAILABILITY", "semantic_version": "1.0.0",
       "name": "MySQL 可用性", "description": "mysqld_exporter 对目标 MySQL 的连接状态。",
       "unit": "state", "value_kind": "STATE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["LAST"],
@@ -10,7 +10,7 @@
       "providers": {"PROMETHEUS": {"template_id": "prom.mysql.up", "template_version": "1", "query_template": "mysql_up{target_key=\"${external_target}\"}", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.up", "template_version": "1", "exact_item_key": "kbot.mysql.availability", "value_type": "UNSIGNED", "unit": "state"}}
     },
     {
-      "metric_code": "mysql.connection.utilization", "semantic_version": "1.0.0",
+      "metric_code": "mysql.connection.utilization", "semantic_role": "CONNECTION_UTILIZATION", "semantic_version": "1.0.0",
       "name": "MySQL 连接使用率", "description": "当前连接数相对 max_connections 的百分比。",
       "unit": "percent", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
@@ -18,7 +18,7 @@
       "providers": {"PROMETHEUS": {"template_id": "prom.mysql.connection.utilization", "template_version": "1", "query_template": "100 * mysql_global_status_threads_connected{target_key=\"${external_target}\"} / clamp_min(mysql_global_variables_max_connections{target_key=\"${external_target}\"}, 1)", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.connection.utilization", "template_version": "1", "exact_item_key": "kbot.mysql.connection.utilization", "value_type": "FLOAT", "unit": "percent"}}
     },
     {
-      "metric_code": "mysql.transaction.throughput", "semantic_version": "1.0.0",
+      "metric_code": "mysql.transaction.throughput", "semantic_role": "TRANSACTION_THROUGHPUT", "semantic_version": "1.0.0",
       "name": "MySQL 事务吞吐", "description": "提交与回滚命令计数器的每秒速率。",
       "unit": "transactions_per_second", "value_kind": "GAUGE", "expected_dimensions": ["target_key", "command"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
@@ -26,7 +26,7 @@
       "providers": {"PROMETHEUS": {"template_id": "prom.mysql.transactions", "template_version": "1", "query_template": "rate(mysql_global_status_commands_total{target_key=\"${external_target}\",command=~\"commit|rollback\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.transactions", "template_version": "1", "exact_item_key": "kbot.mysql.transaction.throughput", "value_type": "FLOAT", "unit": "transactions_per_second"}}
     },
     {
-      "metric_code": "mysql.sql.slow_query_rate", "semantic_version": "1.0.0",
+      "metric_code": "mysql.sql.slow_query_rate", "semantic_role": "SLOW_QUERY_RATE", "semantic_version": "1.0.0",
       "name": "MySQL 慢查询速率", "description": "Slow_queries 计数器的每秒速率。",
       "unit": "queries_per_second", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
@@ -34,7 +34,7 @@
       "providers": {"PROMETHEUS": {"template_id": "prom.mysql.slow_queries", "template_version": "1", "query_template": "rate(mysql_global_status_slow_queries{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.slow_queries", "template_version": "1", "exact_item_key": "kbot.mysql.sql.slow_query_rate", "value_type": "FLOAT", "unit": "queries_per_second"}}
     },
     {
-      "metric_code": "mysql.lock.row_wait_rate", "semantic_version": "1.0.0",
+      "metric_code": "mysql.lock.row_wait_rate", "semantic_role": "LOCK_WAIT_RATE", "semantic_version": "1.0.0",
       "name": "MySQL 行锁等待速率", "description": "InnoDB 行锁等待计数器的每秒速率。",
       "unit": "waits_per_second", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MAX", "LAST"],
@@ -42,7 +42,7 @@
       "providers": {"PROMETHEUS": {"template_id": "prom.mysql.row_lock_waits", "template_version": "1", "query_template": "rate(mysql_global_status_innodb_row_lock_waits{target_key=\"${external_target}\"}[5m])", "required_labels": ["target_key"]}, "ZABBIX": {"template_id": "zabbix.mysql.row_lock_waits", "template_version": "1", "exact_item_key": "kbot.mysql.lock.row_wait_rate", "value_type": "FLOAT", "unit": "waits_per_second"}}
     },
     {
-      "metric_code": "mysql.innodb.buffer_pool_hit_percent", "semantic_version": "1.0.0",
+      "metric_code": "mysql.innodb.buffer_pool_hit_percent", "semantic_role": "BUFFER_POOL_HIT_RATIO", "semantic_version": "1.0.0",
       "name": "MySQL Buffer Pool 命中率", "description": "基于逻辑读与物理读速率计算的 InnoDB Buffer Pool 命中率。",
       "unit": "percent", "value_kind": "GAUGE", "expected_dimensions": ["target_key"],
       "supported_db_types": ["MYSQL"], "allowed_aggregations": ["AVG", "MIN", "LAST"],
@@ -51,6 +51,7 @@
     },
     {
       "metric_code": "postgresql.availability",
+      "semantic_role": "AVAILABILITY",
       "semantic_version": "1.0.0",
       "name": "PostgreSQL 可用性",
       "description": "postgres_exporter 对目标 PostgreSQL 的连接状态。",
@@ -67,6 +68,7 @@
     },
     {
       "metric_code": "postgresql.connection.active",
+      "semantic_role": "ACTIVE_CONNECTIONS",
       "semantic_version": "1.0.0",
       "name": "PostgreSQL 活动连接数",
       "description": "按数据库汇总的当前 backend 数量。",
@@ -83,6 +85,7 @@
     },
     {
       "metric_code": "postgresql.transaction.throughput",
+      "semantic_role": "TRANSACTION_THROUGHPUT",
       "semantic_version": "1.0.0",
       "name": "PostgreSQL 事务吞吐",
       "description": "提交与回滚计数器的每秒速率。",
@@ -99,6 +102,7 @@
     },
     {
       "metric_code": "postgresql.replication.lag_bytes",
+      "semantic_role": "REPLICATION_LAG",
       "semantic_version": "1.0.0",
       "name": "PostgreSQL 复制延迟",
       "description": "主库到发送端或备库回放位置的 WAL 字节差。",
@@ -115,6 +119,7 @@
     },
     {
       "metric_code": "postgresql.replication.slot_retained_bytes",
+      "semantic_role": "REPLICATION_LOG_GAP",
       "semantic_version": "1.0.0",
       "name": "PostgreSQL Slot WAL 保留",
       "description": "复制 Slot 导致的 WAL 保留字节数。",
@@ -131,6 +136,7 @@
     },
     {
       "metric_code": "postgresql.database.size_bytes",
+      "semantic_role": "DATABASE_SIZE",
       "semantic_version": "1.0.0",
       "name": "PostgreSQL 数据库容量",
       "description": "数据库逻辑对象占用的总字节数，不等同于主机文件系统余量。",
@@ -147,6 +153,7 @@
     },
     {
       "metric_code": "db.availability",
+      "semantic_role": "AVAILABILITY",
       "semantic_version": "1.0.0",
       "name": "数据库可用性",
       "description": "由监控源确认的数据库目标可用状态。",
@@ -184,6 +191,7 @@
     },
     {
       "metric_code": "db.cpu.utilization",
+      "semantic_role": "CPU_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "CPU 使用率",
       "description": "数据库目标或数据库实例进程的 CPU 使用百分比。",
@@ -225,6 +233,7 @@
     },
     {
       "metric_code": "db.connection.active",
+      "semantic_role": "ACTIVE_CONNECTIONS",
       "semantic_version": "1.0.0",
       "name": "活动连接数",
       "description": "当前活动数据库连接或会话数量。",
@@ -266,6 +275,7 @@
     },
     {
       "metric_code": "db.connection.utilization",
+      "semantic_role": "CONNECTION_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "连接使用率",
       "description": "活动连接相对配置上限的百分比。",
@@ -307,6 +317,7 @@
     },
     {
       "metric_code": "db.transaction.throughput",
+      "semantic_role": "TRANSACTION_THROUGHPUT",
       "semantic_version": "1.0.0",
       "name": "事务吞吐",
       "description": "每秒完成的数据库事务数量。",
@@ -348,6 +359,7 @@
     },
     {
       "metric_code": "db.response.latency",
+      "semantic_role": "RESPONSE_LATENCY",
       "semantic_version": "1.0.0",
       "name": "响应延迟",
       "description": "监控探针观测到的数据库响应延迟。",
@@ -389,6 +401,7 @@
     },
     {
       "metric_code": "db.storage.utilization",
+      "semantic_role": "STORAGE_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "存储使用率",
       "description": "数据库存储空间的使用百分比。",
@@ -430,6 +443,7 @@
     },
     {
       "metric_code": "db.storage.used_bytes",
+      "semantic_role": "STORAGE_USED",
       "semantic_version": "1.0.0",
       "name": "存储已使用容量",
       "description": "数据库表空间当前已使用字节数。",
@@ -465,6 +479,7 @@
     },
     {
       "metric_code": "db.storage.free_bytes",
+      "semantic_role": "STORAGE_FREE",
       "semantic_version": "1.0.0",
       "name": "存储可用容量",
       "description": "数据库表空间当前可用字节数。",
@@ -500,6 +515,7 @@
     },
     {
       "metric_code": "db.storage.max_bytes",
+      "semantic_role": "STORAGE_MAX",
       "semantic_version": "1.0.0",
       "name": "存储最大容量",
       "description": "数据库表空间包含自动扩展上限的最大字节数。",
@@ -535,6 +551,7 @@
     },
     {
       "metric_code": "db.error.rate",
+      "semantic_role": "ERROR_RATE",
       "semantic_version": "1.0.0",
       "name": "错误率",
       "description": "监控源观测到的数据库错误事件速率。",
@@ -576,6 +593,7 @@
     },
     {
       "metric_code": "runtime.cpu.utilization",
+      "semantic_role": "CPU_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "运行环境 CPU 使用率",
       "description": "数据库运行环境 CPU 使用率；Docker 容器按自身 CPU 硬上限计算，非容器目标读取显式绑定主机的 Node Exporter 指标。",
@@ -595,6 +613,7 @@
     },
     {
       "metric_code": "runtime.memory.utilization",
+      "semantic_role": "MEMORY_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "运行环境内存使用率",
       "description": "数据库运行环境内存使用率；Docker 容器按自身内存硬上限计算，非容器目标读取显式绑定主机的 Node Exporter 指标。",
@@ -614,6 +633,7 @@
     },
     {
       "metric_code": "host.cpu.utilization",
+      "semantic_role": "CPU_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机 CPU 使用率",
       "description": "数据库所在主机的非空闲 CPU 使用百分比。",
@@ -644,6 +664,7 @@
     },
     {
       "metric_code": "host.memory.utilization",
+      "semantic_role": "MEMORY_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机内存使用率",
       "description": "数据库所在主机排除可用内存后的内存使用百分比。",
@@ -674,6 +695,7 @@
     },
     {
       "metric_code": "host.filesystem.utilization",
+      "semantic_role": "FILESYSTEM_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机文件系统使用率",
       "description": "数据库所在主机持久文件系统的空间使用百分比。",
@@ -704,6 +726,7 @@
     },
     {
       "metric_code": "host.disk.io.utilization",
+      "semantic_role": "DISK_IO_UTILIZATION",
       "semantic_version": "1.0.0",
       "name": "主机磁盘 I/O 忙碌率",
       "description": "数据库所在主机各块设备处理 I/O 的时间占比。",
@@ -734,6 +757,7 @@
     },
     {
       "metric_code": "host.network.throughput",
+      "semantic_role": "NETWORK_THROUGHPUT",
       "semantic_version": "1.0.0",
       "name": "主机网络吞吐",
       "description": "数据库所在主机非回环网卡的收发总字节速率。",

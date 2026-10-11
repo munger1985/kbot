@@ -71,6 +71,8 @@ class ResolvedMonitoringProfile(BaseModel):
     version: str
     display_name: str
     description: str
+    purpose: Literal["OVERVIEW", "REPLICATION", "CAPACITY", "HOST"]
+    is_default: bool
     supported_db_types: tuple[DatabaseType, ...]
     supported_database_versions: dict[str, tuple[str, ...]]
     resolved_variant_ids: tuple[str, ...]
@@ -172,6 +174,8 @@ class MonitoringProfileCatalog:
             version=profile.version,
             display_name=profile.display_name,
             description=profile.description,
+            purpose=profile.purpose,
+            is_default=profile.purpose == "OVERVIEW",
             supported_db_types=tuple(sorted(versions)),
             supported_database_versions={
                 db_type: tuple(sorted(items))

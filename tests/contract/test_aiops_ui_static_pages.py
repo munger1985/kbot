@@ -115,7 +115,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("source_display_name", script)
         self.assertIn('id="monitoring-compare-source"', page)
         self.assertIn("aiops.css?v=20261010_3", page)
-        self.assertIn("aiops-monitoring.js?v=20261010_12", page)
+        self.assertIn("aiops-monitoring.js?v=20261011_1", page)
         self.assertIn('percent: "%"', script)
         self.assertIn('transactions_per_second: "次/秒"', script)
         self.assertIn('unit === "state"', script)
@@ -125,13 +125,15 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             "mysql.availability",
             "postgresql.availability",
         ):
-            self.assertIn(f'"{metric_code}"', script)
-        self.assertIn("!summaryOnlyMetricCodes.has(panel.metric_code)", script)
+            self.assertNotIn(f'"{metric_code}"', script)
+        self.assertIn('panel.semantic_role !== "AVAILABILITY"', script)
+        self.assertIn("item.is_default", script)
         self.assertIn("function gapIdentity(gap)", script)
         self.assertIn("if (seen.has(identity)) return false", script)
         self.assertIn("state.view.panels || []).slice(0, 6)", script)
         self.assertNotIn("const importantMetrics", script)
-        self.assertIn('profile.profile_id === "database-capacity"', script)
+        self.assertIn('profile.purpose === "CAPACITY"', script)
+        self.assertIn("capacityMetricRoles", script)
         self.assertIn("function renderCapacityTable", script)
         self.assertIn("<th>数据库实例</th><th>表空间</th><th>已用容量</th><th>可用容量</th><th>最大容量</th><th>容量构成</th>", script)
         self.assertIn('class="ops-table ops-monitoring-instance-table"', page)

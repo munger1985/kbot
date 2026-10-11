@@ -260,6 +260,7 @@ class BaseDiagnosticSourceAdapter:
         provider = definition.providers[self.context.source_type]
         return MetricObservation(
             metric_code=definition.metric_code,
+            semantic_role=definition.semantic_role,
             semantic_version=definition.semantic_version,
             unit=definition.unit,
             value_kind=definition.value_kind,

@@ -68,7 +68,10 @@ from aiops_agent.entities import (
     ReportSourceEntity,
 )
 from aiops_agent.contracts.evidence import ObservationSet
-from aiops_agent.domain.evidence import extract_metric_trend_rows
+from aiops_agent.domain.evidence import (
+    METRIC_ROLE_AVAILABILITY,
+    extract_metric_trend_rows,
+)
 from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
     is_turn_evidence_outcome,
@@ -5130,12 +5133,7 @@ class AIOpsRuntimeService:
             point.get("value")
             for observation_payload in observation_payloads
             for observation in observation_payload.get("observations", [])
-            if observation.get("metric_code")
-            in {
-                "db.availability",
-                "mysql.availability",
-                "postgresql.availability",
-            }
+            if observation.get("semantic_role") == METRIC_ROLE_AVAILABILITY
             for series in observation.get("series", [])
             for point in series.get("points", [])[-1:]
             if point.get("quality") == "GOOD"

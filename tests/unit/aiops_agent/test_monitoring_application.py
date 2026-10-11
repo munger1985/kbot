@@ -380,7 +380,8 @@ def test_live_availability_sample_updates_target_observed_status():
     registry.adapter.result = MetricsEvidenceResult(
         observations=(
             MetricObservation(
-                metric_code="db.availability",
+                metric_code="custom.health",
+                semantic_role="AVAILABILITY",
                 semantic_version="1.0.0",
                 unit="state",
                 value_kind="STATE",

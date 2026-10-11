@@ -294,6 +294,7 @@ class MonitoringViewBuilder:
                 else "TIME_SERIES"
             ),
             metric_code=metric_code,
+            semantic_role=definition.semantic_role,
             unit=definition.unit,
             value_kind=definition.value_kind,
             series=tuple(series),

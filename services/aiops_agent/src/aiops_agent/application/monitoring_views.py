@@ -24,6 +24,7 @@ from platform_core.contracts.aiops.monitoring import (
     MonitoringWindow,
 )
 from aiops_agent.contracts.evidence import ObservationGap
+from aiops_agent.domain.evidence import METRIC_ROLE_AVAILABILITY
 from aiops_agent.monitoring import (
     MonitoringQueryError,
     MonitoringViewBuilder,
@@ -37,15 +38,6 @@ from aiops_agent.ports.diagnostic_source import (
     DiagnosticSourceContext,
     MetricsEvidenceResult,
     MetricsEvidenceRequest,
-)
-
-
-_AVAILABILITY_METRIC_CODES = frozenset(
-    {
-        "db.availability",
-        "mysql.availability",
-        "postgresql.availability",
-    }
 )
 
 
@@ -478,7 +470,8 @@ class MonitoringApplicationService:
             requested_codes = tuple(
                 code
                 for code in profile.metric_codes
-                if code in _AVAILABILITY_METRIC_CODES
+                if self._metric_catalog.get(code).semantic_role
+                == METRIC_ROLE_AVAILABILITY
             )
             snapshot = await self._snapshot_builder.build(
                 uow=uow,
@@ -514,7 +507,7 @@ class MonitoringApplicationService:
 
         values_by_target: dict[str, list[tuple[datetime, bool]]] = {}
         for observation in observations:
-            if observation.metric_code not in _AVAILABILITY_METRIC_CODES:
+            if observation.semantic_role != METRIC_ROLE_AVAILABILITY:
                 continue
             for series in observation.series:
                 latest = next(

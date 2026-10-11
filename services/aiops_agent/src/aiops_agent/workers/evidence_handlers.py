@@ -33,6 +33,7 @@ from aiops_agent.monitoring import (
     PromQueryPolicySnapshot,
     resolve_metric_definitions,
 )
+from aiops_agent.domain.evidence import METRIC_ROLE_AVAILABILITY
 
 from .handlers import TaskExecutionContext, investigation_task_identity
 
@@ -43,12 +44,23 @@ def _parse_time(value: str) -> datetime:
     )
 
 
+def _availability_metric_summaries(
+    metric_summaries: tuple[dict, ...],
+) -> tuple[dict, ...]:
+    return tuple(
+        item
+        for item in metric_summaries
+        if item.get("semantic_role") == METRIC_ROLE_AVAILABILITY
+    )
+
+
 def _ad_hoc_metric_definition(item: dict) -> MetricDefinition:
     """把已冻结 PromQL 转为只供本次调用使用的临时指标定义。"""
     validated = dict(item["validated_query"])
     return MetricDefinition.model_validate(
         {
             "metric_code": f"adhoc.{item['action_id']}",
+            "semantic_role": "CUSTOM",
             "semantic_version": "1.0.0",
             "name": item["question"][:128],
             "description": "本轮调查规划生成的受控 PromQL 结果",
@@ -677,6 +689,7 @@ class EvidenceReportHandler:
         metric_summaries = tuple(
             {
                 "metric_code": item["metric_code"],
+                "semantic_role": item["semantic_role"],
                 "unit": item["unit"],
                 "source_id": item["source_id"],
                 "binding_id": item["binding_id"],
@@ -686,11 +699,7 @@ class EvidenceReportHandler:
             }
             for item in observations
         )
-        availability = tuple(
-            item
-            for item in metric_summaries
-            if item["metric_code"] == "db.availability"
-        )
+        availability = _availability_metric_summaries(metric_summaries)
         return ObserveReport(
             target_id=context.target_id,
             status="PARTIAL" if gaps else "READY",

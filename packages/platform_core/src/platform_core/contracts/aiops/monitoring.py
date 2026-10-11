@@ -66,6 +66,8 @@ class MonitoringProfileSummary(_Contract):
     version: str = Field(min_length=1, max_length=32)
     display_name: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=1000)
+    purpose: Literal["OVERVIEW", "REPLICATION", "CAPACITY", "HOST"]
+    is_default: bool
     supported_db_types: tuple[
         Literal["ORACLE", "MYSQL", "POSTGRESQL"], ...
     ]
@@ -114,6 +116,7 @@ class MonitoringPanel(_Contract):
     description: str = Field(min_length=1, max_length=1000)
     visualization: Literal["STAT", "STATE_TIMELINE", "TIME_SERIES", "GAUGE"]
     metric_code: str
+    semantic_role: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")
     unit: str = Field(min_length=1, max_length=32)
     value_kind: Literal["GAUGE", "COUNTER", "STATE"]
     series: tuple[MonitoringSeries, ...] = ()
