@@ -2072,6 +2072,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         uow = _PlanningUow()
         uow.target.db_type = "MYSQL"
+        uow.target.version_code = "8.4"
         monitoring_builder = SimpleNamespace(
             build=AsyncMock(
                 return_value={
