@@ -1,11 +1,13 @@
 (function () {
   "use strict";
   const api = "/api/v1/apps/aiops/work-items";
+  const rootApi = "/api/v1/apps/aiops";
   const groupApi = "/api/v1/apps/aiops/responsibility-groups";
   const shell = globalThis.KBotAIOpsShell;
+  const markdown = globalThis.KBotMarkdown;
   const state = {
     access: null, cursor: null, filters: { visibility: "SCOPE" }, item: null,
-    items: new Map(), processingItem: null, assignmentItem: null,
+    items: new Map(), processingItem: null, processingContext: null, assignmentItem: null,
     handling: false, assigning: false, suppressReset: false,
   };
   const labels = {
@@ -19,6 +21,7 @@
     ACCEPTED_RISK: "风险已接受", FALSE_POSITIVE: "误报", DUPLICATE: "重复事项",
   };
   const text = (value) => labels[value] || value || "—";
+  const values = (items) => Array.isArray(items) ? items : [];
   const jsonBody = (value) => ({ method: "POST", body: JSON.stringify(value) });
   const query = (values) => {
     const params = new URLSearchParams();
@@ -34,6 +37,116 @@
     if (!value) return "—";
     const overdue = new Date(value).getTime() < Date.now();
     return `<time class="${overdue ? "is-overdue" : ""}">${shell.escape(shell.fmt(value))}</time>`;
+  }
+  function processingAlertHtml(item, situation) {
+    const occurrence = values(item.occurrences)[0];
+    const finding = occurrence?.finding || {};
+    const object = finding.object_ref || {};
+    const objectLabel = object.object_name || object.sql_id || object.object_kind || "";
+    const facts = occurrence ? [
+      ["发现类型", occurrence.finding_type],
+      ["确认度", occurrence.confirmation],
+      ["关联对象", objectLabel],
+      ["观测时间", shell.fmt(occurrence.observed_at)],
+    ].filter((row) => row[1]).map((row) => `<div><dt>${shell.escape(row[0])}</dt><dd>${shell.escape(row[1])}</dd></div>`).join("") : "";
+    const signals = values(situation?.signal_events).map((signal) => `<li><strong>${shell.escape(signal.event_class)} · ${shell.escape(signal.severity)}</strong><span>${shell.escape(signal.summary || signal.normalized_status)}</span><time>${shell.escape(shell.fmt(signal.occurred_at))}</time></li>`).join("");
+    const sourceAlerts = signals || values(situation?.monitoring_sources).map((source) => `<li><strong>${shell.escape(source.latest_event_class || source.source_type || "ALERT")} · ${shell.escape(source.latest_severity || item.severity)}</strong><span>${shell.escape(source.latest_summary || item.summary)}</span><time>${shell.escape(shell.fmt(source.last_observed_at))}</time></li>`).join("");
+    const evidence = values(occurrence?.evidence_refs).map((ref) => `<code>${shell.escape(ref)}</code>`).join("");
+    return `<p class="ops-work-item-context-summary">${shell.escape(finding.impact || item.summary)}</p>${facts ? `<dl class="ops-work-item-context-facts">${facts}</dl>` : ""}${sourceAlerts ? `<ul class="ops-work-item-signal-list">${sourceAlerts}</ul>` : ""}${evidence ? `<div class="ops-work-item-context-evidence">${evidence}</div>` : ""}`;
+  }
+  function findingSummaryHtml(payload) {
+    const rows = values(payload?.findings).map((finding) => `<article><header><strong>${shell.escape(finding.finding_type || "发现")}</strong>${shell.badge(finding.severity || "INFO")}</header><p>${shell.escape(finding.impact || "")}</p></article>`).join("");
+    return rows ? `<section class="ops-work-item-diagnosis-findings">${rows}</section>` : "";
+  }
+  function processingDiagnosisHtml(result, run) {
+    if (!result) {
+      if (run) return `<div class="ops-empty">自动诊断运行状态：${shell.escape(run.status)}，尚未形成可展示结果。</div>`;
+      return '<div class="ops-empty">该工作项没有关联可展示的 Agent 初步诊断。</div>';
+    }
+    const blocks = values(result.payload?.blocks);
+    if (result.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1" && blocks.length) {
+      const html = blocks.map((block) => {
+        const payload = block.payload || {};
+        if (block.block_type === "FINDING_CARDS") return findingSummaryHtml(payload);
+        if (["ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN", "MARKDOWN"].includes(block.block_type)) {
+          const heading = block.block_type === "ANALYSIS_MARKDOWN" ? "分析" : block.block_type === "SOLUTION_MARKDOWN" ? "解决方案" : "";
+          const body = markdown.render(String(payload.markdown || payload.text || ""));
+          return heading ? `<section class="ops-analysis"><header><strong>${heading}</strong></header>${body}</section>` : body;
+        }
+        return "";
+      }).join("");
+      return html || '<div class="ops-empty">Agent 已完成诊断，但没有可展示的文字结论。</div>';
+    }
+    const payload = result.payload || {};
+    const answer = payload.direct_answer?.answer_text || payload.diagnosis_rationale || payload.summary || "Agent 已完成初步诊断，但没有可展示的文字结论。";
+    return `<div class="ops-result-markdown">${markdown.render(String(answer))}</div>`;
+  }
+  async function loadProcessingContext(item) {
+    document.getElementById("work-item-alert-context").innerHTML = '<div class="ops-empty">正在读取错误与告警上下文…</div>';
+    document.getElementById("work-item-agent-diagnosis").innerHTML = '<div class="ops-empty">正在读取 Agent 初步诊断…</div>';
+    document.getElementById("work-item-diagnosis-agent").innerHTML = '<option value="">正在读取可用 Agent…</option>';
+    document.getElementById("work-item-diagnosis-agent").disabled = true;
+    document.getElementById("work-item-continue-diagnosis").disabled = true;
+    const occurrence = values(item.occurrences)[0];
+    const runId = occurrence?.ops_run_id || values(item.links).find((link) => ["RUN", "VERIFICATION"].includes(link.resource_kind))?.resource_id;
+    const situationId = occurrence?.situation_id || values(item.links).find((link) => link.resource_kind === "SITUATION")?.resource_id;
+    const [situationResult, runResult, diagnosisResult, agentResult] = await Promise.allSettled([
+      situationId ? KBotAIOpsAuth.request(`${rootApi}/situations/${encodeURIComponent(situationId)}`) : Promise.resolve(null),
+      runId ? KBotAIOpsAuth.request(`${rootApi}/runs/${encodeURIComponent(runId)}`) : Promise.resolve(null),
+      runId ? KBotAIOpsAuth.request(`${rootApi}/runs/${encodeURIComponent(runId)}/result`) : Promise.resolve(null),
+      KBotAIOpsAuth.request(`${rootApi}/agents`),
+    ]);
+    const situation = situationResult.status === "fulfilled" ? situationResult.value : null;
+    const run = runResult.status === "fulfilled" ? runResult.value : null;
+    const result = diagnosisResult.status === "fulfilled" ? diagnosisResult.value : null;
+    const agents = agentResult.status === "fulfilled" ? values(agentResult.value).filter((agent) => agent.status === "ACTIVE" && values(agent.target_ids).map(String).includes(String(item.target_id))) : [];
+    const source = result?.final_artifact && runId
+      ? { source_run_id: runId }
+      : situationId
+        ? { source_situation_id: situationId }
+        : runId ? { source_run_id: runId } : null;
+    state.processingContext = { situation, run, result, source };
+    document.getElementById("work-item-alert-context").innerHTML = processingAlertHtml(item, situation);
+    document.getElementById("work-item-agent-diagnosis").innerHTML = processingDiagnosisHtml(result, run);
+    const agentSelect = document.getElementById("work-item-diagnosis-agent");
+    agentSelect.innerHTML = '<option value="">请选择 Agent</option>' + agents.map((agent) => `<option value="${shell.escape(agent.agent_id)}">${shell.escape(agent.display_name || agent.agent_key || shell.short(agent.agent_id))}</option>`).join("");
+    if (agents.some((agent) => String(agent.agent_id) === String(item.agent_id))) agentSelect.value = item.agent_id;
+    agentSelect.disabled = !source || !agents.length;
+    const prompt = document.getElementById("work-item-diagnosis-prompt");
+    prompt.value = source ? `请基于工作项“${item.title}”已有的告警、诊断结论和证据继续分析：` : "该工作项没有可继承的诊断上下文。";
+    prompt.disabled = !source;
+    document.getElementById("work-item-diagnosis-note").textContent = source
+      ? `系统将在服务端继承本次${source.source_run_id ? "自动诊断结果与证据" : "告警情境及其监控信号"}。`
+      : "人工创建且未关联 Situation 或 Run 的工作项不能继续诊断。";
+    const continueButton = document.getElementById("work-item-continue-diagnosis");
+    continueButton.disabled = !source || !agents.length;
+  }
+  async function continueProcessingDiagnosis(button) {
+    const item = state.processingItem;
+    const source = state.processingContext?.source;
+    const agentId = document.getElementById("work-item-diagnosis-agent").value;
+    const message = document.getElementById("work-item-diagnosis-prompt").value.trim();
+    if (!item || !source) return shell.toast("该工作项没有可继承的诊断上下文");
+    if (!agentId) return shell.toast("请选择继续诊断使用的 Agent");
+    if (!message) return shell.toast("请填写继续追问的内容");
+    button.disabled = true;
+    try {
+      const body = {
+        agent_id: agentId,
+        target_id: item.target_id,
+        content: [{ content_type: "TEXT", text: message }],
+        ...source,
+      };
+      const result = await KBotAIOpsAuth.request(`${rootApi}/conversations`, {
+        method: "POST",
+        headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
+        body: JSON.stringify(body),
+      });
+      location.href = `./chat.html?conversation=${encodeURIComponent(result.conversation_id)}`;
+    } catch (error) {
+      shell.toast(error.message);
+      button.disabled = false;
+    }
   }
   function renderQueues(summary) {
     const definitions = [
@@ -83,13 +196,15 @@
         }));
         shell.toast("工作项已由你领取并进入处理中");
       }
-      state.processingItem = item;
-      document.getElementById("work-item-processing-title").textContent = item.title;
-      document.getElementById("work-item-processing-target").textContent = item.target_name || "—";
-      document.getElementById("work-item-processing-status").textContent = text(item.status);
-      document.getElementById("work-item-processing-started").textContent = shell.fmt(item.assigned_at);
+      const detail = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(item.work_item_id)}?visibility=SCOPE`);
+      state.processingItem = detail;
+      document.getElementById("work-item-processing-title").textContent = detail.title;
+      document.getElementById("work-item-processing-target").textContent = detail.target_name || "—";
+      document.getElementById("work-item-processing-status").textContent = text(detail.status);
+      document.getElementById("work-item-processing-started").textContent = shell.fmt(detail.assigned_at);
       document.getElementById("work-item-processing-form").reset();
       document.getElementById("work-item-processing-dialog").showModal();
+      await loadProcessingContext(detail);
       await loadList();
     } catch (error) {
       shell.toast(error.message);
@@ -187,8 +302,14 @@
     document.querySelectorAll("[data-close-work-item-dialog]").forEach((button) => {
       button.onclick = () => button.closest("dialog").close();
     });
-    document.getElementById("work-item-processing-dialog").addEventListener("close", () => { state.processingItem = null; });
+    document.getElementById("work-item-processing-dialog").addEventListener("close", () => {
+      state.processingItem = null;
+      state.processingContext = null;
+    });
     document.getElementById("work-item-assignment-dialog").addEventListener("close", () => { state.assignmentItem = null; });
+    document.getElementById("work-item-continue-diagnosis").onclick = (event) => {
+      void continueProcessingDiagnosis(event.currentTarget);
+    };
     document.getElementById("work-item-processing-form").onsubmit = async (event) => {
       event.preventDefault();
       if (!state.processingItem) return;
