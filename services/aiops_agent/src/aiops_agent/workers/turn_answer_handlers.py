@@ -1208,6 +1208,10 @@ _HTML_REPORT_TOOLS = {
     "db.oracle.ash.report",
     "db.oracle.sql_monitor.report",
 }
+_INHERITED_EVIDENCE_TOOLS = {
+    "source.run.final-artifact",
+    "source.situation.signal-events",
+}
 _HTML_REPORT_LABELS = {
     "db.oracle.awr.report": "下载原生 AWR 报告",
     "db.oracle.awr.diff_report": "下载原生 AWR 对比报告",
@@ -1778,13 +1782,54 @@ class DbaAnswerComposeHandler:
         payload["user_facing_dictionary"] = dictionary_for_payload(payload)
         return payload
 
-    @staticmethod
-    def _compose_evidence_payload(fact: TurnEvidenceFact) -> dict[str, Any]:
+    @classmethod
+    def _compose_evidence_payload(cls, fact: TurnEvidenceFact) -> dict[str, Any]:
         payload = fact.model_dump(mode="json", exclude={"visualizations"})
+        if fact.tool_id in _INHERITED_EVIDENCE_TOOLS:
+            payload = cls._canonicalize_inherited_evidence_refs(
+                payload,
+                canonical_ref=fact.evidence_ref,
+            )
         if fact.tool_id in _HTML_REPORT_TOOLS:
             payload["rows"] = []
             payload["columns"] = []
         return payload
+
+    @classmethod
+    def _canonicalize_inherited_evidence_refs(
+        cls,
+        value: Any,
+        *,
+        canonical_ref: str,
+    ) -> Any:
+        if isinstance(value, dict):
+            normalized = {}
+            for key, item in value.items():
+                if key.endswith("evidence_ref") and item:
+                    normalized[key] = canonical_ref
+                elif key.endswith("evidence_refs") and item:
+                    normalized[key] = [canonical_ref]
+                else:
+                    normalized[key] = cls._canonicalize_inherited_evidence_refs(
+                        item,
+                        canonical_ref=canonical_ref,
+                    )
+            return normalized
+        if isinstance(value, list):
+            return [
+                cls._canonicalize_inherited_evidence_refs(
+                    item,
+                    canonical_ref=canonical_ref,
+                )
+                for item in value
+            ]
+        if (
+            isinstance(value, str)
+            and value.startswith("artifact:")
+            and "#" in value
+        ):
+            return canonical_ref
+        return value
 
     @classmethod
     def _model_assessment_payload(
@@ -1794,6 +1839,9 @@ class DbaAnswerComposeHandler:
         payload["evidence"] = [
             cls._compose_evidence_payload(fact)
             for fact in assessment.evidence
+        ]
+        payload["allowed_evidence_refs"] = [
+            fact.evidence_ref for fact in assessment.evidence
         ]
         return payload
 

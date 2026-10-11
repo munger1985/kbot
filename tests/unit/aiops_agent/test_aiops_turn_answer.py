@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from copy import deepcopy
 from dataclasses import replace
@@ -2370,6 +2371,48 @@ class DbaTurnAnswerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "批准证据之外"):
             asyncio.run(handler.execute(context))
+
+    def test_inherited_source_run_exposes_only_current_evidence_ref(self) -> None:
+        artifact_id = str(uuid7())
+        historical_ref = "artifact:historical#row-0"
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        {
+                            "artifact_id": artifact_id,
+                            "schema_version": "SOURCE_RUN_EVIDENCE.v1",
+                            "payload": {
+                                "source_schema_version": "AIOPS_TURN_RESULT.v1",
+                                "source_trust_level": "MODEL_INFERENCE",
+                                "captured_at": datetime.now(UTC).isoformat(),
+                                "payload": {
+                                    "evidence_refs": [historical_ref],
+                                    "allowed_evidence_refs": [historical_ref],
+                                    "parameter_fact_refs": {
+                                        "tablespace": historical_ref,
+                                    },
+                                    "blocks": [
+                                        {
+                                            "evidence_ref": historical_ref,
+                                            "evidence_refs": [historical_ref],
+                                        }
+                                    ],
+                                },
+                            },
+                        },
+                    )
+                )
+            )
+        )
+
+        payload = DbaAnswerComposeHandler._model_assessment_payload(assessment)
+        canonical_ref = f"artifact:{artifact_id}#source-run"
+        serialized = json.dumps(payload, ensure_ascii=False)
+
+        self.assertNotIn(historical_ref, serialized)
+        self.assertIn(canonical_ref, serialized)
+        self.assertEqual([canonical_ref], payload["allowed_evidence_refs"])
 
     def test_streamed_answer_is_validated_then_emits_progress(self) -> None:
         assessment = asyncio.run(
