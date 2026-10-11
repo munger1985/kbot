@@ -39,13 +39,13 @@
     const text = String(value || "");
     return text.length > 18 ? `${text.slice(0, 8)}…${text.slice(-6)}` : text || "—";
   };
-  function badge(value) {
+  function badge(value, label = value) {
     const text = String(value || "UNKNOWN").toUpperCase();
     const tone = ["ACTIVE", "ENABLED", "CONNECTED", "UP", "COMPLETED", "SUCCEEDED", "HEALTHY", "RESOLVED", "PUBLISHED", "APPROVED"].includes(text)
       ? "good" : ["FAILED", "ERROR", "CRITICAL", "REJECTED", "UNHEALTHY", "UNREACHABLE", "MISCONFIGURED", "DOWN"].includes(text)
         ? "bad" : ["RUNNING", "CHECKING", "OPEN", "PENDING", "WARNING", "DEGRADED"].includes(text)
           ? "warn" : "";
-    return `<span class="ops-badge ${tone}">${escape(text)}</span>`;
+    return `<span class="ops-badge ${tone}">${escape(label || text)}</span>`;
   }
   function toast(message) {
     const node = document.createElement("div");

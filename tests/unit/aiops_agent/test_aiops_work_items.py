@@ -1,12 +1,15 @@
 """DBA 工作项合同、SLA 与指纹规则测试。"""
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 import unittest
 
 from pydantic import ValidationError
+from sqlalchemy.dialects import oracle
 
 from aiops_agent.application.work_items import _fingerprint, _sla
+from aiops_agent.repositories.work_item import WorkItemRepository
 from platform_core.contracts.aiops import (
     WorkItemPriority,
     WorkItemStatus,
@@ -18,7 +21,38 @@ from platform_core.identity import uuid7
 ROOT = Path(__file__).resolve().parents[3]
 
 
+class _CapturedResult:
+    def scalars(self):
+        return self
+
+    def first(self):
+        return None
+
+
+class _CapturingSession:
+    statement = None
+
+    async def execute(self, statement):
+        self.statement = statement
+        return _CapturedResult()
+
+
 class WorkItemContractTest(unittest.TestCase):
+    def test_locked_fingerprint_lookup_avoids_oracle_row_limit_view(self):
+        session = _CapturingSession()
+        repository = WorkItemRepository(session)
+
+        asyncio.run(repository.get_open_by_fingerprint(
+            domain_id=7,
+            target_id=uuid7(),
+            fingerprint="fingerprint",
+            lock=True,
+        ))
+
+        sql = str(session.statement.compile(dialect=oracle.dialect())).upper()
+        self.assertIn("FOR UPDATE", sql)
+        self.assertNotIn("FETCH FIRST", sql)
+
     def test_fingerprint_is_stable_for_semantically_equal_object_refs(self):
         target_id = uuid7()
         first = _fingerprint(

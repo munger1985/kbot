@@ -90,11 +90,12 @@ class WorkItemRepository(AIOpsRepository):
                 WorkItemEntity.updated_at.desc(),
                 WorkItemEntity.work_item_id.desc(),
             )
-            .limit(1)
         )
         if lock:
             statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
+        else:
+            statement = statement.limit(1)
+        return (await self._session.execute(statement)).scalars().first()
 
     async def page(
         self,
