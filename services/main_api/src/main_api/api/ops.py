@@ -871,9 +871,18 @@ async def _work_item_action(work_item_id: UUID, action: str, body: BaseModel, re
 
 @router.post("/work-items/{work_item_id}:claim", response_model=WorkItemView)
 async def claim_work_item(work_item_id: UUID, body: WorkItemVersionCommand, request: Request, response: Response) -> WorkItemView:
+    user_id = request.state.auth_context.asserted_user_id
+    if not user_id:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            {
+                "code": "AIOPS_USER_CONTEXT_REQUIRED",
+                "message": "领取工作项必须包含可信用户身份",
+            },
+        )
     await _require_eligible_aiops_group_member(
         request,
-        str(request.state.auth_context.principal_id),
+        user_id,
     )
     return await _work_item_action(work_item_id, "claim", body, request, response)
 

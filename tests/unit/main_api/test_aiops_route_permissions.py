@@ -1,7 +1,9 @@
 """AIOps 公开路由核心权限登记完整性测试。"""
 
+import asyncio
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
@@ -9,8 +11,11 @@ from fastapi.routing import APIRoute
 from main_api.api.ops import (
     AIOPS_ROUTE_PERMISSIONS,
     _resolve_work_item_visibility,
+    claim_work_item,
     router,
 )
+from platform_core.contracts.aiops import WorkItemVersionCommand
+from platform_core.identity import uuid7
 
 
 class AIOpsRoutePermissionsTest(unittest.TestCase):
@@ -46,6 +51,47 @@ class AIOpsRoutePermissionsTest(unittest.TestCase):
             "EXCEPTIONS",
             _resolve_work_item_visibility(manager, "EXCEPTIONS"),
         )
+
+    def test_claim_uses_asserted_user_id_for_group_eligibility(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(
+            auth_context=SimpleNamespace(asserted_user_id="dba-user-1")
+        ))
+        response = SimpleNamespace(headers={})
+        expected = object()
+
+        with patch(
+            "main_api.api.ops._require_eligible_aiops_group_member",
+            new_callable=AsyncMock,
+        ) as require_member, patch(
+            "main_api.api.ops._work_item_action",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ) as action:
+            actual = asyncio.run(claim_work_item(
+                uuid7(),
+                WorkItemVersionCommand(expected_row_version=1),
+                request,
+                response,
+            ))
+
+        self.assertIs(expected, actual)
+        require_member.assert_awaited_once_with(request, "dba-user-1")
+        action.assert_awaited_once()
+
+    def test_claim_rejects_missing_user_context(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(
+            auth_context=SimpleNamespace(asserted_user_id=None)
+        ))
+
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(claim_work_item(
+                uuid7(),
+                WorkItemVersionCommand(expected_row_version=1),
+                request,
+                SimpleNamespace(headers={}),
+            ))
+
+        self.assertEqual(401, raised.exception.status_code)
 
 
 if __name__ == "__main__":
