@@ -45,7 +45,7 @@
     const number = Number(value);
     if (Number.isFinite(number)) {
       const text = number.toLocaleString("zh-CN", { maximumFractionDigits: Math.abs(number) >= 100 ? 1 : 2 });
-      if (unit === "percent") return `${text}%`;
+      if (unit === "percent") return `${text} %`;
       if (unit === "bytes") return formatBytes(number);
       if (unit === "bytes_per_second") return `${formatBytes(number)}/秒`;
       const translatedUnit = unitLabel(unit);
