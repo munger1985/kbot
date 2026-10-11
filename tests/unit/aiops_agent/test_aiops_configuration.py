@@ -786,10 +786,12 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.now = datetime.now(UTC)
         self.targets = AsyncMock()
+        self.work_items = AsyncMock()
         self.outbox = AsyncMock()
         self.uow = SimpleNamespace(
             targets=self.targets,
             managed_credentials=object(),
+            work_items=self.work_items,
             outbox=self.outbox,
             session=AsyncMock(),
             commit=AsyncMock(),

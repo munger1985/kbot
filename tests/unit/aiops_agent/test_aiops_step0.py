@@ -197,44 +197,47 @@ class AIOpsIdentityTest(unittest.TestCase):
 
         auth_codec = create_auth_context_codec()
         service_codec = create_service_identity_codec()
-        with TestClient(app) as client:
-            main_context = create_service_auth_context(
-                caller_service="kbot-main-api"
-            )
-            main_headers = build_scoped_internal_auth_headers(
-                audience="kbot-aiops-api",
-                caller_service="kbot-main-api",
-                scopes=("aiops.manage",),
-                context=main_context,
-                auth_context_codec=auth_codec,
-                service_identity_codec=service_codec,
-            )
-            self.assertEqual(
-                200,
-                client.get(
-                    "/internal/v1/aiops/scope-test",
-                    headers=main_headers,
-                ).status_code,
-            )
+        app.state.auth_context_codec = auth_codec
+        app.state.service_identity_codec = service_codec
+        client = TestClient(app)
+        self.addCleanup(client.close)
+        main_context = create_service_auth_context(
+            caller_service="kbot-main-api"
+        )
+        main_headers = build_scoped_internal_auth_headers(
+            audience="kbot-aiops-api",
+            caller_service="kbot-main-api",
+            scopes=("aiops.manage",),
+            context=main_context,
+            auth_context_codec=auth_codec,
+            service_identity_codec=service_codec,
+        )
+        self.assertEqual(
+            200,
+            client.get(
+                "/internal/v1/aiops/scope-test",
+                headers=main_headers,
+            ).status_code,
+        )
 
-            agent_context = create_service_auth_context(
-                caller_service="kbot-agent-runtime-api"
-            )
-            agent_headers = build_scoped_internal_auth_headers(
-                audience="kbot-aiops-api",
-                caller_service="kbot-agent-runtime-api",
-                scopes=("aiops.delegate",),
-                context=agent_context,
-                auth_context_codec=auth_codec,
-                service_identity_codec=service_codec,
-            )
-            self.assertEqual(
-                403,
-                client.get(
-                    "/internal/v1/aiops/scope-test",
-                    headers=agent_headers,
-                ).status_code,
-            )
+        agent_context = create_service_auth_context(
+            caller_service="kbot-agent-runtime-api"
+        )
+        agent_headers = build_scoped_internal_auth_headers(
+            audience="kbot-aiops-api",
+            caller_service="kbot-agent-runtime-api",
+            scopes=("aiops.delegate",),
+            context=agent_context,
+            auth_context_codec=auth_codec,
+            service_identity_codec=service_codec,
+        )
+        self.assertEqual(
+            403,
+            client.get(
+                "/internal/v1/aiops/scope-test",
+                headers=agent_headers,
+            ).status_code,
+        )
 
 
 class AIOpsConfigAndBootstrapTest(unittest.TestCase):
