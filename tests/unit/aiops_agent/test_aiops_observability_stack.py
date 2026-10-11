@@ -163,6 +163,7 @@ kbot_webhook_secret = actual-webhook-credential-value
 ammolite_webhook_url = https://ammolite.example.com
 ammolite_webhook_key = whk-acceptance-key-long-enough-for-ammolite
 ammolite_webhook_secret = actual-ammolite-webhook-credential-value
+ammolite_webhook_target_keys = oracle-all-modules-01,mysql-all-modules-01,postgres-all-modules-01
 
 [logs]
 enabled = true
@@ -242,7 +243,12 @@ password = postgres-secret
     alertmanager_config = (
         settings.runtime_dir / "alertmanager/alertmanager.yml"
     ).read_text()
-    assert "receiver: aiops" in alertmanager_config
+    assert "receiver: kbot" in alertmanager_config
+    assert "- receiver: aiops" in alertmanager_config
+    assert (
+        'target_key=~"^(oracle\\-all\\-modules\\-01|mysql\\-all\\-modules\\-01|postgres\\-all\\-modules\\-01)$"'
+        in alertmanager_config
+    )
     assert "http://kbot-webhook-signer:8080/alertmanager" in alertmanager_config
     assert (
         "http://ammolite-webhook-signer:8080/alertmanager"

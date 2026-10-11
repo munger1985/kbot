@@ -178,6 +178,7 @@ kbot_webhook_secret = acceptance-webhook-secret
 ammolite_webhook_url = https://ammolite.example.com
 ammolite_webhook_key = whk-acceptance-key-long-enough-for-ammolite
 ammolite_webhook_secret = acceptance-ammolite-webhook-secret
+ammolite_webhook_target_keys = oracle-prod-01,oracle-prod-02
 
 [prometheus_target:oracle-prod-01]
 enabled = true

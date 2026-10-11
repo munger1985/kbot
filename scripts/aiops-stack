@@ -90,6 +90,8 @@ local_access = false
 # ammolite_webhook_url = https://ammolite.example.com
 # ammolite_webhook_key = CHANGE_ME
 # ammolite_webhook_secret = CHANGE_ME
+# 必填：只将Ammolite监控源已绑定的Target Key双发，多个值用逗号分隔。
+# ammolite_webhook_target_keys = oracle-prod-01,mysql-prod-01
 
 [logs]
 # enabled = true
@@ -525,6 +527,36 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
                 if settings.role == "central" and parsed.scheme != "https":
                     raise ValueError(
                         f"central角色的{display_name} Webhook必须使用HTTPS"
+                    )
+            if product == "ammolite":
+                target_keys = [
+                    value.strip()
+                    for value in parser.get(
+                        "metrics", "ammolite_webhook_target_keys", fallback=""
+                    ).split(",")
+                    if value.strip()
+                ]
+                if webhook_url and not target_keys:
+                    raise ValueError(
+                        "[metrics] 配置Ammolite Webhook时必须填写"
+                        "ammolite_webhook_target_keys"
+                    )
+                if target_keys and not webhook_url:
+                    raise ValueError(
+                        "[metrics] ammolite_webhook_target_keys不能单独配置"
+                    )
+                invalid_keys = [
+                    key
+                    for key in target_keys
+                    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", key)
+                ]
+                if invalid_keys:
+                    raise ValueError(
+                        "[metrics] ammolite_webhook_target_keys包含无效Target Key"
+                    )
+                if len(target_keys) != len(set(target_keys)):
+                    raise ValueError(
+                        "[metrics] ammolite_webhook_target_keys不能包含重复值"
                     )
     for section in _prometheus_target_sections(parser):
         engine = _required(parser, section, "engine")
@@ -1038,10 +1070,12 @@ def _prometheus_query_overrides() -> str:
 
 
 def _alertmanager_config(
-    *, kbot_webhook_enabled: bool, ammolite_webhook_enabled: bool
+    *,
+    kbot_webhook_enabled: bool,
+    ammolite_webhook_enabled: bool,
+    ammolite_target_keys: tuple[str, ...] = (),
 ) -> str:
-    webhook_enabled = kbot_webhook_enabled or ammolite_webhook_enabled
-    receiver = "aiops" if webhook_enabled else "discard"
+    receiver = "kbot" if kbot_webhook_enabled else "discard"
     lines = [
         "route:",
         f"  receiver: {receiver}",
@@ -1049,11 +1083,38 @@ def _alertmanager_config(
         "  group_wait: 10s",
         "  group_interval: 1m",
         "  repeat_interval: 4h",
-        "receivers:",
-        "  - name: discard",
     ]
-    if webhook_enabled:
-        lines.extend(["  - name: aiops", "    webhook_configs:"])
+    if ammolite_webhook_enabled:
+        matcher = "|".join(re.escape(key) for key in ammolite_target_keys)
+        routed_receiver = "aiops" if kbot_webhook_enabled else "ammolite"
+        lines.extend(
+            [
+                "  routes:",
+                f"    - receiver: {routed_receiver}",
+                "      matchers:",
+                f'        - target_key=~"^({matcher})$"',
+            ]
+        )
+    lines.extend(["receivers:", "  - name: discard"])
+    if kbot_webhook_enabled:
+        lines.extend(
+            [
+                "  - name: kbot",
+                "    webhook_configs:",
+                '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
+                "        send_resolved: true",
+            ]
+        )
+    if ammolite_webhook_enabled:
+        ammolite_receiver = (
+            "aiops" if kbot_webhook_enabled else "ammolite"
+        )
+        lines.extend(
+            [
+                f"  - name: {ammolite_receiver}",
+                "    webhook_configs:",
+            ]
+        )
         if kbot_webhook_enabled:
             lines.extend(
                 [
@@ -1061,13 +1122,12 @@ def _alertmanager_config(
                     "        send_resolved: true",
                 ]
             )
-        if ammolite_webhook_enabled:
-            lines.extend(
-                [
-                    '      - url: "http://ammolite-webhook-signer:8080/alertmanager"',
-                    "        send_resolved: true",
-                ]
-            )
+        lines.extend(
+            [
+                '      - url: "http://ammolite-webhook-signer:8080/alertmanager"',
+                "        send_resolved: true",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -1597,9 +1657,17 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         ammolite_webhook_url = parser.get(
             "metrics", "ammolite_webhook_url", fallback=""
         ).strip()
+        ammolite_target_keys = tuple(
+            value.strip()
+            for value in parser.get(
+                "metrics", "ammolite_webhook_target_keys", fallback=""
+            ).split(",")
+            if value.strip()
+        )
         alertmanager_config = _alertmanager_config(
             kbot_webhook_enabled=bool(webhook_url),
             ammolite_webhook_enabled=bool(ammolite_webhook_url),
+            ammolite_target_keys=ammolite_target_keys,
         )
         alertmanager_revision = hashlib.sha256(
             alertmanager_config.encode("utf-8")
