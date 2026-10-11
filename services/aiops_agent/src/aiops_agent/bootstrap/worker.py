@@ -37,6 +37,7 @@ from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
 from aiops_agent.application.workload import WorkloadService
+from aiops_agent.application.work_items import SituationRecoveryProjector
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.application.configuration.connection_test import (
     test_target_connection,
@@ -297,6 +298,9 @@ def create_aiops_worker_probe(
                 db_executor_client=db_executor_client,
                 turn_queue_service=turn_queue_service,
                 conversation_turn_service=ConversationTurnService(
+                    uow_factory=runtime.uow_factory,
+                ),
+                situation_recovery_projector=SituationRecoveryProjector(
                     uow_factory=runtime.uow_factory,
                 ),
                 turn_planner_service=TurnPlannerService(

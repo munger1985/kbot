@@ -1464,6 +1464,27 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             payload=payload, auth_context=auth_context,
         )
 
+    async def work_item_action(self, work_item_id: UUID, action: str, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/work-items/{work_item_id}:{action}", payload=payload, auth_context=auth_context)
+
+    async def list_responsibility_groups(self, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/responsibility-groups", auth_context=auth_context)
+
+    async def create_responsibility_group(self, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/responsibility-groups", payload=payload, auth_context=auth_context)
+
+    async def get_responsibility_group(self, group_id: UUID, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/responsibility-groups/{group_id}", auth_context=auth_context)
+
+    async def patch_responsibility_group(self, group_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PATCH", f"{INTERNAL_API_V1}/aiops/responsibility-groups/{group_id}", payload=payload, auth_context=auth_context)
+
+    async def put_responsibility_group_member(self, group_id: UUID, user_id: str, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PUT", f"{INTERNAL_API_V1}/aiops/responsibility-groups/{group_id}/members/{user_id}", payload=payload, auth_context=auth_context)
+
+    async def remove_responsibility_group_member(self, group_id: UUID, user_id: str, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("DELETE", f"{INTERNAL_API_V1}/aiops/responsibility-groups/{group_id}/members/{user_id}", auth_context=auth_context)
+
     async def route_run_to_work_items(
         self, payload: dict[str, Any], *, auth_context: AuthContext
     ) -> list[dict[str, Any]]:

@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 37,
-  "contract_version": "aiops-oracle-v27",
+  "schema_version": 38,
+  "contract_version": "aiops-oracle-v28",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "56cc4e5abd4ac57443d0536e050b69e2755110a1ffa36f491b199c973d16fff4"
+      "sha256": "1ed4f1c16cad52c5d3e44f0cdec57af634819f957a5cdc18db28960d0e1baa70"
     },
     {
       "name": "007_ops_agents.sql",
@@ -61,8 +61,8 @@
     },
     {
       "name": "012_ops_work_items.sql",
-      "statements": 15,
-      "sha256": "5c5eceb25073fb57c179ea73361da303b948ba7d04e8d1b38dfe77c1ded546db"
+      "statements": 26,
+      "sha256": "85ebf230da1b9ff60d7806c0e0e15646986c36b3067dac597d62ddf669a9e778"
     }
   ],
   "tables": [
@@ -123,6 +123,8 @@
     "KBOT_OPS_KNOWLEDGE_REVIEW",
     "KBOT_OPS_RECOVERY_PROFILE",
     "KBOT_OPS_RECOVERY_DRILL",
+    "KBOT_OPS_RESPONSIBILITY_GROUP",
+    "KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER",
     "KBOT_OPS_WORK_ITEM",
     "KBOT_OPS_WORK_ITEM_OCCURRENCE",
     "KBOT_OPS_WORK_ITEM_LINK",

@@ -48,6 +48,7 @@ class TargetEntity(BaseEntity):
     importance_level: Mapped[int] = mapped_column(
         Numeric(1, 0), nullable=False, default=3
     )
+    default_responsibility_group_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     capabilities_json: Mapped[dict[str, Any] | None] = mapped_column(
         OracleNativeJSON
     )

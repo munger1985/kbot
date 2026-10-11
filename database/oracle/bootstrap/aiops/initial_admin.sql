@@ -121,6 +121,8 @@ MERGE INTO KBOT_PERMISSION target
 USING (
     SELECT 'aiops:use' PERMISSION_CODE, 'aiops' APP_ID, '使用 AIOps' DISPLAY_NAME FROM DUAL UNION ALL
     SELECT 'aiops:member_manage', 'aiops', '管理 AIOps 成员' FROM DUAL UNION ALL
+    SELECT 'aiops:work_item_handle', 'aiops', '领取并处理 DBA 工作项' FROM DUAL UNION ALL
+    SELECT 'aiops:work_item_manage', 'aiops', '维护责任组并跨用户管理 DBA 工作项' FROM DUAL UNION ALL
     SELECT 'aiops:role_manage', 'aiops', '管理 AIOps 角色' FROM DUAL UNION ALL
     SELECT 'aiops:target_manage', 'aiops', '管理诊断目标' FROM DUAL UNION ALL
     SELECT 'aiops:diagnostic_source_manage', 'aiops', '管理诊断源' FROM DUAL UNION ALL
@@ -174,7 +176,7 @@ USING (
     SELECT 'aiops' APP_ID, 'operator' ROLE_CODE, PERMISSION_CODE
       FROM KBOT_PERMISSION
      WHERE PERMISSION_CODE IN (
-        'aiops:use', 'aiops:target_manage',
+        'aiops:use', 'aiops:target_manage', 'aiops:work_item_handle',
         'aiops:diagnostic_source_manage', 'aiops:policy_manage',
         'aiops:plan_manage'
      )

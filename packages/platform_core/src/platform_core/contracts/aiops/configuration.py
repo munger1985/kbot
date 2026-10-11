@@ -123,6 +123,7 @@ class TargetCreate(AIOpsContract):
     diagnostic_credential: DatabaseCredentialInput | None = None
     execution_credential: DatabaseCredentialInput | None = None
     importance_level: int = Field(default=3, ge=1, le=5)
+    default_responsibility_group_id: UUIDv7 | None = None
     capabilities: JsonObject = Field(default_factory=dict)
     workload_snapshot_policy: WorkloadPolicy = Field(
         default_factory=WorkloadPolicy
@@ -248,6 +249,7 @@ class TargetPatch(AIOpsContract):
     readonly_connection_enabled: bool | None = None
     controlled_change_enabled: bool | None = None
     importance_level: int | None = Field(default=None, ge=1, le=5)
+    default_responsibility_group_id: UUIDv7 | None = None
     capabilities: JsonObject | None = None
     workload_snapshot_policy: WorkloadPolicy | None = None
     activity_sampler_policy: ActivitySamplerPolicy | None = None
@@ -260,6 +262,7 @@ class TargetSummary(AIOpsContract):
     db_type: DatabaseType
     environment: str
     importance_level: int = Field(ge=1, le=5)
+    default_responsibility_group_id: UUIDv7 | None = None
     status: TargetStatus
     connectivity_status: ConnectivityStatus
     observed_status: ObservedStatus

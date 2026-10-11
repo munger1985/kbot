@@ -170,6 +170,7 @@ class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    default_responsibility_group_id: UUID | None = None
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     controlled_action_execution: tuple[
         TargetControlledActionExecution, ...
@@ -207,6 +208,7 @@ class UpdateAIOpsAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    default_responsibility_group_id: UUID | None = None
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
@@ -280,6 +282,16 @@ class AIOpsAgentService:
         agent_id, version_id = uuid7(), uuid7()
         async with self._uow_factory() as uow:
             values = command.model_dump()
+            if command.default_responsibility_group_id is not None:
+                group = await uow.work_items.get_group(
+                    group_id=command.default_responsibility_group_id,
+                    domain_id=command.domain_id,
+                )
+                if group is None or group.status != "ACTIVE":
+                    raise AIOpsAgentError(
+                        "AIOPS_RESPONSIBILITY_GROUP_INVALID",
+                        "默认责任组不存在或已停用",
+                    )
             await self._validate_resources(
                 uow, command.domain_id, command.status, values
             )
@@ -297,6 +309,9 @@ class AIOpsAgentService:
                 domain_id=command.domain_id,
                 display_name=command.display_name.strip(),
                 description=command.description,
+                default_responsibility_group_id=(
+                    command.default_responsibility_group_id
+                ),
                 status=command.status,
                 current_version_id=None,
                 created_by=command.actor_id,
@@ -492,6 +507,18 @@ class AIOpsAgentService:
                 exclude={"domain_id", "agent_id", "expected_row_version", "actor_id"},
                 exclude_unset=True,
             )
+            if "default_responsibility_group_id" in changes:
+                group_id = changes["default_responsibility_group_id"]
+                if group_id is not None:
+                    group = await uow.work_items.get_group(
+                        group_id=group_id,
+                        domain_id=command.domain_id,
+                    )
+                    if group is None or group.status != "ACTIVE":
+                        raise AIOpsAgentError(
+                            "AIOPS_RESPONSIBILITY_GROUP_INVALID",
+                            "默认责任组不存在或已停用",
+                        )
             effective_target_ids = tuple(
                 changes.get("target_ids", tuple(current_targets))
             )
@@ -582,7 +609,12 @@ class AIOpsAgentService:
                     ),
                 )
                 agent.current_version_id = version_id
-            for field in ("display_name", "description", "status"):
+            for field in (
+                "display_name",
+                "description",
+                "status",
+                "default_responsibility_group_id",
+            ):
                 if field in changes:
                     setattr(agent, field, changes[field])
             agent.updated_by = command.actor_id
@@ -986,6 +1018,11 @@ class AIOpsAgentService:
             "domain_id": str(agent.domain_id),
             "display_name": agent.display_name,
             "description": agent.description,
+            "default_responsibility_group_id": (
+                str(agent.default_responsibility_group_id)
+                if agent.default_responsibility_group_id
+                else None
+            ),
             "status": agent.status,
             "agent_version_id": str(version.agent_version_id),
             "version_no": int(version.version_no),

@@ -150,6 +150,8 @@ SERVICE_TABLES = {
         "KBOT_OPS_WORK_ITEM_OCCURRENCE",
         "KBOT_OPS_WORK_ITEM_LINK",
         "KBOT_OPS_WORK_ITEM_ACTIVITY",
+        "KBOT_OPS_RESPONSIBILITY_GROUP",
+        "KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER",
     },
     "knowledge_retrieval_app": {
         "KBOT_KR_AGENT",

@@ -6432,6 +6432,390 @@
         "title": "ReportView",
         "type": "object"
       },
+      "ResponsibilityGroupCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "lead_user_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead User Id"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ResponsibilityGroupCreate",
+        "type": "object"
+      },
+      "ResponsibilityGroupMemberRole": {
+        "enum": [
+          "LEAD",
+          "MEMBER"
+        ],
+        "title": "ResponsibilityGroupMemberRole",
+        "type": "string"
+      },
+      "ResponsibilityGroupMemberUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "member_role": {
+            "$ref": "#/components/schemas/ResponsibilityGroupMemberRole",
+            "default": "MEMBER"
+          }
+        },
+        "title": "ResponsibilityGroupMemberUpsert",
+        "type": "object"
+      },
+      "ResponsibilityGroupMemberView": {
+        "additionalProperties": false,
+        "properties": {
+          "active_work_item_count": {
+            "minimum": 0.0,
+            "title": "Active Work Item Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "member_role": {
+            "$ref": "#/components/schemas/ResponsibilityGroupMemberRole"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResponsibilityGroupStatus"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "member_role",
+          "status",
+          "active_work_item_count",
+          "created_at"
+        ],
+        "title": "ResponsibilityGroupMemberView",
+        "type": "object"
+      },
+      "ResponsibilityGroupPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResponsibilityGroupSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "ResponsibilityGroupPage",
+        "type": "object"
+      },
+      "ResponsibilityGroupPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "lead_user_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead User Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponsibilityGroupStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "ResponsibilityGroupPatch",
+        "type": "object"
+      },
+      "ResponsibilityGroupStatus": {
+        "enum": [
+          "ACTIVE",
+          "INACTIVE"
+        ],
+        "title": "ResponsibilityGroupStatus",
+        "type": "string"
+      },
+      "ResponsibilityGroupSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "active_member_count": {
+            "minimum": 0.0,
+            "title": "Active Member Count",
+            "type": "integer"
+          },
+          "agent_binding_count": {
+            "minimum": 0.0,
+            "title": "Agent Binding Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "lead_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead User Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "format": "uuid",
+            "title": "Responsibility Group Id",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResponsibilityGroupStatus"
+          },
+          "target_binding_count": {
+            "minimum": 0.0,
+            "title": "Target Binding Count",
+            "type": "integer"
+          },
+          "unassigned_work_item_count": {
+            "minimum": 0.0,
+            "title": "Unassigned Work Item Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "responsibility_group_id",
+          "name",
+          "status",
+          "active_member_count",
+          "agent_binding_count",
+          "target_binding_count",
+          "unassigned_work_item_count",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ResponsibilityGroupSummary",
+        "type": "object"
+      },
+      "ResponsibilityGroupView": {
+        "additionalProperties": false,
+        "properties": {
+          "active_member_count": {
+            "minimum": 0.0,
+            "title": "Active Member Count",
+            "type": "integer"
+          },
+          "agent_binding_count": {
+            "minimum": 0.0,
+            "title": "Agent Binding Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "lead_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead User Id"
+          },
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResponsibilityGroupMemberView"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "format": "uuid",
+            "title": "Responsibility Group Id",
+            "type": "string"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ResponsibilityGroupStatus"
+          },
+          "target_binding_count": {
+            "minimum": 0.0,
+            "title": "Target Binding Count",
+            "type": "integer"
+          },
+          "unassigned_work_item_count": {
+            "minimum": 0.0,
+            "title": "Unassigned Work Item Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "responsibility_group_id",
+          "name",
+          "status",
+          "active_member_count",
+          "agent_binding_count",
+          "target_binding_count",
+          "unassigned_work_item_count",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ResponsibilityGroupView",
+        "type": "object"
+      },
       "ResultStatus": {
         "enum": [
           "SUCCEEDED",
@@ -7365,6 +7749,18 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
+          },
           "diagnostic_credential": {
             "anyOf": [
               {
@@ -7584,6 +7980,18 @@
           },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
+          },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
           },
           "diagnostic_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
@@ -8251,6 +8659,18 @@
             ],
             "title": "Db Role"
           },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -8649,6 +9069,18 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
+          },
           "diagnostic_credential_configured": {
             "title": "Diagnostic Credential Configured",
             "type": "boolean"
@@ -8914,28 +9346,74 @@
             ],
             "title": "Assignee User Id"
           },
-          "assignment_group": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "responsibility_group_id": {
             "anyOf": [
               {
-                "maxLength": 128,
+                "format": "uuid",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Assignment Group"
-          },
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
+            "title": "Responsibility Group Id"
           }
         },
         "required": [
           "expected_row_version"
         ],
         "title": "WorkItemAssignment",
+        "type": "object"
+      },
+      "WorkItemAssignmentSource": {
+        "enum": [
+          "ROUTING_RULE",
+          "TARGET_DEFAULT",
+          "AGENT_DEFAULT",
+          "MANUAL",
+          "CLAIM"
+        ],
+        "title": "WorkItemAssignmentSource",
+        "type": "string"
+      },
+      "WorkItemCompletion": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Completion Note",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "resolution_code": {
+            "$ref": "#/components/schemas/WorkItemResolutionCode"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "resolution_code",
+          "completion_note"
+        ],
+        "title": "WorkItemCompletion",
         "type": "object"
       },
       "WorkItemCreate": {
@@ -8953,20 +9431,20 @@
             ],
             "title": "Assignee User Id"
           },
-          "assignment_group": {
+          "priority": {
+            "$ref": "#/components/schemas/WorkItemPriority"
+          },
+          "responsibility_group_id": {
             "anyOf": [
               {
-                "maxLength": 128,
+                "format": "uuid",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Assignment Group"
-          },
-          "priority": {
-            "$ref": "#/components/schemas/WorkItemPriority"
+            "title": "Responsibility Group Id"
           },
           "severity": {
             "$ref": "#/components/schemas/FindingSeverity"
@@ -9002,6 +9480,16 @@
         ],
         "title": "WorkItemCreate",
         "type": "object"
+      },
+      "WorkItemDecision": {
+        "enum": [
+          "ACTION_REQUIRED",
+          "MANUAL_INVESTIGATION",
+          "OBSERVE",
+          "NO_WORK_ITEM"
+        ],
+        "title": "WorkItemDecision",
+        "type": "string"
       },
       "WorkItemOccurrenceView": {
         "additionalProperties": false,
@@ -9193,6 +9681,8 @@
         "enum": [
           "FIXED",
           "MITIGATED",
+          "OBSERVED_STABLE",
+          "FALSE_POSITIVE",
           "ACCEPTED_RISK",
           "DUPLICATE",
           "NO_ACTION",
@@ -9299,6 +9789,89 @@
         "title": "WorkItemRouteRun",
         "type": "object"
       },
+      "WorkItemRoutingDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "action_summary": {
+            "title": "Action Summary",
+            "type": "string"
+          },
+          "confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/WorkItemDecision"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact"
+          },
+          "observation_window": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Window"
+          },
+          "reason_codes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "recommended_playbook_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Playbook Id"
+          },
+          "recommended_priority": {
+            "$ref": "#/components/schemas/WorkItemPriority"
+          }
+        },
+        "required": [
+          "decision",
+          "recommended_priority",
+          "action_summary"
+        ],
+        "title": "WorkItemRoutingDecision",
+        "type": "object"
+      },
       "WorkItemSourceKind": {
         "enum": [
           "ALERT",
@@ -9338,6 +9911,29 @@
             ],
             "title": "Acknowledgement Due At"
           },
+          "assigned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned At"
+          },
+          "assigned_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned By"
+          },
           "assignee_user_id": {
             "anyOf": [
               {
@@ -9349,16 +9945,15 @@
             ],
             "title": "Assignee User Id"
           },
-          "assignment_group": {
+          "assignment_source": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/WorkItemAssignmentSource"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Assignment Group"
+            ]
           },
           "closed_at": {
             "anyOf": [
@@ -9371,6 +9966,40 @@
               }
             ],
             "title": "Closed At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed By"
+          },
+          "completion_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Note"
           },
           "created_at": {
             "format": "date-time",
@@ -9441,6 +10070,29 @@
             ],
             "title": "Resolved At"
           },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
+          "responsibility_group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Name"
+          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -9493,6 +10145,40 @@
               }
             ],
             "title": "Verification Due At"
+          },
+          "verification_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Result"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "verified_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified By"
           },
           "wait_reason": {
             "anyOf": [
@@ -9601,10 +10287,65 @@
           "RISK_REMEDIATION",
           "PROBLEM_INVESTIGATION",
           "OPTIMIZATION",
-          "OBSERVABILITY_GAP"
+          "OBSERVABILITY_GAP",
+          "RECOVERY_OBSERVATION"
         ],
         "title": "WorkItemType",
         "type": "string"
+      },
+      "WorkItemVerification": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "verification_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Id"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "passed",
+          "note"
+        ],
+        "title": "WorkItemVerification",
+        "type": "object"
+      },
+      "WorkItemVersionCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "WorkItemVersionCommand",
+        "type": "object"
       },
       "WorkItemView": {
         "additionalProperties": false,
@@ -9629,6 +10370,29 @@
             "title": "Activities",
             "type": "array"
           },
+          "assigned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned At"
+          },
+          "assigned_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned By"
+          },
           "assignee_user_id": {
             "anyOf": [
               {
@@ -9640,16 +10404,15 @@
             ],
             "title": "Assignee User Id"
           },
-          "assignment_group": {
+          "assignment_source": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/WorkItemAssignmentSource"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Assignment Group"
+            ]
           },
           "closed_at": {
             "anyOf": [
@@ -9662,6 +10425,40 @@
               }
             ],
             "title": "Closed At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed By"
+          },
+          "completion_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Note"
           },
           "created_at": {
             "format": "date-time",
@@ -9759,6 +10556,39 @@
             ],
             "title": "Resolved At"
           },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
+          "responsibility_group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Name"
+          },
+          "routing_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItemRoutingDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -9811,6 +10641,40 @@
               }
             ],
             "title": "Verification Due At"
+          },
+          "verification_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Result"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "verified_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified By"
           },
           "wait_reason": {
             "anyOf": [
@@ -12906,6 +13770,317 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/responsibility-groups": {
+      "get": {
+        "operationId": "list_responsibility_groups_api_v1_apps_aiops_responsibility_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibilityGroupPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Responsibility Groups",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "post": {
+        "operationId": "create_responsibility_group_api_v1_apps_aiops_responsibility_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsibilityGroupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibilityGroupView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Responsibility Group",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/responsibility-groups/{group_id}": {
+      "get": {
+        "operationId": "get_responsibility_group_api_v1_apps_aiops_responsibility_groups__group_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibilityGroupView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Responsibility Group",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_responsibility_group_api_v1_apps_aiops_responsibility_groups__group_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsibilityGroupPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibilityGroupView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Responsibility Group",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/responsibility-groups/{group_id}/member-candidates": {
+      "get": {
+        "operationId": "responsibility_group_member_candidates_api_v1_apps_aiops_responsibility_groups__group_id__member_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Responsibility Group Member Candidates Api V1 Apps Aiops Responsibility Groups  Group Id  Member Candidates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Responsibility Group Member Candidates",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/responsibility-groups/{group_id}/members/{user_id}": {
+      "delete": {
+        "operationId": "remove_responsibility_group_member_api_v1_apps_aiops_responsibility_groups__group_id__members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibilityGroupView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Responsibility Group Member",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "put": {
+        "operationId": "put_responsibility_group_member_api_v1_apps_aiops_responsibility_groups__group_id__members__user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsibilityGroupMemberUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsibilityGroupView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Responsibility Group Member",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/runs": {
       "get": {
         "operationId": "list_ops_runs_api_v1_apps_aiops_runs_get",
@@ -15922,6 +17097,218 @@
           }
         },
         "summary": "Transition Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}:claim": {
+      "post": {
+        "operationId": "claim_work_item_api_v1_apps_aiops_work_items__work_item_id__claim_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemVersionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}:complete": {
+      "post": {
+        "operationId": "complete_work_item_api_v1_apps_aiops_work_items__work_item_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemCompletion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}:return-to-group": {
+      "post": {
+        "operationId": "return_work_item_api_v1_apps_aiops_work_items__work_item_id__return_to_group_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemVersionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Return Work Item",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/work-items/{work_item_id}:verify": {
+      "post": {
+        "operationId": "verify_work_item_api_v1_apps_aiops_work_items__work_item_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Work Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemVerification"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Work Item",
         "tags": [
           "AIOps"
         ]

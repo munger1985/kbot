@@ -29,6 +29,7 @@ class _Request(BaseModel):
 class AgentCreateRequest(_Request):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    default_responsibility_group_id: UUID | None = None
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     controlled_action_execution: tuple[
         TargetControlledActionExecution, ...
@@ -52,6 +53,7 @@ class AgentUpdateRequest(_Request):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
+    default_responsibility_group_id: UUID | None = None
     target_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )

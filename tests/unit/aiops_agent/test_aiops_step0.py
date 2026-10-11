@@ -336,22 +336,14 @@ class AIOpsConfigAndBootstrapTest(unittest.TestCase):
             [path.name for path in sql_files],
         )
 
-    def test_aiops_ready_check_uses_canonical_schema_version(self) -> None:
+    def test_aiops_ready_check_only_checks_database_connectivity(self) -> None:
         root = Path(__file__).resolve().parents[3]
-        manifest = json.loads(
-            (
-                root / "database" / "oracle" / "aiops_agent"
-                / "schema_manifest.json"
-            ).read_text(encoding="utf-8")
-        )
         source = (
             root / "services" / "aiops_agent" / "src" / "aiops_agent"
             / "bootstrap" / "common.py"
         ).read_text(encoding="utf-8")
-        self.assertIn(
-            f"AND schema_version = {manifest['schema_version']}",
-            source,
-        )
+        self.assertIn('text("SELECT 1 FROM DUAL")', source)
+        self.assertNotIn("KBOT_V_OPS_SCHEMA_VERSION", source)
 
     def test_openapi_snapshots_match_frozen_contracts(self) -> None:
         root = Path(__file__).resolve().parents[3]

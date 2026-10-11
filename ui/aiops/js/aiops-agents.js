@@ -6,6 +6,7 @@
   let agents = [];
   let targets = [];
   let models = [];
+  let responsibilityGroups = [];
   const actionDraftsByTarget = new Map();
   const actionCatalogsByTarget = new Map();
   let editing = null;
@@ -185,6 +186,10 @@
     document.getElementById("agent-targets").innerHTML = targets.length
       ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
       : '<div class="ops-error">暂无已启用的 Target。请先创建 Target，并完成监控 Label 映射后启用。</div>';
+    document.getElementById("agent-responsibility-group").innerHTML = '<option value="">未分派队列</option>' + responsibilityGroups
+      .filter((group) => group.status === "ACTIVE")
+      .map((group) => `<option value="${escape(group.responsibility_group_id)}">${escape(group.name)}</option>`)
+      .join("");
     const diagnosisModels = sortedDiagnosisModels();
     document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
@@ -339,6 +344,7 @@
     form.elements.alert_cooldown_minutes.value = 15;
     form.elements.auto_observe_min_target_level.value = 1;
     form.elements.auto_alert_enabled.checked = true;
+    form.elements.default_responsibility_group_id.value = "";
     form.elements.status.disabled = true;
     const localModelId = firstLocalDeepseekId();
     form.elements.planner_model_id.value = localModelId;
@@ -363,6 +369,7 @@
     form.elements.status.disabled = false;
     form.elements.display_name.value = editing.display_name;
     form.elements.description.value = editing.description || "";
+    form.elements.default_responsibility_group_id.value = editing.default_responsibility_group_id || "";
     form.elements.status.value = editing.status;
     form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled);
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
@@ -462,6 +469,7 @@
     return {
       display_name: form.elements.display_name.value.trim(),
       description: form.elements.description.value.trim() || null,
+      default_responsibility_group_id: form.elements.default_responsibility_group_id.value || null,
       status: editing ? form.elements.status.value : "DRAFT",
       target_ids: targetIds,
       controlled_action_execution: controlledActionExecution,
@@ -506,14 +514,16 @@
   }
 
   async function load() {
-    const [agentRows, targetPage, modelRows] = await Promise.all([
+    const [agentRows, targetPage, modelRows, groupPage] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
       KBotAIOpsAuth.request("/api/v1/model-catalog"),
+      KBotAIOpsAuth.request(`${api}/responsibility-groups`),
     ]);
     agents = Array.isArray(agentRows) ? agentRows : [];
     targets = targetPage.items || [];
     models = Array.isArray(modelRows) ? modelRows : [];
+    responsibilityGroups = groupPage.items || [];
     renderResources();
     renderRows();
   }

@@ -124,6 +124,7 @@ def _target_summary(entity: TargetEntity) -> TargetSummary:
         db_type=entity.db_type,
         environment=entity.environment,
         importance_level=int(entity.importance_level),
+        default_responsibility_group_id=entity.default_responsibility_group_id,
         status=entity.status,
         connectivity_status=entity.connectivity_status,
         observed_status=entity.observed_status,

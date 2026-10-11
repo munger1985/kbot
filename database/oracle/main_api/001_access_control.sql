@@ -212,6 +212,8 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('media_studio:run_read', 'media_studio', '查看生成运行和用量')
     INTO KBOT_PERMISSION VALUES ('aiops:use', 'aiops', '使用 AIOps')
     INTO KBOT_PERMISSION VALUES ('aiops:member_manage', 'aiops', '管理 AIOps 成员')
+    INTO KBOT_PERMISSION VALUES ('aiops:work_item_handle', 'aiops', '领取并处理 DBA 工作项')
+    INTO KBOT_PERMISSION VALUES ('aiops:work_item_manage', 'aiops', '维护责任组并跨用户管理 DBA 工作项')
     INTO KBOT_PERMISSION VALUES ('aiops:role_manage', 'aiops', '管理 AIOps 角色')
     INTO KBOT_PERMISSION VALUES ('aiops:target_manage', 'aiops', '管理诊断目标')
     INTO KBOT_PERMISSION VALUES ('aiops:diagnostic_source_manage', 'aiops', '管理诊断源')
@@ -283,7 +285,7 @@ WHERE PERMISSION_CODE = 'aiops:use';
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'aiops', 'operator', PERMISSION_CODE FROM KBOT_PERMISSION
-WHERE PERMISSION_CODE IN ('aiops:use', 'aiops:target_manage', 'aiops:diagnostic_source_manage', 'aiops:policy_manage', 'aiops:plan_manage');
+WHERE PERMISSION_CODE IN ('aiops:use', 'aiops:target_manage', 'aiops:diagnostic_source_manage', 'aiops:policy_manage', 'aiops:plan_manage', 'aiops:work_item_handle');
 
 INSERT INTO KBOT_APP_ROLE_PERMISSION
 SELECT 'aiops', 'approver', PERMISSION_CODE FROM KBOT_PERMISSION

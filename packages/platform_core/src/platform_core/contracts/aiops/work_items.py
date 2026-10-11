@@ -23,6 +23,7 @@ class WorkItemType(StrEnum):
     PROBLEM_INVESTIGATION = "PROBLEM_INVESTIGATION"
     OPTIMIZATION = "OPTIMIZATION"
     OBSERVABILITY_GAP = "OBSERVABILITY_GAP"
+    RECOVERY_OBSERVATION = "RECOVERY_OBSERVATION"
 
 
 class WorkItemSourceKind(StrEnum):
@@ -62,10 +63,49 @@ class WorkItemPhase(StrEnum):
 class WorkItemResolutionCode(StrEnum):
     FIXED = "FIXED"
     MITIGATED = "MITIGATED"
+    OBSERVED_STABLE = "OBSERVED_STABLE"
+    FALSE_POSITIVE = "FALSE_POSITIVE"
     ACCEPTED_RISK = "ACCEPTED_RISK"
     DUPLICATE = "DUPLICATE"
     NO_ACTION = "NO_ACTION"
     CANNOT_REPRODUCE = "CANNOT_REPRODUCE"
+
+
+class WorkItemAssignmentSource(StrEnum):
+    ROUTING_RULE = "ROUTING_RULE"
+    TARGET_DEFAULT = "TARGET_DEFAULT"
+    AGENT_DEFAULT = "AGENT_DEFAULT"
+    MANUAL = "MANUAL"
+    CLAIM = "CLAIM"
+
+
+class ResponsibilityGroupStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
+class ResponsibilityGroupMemberRole(StrEnum):
+    LEAD = "LEAD"
+    MEMBER = "MEMBER"
+
+
+class WorkItemDecision(StrEnum):
+    ACTION_REQUIRED = "ACTION_REQUIRED"
+    MANUAL_INVESTIGATION = "MANUAL_INVESTIGATION"
+    OBSERVE = "OBSERVE"
+    NO_WORK_ITEM = "NO_WORK_ITEM"
+
+
+class WorkItemRoutingDecision(AIOpsContract):
+    decision: WorkItemDecision
+    recommended_priority: WorkItemPriority
+    reason_codes: tuple[str, ...] = ()
+    action_summary: str
+    impact: str | None = None
+    confirmation: str | None = None
+    evidence_refs: tuple[str, ...] = ()
+    recommended_playbook_id: UUIDv7 | None = None
+    observation_window: str | None = None
 
 
 class WorkItemResourceKind(StrEnum):
@@ -99,8 +139,12 @@ class WorkItemSummary(AIOpsContract):
     status: WorkItemStatus
     phase: WorkItemPhase
     wait_reason: str | None = None
-    assignment_group: str | None = None
+    responsibility_group_id: UUIDv7 | None = None
+    responsibility_group_name: str | None = None
     assignee_user_id: str | None = None
+    assignment_source: WorkItemAssignmentSource | None = None
+    assigned_by: str | None = None
+    assigned_at: UtcDatetime | None = None
     acknowledgement_due_at: UtcDatetime | None = None
     resolution_due_at: UtcDatetime | None = None
     verification_due_at: UtcDatetime | None = None
@@ -109,6 +153,12 @@ class WorkItemSummary(AIOpsContract):
     occurrence_count: int = Field(ge=1)
     reopen_count: int = Field(ge=0)
     resolution_code: WorkItemResolutionCode | None = None
+    completion_note: str | None = None
+    completed_by: str | None = None
+    completed_at: UtcDatetime | None = None
+    verification_result: str | None = None
+    verified_by: str | None = None
+    verified_at: UtcDatetime | None = None
     resolved_at: UtcDatetime | None = None
     closed_at: UtcDatetime | None = None
     row_version: int = Field(ge=1)
@@ -156,6 +206,7 @@ class WorkItemView(WorkItemSummary):
     links: tuple[WorkItemResourceLinkView, ...] = ()
     activities: tuple[WorkItemActivityView, ...] = ()
     resolution_note: str | None = None
+    routing_decision: WorkItemRoutingDecision | None = None
 
 
 class WorkItemPage(CursorPage):
@@ -171,7 +222,7 @@ class WorkItemCreate(AIOpsContract):
     summary: str = Field(min_length=1, max_length=4000)
     severity: FindingSeverity
     priority: WorkItemPriority
-    assignment_group: str | None = Field(default=None, max_length=128)
+    responsibility_group_id: UUIDv7 | None = None
     assignee_user_id: str | None = Field(default=None, max_length=256)
 
 
@@ -183,8 +234,74 @@ class WorkItemRouteRun(AIOpsContract):
 
 class WorkItemAssignment(AIOpsContract):
     expected_row_version: int = Field(ge=1)
-    assignment_group: str | None = Field(default=None, max_length=128)
+    responsibility_group_id: UUIDv7 | None = None
     assignee_user_id: str | None = Field(default=None, max_length=256)
+
+
+class WorkItemVersionCommand(AIOpsContract):
+    expected_row_version: int = Field(ge=1)
+
+
+class WorkItemCompletion(WorkItemVersionCommand):
+    resolution_code: WorkItemResolutionCode
+    completion_note: str = Field(min_length=1, max_length=4000)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=100)
+
+
+class WorkItemVerification(WorkItemVersionCommand):
+    passed: bool
+    note: str = Field(min_length=1, max_length=4000)
+    verification_id: UUIDv7 | None = None
+
+
+class ResponsibilityGroupMemberView(AIOpsContract):
+    user_id: str
+    member_role: ResponsibilityGroupMemberRole
+    status: ResponsibilityGroupStatus
+    active_work_item_count: int = Field(ge=0)
+    created_at: UtcDatetime
+
+
+class ResponsibilityGroupSummary(AIOpsContract):
+    responsibility_group_id: UUIDv7
+    name: str
+    description: str | None = None
+    status: ResponsibilityGroupStatus
+    lead_user_id: str | None = None
+    active_member_count: int = Field(ge=0)
+    agent_binding_count: int = Field(ge=0)
+    target_binding_count: int = Field(ge=0)
+    unassigned_work_item_count: int = Field(ge=0)
+    row_version: int = Field(ge=1)
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class ResponsibilityGroupView(ResponsibilityGroupSummary):
+    members: tuple[ResponsibilityGroupMemberView, ...] = ()
+
+
+class ResponsibilityGroupPage(CursorPage):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[ResponsibilityGroupSummary, ...] = ()
+
+
+class ResponsibilityGroupCreate(AIOpsContract):
+    name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1000)
+    lead_user_id: str | None = Field(default=None, max_length=256)
+
+
+class ResponsibilityGroupPatch(AIOpsContract):
+    expected_row_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1000)
+    status: ResponsibilityGroupStatus | None = None
+    lead_user_id: str | None = Field(default=None, max_length=256)
+
+
+class ResponsibilityGroupMemberUpsert(AIOpsContract):
+    member_role: ResponsibilityGroupMemberRole = ResponsibilityGroupMemberRole.MEMBER
 
 
 class WorkItemTransition(AIOpsContract):

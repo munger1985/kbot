@@ -9954,6 +9954,18 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
+          },
           "diagnostic_credential": {
             "anyOf": [
               {
@@ -10173,6 +10185,18 @@
           },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
+          },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
           },
           "diagnostic_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
@@ -10895,6 +10919,18 @@
             ],
             "title": "Db Role"
           },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -11292,6 +11328,18 @@
           },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
+          },
+          "default_responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Responsibility Group Id"
           },
           "diagnostic_credential_configured": {
             "title": "Diagnostic Credential Configured",

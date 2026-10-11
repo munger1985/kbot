@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DBA 责任组</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261011_2">
+</head>
+<body data-page="responsibility-groups">
+  <main class="ops-main ops-responsibility-groups-main">
+    <header class="ops-head">
+      <div>
+        <h1>DBA 责任组</h1>
+        <p>从当前工作域已有的有效 AIOps 用户中维护工作路由关系；责任组不创建账号，也不授予 App 权限。</p>
+      </div>
+      <button id="groups-refresh" type="button">刷新</button>
+    </header>
+    <section class="ops-work-item-detail-grid">
+      <article class="ops-panel">
+        <div class="ops-panel-head">
+          <div><h2>责任组列表</h2><p>Target 默认组优先于 Agent 默认组；配置只影响后续新工作项。</p></div>
+        </div>
+        <div class="ops-table-wrap">
+          <table class="ops-table ops-responsibility-group-table">
+            <thead><tr><th>名称</th><th>状态</th><th>组长</th><th>成员</th><th>默认绑定</th><th>未领取</th><th></th></tr></thead>
+            <tbody id="groups-body"><tr><td colspan="7" class="ops-empty">正在加载…</td></tr></tbody>
+          </table>
+        </div>
+      </article>
+      <aside class="ops-work-item-side">
+        <article class="ops-panel">
+          <div class="ops-panel-head"><h2>新建责任组</h2></div>
+          <form id="group-create" class="ops-panel-body ops-work-item-action-form">
+            <label>名称<input name="name" maxlength="128" required></label>
+            <label>说明<textarea name="description" maxlength="1000"></textarea></label>
+            <small>创建后再从现有 AIOps 用户中添加成员并设置组长。</small>
+            <button class="primary" type="submit">创建</button>
+          </form>
+        </article>
+        <article id="group-maintenance" class="ops-panel" hidden>
+          <div class="ops-panel-head"><div><h2 id="group-maintenance-title">维护成员</h2><p id="group-maintenance-status"></p></div></div>
+          <div class="ops-panel-body ops-responsibility-group-maintenance">
+            <div id="group-members" class="ops-responsibility-group-members"></div>
+            <form id="group-member-form" class="ops-work-item-action-form">
+              <label>已有 AIOps 用户<select name="user_id" required><option value="">请选择</option></select></label>
+              <label>组内角色<select name="member_role"><option value="MEMBER">成员</option><option value="LEAD">组长</option></select></label>
+              <button class="primary" type="submit">保存成员</button>
+            </form>
+            <button id="group-status-toggle" type="button"></button>
+          </div>
+        </article>
+      </aside>
+    </section>
+  </main>
+  <script src="../runtime-config.js"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-responsibility-groups.js?v=20261011_2"></script>
+</body>
+</html>

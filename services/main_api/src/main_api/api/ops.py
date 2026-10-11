@@ -24,6 +24,11 @@ from starlette.responses import StreamingResponse
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
 from platform_core.contracts.aiops import (
+    ResponsibilityGroupCreate,
+    ResponsibilityGroupMemberUpsert,
+    ResponsibilityGroupPage,
+    ResponsibilityGroupPatch,
+    ResponsibilityGroupView,
     AgentBindingCreate,
     AgentBindingPatch,
     AgentBindingView,
@@ -97,11 +102,14 @@ from platform_core.contracts.aiops import (
     TargetPatch,
     WebhookKeyRotation,
     WorkItemAssignment,
+    WorkItemCompletion,
     WorkItemCreate,
     WorkItemPage,
     WorkItemRouteRun,
     WorkItemSummary,
     WorkItemTransition,
+    WorkItemVerification,
+    WorkItemVersionCommand,
     WorkItemView,
 )
 from platform_core.contracts.aiops.internal import CreateOpsRunCommand
@@ -138,13 +146,20 @@ def _route_permissions() -> dict[str, str]:
             "list_situations", "get_situation", "get_ops_run",
             "list_work_items", "get_work_item",
             "transition_work_item", "route_run_to_work_items",
+            "list_responsibility_groups", "get_responsibility_group",
+            "responsibility_group_member_candidates",
             "get_ops_run_result", "get_pending_input", "get_hitl_input",
             "respond_hitl", "skip_hitl", "decide_diagnostic_query",
             "list_proposals", "get_proposal", "cancel_ops_run",
             "stream_ops_run_events", "list_targets",
         },
-        "aiops:member_manage": {
-            "assign_work_item", "create_work_item",
+        "aiops:work_item_handle": {
+            "claim_work_item", "return_work_item", "complete_work_item",
+        },
+        "aiops:work_item_manage": {
+            "assign_work_item", "create_work_item", "verify_work_item",
+            "create_responsibility_group", "patch_responsibility_group",
+            "put_responsibility_group_member", "remove_responsibility_group_member",
         },
         "aiops:proposal:approve": {
             "reject_proposal", "approve_proposal", "record_manual_result",
@@ -599,6 +614,43 @@ async def list_monitoring_profiles(source_id: UUID, request: Request):
     )
 
 
+async def _eligible_aiops_group_members(request: Request) -> list[dict[str, Any]]:
+    context = request.state.auth_context
+    members = await request.app.state.access_control_service.list_members(
+        app_id="aiops",
+        domain_id=int(context.domain_id),
+    )
+    eligible: list[dict[str, Any]] = []
+    for row in members:
+        if row.get("status") != "ACTIVE":
+            continue
+        snapshot = await request.app.state.access_control_service.snapshot(
+            app_id="aiops",
+            domain_id=int(context.domain_id),
+            user_id=str(row["user_id"]),
+        )
+        if "aiops:use" in snapshot.permissions:
+            eligible.append(row)
+    return eligible
+
+
+async def _require_eligible_aiops_group_member(
+    request: Request,
+    user_id: str,
+) -> None:
+    if not any(
+        str(row["user_id"]) == str(user_id)
+        for row in await _eligible_aiops_group_members(request)
+    ):
+        raise HTTPException(
+            409,
+            {
+                "code": "AIOPS_GROUP_MEMBER_INELIGIBLE",
+                "message": "用户在当前空间没有有效的 AIOps 使用权限",
+            },
+        )
+
+
 @router.post(
     "/monitoring/sources/{source_id}/views",
     response_model=MonitoringView,
@@ -713,6 +765,10 @@ async def list_work_items(
 async def create_work_item(
     body: WorkItemCreate, request: Request, response: Response,
 ) -> WorkItemView:
+    if body.assignee_user_id is not None:
+        await _require_eligible_aiops_group_member(
+            request, body.assignee_user_id
+        )
     payload = await _client(request).create_work_item(
         body.model_dump(mode="json"), auth_context=request.state.auth_context
     )
@@ -753,6 +809,10 @@ async def assign_work_item(
     work_item_id: UUID, body: WorkItemAssignment,
     request: Request, response: Response,
 ) -> WorkItemView:
+    if body.assignee_user_id is not None:
+        await _require_eligible_aiops_group_member(
+            request, body.assignee_user_id
+        )
     payload = await _client(request).assign_work_item(
         work_item_id, body.model_dump(mode="json"),
         auth_context=request.state.auth_context,
@@ -776,6 +836,78 @@ async def transition_work_item(
     result = WorkItemView.model_validate(payload)
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
+
+
+async def _work_item_action(work_item_id: UUID, action: str, body: BaseModel, request: Request, response: Response) -> WorkItemView:
+    payload = await _client(request).work_item_action(work_item_id, action, body.model_dump(mode="json"), auth_context=request.state.auth_context)
+    result = WorkItemView.model_validate(payload)
+    response.headers["ETag"] = f'"rv-{result.row_version}"'
+    return result
+
+
+@router.post("/work-items/{work_item_id}:claim", response_model=WorkItemView)
+async def claim_work_item(work_item_id: UUID, body: WorkItemVersionCommand, request: Request, response: Response) -> WorkItemView:
+    await _require_eligible_aiops_group_member(
+        request,
+        str(request.state.auth_context.principal_id),
+    )
+    return await _work_item_action(work_item_id, "claim", body, request, response)
+
+
+@router.post("/work-items/{work_item_id}:return-to-group", response_model=WorkItemView)
+async def return_work_item(work_item_id: UUID, body: WorkItemVersionCommand, request: Request, response: Response) -> WorkItemView:
+    return await _work_item_action(work_item_id, "return-to-group", body, request, response)
+
+
+@router.post("/work-items/{work_item_id}:complete", response_model=WorkItemView)
+async def complete_work_item(work_item_id: UUID, body: WorkItemCompletion, request: Request, response: Response) -> WorkItemView:
+    return await _work_item_action(work_item_id, "complete", body, request, response)
+
+
+@router.post("/work-items/{work_item_id}:verify", response_model=WorkItemView)
+async def verify_work_item(work_item_id: UUID, body: WorkItemVerification, request: Request, response: Response) -> WorkItemView:
+    return await _work_item_action(work_item_id, "verify", body, request, response)
+
+
+@router.get("/responsibility-groups", response_model=ResponsibilityGroupPage)
+async def list_responsibility_groups(request: Request) -> ResponsibilityGroupPage:
+    return ResponsibilityGroupPage.model_validate(await _client(request).list_responsibility_groups(auth_context=request.state.auth_context))
+
+
+@router.post("/responsibility-groups", response_model=ResponsibilityGroupView, status_code=201)
+async def create_responsibility_group(body: ResponsibilityGroupCreate, request: Request) -> ResponsibilityGroupView:
+    if body.lead_user_id is not None:
+        await _require_eligible_aiops_group_member(request, body.lead_user_id)
+    return ResponsibilityGroupView.model_validate(await _client(request).create_responsibility_group(body.model_dump(mode="json"), auth_context=request.state.auth_context))
+
+
+@router.get("/responsibility-groups/{group_id}", response_model=ResponsibilityGroupView)
+async def get_responsibility_group(group_id: UUID, request: Request) -> ResponsibilityGroupView:
+    return ResponsibilityGroupView.model_validate(await _client(request).get_responsibility_group(group_id, auth_context=request.state.auth_context))
+
+
+@router.get("/responsibility-groups/{group_id}/member-candidates")
+async def responsibility_group_member_candidates(group_id: UUID, request: Request) -> dict[str, Any]:
+    await _client(request).get_responsibility_group(group_id, auth_context=request.state.auth_context)
+    return {"items": await _eligible_aiops_group_members(request)}
+
+
+@router.patch("/responsibility-groups/{group_id}", response_model=ResponsibilityGroupView)
+async def patch_responsibility_group(group_id: UUID, body: ResponsibilityGroupPatch, request: Request) -> ResponsibilityGroupView:
+    if "lead_user_id" in body.model_fields_set and body.lead_user_id is not None:
+        await _require_eligible_aiops_group_member(request, body.lead_user_id)
+    return ResponsibilityGroupView.model_validate(await _client(request).patch_responsibility_group(group_id, body.model_dump(mode="json", exclude_unset=True), auth_context=request.state.auth_context))
+
+
+@router.put("/responsibility-groups/{group_id}/members/{user_id}", response_model=ResponsibilityGroupView)
+async def put_responsibility_group_member(group_id: UUID, user_id: str, body: ResponsibilityGroupMemberUpsert, request: Request) -> ResponsibilityGroupView:
+    await _require_eligible_aiops_group_member(request, user_id)
+    return ResponsibilityGroupView.model_validate(await _client(request).put_responsibility_group_member(group_id, user_id, body.model_dump(mode="json"), auth_context=request.state.auth_context))
+
+
+@router.delete("/responsibility-groups/{group_id}/members/{user_id}", response_model=ResponsibilityGroupView)
+async def remove_responsibility_group_member(group_id: UUID, user_id: str, request: Request) -> ResponsibilityGroupView:
+    return ResponsibilityGroupView.model_validate(await _client(request).remove_responsibility_group_member(group_id, user_id, auth_context=request.state.auth_context))
 
 
 @router.get("/runs/{run_id}", response_model=OpsRunSummary)

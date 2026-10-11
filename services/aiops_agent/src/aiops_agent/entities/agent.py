@@ -29,6 +29,7 @@ class AIOpsAgentEntity(BaseEntity):
     description: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")
     current_version_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    default_responsibility_group_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)

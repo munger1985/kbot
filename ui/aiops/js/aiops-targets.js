@@ -42,11 +42,26 @@
   let editingTarget = null;
   let availableMonitorSources = [];
   let currentMonitorBindings = [];
+  let responsibilityGroups = [];
+  let responsibilityGroupsLoaded = false;
   const supportedVersions = {
     ORACLE: ["19c", "26ai"],
     MYSQL: ["8.4"],
     POSTGRESQL: ["16"],
   };
+
+  async function ensureResponsibilityGroups() {
+    if (!responsibilityGroupsLoaded) {
+      const page = await KBotAIOpsAuth.request(`${api}/responsibility-groups`);
+      responsibilityGroups = page.items || [];
+      responsibilityGroupsLoaded = true;
+    }
+    const select = document.getElementById("target-responsibility-group");
+    select.innerHTML = '<option value="">继承 Agent 或进入未分派队列</option>' + responsibilityGroups
+      .filter((group) => group.status === "ACTIVE")
+      .map((group) => `<option value="${shell.escape(group.responsibility_group_id)}">${shell.escape(group.name)}</option>`)
+      .join("");
+  }
 
   function clearResult() {
     result.textContent = "";
@@ -382,6 +397,7 @@
   }
 
   async function openCreate() {
+    await ensureResponsibilityGroups();
     editingTarget = null;
     form.reset();
     dbType.disabled = false;
@@ -408,7 +424,10 @@
 
   async function openEdit(targetId) {
     try {
-      const target = await KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}`);
+      const [target] = await Promise.all([
+        KBotAIOpsAuth.request(`${api}/targets/${encodeURIComponent(targetId)}`),
+        ensureResponsibilityGroups(),
+      ]);
       editingTarget = target;
       form.reset();
       dbType.disabled = false;
@@ -419,6 +438,7 @@
       form.elements.environment.value = target.environment;
       form.elements.db_role.value = target.db_role;
       form.elements.importance_level.value = target.importance_level;
+      form.elements.default_responsibility_group_id.value = target.default_responsibility_group_id || "";
       readonlyEnabled.checked = Boolean(target.readonly_connection_enabled);
       changeEnabled.checked = Boolean(target.controlled_change_enabled);
       form.elements.host.value = target.endpoint?.host || "";
@@ -555,6 +575,7 @@
       readonly_connection_enabled: readonlyEnabled.checked,
       controlled_change_enabled: changeEnabled.checked,
       importance_level: Number(form.elements.importance_level.value),
+      default_responsibility_group_id: form.elements.default_responsibility_group_id.value || null,
       ...oracleContainerPayload(),
     };
     if (readonlyEnabled.checked) fields.endpoint = endpointPayload();

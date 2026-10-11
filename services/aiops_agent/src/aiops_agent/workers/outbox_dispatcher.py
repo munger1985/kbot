@@ -48,6 +48,7 @@ class AIOpsDomainOutboxSink:
         turn_planner_service=None,
         turn_planning_service=None,
         conversation_turn_service=None,
+        situation_recovery_projector=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
@@ -60,6 +61,7 @@ class AIOpsDomainOutboxSink:
         self._turn_planner_service = turn_planner_service
         self._turn_planning_service = turn_planning_service
         self._conversation_turn_service = conversation_turn_service
+        self._situation_recovery_projector = situation_recovery_projector
 
     async def publish(self, event_type: str, payload: dict) -> None:
         if event_type == "aiops.turn.created" and self._turn_queue_service is not None:
@@ -194,6 +196,11 @@ class AIOpsDomainOutboxSink:
                 payload["inspection_fire_id"],
                 result["conversation_count"],
             )
+            return
+        if event_type == "OPS_SITUATION_RECOVERED":
+            if self._situation_recovery_projector is None:
+                raise RuntimeError("Situation 恢复工作项投影器未配置")
+            await self._situation_recovery_projector.project(payload)
             return
         if event_type != "OPS_SITUATION_AUTO_RUN_REQUESTED":
             await self._fallback.publish(event_type, payload)

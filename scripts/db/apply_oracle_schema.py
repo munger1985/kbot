@@ -82,6 +82,8 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "media_studio:run_read",
     "aiops:use",
     "aiops:member_manage",
+    "aiops:work_item_handle",
+    "aiops:work_item_manage",
     "aiops:role_manage",
     "aiops:target_manage",
     "aiops:diagnostic_source_manage",
@@ -151,6 +153,7 @@ def _expected_foundation_role_permissions() -> dict[tuple[str, str], set[str]]:
             "aiops:diagnostic_source_manage",
             "aiops:policy_manage",
             "aiops:plan_manage",
+            "aiops:work_item_handle",
         },
         ("aiops", "approver"): {
             "aiops:use",

@@ -106,8 +106,13 @@ def audit(root: Path, peer: Path) -> dict[str, Any]:
             )
         ),
         "complete_target_source_matrix": all(
-            "set(source_ids).issubset(bound_source_ids)" in source
+            marker in source
             for source in (local_agents, peer_agents)
+            for marker in (
+                "list_source_bindings",
+                "AIOPS_AGENT_SOURCE_BINDING_REQUIRED",
+                "AIOPS_AGENT_SOURCE_UNAVAILABLE",
+            )
         ),
     }
     passed = (

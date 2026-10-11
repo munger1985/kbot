@@ -309,16 +309,13 @@ class SituationRepository(AIOpsRepository):
         return await self._add(entity)
 
     async def get_situation(
-        self, *, situation_id: UUID
+        self, *, situation_id: UUID, lock: bool = False
     ) -> SituationEntity | None:
         self._check_active()
-        return (
-            await self._session.execute(
-                select(SituationEntity).where(
-                    SituationEntity.situation_id == situation_id
-                )
-            )
-        ).scalar_one_or_none()
+        statement = select(SituationEntity).where(SituationEntity.situation_id == situation_id)
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def get_situation_scoped(
         self, *, situation_id: UUID, domain_id: int

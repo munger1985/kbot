@@ -71,6 +71,13 @@
                 <label for="agent-description">简短说明</label>
                 <input id="agent-description" name="description" maxlength="1000" placeholder="这个 Agent 负责什么">
               </div>
+              <div class="ops-field span-12">
+                <label for="agent-responsibility-group">默认责任组</label>
+                <select id="agent-responsibility-group" name="default_responsibility_group_id">
+                  <option value="">未分派队列</option>
+                </select>
+                <small>Target 未设置覆盖组时，新工作项路由到此组；系统不会自动指派个人。</small>
+              </div>
               <div class="ops-field span-6">
                 <label for="agent-planner-model">规划模型</label>
                 <select id="agent-planner-model" name="planner_model_id" required>

@@ -8,6 +8,9 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
+    ResponsibilityGroupEntity,
+    ResponsibilityGroupMemberEntity,
+    AIOpsAgentEntity,
     TargetEntity,
     WorkItemActivityEntity,
     WorkItemEntity,
@@ -43,6 +46,144 @@ class WorkItemRepository(AIOpsRepository):
         self, entity: WorkItemActivityEntity
     ) -> WorkItemActivityEntity:
         return await self._add(entity)
+
+    async def add_group(self, entity: ResponsibilityGroupEntity) -> ResponsibilityGroupEntity:
+        return await self._add(entity)
+
+    async def add_group_member(self, entity: ResponsibilityGroupMemberEntity) -> ResponsibilityGroupMemberEntity:
+        return await self._add(entity)
+
+    async def get_group(self, *, group_id: UUID, domain_id: int, lock: bool = False) -> ResponsibilityGroupEntity | None:
+        statement = select(ResponsibilityGroupEntity).where(
+            ResponsibilityGroupEntity.responsibility_group_id == group_id,
+            ResponsibilityGroupEntity.domain_id == domain_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_groups(self, *, domain_id: int) -> list[ResponsibilityGroupEntity]:
+        rows = await self._session.scalars(select(ResponsibilityGroupEntity).where(
+            ResponsibilityGroupEntity.domain_id == domain_id,
+        ).order_by(ResponsibilityGroupEntity.name, ResponsibilityGroupEntity.responsibility_group_id))
+        return list(rows)
+
+    async def list_group_members(self, *, group_id: UUID) -> list[ResponsibilityGroupMemberEntity]:
+        rows = await self._session.scalars(select(ResponsibilityGroupMemberEntity).where(
+            ResponsibilityGroupMemberEntity.responsibility_group_id == group_id,
+        ).order_by(ResponsibilityGroupMemberEntity.member_role, ResponsibilityGroupMemberEntity.user_id))
+        return list(rows)
+
+    async def get_group_member(self, *, group_id: UUID, user_id: str) -> ResponsibilityGroupMemberEntity | None:
+        return (await self._session.execute(select(ResponsibilityGroupMemberEntity).where(
+            ResponsibilityGroupMemberEntity.responsibility_group_id == group_id,
+            ResponsibilityGroupMemberEntity.user_id == user_id,
+        ))).scalar_one_or_none()
+
+    async def active_member_count(self, *, group_id: UUID) -> int:
+        value = await self._session.scalar(select(func.count()).select_from(ResponsibilityGroupMemberEntity).where(
+            ResponsibilityGroupMemberEntity.responsibility_group_id == group_id,
+            ResponsibilityGroupMemberEntity.status == "ACTIVE",
+        ))
+        return int(value or 0)
+
+    async def group_routing_counts(self, *, group_id: UUID) -> tuple[int, int, int]:
+        agent_count = await self._session.scalar(
+            select(func.count()).select_from(AIOpsAgentEntity).where(
+                AIOpsAgentEntity.default_responsibility_group_id == group_id
+            )
+        )
+        target_count = await self._session.scalar(
+            select(func.count()).select_from(TargetEntity).where(
+                TargetEntity.default_responsibility_group_id == group_id
+            )
+        )
+        unassigned_count = await self._session.scalar(
+            select(func.count()).select_from(WorkItemEntity).where(
+                WorkItemEntity.responsibility_group_id == group_id,
+                WorkItemEntity.assignee_user_id.is_(None),
+                WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
+            )
+        )
+        return (
+            int(agent_count or 0),
+            int(target_count or 0),
+            int(unassigned_count or 0),
+        )
+
+    async def default_responsibility_group(self, *, target_id: UUID, agent_id: UUID) -> tuple[UUID | None, str | None]:
+        target_group = await self._session.scalar(
+            select(TargetEntity.default_responsibility_group_id)
+            .join(
+                ResponsibilityGroupEntity,
+                ResponsibilityGroupEntity.responsibility_group_id
+                == TargetEntity.default_responsibility_group_id,
+            )
+            .where(
+                TargetEntity.target_id == target_id,
+                ResponsibilityGroupEntity.status == "ACTIVE",
+            )
+        )
+        if target_group is not None:
+            return target_group, "TARGET_DEFAULT"
+        agent_group = await self._session.scalar(
+            select(AIOpsAgentEntity.default_responsibility_group_id)
+            .join(
+                ResponsibilityGroupEntity,
+                ResponsibilityGroupEntity.responsibility_group_id
+                == AIOpsAgentEntity.default_responsibility_group_id,
+            )
+            .where(
+                AIOpsAgentEntity.agent_id == agent_id,
+                ResponsibilityGroupEntity.status == "ACTIVE",
+            )
+        )
+        return (agent_group, "AGENT_DEFAULT") if agent_group is not None else (None, None)
+
+    async def group_name(self, *, group_id: UUID | None) -> str | None:
+        if group_id is None:
+            return None
+        return await self._session.scalar(
+            select(ResponsibilityGroupEntity.name).where(
+                ResponsibilityGroupEntity.responsibility_group_id == group_id
+            )
+        )
+
+    async def active_assignment_count(self, *, group_id: UUID, user_id: str) -> int:
+        value = await self._session.scalar(
+            select(func.count()).select_from(WorkItemEntity).where(
+                WorkItemEntity.responsibility_group_id == group_id,
+                WorkItemEntity.assignee_user_id == user_id,
+                WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
+            )
+        )
+        return int(value or 0)
+
+    async def work_item_ids_for_target_finding_types(
+        self,
+        *,
+        domain_id: int,
+        target_id: UUID,
+        finding_types: set[str],
+    ) -> list[UUID]:
+        if not finding_types:
+            return []
+        rows = await self._session.scalars(
+            select(WorkItemEntity.work_item_id)
+            .join(
+                WorkItemOccurrenceEntity,
+                WorkItemOccurrenceEntity.work_item_id == WorkItemEntity.work_item_id,
+            )
+            .where(
+                WorkItemEntity.domain_id == domain_id,
+                WorkItemEntity.target_id == target_id,
+                WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
+                WorkItemOccurrenceEntity.finding_type.in_(tuple(finding_types)),
+            )
+            .distinct()
+            .order_by(WorkItemEntity.work_item_id)
+        )
+        return list(rows)
 
     async def occurrence_exists(
         self, *, work_item_id: UUID, ops_run_id: UUID, finding_id: str
@@ -110,11 +251,20 @@ class WorkItemRepository(AIOpsRepository):
         after_due_at: datetime | None = None,
         after_id: UUID | None = None,
         limit: int = 51,
-    ) -> list[tuple[WorkItemEntity, str]]:
+    ) -> list[tuple[WorkItemEntity, str, str | None]]:
         self._check_active()
         statement = (
-            select(WorkItemEntity, TargetEntity.display_name)
+            select(
+                WorkItemEntity,
+                TargetEntity.display_name,
+                ResponsibilityGroupEntity.name,
+            )
             .join(TargetEntity, TargetEntity.target_id == WorkItemEntity.target_id)
+            .outerjoin(
+                ResponsibilityGroupEntity,
+                ResponsibilityGroupEntity.responsibility_group_id
+                == WorkItemEntity.responsibility_group_id,
+            )
             .where(WorkItemEntity.domain_id == domain_id)
         )
         if status is None:

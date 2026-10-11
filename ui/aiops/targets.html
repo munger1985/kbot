@@ -94,6 +94,13 @@
             </select>
             <small>用于 Agent 自动告警诊断过滤，5 表示最重要。</small>
           </div>
+          <div class="ops-field span-6">
+            <label for="target-responsibility-group">默认责任组</label>
+            <select id="target-responsibility-group" name="default_responsibility_group_id">
+              <option value="">继承 Agent 或进入未分派队列</option>
+            </select>
+            <small>优先于 Agent 默认责任组，只影响后续新建工作项。</small>
+          </div>
           <section class="target-access-policy span-12" aria-labelledby="target-monitor-editor-title">
             <div class="target-access-policy-head">
               <div><h3 id="target-monitor-editor-title">监控源与 Label 映射</h3><p>Target 必须至少绑定一条有效监控映射；Agent 会从 Target 自动继承监控能力。</p></div>

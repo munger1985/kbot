@@ -35,8 +35,11 @@ class WorkItemEntity(BaseEntity):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     phase: Mapped[str] = mapped_column(String(24), nullable=False)
     wait_reason: Mapped[str | None] = mapped_column(String(256))
-    assignment_group: Mapped[str | None] = mapped_column(String(128))
+    responsibility_group_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     assignee_user_id: Mapped[str | None] = mapped_column(String(256))
+    assignment_source: Mapped[str | None] = mapped_column(String(32))
+    assigned_by: Mapped[str | None] = mapped_column(String(256))
+    assigned_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
     acknowledgement_due_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
@@ -60,6 +63,14 @@ class WorkItemEntity(BaseEntity):
     )
     resolution_code: Mapped[str | None] = mapped_column(String(32))
     resolution_note: Mapped[str | None] = mapped_column(Text)
+    completion_note: Mapped[str | None] = mapped_column(Text)
+    completed_by: Mapped[str | None] = mapped_column(String(256))
+    completed_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    verification_result: Mapped[str | None] = mapped_column(String(16))
+    verification_note: Mapped[str | None] = mapped_column(Text)
+    verified_by: Mapped[str | None] = mapped_column(String(256))
+    verified_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    routing_decision_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     resolved_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
@@ -79,6 +90,36 @@ class WorkItemEntity(BaseEntity):
         Numeric(19, 0), nullable=False, default=1
     )
     __mapper_args__ = {"version_id_col": row_version}
+
+
+class ResponsibilityGroupEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_RESPONSIBILITY_GROUP"
+
+    responsibility_group_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    lead_user_id: Mapped[str | None] = mapped_column(String(256))
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": row_version}
+
+
+class ResponsibilityGroupMemberEntity(BaseEntity):
+    __tablename__ = "KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER"
+
+    responsibility_group_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    member_role: Mapped[str] = mapped_column(String(16), nullable=False, default="MEMBER")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class WorkItemOccurrenceEntity(BaseEntity):

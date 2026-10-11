@@ -52,7 +52,7 @@ from aiops_agent.api.workload import (
     artifact_router as workload_artifact_router,
     router as workload_router,
 )
-from aiops_agent.api.work_items import router as work_item_router
+from aiops_agent.api.work_items import group_router as responsibility_group_router, router as work_item_router
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
@@ -63,6 +63,7 @@ from aiops_agent.application.report_templates import (
     SessionReportTemplateService,
 )
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
+from aiops_agent.application.responsibility_groups import ResponsibilityGroupService
 from aiops_agent.application.monitoring_views import MonitoringApplicationService
 from aiops_agent.api.runtime import router as runtime_router
 from aiops_agent.api.intake import router as intake_router
@@ -206,6 +207,9 @@ def create_aiops_api(
         app.state.work_item_service = WorkItemService(
             uow_factory=runtime.uow_factory,
             cursor_codec=cursor_codec,
+        )
+        app.state.responsibility_group_service = ResponsibilityGroupService(
+            uow_factory=runtime.uow_factory,
         )
         diagnostic_source_catalog = DiagnosticSourceAdapterCatalog()
         metric_catalog = load_metric_catalog(
@@ -434,6 +438,7 @@ def create_aiops_api(
     app.include_router(workload_router)
     app.include_router(workload_artifact_router)
     app.include_router(work_item_router)
+    app.include_router(responsibility_group_router)
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

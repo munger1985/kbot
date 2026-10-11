@@ -48,6 +48,8 @@ from .workload import (
     WorkloadStatementEntity,
 )
 from .work_item import (
+    ResponsibilityGroupEntity,
+    ResponsibilityGroupMemberEntity,
     WorkItemActivityEntity,
     WorkItemEntity,
     WorkItemLinkEntity,
@@ -122,6 +124,8 @@ __all__ = [
     "WorkloadSnapshotEntity",
     "WorkloadStatementEntity",
     "WorkItemActivityEntity",
+    "ResponsibilityGroupEntity",
+    "ResponsibilityGroupMemberEntity",
     "WorkItemEntity",
     "WorkItemLinkEntity",
     "WorkItemOccurrenceEntity",

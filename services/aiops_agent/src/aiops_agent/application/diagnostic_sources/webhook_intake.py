@@ -536,6 +536,38 @@ class SignalEventIntakeService:
                 situation_resolved = situation.status != "RESOLVED"
                 situation.status = "RESOLVED"
                 situation.resolved_at = event.occurred_at
+                if situation_resolved:
+                    recovery_payload = {
+                        "domain_id": int(situation.domain_id),
+                        "situation_id": str(situation.situation_id),
+                        "target_id": str(situation.target_id),
+                        "actor_id": "system:signal-intake",
+                        "recovery_event_id": str(entity.signal_event_id),
+                        "resolved_at": event.occurred_at.isoformat(),
+                        "trace_id": trace_id,
+                    }
+                    await uow.outbox.add(
+                        OutboxEntity(
+                            outbox_id=uuid7(),
+                            aggregate_type="SITUATION",
+                            aggregate_id=situation.situation_id,
+                            event_type="OPS_SITUATION_RECOVERED",
+                            idempotency_key=(
+                                f"situation:{situation.situation_id}:"
+                                f"recovered:{entity.signal_event_id}"
+                            ),
+                            payload_json=recovery_payload,
+                            payload_hash=hashlib.sha256(
+                                canonical_bytes(recovery_payload)
+                            ).hexdigest(),
+                            status="PENDING",
+                            available_at=now,
+                            max_attempts=8,
+                            trace_id=trace_id,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
         auto_agent = None
         auto_run_cooldown_seconds = 0
         if situation is not None and situation.status != "RESOLVED":

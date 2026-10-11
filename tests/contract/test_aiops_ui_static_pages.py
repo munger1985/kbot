@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "dashboard", "work-items", "work-item-detail", "monitoring", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "work-items", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
@@ -50,7 +50,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(13, len(scripts))
+        self.assertEqual(14, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -180,8 +180,29 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("关联资源", detail)
         self.assertIn("活动时间线", detail)
         self.assertIn("/api/v1/apps/aiops/work-items", script)
-        self.assertIn('PENDING_VERIFICATION: ["IN_PROGRESS", "RESOLVED"]', script)
+        self.assertIn('PENDING_VERIFICATION: []', script)
+        self.assertIn("loadAssignmentMembers", script)
+        self.assertIn(":return-to-group", script)
+        self.assertIn(':complete', script)
+        self.assertIn('由组内 DBA 领取', script)
         self.assertNotIn("fake", script.lower())
+
+    def test_responsibility_groups_and_default_routing_are_manageable(self):
+        page = (AIOPS_ROOT / "responsibility-groups.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-responsibility-groups.js").read_text(encoding="utf-8")
+        agents = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")
+        agent_script = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(encoding="utf-8")
+        targets = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+        target_script = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(encoding="utf-8")
+        self.assertIn("已有 AIOps 用户", page)
+        self.assertIn("active_work_item_count", script)
+        self.assertIn("unassigned_work_item_count", script)
+        self.assertIn("group-status-toggle", page)
+        self.assertIn("/member-candidates", script)
+        self.assertIn("/members/${encodeURIComponent", script)
+        for markup, source in ((agents, agent_script), (targets, target_script)):
+            self.assertIn("default_responsibility_group_id", markup)
+            self.assertIn("default_responsibility_group_id", source)
 
     def test_chat_code_copy_supports_insecure_http_context(self):
         renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(
