@@ -217,67 +217,6 @@ BEGIN
        SET DISPLAY_NAME = '管理巡检计划与报告模板'
      WHERE PERMISSION_CODE = 'aiops:plan_manage';
 
-    INSERT INTO KBOT_ACCESS_AUDIT_EVENT (
-        EVENT_ID, ACTOR_ID, APP_ID, ACTION, RESOURCE_TYPE,
-        RESOURCE_ID, SUMMARY_JSON, AFFECTED_MEMBER_COUNT, CREATED_AT
-    )
-    SELECT RAWTOHEX(SYS_GUID()), 'migration:app-authorization-v2',
-           'assistant', 'RETIRED_APP_AUTHORIZATION_DISABLED',
-           'PLATFORM_APP', 'assistant',
-           '{"authorization_disabled":true}',
-           (
-               SELECT COUNT(*)
-                 FROM KBOT_APP_MEMBER
-                WHERE APP_ID = 'assistant'
-                  AND STATUS = 'ACTIVE'
-           ),
-           SYSTIMESTAMP
-      FROM DUAL
-     WHERE EXISTS (
-               SELECT 1
-                 FROM KBOT_PLATFORM_APP
-                WHERE APP_ID = 'assistant'
-                  AND STATUS = 'ACTIVE'
-           )
-        OR EXISTS (
-               SELECT 1
-                 FROM KBOT_APP_ROLE
-                WHERE APP_ID = 'assistant'
-                  AND (IS_SYSTEM = 'Y' OR STATUS = 'ACTIVE')
-           );
-
-    DELETE FROM KBOT_APP_ROLE_PERMISSION
-     WHERE APP_ID = 'assistant';
-    DELETE FROM KBOT_PERMISSION
-     WHERE APP_ID = 'assistant';
-    UPDATE KBOT_APP_MEMBER_ROLE
-       SET STATUS = 'DISABLED'
-     WHERE APP_ID = 'assistant'
-       AND STATUS <> 'DISABLED';
-    UPDATE KBOT_APP_MEMBER
-       SET IS_INITIAL_ADMIN = 'N',
-           STATUS = 'DISABLED',
-           UPDATED_AT = SYSTIMESTAMP
-     WHERE APP_ID = 'assistant'
-       AND (IS_INITIAL_ADMIN <> 'N' OR STATUS <> 'DISABLED');
-    UPDATE KBOT_APP_DOMAIN
-       SET STATUS = 'DISABLED'
-     WHERE APP_ID = 'assistant'
-       AND STATUS <> 'DISABLED';
-    UPDATE KBOT_APP_ROLE
-       SET IS_SYSTEM = 'N',
-           STATUS = 'DISABLED',
-           ROW_VERSION = ROW_VERSION + 1
-     WHERE APP_ID = 'assistant'
-       AND (IS_SYSTEM <> 'N' OR STATUS <> 'DISABLED');
-    UPDATE KBOT_PLATFORM_APP
-       SET STATUS = 'DISABLED',
-           MEMBER_ASSIGNABLE = 'N',
-           ROW_VERSION = ROW_VERSION + 1,
-           UPDATED_AT = SYSTIMESTAMP
-     WHERE APP_ID = 'assistant'
-       AND (STATUS <> 'DISABLED' OR MEMBER_ASSIGNABLE <> 'N');
-
     MERGE INTO KBOT_APP_ROLE target
     USING (
         SELECT 'knowledge_retrieval' APP_ID, 'app_user' ROLE_CODE,

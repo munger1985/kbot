@@ -99,6 +99,11 @@ X Search 属于 Grok 模型能力，不再写入模型表。脚本不会把任�
 
 ## 权限模型收敛
 
+`purge_retired_assistant_authorization.sql` 用于物理删除已退役 `assistant` App 的
+权限、角色、Domain、成员、API Client 以及 App 自有用户。若 App 自有用户曾被显式
+授予其他 App，这些绑定也会一并删除。脚本保留历史审计表，新增一条物理清理事件，
+支持重复执行并在异常时整体回滚。
+
 `upgrade_app_authorization_roles.sql` 用于把既有业务 App 升级到统一的 `app_user`、
 `app_manager`、`app_admin` 三层系统角色。执行前必须停止 Main API 的授权写入、完成备份，
 并运行 `scripts/db/audit_app_authorization.py`。脚本保留专业角色、成员和 Domain Scope，

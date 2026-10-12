@@ -131,25 +131,11 @@ SOURCE_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')
 append_startup_log "INFO" \
     "内部包预检通过：mode=${PACKAGE_INSTALL_MODE} commit=${SOURCE_COMMIT} python=$(command -v python) agent_runtime=${AGENT_RUNTIME_ORIGIN}"
 
-FOUNDATION_MODE="--check-foundation"
 FOUNDATION_ACTION="只读校验"
 FOUNDATION_CHECK_OUTPUT=$(
-    python scripts/db/apply_oracle_schema.py "$FOUNDATION_MODE" 2>&1
+    python scripts/db/apply_oracle_schema.py --check-foundation 2>&1
 )
 FOUNDATION_CHECK_STATUS=$?
-case "${CONFIG_ENVIRONMENT,,}:${FOUNDATION_CHECK_STATUS}" in
-    dev:3|development:3|debug:3)
-        FOUNDATION_MODE="--foundation-only"
-        FOUNDATION_ACTION="自动修复并校验"
-        FOUNDATION_REPAIR_OUTPUT=$(
-            python scripts/db/apply_oracle_schema.py "$FOUNDATION_MODE" 2>&1
-        )
-        FOUNDATION_CHECK_STATUS=$?
-        FOUNDATION_CHECK_OUTPUT="${FOUNDATION_CHECK_OUTPUT}"$'\n'\
-"检测到开发库基础数据漂移，已自动执行幂等修复："$'\n'\
-"${FOUNDATION_REPAIR_OUTPUT}"
-        ;;
-esac
 if [ -n "$FOUNDATION_CHECK_OUTPUT" ]; then
     printf '%s\n' "$FOUNDATION_CHECK_OUTPUT"
     while IFS= read -r output_line; do
@@ -168,18 +154,13 @@ case "$FOUNDATION_CHECK_STATUS" in
         ;;
     3)
         echo "❌ 平台基础数据校验未通过，未启动任何服务。"
-        echo "   请根据上方 PDB、Schema 和具体缺失项确认目标后执行："
-        echo "   python scripts/db/apply_oracle_schema.py --foundation-only"
+        echo "   请根据上方 PDB、Schema 和具体漂移项执行对应的受控 SQL 后重试。"
         append_startup_log "ERROR" "平台基础数据不完整，启动已终止"
         exit 1
         ;;
     *)
         echo "❌ 平台基础数据${FOUNDATION_ACTION}失败，未启动任何服务。"
-        if [ "$FOUNDATION_MODE" = "--foundation-only" ]; then
-            echo "   开发环境已自动尝试幂等修复，请检查上方具体错误、数据库连通性和 Schema 权限。"
-        else
-            echo "   这不代表系统未初始化；请检查数据库连通性、部署配置和 Conda 环境。"
-        fi
+        echo "   这不代表系统未初始化；请检查数据库连通性、部署配置和 Conda 环境。"
         echo "   完整输出已记录：${STARTUP_LOG_FILE}"
         append_startup_log "ERROR" \
             "预检执行异常，退出码=${FOUNDATION_CHECK_STATUS}，启动已终止"

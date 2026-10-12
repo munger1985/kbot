@@ -345,8 +345,6 @@ def main() -> int:
         "IS_SYSTEM = 'N'",
         "role_permission.APP_ID || ':member_manage'",
         "CUSTOM_ROLE_ADMIN_MEMBERS_MIGRATED",
-        "RETIRED_APP_AUTHORIZATION_DISABLED",
-        "WHERE APP_ID = 'assistant'",
     ):
         assert required in migration_sql, f"App 权限迁移缺少保护逻辑：{required}"
     for credential_token in (
@@ -356,6 +354,23 @@ def main() -> int:
     ):
         assert credential_token not in migration_sql, (
             f"App 权限迁移不得修改凭据：{credential_token}"
+        )
+    retired_app_purge = (
+        ROOT
+        / "database/oracle/operations/purge_retired_assistant_authorization.sql"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK",
+        "DELETE FROM KBOT_APP_API_CREDENTIAL",
+        "DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE",
+        "DELETE FROM KBOT_PLATFORM_USER_CREDENTIAL",
+        "DELETE FROM KBOT_PLATFORM_USER",
+        "DELETE FROM KBOT_PLATFORM_APP",
+        "RETIRED_APP_AUTHORIZATION_PURGED",
+        "COMMIT",
+    ):
+        assert required in retired_app_purge, (
+            f"assistant 退役清理脚本缺少：{required}"
         )
     system_role_merge = migration_sql.index("MERGE INTO KBOT_APP_ROLE target")
     admin_member_merge = migration_sql.index(
