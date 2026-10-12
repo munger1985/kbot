@@ -14,6 +14,12 @@ from aiops_agent.application.errors import (
     state_conflict,
     validation_failed,
 )
+from aiops_agent.application.work_items import (
+    cancel_recovery_drill_work_item,
+    ensure_recovery_drill_work_item,
+    review_recovery_drill_work_items,
+    submit_recovery_drill_work_item,
+)
 from aiops_agent.entities import RecoveryDrillEntity, RecoveryProfileEntity
 from aiops_agent.persistence import AIOpsUnitOfWork
 from platform_core.contracts.aiops import (
@@ -37,6 +43,29 @@ _SOURCE_DB_TYPES = {
     "MYSQL_ENTERPRISE_BACKUP": "MYSQL",
     "MYSQL_LOGICAL_DUMP": "MYSQL",
 }
+_ASSURANCE_ORDER = {
+    "BACKUP_METADATA": 1,
+    "RESTORE_VALIDATE": 2,
+    "DATABASE_OPEN": 3,
+    "APPLICATION_VALIDATED": 4,
+}
+
+
+def _drill_satisfies_profile(
+    *, drill: RecoveryDrillEntity, profile: RecoveryProfileEntity | None
+) -> bool:
+    if profile is None or drill.result != "PASS":
+        return False
+    if _ASSURANCE_ORDER[drill.assurance_level] < _ASSURANCE_ORDER[profile.required_assurance_level]:
+        return False
+    if drill.backup_source_type not in set(profile.required_backup_source_types_json):
+        return False
+    if drill.achieved_rpo_seconds is None or drill.achieved_rto_seconds is None:
+        return False
+    return (
+        int(drill.achieved_rpo_seconds) <= int(profile.rpo_seconds)
+        and int(drill.achieved_rto_seconds) <= int(profile.rto_seconds)
+    )
 
 
 def recovery_profile_view(entity: RecoveryProfileEntity) -> TargetRecoveryProfileView:
@@ -46,6 +75,7 @@ def recovery_profile_view(entity: RecoveryProfileEntity) -> TargetRecoveryProfil
         version_no=int(entity.version_no),
         rpo_seconds=int(entity.rpo_seconds),
         rto_seconds=int(entity.rto_seconds),
+        drill_required=bool(entity.drill_required),
         required_drill_interval_days=int(entity.required_drill_interval_days),
         required_assurance_level=entity.required_assurance_level,
         required_backup_source_types=tuple(
@@ -164,6 +194,7 @@ class RecoveryConfigurationMixin:
                 version_no=max((int(row.version_no) for row in versions), default=0) + 1,
                 rpo_seconds=request.rpo_seconds,
                 rto_seconds=request.rto_seconds,
+                drill_required=1 if request.drill_required else 0,
                 required_drill_interval_days=request.required_drill_interval_days,
                 required_assurance_level=request.required_assurance_level,
                 required_backup_source_types_json=list(
@@ -182,6 +213,15 @@ class RecoveryConfigurationMixin:
                 updated_at=now,
             )
             await uow.recovery.add_profile(entity)
+            assert uow.work_items is not None
+            if request.drill_required:
+                await ensure_recovery_drill_work_item(
+                    uow=uow, scope=scope, target=target, profile=entity, now=now
+                )
+            else:
+                await cancel_recovery_drill_work_item(
+                    uow=uow, scope=scope, target_id=target_id, now=now
+                )
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
@@ -285,6 +325,18 @@ class RecoveryConfigurationMixin:
                 updated_at=now,
             )
             await uow.recovery.add_drill(entity)
+            if request.source_work_item_id is not None:
+                if profile is None or not bool(profile.drill_required):
+                    raise state_conflict("当前 Target 未要求定期恢复演练，不能从计划工单提交")
+                assert uow.work_items is not None
+                await submit_recovery_drill_work_item(
+                    uow=uow,
+                    scope=scope,
+                    work_item_id=request.source_work_item_id,
+                    target_id=target_id,
+                    drill=entity,
+                    now=now,
+                )
             await add_configuration_event(
                 uow=uow,
                 scope=scope,
@@ -317,7 +369,12 @@ class RecoveryConfigurationMixin:
         idempotency_key: str,
     ) -> RecoveryDrillView:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> RecoveryDrillView:
-            assert uow.recovery is not None
+            assert uow.recovery is not None and uow.targets is not None
+            target = await uow.targets.get_scoped(
+                target_id=target_id, domain_id=scope.domain_id, lock=True
+            )
+            if target is None:
+                raise resource_not_found("Target")
             entity = await uow.recovery.get_drill_scoped(
                 drill_id=drill_id,
                 target_id=target_id,
@@ -338,6 +395,25 @@ class RecoveryConfigurationMixin:
             # 人工审核只确认记录流程，不提升来源信任等级。
             entity.source_trust_level = "USER_PROVIDED"
             await uow.session.flush()  # type: ignore[union-attr]
+            profile = await uow.recovery.get_active_profile(
+                target_id=target_id, domain_id=scope.domain_id
+            )
+            assert uow.work_items is not None
+            await review_recovery_drill_work_items(
+                uow=uow,
+                scope=scope,
+                target=target,
+                profile=profile,
+                drill=entity,
+                verified=request.decision == "VERIFY",
+                satisfies_policy=(
+                    request.decision == "VERIFY"
+                    and profile is not None
+                    and bool(profile.drill_required)
+                    and _drill_satisfies_profile(drill=entity, profile=profile)
+                ),
+                now=now,
+            )
             await add_configuration_event(
                 uow=uow,
                 scope=scope,

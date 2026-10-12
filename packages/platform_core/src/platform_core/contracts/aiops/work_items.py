@@ -24,6 +24,7 @@ class WorkItemType(StrEnum):
     OPTIMIZATION = "OPTIMIZATION"
     OBSERVABILITY_GAP = "OBSERVABILITY_GAP"
     RECOVERY_OBSERVATION = "RECOVERY_OBSERVATION"
+    RECOVERY_DRILL = "RECOVERY_DRILL"
 
 
 class WorkItemSourceKind(StrEnum):
@@ -31,6 +32,7 @@ class WorkItemSourceKind(StrEnum):
     INSPECTION = "INSPECTION"
     CHAT = "CHAT"
     MANUAL = "MANUAL"
+    SCHEDULE = "SCHEDULE"
 
 
 class WorkItemPriority(StrEnum):
@@ -114,6 +116,8 @@ class WorkItemResourceKind(StrEnum):
     REPORT = "REPORT"
     PROPOSAL = "PROPOSAL"
     VERIFICATION = "VERIFICATION"
+    RECOVERY_PROFILE = "RECOVERY_PROFILE"
+    RECOVERY_DRILL = "RECOVERY_DRILL"
 
 
 class WorkItemQueueSummary(AIOpsContract):

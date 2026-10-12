@@ -17,8 +17,12 @@
       <a id="recovery-target-detail-link" class="ops-button" href="./targets.html">查看 Target</a>
     </header>
 
+    <section id="recovery-work-item-context" class="ops-panel" hidden>
+      <div class="ops-panel-head"><div><h2>计划内恢复演练</h2><p>提交后工作项进入待审核；审核通过且满足当前策略后自动生成下一周期工单。</p></div><span class="ops-badge good">处理中</span></div>
+    </section>
+
     <section class="ops-panel recovery-drill-context">
-      <div class="ops-panel-head"><div><h2>演练对象</h2><p>选择数据库 Target 后加载其恢复目标与历史演练。</p></div><span id="recovery-workspace-state" class="ops-badge">请选择</span></div>
+      <div class="ops-panel-head"><div><h2>演练对象</h2><p>从菜单进入可补录计划外演练；从工作项进入时 Target 会自动锁定。</p></div><span id="recovery-workspace-state" class="ops-badge">请选择</span></div>
       <div class="ops-panel-body recovery-drill-context-grid">
         <label class="ops-field span-6">Target<select id="recovery-target-select"><option value="">请选择 Target</option></select></label>
         <div id="recovery-profile-summary" class="recovery-profile-summary span-6"><p class="ops-empty">尚未选择 Target。</p></div>

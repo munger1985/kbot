@@ -142,6 +142,278 @@ def _fingerprint(
     return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
 
 
+def recovery_drill_fingerprint(*, domain_id: int, target_id: UUID) -> str:
+    material = {
+        "domain_id": domain_id,
+        "target_id": str(target_id),
+        "work_type": WorkItemType.RECOVERY_DRILL.value,
+    }
+    return hashlib.sha256(canonical_json(material).encode("utf-8")).hexdigest()
+
+
+async def ensure_recovery_drill_work_item(
+    *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, target, profile,
+    now: datetime, anchor_at: datetime | None = None,
+) -> WorkItemEntity:
+    """按当前恢复策略幂等创建或更新下一次恢复演练工作项。"""
+    assert uow.work_items is not None
+    routing = await uow.work_items.recovery_drill_routing(
+        domain_id=scope.domain_id, target_id=target.target_id
+    )
+    if routing is None:
+        raise state_conflict("请先为 Target 绑定有效 Agent 和责任组，再保存恢复策略")
+    agent_id, group_id, assignment_source, agent_name = routing
+    fingerprint = recovery_drill_fingerprint(
+        domain_id=scope.domain_id, target_id=target.target_id
+    )
+    item = await uow.work_items.get_active_by_target_fingerprint(
+        domain_id=scope.domain_id, target_id=target.target_id,
+        fingerprint=fingerprint, lock=True,
+    )
+    due_at = _utc(anchor_at or profile.effective_at) + timedelta(
+        days=int(profile.required_drill_interval_days)
+    )
+    acknowledgement_due_at = max(now, due_at - timedelta(days=7))
+    verification_due_at = due_at + timedelta(days=1)
+    source_labels = "、".join(profile.required_backup_source_types_json)
+    summary = (
+        f"按恢复策略 v{int(profile.version_no)} 完成恢复演练；最低保障等级 "
+        f"{profile.required_assurance_level}，备份来源 {source_labels}，"
+        f"目标 RPO {int(profile.rpo_seconds)} 秒、RTO {int(profile.rto_seconds)} 秒。"
+    )
+    if item is None:
+        item_id = uuid7()
+        item = await uow.work_items.add(WorkItemEntity(
+            work_item_id=item_id,
+            domain_id=scope.domain_id,
+            item_key=f"WI-{item_id.hex[:12].upper()}",
+            agent_id=agent_id,
+            target_id=target.target_id,
+            work_type=WorkItemType.RECOVERY_DRILL.value,
+            source_kind=WorkItemSourceKind.SCHEDULE.value,
+            fingerprint=fingerprint,
+            title=f"{target.display_name} 恢复演练",
+            summary=summary,
+            severity=FindingSeverity.MEDIUM.value,
+            priority=WorkItemPriority.P3.value,
+            status=WorkItemStatus.PENDING_TRIAGE.value,
+            phase=WorkItemPhase.TRIAGE.value,
+            responsibility_group_id=group_id,
+            assignment_source=assignment_source,
+            assigned_by=scope.actor_id,
+            assigned_at=now,
+            acknowledgement_due_at=acknowledgement_due_at,
+            resolution_due_at=due_at,
+            verification_due_at=verification_due_at,
+            first_observed_at=now,
+            last_observed_at=now,
+            occurrence_count=1,
+            reopen_count=0,
+            created_by=scope.actor_id,
+            updated_by=scope.actor_id,
+            created_at=now,
+            updated_at=now,
+            row_version=1,
+        ))
+        await WorkItemService._activity(
+            uow, item=item, activity_type="CREATED", actor_id=scope.actor_id,
+            detail={
+                "source": WorkItemSourceKind.SCHEDULE.value,
+                "agent_id": str(agent_id),
+                "agent_name": agent_name,
+                "recovery_profile_id": str(profile.recovery_profile_id),
+            }, now=now,
+        )
+    else:
+        item.agent_id = agent_id
+        item.responsibility_group_id = group_id
+        item.assignment_source = assignment_source
+        item.title = f"{target.display_name} 恢复演练"
+        item.summary = summary
+        item.acknowledgement_due_at = acknowledgement_due_at
+        item.resolution_due_at = due_at
+        item.verification_due_at = verification_due_at
+        item.last_observed_at = now
+        item.updated_by = scope.actor_id
+        item.updated_at = now
+        await WorkItemService._activity(
+            uow, item=item, activity_type="RECOVERY_POLICY_UPDATED",
+            actor_id=scope.actor_id,
+            detail={
+                "recovery_profile_id": str(profile.recovery_profile_id),
+                "version_no": int(profile.version_no),
+                "resolution_due_at": due_at.isoformat(),
+            }, now=now,
+        )
+    await _ensure_link(
+        uow, item=item,
+        resource_kind=WorkItemResourceKind.RECOVERY_PROFILE.value,
+        resource_id=profile.recovery_profile_id, role="SCHEDULE_POLICY",
+        snapshot={
+            "label": f"恢复策略 v{int(profile.version_no)}",
+            "status": profile.status,
+        },
+        actor_id=scope.actor_id, now=now,
+    )
+    return item
+
+
+async def cancel_recovery_drill_work_item(
+    *, uow: AIOpsUnitOfWork, scope: ConfigurationScope,
+    target_id: UUID, now: datetime,
+) -> WorkItemEntity | None:
+    """Target 明确不做定期演练时取消尚未关闭的系统计划工单。"""
+    assert uow.work_items is not None
+    item = await uow.work_items.get_active_by_target_fingerprint(
+        domain_id=scope.domain_id,
+        target_id=target_id,
+        fingerprint=recovery_drill_fingerprint(
+            domain_id=scope.domain_id, target_id=target_id
+        ),
+        lock=True,
+    )
+    if item is None:
+        return None
+    old_status, old_phase = item.status, item.phase
+    item.status = WorkItemStatus.CANCELLED.value
+    item.wait_reason = "当前恢复策略不要求定期恢复演练"
+    item.closed_at = now
+    item.updated_by, item.updated_at = scope.actor_id, now
+    await WorkItemService._activity(
+        uow, item=item, activity_type="RECOVERY_DRILL_NOT_REQUIRED",
+        actor_id=scope.actor_id,
+        detail={"reason": item.wait_reason},
+        now=now, from_status=old_status, to_status=item.status,
+        from_phase=old_phase, to_phase=item.phase,
+    )
+    return item
+
+
+async def submit_recovery_drill_work_item(
+    *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, work_item_id: UUID,
+    target_id: UUID, drill, now: datetime,
+) -> WorkItemEntity:
+    """把计划工作项与演练记录关联，并推进到待审核。"""
+    assert uow.work_items is not None
+    item = await uow.work_items.get_scoped(
+        work_item_id=work_item_id, domain_id=scope.domain_id, lock=True
+    )
+    if (
+        item is None or item.target_id != target_id
+        or item.work_type != WorkItemType.RECOVERY_DRILL.value
+    ):
+        raise state_conflict("恢复演练工作项与当前 Target 不匹配")
+    if (
+        item.status != WorkItemStatus.IN_PROGRESS.value
+        or item.assignee_user_id != scope.actor_id
+    ):
+        raise state_conflict("请先领取恢复演练工作项，再提交演练结果")
+    old_status, old_phase = item.status, item.phase
+    item.status = WorkItemStatus.PENDING_VERIFICATION.value
+    item.phase = WorkItemPhase.VERIFICATION.value
+    item.resolution_code = (
+        WorkItemResolutionCode.OBSERVED_STABLE.value
+        if drill.result == "PASS" else WorkItemResolutionCode.NO_ACTION.value
+    )
+    item.completion_note = f"已提交恢复演练记录 {drill.drill_id}，等待审核。"
+    item.completed_by, item.completed_at = scope.actor_id, now
+    item.updated_by, item.updated_at = scope.actor_id, now
+    await _ensure_link(
+        uow, item=item,
+        resource_kind=WorkItemResourceKind.RECOVERY_DRILL.value,
+        resource_id=drill.drill_id, role="EXECUTION_RESULT",
+        snapshot={"label": "恢复演练记录", "status": drill.status},
+        actor_id=scope.actor_id, now=now,
+    )
+    await WorkItemService._activity(
+        uow, item=item, activity_type="RECOVERY_DRILL_SUBMITTED",
+        actor_id=scope.actor_id,
+        detail={"drill_id": str(drill.drill_id), "result": drill.result},
+        now=now, from_status=old_status, to_status=item.status,
+        from_phase=old_phase, to_phase=item.phase,
+    )
+    return item
+
+
+async def review_recovery_drill_work_items(
+    *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, target, profile,
+    drill, verified: bool, satisfies_policy: bool, now: datetime,
+) -> WorkItemEntity | None:
+    """审核演练后关闭合格计划，或把来源工单退回继续处理。"""
+    assert uow.work_items is not None
+    linked = await uow.work_items.list_by_resource(
+        resource_kind=WorkItemResourceKind.RECOVERY_DRILL.value,
+        resource_id=drill.drill_id,
+    )
+    fingerprint = recovery_drill_fingerprint(
+        domain_id=scope.domain_id, target_id=target.target_id
+    )
+    active = await uow.work_items.get_active_by_target_fingerprint(
+        domain_id=scope.domain_id, target_id=target.target_id,
+        fingerprint=fingerprint, lock=True,
+    )
+    candidates = {item.work_item_id: item for item in linked}
+    if active is not None:
+        candidates[active.work_item_id] = active
+    affected: WorkItemEntity | None = None
+    for item in candidates.values():
+        if (
+            item.target_id != target.target_id
+            or item.work_type != WorkItemType.RECOVERY_DRILL.value
+        ):
+            continue
+        is_source = any(row.work_item_id == item.work_item_id for row in linked)
+        if verified and satisfies_policy:
+            old_status, old_phase = item.status, item.phase
+            item.status = WorkItemStatus.CLOSED.value
+            item.phase = WorkItemPhase.VERIFICATION.value
+            item.verification_result = "PASSED"
+            item.verification_note = "恢复演练已审核通过并满足当前恢复策略。"
+            item.verified_by, item.verified_at = scope.actor_id, now
+            item.resolved_at, item.closed_at = now, now
+            item.updated_by, item.updated_at = scope.actor_id, now
+            await WorkItemService._activity(
+                uow, item=item, activity_type="RECOVERY_DRILL_VERIFIED",
+                actor_id=scope.actor_id,
+                detail={"drill_id": str(drill.drill_id), "policy_satisfied": True},
+                now=now, from_status=old_status, to_status=item.status,
+                from_phase=old_phase, to_phase=item.phase,
+            )
+            affected = item
+        elif (
+            is_source
+            and item.status == WorkItemStatus.PENDING_VERIFICATION.value
+        ):
+            old_status, old_phase = item.status, item.phase
+            item.status = WorkItemStatus.IN_PROGRESS.value
+            item.phase = WorkItemPhase.REMEDIATION.value
+            item.verification_result = "FAILED"
+            item.verification_note = (
+                "演练记录未通过审核。" if not verified
+                else "演练记录已审核，但结果未满足当前恢复策略。"
+            )
+            item.verified_by, item.verified_at = scope.actor_id, now
+            item.reopen_count = int(item.reopen_count) + 1
+            item.updated_by, item.updated_at = scope.actor_id, now
+            await WorkItemService._activity(
+                uow, item=item, activity_type="RECOVERY_DRILL_REOPENED",
+                actor_id=scope.actor_id,
+                detail={
+                    "drill_id": str(drill.drill_id),
+                    "verified": verified,
+                    "policy_satisfied": satisfies_policy,
+                }, now=now, from_status=old_status, to_status=item.status,
+                from_phase=old_phase, to_phase=item.phase,
+            )
+            affected = item
+    if verified and satisfies_policy and profile is not None:
+        await ensure_recovery_drill_work_item(
+            uow=uow, scope=scope, target=target, profile=profile, now=now,
+            anchor_at=drill.simulated_failure_at,
+        )
+    return affected
+
+
 def _sla(priority: str, observed_at: datetime) -> tuple[datetime, datetime, datetime]:
     acknowledgement_minutes, resolution_hours, verification_hours = _SLA[priority]
     return (

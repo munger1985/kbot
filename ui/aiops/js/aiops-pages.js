@@ -662,7 +662,7 @@
     const requiredRank = rank[profile?.required_assurance_level] || 0;
     const success = drills.find((item) => item.status === "VERIFIED" && item.result === "PASS" && (rank[item.assurance_level] || 0) >= requiredRank) || null;
     state.className = `ops-badge ${profile ? "good" : "warn"}`;
-    state.textContent = profile ? `目标 v${profile.version_no}` : "目标未配置";
+    state.textContent = profile ? (profile.drill_required ? `目标 v${profile.version_no}` : "无需定期演练") : "目标未配置";
     summary.innerHTML = `<dl class="ops-detail"><dt>当前 RPO</dt><dd>${profile ? `${profile.rpo_seconds / 60} 分钟` : "未配置"}</dd><dt>当前 RTO</dt><dd>${profile ? `${profile.rto_seconds / 60} 分钟` : "未配置"}</dd><dt>最新尝试</dt><dd>${latest ? `${shell.escape(latest.result)} · ${shell.escape(shell.fmt(latest.simulated_failure_at))}` : "无记录"}</dd><dt>最新审核成功</dt><dd>${success ? `${shell.escape(success.assurance_level)} · ${shell.escape(shell.fmt(success.simulated_failure_at))}` : "无记录"}</dd></dl>${latest && latest.result !== "PASS" && success ? '<p class="ops-connection-result" data-tone="bad">最新尝试未通过；下方旧成功记录仅作历史证据，不能掩盖本次失败。</p>' : ""}`;
   }
 
@@ -689,6 +689,7 @@
       const form = document.getElementById("target-recovery-profile-form");
       form.rpo_minutes.value = profile.rpo_seconds / 60;
       form.rto_minutes.value = profile.rto_seconds / 60;
+      form.drill_required.checked = Boolean(profile.drill_required);
       form.required_drill_interval_days.value = profile.required_drill_interval_days;
       form.required_assurance_level.value = profile.required_assurance_level;
       configureRecoverySources(form, dbType, profile.required_backup_source_types || []);
@@ -709,6 +710,14 @@
     profileForm.dataset.targetId = targetId;
     profileForm.dataset.dbType = target.db_type;
     configureRecoverySources(profileForm, target.db_type);
+    const syncDrillRequirement = () => {
+      const disabled = !profileForm.drill_required.checked;
+      profileForm.required_drill_interval_days.disabled = disabled;
+      profileForm.required_assurance_level.disabled = disabled;
+      profileForm.required_backup_source_types.disabled = disabled;
+    };
+    profileForm.drill_required.onchange = syncDrillRequirement;
+    syncDrillRequirement();
     if (profileForm.dataset.initialized !== "true") {
       profileForm.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -716,9 +725,10 @@
         const currentTargetId = profileForm.dataset.targetId;
         const currentDbType = profileForm.dataset.dbType;
         try {
-          await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(currentTargetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, required_backup_source_types: [...profileForm.required_backup_source_types.selectedOptions].map((option) => option.value), rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
+          await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(currentTargetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, drill_required: profileForm.drill_required.checked, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, required_backup_source_types: [...profileForm.required_backup_source_types.selectedOptions].map((option) => option.value), rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
           result.textContent = "已保存为新的生效版本。"; result.dataset.tone = "good";
           await loadTargetRecovery(currentTargetId, currentDbType, true);
+          syncDrillRequirement();
         } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
       });
       profileForm.dataset.initialized = "true";

@@ -27,6 +27,7 @@ class RecoveryProfileEntity(BaseEntity):
     version_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     rpo_seconds: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     rto_seconds: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
+    drill_required: Mapped[int] = mapped_column(Numeric(1, 0), nullable=False)
     required_drill_interval_days: Mapped[int] = mapped_column(
         Numeric(10, 0), nullable=False
     )

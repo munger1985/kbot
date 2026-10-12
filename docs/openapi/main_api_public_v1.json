@@ -11727,6 +11727,18 @@
             "format": "date-time",
             "title": "Simulated Failure At",
             "type": "string"
+          },
+          "source_work_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Work Item Id"
           }
         },
         "required": [
@@ -12099,6 +12111,18 @@
             ],
             "title": "Source Trust Level",
             "type": "string"
+          },
+          "source_work_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Work Item Id"
           },
           "status": {
             "enum": [
@@ -15837,6 +15861,10 @@
       "TargetRecoveryProfileUpsert": {
         "additionalProperties": false,
         "properties": {
+          "drill_required": {
+            "title": "Drill Required",
+            "type": "boolean"
+          },
           "required_assurance_level": {
             "enum": [
               "BACKUP_METADATA",
@@ -15866,7 +15894,6 @@
               "type": "string"
             },
             "maxItems": 16,
-            "minItems": 1,
             "title": "Required Backup Source Types",
             "type": "array"
           },
@@ -15915,6 +15942,7 @@
         "required": [
           "rpo_seconds",
           "rto_seconds",
+          "drill_required",
           "required_drill_interval_days",
           "required_assurance_level",
           "required_backup_source_types"
@@ -15933,6 +15961,10 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "drill_required": {
+            "title": "Drill Required",
+            "type": "boolean"
           },
           "effective_at": {
             "format": "date-time",
@@ -15973,7 +16005,6 @@
               "type": "string"
             },
             "maxItems": 16,
-            "minItems": 1,
             "title": "Required Backup Source Types",
             "type": "array"
           },
@@ -16062,6 +16093,7 @@
         "required": [
           "rpo_seconds",
           "rto_seconds",
+          "drill_required",
           "required_drill_interval_days",
           "required_assurance_level",
           "required_backup_source_types",
@@ -17708,7 +17740,9 @@
           "SITUATION",
           "REPORT",
           "PROPOSAL",
-          "VERIFICATION"
+          "VERIFICATION",
+          "RECOVERY_PROFILE",
+          "RECOVERY_DRILL"
         ],
         "title": "WorkItemResourceKind",
         "type": "string"
@@ -17888,7 +17922,8 @@
           "ALERT",
           "INSPECTION",
           "CHAT",
-          "MANUAL"
+          "MANUAL",
+          "SCHEDULE"
         ],
         "title": "WorkItemSourceKind",
         "type": "string"
@@ -18322,7 +18357,8 @@
           "PROBLEM_INVESTIGATION",
           "OPTIMIZATION",
           "OBSERVABILITY_GAP",
-          "RECOVERY_OBSERVATION"
+          "RECOVERY_OBSERVATION",
+          "RECOVERY_DRILL"
         ],
         "title": "WorkItemType",
         "type": "string"

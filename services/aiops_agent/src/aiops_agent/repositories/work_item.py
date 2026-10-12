@@ -259,6 +259,45 @@ class WorkItemRepository(AIOpsRepository):
         source = "TARGET_DEFAULT" if target_group_id is not None else "AGENT_DEFAULT"
         return group_id, source, str(agent_name)
 
+    async def recovery_drill_routing(
+        self, *, domain_id: int, target_id: UUID
+    ) -> tuple[UUID, UUID, str, str] | None:
+        """为恢复演练选择一个绑定当前 Target 的有效 Agent 与责任组。"""
+        rows = await self._session.execute(
+            select(
+                AIOpsAgentEntity.agent_id,
+                AIOpsAgentEntity.default_responsibility_group_id,
+                TargetEntity.default_responsibility_group_id,
+                AIOpsAgentEntity.display_name,
+            )
+            .join(
+                AIOpsAgentVersionTargetEntity,
+                AIOpsAgentVersionTargetEntity.agent_version_id
+                == AIOpsAgentEntity.current_version_id,
+            )
+            .join(
+                TargetEntity,
+                TargetEntity.target_id == AIOpsAgentVersionTargetEntity.target_id,
+            )
+            .where(
+                AIOpsAgentEntity.domain_id == domain_id,
+                AIOpsAgentEntity.status == "ACTIVE",
+                TargetEntity.target_id == target_id,
+                TargetEntity.domain_id == domain_id,
+                TargetEntity.status == "ENABLED",
+            )
+            .order_by(AIOpsAgentEntity.agent_id)
+        )
+        for agent_id, agent_group_id, target_group_id, agent_name in rows:
+            group_id = target_group_id or agent_group_id
+            if group_id is None:
+                continue
+            group = await self.get_group(group_id=group_id, domain_id=domain_id)
+            if group is not None and group.status == "ACTIVE":
+                source = "TARGET_DEFAULT" if target_group_id is not None else "AGENT_DEFAULT"
+                return agent_id, group_id, source, str(agent_name)
+        return None
+
     async def agent_name(
         self, *, agent_id: UUID | None, domain_id: int
     ) -> str | None:
@@ -389,6 +428,20 @@ class WorkItemRepository(AIOpsRepository):
             statement = statement.with_for_update()
         else:
             statement = statement.limit(1)
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def get_active_by_target_fingerprint(
+        self, *, domain_id: int, target_id: UUID, fingerprint: str,
+        lock: bool = False,
+    ) -> WorkItemEntity | None:
+        statement = select(WorkItemEntity).where(
+            WorkItemEntity.domain_id == domain_id,
+            WorkItemEntity.target_id == target_id,
+            WorkItemEntity.fingerprint == fingerprint,
+            WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
+        ).order_by(WorkItemEntity.created_at, WorkItemEntity.work_item_id)
+        if lock:
+            statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalars().first()
 
     async def page(

@@ -30,6 +30,7 @@ async def build_recovery_assurance_snapshot(
         target_id=target.target_id, domain_id=int(target.domain_id), limit=100
     )
     latest_attempt = drills[0] if drills else None
+    drill_required = bool(profile and profile.drill_required)
     required_rank = _ASSURANCE_RANK.get(
         getattr(profile, "required_assurance_level", ""), 0
     )
@@ -50,13 +51,13 @@ async def build_recovery_assurance_snapshot(
         >= _ASSURANCE_RANK["DATABASE_OPEN"]
     )
     stale = bool(
-        profile
+        drill_required
         and latest_success
         and latest_success.simulated_failure_at
         < captured_at - timedelta(days=int(profile.required_drill_interval_days))
     )
     profile_changed = bool(
-        profile
+        drill_required
         and latest_success
         and (
             latest_success.recovery_profile_id != profile.recovery_profile_id
@@ -66,7 +67,7 @@ async def build_recovery_assurance_snapshot(
     )
     covered_sources = sorted({row.backup_source_type for row in verified_passes})
     required_sources = (
-        list(profile.required_backup_source_types_json) if profile else []
+        list(profile.required_backup_source_types_json) if drill_required else []
     )
     uncovered_sources = sorted(set(required_sources) - set(covered_sources))
     gaps: list[dict[str, object]] = []
@@ -77,7 +78,7 @@ async def build_recovery_assurance_snapshot(
                 {"code": "RTO_NOT_CONFIGURED", "detail": "Target 未配置业务 RTO"},
             )
         )
-    if not restore_demonstrated:
+    if profile is None or (drill_required and not restore_demonstrated):
         gaps.append(
             {
                 "code": "RESTORE_NOT_DEMONSTRATED",
@@ -93,9 +94,9 @@ async def build_recovery_assurance_snapshot(
                 "detail": "恢复目标版本在最近合格成功演练后已变更",
             }
         )
-    if latest_attempt and latest_attempt.result == "FAIL":
+    if drill_required and latest_attempt and latest_attempt.result == "FAIL":
         gaps.append({"code": "LATEST_DRILL_FAILED", "detail": "最近一次恢复演练失败"})
-    if profile and latest_success:
+    if drill_required and latest_success:
         if latest_success.achieved_rpo_seconds is None:
             gaps.append({"code": "RPO_MEASUREMENT_MISSING", "detail": "合格演练缺少实测 RPO"})
         elif int(latest_success.achieved_rpo_seconds) > int(profile.rpo_seconds):
@@ -124,6 +125,8 @@ async def build_recovery_assurance_snapshot(
     assurance_status = (
         "TARGET_NOT_CONFIGURED"
         if profile is None
+        else "DRILL_NOT_REQUIRED"
+        if not drill_required
         else "NOT_DEMONSTRATED"
         if "RESTORE_NOT_DEMONSTRATED" in gap_codes
         else "LATEST_DRILL_FAILED"

@@ -31,6 +31,17 @@ class AIOpsRoutePermissionsTest(unittest.TestCase):
             "aiops:plan_manage",
             AIOPS_ROUTE_PERMISSIONS["delete_inspection_plan"],
         )
+        self.assertEqual(
+            "aiops:use", AIOPS_ROUTE_PERMISSIONS["get_recovery_profile"]
+        )
+        self.assertEqual(
+            "aiops:work_item_handle",
+            AIOPS_ROUTE_PERMISSIONS["create_recovery_drill"],
+        )
+        self.assertEqual(
+            "aiops:work_item_manage",
+            AIOPS_ROUTE_PERMISSIONS["review_recovery_drill"],
+        )
 
     def test_elevated_work_item_visibility_requires_manage_permission(self) -> None:
         ordinary = SimpleNamespace(state=SimpleNamespace(

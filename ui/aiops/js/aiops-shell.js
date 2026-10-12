@@ -5,7 +5,7 @@
     reports: "aiops:use", "report-detail": "aiops:use",
     "run-detail": "aiops:use", targets: "aiops:target_manage",
     "target-detail": "aiops:target_manage",
-    "recovery-drills": "aiops:target_manage",
+    "recovery-drills": "aiops:work_item_handle",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
     "operations-knowledge": "aiops:knowledge_manage", agents: "aiops:agent_manage",

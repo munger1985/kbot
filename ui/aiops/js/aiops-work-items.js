@@ -19,6 +19,7 @@
     P2: "P2 高", P3: "P3 中", P4: "P4 低",
     FIXED: "已修复", MITIGATED: "已缓解", OBSERVED_STABLE: "观察稳定",
     ACCEPTED_RISK: "风险已接受", FALSE_POSITIVE: "误报", DUPLICATE: "重复事项",
+    RECOVERY_DRILL: "恢复演练", SCHEDULE: "策略计划",
   };
   const text = (value) => labels[value] || value || "—";
   const values = (items) => Array.isArray(items) ? items : [];
@@ -224,6 +225,10 @@
           expected_row_version: Number(item.row_version),
         }));
         shell.toast("工作项已由你领取并进入处理中");
+      }
+      if (item.work_type === "RECOVERY_DRILL") {
+        location.href = `./recovery-drills.html?target_id=${encodeURIComponent(item.target_id)}&work_item_id=${encodeURIComponent(item.work_item_id)}`;
+        return;
       }
       const detail = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(item.work_item_id)}?visibility=SCOPE`);
       state.processingItem = detail;

@@ -94,7 +94,7 @@ class RecoveryContractTest(unittest.TestCase):
         manifest = json.loads(
             (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
         )
-        self.assertEqual(39, manifest["schema_version"])
+        self.assertEqual(40, manifest["schema_version"])
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
         self.assertIn("required_backup_source_types", (
@@ -169,6 +169,7 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
             version_no=2,
             rpo_seconds=300,
             rto_seconds=900,
+            drill_required=1,
             required_drill_interval_days=30,
             required_assurance_level="DATABASE_OPEN",
             required_backup_source_types_json=[
@@ -287,10 +288,40 @@ class _Session:
         return None
 
 
+class _WorkItems:
+    def __init__(self):
+        self.items = []
+        self.links = []
+        self.activities = []
+        self.agent_id = uuid7()
+        self.group_id = uuid7()
+
+    async def recovery_drill_routing(self, **_kwargs):
+        return self.agent_id, self.group_id, "TARGET_DEFAULT", "恢复保障 Agent"
+
+    async def get_active_by_target_fingerprint(self, *, target_id, fingerprint, **_kwargs):
+        return next((item for item in self.items if item.target_id == target_id and item.fingerprint == fingerprint and item.status not in {"CLOSED", "CANCELLED"}), None)
+
+    async def add(self, entity): self.items.append(entity); return entity
+    async def add_link(self, entity): self.links.append(entity); return entity
+    async def add_activity(self, entity): self.activities.append(entity); return entity
+
+    async def existing_link(self, *, work_item_id, resource_kind, resource_id, link_role):
+        return next((row for row in self.links if row.work_item_id == work_item_id and row.resource_kind == resource_kind and row.resource_id == resource_id and row.link_role == link_role), None)
+
+    async def get_scoped(self, *, work_item_id, **_kwargs):
+        return next((item for item in self.items if item.work_item_id == work_item_id), None)
+
+    async def list_by_resource(self, *, resource_kind, resource_id):
+        item_ids = {row.work_item_id for row in self.links if row.resource_kind == resource_kind and row.resource_id == resource_id}
+        return [item for item in self.items if item.work_item_id in item_ids]
+
+
 class _Uow:
     def __init__(self, target, recovery):
         self.targets = _TargetRepository(target)
         self.recovery = recovery
+        self.work_items = _WorkItems()
         self.outbox = _Outbox()
         self.session = _Session()
 
@@ -311,7 +342,7 @@ class _RecoveryService(RecoveryConfigurationMixin):
 class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_profile_rejects_backup_source_from_another_database(self) -> None:
         target = SimpleNamespace(
-            target_id=uuid7(), domain_id=1, db_type="MYSQL"
+            target_id=uuid7(), domain_id=1, db_type="MYSQL", display_name="MYSQL-PROD", status="ENABLED"
         )
         repository = _MutableRecoveryRepository(None, [])
         service = _RecoveryService(_Uow(target, repository))
@@ -331,6 +362,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
                 request=TargetRecoveryProfileUpsert(
                     rpo_seconds=300,
                     rto_seconds=900,
+                    drill_required=True,
                     required_drill_interval_days=30,
                     required_assurance_level="DATABASE_OPEN",
                     required_backup_source_types=("POSTGRESQL_PGBACKREST",),
@@ -343,7 +375,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_profile_versions_drill_metrics_and_review_trust(self) -> None:
         target = SimpleNamespace(
-            target_id=uuid7(), domain_id=1, db_type="MYSQL"
+            target_id=uuid7(), domain_id=1, db_type="MYSQL", display_name="MYSQL-PROD", status="ENABLED"
         )
         repository = _MutableRecoveryRepository(None, [])
         service = _RecoveryService(_Uow(target, repository))
@@ -365,6 +397,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
             request=TargetRecoveryProfileUpsert(
                 rpo_seconds=300,
                 rto_seconds=900,
+                drill_required=True,
                 required_drill_interval_days=30,
                 required_assurance_level="DATABASE_OPEN",
                 required_backup_source_types=("MYSQL_XTRABACKUP",),
@@ -377,6 +410,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
             request=TargetRecoveryProfileUpsert(
                 rpo_seconds=600,
                 rto_seconds=1200,
+                drill_required=True,
                 required_drill_interval_days=60,
                 required_assurance_level="APPLICATION_VALIDATED",
                 required_backup_source_types=("MYSQL_XTRABACKUP",),
@@ -414,6 +448,47 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual("VERIFIED", reviewed.status)
         self.assertEqual("USER_PROVIDED", reviewed.source_trust_level)
+
+    async def test_disabling_drill_requirement_cancels_active_schedule(self) -> None:
+        target = SimpleNamespace(
+            target_id=uuid7(), domain_id=1, db_type="MYSQL",
+            display_name="MYSQL-PROD", status="ENABLED",
+        )
+        repository = _MutableRecoveryRepository(None, [])
+        uow = _Uow(target, repository)
+        service = _RecoveryService(uow)
+        scope = ConfigurationScope(
+            domain_id=1, principal_id="principal", actor_id="operator",
+            request_id="request", trace_id="trace",
+        )
+        from platform_core.contracts.aiops import TargetRecoveryProfileUpsert
+
+        await service.upsert_recovery_profile(
+            scope=scope, target_id=target.target_id,
+            request=TargetRecoveryProfileUpsert(
+                rpo_seconds=300, rto_seconds=900, drill_required=True,
+                required_drill_interval_days=30,
+                required_assurance_level="DATABASE_OPEN",
+                required_backup_source_types=("MYSQL_XTRABACKUP",),
+            ),
+            idempotency_key="profile-enabled",
+        )
+        scheduled = uow.work_items.items[0]
+
+        await service.upsert_recovery_profile(
+            scope=scope, target_id=target.target_id,
+            request=TargetRecoveryProfileUpsert(
+                rpo_seconds=300, rto_seconds=900, drill_required=False,
+                required_drill_interval_days=30,
+                required_assurance_level="DATABASE_OPEN",
+                required_backup_source_types=(),
+            ),
+            idempotency_key="profile-disabled",
+        )
+
+        self.assertEqual("CANCELLED", scheduled.status)
+        self.assertEqual("当前恢复策略不要求定期恢复演练", scheduled.wait_reason)
+        self.assertEqual(1, len(uow.work_items.items))
 
 
 if __name__ == "__main__":

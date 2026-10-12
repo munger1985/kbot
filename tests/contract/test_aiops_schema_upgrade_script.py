@@ -6,6 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_39.sql"
+RECOVERY_POLICY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_40.sql"
 
 
 class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
@@ -33,6 +34,23 @@ class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
         self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)
         self.assertNotIn("TRUNCATE TABLE KBOT_OPS_", self.upper)
         self.assertNotIn("DROP TABLE KBOT_OPS_", self.upper)
+
+
+class AIOpsRecoveryPolicyUpgradeScriptTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.upper = RECOVERY_POLICY_SCRIPT.read_text(encoding="utf-8").upper()
+
+    def test_upgrade_is_version_guarded_and_preserves_existing_requirement(self) -> None:
+        self.assertIn("L_SCHEMA_VERSION <> 39", self.upper)
+        self.assertIn("AIOPS-ORACLE-V29", self.upper)
+        self.assertIn("40 AS SCHEMA_VERSION", self.upper)
+        self.assertIn("AIOPS-ORACLE-V30", self.upper)
+        add_at = self.upper.index("ADD DRILL_REQUIRED NUMBER(1)")
+        update_at = self.upper.index("SET DRILL_REQUIRED = 1")
+        required_at = self.upper.index("MODIFY DRILL_REQUIRED NOT NULL")
+        self.assertLess(add_at, update_at)
+        self.assertLess(update_at, required_at)
 
 
 if __name__ == "__main__":

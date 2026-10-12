@@ -375,10 +375,11 @@ class TargetRecoveryProfileUpsert(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     rpo_seconds: int = Field(ge=0, le=31_536_000)
     rto_seconds: int = Field(ge=60, le=31_536_000)
+    drill_required: bool
     required_drill_interval_days: int = Field(ge=1, le=3650)
     required_assurance_level: RecoveryAssuranceLevel
     required_backup_source_types: tuple[RecoveryBackupSourceType, ...] = Field(
-        min_length=1, max_length=16
+        max_length=16
     )
     rto_clock_basis: Literal["SERVICE_UNAVAILABLE_TO_VALIDATED"] = (
         "SERVICE_UNAVAILABLE_TO_VALIDATED"
@@ -387,6 +388,8 @@ class TargetRecoveryProfileUpsert(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_source_types(self) -> "TargetRecoveryProfileUpsert":
+        if self.drill_required and not self.required_backup_source_types:
+            raise ValueError("要求定期恢复演练时必须配置备份来源")
         if len(set(self.required_backup_source_types)) != len(
             self.required_backup_source_types
         ):
@@ -423,6 +426,7 @@ class RecoveryDrillEvidence(AIOpsContract):
 
 class RecoveryDrillCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
+    source_work_item_id: UUIDv7 | None = None
     scenario: Literal[
         "FULL_INSTANCE",
         "POINT_IN_TIME",

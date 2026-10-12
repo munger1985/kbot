@@ -679,6 +679,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("evidence: []", drill_script)
         self.assertIn("数据时间不能晚于模拟故障时间", drill_script)
         self.assertIn("验证完成时间不能早于模拟故障时间", drill_script)
+        self.assertIn('query.get("work_item_id")', drill_script)
+        self.assertIn("source_work_item_id: sourceWorkItemId || null", drill_script)
+        self.assertIn("补录计划外演练", drill_page)
         self.assertIn('["recovery-drills", "恢复演练"]', shell)
 
     def test_target_edit_and_chat_own_target_fact_confirmation(self):

@@ -1868,6 +1868,7 @@ BEGIN
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_AT',
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_BY',
             'KBOT_OPS_RECOVERY_PROFILE|DOMAIN_ID',
+            'KBOT_OPS_RECOVERY_PROFILE|DRILL_REQUIRED',
             'KBOT_OPS_RECOVERY_PROFILE|EFFECTIVE_AT',
             'KBOT_OPS_RECOVERY_PROFILE|RECOVERY_PROFILE_ID',
             'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_ASSURANCE_LEVEL',
@@ -2957,6 +2958,7 @@ BEGIN
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_AT',
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_BY',
             'KBOT_OPS_RECOVERY_PROFILE|DOMAIN_ID',
+            'KBOT_OPS_RECOVERY_PROFILE|DRILL_REQUIRED',
             'KBOT_OPS_RECOVERY_PROFILE|EFFECTIVE_AT',
             'KBOT_OPS_RECOVERY_PROFILE|RECOVERY_PROFILE_ID',
             'KBOT_OPS_RECOVERY_PROFILE|REQUIRED_ASSURANCE_LEVEL',
@@ -3479,7 +3481,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1072 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1073 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3571,19 +3573,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 39
-           OR l_contract_version <> 'aiops-oracle-v29' THEN
+           OR l_schema_version <> 40
+           OR l_contract_version <> 'aiops-oracle-v30' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '39/aiops-oracle-v29'
+                || '40/aiops-oracle-v30'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/39/'
-                || 'aiops-oracle-v29'
+                '[通过] Schema 合同：AIOPS/40/'
+                || 'aiops-oracle-v30'
             );
         END IF;
     EXCEPTION
@@ -3611,7 +3613,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：63 张表、10 个视图、'
         || '267 个命名索引、232 个命名约束、'
-        || '1072 个表列；Schema 与当前规范一致。'
+        || '1073 个表列；Schema 与当前规范一致。'
     );
 END;
 /
