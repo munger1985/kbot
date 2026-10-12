@@ -150,13 +150,23 @@
   }
   function renderQueues(summary) {
     const definitions = [
-      ["my_open", "我的待办", "mine"], ["unassigned", "未分派", "unassigned"],
-      ["urgent", "P1 / P2", "urgent"], ["overdue", "已超 SLA", "overdue"],
-      ["pending_verification", "处理完成", "verification"],
+      ["my_open", "我的待办", "mine", "当前分派给我的活动事项", "accent"],
+      ["unassigned", "未分派", "unassigned", "等待责任组内 DBA 领取", ""],
+      ["urgent", "P1 / P2", "urgent", "需要优先研判与处置", "warning"],
+      ["overdue", "已超 SLA", "overdue", "解决时限已经超期", "danger"],
+      ["pending_verification", "处理完成", "verification", "等待复核处理结果", "info"],
     ];
-    document.getElementById("work-item-queues").innerHTML = definitions.map(([key, label, filter]) =>
-      `<button type="button" data-queue="${filter}"><span>${label}</span><strong>${Number(summary?.[key] || 0)}</strong></button>`
+    document.getElementById("work-item-queues").innerHTML = definitions.map(([key, label, filter, description, tone]) =>
+      `<button class="${tone ? `is-${tone} ` : ""}${queueIsActive(filter) ? "is-active" : ""}" type="button" data-queue="${filter}" aria-pressed="${queueIsActive(filter)}"><header><span>${label}</span><strong>${Number(summary?.[key] || 0)}</strong></header><p>${description}</p></button>`
     ).join("");
+  }
+  function queueIsActive(value) {
+    const filters = state.filters;
+    if (value === "mine") return Boolean(filters.assignee_user_id) && !filters.status && !filters.priority && !filters.unassigned && !filters.overdue;
+    if (value === "unassigned") return Boolean(filters.unassigned) && !filters.status && !filters.priority && !filters.overdue;
+    if (value === "urgent") return filters.priority === "P1,P2" && !filters.status && !filters.assignee_user_id && !filters.unassigned && !filters.overdue;
+    if (value === "overdue") return Boolean(filters.overdue) && !filters.status && !filters.priority && !filters.assignee_user_id && !filters.unassigned;
+    return filters.status === "PENDING_VERIFICATION" && !filters.priority && !filters.assignee_user_id && !filters.unassigned && !filters.overdue;
   }
   async function loadScopedAgents() {
     const [agents, groupPage] = await Promise.all([
