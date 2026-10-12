@@ -77,9 +77,11 @@ PYTHONPATH=packages/platform_core/src \
 2. `app_admin` 保留成员绑定并重建为 App 全权限。
 3. 新建 `app_manager` 并写入规范权限，不自动分配任何成员。
 4. 旧专业系统角色原位转为自定义角色，角色编码、权限、成员和 Domain 范围均保留。
-5. 若存在孤儿绑定、统一角色编码冲突，或旧专业角色持有 `member_manage` / `role_manage`，
-   迁移拒绝猜测并整体回滚。
-6. 脚本可重复执行，不修改账号、密码、API Key 或业务数据。
+5. 已有同名自定义角色若权限、Scope 和状态与目标系统角色完全一致，则原位转为系统角色并
+   保留全部成员绑定；语义不一致时拒绝猜测并整体回滚。
+6. 若存在孤儿绑定，或旧专业角色持有 `member_manage` / `role_manage`，迁移拒绝猜测并
+   整体回滚。
+7. 脚本可重复执行，不修改账号、密码、API Key 或业务数据。
 
 迁移后再次运行只读审计，所有 `findings.item_count` 应为 `0`，三个系统角色的
 `missing_permissions` 和 `excess_permissions` 均应为空。

@@ -45,11 +45,87 @@ BEGIN
                'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
            )
        AND role_row.ROLE_CODE IN ('app_user', 'app_manager', 'app_admin')
-       AND role_row.IS_SYSTEM <> 'Y';
+       AND role_row.IS_SYSTEM <> 'Y'
+       AND (
+           role_row.STATUS <> 'ACTIVE'
+           OR role_row.SCOPE_POLICY <> CASE role_row.ROLE_CODE
+               WHEN 'app_user' THEN 'SELECTABLE'
+               ELSE 'ALL_APP_DOMAINS'
+           END
+           OR EXISTS (
+               SELECT 1
+                 FROM KBOT_APP_ROLE_PERMISSION actual_permission
+                WHERE actual_permission.APP_ID = role_row.APP_ID
+                  AND actual_permission.ROLE_CODE = role_row.ROLE_CODE
+                  AND NOT (
+                      role_row.ROLE_CODE = 'app_admin'
+                      OR (
+                          role_row.ROLE_CODE = 'app_manager'
+                          AND actual_permission.PERMISSION_CODE NOT IN (
+                              role_row.APP_ID || ':member_manage',
+                              role_row.APP_ID || ':role_manage'
+                          )
+                      )
+                      OR (
+                          role_row.ROLE_CODE = 'app_user'
+                          AND actual_permission.PERMISSION_CODE IN (
+                              'knowledge_retrieval:use',
+                              'knowledge_retrieval:knowledge_chat',
+                              'knowledge_retrieval:x_search',
+                              'km_asset:use',
+                              'media_studio:use',
+                              'media_studio:image_generate',
+                              'media_studio:media_read',
+                              'media_studio:run_read',
+                              'aiops:use',
+                              'aiops:work_item_handle'
+                          )
+                      )
+                  )
+           )
+           OR EXISTS (
+               SELECT 1
+                 FROM KBOT_PERMISSION expected_permission
+                WHERE expected_permission.APP_ID = role_row.APP_ID
+                  AND (
+                      role_row.ROLE_CODE = 'app_admin'
+                      OR (
+                          role_row.ROLE_CODE = 'app_manager'
+                          AND expected_permission.PERMISSION_CODE NOT IN (
+                              role_row.APP_ID || ':member_manage',
+                              role_row.APP_ID || ':role_manage'
+                          )
+                      )
+                      OR (
+                          role_row.ROLE_CODE = 'app_user'
+                          AND expected_permission.PERMISSION_CODE IN (
+                              'knowledge_retrieval:use',
+                              'knowledge_retrieval:knowledge_chat',
+                              'knowledge_retrieval:x_search',
+                              'km_asset:use',
+                              'media_studio:use',
+                              'media_studio:image_generate',
+                              'media_studio:media_read',
+                              'media_studio:run_read',
+                              'aiops:use',
+                              'aiops:work_item_handle'
+                          )
+                      )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                        FROM KBOT_APP_ROLE_PERMISSION actual_permission
+                       WHERE actual_permission.APP_ID = role_row.APP_ID
+                         AND actual_permission.ROLE_CODE = role_row.ROLE_CODE
+                         AND actual_permission.PERMISSION_CODE =
+                             expected_permission.PERMISSION_CODE
+                  )
+           )
+       );
     IF l_count > 0 THEN
         RAISE_APPLICATION_ERROR(
             -20001,
-            '统一系统角色编码已被自定义角色占用，请先人工审计冲突'
+            '同名自定义角色与统一系统角色的权限或 Scope 不一致，请先人工审计冲突'
         );
     END IF;
 
