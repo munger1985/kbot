@@ -8,6 +8,7 @@ from .app_api_key import (
     AppApiCredentialEntity,
 )
 from .access_control import (
+    AccessAuditEventEntity,
     AppDomainEntity,
     AppMemberEntity,
     AppMemberRoleEntity,
@@ -29,6 +30,7 @@ from .notification import (
 )
 
 __all__ = [
+    "AccessAuditEventEntity",
     "AppDomainEntity",
     "AppApiClientAgentEntity",
     "AppApiClientEntity",

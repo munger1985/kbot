@@ -224,14 +224,17 @@ WHEN NOT MATCHED THEN
 MERGE INTO KBOT_APP_ROLE target
 USING (
     SELECT 'km_asset' AS APP_ID,
-           'user' AS ROLE_CODE,
-           '用户' AS DISPLAY_NAME,
+           'app_user' AS ROLE_CODE,
+           'App 用户' AS DISPLAY_NAME,
            'Y' AS IS_SYSTEM,
            'SELECTABLE' AS SCOPE_POLICY,
            'ACTIVE' AS STATUS
       FROM DUAL
     UNION ALL
-    SELECT 'km_asset', 'app_admin', 'KM Asset 初始管理员',
+    SELECT 'km_asset', 'app_manager', 'App 业务管理员',
+           'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
+    UNION ALL
+    SELECT 'km_asset', 'app_admin', 'App 管理员',
            'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
 ) source
 ON (
@@ -259,16 +262,24 @@ MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (
     SELECT
         'km_asset' AS APP_ID,
+        'app_user' AS ROLE_CODE,
+        'km_asset:use' AS PERMISSION_CODE
+    FROM DUAL
+    UNION ALL
+    SELECT
+        'km_asset' AS APP_ID,
+        'app_manager' AS ROLE_CODE,
+        permission.PERMISSION_CODE
+    FROM KBOT_PERMISSION permission
+    WHERE permission.APP_ID = 'km_asset'
+      AND permission.PERMISSION_CODE NOT IN ('km_asset:member_manage', 'km_asset:role_manage')
+    UNION ALL
+    SELECT
+        'km_asset' AS APP_ID,
         'app_admin' AS ROLE_CODE,
         permission.PERMISSION_CODE
     FROM KBOT_PERMISSION permission
     WHERE permission.APP_ID = 'km_asset'
-    UNION ALL
-    SELECT
-        'km_asset' AS APP_ID,
-        'user' AS ROLE_CODE,
-        'km_asset:use' AS PERMISSION_CODE
-    FROM DUAL
 ) source
 ON (
     target.APP_ID = source.APP_ID

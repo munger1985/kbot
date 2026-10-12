@@ -11,8 +11,9 @@ Schema 全量创建，不读取、转换、回填或保留任何 3.x KBot 表和
 - `generated/`：由 `tools/db/` 生成、禁止手工修改的 SQL 交付物。
 
 业务 Schema、Bootstrap 和 DBA 操作 SQL 不得放在 `scripts/db/`。连接、参数、事务编排
-和结果校验属于 `scripts/db/`；纯生成器属于 `tools/db/`；一次性迁移、修复和补种脚本
-不进入活动主干。观测组件随部署模块交付的专用授权 SQL 仍归对应部署目录管理。
+和结果校验属于 `scripts/db/`；纯生成器属于 `tools/db/`。需要保留既有数据的受控升级脚本
+位于 `operations/`，必须包含预检、事务回滚和迁移后校验。观测组件随部署模块交付的专用
+授权 SQL 仍归对应部署目录管理。
 
 脚本按拥有数据的服务拆分：
 
@@ -61,7 +62,12 @@ Schema。规范初始化脚本不包含 `DROP`、旧表查询、旧数据导入�
 已有开发 Schema 无需保留数据时，先使用 KBot Schema 用户执行
 `database/oracle/operations/reset_kbot_schema.sql`，确认验证查询返回 0 行，再运行下方初始化
 命令。重置脚本只处理当前用户下的 `KBOT_%` 表和视图。KBot 4.0 不保留一次性升级、
-字段修复或数据补种脚本；结构变化直接更新规范 DDL，并在新的空白 Schema 重新初始化。
+字段修复或数据补种逻辑不得混入应用启动或 Bootstrap；确需保留既有环境数据时，通过
+`operations/` 下经审计的显式升级脚本完成。
+
+App 权限角色升级前后使用 `scripts/db/audit_app_authorization.py` 只读审计，升级资产为
+`operations/upgrade_app_authorization_roles.sql`。统一权限模型详见
+`docs/architecture/app-authorization-standard.md`。
 
 执行前运行：
 

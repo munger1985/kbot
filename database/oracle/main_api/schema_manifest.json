@@ -1,15 +1,16 @@
 {
   "component": "main_api",
-  "schema_version": 6,
-  "contract_version": "main-api-oracle-v6",
+  "schema_version": 7,
+  "contract_version": "main-api-oracle-v7",
   "oracle_baseline": "26ai",
   "scripts": [
-    {"name": "001_access_control.sql", "statements": 30, "sha256": "df60ea1ef3814c9f26c206a9d85571792729cd469b9366a1349f98d00fbc8d8f"},
+    {"name": "001_access_control.sql", "statements": 33, "sha256": "e2da0b1a17d91a15cfec0f2cbedbec5ccd4215f3931d45b458d0c0a395bb269e"},
     {"name": "002_app_api_clients.sql", "statements": 13, "sha256": "a45420fb23c26fc4b1e21e30ed70a8a1df6a8bfb74de2b3bc2ac2b77394edf9a"}
   ],
   "tables": [
     "KBOT_PLATFORM_APP", "KBOT_PLATFORM_USER", "KBOT_PLATFORM_USER_CREDENTIAL",
     "KBOT_PERMISSION", "KBOT_APP_ROLE", "KBOT_APP_ROLE_PERMISSION",
+    "KBOT_ACCESS_AUDIT_EVENT",
     "KBOT_PLATFORM_USER_ROLE", "KBOT_APP_DOMAIN", "KBOT_APP_MEMBER",
     "KBOT_APP_MEMBER_ROLE", "KBOT_APP_MEMBER_ROLE_SCOPE",
     "KBOT_APP_API_CLIENT", "KBOT_APP_API_CREDENTIAL",

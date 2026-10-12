@@ -1666,6 +1666,31 @@
         "title": "AppLoginPayload",
         "type": "object"
       },
+      "AppRoleUpdatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "permissions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "AppRoleUpdatePayload",
+        "type": "object"
+      },
       "AppUserCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -37624,6 +37649,22 @@
               "title": "Role Code",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
           }
         ],
         "responses": {
@@ -37671,13 +37712,29 @@
               "title": "Role Code",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoleUpdatePayload"
+                "$ref": "#/components/schemas/AppRoleUpdatePayload"
               }
             }
           },

@@ -3,18 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import bcrypt
 
 from main_api.application.access_control import is_reserved_global_admin
 from main_api.entities.access_control import (
+    AccessAuditEventEntity,
     AppDomainEntity,
     AppMemberEntity,
     AppRoleEntity,
     PlatformUserCredentialEntity,
     PlatformUserEntity,
 )
-from platform_core.authorization import get_app_authorization_policy
+from platform_core.authorization import (
+    BUILT_IN_APP_ROLE_CODES,
+    app_permission_catalog,
+    get_app_authorization_policy,
+)
+from platform_core.identity import uuid7
 
 
 INITIAL_APP_ADMIN_ROLE = "app_admin"
@@ -524,28 +531,55 @@ class AccessManagementService:
             await uow.commit()
             return {"user_id": user_id, "deleted": True}
 
-    async def list_permissions(self, *, app_id: str | None) -> list[dict[str, str]]:
+    async def list_permissions(self, *, app_id: str | None) -> list[dict[str, object]]:
         async with self._uow_factory() as uow:
-            return [{"app_id": row.app_id, "permission_code": row.permission_code, "display_name": row.display_name} for row in await uow.access.list_permissions(app_id=app_id)]
+            rows = await uow.access.list_permissions(app_id=app_id)
+        metadata = {
+            item.code: item
+            for item in app_permission_catalog(app_id)
+        } if app_id and app_id != "platform" else {}
+        return [{
+            "app_id": row.app_id,
+            "permission_code": row.permission_code,
+            "display_name": row.display_name,
+            **({
+                "default_tier": metadata[row.permission_code].default_tier.value,
+                "custom_assignable": metadata[row.permission_code].custom_assignable,
+            } if row.permission_code in metadata else {}),
+        } for row in rows]
 
     async def list_roles(self, *, app_id: str | None) -> list[dict[str, object]]:
         async with self._uow_factory() as uow:
             result = []
             for row in await uow.access.list_all_roles(app_id=app_id):
                 permissions = await uow.access.list_role_permission_codes(app_id=row.app_id, role_code=row.role_code)
-                result.append(self._role_item(row, permissions))
+                member_count = await uow.access.count_active_role_members(
+                    app_id=row.app_id,
+                    role_code=row.role_code,
+                )
+                result.append(self._role_item(
+                    row, permissions, member_count=member_count
+                ))
             return result
 
     async def create_role(
         self, *, app_id: str, role_code: str, display_name: str,
         permission_codes: tuple[str, ...], assignable_permissions: frozenset[str],
+        actor_id: str,
     ) -> dict[str, object]:
         async with self._uow_factory() as uow:
             await self._require_app(uow=uow, app_id=app_id)
+            if app_id != "platform" and role_code in BUILT_IN_APP_ROLE_CODES:
+                raise AccessManagementError(
+                    "SYSTEM_ROLE_CODE_RESERVED",
+                    "统一系统角色编码不能用于自定义角色",
+                    status_code=409,
+                )
             if await uow.access.get_role(app_id=app_id, role_code=role_code):
                 raise AccessManagementError("ROLE_ALREADY_EXISTS", "应用角色已存在", status_code=409)
             await self._validate_permissions(uow=uow, app_id=app_id, permission_codes=permission_codes)
             self._assert_assignable_permissions(
+                app_id=app_id,
                 permission_codes=permission_codes,
                 assignable_permissions=assignable_permissions,
             )
@@ -557,38 +591,103 @@ class AccessManagementService:
             )
             await uow.access.add_role(role)
             await uow.access.replace_role_permissions(app_id=app_id, role_code=role_code, permission_codes=permission_codes)
+            await self._audit_role_change(
+                uow=uow, actor_id=actor_id, action="ROLE_CREATED", role=role,
+                permission_codes=permission_codes,
+            )
             await uow.commit()
             return self._role_item(role, permission_codes)
 
     async def update_role(
         self, *, app_id: str, role_code: str, display_name: str, status: str,
         permission_codes: tuple[str, ...], assignable_permissions: frozenset[str],
+        actor_id: str, expected_version: int | None = None,
     ) -> dict[str, object]:
         _assert_status(status)
+        if app_id != "platform" and status != "ACTIVE":
+            raise AccessManagementError(
+                "ROLE_STATUS_INVALID", "App 自定义角色只能通过物理删除下线"
+            )
         async with self._uow_factory() as uow:
-            role = await uow.access.get_role(app_id=app_id, role_code=role_code)
+            role = await uow.access.get_role_for_update(
+                app_id=app_id, role_code=role_code
+            )
             if role is None:
                 raise AccessManagementError("ROLE_NOT_FOUND", "应用角色不存在", status_code=404)
             self._assert_mutable_role(role)
+            self._assert_expected_version(role, expected_version)
             await self._validate_permissions(uow=uow, app_id=app_id, permission_codes=permission_codes)
             self._assert_assignable_permissions(
+                app_id=app_id,
                 permission_codes=permission_codes,
                 assignable_permissions=assignable_permissions,
             )
-            await uow.access.update_role(role=role, display_name=display_name, status=status)
+            await uow.access.update_role(
+                role=role,
+                display_name=display_name,
+                status=status if app_id == "platform" else None,
+            )
             await uow.access.replace_role_permissions(app_id=app_id, role_code=role_code, permission_codes=permission_codes)
+            await self._audit_role_change(
+                uow=uow, actor_id=actor_id, action="ROLE_UPDATED", role=role,
+                permission_codes=permission_codes,
+            )
             await uow.commit()
             return self._role_item(role, permission_codes)
 
-    async def delete_role(self, *, app_id: str, role_code: str) -> dict[str, object]:
+    async def delete_role(
+        self, *, app_id: str, role_code: str,
+        actor_id: str, expected_version: int | None = None,
+    ) -> dict[str, object]:
         async with self._uow_factory() as uow:
-            role = await uow.access.get_role(app_id=app_id, role_code=role_code)
+            role = await uow.access.get_role_for_update(
+                app_id=app_id, role_code=role_code
+            )
             if role is None:
                 raise AccessManagementError("ROLE_NOT_FOUND", "应用角色不存在", status_code=404)
             self._assert_mutable_role(role)
-            await uow.access.update_role(role=role, display_name=role.display_name, status="DISABLED")
+            self._assert_expected_version(role, expected_version)
+            permission_codes = await uow.access.list_role_permission_codes(
+                app_id=app_id, role_code=role_code
+            )
+            if app_id == "platform":
+                await uow.access.update_role(
+                    role=role,
+                    display_name=role.display_name,
+                    status="DISABLED",
+                )
+                affected_member_count = 0
+            else:
+                affected_member_count = await uow.access.delete_role(role=role)
+            await self._audit_role_change(
+                uow=uow, actor_id=actor_id, action="ROLE_DELETED", role=role,
+                permission_codes=permission_codes,
+                affected_member_count=affected_member_count,
+            )
             await uow.commit()
-            return {"app_id": app_id, "role_code": role_code, "status": "DISABLED", "deleted": True}
+            return {
+                "app_id": app_id,
+                "role_code": role_code,
+                "status": "DISABLED" if app_id == "platform" else "DELETED",
+                "deleted": True,
+                "affected_member_count": affected_member_count,
+            }
+
+    @staticmethod
+    async def _audit_role_change(
+        *, uow, actor_id: str, action: str, role: AppRoleEntity,
+        permission_codes: tuple[str, ...], affected_member_count: int = 0,
+    ) -> None:
+        await uow.access.add_access_audit_event(AccessAuditEventEntity(
+            event_id=str(uuid7()), actor_id=actor_id, app_id=role.app_id,
+            action=action, resource_type="APP_ROLE", resource_id=role.role_code,
+            summary_json=json.dumps({
+                "display_name": role.display_name,
+                "permissions": sorted(permission_codes),
+                "row_version": int(role.row_version),
+            }, ensure_ascii=False, separators=(",", ":")),
+            affected_member_count=affected_member_count,
+        ))
 
     @staticmethod
     async def _require_app(*, uow, app_id: str, require_active: bool = True):
@@ -623,6 +722,14 @@ class AccessManagementService:
             role = await uow.access.get_role(app_id=app_id, role_code=role_code)
             if role is None or role.status != "ACTIVE":
                 raise AccessManagementError("ROLE_NOT_FOUND", f"App 角色不存在或已停用：{role_code}", status_code=404)
+            if role.scope_policy == "ALL_APP_DOMAINS" and scope_mode != "ALL_APP_DOMAINS":
+                raise AccessManagementError(
+                    "ROLE_SCOPE_REQUIRED", "该角色必须覆盖全部 App Domain"
+                )
+            if role.scope_policy == "SELECTABLE" and scope_mode != "SELECTED_DOMAINS":
+                raise AccessManagementError(
+                    "ROLE_SCOPE_ESCALATION", "该角色只能选择具体 Domain"
+                )
             if assignable_permissions is not None:
                 role_permissions = frozenset(
                     await uow.access.list_role_permission_codes(
@@ -817,15 +924,38 @@ class AccessManagementService:
 
     @staticmethod
     def _assert_assignable_permissions(
-        *, permission_codes: tuple[str, ...],
+        *, app_id: str, permission_codes: tuple[str, ...],
         assignable_permissions: frozenset[str],
     ) -> None:
-        excess = sorted(set(permission_codes) - assignable_permissions)
+        catalog_assignable = (
+            {
+                item.code
+                for item in app_permission_catalog(app_id)
+                if item.custom_assignable
+            }
+            if app_id != "platform"
+            else set(assignable_permissions)
+        )
+        excess = sorted(
+            set(permission_codes)
+            - assignable_permissions.intersection(catalog_assignable)
+        )
         if excess:
             raise AccessManagementError(
                 "ROLE_PERMISSION_ESCALATION",
                 "不能配置当前管理员不具备的权限：" + ", ".join(excess),
                 status_code=403,
+            )
+
+    @staticmethod
+    def _assert_expected_version(
+        role: AppRoleEntity, expected_version: int | None
+    ) -> None:
+        if expected_version is not None and int(role.row_version) != expected_version:
+            raise AccessManagementError(
+                "ROLE_VERSION_CONFLICT",
+                "角色已被其他操作修改，请刷新后重试",
+                status_code=412,
             )
 
     @staticmethod
@@ -847,12 +977,16 @@ class AccessManagementService:
         }
 
     @staticmethod
-    def _role_item(role: AppRoleEntity, permissions: tuple[str, ...]) -> dict[str, object]:
+    def _role_item(
+        role: AppRoleEntity, permissions: tuple[str, ...],
+        *, member_count: int = 0,
+    ) -> dict[str, object]:
         return {
             "app_id": role.app_id, "role_code": role.role_code,
             "display_name": role.display_name, "status": role.status,
             "protected": role.is_system == "Y", "scope_policy": role.scope_policy,
             "permissions": list(permissions), "row_version": int(role.row_version),
+            "member_count": member_count,
         }
 
     @staticmethod

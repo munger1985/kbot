@@ -2,7 +2,7 @@
 
 from typing import Literal, cast
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from main_api.application import (
@@ -123,6 +123,38 @@ class RoleUpdatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     status: Literal["ACTIVE", "DISABLED"]
     permissions: tuple[str, ...] = Field(default=(), max_length=200)
+
+
+class AppRoleUpdatePayload(_Payload):
+    display_name: str = Field(min_length=1, max_length=256)
+    permissions: tuple[str, ...] = Field(default=(), max_length=200)
+
+
+def _expected_role_version(if_match: str | None) -> int:
+    if if_match is None:
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED,
+            {"code": "PRECONDITION_REQUIRED", "message": "该操作必须提供 If-Match"},
+        )
+    value = if_match.strip()
+    if not (value.startswith('"rv-') and value.endswith('"')):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            {"code": "ROLE_ETAG_INVALID", "message": 'If-Match 必须使用 "rv-N" 格式'},
+        )
+    try:
+        version = int(value[4:-1])
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            {"code": "ROLE_ETAG_INVALID", "message": 'If-Match 必须使用 "rv-N" 格式'},
+        ) from exc
+    if version < 1:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            {"code": "ROLE_ETAG_INVALID", "message": "角色版本必须为正整数"},
+        )
+    return version
 
 
 def _management(request: Request) -> AccessManagementService:
@@ -264,7 +296,7 @@ async def create_platform_role(payload: RoleCreatePayload, request: Request):
     return await _call(lambda: _management(request).create_role(
         app_id="platform", role_code=payload.role_code,
         display_name=payload.display_name, permission_codes=payload.permissions,
-        assignable_permissions=snapshot.permissions,
+        assignable_permissions=snapshot.permissions, actor_id=actor_id,
     ))
 
 
@@ -276,14 +308,16 @@ async def update_platform_role(role_code: str, payload: RoleUpdatePayload, reque
         app_id="platform", role_code=role_code,
         display_name=payload.display_name, status=payload.status,
         permission_codes=payload.permissions,
-        assignable_permissions=snapshot.permissions,
+        assignable_permissions=snapshot.permissions, actor_id=actor_id,
     ))
 
 
 @router.delete(f"{PUBLIC_API_V1}/platform/roles/{{role_code}}")
 async def delete_platform_role(role_code: str, request: Request):
-    await _require_platform(request, "platform:role_manage")
-    return await _call(lambda: _management(request).delete_role(app_id="platform", role_code=role_code))
+    actor_id = await _require_platform(request, "platform:role_manage")
+    return await _call(lambda: _management(request).delete_role(
+        app_id="platform", role_code=role_code, actor_id=actor_id,
+    ))
 
 
 @router.get(f"{PUBLIC_API_V1}/platform/apps")
@@ -440,32 +474,53 @@ async def list_app_roles(app_id: str, request: Request):
 
 
 @router.post(f"{PUBLIC_API_V1}/apps/{{app_id}}/roles", status_code=status.HTTP_201_CREATED)
-async def create_app_role(app_id: str, payload: RoleCreatePayload, request: Request):
+async def create_app_role(
+    app_id: str, payload: RoleCreatePayload, request: Request,
+    response: Response,
+):
     app_id = _canonical_app_id(app_id)
-    _, _, snapshot = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:role_manage")
-    return await _call(lambda: _management(request).create_role(
+    actor_id, _, snapshot = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:role_manage")
+    result = await _call(lambda: _management(request).create_role(
         app_id=app_id, role_code=payload.role_code, display_name=payload.display_name,
         permission_codes=payload.permissions,
-        assignable_permissions=snapshot.permissions,
+        assignable_permissions=snapshot.permissions, actor_id=actor_id,
     ))
+    response.headers["ETag"] = f'"rv-{result["row_version"]}"'
+    return result
 
 
 @router.put(f"{PUBLIC_API_V1}/apps/{{app_id}}/roles/{{role_code}}")
-async def update_app_role(app_id: str, role_code: str, payload: RoleUpdatePayload, request: Request):
+async def update_app_role(
+    app_id: str, role_code: str, payload: AppRoleUpdatePayload,
+    request: Request, response: Response,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
     app_id = _canonical_app_id(app_id)
-    _, _, snapshot = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:role_manage")
-    return await _call(lambda: _management(request).update_role(
+    actor_id, _, snapshot = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:role_manage")
+    result = await _call(lambda: _management(request).update_role(
         app_id=app_id, role_code=role_code, display_name=payload.display_name,
-        status=payload.status, permission_codes=payload.permissions,
+        status="ACTIVE", permission_codes=payload.permissions,
         assignable_permissions=snapshot.permissions,
+        actor_id=actor_id,
+        expected_version=_expected_role_version(if_match),
     ))
+    response.headers["ETag"] = f'"rv-{result["row_version"]}"'
+    return result
 
 
 @router.delete(f"{PUBLIC_API_V1}/apps/{{app_id}}/roles/{{role_code}}")
-async def delete_app_role(app_id: str, role_code: str, request: Request):
+async def delete_app_role(
+    app_id: str, role_code: str, request: Request,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
     app_id = _canonical_app_id(app_id)
-    await _require_app(request, app_id=app_id, permission_code=f"{app_id}:role_manage")
-    return await _call(lambda: _management(request).delete_role(app_id=app_id, role_code=role_code))
+    actor_id, _, _ = await _require_app(request, app_id=app_id, permission_code=f"{app_id}:role_manage")
+    return await _call(lambda: _management(request).delete_role(
+        app_id=app_id,
+        role_code=role_code,
+        actor_id=actor_id,
+        expected_version=_expected_role_version(if_match),
+    ))
 
 
 __all__ = ["router"]

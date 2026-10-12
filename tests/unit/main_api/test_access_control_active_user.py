@@ -39,8 +39,15 @@ class _DeleteSession:
         sql = str(statement.compile(dialect=oracle.dialect()))
         self.actions.append(("execute", sql))
 
+    async def scalar(self, statement):
+        del statement
+        return 0
+
     async def delete(self, user):
-        self.actions.append(("delete", user.user_id))
+        self.actions.append((
+            "delete",
+            getattr(user, "user_id", getattr(user, "role_code", None)),
+        ))
 
     async def flush(self):
         self.actions.append(("flush", None))
@@ -105,6 +112,21 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn('"KBOT_PLATFORM_USER".status = \'ACTIVE\'', sql)
         self.assertIn('"KBOT_APP_ROLE".status = \'ACTIVE\'', sql)
+
+    async def test_role_delete_respects_foreign_key_order(self):
+        session = _DeleteSession()
+        repository = AccessControlRepository(session)
+
+        affected = await repository.delete_role(role=SimpleNamespace(
+            app_id="aiops", role_code="operator"
+        ))
+
+        self.assertEqual(0, affected)
+        self.assertIn("KBOT_APP_MEMBER_ROLE_SCOPE", session.actions[0][1])
+        self.assertIn("KBOT_APP_MEMBER_ROLE", session.actions[1][1])
+        self.assertIn("KBOT_APP_ROLE_PERMISSION", session.actions[2][1])
+        self.assertEqual(("delete", "operator"), session.actions[3])
+        self.assertEqual(("flush", None), session.actions[4])
 
     async def test_reserved_admin_cannot_be_created_by_ensure_user(self):
         class Access:
@@ -305,6 +327,35 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
             },
             await service.list_policy_subjects(
                 app_id="knowledge_retrieval", domain_id=41
+            ),
+        )
+
+    async def test_member_permission_filter_uses_effective_snapshot(self):
+        class Service(AccessControlService):
+            async def list_members(self, **kwargs):
+                del kwargs
+                return [
+                    {"user_id": "allowed", "status": "ACTIVE"},
+                    {"user_id": "denied", "status": "ACTIVE"},
+                    {"user_id": "disabled", "status": "DISABLED"},
+                ]
+
+            async def snapshot(self, *, app_id, domain_id, user_id):
+                return SimpleNamespace(
+                    app_id=app_id,
+                    domain_id=domain_id,
+                    user_id=user_id,
+                    permissions=frozenset({"aiops:use"})
+                    if user_id == "allowed" else frozenset(),
+                )
+
+        service = Service(uow_factory=None)
+
+        self.assertEqual(
+            [{"user_id": "allowed", "status": "ACTIVE"}],
+            await service.list_members_with_permission(
+                app_id="aiops", domain_id=41,
+                permission_code="aiops:use",
             ),
         )
 

@@ -14,6 +14,13 @@ from typing import Sequence
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from platform_core.authorization import (
+    APP_AUTHORIZATION_POLICIES,
+    BUILT_IN_APP_ROLE_CODES,
+    app_permission_catalog,
+    built_in_role_permissions,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ROOT = ROOT / "database" / "oracle"
 DEFAULT_CONFIG_PATH = ROOT / "configuration" / "oracle_schema_services.ini"
@@ -40,6 +47,7 @@ PLATFORM_FOUNDATION_TABLES = {
     "KBOT_PERMISSION",
     "KBOT_APP_ROLE",
     "KBOT_APP_ROLE_PERMISSION",
+    "KBOT_ACCESS_AUDIT_EVENT",
     "KBOT_PLATFORM_USER_ROLE",
     "KBOT_APP_DOMAIN",
     "KBOT_APP_MEMBER",
@@ -52,115 +60,36 @@ PLATFORM_FOUNDATION_PERMISSIONS = {
     "platform:domain_manage",
     "platform:app_manage",
     "platform:app_grant_manage",
-    "knowledge_retrieval:use",
-    "knowledge_retrieval:upload",
-    "knowledge_retrieval:review",
-    "knowledge_retrieval:member_manage",
-    "knowledge_retrieval:role_manage",
-    "knowledge_retrieval:knowledge_manage",
-    "knowledge_retrieval:data_manage",
-    "knowledge_retrieval:agent_manage",
-    "knowledge_retrieval:api_key_manage",
-    "km_asset:use",
-    "km_asset:source_manage",
-    "km_asset:knowledge_manage",
-    "km_asset:data_manage",
-    "km_asset:agent_manage",
-    "km_asset:operations_manage",
-    "km_asset:member_manage",
-    "km_asset:role_manage",
-    "km_asset:api_key_manage",
-    "knowledge_retrieval:knowledge_chat",
-    "knowledge_retrieval:x_search",
-    "knowledge_retrieval:domain_manage",
-    "knowledge_retrieval:knowledge_core_manage",
-    "knowledge_retrieval:data_model_manage",
-    "media_studio:use",
-    "media_studio:image_generate",
-    "media_studio:media_read",
-    "media_studio:model_binding_manage",
-    "media_studio:run_read",
-    "aiops:use",
-    "aiops:member_manage",
-    "aiops:work_item_handle",
-    "aiops:work_item_manage",
-    "aiops:role_manage",
-    "aiops:target_manage",
-    "aiops:diagnostic_source_manage",
-    "aiops:policy_manage",
-    "aiops:plan_manage",
-    "aiops:agent_manage",
-    "aiops:knowledge_manage",
-    "aiops:api_key_manage",
-    "aiops:proposal:approve",
+} | {
+    item.code
+    for app_id in APP_AUTHORIZATION_POLICIES
+    for item in app_permission_catalog(app_id)
 }
 PLATFORM_FOUNDATION_ROLES = {
     ("platform", "platform_admin"),
-    ("knowledge_retrieval", "user"),
-    ("knowledge_retrieval", "contributor"),
-    ("knowledge_retrieval", "reviewer"),
-    ("knowledge_retrieval", "app_admin"),
-    ("km_asset", "user"),
-    ("km_asset", "app_admin"),
-    ("media_studio", "user"),
-    ("media_studio", "app_admin"),
-    ("aiops", "operator"),
-    ("aiops", "approver"),
-    ("aiops", "app_admin"),
-    ("aiops", "user"),
+} | {
+    (app_id, role_code)
+    for app_id in APP_AUTHORIZATION_POLICIES
+    for role_code in BUILT_IN_APP_ROLE_CODES
 }
 
 
 def _expected_foundation_role_permissions() -> dict[tuple[str, str], set[str]]:
     """返回平台内置角色必须具备的权限映射。"""
-    permissions_by_app: dict[str, set[str]] = {}
-    for permission_code in PLATFORM_FOUNDATION_PERMISSIONS:
-        permissions_by_app.setdefault(
-            permission_code.partition(":")[0], set()
-        ).add(permission_code)
-    return {
-        ("platform", "platform_admin"): permissions_by_app["platform"],
-        ("knowledge_retrieval", "user"): {
-            "knowledge_retrieval:use",
-            "knowledge_retrieval:knowledge_chat",
-            "knowledge_retrieval:x_search",
+    result = {
+        ("platform", "platform_admin"): {
+            code for code in PLATFORM_FOUNDATION_PERMISSIONS
+            if code.startswith("platform:")
         },
-        ("knowledge_retrieval", "contributor"): {
-            "knowledge_retrieval:use",
-            "knowledge_retrieval:upload",
-        },
-        ("knowledge_retrieval", "reviewer"): {
-            "knowledge_retrieval:use",
-            "knowledge_retrieval:upload",
-            "knowledge_retrieval:review",
-        },
-        ("knowledge_retrieval", "app_admin"): permissions_by_app[
-            "knowledge_retrieval"
-        ],
-        ("km_asset", "user"): {"km_asset:use"},
-        ("km_asset", "app_admin"): permissions_by_app["km_asset"],
-        ("media_studio", "user"): {
-            "media_studio:use",
-            "media_studio:image_generate",
-            "media_studio:media_read",
-            "media_studio:run_read",
-        },
-        ("media_studio", "app_admin"): permissions_by_app["media_studio"],
-        ("aiops", "user"): {"aiops:use"},
-        ("aiops", "operator"): {
-            "aiops:use",
-            "aiops:target_manage",
-            "aiops:diagnostic_source_manage",
-            "aiops:policy_manage",
-            "aiops:plan_manage",
-            "aiops:work_item_handle",
-        },
-        ("aiops", "approver"): {
-            "aiops:use",
-            "aiops:proposal:approve",
-        },
-        ("aiops", "app_admin"): permissions_by_app["aiops"],
     }
+    result.update({
+        (app_id, role_code): set(
+            built_in_role_permissions(app_id, role_code)
+        )
+        for app_id in APP_AUTHORIZATION_POLICIES
+        for role_code in BUILT_IN_APP_ROLE_CODES
+    })
+    return result
 
 from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
@@ -549,6 +478,26 @@ async def _validate_platform_foundation(
             + ", ".join(
                 f"{app_id}/{role_code}"
                 for app_id, role_code in sorted(missing_roles)
+            )
+        )
+    active_system_roles = {
+        (str(app_id), str(role_code))
+        for app_id, role_code in (
+            await connection.execute(
+                text(
+                    "SELECT APP_ID, ROLE_CODE FROM KBOT_APP_ROLE "
+                    "WHERE STATUS = 'ACTIVE' AND IS_SYSTEM = 'Y'"
+                )
+            )
+        ).all()
+    }
+    unexpected_system_roles = active_system_roles - PLATFORM_FOUNDATION_ROLES
+    if unexpected_system_roles:
+        raise FoundationValidationError(
+            "存在非规范系统角色："
+            + ", ".join(
+                f"{app_id}/{role_code}"
+                for app_id, role_code in sorted(unexpected_system_roles)
             )
         )
 

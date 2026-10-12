@@ -18,6 +18,27 @@ class AgentAccessMode(str, Enum):
     CLIENT_ALLOWLIST = "CLIENT_ALLOWLIST"
 
 
+class AppRoleTier(str, Enum):
+    """业务 App 统一系统角色的权限层级。"""
+
+    USER = "USER"
+    MANAGER = "MANAGER"
+    ADMIN = "ADMIN"
+
+
+BUILT_IN_APP_ROLE_CODES = ("app_user", "app_manager", "app_admin")
+
+
+@dataclass(frozen=True, slots=True)
+class AppPermissionPolicy:
+    """权限目录中的授权层级与自定义角色可分配性。"""
+
+    code: str
+    display_name: str
+    default_tier: AppRoleTier
+    custom_assignable: bool = True
+
+
 @dataclass(frozen=True, slots=True)
 class ApiRouteScope:
     """机器公开路由与 Scope 的唯一映射。"""
@@ -39,6 +60,7 @@ class AppAuthorizationPolicy:
     app_id: str
     public_slug: str
     use_permission: str
+    permissions: tuple[AppPermissionPolicy, ...]
     human_agent_access: AgentAccessMode = AgentAccessMode.DOMAIN_ACTIVE
     machine_agent_access: AgentAccessMode = AgentAccessMode.CLIENT_ALLOWLIST
     api_scope_permissions: Mapping[str, str] = MappingProxyType({})
@@ -54,6 +76,31 @@ class AppAuthorizationPolicy:
             raise ValueError(
                 f"App {self.app_id} 的入口权限必须是 {expected_use_permission}"
             )
+        codes = tuple(item.code for item in self.permissions)
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"App {self.app_id} 的权限目录存在重复编码")
+        if expected_use_permission not in codes:
+            raise ValueError(f"App {self.app_id} 的权限目录缺少入口权限")
+        for item in self.permissions:
+            if not item.code.startswith(f"{self.app_id}:"):
+                raise ValueError(
+                    f"权限 {item.code} 不属于 App {self.app_id}"
+                )
+        use_policy = next(
+            item for item in self.permissions if item.code == expected_use_permission
+        )
+        if use_policy.default_tier != AppRoleTier.USER:
+            raise ValueError(f"App {self.app_id} 的入口权限必须属于 USER 层级")
+        for suffix in ("member_manage", "role_manage"):
+            code = f"{self.app_id}:{suffix}"
+            matches = [item for item in self.permissions if item.code == code]
+            if len(matches) != 1:
+                raise ValueError(f"App {self.app_id} 的权限目录缺少 {code}")
+            if (
+                matches[0].default_tier != AppRoleTier.ADMIN
+                or matches[0].custom_assignable
+            ):
+                raise ValueError(f"权限 {code} 必须仅由 app_admin 持有")
         for scope, permission in self.api_scope_permissions.items():
             if not scope or not permission.startswith(f"{self.app_id}:"):
                 raise ValueError(
@@ -101,6 +148,7 @@ def _policy(
     *,
     app_id: str,
     public_slug: str,
+    permissions: tuple[tuple[str, str, AppRoleTier, bool], ...],
     api_scope_permissions: Mapping[str, str] | None = None,
     api_route_scopes: tuple[tuple[str, str, str], ...] = (),
 ) -> AppAuthorizationPolicy:
@@ -108,6 +156,15 @@ def _policy(
         app_id=app_id,
         public_slug=public_slug,
         use_permission=f"{app_id}:use",
+        permissions=tuple(
+            AppPermissionPolicy(
+                code=f"{app_id}:{suffix}",
+                display_name=display_name,
+                default_tier=tier,
+                custom_assignable=custom_assignable,
+            )
+            for suffix, display_name, tier, custom_assignable in permissions
+        ),
         api_scope_permissions=MappingProxyType(dict(api_scope_permissions or {})),
         api_route_scopes=tuple(ApiRouteScope(*route) for route in api_route_scopes),
     )
@@ -118,6 +175,22 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
         "knowledge_retrieval": _policy(
             app_id="knowledge_retrieval",
             public_slug="knowledge-retrieval",
+            permissions=(
+                ("use", "使用知识检索", AppRoleTier.USER, True),
+                ("knowledge_chat", "使用知识问答", AppRoleTier.USER, True),
+                ("x_search", "使用 X 实时搜索", AppRoleTier.USER, True),
+                ("upload", "上传知识文件", AppRoleTier.MANAGER, True),
+                ("review", "审核知识文件", AppRoleTier.MANAGER, True),
+                ("knowledge_manage", "管理知识库", AppRoleTier.MANAGER, True),
+                ("data_manage", "管理问数资源", AppRoleTier.MANAGER, True),
+                ("agent_manage", "管理知识检索 Agent", AppRoleTier.MANAGER, True),
+                ("api_key_manage", "管理知识检索 API Client", AppRoleTier.MANAGER, True),
+                ("domain_manage", "管理知识 Domain", AppRoleTier.MANAGER, True),
+                ("knowledge_core_manage", "管理 Knowledge Core", AppRoleTier.MANAGER, True),
+                ("data_model_manage", "管理问数模型", AppRoleTier.MANAGER, True),
+                ("member_manage", "管理应用成员", AppRoleTier.ADMIN, False),
+                ("role_manage", "管理应用角色", AppRoleTier.ADMIN, False),
+            ),
             api_scope_permissions={
                 "knowledge:agent:read": "knowledge_retrieval:use",
                 "knowledge:chat:write": "knowledge_retrieval:use",
@@ -149,6 +222,17 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
         "km_asset": _policy(
             app_id="km_asset",
             public_slug="km-asset",
+            permissions=(
+                ("use", "使用 KM Asset", AppRoleTier.USER, True),
+                ("source_manage", "管理 KM Asset 来源", AppRoleTier.MANAGER, True),
+                ("knowledge_manage", "管理 KM Portal Knowledge Core", AppRoleTier.MANAGER, True),
+                ("data_manage", "管理 KM Asset 问数模型", AppRoleTier.MANAGER, True),
+                ("agent_manage", "管理 KM Asset Agent", AppRoleTier.MANAGER, True),
+                ("operations_manage", "管理 KM Asset 同步运行", AppRoleTier.MANAGER, True),
+                ("api_key_manage", "管理 KM Asset API Client", AppRoleTier.MANAGER, True),
+                ("member_manage", "管理 KM Asset 成员", AppRoleTier.ADMIN, False),
+                ("role_manage", "管理 KM Asset 角色", AppRoleTier.ADMIN, False),
+            ),
             api_scope_permissions={
                 "km:agent:read": "km_asset:use",
                 "km:chat:write": "km_asset:use",
@@ -178,10 +262,34 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
         "media_studio": _policy(
             app_id="media_studio",
             public_slug="media-studio",
+            permissions=(
+                ("use", "使用多媒体创作工作台", AppRoleTier.USER, True),
+                ("image_generate", "使用图片生成", AppRoleTier.USER, True),
+                ("media_read", "查看媒体资产", AppRoleTier.USER, True),
+                ("run_read", "查看生成运行和用量", AppRoleTier.USER, True),
+                ("model_binding_manage", "管理媒体模型绑定", AppRoleTier.MANAGER, True),
+                ("member_manage", "管理多媒体创作工作台成员", AppRoleTier.ADMIN, False),
+                ("role_manage", "管理多媒体创作工作台角色", AppRoleTier.ADMIN, False),
+            ),
         ),
         "aiops": _policy(
             app_id="aiops",
             public_slug="aiops",
+            permissions=(
+                ("use", "使用 AIOps", AppRoleTier.USER, True),
+                ("work_item_handle", "领取并处理 DBA 工作项", AppRoleTier.USER, True),
+                ("work_item_manage", "维护责任组并跨用户管理 DBA 工作项", AppRoleTier.MANAGER, True),
+                ("target_manage", "管理诊断目标", AppRoleTier.MANAGER, True),
+                ("diagnostic_source_manage", "管理诊断源", AppRoleTier.MANAGER, True),
+                ("policy_manage", "管理诊断策略", AppRoleTier.MANAGER, True),
+                ("plan_manage", "管理巡检计划与报告模板", AppRoleTier.MANAGER, True),
+                ("agent_manage", "管理 AIOps Agent", AppRoleTier.MANAGER, True),
+                ("knowledge_manage", "管理 AIOps Knowledge Core", AppRoleTier.MANAGER, True),
+                ("api_key_manage", "管理 AIOps API Client", AppRoleTier.MANAGER, True),
+                ("proposal:approve", "审批执行提案", AppRoleTier.MANAGER, True),
+                ("member_manage", "管理 AIOps 成员", AppRoleTier.ADMIN, False),
+                ("role_manage", "管理 AIOps 角色", AppRoleTier.ADMIN, False),
+            ),
             api_scope_permissions={
                 "aiops:agent:read": "aiops:use",
                 "aiops:chat:write": "aiops:use",
@@ -231,6 +339,31 @@ def get_app_authorization_policy(app_id: str) -> AppAuthorizationPolicy:
         return APP_AUTHORIZATION_POLICIES[app_id]
     except KeyError as exc:
         raise ValueError(f"App 未注册统一授权策略：{app_id}") from exc
+
+
+def app_permission_catalog(app_id: str) -> tuple[AppPermissionPolicy, ...]:
+    """返回一个 App 的规范权限元数据。"""
+
+    return get_app_authorization_policy(app_id).permissions
+
+
+def built_in_role_permissions(app_id: str, role_code: str) -> tuple[str, ...]:
+    """按权限层级机械生成统一系统角色权限。"""
+
+    tiers = {
+        "app_user": {AppRoleTier.USER},
+        "app_manager": {AppRoleTier.USER, AppRoleTier.MANAGER},
+        "app_admin": {AppRoleTier.USER, AppRoleTier.MANAGER, AppRoleTier.ADMIN},
+    }
+    try:
+        included = tiers[role_code]
+    except KeyError as exc:
+        raise ValueError(f"未知的系统 App 角色：{role_code}") from exc
+    return tuple(
+        item.code
+        for item in app_permission_catalog(app_id)
+        if item.default_tier in included
+    )
 
 
 def resolve_business_app_id(value: str) -> str:

@@ -1443,7 +1443,7 @@ class MainApiTest(unittest.TestCase):
                 "display_name": "新用户",
                 "password": "Example@Password2026!",
                 "role_bindings": [{
-                    "role_code": "user",
+                    "role_code": "app_user",
                     "scope_mode": "SELECTED_DOMAINS",
                     "domain_ids": [100]
                 }],
@@ -1456,6 +1456,20 @@ class MainApiTest(unittest.TestCase):
             "knowledge_retrieval", management.created_values["app_id"]
         )
         self.assertEqual(1, management.created_values["max_security_level"])
+
+    def test_app_role_delete_requires_if_match(self) -> None:
+        class _AccessManagementService:
+            async def delete_role(self, **values):
+                raise AssertionError(f"缺少版本条件时不应删除角色：{values}")
+
+        self.app.state.access_management_service = _AccessManagementService()
+        response = self.client.delete(
+            "/api/v1/apps/knowledge-retrieval/roles/knowledge_manager",
+            headers=self._headers(),
+        )
+
+        self.assertEqual(428, response.status_code, response.text)
+        self.assertEqual("PRECONDITION_REQUIRED", response.json()["code"])
 
     def test_legacy_admin_routes_are_not_exposed(self) -> None:
         paths = self.app.openapi()["paths"]

@@ -199,7 +199,7 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             {
                 "app_id": "aiops",
-                "role_code": "user",
+                "role_code": "app_user",
                 "permission_code": "aiops:use",
             },
             connection.role_permission_mappings,
@@ -209,7 +209,7 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("MERGE INTO KBOT_PERMISSION", foundation_sql)
         self.assertIn("MERGE INTO KBOT_APP_ROLE", foundation_sql)
         self.assertIn(
-            "SELECT 'aiops', 'user', '用户'",
+            "SELECT 'aiops', 'app_user', 'App 用户'",
             foundation_sql,
         )
         self.assertIn("DELETE FROM KBOT_PERMISSION", foundation_sql)
@@ -222,7 +222,10 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
             for code in PLATFORM_FOUNDATION_PERMISSIONS
             if code.startswith(("knowledge_retrieval:", "media_studio:"))
         ):
-            self.assertIn(permission_code, foundation_sql)
+            self.assertTrue(any(
+                mapping["permission_code"] == permission_code
+                for mapping in connection.role_permission_mappings
+            ), permission_code)
         self.assertTrue(connection.committed)
 
     async def test_noncanonical_security_column_is_rejected(self):

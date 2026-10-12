@@ -8,6 +8,8 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
   `configuration/oracle_schema_services.ini` 初始化所选服务的 Oracle 表；
   `--foundation-only` 可幂等补齐平台基础数据。
 - `scripts/db/sync_prompt_catalog.py`：在现有 Oracle Schema 中幂等插入并激活仓库最新 Prompt，不执行 DDL 或修改其他基础数据。
+- `scripts/db/audit_app_authorization.py`：只读输出 App 角色、权限、成员与 Domain Scope
+  聚合数据及迁移风险，不输出用户标识或凭据。
 - `scripts/db/initialize_km.py`：幂等创建 `kmadmin`、授予 KM App 全部权限，并创建固定的
   `km_portal/assets` KC Collection；`--check-only` 可只读复查。
 - `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
@@ -56,6 +58,6 @@ bash scripts/deployment/bootstrap_kbot.sh --production
 Prompt Catalog；不会把 ADMIN 自动加入业务 App，也不会创建模型、Collection、Agent、
 会话或 AIOps 业务数据。
 
-KBot 4.0 不在活动目录保留一次性升级、修复或补种脚本。Schema 变化直接更新
-`database/oracle/<service>/` 的规范定义，并通过新的空白 Schema 重新初始化；已完成使命
-的临时脚本通过 Git 历史恢复。
+普通开发 Schema 优先通过新的空白 Schema 重新初始化。确需保留既有数据的升级使用
+`database/oracle/operations/` 下带预检、回滚和迁移后校验的受控资产；不得把迁移或补种
+逻辑放入应用启动流程。已完成使命且不再支持的临时脚本通过 Git 历史恢复。

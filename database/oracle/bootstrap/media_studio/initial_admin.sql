@@ -74,7 +74,9 @@ USING (
     SELECT 'media_studio:image_generate', 'media_studio', '使用图片生成' FROM DUAL UNION ALL
     SELECT 'media_studio:media_read', 'media_studio', '查看媒体资产' FROM DUAL UNION ALL
     SELECT 'media_studio:model_binding_manage', 'media_studio', '管理媒体模型绑定' FROM DUAL UNION ALL
-    SELECT 'media_studio:run_read', 'media_studio', '查看生成运行和用量' FROM DUAL
+    SELECT 'media_studio:run_read', 'media_studio', '查看生成运行和用量' FROM DUAL UNION ALL
+    SELECT 'media_studio:member_manage', 'media_studio', '管理多媒体创作工作台成员' FROM DUAL UNION ALL
+    SELECT 'media_studio:role_manage', 'media_studio', '管理多媒体创作工作台角色' FROM DUAL
 ) source
 ON (target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN MATCHED THEN UPDATE SET target.APP_ID = source.APP_ID, target.DISPLAY_NAME = source.DISPLAY_NAME
@@ -83,8 +85,9 @@ VALUES (source.PERMISSION_CODE, source.APP_ID, source.DISPLAY_NAME);
 
 MERGE INTO KBOT_APP_ROLE target
 USING (
-    SELECT 'media_studio' APP_ID, 'user' ROLE_CODE, '创作用户' DISPLAY_NAME, 'Y' IS_SYSTEM, 'SELECTABLE' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL UNION ALL
-    SELECT 'media_studio', 'app_admin', '多媒体创作工作台初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
+    SELECT 'media_studio' APP_ID, 'app_user' ROLE_CODE, 'App 用户' DISPLAY_NAME, 'Y' IS_SYSTEM, 'SELECTABLE' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL UNION ALL
+    SELECT 'media_studio', 'app_manager', 'App 业务管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL UNION ALL
+    SELECT 'media_studio', 'app_admin', 'App 管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
 ) source
 ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE)
 WHEN MATCHED THEN UPDATE SET target.DISPLAY_NAME = source.DISPLAY_NAME, target.IS_SYSTEM = source.IS_SYSTEM, target.SCOPE_POLICY = source.SCOPE_POLICY, target.STATUS = source.STATUS
@@ -94,9 +97,20 @@ VALUES (source.APP_ID, source.ROLE_CODE, source.DISPLAY_NAME, source.IS_SYSTEM, 
 
 MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (
-    SELECT 'media_studio' APP_ID, 'user' ROLE_CODE, PERMISSION_CODE
+    SELECT 'media_studio' APP_ID, 'app_user' ROLE_CODE, PERMISSION_CODE
       FROM KBOT_PERMISSION
      WHERE PERMISSION_CODE IN ('media_studio:use', 'media_studio:image_generate', 'media_studio:media_read', 'media_studio:run_read')
+) source
+ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE AND target.PERMISSION_CODE = source.PERMISSION_CODE)
+WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
+VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
+
+MERGE INTO KBOT_APP_ROLE_PERMISSION target
+USING (
+    SELECT 'media_studio' APP_ID, 'app_manager' ROLE_CODE, PERMISSION_CODE
+      FROM KBOT_PERMISSION
+     WHERE APP_ID = 'media_studio'
+       AND PERMISSION_CODE NOT IN ('media_studio:member_manage', 'media_studio:role_manage')
 ) source
 ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE AND target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)

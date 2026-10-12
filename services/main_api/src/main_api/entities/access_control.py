@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, Numeric, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.persistence.orm import BaseEntity
@@ -92,6 +92,26 @@ class AppRolePermissionEntity(BaseEntity):
     permission_code: Mapped[str] = mapped_column(String(128), primary_key=True)
 
 
+class AccessAuditEventEntity(BaseEntity):
+    """不依赖被审计资源外键的权限管理审计事件。"""
+
+    __tablename__ = "KBOT_ACCESS_AUDIT_EVENT"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    app_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    affected_member_count: Mapped[int] = mapped_column(
+        Numeric(19, 0), nullable=False, default=0
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class PlatformUserRoleEntity(BaseEntity):
     __tablename__ = "KBOT_PLATFORM_USER_ROLE"
     __table_args__ = (
@@ -178,7 +198,7 @@ class AppMemberRoleScopeEntity(BaseEntity):
 
 
 __all__ = [
-    "AppDomainEntity", "AppMemberEntity", "AppMemberRoleEntity",
+    "AccessAuditEventEntity", "AppDomainEntity", "AppMemberEntity", "AppMemberRoleEntity",
     "AppMemberRoleScopeEntity", "AppRoleEntity", "AppRolePermissionEntity",
     "PermissionEntity", "PlatformApplicationEntity", "PlatformUserCredentialEntity",
     "PlatformUserEntity", "PlatformUserRoleEntity",

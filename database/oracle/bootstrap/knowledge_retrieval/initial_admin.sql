@@ -92,10 +92,9 @@ VALUES (source.PERMISSION_CODE, source.APP_ID, source.DISPLAY_NAME);
 
 MERGE INTO KBOT_APP_ROLE target
 USING (
-    SELECT 'knowledge_retrieval' APP_ID, 'user' ROLE_CODE, '用户' DISPLAY_NAME, 'Y' IS_SYSTEM, 'SELECTABLE' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL UNION ALL
-    SELECT 'knowledge_retrieval', 'contributor', '贡献者', 'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL UNION ALL
-    SELECT 'knowledge_retrieval', 'reviewer', '审核人', 'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL UNION ALL
-    SELECT 'knowledge_retrieval', 'app_admin', '知识检索初始管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
+    SELECT 'knowledge_retrieval' APP_ID, 'app_user' ROLE_CODE, 'App 用户' DISPLAY_NAME, 'Y' IS_SYSTEM, 'SELECTABLE' SCOPE_POLICY, 'ACTIVE' STATUS FROM DUAL UNION ALL
+    SELECT 'knowledge_retrieval', 'app_manager', 'App 业务管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL UNION ALL
+    SELECT 'knowledge_retrieval', 'app_admin', 'App 管理员', 'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
 ) source
 ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE)
 WHEN MATCHED THEN UPDATE SET target.DISPLAY_NAME = source.DISPLAY_NAME, target.IS_SYSTEM = source.IS_SYSTEM, target.SCOPE_POLICY = source.SCOPE_POLICY, target.STATUS = source.STATUS
@@ -105,7 +104,7 @@ VALUES (source.APP_ID, source.ROLE_CODE, source.DISPLAY_NAME, source.IS_SYSTEM, 
 
 MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (
-    SELECT 'knowledge_retrieval' APP_ID, 'user' ROLE_CODE, PERMISSION_CODE
+    SELECT 'knowledge_retrieval' APP_ID, 'app_user' ROLE_CODE, PERMISSION_CODE
       FROM KBOT_PERMISSION
      WHERE PERMISSION_CODE IN ('knowledge_retrieval:use', 'knowledge_retrieval:knowledge_chat', 'knowledge_retrieval:x_search')
 ) source
@@ -115,19 +114,10 @@ VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
 
 MERGE INTO KBOT_APP_ROLE_PERMISSION target
 USING (
-    SELECT 'knowledge_retrieval' APP_ID, 'contributor' ROLE_CODE, PERMISSION_CODE
+    SELECT 'knowledge_retrieval' APP_ID, 'app_manager' ROLE_CODE, PERMISSION_CODE
       FROM KBOT_PERMISSION
-     WHERE PERMISSION_CODE IN ('knowledge_retrieval:use', 'knowledge_retrieval:upload')
-) source
-ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE AND target.PERMISSION_CODE = source.PERMISSION_CODE)
-WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)
-VALUES (source.APP_ID, source.ROLE_CODE, source.PERMISSION_CODE);
-
-MERGE INTO KBOT_APP_ROLE_PERMISSION target
-USING (
-    SELECT 'knowledge_retrieval' APP_ID, 'reviewer' ROLE_CODE, PERMISSION_CODE
-      FROM KBOT_PERMISSION
-     WHERE PERMISSION_CODE IN ('knowledge_retrieval:use', 'knowledge_retrieval:upload', 'knowledge_retrieval:review')
+     WHERE APP_ID = 'knowledge_retrieval'
+       AND PERMISSION_CODE NOT IN ('knowledge_retrieval:member_manage', 'knowledge_retrieval:role_manage')
 ) source
 ON (target.APP_ID = source.APP_ID AND target.ROLE_CODE = source.ROLE_CODE AND target.PERMISSION_CODE = source.PERMISSION_CODE)
 WHEN NOT MATCHED THEN INSERT (APP_ID, ROLE_CODE, PERMISSION_CODE)

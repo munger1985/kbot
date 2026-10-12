@@ -22,6 +22,7 @@ App 管理员维护普通 App 用户。
 - `KBOT_APP_MEMBER_ROLE`：App 成员角色绑定，范围为全部 App Domain 或指定 Domain。
 - `KBOT_APP_MEMBER_ROLE_SCOPE`：指定 Domain 范围的明细。
 - `KBOT_APP_ROLE`、`KBOT_PERMISSION`、`KBOT_APP_ROLE_PERMISSION`：按 App 隔离的角色与权限。
+- `KBOT_ACCESS_AUDIT_EVENT`：不依赖角色外键的持久化权限变更审计。
 
 有效业务权限必须同时满足：用户、App、App 成员、角色绑定、角色、App-Domain 都为
 `ACTIVE`，请求 Domain 落在绑定范围内，并且角色包含目标权限。
@@ -42,10 +43,14 @@ App 接口统一位于 `/api/v1/apps/{app_id}`：
 - `/members` 创建和查询该 App 来源用户；
 - `/members/{user_id}/role-bindings` 一次设置角色与全部或选定 Domain 范围；
 - `/members/{user_id}` 仅允许修改、停用或删除普通 App 用户；
-- `/roles` 维护本 App 自定义角色，系统角色不可删除。
+- `/roles` 维护本 App 自定义角色；更新、删除使用 `If-Match`，删除会同步物理删除成员绑定。
 
 平台用户的显式 App Grant 仍由平台管理员维护，App 管理员不能改变平台账号归属。App
 管理员只能分配自己实际拥有的权限，不能通过创建角色实现权限提升。
+
+所有业务 App 固定使用 `app_user`、`app_manager`、`app_admin` 三个系统角色。专业职责使用
+App 内自定义角色；自定义角色不能获得成员或角色管理权限。完整的角色层级、删除、审计和
+升级规则见 [App 权限设计规范](app-authorization-standard.md)。
 
 ## 认证流程
 
@@ -69,8 +74,9 @@ Token 不能续签。
 受保护初始管理员，只能通过平台接口创建。受保护账号不能删除、停用、改名或变更角色，
 但允许重置密码；初始 App 管理员随父 App 停用而失效，重新启用 App 后恢复。
 
-## Schema 约束
+## Schema 与升级
 
-规范建库脚本只面向空 Schema，不提供旧授权结构的原位迁移入口。结构变化时必须备份
-需要保留的业务数据，重新创建空白 Schema，再由 ADMIN 逐 App 建立 App-Domain 关系并
-创建初始管理员。
+空环境由规范 DDL 和 Bootstrap 初始化。既有 KBot 4.0 Schema 的角色模型升级使用
+`database/oracle/operations/upgrade_app_authorization_roles.sql`；执行前必须先备份和运行
+`scripts/db/audit_app_authorization.py`，执行后再次审计。迁移不重置密码，也不自动给成员
+分配 `app_manager`。

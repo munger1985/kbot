@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
-from typing import Annotated, Literal, TypeVar, cast
+from typing import Annotated, Any, Literal, TypeVar, cast
 from uuid import UUID
 
 from fastapi import (
@@ -633,25 +633,15 @@ async def list_monitoring_profiles(source_id: UUID, request: Request):
 
 async def _eligible_aiops_group_members(request: Request) -> list[dict[str, Any]]:
     context = request.state.auth_context
-    members = await request.app.state.access_control_service.list_members(
+    members = await request.app.state.access_control_service.list_members_with_permission(
         app_id="aiops",
         domain_id=int(context.domain_id),
+        permission_code="aiops:use",
     )
-    eligible: list[dict[str, Any]] = []
-    for row in members:
-        if row.get("status") != "ACTIVE":
-            continue
-        snapshot = await request.app.state.access_control_service.snapshot(
-            app_id="aiops",
-            domain_id=int(context.domain_id),
-            user_id=str(row["user_id"]),
-        )
-        if "aiops:use" in snapshot.permissions:
-            eligible.append({
-                "user_id": str(row["user_id"]),
-                "display_name": row.get("display_name") or str(row["user_id"]),
-            })
-    return eligible
+    return [{
+        "user_id": str(row["user_id"]),
+        "display_name": row.get("display_name") or str(row["user_id"]),
+    } for row in members]
 
 
 async def _require_eligible_aiops_group_member(

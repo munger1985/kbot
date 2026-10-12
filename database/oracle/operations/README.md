@@ -99,6 +99,12 @@ X Search 属于 Grok 模型能力，不再写入模型表。脚本不会把任�
 
 ## 权限模型收敛
 
+`upgrade_app_authorization_roles.sql` 用于把既有业务 App 升级到统一的 `app_user`、
+`app_manager`、`app_admin` 三层系统角色。执行前必须停止 Main API 的授权写入、完成备份，
+并运行 `scripts/db/audit_app_authorization.py`。脚本保留专业角色、成员和 Domain Scope，
+将专业系统角色转为 App 内自定义角色；若数据存在歧义会整体回滚。执行后必须再次运行
+审计，并确认系统角色差异和异常计数全部为空。
+
 既有 KBot 4.0 Schema 升级到统一核心权限规则时，先由 Schema Owner 执行
 `converge_core_authorization.sql` 删除废弃的人类 Agent Grant 表，再运行：
 

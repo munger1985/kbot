@@ -6,6 +6,7 @@ from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from main_api.entities.access_control import (
+    AccessAuditEventEntity,
     AppDomainEntity,
     AppMemberEntity,
     AppMemberRoleEntity,
@@ -275,6 +276,18 @@ class AccessControlRepository:
     async def get_role(self, *, app_id: str, role_code: str) -> AppRoleEntity | None:
         return await self._session.get(AppRoleEntity, (app_id, role_code))
 
+    async def get_role_for_update(
+        self, *, app_id: str, role_code: str
+    ) -> AppRoleEntity | None:
+        return await self._session.scalar(
+            select(AppRoleEntity)
+            .where(
+                AppRoleEntity.app_id == app_id,
+                AppRoleEntity.role_code == role_code,
+            )
+            .with_for_update()
+        )
+
     async def get_app_member(self, *, app_id: str, user_id: str) -> AppMemberEntity | None:
         return await self._session.get(AppMemberEntity, (app_id, user_id))
 
@@ -464,6 +477,17 @@ class AccessControlRepository:
         rows = await self._session.scalars(statement.order_by(AppRoleEntity.app_id, AppRoleEntity.role_code))
         return list(rows)
 
+    async def count_active_role_members(
+        self, *, app_id: str, role_code: str
+    ) -> int:
+        return int(await self._session.scalar(
+            select(func.count(func.distinct(AppMemberRoleEntity.user_id))).where(
+                AppMemberRoleEntity.app_id == app_id,
+                AppMemberRoleEntity.role_code == role_code,
+                AppMemberRoleEntity.status == "ACTIVE",
+            )
+        ) or 0)
+
     async def list_role_permission_codes(self, *, app_id: str, role_code: str) -> tuple[str, ...]:
         rows = await self._session.scalars(select(AppRolePermissionEntity.permission_code).where(AppRolePermissionEntity.app_id == app_id, AppRolePermissionEntity.role_code == role_code).order_by(AppRolePermissionEntity.permission_code))
         return tuple(rows)
@@ -472,9 +496,17 @@ class AccessControlRepository:
         self._session.add(row)
         await self._session.flush()
 
-    async def update_role(self, *, role: AppRoleEntity, display_name: str, status: str) -> None:
+    async def add_access_audit_event(self, row: AccessAuditEventEntity) -> None:
+        self._session.add(row)
+        await self._session.flush()
+
+    async def update_role(
+        self, *, role: AppRoleEntity, display_name: str,
+        status: str | None = None,
+    ) -> None:
         role.display_name = display_name
-        role.status = status
+        if status is not None:
+            role.status = status
         role.row_version = int(role.row_version) + 1
         await self._session.flush()
 
@@ -482,6 +514,33 @@ class AccessControlRepository:
         await self._session.execute(delete(AppRolePermissionEntity).where(AppRolePermissionEntity.app_id == app_id, AppRolePermissionEntity.role_code == role_code))
         self._session.add_all(AppRolePermissionEntity(app_id=app_id, role_code=role_code, permission_code=permission_code) for permission_code in permission_codes)
         await self._session.flush()
+
+    async def delete_role(self, *, role: AppRoleEntity) -> int:
+        affected_member_count = await self.count_active_role_members(
+            app_id=role.app_id,
+            role_code=role.role_code,
+        )
+        await self._session.execute(
+            delete(AppMemberRoleScopeEntity).where(
+                AppMemberRoleScopeEntity.app_id == role.app_id,
+                AppMemberRoleScopeEntity.role_code == role.role_code,
+            )
+        )
+        await self._session.execute(
+            delete(AppMemberRoleEntity).where(
+                AppMemberRoleEntity.app_id == role.app_id,
+                AppMemberRoleEntity.role_code == role.role_code,
+            )
+        )
+        await self._session.execute(
+            delete(AppRolePermissionEntity).where(
+                AppRolePermissionEntity.app_id == role.app_id,
+                AppRolePermissionEntity.role_code == role.role_code,
+            )
+        )
+        await self._session.delete(role)
+        await self._session.flush()
+        return affected_member_count
 
 
 __all__ = ["AccessControlRepository"]

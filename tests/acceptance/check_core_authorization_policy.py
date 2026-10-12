@@ -21,6 +21,9 @@ from main_api.application import authorize_business_app_route
 from platform_core.authorization import (
     APP_AUTHORIZATION_POLICIES,
     AgentAccessMode,
+    BUILT_IN_APP_ROLE_CODES,
+    app_permission_catalog,
+    built_in_role_permissions,
     resolve_business_app_id,
 )
 
@@ -238,26 +241,25 @@ def main() -> int:
             f"权限 {permission} 不属于声明的 App {app_id}"
         )
 
-    schema_runner_tree = ast.parse(
-        (ROOT / "scripts/db/apply_oracle_schema.py").read_text(
-            encoding="utf-8"
-        )
-    )
-    foundation_permissions = ast.literal_eval(
-        next(
-            node.value
-            for node in schema_runner_tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name)
-                and target.id == "PLATFORM_FOUNDATION_PERMISSIONS"
-                for target in node.targets
-            )
-        )
-    )
+    schema_runner_source = (
+        ROOT / "scripts/db/apply_oracle_schema.py"
+    ).read_text(encoding="utf-8")
+    foundation_permissions = {
+        "platform:user_manage",
+        "platform:role_manage",
+        "platform:domain_manage",
+        "platform:app_manage",
+        "platform:app_grant_manage",
+    } | {
+        item.code
+        for app_id in APP_AUTHORIZATION_POLICIES
+        for item in app_permission_catalog(app_id)
+    }
     assert foundation_permissions == catalog_permissions, (
         "规范权限目录与 Schema Runner 初始化目录不一致"
     )
+    assert "app_permission_catalog(app_id)" in schema_runner_source
+    assert "built_in_role_permissions(app_id, role_code)" in schema_runner_source
 
     for app_id, policy in APP_AUTHORIZATION_POLICIES.items():
         assert policy.use_permission == f"{app_id}:use"
@@ -273,21 +275,89 @@ def main() -> int:
             raise AssertionError(f"App {app_id} 允许角色绕过 use 权限")
         assert policy.human_agent_access == AgentAccessMode.DOMAIN_ACTIVE
         assert policy.machine_agent_access == AgentAccessMode.CLIENT_ALLOWLIST
-        assert re.search(
-            rf"INTO KBOT_APP_ROLE VALUES \('{re.escape(app_id)}', 'user',",
-            sql,
-        ), f"App {app_id} 缺少系统 user 角色"
-        assert re.search(
-            rf"SELECT '{re.escape(app_id)}', 'user', PERMISSION_CODE[\s\S]*?"
-            rf"{re.escape(policy.use_permission)}",
-            sql,
-        ), f"App {app_id} 的 user 角色未绑定 use 权限"
+        metadata = {item.code: item for item in app_permission_catalog(app_id)}
+        assert set(metadata) == {
+            permission for permission in catalog_permissions
+            if permission.startswith(f"{app_id}:")
+        }
+        for role_code in BUILT_IN_APP_ROLE_CODES:
+            assert re.search(
+                rf"INTO KBOT_APP_ROLE VALUES \('{re.escape(app_id)}', "
+                rf"'{role_code}',",
+                sql,
+            ), f"App {app_id} 缺少系统角色 {role_code}"
+            expected_permissions = set(
+                built_in_role_permissions(app_id, role_code)
+            )
+            assert policy.use_permission in expected_permissions
+            role_block = re.search(
+                rf"INSERT INTO KBOT_APP_ROLE_PERMISSION\s+"
+                rf"SELECT '{re.escape(app_id)}', '{role_code}', "
+                rf"PERMISSION_CODE[\s\S]*?;",
+                sql,
+            )
+            assert role_block is not None, (
+                f"App {app_id} 缺少 {role_code} 权限初始化"
+            )
+            block = role_block.group(0)
+            if role_code == "app_admin":
+                assert f"WHERE APP_ID = '{app_id}'" in block
+            elif role_code == "app_manager":
+                assert f"WHERE APP_ID = '{app_id}'" in block
+                assert f"'{app_id}:member_manage'" in block
+                assert f"'{app_id}:role_manage'" in block
+            else:
+                declared = {
+                    value for value in re.findall(r"'([^']+)'", block)
+                    if value.startswith(f"{app_id}:")
+                }
+                assert declared == expected_permissions, (
+                    f"App {app_id} 的 app_user 权限与元数据不一致"
+                )
+        for suffix in ("member_manage", "role_manage"):
+            item = metadata[f"{app_id}:{suffix}"]
+            assert item.default_tier.value == "ADMIN"
+            assert not item.custom_assignable
         for scope, permission in policy.api_scope_permissions.items():
             assert permission in catalog_permissions, (
                 f"机器 Scope {scope} 映射到不存在的权限 {permission}"
             )
         if policy.api_scope_permissions:
             assert policy.api_route_scopes, f"App {app_id} 未登记机器公开路由"
+
+    legacy_system_roles = re.findall(
+        r"INTO KBOT_APP_ROLE VALUES \('(?:knowledge_retrieval|km_asset|"
+        r"media_studio|aiops)', '(user|operator|approver|contributor|reviewer)',",
+        sql,
+    )
+    assert not legacy_system_roles, f"规范 DDL 仍包含专业系统角色：{legacy_system_roles}"
+
+    migration_sql = (
+        ROOT / "database/oracle/operations/upgrade_app_authorization_roles.sql"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "ROLLBACK",
+        "KBOT_ACCESS_AUDIT_EVENT",
+        "ROLE_CODE = 'user'",
+        "ROLE_CODE = 'app_user'",
+        "ROLE_CODE IN ('app_manager', 'app_admin')",
+        "IS_SYSTEM = 'N'",
+        "role_permission.APP_ID || ':member_manage'",
+    ):
+        assert required in migration_sql, f"App 权限迁移缺少保护逻辑：{required}"
+    for credential_token in (
+        "KBOT_PLATFORM_USER_CREDENTIAL",
+        "PASSWORD_HASH",
+        "KBOT_APP_API_CREDENTIAL",
+    ):
+        assert credential_token not in migration_sql, (
+            f"App 权限迁移不得修改凭据：{credential_token}"
+        )
+    audit_script = (
+        ROOT / "scripts/db/audit_app_authorization.py"
+    ).read_text(encoding="utf-8")
+    assert "safe_output" in audit_script
+    assert "PASSWORD_HASH" not in audit_script
 
     oracle_sql = "\n".join(
         path.read_text(encoding="utf-8")

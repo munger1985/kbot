@@ -24,10 +24,15 @@ class _Access:
                 display_name="初始管理员", is_system="Y",
                 scope_policy="ALL_APP_DOMAINS", status="ACTIVE", row_version=1,
             ),
-            ("knowledge_retrieval", "user"): SimpleNamespace(
-                app_id="knowledge_retrieval", role_code="user",
+            ("knowledge_retrieval", "app_user"): SimpleNamespace(
+                app_id="knowledge_retrieval", role_code="app_user",
                 display_name="用户", is_system="Y",
                 scope_policy="SELECTABLE", status="ACTIVE", row_version=1,
+            ),
+            ("knowledge_retrieval", "app_manager"): SimpleNamespace(
+                app_id="knowledge_retrieval", role_code="app_manager",
+                display_name="业务管理员", is_system="Y",
+                scope_policy="ALL_APP_DOMAINS", status="ACTIVE", row_version=1,
             ),
         }
         self.role_permissions = {
@@ -35,7 +40,11 @@ class _Access:
                 "knowledge_retrieval:use",
                 "knowledge_retrieval:member_manage",
             ),
-            ("knowledge_retrieval", "user"): ("knowledge_retrieval:use",),
+            ("knowledge_retrieval", "app_user"): ("knowledge_retrieval:use",),
+            ("knowledge_retrieval", "app_manager"): (
+                "knowledge_retrieval:use",
+                "knowledge_retrieval:knowledge_manage",
+            ),
         }
         self.permissions = (
             SimpleNamespace(
@@ -43,6 +52,12 @@ class _Access:
             ),
             SimpleNamespace(
                 permission_code="knowledge_retrieval:knowledge_manage"
+            ),
+            SimpleNamespace(
+                permission_code="knowledge_retrieval:member_manage"
+            ),
+            SimpleNamespace(
+                permission_code="knowledge_retrieval:role_manage"
             ),
         )
         self.members = {}
@@ -54,6 +69,7 @@ class _Access:
         self.domain_ids = {}
         self.effective_permissions = {}
         self.platform_permissions = {}
+        self.audit_events = []
 
     async def get_user(self, user_id):
         return self.users.get(user_id)
@@ -89,6 +105,9 @@ class _Access:
     async def get_role(self, *, app_id, role_code):
         return self.roles.get((app_id, role_code))
 
+    async def get_role_for_update(self, *, app_id, role_code):
+        return self.roles.get((app_id, role_code))
+
     async def list_role_permission_codes(self, *, app_id, role_code):
         return self.role_permissions.get((app_id, role_code), ())
 
@@ -97,6 +116,41 @@ class _Access:
 
     async def add_role(self, row):
         self.roles[(row.app_id, row.role_code)] = row
+
+    async def add_access_audit_event(self, row):
+        self.audit_events.append(row)
+
+    async def count_active_role_members(self, *, app_id, role_code):
+        return len({
+            user_id
+            for (candidate_app, user_id, candidate_role), binding
+            in self.bindings.items()
+            if candidate_app == app_id
+            and candidate_role == role_code
+            and binding.status == "ACTIVE"
+        })
+
+    async def update_role(self, *, role, display_name, status=None):
+        role.display_name = display_name
+        if status is not None:
+            role.status = status
+        role.row_version += 1
+
+    async def delete_role(self, *, role):
+        affected_member_count = await self.count_active_role_members(
+            app_id=role.app_id, role_code=role.role_code
+        )
+        self.scopes = {
+            key: value for key, value in self.scopes.items()
+            if (key[0], key[2]) != (role.app_id, role.role_code)
+        }
+        self.bindings = {
+            key: value for key, value in self.bindings.items()
+            if (key[0], key[2]) != (role.app_id, role.role_code)
+        }
+        self.role_permissions.pop((role.app_id, role.role_code), None)
+        self.roles.pop((role.app_id, role.role_code), None)
+        return affected_member_count
 
     async def replace_role_permissions(
         self, *, app_id, role_code, permission_codes
@@ -175,6 +229,109 @@ class _ForbiddenUowFactory:
 
 
 class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_three_system_roles_are_immutable(self):
+        uow = _Uow()
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        for role_code in ("app_user", "app_manager", "app_admin"):
+            with self.subTest(role_code=role_code):
+                with self.assertRaises(AccessManagementError) as context:
+                    await service.delete_role(
+                        app_id="knowledge_retrieval", role_code=role_code,
+                        actor_id="APP_ADMIN", expected_version=1,
+                    )
+                self.assertEqual("SYSTEM_ROLE_PROTECTED", context.exception.code)
+
+    async def test_custom_role_cannot_receive_role_administration(self):
+        uow = _Uow()
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.create_role(
+                app_id="knowledge_retrieval", role_code="delegated_admin",
+                display_name="委派管理员",
+                permission_codes=(
+                    "knowledge_retrieval:use",
+                    "knowledge_retrieval:role_manage",
+                ),
+                assignable_permissions=frozenset({
+                    "knowledge_retrieval:use",
+                    "knowledge_retrieval:role_manage",
+                }),
+                actor_id="APP_ADMIN",
+            )
+
+        self.assertEqual("ROLE_PERMISSION_ESCALATION", context.exception.code)
+
+    async def test_selectable_role_cannot_cover_all_domains(self):
+        uow = _Uow()
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.create_app_user(
+                app_id="knowledge_retrieval", user_id="APP_USER",
+                display_name="应用用户", password="Example@Password2026!",
+                must_change_password=True, max_security_level=1,
+                role_bindings=({
+                    "role_code": "app_user",
+                    "scope_mode": "ALL_APP_DOMAINS",
+                    "domain_ids": (),
+                },),
+                actor_id="APP_ADMIN", actor_security_level=3,
+                actor_permissions=frozenset({"knowledge_retrieval:use"}),
+            )
+
+        self.assertEqual("ROLE_SCOPE_ESCALATION", context.exception.code)
+
+    async def test_custom_role_delete_is_physical_and_audited(self):
+        uow = _Uow()
+        role = SimpleNamespace(
+            app_id="knowledge_retrieval", role_code="knowledge_manager",
+            display_name="知识管理员", is_system="N",
+            scope_policy="SELECTABLE", status="ACTIVE", row_version=3,
+        )
+        uow.access.roles[(role.app_id, role.role_code)] = role
+        uow.access.role_permissions[(role.app_id, role.role_code)] = (
+            "knowledge_retrieval:use",
+        )
+        uow.access.bindings[(role.app_id, "APP_USER", role.role_code)] = (
+            SimpleNamespace(status="ACTIVE")
+        )
+        uow.access.scopes[(role.app_id, "APP_USER", role.role_code)] = (1,)
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        result = await service.delete_role(
+            app_id=role.app_id, role_code=role.role_code,
+            actor_id="APP_ADMIN", expected_version=3,
+        )
+
+        self.assertEqual(1, result["affected_member_count"])
+        self.assertNotIn((role.app_id, role.role_code), uow.access.roles)
+        self.assertFalse(uow.access.bindings)
+        self.assertFalse(uow.access.scopes)
+        self.assertEqual("ROLE_DELETED", uow.access.audit_events[0].action)
+
+    async def test_role_update_rejects_stale_version(self):
+        uow = _Uow()
+        role = SimpleNamespace(
+            app_id="knowledge_retrieval", role_code="knowledge_manager",
+            display_name="知识管理员", is_system="N",
+            scope_policy="SELECTABLE", status="ACTIVE", row_version=2,
+        )
+        uow.access.roles[(role.app_id, role.role_code)] = role
+        service = AccessManagementService(uow_factory=lambda: uow)
+
+        with self.assertRaises(AccessManagementError) as context:
+            await service.update_role(
+                app_id=role.app_id, role_code=role.role_code,
+                display_name="新名称", status="ACTIVE",
+                permission_codes=("knowledge_retrieval:use",),
+                assignable_permissions=frozenset({"knowledge_retrieval:use"}),
+                actor_id="APP_ADMIN", expected_version=1,
+            )
+
+        self.assertEqual("ROLE_VERSION_CONFLICT", context.exception.code)
+
     async def test_business_role_must_include_use_permission(self):
         uow = _Uow()
         service = AccessManagementService(uow_factory=lambda: uow)
@@ -189,6 +346,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
                     "knowledge_retrieval:use",
                     "knowledge_retrieval:knowledge_manage",
                 }),
+                actor_id="APP_ADMIN",
             )
 
         self.assertEqual(
@@ -212,6 +370,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
                 "knowledge_retrieval:use",
                 "knowledge_retrieval:knowledge_manage",
             }),
+            actor_id="APP_ADMIN",
         )
 
         self.assertTrue(uow.committed)
@@ -244,7 +403,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
             display_name="应用用户", password="Example@Password2026!",
             must_change_password=True, max_security_level=2,
             role_bindings=({
-                "role_code": "user", "scope_mode": "SELECTED_DOMAINS",
+                "role_code": "app_user", "scope_mode": "SELECTED_DOMAINS",
                 "domain_ids": (1,),
             },),
             actor_id="APP_ADMIN", actor_security_level=3,
@@ -259,7 +418,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("APP_CREATED", result["membership"]["member_source"])
         self.assertEqual(
             (1,),
-            uow.access.scopes[("knowledge_retrieval", "APP_USER", "user")],
+            uow.access.scopes[("knowledge_retrieval", "APP_USER", "app_user")],
         )
 
     async def test_app_manager_cannot_assign_more_privileged_role(self):
@@ -343,7 +502,7 @@ class AccessManagementProtectionTest(unittest.IsolatedAsyncioTestCase):
         result = await service.set_platform_app_grant(
             user_id="PLATFORM_OP", app_id="knowledge_retrieval",
             role_bindings=({
-                "role_code": "user", "scope_mode": "SELECTED_DOMAINS",
+                "role_code": "app_user", "scope_mode": "SELECTED_DOMAINS",
                 "domain_ids": (1,),
             },),
             actor_id="ADMIN",

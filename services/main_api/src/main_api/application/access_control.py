@@ -201,6 +201,24 @@ class AccessControlService:
             ],
         }
 
+    async def list_members_with_permission(
+        self, *, app_id: str, domain_id: int, permission_code: str
+    ) -> list[dict[str, object]]:
+        """返回当前 Domain 中实际拥有指定权限的 ACTIVE App 成员。"""
+        members = await self.list_members(app_id=app_id, domain_id=domain_id)
+        eligible: list[dict[str, object]] = []
+        for member in members:
+            if member.get("status") != "ACTIVE":
+                continue
+            snapshot = await self.snapshot(
+                app_id=app_id,
+                domain_id=domain_id,
+                user_id=str(member["user_id"]),
+            )
+            if permission_code in snapshot.permissions:
+                eligible.append(member)
+        return eligible
+
 __all__ = [
     "AccessConfigurationError", "AccessControlService",
     "AccessDeniedError", "AccessSnapshot", "GLOBAL_ADMIN_USER_ID",
