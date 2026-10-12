@@ -341,9 +341,10 @@ def main() -> int:
         "ROLE_CODE = 'user'",
         "ROLE_CODE = 'app_user'",
         "ROLE_CODE IN ('app_manager', 'app_admin')",
+        "target.ROLE_CODE = 'app_admin'",
         "IS_SYSTEM = 'N'",
         "role_permission.APP_ID || ':member_manage'",
-        "CUSTOM_ROLE_RESERVED_PERMISSIONS_REMOVED",
+        "CUSTOM_ROLE_ADMIN_MEMBERS_MIGRATED",
     ):
         assert required in migration_sql, f"App 权限迁移缺少保护逻辑：{required}"
     for credential_token in (
@@ -354,6 +355,17 @@ def main() -> int:
         assert credential_token not in migration_sql, (
             f"App 权限迁移不得修改凭据：{credential_token}"
         )
+    system_role_merge = migration_sql.index("MERGE INTO KBOT_APP_ROLE target")
+    admin_member_merge = migration_sql.index(
+        "SELECT binding.APP_ID, binding.USER_ID,\n"
+        "               MIN(binding.CREATED_BY) CREATED_BY"
+    )
+    reserved_permission_delete = migration_sql.index(
+        "DELETE FROM KBOT_APP_ROLE_PERMISSION role_permission"
+    )
+    assert system_role_merge < admin_member_merge < reserved_permission_delete, (
+        "App 权限迁移必须先创建系统角色，再迁移管理员成员，最后清理旧权限"
+    )
     audit_script = (
         ROOT / "scripts/db/audit_app_authorization.py"
     ).read_text(encoding="utf-8")

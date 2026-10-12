@@ -79,9 +79,10 @@ PYTHONPATH=packages/platform_core/src \
 4. 旧专业系统角色原位转为自定义角色，角色编码、权限、成员和 Domain 范围均保留。
 5. 已有同名自定义角色若权限、Scope 和状态与目标系统角色完全一致，则原位转为系统角色并
    保留全部成员绑定；语义不一致时拒绝猜测并整体回滚。
-6. 旧专业或测试自定义角色继续保留角色、成员、Domain Scope 和业务权限，但统一移除
-   `member_manage` / `role_manage`；每个被收敛的角色写入独立审计事件。若清理后角色不含
-   App `use` 权限，迁移拒绝猜测并整体回滚。
+6. 旧专业或测试自定义角色如持有 `member_manage` / `role_manage`，其 ACTIVE 成员
+   直接迁入同 App 的 `app_admin`，并统一为 `ALL_APP_DOMAINS`。原角色、成员、Domain Scope
+   和业务权限保留，仅移除这两项保留管理权限；每个被收敛的角色写入独立审计事件。
+   若清理后角色不含 App `use` 权限，迁移拒绝猜测并整体回滚。
 7. 脚本可重复执行，不修改账号、密码、API Key 或业务数据。
 
 迁移后再次运行只读审计，所有 `findings.item_count` 应为 `0`，三个系统角色的

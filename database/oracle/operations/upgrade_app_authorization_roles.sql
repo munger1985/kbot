@@ -217,96 +217,6 @@ BEGIN
        SET DISPLAY_NAME = '管理巡检计划与报告模板'
      WHERE PERMISSION_CODE = 'aiops:plan_manage';
 
-    SELECT COUNT(*) INTO l_stripped_role_count
-      FROM KBOT_APP_ROLE role_row
-     WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
-           )
-       AND role_row.ROLE_CODE NOT IN (
-               'user', 'app_user', 'app_manager', 'app_admin'
-           )
-       AND EXISTS (
-           SELECT 1
-             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
-            WHERE reserved_permission.APP_ID = role_row.APP_ID
-              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
-              AND reserved_permission.PERMISSION_CODE IN (
-                  role_row.APP_ID || ':member_manage',
-                  role_row.APP_ID || ':role_manage'
-              )
-       );
-
-    SELECT COUNT(*) INTO l_affected_custom_members
-      FROM (
-          SELECT DISTINCT binding.APP_ID, binding.USER_ID
-            FROM KBOT_APP_MEMBER_ROLE binding
-           WHERE binding.STATUS = 'ACTIVE'
-             AND binding.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
-                     'media_studio', 'aiops'
-                 )
-             AND binding.ROLE_CODE NOT IN (
-                     'user', 'app_user', 'app_manager', 'app_admin'
-                 )
-             AND EXISTS (
-                 SELECT 1
-                   FROM KBOT_APP_ROLE_PERMISSION reserved_permission
-                  WHERE reserved_permission.APP_ID = binding.APP_ID
-                    AND reserved_permission.ROLE_CODE = binding.ROLE_CODE
-                    AND reserved_permission.PERMISSION_CODE IN (
-                        binding.APP_ID || ':member_manage',
-                        binding.APP_ID || ':role_manage'
-                    )
-             )
-      );
-
-    INSERT INTO KBOT_ACCESS_AUDIT_EVENT (
-        EVENT_ID, ACTOR_ID, APP_ID, ACTION, RESOURCE_TYPE,
-        RESOURCE_ID, SUMMARY_JSON, AFFECTED_MEMBER_COUNT, CREATED_AT
-    )
-    SELECT RAWTOHEX(SYS_GUID()),
-           'migration:app-authorization-v2', role_row.APP_ID,
-           'CUSTOM_ROLE_RESERVED_PERMISSIONS_REMOVED',
-           'APP_ROLE', role_row.ROLE_CODE,
-           '{"reserved_permissions_removed":true}',
-           (
-               SELECT COUNT(DISTINCT binding.USER_ID)
-                 FROM KBOT_APP_MEMBER_ROLE binding
-                WHERE binding.APP_ID = role_row.APP_ID
-                  AND binding.ROLE_CODE = role_row.ROLE_CODE
-                  AND binding.STATUS = 'ACTIVE'
-           ),
-           SYSTIMESTAMP
-      FROM KBOT_APP_ROLE role_row
-     WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
-           )
-       AND role_row.ROLE_CODE NOT IN (
-               'user', 'app_user', 'app_manager', 'app_admin'
-           )
-       AND EXISTS (
-           SELECT 1
-             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
-            WHERE reserved_permission.APP_ID = role_row.APP_ID
-              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
-              AND reserved_permission.PERMISSION_CODE IN (
-                  role_row.APP_ID || ':member_manage',
-                  role_row.APP_ID || ':role_manage'
-              )
-       );
-
-    DELETE FROM KBOT_APP_ROLE_PERMISSION role_permission
-     WHERE role_permission.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
-           )
-       AND role_permission.ROLE_CODE NOT IN (
-               'user', 'app_user', 'app_manager', 'app_admin'
-           )
-       AND role_permission.PERMISSION_CODE IN (
-               role_permission.APP_ID || ':member_manage',
-               role_permission.APP_ID || ':role_manage'
-           );
-
     MERGE INTO KBOT_APP_ROLE target
     USING (
         SELECT 'knowledge_retrieval' APP_ID, 'app_user' ROLE_CODE,
@@ -352,6 +262,170 @@ BEGIN
         source.APP_ID, source.ROLE_CODE, source.DISPLAY_NAME, 'Y',
         source.SCOPE_POLICY, 'ACTIVE', 1
     );
+
+    SELECT COUNT(*) INTO l_stripped_role_count
+      FROM KBOT_APP_ROLE role_row
+     WHERE role_row.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND role_row.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+            WHERE reserved_permission.APP_ID = role_row.APP_ID
+              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
+              AND reserved_permission.PERMISSION_CODE IN (
+                  role_row.APP_ID || ':member_manage',
+                  role_row.APP_ID || ':role_manage'
+              )
+       );
+
+    SELECT COUNT(*) INTO l_affected_custom_members
+      FROM (
+          SELECT DISTINCT binding.APP_ID, binding.USER_ID
+            FROM KBOT_APP_MEMBER_ROLE binding
+           WHERE binding.STATUS = 'ACTIVE'
+             AND binding.APP_ID IN (
+                     'knowledge_retrieval', 'km_asset',
+                     'media_studio', 'aiops'
+                 )
+             AND binding.ROLE_CODE NOT IN (
+                     'user', 'app_user', 'app_manager', 'app_admin'
+                 )
+             AND EXISTS (
+                 SELECT 1
+                   FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+                  WHERE reserved_permission.APP_ID = binding.APP_ID
+                    AND reserved_permission.ROLE_CODE = binding.ROLE_CODE
+                    AND reserved_permission.PERMISSION_CODE IN (
+                        binding.APP_ID || ':member_manage',
+                        binding.APP_ID || ':role_manage'
+                    )
+             )
+      );
+
+    MERGE INTO KBOT_APP_MEMBER_ROLE target
+    USING (
+        SELECT binding.APP_ID, binding.USER_ID,
+               MIN(binding.CREATED_BY) CREATED_BY
+          FROM KBOT_APP_MEMBER_ROLE binding
+         WHERE binding.STATUS = 'ACTIVE'
+           AND binding.APP_ID IN (
+                   'knowledge_retrieval', 'km_asset',
+                   'media_studio', 'aiops'
+               )
+           AND binding.ROLE_CODE NOT IN (
+                   'user', 'app_user', 'app_manager', 'app_admin'
+               )
+           AND EXISTS (
+               SELECT 1
+                 FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+                WHERE reserved_permission.APP_ID = binding.APP_ID
+                  AND reserved_permission.ROLE_CODE = binding.ROLE_CODE
+                  AND reserved_permission.PERMISSION_CODE IN (
+                      binding.APP_ID || ':member_manage',
+                      binding.APP_ID || ':role_manage'
+                  )
+           )
+         GROUP BY binding.APP_ID, binding.USER_ID
+    ) source
+       ON (target.APP_ID = source.APP_ID
+           AND target.USER_ID = source.USER_ID
+           AND target.ROLE_CODE = 'app_admin')
+    WHEN MATCHED THEN UPDATE SET
+        target.SCOPE_MODE = 'ALL_APP_DOMAINS',
+        target.STATUS = 'ACTIVE'
+        WHERE target.SCOPE_MODE <> 'ALL_APP_DOMAINS'
+           OR target.STATUS <> 'ACTIVE'
+    WHEN NOT MATCHED THEN INSERT (
+        APP_ID, USER_ID, ROLE_CODE, SCOPE_MODE,
+        STATUS, CREATED_BY, CREATED_AT
+    ) VALUES (
+        source.APP_ID, source.USER_ID, 'app_admin', 'ALL_APP_DOMAINS',
+        'ACTIVE', source.CREATED_BY, SYSTIMESTAMP
+    );
+
+    SELECT COUNT(*) INTO l_count
+      FROM KBOT_APP_MEMBER_ROLE binding
+     WHERE binding.STATUS = 'ACTIVE'
+       AND binding.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND binding.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+            WHERE reserved_permission.APP_ID = binding.APP_ID
+              AND reserved_permission.ROLE_CODE = binding.ROLE_CODE
+              AND reserved_permission.PERMISSION_CODE IN (
+                  binding.APP_ID || ':member_manage',
+                  binding.APP_ID || ':role_manage'
+              )
+       )
+       AND NOT EXISTS (
+           SELECT 1
+             FROM KBOT_APP_MEMBER_ROLE admin_binding
+            WHERE admin_binding.APP_ID = binding.APP_ID
+              AND admin_binding.USER_ID = binding.USER_ID
+              AND admin_binding.ROLE_CODE = 'app_admin'
+              AND admin_binding.SCOPE_MODE = 'ALL_APP_DOMAINS'
+              AND admin_binding.STATUS = 'ACTIVE'
+       );
+    IF l_count > 0 THEN
+        RAISE_APPLICATION_ERROR(-20008, '旧管理员成员迁移至 app_admin 失败');
+    END IF;
+
+    INSERT INTO KBOT_ACCESS_AUDIT_EVENT (
+        EVENT_ID, ACTOR_ID, APP_ID, ACTION, RESOURCE_TYPE,
+        RESOURCE_ID, SUMMARY_JSON, AFFECTED_MEMBER_COUNT, CREATED_AT
+    )
+    SELECT RAWTOHEX(SYS_GUID()),
+           'migration:app-authorization-v2', role_row.APP_ID,
+           'CUSTOM_ROLE_ADMIN_MEMBERS_MIGRATED',
+           'APP_ROLE', role_row.ROLE_CODE,
+           '{"member_migration":"app_admin","scope_mode":"ALL_APP_DOMAINS",' ||
+           '"reserved_permissions_removed":true}',
+           (
+               SELECT COUNT(DISTINCT binding.USER_ID)
+                 FROM KBOT_APP_MEMBER_ROLE binding
+                WHERE binding.APP_ID = role_row.APP_ID
+                  AND binding.ROLE_CODE = role_row.ROLE_CODE
+                  AND binding.STATUS = 'ACTIVE'
+           ),
+           SYSTIMESTAMP
+      FROM KBOT_APP_ROLE role_row
+     WHERE role_row.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND role_row.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+            WHERE reserved_permission.APP_ID = role_row.APP_ID
+              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
+              AND reserved_permission.PERMISSION_CODE IN (
+                  role_row.APP_ID || ':member_manage',
+                  role_row.APP_ID || ':role_manage'
+              )
+       );
+
+    DELETE FROM KBOT_APP_ROLE_PERMISSION role_permission
+     WHERE role_permission.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND role_permission.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND role_permission.PERMISSION_CODE IN (
+               role_permission.APP_ID || ':member_manage',
+               role_permission.APP_ID || ':role_manage'
+           );
 
     MERGE INTO KBOT_APP_MEMBER_ROLE_SCOPE target
     USING (
@@ -575,7 +649,8 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE(
         'App 权限角色升级完成，迁移 user 绑定数=' || l_migrated_bindings ||
         '，清理保留管理权限的自定义角色数=' || l_stripped_role_count ||
-        '，受影响 ACTIVE 成员数=' || l_affected_custom_members
+        '，迁移至 app_admin 的 ACTIVE 成员数=' ||
+        l_affected_custom_members
     );
 EXCEPTION
     WHEN OTHERS THEN
