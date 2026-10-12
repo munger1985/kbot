@@ -38,6 +38,8 @@ END;
 DECLARE
     l_count NUMBER;
     l_migrated_bindings NUMBER := 0;
+    l_stripped_role_count NUMBER := 0;
+    l_affected_custom_members NUMBER := 0;
 BEGIN
     SELECT COUNT(*) INTO l_count
       FROM KBOT_APP_ROLE role_row
@@ -130,21 +132,34 @@ BEGIN
     END IF;
 
     SELECT COUNT(*) INTO l_count
-      FROM KBOT_APP_ROLE_PERMISSION role_permission
-     WHERE role_permission.APP_ID IN (
+      FROM KBOT_APP_ROLE role_row
+     WHERE role_row.APP_ID IN (
                'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
            )
-       AND role_permission.ROLE_CODE NOT IN (
+       AND role_row.ROLE_CODE NOT IN (
                'user', 'app_user', 'app_manager', 'app_admin'
            )
-       AND role_permission.PERMISSION_CODE IN (
-               role_permission.APP_ID || ':member_manage',
-               role_permission.APP_ID || ':role_manage'
-           );
+       AND EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+            WHERE reserved_permission.APP_ID = role_row.APP_ID
+              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
+              AND reserved_permission.PERMISSION_CODE IN (
+                  role_row.APP_ID || ':member_manage',
+                  role_row.APP_ID || ':role_manage'
+              )
+       )
+       AND NOT EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION use_permission
+            WHERE use_permission.APP_ID = role_row.APP_ID
+              AND use_permission.ROLE_CODE = role_row.ROLE_CODE
+              AND use_permission.PERMISSION_CODE = role_row.APP_ID || ':use'
+       );
     IF l_count > 0 THEN
         RAISE_APPLICATION_ERROR(
             -20002,
-            '既有专业角色持有成员或角色管理权限，请先人工确认后再迁移'
+            '自定义角色清理保留管理权限后将缺少 App use 权限，请先人工审计冲突'
         );
     END IF;
 
@@ -201,6 +216,96 @@ BEGIN
     UPDATE KBOT_PERMISSION
        SET DISPLAY_NAME = '管理巡检计划与报告模板'
      WHERE PERMISSION_CODE = 'aiops:plan_manage';
+
+    SELECT COUNT(*) INTO l_stripped_role_count
+      FROM KBOT_APP_ROLE role_row
+     WHERE role_row.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND role_row.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+            WHERE reserved_permission.APP_ID = role_row.APP_ID
+              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
+              AND reserved_permission.PERMISSION_CODE IN (
+                  role_row.APP_ID || ':member_manage',
+                  role_row.APP_ID || ':role_manage'
+              )
+       );
+
+    SELECT COUNT(*) INTO l_affected_custom_members
+      FROM (
+          SELECT DISTINCT binding.APP_ID, binding.USER_ID
+            FROM KBOT_APP_MEMBER_ROLE binding
+           WHERE binding.STATUS = 'ACTIVE'
+             AND binding.APP_ID IN (
+                     'knowledge_retrieval', 'km_asset',
+                     'media_studio', 'aiops'
+                 )
+             AND binding.ROLE_CODE NOT IN (
+                     'user', 'app_user', 'app_manager', 'app_admin'
+                 )
+             AND EXISTS (
+                 SELECT 1
+                   FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+                  WHERE reserved_permission.APP_ID = binding.APP_ID
+                    AND reserved_permission.ROLE_CODE = binding.ROLE_CODE
+                    AND reserved_permission.PERMISSION_CODE IN (
+                        binding.APP_ID || ':member_manage',
+                        binding.APP_ID || ':role_manage'
+                    )
+             )
+      );
+
+    INSERT INTO KBOT_ACCESS_AUDIT_EVENT (
+        EVENT_ID, ACTOR_ID, APP_ID, ACTION, RESOURCE_TYPE,
+        RESOURCE_ID, SUMMARY_JSON, AFFECTED_MEMBER_COUNT, CREATED_AT
+    )
+    SELECT RAWTOHEX(SYS_GUID()),
+           'migration:app-authorization-v2', role_row.APP_ID,
+           'CUSTOM_ROLE_RESERVED_PERMISSIONS_REMOVED',
+           'APP_ROLE', role_row.ROLE_CODE,
+           '{"reserved_permissions_removed":true}',
+           (
+               SELECT COUNT(DISTINCT binding.USER_ID)
+                 FROM KBOT_APP_MEMBER_ROLE binding
+                WHERE binding.APP_ID = role_row.APP_ID
+                  AND binding.ROLE_CODE = role_row.ROLE_CODE
+                  AND binding.STATUS = 'ACTIVE'
+           ),
+           SYSTIMESTAMP
+      FROM KBOT_APP_ROLE role_row
+     WHERE role_row.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND role_row.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND EXISTS (
+           SELECT 1
+             FROM KBOT_APP_ROLE_PERMISSION reserved_permission
+            WHERE reserved_permission.APP_ID = role_row.APP_ID
+              AND reserved_permission.ROLE_CODE = role_row.ROLE_CODE
+              AND reserved_permission.PERMISSION_CODE IN (
+                  role_row.APP_ID || ':member_manage',
+                  role_row.APP_ID || ':role_manage'
+              )
+       );
+
+    DELETE FROM KBOT_APP_ROLE_PERMISSION role_permission
+     WHERE role_permission.APP_ID IN (
+               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+           )
+       AND role_permission.ROLE_CODE NOT IN (
+               'user', 'app_user', 'app_manager', 'app_admin'
+           )
+       AND role_permission.PERMISSION_CODE IN (
+               role_permission.APP_ID || ':member_manage',
+               role_permission.APP_ID || ':role_manage'
+           );
 
     MERGE INTO KBOT_APP_ROLE target
     USING (
@@ -468,7 +573,9 @@ BEGIN
 
     COMMIT;
     DBMS_OUTPUT.PUT_LINE(
-        'App 权限角色升级完成，迁移 user 绑定数=' || l_migrated_bindings
+        'App 权限角色升级完成，迁移 user 绑定数=' || l_migrated_bindings ||
+        '，清理保留管理权限的自定义角色数=' || l_stripped_role_count ||
+        '，受影响 ACTIVE 成员数=' || l_affected_custom_members
     );
 EXCEPTION
     WHEN OTHERS THEN

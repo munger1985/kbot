@@ -343,6 +343,7 @@ def main() -> int:
         "ROLE_CODE IN ('app_manager', 'app_admin')",
         "IS_SYSTEM = 'N'",
         "role_permission.APP_ID || ':member_manage'",
+        "CUSTOM_ROLE_RESERVED_PERMISSIONS_REMOVED",
     ):
         assert required in migration_sql, f"App 权限迁移缺少保护逻辑：{required}"
     for credential_token in (
