@@ -271,7 +271,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("不修改该用户的 AIOps 角色或权限", page)
         self.assertNotIn("组内角色", page)
         self.assertIn("active_work_item_count", script)
-        self.assertIn("unassigned_work_item_count", script)
+        table = page.split('<table class="ops-table ops-responsibility-group-table">', 1)[1].split("</table>", 1)[0]
+        self.assertIn("绑定 Agent", table)
+        self.assertNotIn("未领取", table)
+        self.assertNotIn("target_binding_count", script)
+        self.assertNotIn("unassigned_work_item_count", script)
+        self.assertIn("运维目标由 Agent 关联", page)
         self.assertIn('<dialog id="group-editor-dialog"', page)
         self.assertIn('<dialog id="group-members-dialog"', page)
         self.assertIn('<dialog id="group-confirm-dialog"', page)

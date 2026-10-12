@@ -22,10 +22,9 @@
       <td>${shell.badge(group.status)}</td>
       <td>${shell.escape(group.lead_user_id || "未设置")}</td>
       <td>${Number(group.active_member_count || 0)}</td>
-      <td><strong>${Number(group.target_binding_count || 0)} 个 Target</strong><small>${Number(group.agent_binding_count || 0)} 个 Agent</small></td>
-      <td>${Number(group.unassigned_work_item_count || 0)}</td>
+      <td><strong>${Number(group.agent_binding_count || 0)} 个 Agent</strong></td>
       <td><span class="ops-actions"><button type="button" data-edit-group="${shell.escape(group.responsibility_group_id)}">修改</button><button type="button" data-members-group="${shell.escape(group.responsibility_group_id)}">人员</button><button type="button" class="danger" data-delete-group="${shell.escape(group.responsibility_group_id)}" ${group.status === "INACTIVE" ? "disabled title=\"责任组已停用\"" : ""}>删除</button></span></td>
-    </tr>`).join("") || '<tr><td colspan="7" class="ops-empty">尚未创建责任组</td></tr>';
+    </tr>`).join("") || '<tr><td colspan="6" class="ops-empty">尚未创建责任组</td></tr>';
     body.querySelectorAll("[data-edit-group]").forEach((button) => {
       button.addEventListener("click", () => openEditor(groups.find((item) => item.responsibility_group_id === button.dataset.editGroup)));
     });
@@ -64,7 +63,7 @@
       groups = values(page.items).filter((item) => item.status === "ACTIVE");
       renderGroups();
     } catch (error) {
-      body.innerHTML = `<tr><td colspan="7" class="ops-empty">${shell.escape(error.message)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="ops-empty">${shell.escape(error.message)}</td></tr>`;
     }
   }
 
@@ -190,8 +189,8 @@
     try {
       const detail = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(group.responsibility_group_id)}`);
       const assignedCount = values(detail.members).reduce((total, member) => total + Number(member.active_work_item_count || 0), 0);
-      if (Number(group.agent_binding_count || 0) || Number(group.target_binding_count || 0) || Number(group.unassigned_work_item_count || 0) || assignedCount) {
-        shell.toast("请先解除 Agent/Target 绑定，并处理或改派组内活动工作项");
+      if (Number(group.agent_binding_count || 0) || assignedCount) {
+        shell.toast("请先解除 Agent 绑定，并处理或改派组内活动工作项");
         return;
       }
       if (!await askConfirmation({
