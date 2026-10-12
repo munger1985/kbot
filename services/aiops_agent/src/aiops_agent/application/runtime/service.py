@@ -3493,6 +3493,93 @@ class AIOpsRuntimeService:
                 }
             )
 
+        backup_policy = inspection.get("backup_policy")
+        if isinstance(backup_policy, dict) and backup_policy.get("enabled"):
+            backup_tool_id = {
+                "ORACLE": "db.backup.recent_jobs",
+                "POSTGRESQL": "db.postgresql.archiver.status",
+                "MYSQL": "db.mysql.binlog.status",
+            }.get(database_type)
+            backup_observations = evidence_by_tool.get(backup_tool_id or "", [])
+            if database_type == "ORACLE":
+                successful_end_times: list[datetime] = []
+                for observation in backup_observations:
+                    indexes = {
+                        str(column.get("name") or "").lower(): index
+                        for index, column in enumerate(observation.columns)
+                    }
+                    status_index = indexes.get("status")
+                    end_time_index = indexes.get("end_time")
+                    if status_index is None or end_time_index is None:
+                        continue
+                    for row in observation.rows:
+                        if not str(row[status_index] or "").upper().startswith("COMPLETED"):
+                            continue
+                        raw_end_time = row[end_time_index]
+                        if isinstance(raw_end_time, datetime):
+                            successful_end_times.append(raw_end_time)
+                        elif raw_end_time:
+                            try:
+                                successful_end_times.append(datetime.fromisoformat(str(raw_end_time).replace("Z", "+00:00")))
+                            except ValueError:
+                                continue
+                if successful_end_times:
+                    latest_success = max(successful_end_times)
+                    if latest_success.tzinfo is None:
+                        latest_success = latest_success.replace(tzinfo=UTC)
+                    reference_time = datetime.fromisoformat(str(inspection.get("period_end")))
+                    compliant = reference_time - latest_success <= timedelta(
+                        hours=int(backup_policy["success_max_age_hours"])
+                    )
+                    facts.append({
+                        "kind": "backup_policy_check",
+                        "title": "备份策略校验",
+                        "summary": f"最近成功 RMAN 备份时间为 {latest_success.isoformat()}，策略要求 {backup_policy['success_max_age_hours']} 小时内成功。",
+                        "check_status": "COMPLIANT" if compliant else "BREACHED",
+                        "tool_id": backup_tool_id,
+                        "policy": backup_policy,
+                    })
+                    if not compliant:
+                        gaps.append({
+                            "source_id": "inspection.backup-policy",
+                            "step_id": backup_tool_id,
+                            "code": "BACKUP_SUCCESS_STALE",
+                            "detail": "最近成功 RMAN 备份已超过 Target 备份策略允许时效",
+                            "retryable": False,
+                        })
+                else:
+                    facts.append({
+                        "kind": "backup_policy_check",
+                        "title": "备份策略校验",
+                        "summary": "未取得可解析的成功 RMAN 备份记录，无法证明满足备份策略。",
+                        "check_status": "NOT_OBSERVED",
+                        "tool_id": backup_tool_id,
+                        "policy": backup_policy,
+                    })
+                    gaps.append({
+                        "source_id": "inspection.backup-policy",
+                        "step_id": backup_tool_id,
+                        "code": "BACKUP_SUCCESS_NOT_FOUND",
+                        "detail": "RMAN 观测中没有可解析的成功备份记录",
+                        "retryable": False,
+                    })
+            else:
+                facts.append({
+                    "kind": "backup_policy_check",
+                    "title": "备份策略校验",
+                    "summary": "已检查数据库归档链，但当前证据不能证明第三方全量备份在策略时效内成功。",
+                    "check_status": "NOT_OBSERVABLE",
+                    "tool_id": backup_tool_id,
+                    "policy": backup_policy,
+                })
+                gaps.append({
+                    "source_id": "inspection.backup-policy",
+                    "step_id": backup_tool_id,
+                    "code": "BACKUP_SUCCESS_NOT_OBSERVABLE",
+                    "detail": "归档链观测不能替代备份平台成功记录，需要接入对应备份来源证据",
+                    "retryable": False,
+                })
+
         if str(inspection.get("schedule_type") or "") == "WEEKLY":
             for trend in extract_metric_trend_rows(source.evidence):
                 facts.append(

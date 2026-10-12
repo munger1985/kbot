@@ -94,7 +94,7 @@ class RecoveryContractTest(unittest.TestCase):
         manifest = json.loads(
             (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
         )
-        self.assertEqual(41, manifest["schema_version"])
+        self.assertEqual(42, manifest["schema_version"])
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
         self.assertIn("required_backup_source_types", (
@@ -167,6 +167,10 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
             target_id=target_id,
             domain_id=1,
             version_no=2,
+            backup_policy_enabled=1,
+            backup_frequency_hours=24,
+            backup_success_max_age_hours=26,
+            backup_retention_days=30,
             rpo_seconds=300,
             rto_seconds=900,
             drill_required=1,
@@ -478,6 +482,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
         await service.upsert_recovery_profile(
             scope=scope, target_id=target.target_id,
             request=TargetRecoveryProfileUpsert(
+                backup_policy_enabled=False,
                 rpo_seconds=300, rto_seconds=900, drill_required=False,
                 required_drill_interval_days=30,
                 required_assurance_level="DATABASE_OPEN",

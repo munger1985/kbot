@@ -539,6 +539,38 @@ class InspectionReportPublishingTest(unittest.TestCase):
 
         self.assertEqual([], list(gaps))
         self.assertIn("当前没有备份任务记录", facts[0]["summary"])
+
+    def test_daily_inspection_enforces_target_backup_policy(self) -> None:
+        source = SimpleNamespace(
+            evidence=[SimpleNamespace(
+                tool_id="db.backup.recent_jobs",
+                row_count=1,
+                truncated=False,
+                evidence_ref="artifact:test#backup-policy",
+                trust_level="SOURCE_VERIFIED",
+                columns=({"name": "STATUS"}, {"name": "END_TIME"}),
+                rows=(("COMPLETED", "2026-07-23T15:00:00+00:00"),),
+            )],
+            evidence_gaps=(),
+        )
+        facts, gaps, _ = AIOpsRuntimeService._inspection_report_projection(
+            inspection={
+                "schedule_type": "DAILY",
+                "period_end": "2026-07-23T16:00:00+00:00",
+                "backup_policy": {"enabled": True, "success_max_age_hours": 26},
+                "evidence_steps": [{
+                    "title": "最近成功/失败",
+                    "tool_id": "db.backup.recent_jobs",
+                    "expected_evidence_kind": "BACKUP_FAILED",
+                }],
+            },
+            source=source,
+            action_tool_ids={},
+            database_type="ORACLE",
+        )
+        policy_fact = next(item for item in facts if item["kind"] == "backup_policy_check")
+        self.assertEqual("COMPLIANT", policy_fact["check_status"])
+        self.assertNotIn("BACKUP_SUCCESS_STALE", {item["code"] for item in gaps})
         self.assertNotIn("结果正常", facts[0]["summary"])
         self.assertNotIn("本期没有需要报告的记录", facts[0]["summary"])
 

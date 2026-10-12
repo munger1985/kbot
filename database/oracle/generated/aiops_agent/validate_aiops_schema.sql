@@ -1860,6 +1860,10 @@ BEGIN
             'KBOT_OPS_RECOVERY_DRILL|TARGET_ID',
             'KBOT_OPS_RECOVERY_DRILL|UPDATED_AT',
             'KBOT_OPS_RECOVERY_DRILL|UPDATED_BY',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_FREQUENCY_HOURS',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_POLICY_ENABLED',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_RETENTION_DAYS',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_SUCCESS_MAX_AGE_HOURS',
             'KBOT_OPS_RECOVERY_PROFILE|CONFIRMED_BY',
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_AT',
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_BY',
@@ -2950,6 +2954,10 @@ BEGIN
             'KBOT_OPS_RECOVERY_DRILL|TARGET_ID',
             'KBOT_OPS_RECOVERY_DRILL|UPDATED_AT',
             'KBOT_OPS_RECOVERY_DRILL|UPDATED_BY',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_FREQUENCY_HOURS',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_POLICY_ENABLED',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_RETENTION_DAYS',
+            'KBOT_OPS_RECOVERY_PROFILE|BACKUP_SUCCESS_MAX_AGE_HOURS',
             'KBOT_OPS_RECOVERY_PROFILE|CONFIRMED_BY',
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_AT',
             'KBOT_OPS_RECOVERY_PROFILE|CREATED_BY',
@@ -3477,7 +3485,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1073 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1077 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3569,19 +3577,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 41
-           OR l_contract_version <> 'aiops-oracle-v31' THEN
+           OR l_schema_version <> 42
+           OR l_contract_version <> 'aiops-oracle-v32' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '41/aiops-oracle-v31'
+                || '42/aiops-oracle-v32'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/41/'
-                || 'aiops-oracle-v31'
+                '[通过] Schema 合同：AIOPS/42/'
+                || 'aiops-oracle-v32'
             );
         END IF;
     EXCEPTION
@@ -3609,7 +3617,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：63 张表、10 个视图、'
         || '266 个命名索引、231 个命名约束、'
-        || '1073 个表列；Schema 与当前规范一致。'
+        || '1077 个表列；Schema 与当前规范一致。'
     );
 END;
 /

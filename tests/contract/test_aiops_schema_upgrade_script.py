@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_39.sql"
 RECOVERY_POLICY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_40.sql"
 TARGET_RESPONSIBILITY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_41.sql"
+BACKUP_POLICY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_42.sql"
 
 
 class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
@@ -75,6 +76,26 @@ class AIOpsTargetResponsibilityUpgradeScriptTest(unittest.TestCase):
         self.assertLess(conflict_at, add_at)
         self.assertLess(add_at, inherit_at)
         self.assertLess(inherit_at, drop_at)
+        self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)
+        self.assertNotIn("TRUNCATE TABLE KBOT_OPS_", self.upper)
+
+
+class AIOpsBackupPolicyUpgradeScriptTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.upper = BACKUP_POLICY_SCRIPT.read_text(encoding="utf-8").upper()
+
+    def test_upgrade_is_guarded_and_backfills_before_not_null(self) -> None:
+        self.assertIn("L_SCHEMA_VERSION <> 41", self.upper)
+        self.assertIn("AIOPS-ORACLE-V31", self.upper)
+        self.assertIn("42 AS SCHEMA_VERSION", self.upper)
+        self.assertIn("AIOPS-ORACLE-V32", self.upper)
+        add_at = self.upper.index("ADD BACKUP_POLICY_ENABLED NUMBER(1)")
+        update_at = self.upper.index("SET BACKUP_POLICY_ENABLED = CASE")
+        required_at = self.upper.index("MODIFY BACKUP_POLICY_ENABLED NOT NULL")
+        self.assertLess(add_at, update_at)
+        self.assertLess(update_at, required_at)
+        self.assertIn("JSON_EXISTS(REQUIRED_BACKUP_SOURCE_TYPES_JSON, '$[0]')", self.upper)
         self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)
         self.assertNotIn("TRUNCATE TABLE KBOT_OPS_", self.upper)
 

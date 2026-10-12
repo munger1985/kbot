@@ -643,6 +643,25 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="target-recovery-profile-form"', editor_page)
         self.assertIn('id="target-facts-form"', editor_page)
 
+    def test_target_editor_uses_four_step_wizard_and_backup_policy(self):
+        page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+        targets = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(encoding="utf-8")
+        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(encoding="utf-8")
+        identity = page.index('data-target-wizard-step="identity"')
+        monitoring = page.index('data-target-wizard-step="monitoring"')
+        access = page.index('data-target-wizard-step="access"')
+        recovery = page.index('data-target-wizard-step="recovery"')
+        self.assertLess(identity, monitoring)
+        self.assertLess(monitoring, access)
+        self.assertLess(access, recovery)
+        self.assertIn("目标身份与责任归属", page)
+        self.assertIn('name="responsibility_group_id" required', page)
+        self.assertIn('name="backup_policy_enabled"', page)
+        self.assertIn('name="backup_success_max_age_hours"', page)
+        self.assertIn("补录计划外恢复演练", page)
+        self.assertIn("saveTargetRecovery", targets)
+        self.assertIn("backup_success_max_age_hours", pages)
+
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"

@@ -373,6 +373,10 @@ RecoveryMarker = Annotated[
 
 class TargetRecoveryProfileUpsert(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
+    backup_policy_enabled: bool = True
+    backup_frequency_hours: int = Field(default=24, ge=1, le=8760)
+    backup_success_max_age_hours: int = Field(default=26, ge=1, le=8760)
+    backup_retention_days: int = Field(default=30, ge=1, le=3650)
     rpo_seconds: int = Field(ge=0, le=31_536_000)
     rto_seconds: int = Field(ge=60, le=31_536_000)
     drill_required: bool
@@ -388,8 +392,10 @@ class TargetRecoveryProfileUpsert(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_source_types(self) -> "TargetRecoveryProfileUpsert":
-        if self.drill_required and not self.required_backup_source_types:
-            raise ValueError("要求定期恢复演练时必须配置备份来源")
+        if (self.backup_policy_enabled or self.drill_required) and not self.required_backup_source_types:
+            raise ValueError("启用备份策略或定期恢复演练时必须配置备份来源")
+        if self.backup_policy_enabled and self.backup_success_max_age_hours < self.backup_frequency_hours:
+            raise ValueError("备份成功时效不能短于备份频率")
         if len(set(self.required_backup_source_types)) != len(
             self.required_backup_source_types
         ):

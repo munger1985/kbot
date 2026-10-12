@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.inspections.check_catalog import (
+    compile_selected_check_steps,
     inspection_template_steps,
 )
 from aiops_agent.application.conversation_starters import (
@@ -385,6 +386,65 @@ class ConversationTurnService:
                     schedule_type=schedule_type,
                     database_type=str(target.db_type),
                 )
+                recovery_repository = getattr(uow, "recovery", None)
+                recovery_profile = (
+                    await recovery_repository.get_active_profile(
+                        target_id=target_id,
+                        domain_id=domain_id,
+                    )
+                    if recovery_repository is not None
+                    else None
+                )
+                backup_policy = None
+                if recovery_profile is not None:
+                    backup_policy = {
+                        "enabled": bool(recovery_profile.backup_policy_enabled),
+                        "frequency_hours": int(recovery_profile.backup_frequency_hours),
+                        "success_max_age_hours": int(recovery_profile.backup_success_max_age_hours),
+                        "retention_days": int(recovery_profile.backup_retention_days),
+                        "source_types": list(recovery_profile.required_backup_source_types_json),
+                        "profile_id": str(recovery_profile.recovery_profile_id),
+                        "profile_version": int(recovery_profile.version_no),
+                    }
+                if schedule_type == "DAILY" and backup_policy and backup_policy["enabled"]:
+                    backup_check_id = {
+                        "ORACLE": "oracle.backup.recent_jobs",
+                        "POSTGRESQL": "postgresql.backup.archive_chain",
+                        "MYSQL": "mysql.backup.binlog_chain",
+                    }.get(str(target.db_type))
+                    existing_tool_ids = {str(item.get("tool_id") or "") for item in evidence_steps}
+                    if backup_check_id:
+                        backup_steps = compile_selected_check_steps(
+                            (backup_check_id,),
+                            schedule_type=schedule_type,
+                            database_type=str(target.db_type),
+                        )
+                        evidence_steps = tuple(evidence_steps) + tuple(
+                            item for item in backup_steps
+                            if str(item.get("tool_id") or "") not in existing_tool_ids
+                        )
+                    if str(target.db_type) == "ORACLE":
+                        query_days = min(
+                            90,
+                            max(
+                                7,
+                                (int(backup_policy["success_max_age_hours"]) + 23)
+                                // 24
+                                + 1,
+                            ),
+                        )
+                        evidence_steps = tuple(
+                            {
+                                **item,
+                                "input": {
+                                    **dict(item.get("input") or {}),
+                                    "days": query_days,
+                                },
+                            }
+                            if str(item.get("tool_id") or "") == "db.backup.recent_jobs"
+                            else item
+                            for item in evidence_steps
+                        )
                 if not evidence_steps:
                     raise self._error(
                         "AIOPS_INSPECTION_CHECK_SELECTION_INVALID",
@@ -452,6 +512,7 @@ class ConversationTurnService:
                                     "schedule_resolver_version"
                                 ],
                                 "schedule_type": schedule_type,
+                                "database_type": str(target.db_type),
                                 "timezone": payload["timezone"],
                                 "period_start": period_start.isoformat(),
                                 "period_end": period_end.isoformat(),
@@ -459,6 +520,7 @@ class ConversationTurnService:
                                     selected_check_ids
                                 ),
                                 "evidence_steps": evidence_steps,
+                                "backup_policy": backup_policy,
                             },
                         },
                     )

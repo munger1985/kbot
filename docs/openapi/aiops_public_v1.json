@@ -6610,11 +6610,6 @@
             "title": "Active Member Count",
             "type": "integer"
           },
-          "agent_binding_count": {
-            "minimum": 0.0,
-            "title": "Agent Binding Count",
-            "type": "integer"
-          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6664,11 +6659,6 @@
             "title": "Target Binding Count",
             "type": "integer"
           },
-          "unassigned_work_item_count": {
-            "minimum": 0.0,
-            "title": "Unassigned Work Item Count",
-            "type": "integer"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -6680,9 +6670,7 @@
           "name",
           "status",
           "active_member_count",
-          "agent_binding_count",
           "target_binding_count",
-          "unassigned_work_item_count",
           "row_version",
           "created_at",
           "updated_at"
@@ -6696,11 +6684,6 @@
           "active_member_count": {
             "minimum": 0.0,
             "title": "Active Member Count",
-            "type": "integer"
-          },
-          "agent_binding_count": {
-            "minimum": 0.0,
-            "title": "Agent Binding Count",
             "type": "integer"
           },
           "created_at": {
@@ -6760,11 +6743,6 @@
             "title": "Target Binding Count",
             "type": "integer"
           },
-          "unassigned_work_item_count": {
-            "minimum": 0.0,
-            "title": "Unassigned Work Item Count",
-            "type": "integer"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -6776,9 +6754,7 @@
           "name",
           "status",
           "active_member_count",
-          "agent_binding_count",
           "target_binding_count",
-          "unassigned_work_item_count",
           "row_version",
           "created_at",
           "updated_at"
@@ -7719,18 +7695,6 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
-          "default_responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Responsibility Group Id"
-          },
           "diagnostic_credential": {
             "anyOf": [
               {
@@ -7816,6 +7780,18 @@
             "default": false,
             "title": "Readonly Connection Enabled",
             "type": "boolean"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
           },
           "schema_version": {
             "default": "aiops.public.v1",
@@ -7950,18 +7926,6 @@
           },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
-          },
-          "default_responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Responsibility Group Id"
           },
           "diagnostic_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
@@ -8138,6 +8102,18 @@
           "readonly_connection_enabled": {
             "title": "Readonly Connection Enabled",
             "type": "boolean"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
           },
           "row_version": {
             "minimum": 1.0,
@@ -8629,18 +8605,6 @@
             ],
             "title": "Db Role"
           },
-          "default_responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Responsibility Group Id"
-          },
           "display_name": {
             "anyOf": [
               {
@@ -8733,6 +8697,18 @@
             ],
             "title": "Readonly Connection Enabled"
           },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
@@ -8772,6 +8748,32 @@
       "TargetRecoveryProfileUpsert": {
         "additionalProperties": false,
         "properties": {
+          "backup_frequency_hours": {
+            "default": 24,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Frequency Hours",
+            "type": "integer"
+          },
+          "backup_policy_enabled": {
+            "default": true,
+            "title": "Backup Policy Enabled",
+            "type": "boolean"
+          },
+          "backup_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Backup Retention Days",
+            "type": "integer"
+          },
+          "backup_success_max_age_hours": {
+            "default": 26,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Success Max Age Hours",
+            "type": "integer"
+          },
           "drill_required": {
             "title": "Drill Required",
             "type": "boolean"
@@ -8864,6 +8866,32 @@
       "TargetRecoveryProfileView": {
         "additionalProperties": false,
         "properties": {
+          "backup_frequency_hours": {
+            "default": 24,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Frequency Hours",
+            "type": "integer"
+          },
+          "backup_policy_enabled": {
+            "default": true,
+            "title": "Backup Policy Enabled",
+            "type": "boolean"
+          },
+          "backup_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Backup Retention Days",
+            "type": "integer"
+          },
+          "backup_success_max_age_hours": {
+            "default": 26,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Success Max Age Hours",
+            "type": "integer"
+          },
           "confirmed_by": {
             "title": "Confirmed By",
             "type": "string"
@@ -9047,18 +9075,6 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
-          "default_responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Responsibility Group Id"
-          },
           "diagnostic_credential_configured": {
             "title": "Diagnostic Credential Configured",
             "type": "boolean"
@@ -9094,6 +9110,18 @@
           "readonly_connection_enabled": {
             "title": "Readonly Connection Enabled",
             "type": "boolean"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
           },
           "row_version": {
             "minimum": 1.0,
@@ -9351,8 +9379,7 @@
       "WorkItemAssignmentSource": {
         "enum": [
           "ROUTING_RULE",
-          "TARGET_DEFAULT",
-          "AGENT_DEFAULT",
+          "TARGET_RESPONSIBILITY",
           "MANUAL",
           "CLAIM"
         ],

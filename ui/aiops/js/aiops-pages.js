@@ -663,7 +663,7 @@
     const success = drills.find((item) => item.status === "VERIFIED" && item.result === "PASS" && (rank[item.assurance_level] || 0) >= requiredRank) || null;
     state.className = `ops-badge ${profile ? "good" : "warn"}`;
     state.textContent = profile ? (profile.drill_required ? `目标 v${profile.version_no}` : "无需定期演练") : "目标未配置";
-    summary.innerHTML = `<dl class="ops-detail"><dt>当前 RPO</dt><dd>${profile ? `${profile.rpo_seconds / 60} 分钟` : "未配置"}</dd><dt>当前 RTO</dt><dd>${profile ? `${profile.rto_seconds / 60} 分钟` : "未配置"}</dd><dt>最新尝试</dt><dd>${latest ? `${shell.escape(latest.result)} · ${shell.escape(shell.fmt(latest.simulated_failure_at))}` : "无记录"}</dd><dt>最新审核成功</dt><dd>${success ? `${shell.escape(success.assurance_level)} · ${shell.escape(shell.fmt(success.simulated_failure_at))}` : "无记录"}</dd></dl>${latest && latest.result !== "PASS" && success ? '<p class="ops-connection-result" data-tone="bad">最新尝试未通过；下方旧成功记录仅作历史证据，不能掩盖本次失败。</p>' : ""}`;
+    summary.innerHTML = `<dl class="ops-detail"><dt>备份校验</dt><dd>${profile ? (profile.backup_policy_enabled ? `每 ${profile.backup_frequency_hours} 小时，${profile.backup_success_max_age_hours} 小时内须成功` : "未启用") : "未配置"}</dd><dt>备份保留</dt><dd>${profile ? `${profile.backup_retention_days} 天` : "未配置"}</dd><dt>当前 RPO</dt><dd>${profile ? `${profile.rpo_seconds / 60} 分钟` : "未配置"}</dd><dt>当前 RTO</dt><dd>${profile ? `${profile.rto_seconds / 60} 分钟` : "未配置"}</dd><dt>最新尝试</dt><dd>${latest ? `${shell.escape(latest.result)} · ${shell.escape(shell.fmt(latest.simulated_failure_at))}` : "无记录"}</dd><dt>最新审核成功</dt><dd>${success ? `${shell.escape(success.assurance_level)} · ${shell.escape(shell.fmt(success.simulated_failure_at))}` : "无记录"}</dd></dl>${latest && latest.result !== "PASS" && success ? '<p class="ops-connection-result" data-tone="bad">最新尝试未通过；下方旧成功记录仅作历史证据，不能掩盖本次失败。</p>' : ""}`;
   }
 
   const recoverySourcesByDatabase = {
@@ -672,10 +672,13 @@
     MYSQL: ["MYSQL_XTRABACKUP", "MYSQL_ENTERPRISE_BACKUP", "MYSQL_LOGICAL_DUMP", "FILESYSTEM_SNAPSHOT", "STORAGE_SNAPSHOT", "CLOUD_MANAGED_BACKUP", "THIRD_PARTY_BACKUP"],
   };
 
+  const recoveryField = (container, name) => container?.querySelector(`[name="${name}"]`);
+
   function configureRecoverySources(form, dbType, selected = []) {
     const values = recoverySourcesByDatabase[dbType] || [];
     const selectedValues = new Set(selected.length ? selected : values.slice(0, 1));
-    form.required_backup_source_types.innerHTML = values.map((value) => `<option value="${shell.escape(value)}" ${selectedValues.has(value) ? "selected" : ""}>${shell.escape(value)}</option>`).join("");
+    const sourceField = recoveryField(form, "required_backup_source_types");
+    if (sourceField) sourceField.innerHTML = values.map((value) => `<option value="${shell.escape(value)}" ${selectedValues.has(value) ? "selected" : ""}>${shell.escape(value)}</option>`).join("");
   }
 
   async function loadTargetRecovery(targetId, dbType, populateProfile = true) {
@@ -687,15 +690,38 @@
     renderRecoverySummary(profile, drills);
     if (profile && populateProfile) {
       const form = document.getElementById("target-recovery-profile-form");
-      form.rpo_minutes.value = profile.rpo_seconds / 60;
-      form.rto_minutes.value = profile.rto_seconds / 60;
-      form.drill_required.checked = Boolean(profile.drill_required);
-      form.required_drill_interval_days.value = profile.required_drill_interval_days;
-      form.required_assurance_level.value = profile.required_assurance_level;
+      recoveryField(form, "backup_policy_enabled").checked = Boolean(profile.backup_policy_enabled);
+      recoveryField(form, "backup_frequency_hours").value = profile.backup_frequency_hours;
+      recoveryField(form, "backup_success_max_age_hours").value = profile.backup_success_max_age_hours;
+      recoveryField(form, "backup_retention_days").value = profile.backup_retention_days;
+      recoveryField(form, "rpo_minutes").value = profile.rpo_seconds / 60;
+      recoveryField(form, "rto_minutes").value = profile.rto_seconds / 60;
+      recoveryField(form, "drill_required").checked = Boolean(profile.drill_required);
+      recoveryField(form, "required_drill_interval_days").value = profile.required_drill_interval_days;
+      recoveryField(form, "required_assurance_level").value = profile.required_assurance_level;
       configureRecoverySources(form, dbType, profile.required_backup_source_types || []);
-      form.source_note.value = profile.source_note || "";
+      recoveryField(form, "source_note").value = profile.source_note || "";
+      form.closest("form")?.dispatchEvent(new Event("change"));
     }
     return { profile, drills };
+  }
+
+  function syncRecoveryControls(profileForm) {
+    const drillDisabled = !recoveryField(profileForm, "drill_required").checked;
+    const backupDisabled = !recoveryField(profileForm, "backup_policy_enabled").checked;
+    recoveryField(profileForm, "required_drill_interval_days").disabled = drillDisabled;
+    recoveryField(profileForm, "required_assurance_level").disabled = drillDisabled;
+    recoveryField(profileForm, "backup_frequency_hours").disabled = backupDisabled;
+    recoveryField(profileForm, "backup_success_max_age_hours").disabled = backupDisabled;
+    recoveryField(profileForm, "backup_retention_days").disabled = backupDisabled;
+    recoveryField(profileForm, "required_backup_source_types").required = !backupDisabled || !drillDisabled;
+  }
+
+  function bindRecoveryControls(profileForm) {
+    const sync = () => syncRecoveryControls(profileForm);
+    recoveryField(profileForm, "drill_required").onchange = sync;
+    recoveryField(profileForm, "backup_policy_enabled").onchange = sync;
+    sync();
   }
 
   async function initializeTargetRecovery(targetId, target) {
@@ -710,31 +736,59 @@
     profileForm.dataset.targetId = targetId;
     profileForm.dataset.dbType = target.db_type;
     configureRecoverySources(profileForm, target.db_type);
-    const syncDrillRequirement = () => {
-      const disabled = !profileForm.drill_required.checked;
-      profileForm.required_drill_interval_days.disabled = disabled;
-      profileForm.required_assurance_level.disabled = disabled;
-      profileForm.required_backup_source_types.disabled = disabled;
-    };
-    profileForm.drill_required.onchange = syncDrillRequirement;
-    syncDrillRequirement();
-    if (profileForm.dataset.initialized !== "true") {
-      profileForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const result = document.getElementById("target-recovery-profile-result");
-        const currentTargetId = profileForm.dataset.targetId;
-        const currentDbType = profileForm.dataset.dbType;
-        try {
-          await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(currentTargetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify({ rpo_seconds: Number(profileForm.rpo_minutes.value) * 60, rto_seconds: Number(profileForm.rto_minutes.value) * 60, drill_required: profileForm.drill_required.checked, required_drill_interval_days: Number(profileForm.required_drill_interval_days.value), required_assurance_level: profileForm.required_assurance_level.value, required_backup_source_types: [...profileForm.required_backup_source_types.selectedOptions].map((option) => option.value), rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED", source_note: String(profileForm.source_note.value || "").trim() || null }) });
-          result.textContent = "已保存为新的生效版本。"; result.dataset.tone = "good";
-          await loadTargetRecovery(currentTargetId, currentDbType, true);
-          syncDrillRequirement();
-        } catch (error) { result.textContent = error.message; result.dataset.tone = "bad"; }
-      });
-      profileForm.dataset.initialized = "true";
-    }
+    bindRecoveryControls(profileForm);
     try { await loadTargetRecovery(targetId, target.db_type, true); }
     catch (error) { document.getElementById("target-recovery-summary").innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
+  }
+
+  async function saveTargetRecovery(targetId, dbType) {
+    const form = document.getElementById("target-recovery-profile-form");
+    const result = document.getElementById("target-recovery-profile-result");
+    const backupEnabled = recoveryField(form, "backup_policy_enabled").checked;
+    const drillRequired = recoveryField(form, "drill_required").checked;
+    const sources = [...recoveryField(form, "required_backup_source_types").selectedOptions].map((option) => option.value);
+    const frequency = Number(recoveryField(form, "backup_frequency_hours").value);
+    const maximumAge = Number(recoveryField(form, "backup_success_max_age_hours").value);
+    if ((backupEnabled || drillRequired) && !sources.length) throw new Error("启用备份策略或恢复演练时，请至少选择一个备份来源。");
+    if (backupEnabled && maximumAge < frequency) throw new Error("成功备份最大时效不能短于备份频率。");
+    const payload = {
+      backup_policy_enabled: backupEnabled,
+      backup_frequency_hours: frequency,
+      backup_success_max_age_hours: maximumAge,
+      backup_retention_days: Number(recoveryField(form, "backup_retention_days").value),
+      rpo_seconds: Number(recoveryField(form, "rpo_minutes").value) * 60,
+      rto_seconds: Number(recoveryField(form, "rto_minutes").value) * 60,
+      drill_required: drillRequired,
+      required_drill_interval_days: Number(recoveryField(form, "required_drill_interval_days").value),
+      required_assurance_level: recoveryField(form, "required_assurance_level").value,
+      required_backup_source_types: sources,
+      rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED",
+      source_note: String(recoveryField(form, "source_note").value || "").trim() || null,
+    };
+    await KBotAIOpsAuth.request(`${appApi}/targets/${encodeURIComponent(targetId)}/recovery-profile`, { method: "PUT", headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() }, body: JSON.stringify(payload) });
+    result.textContent = "备份与恢复策略已保存为新的生效版本。";
+    result.dataset.tone = "good";
+    await loadTargetRecovery(targetId, dbType, true);
+  }
+
+  function prepareTargetRecovery(dbType) {
+    const form = document.getElementById("target-recovery-profile-form");
+    if (!form) return;
+    recoveryField(form, "backup_policy_enabled").checked = true;
+    recoveryField(form, "backup_frequency_hours").value = 24;
+    recoveryField(form, "backup_success_max_age_hours").value = 26;
+    recoveryField(form, "backup_retention_days").value = 30;
+    recoveryField(form, "rpo_minutes").value = 60;
+    recoveryField(form, "rto_minutes").value = 240;
+    recoveryField(form, "drill_required").checked = true;
+    recoveryField(form, "required_drill_interval_days").value = 90;
+    recoveryField(form, "required_assurance_level").value = "DATABASE_OPEN";
+    recoveryField(form, "source_note").value = "";
+    configureRecoverySources(form, dbType);
+    bindRecoveryControls(form);
+    form.closest("form")?.dispatchEvent(new Event("change"));
+    document.getElementById("target-recovery-state").textContent = "尚未保存";
+    document.getElementById("target-recovery-summary").textContent = "创建 Target 后保存策略。";
   }
 
   const protectedReportSections = new Set(["EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"]);
@@ -1192,6 +1246,8 @@
   globalThis.KBotAIOpsPages = {
     initializeTargetFacts,
     initializeTargetRecovery,
+    prepareTargetRecovery,
+    saveTargetRecovery,
     reload() {
       const page = document.body.dataset.page;
       return configs[page] ? renderList(page) : Promise.resolve();

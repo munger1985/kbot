@@ -39,6 +39,13 @@
   const monitorHostSection = document.getElementById("target-monitor-editor-host-section");
   const monitorHostCandidates = document.getElementById("target-monitor-editor-host-candidates");
   const discoverMonitorLabels = document.getElementById("discover-target-monitor-editor-labels");
+  const wizardSteps = ["identity", "monitoring", "access", "recovery"];
+  const wizardButtons = [...document.querySelectorAll("[data-target-wizard-step]")];
+  const wizardPanels = [...document.querySelectorAll("[data-target-wizard-panel]")];
+  const wizardPrevious = document.getElementById("target-wizard-previous");
+  const wizardNext = document.getElementById("target-wizard-next");
+  const testConnectionButton = document.getElementById("test-target-connection");
+  let currentWizardStep = "identity";
   let editingTarget = null;
   let availableMonitorSources = [];
   let currentMonitorBindings = [];
@@ -50,6 +57,55 @@
     POSTGRESQL: ["16"],
   };
 
+  function setWizardStep(step) {
+    if (!wizardSteps.includes(step)) return;
+    currentWizardStep = step;
+    wizardPanels.forEach((panel) => { panel.hidden = panel.dataset.targetWizardPanel !== step; });
+    wizardButtons.forEach((button) => button.classList.toggle("active", button.dataset.targetWizardStep === step));
+    const index = wizardSteps.indexOf(step);
+    wizardPrevious.hidden = index === 0;
+    wizardNext.hidden = index === wizardSteps.length - 1;
+    wizardNext.textContent = index === 0 ? "继续：监控接入" : index === 1 ? "继续：数据库接入" : "继续：备份与恢复策略";
+    submit.hidden = index !== wizardSteps.length - 1;
+    testConnectionButton.hidden = step !== "access" || !readonlyEnabled.checked;
+    updateWizardStatuses();
+  }
+
+  function updateWizardStatuses() {
+    const states = {
+      identity: Boolean(form.elements.display_name.value.trim() && version.value && form.elements.responsibility_group_id.value),
+      monitoring: Boolean(currentMonitorBindings.some((item) => item.status === "ACTIVE") || monitorSource.value),
+      access: !readonlyEnabled.checked || Boolean(form.elements.host.value.trim() && port.value && (dbType.value === "ORACLE" ? service.value.trim() : database.value.trim())),
+      recovery: Boolean(document.querySelector('[name="required_backup_source_types"]')?.selectedOptions.length),
+    };
+    wizardButtons.forEach((button) => {
+      const complete = states[button.dataset.targetWizardStep];
+      const label = button.querySelector("em");
+      label.textContent = complete ? "已完成" : "待配置";
+      label.className = complete ? "good" : "";
+    });
+  }
+
+  function validateWizardStep(step) {
+    if (step === "monitoring") return monitorSelectionIsValid();
+    const panel = document.querySelector(`[data-target-wizard-panel="${step}"]`);
+    const invalid = panel?.querySelector(":invalid");
+    if (invalid) {
+      invalid.reportValidity();
+      return false;
+    }
+    return true;
+  }
+
+  function advanceWizard() {
+    if (!validateWizardStep(currentWizardStep)) return;
+    setWizardStep(wizardSteps[wizardSteps.indexOf(currentWizardStep) + 1]);
+  }
+
+  function retreatWizard() {
+    setWizardStep(wizardSteps[wizardSteps.indexOf(currentWizardStep) - 1]);
+  }
+
   async function ensureResponsibilityGroups() {
     if (!responsibilityGroupsLoaded) {
       const page = await KBotAIOpsAuth.request(`${api}/responsibility-groups`);
@@ -57,7 +113,7 @@
       responsibilityGroupsLoaded = true;
     }
     const select = document.getElementById("target-responsibility-group");
-    select.innerHTML = '<option value="">未分配责任组</option>' + responsibilityGroups
+    select.innerHTML = '<option value="">请选择责任组</option>' + responsibilityGroups
       .filter((group) => group.status === "ACTIVE")
       .map((group) => `<option value="${shell.escape(group.responsibility_group_id)}">${shell.escape(group.name)}</option>`)
       .join("");
@@ -88,6 +144,7 @@
         return `<div class="agent-switch-row"><span><strong>${shell.escape(source?.display_name || shell.short(binding.source_id))}</strong><small>${shell.escape(source?.source_type || "—")} · 数据库 <code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code> · 主机 <code>${shell.escape(hostKey || "未配置")}</code> · ${shell.escape(binding.status)}</small></span><span class="ops-actions"><button type="button" data-monitor-binding-action="${action}" data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">${actionLabel}</button><button type="button" class="danger" data-monitor-binding-delete data-binding-id="${shell.escape(binding.binding_id)}" data-row-version="${binding.row_version}">删除</button></span></div>`;
       }).join("")}</div>`
       : '<div class="ops-error">尚未绑定监控源；创建 Target 前必须选择监控源和 Label。</div>';
+    updateWizardStatuses();
   }
 
   function renderMonitorSourceOptions() {
@@ -369,7 +426,7 @@
     executionUsername.required = executionCredentialRequired;
     executionPassword.required = executionCredentialRequired;
     configureEndpoint(false);
-    document.getElementById("test-target-connection").hidden = !readonly;
+    testConnectionButton.hidden = currentWizardStep !== "access" || !readonly;
     accessSummary.textContent = changeEnabled.checked
       ? "允许受控变更"
       : readonly ? "只读直连" : "仅监控";
@@ -411,6 +468,8 @@
     document.getElementById("target-dialog-title").textContent = "新增运维目标";
     document.getElementById("target-advanced-editor").hidden = true;
     submit.textContent = "创建目标";
+    globalThis.KBotAIOpsPages.prepareTargetRecovery(dbType.value);
+    setWizardStep("identity");
     dialog.showModal();
     try {
       await loadMonitorEditor();
@@ -454,6 +513,7 @@
       document.getElementById("target-dialog-title").textContent = "编辑运维目标";
       submit.textContent = "保存修改";
       clearResult();
+      setWizardStep("identity");
       dialog.showModal();
       await loadMonitorEditor(target.target_id);
       document.getElementById("target-advanced-editor").hidden = false;
@@ -626,6 +686,7 @@
         editingTarget = created;
         baseSaved = true;
         await saveSelectedMonitorBinding(created);
+        await globalThis.KBotAIOpsPages.saveTargetRecovery(created.target_id, created.db_type);
       } else {
         let updated = editingTarget;
         const targetUrl = `${api}/targets/${encodeURIComponent(editingTarget.target_id)}`;
@@ -665,15 +726,16 @@
         editingTarget = updated;
         baseSaved = true;
         await saveSelectedMonitorBinding(updated);
+        await globalThis.KBotAIOpsPages.saveTargetRecovery(updated.target_id, updated.db_type);
       }
       dialog.close();
-      shell.toast(creating ? "运维目标及监控映射已创建" : "运维目标及监控映射已更新");
+      shell.toast(creating ? "运维目标四步配置已创建" : "运维目标四步配置已更新");
       editingTarget = null;
       await KBotAIOpsPages.reload();
     } catch (error) {
       result.dataset.tone = "bad";
       result.textContent = baseSaved
-        ? `Target 基本信息已保存，但监控映射或后续配置失败：${error.message}`
+        ? `Target 基本信息已保存，但监控映射或备份恢复策略失败：${error.message}`
         : versionSavedBeforeCredential
           ? `数据库版本已保存，但后续操作失败：${error.message}`
           : error.message;
@@ -690,9 +752,13 @@
     document.getElementById("close-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("cancel-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("test-target-connection").addEventListener("click", testConnection);
+    wizardNext.addEventListener("click", advanceWizard);
+    wizardPrevious.addEventListener("click", retreatWizard);
+    wizardButtons.forEach((button) => button.addEventListener("click", () => setWizardStep(button.dataset.targetWizardStep)));
     dbType.addEventListener("change", () => {
       configureEndpoint();
       configureMonitorSource();
+      if (!editingTarget) globalThis.KBotAIOpsPages.prepareTargetRecovery(dbType.value);
     });
     monitorSource.addEventListener("change", configureMonitorSource);
     discoverMonitorLabels.addEventListener("click", () => void discoverMonitorCandidates());
@@ -708,7 +774,8 @@
     oracleScope.addEventListener("change", () => configureEndpoint(false));
     readonlyEnabled.addEventListener("change", toggleAccessFields);
     changeEnabled.addEventListener("change", toggleAccessFields);
-    form.addEventListener("input", clearResult);
+    form.addEventListener("input", () => { clearResult(); updateWizardStatuses(); });
+    form.addEventListener("change", updateWizardStatuses);
     form.addEventListener("submit", saveTarget);
     const editTargetId = new URLSearchParams(location.search).get("edit");
     if (editTargetId) void openEdit(editTargetId);
