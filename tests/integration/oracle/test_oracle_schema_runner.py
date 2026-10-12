@@ -217,6 +217,22 @@ class PlatformFoundationMaintenanceTest(unittest.IsolatedAsyncioTestCase):
             "DELETE FROM KBOT_APP_ROLE_PERMISSION",
             foundation_sql,
         )
+        self.assertIn(
+            "RETIRED_APP_AUTHORIZATION_DISABLED",
+            foundation_sql,
+        )
+        self.assertIn(
+            "UPDATE KBOT_APP_MEMBER_ROLE SET STATUS = 'DISABLED'",
+            foundation_sql,
+        )
+        self.assertIn(
+            "UPDATE KBOT_APP_ROLE SET IS_SYSTEM = 'N'",
+            foundation_sql,
+        )
+        self.assertIn(
+            "UPDATE KBOT_PLATFORM_APP SET STATUS = 'DISABLED'",
+            foundation_sql,
+        )
         for permission_code in sorted(
             code
             for code in PLATFORM_FOUNDATION_PERMISSIONS

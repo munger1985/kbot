@@ -345,6 +345,8 @@ def main() -> int:
         "IS_SYSTEM = 'N'",
         "role_permission.APP_ID || ':member_manage'",
         "CUSTOM_ROLE_ADMIN_MEMBERS_MIGRATED",
+        "RETIRED_APP_AUTHORIZATION_DISABLED",
+        "WHERE APP_ID = 'assistant'",
     ):
         assert required in migration_sql, f"App 权限迁移缺少保护逻辑：{required}"
     for credential_token in (

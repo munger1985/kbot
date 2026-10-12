@@ -33,6 +33,7 @@ PLATFORM_FOUNDATION_SCRIPT = (
     / "platform_foundation.sql"
 )
 FOUNDATION_VALIDATION_EXIT_CODE = 3
+RETIRED_APP_IDS = ("assistant",)
 
 
 class FoundationValidationError(RuntimeError):
@@ -628,6 +629,74 @@ async def _repair_foundation_role_permissions(
     )
 
 
+async def _retire_legacy_app_authorization(
+    connection: AsyncConnection,
+) -> None:
+    """冻结已明确退役 App 的授权面，保留历史行供审计。"""
+    for app_id in RETIRED_APP_IDS:
+        await connection.execute(
+            text(
+                "INSERT INTO KBOT_ACCESS_AUDIT_EVENT ("
+                "EVENT_ID, ACTOR_ID, APP_ID, ACTION, RESOURCE_TYPE, "
+                "RESOURCE_ID, SUMMARY_JSON, AFFECTED_MEMBER_COUNT, CREATED_AT"
+                ") SELECT RAWTOHEX(SYS_GUID()), 'foundation-repair', :app_id, "
+                "'RETIRED_APP_AUTHORIZATION_DISABLED', 'PLATFORM_APP', "
+                ":app_id, '{\"authorization_disabled\":true}', "
+                "(SELECT COUNT(*) FROM KBOT_APP_MEMBER "
+                "WHERE APP_ID = :app_id AND STATUS = 'ACTIVE'), SYSTIMESTAMP "
+                "FROM DUAL WHERE EXISTS ("
+                "SELECT 1 FROM KBOT_PLATFORM_APP "
+                "WHERE APP_ID = :app_id AND STATUS = 'ACTIVE'"
+                ") OR EXISTS ("
+                "SELECT 1 FROM KBOT_APP_ROLE WHERE APP_ID = :app_id "
+                "AND (IS_SYSTEM = 'Y' OR STATUS = 'ACTIVE')"
+                ")"
+            ),
+            {"app_id": app_id},
+        )
+        await connection.execute(
+            text(
+                "UPDATE KBOT_APP_MEMBER_ROLE SET STATUS = 'DISABLED' "
+                "WHERE APP_ID = :app_id AND STATUS <> 'DISABLED'"
+            ),
+            {"app_id": app_id},
+        )
+        await connection.execute(
+            text(
+                "UPDATE KBOT_APP_MEMBER SET IS_INITIAL_ADMIN = 'N', "
+                "STATUS = 'DISABLED', UPDATED_AT = SYSTIMESTAMP "
+                "WHERE APP_ID = :app_id "
+                "AND (IS_INITIAL_ADMIN <> 'N' OR STATUS <> 'DISABLED')"
+            ),
+            {"app_id": app_id},
+        )
+        await connection.execute(
+            text(
+                "UPDATE KBOT_APP_DOMAIN SET STATUS = 'DISABLED' "
+                "WHERE APP_ID = :app_id AND STATUS <> 'DISABLED'"
+            ),
+            {"app_id": app_id},
+        )
+        await connection.execute(
+            text(
+                "UPDATE KBOT_APP_ROLE SET IS_SYSTEM = 'N', "
+                "STATUS = 'DISABLED', ROW_VERSION = ROW_VERSION + 1 "
+                "WHERE APP_ID = :app_id "
+                "AND (IS_SYSTEM <> 'N' OR STATUS <> 'DISABLED')"
+            ),
+            {"app_id": app_id},
+        )
+        await connection.execute(
+            text(
+                "UPDATE KBOT_PLATFORM_APP SET STATUS = 'DISABLED', "
+                "MEMBER_ASSIGNABLE = 'N', ROW_VERSION = ROW_VERSION + 1, "
+                "UPDATED_AT = SYSTIMESTAMP WHERE APP_ID = :app_id "
+                "AND (STATUS <> 'DISABLED' OR MEMBER_ASSIGNABLE <> 'N')"
+            ),
+            {"app_id": app_id},
+        )
+
+
 async def _apply_platform_foundation(
     connection: AsyncConnection,
 ) -> None:
@@ -672,6 +741,7 @@ async def _apply_platform_foundation(
     )
     for statement in statements:
         await connection.exec_driver_sql(statement)
+    await _retire_legacy_app_authorization(connection)
     await _repair_foundation_role_permissions(connection)
     await connection.commit()
 
