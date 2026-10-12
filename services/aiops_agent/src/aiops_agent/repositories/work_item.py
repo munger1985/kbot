@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, not_, or_, select
+from sqlalchemy import and_, case, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 

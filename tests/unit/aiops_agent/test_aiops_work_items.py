@@ -45,6 +45,9 @@ class _CapturedResult:
     def first(self):
         return None
 
+    def one(self):
+        return (0, 0, 0, 0, 0)
+
 
 class _CapturingSession:
     statement = None
@@ -371,6 +374,27 @@ class WorkItemContractTest(unittest.TestCase):
         sql = str(compiled).upper()
         self.assertIn("AGENT_ID", sql)
         self.assertIn(agent_id, compiled.params.values())
+
+    def test_queue_summary_compiles_conditional_aggregates(self):
+        session = _CapturingSession()
+        repository = WorkItemRepository(session)
+
+        summary = asyncio.run(repository.queue_summary(
+            domain_id=7,
+            actor_id="user:dba-1",
+            now=datetime(2026, 10, 12, tzinfo=UTC),
+            visibility="ALL",
+        ))
+
+        sql = str(session.statement.compile(dialect=oracle.dialect())).upper()
+        self.assertEqual(5, sql.count("CASE WHEN"))
+        self.assertEqual({
+            "my_open": 0,
+            "unassigned": 0,
+            "urgent": 0,
+            "overdue": 0,
+            "pending_verification": 0,
+        }, summary)
 
     def test_scope_visibility_follows_member_agent_current_version_and_target(self):
         actor_id = "user:dba-1"
