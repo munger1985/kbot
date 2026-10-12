@@ -205,16 +205,19 @@
     const picker = document.getElementById("monitoring-instance-picker");
     picker.hidden = renderGate();
     if (picker.hidden) return;
-    document.getElementById("monitoring-selection-count").textContent = state.selected.length ? "已选择" : "未选择";
-    const rows = filteredInstances().map((instance) => {
+    const instances = filteredInstances();
+    const count = document.getElementById("monitoring-selection-count");
+    count.classList.toggle("has-selection", Boolean(state.selected.length));
+    count.innerHTML = `<strong>${state.selected.length}</strong> / ${instances.length} ${state.selected.length ? "已选择" : "请选择"}`;
+    const cards = instances.map((instance) => {
       const selected = state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const quality = result ? instanceQuality(result) : selected ? "待查询" : "未选择";
       const qualityState = quality === "正常" ? "GOOD" : quality === "部分成功" ? "PARTIAL" : quality === "不可用" ? "UNAVAILABLE" : quality === "无有效采样" ? "NO_DATA" : "PARTIAL";
       const current = state.selected.length === 1 && selected;
-      return `<tr class="${selected ? "is-selected" : ""}"><td><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}></td><td><strong>${esc(instance.display_name)}</strong><small>${esc(instance.db_type)} · ${esc(instance.instance_id.slice(0, 8))}</small></td><td>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></td><td>${badge(qualityState, quality)}</td><td>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</td><td><button type="button" data-drill-instance="${esc(instance.instance_id)}" ${current ? "disabled" : ""}>${current ? "当前实例" : "选择此实例"}</button></td></tr>`;
+      return `<label class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span class="ops-monitoring-instance-copy"><span><strong>${esc(instance.display_name)}</strong><em>${esc(instance.db_type)}</em></span><small>${esc(instance.instance_id.slice(0, 8))}</small></span><span class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}</span><span class="ops-monitoring-instance-meta"><span><small>接入状态</small><span>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></span></span><span><small>查询状态</small>${badge(qualityState, quality)}</span><span><small>最新采样</small><time>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</time></span></span></label>`;
     }).join("");
-    document.getElementById("monitoring-instance-list").innerHTML = rows || '<tr><td colspan="6" class="ops-empty">当前筛选条件下没有数据库实例。</td></tr>';
+    document.getElementById("monitoring-instance-list").innerHTML = cards || '<div class="ops-empty">当前筛选条件下没有数据库实例。</div>';
     renderFreshness();
   }
   function scheduleView() {
@@ -648,7 +651,6 @@
     if (!input?.checked) return;
     void selectInstance(input.dataset.instanceId);
   };
-  document.getElementById("monitoring-instance-list").onclick = (event) => { const button = event.target.closest("[data-drill-instance]"); if (button && !button.disabled) drillInto(button.dataset.drillInstance); };
   document.getElementById("monitoring-panels").onclick = (event) => {
     const button = event.target.closest("[data-panel-id]");
     if (!button) return;
