@@ -85,8 +85,8 @@ PYTHONPATH=packages/platform_core/src \
    若清理后角色不含 App `use` 权限，迁移拒绝猜测并整体回滚。
 7. 脚本可重复执行，不修改账号、密码、API Key 或业务数据。
 
-已从产品注册表退役的 App 不得冒充新三层角色。启动检查只报告漂移，不自动改库；
-退役 App 必须由 Schema Owner 执行明确的受控清理脚本。
+已从产品注册表退役的 App 不得冒充新三层角色。权限漂移由独立审计命令报告，
+不纳入服务启动链路；退役 App 必须由 Schema Owner 执行明确的受控清理脚本。
 
 迁移后再次运行只读审计，所有 `findings.item_count` 应为 `0`，三个系统角色的
 `missing_permissions` 和 `excess_permissions` 均应为空。

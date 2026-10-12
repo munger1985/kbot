@@ -134,11 +134,9 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         self.assertTrue(
             (SCRIPTS_ROOT / "deployment" / "run_service.sh").is_file()
         )
-        self.assertIn("--check-foundation", startup)
+        self.assertNotIn("--check-foundation", startup)
         self.assertNotIn("--foundation-only", startup)
         self.assertNotIn('dev:3|development:3|debug:3)', startup)
-        self.assertIn('FOUNDATION_CHECK_STATUS" -eq 0', startup)
-        self.assertIn("这不代表系统未初始化", startup)
         self.assertIn("main_api/runtime.log", startup)
         self.assertIn('conda_env_exists "kbot4"', startup)
         self.assertNotIn('conda_env_exists "kbot3"', startup)

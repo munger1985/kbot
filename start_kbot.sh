@@ -131,43 +131,6 @@ SOURCE_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')
 append_startup_log "INFO" \
     "内部包预检通过：mode=${PACKAGE_INSTALL_MODE} commit=${SOURCE_COMMIT} python=$(command -v python) agent_runtime=${AGENT_RUNTIME_ORIGIN}"
 
-FOUNDATION_ACTION="只读校验"
-FOUNDATION_CHECK_OUTPUT=$(
-    python scripts/db/apply_oracle_schema.py --check-foundation 2>&1
-)
-FOUNDATION_CHECK_STATUS=$?
-if [ -n "$FOUNDATION_CHECK_OUTPUT" ]; then
-    printf '%s\n' "$FOUNDATION_CHECK_OUTPUT"
-    while IFS= read -r output_line; do
-        if [ "$FOUNDATION_CHECK_STATUS" -eq 0 ]; then
-            append_startup_log "INFO" \
-                "平台基础数据${FOUNDATION_ACTION}：${output_line}"
-        else
-            append_startup_log "ERROR" \
-                "平台基础数据${FOUNDATION_ACTION}：${output_line}"
-        fi
-    done <<< "$FOUNDATION_CHECK_OUTPUT"
-fi
-
-case "$FOUNDATION_CHECK_STATUS" in
-    0)
-        ;;
-    3)
-        echo "❌ 平台基础数据校验未通过，未启动任何服务。"
-        echo "   请根据上方 PDB、Schema 和具体漂移项执行对应的受控 SQL 后重试。"
-        append_startup_log "ERROR" "平台基础数据不完整，启动已终止"
-        exit 1
-        ;;
-    *)
-        echo "❌ 平台基础数据${FOUNDATION_ACTION}失败，未启动任何服务。"
-        echo "   这不代表系统未初始化；请检查数据库连通性、部署配置和 Conda 环境。"
-        echo "   完整输出已记录：${STARTUP_LOG_FILE}"
-        append_startup_log "ERROR" \
-            "预检执行异常，退出码=${FOUNDATION_CHECK_STATUS}，启动已终止"
-        exit 1
-        ;;
-esac
-
 # UI 测试服务器开关：开发环境默认开启，其他环境强制关闭。
 ENVIRONMENT="${ENVIRONMENT:-$CONFIG_ENVIRONMENT}"
 ENVIRONMENT="${ENVIRONMENT,,}"
