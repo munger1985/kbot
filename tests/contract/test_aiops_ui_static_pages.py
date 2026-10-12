@@ -208,6 +208,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("选择队列可快速聚焦需要立即处理的事项", page)
         self.assertIn('aria-pressed="${queueIsActive(filter)}"', script)
         self.assertIn("等待责任组内 DBA 领取", script)
+        self.assertIn(".ops-work-item-filters>div{grid-column:-2/-1}", (
+            AIOPS_ROOT / "css" / "aiops.css"
+        ).read_text(encoding="utf-8"))
         self.assertIn('name="agent_id"', page)
         self.assertIn("责任组内全部 Agent", page)
         self.assertIn("事实与发生记录", detail)
