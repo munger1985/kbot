@@ -100,21 +100,34 @@ from .types import (
 
 
 
+class InspectionRunSummary(AIOpsContract):
+    """一次巡检批次中单个运维目标的执行摘要。"""
+
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    run_id: UUIDv7
+    target_id: UUIDv7
+    status: OpsRunStatus
+    error_code: str | None = None
+    error_message: str | None = None
+    completed_at: UtcDatetime | None = None
+
+
 class InspectionFireSummary(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     fire_id: UUIDv7
     plan_id: UUIDv7
+    plan_display_name: str = Field(min_length=1, max_length=256)
     scheduled_at: UtcDatetime
     status: str
     target_count: int = Field(ge=0)
     completed_count: int = Field(ge=0)
     failed_count: int = Field(ge=0)
+    completed_at: UtcDatetime | None = None
 
 
 class InspectionFireView(InspectionFireSummary):
-    run_ids: tuple[UUIDv7, ...] = ()
+    runs: tuple[InspectionRunSummary, ...] = ()
     created_at: UtcDatetime
-    completed_at: UtcDatetime | None = None
 
 
 class InspectionFirePage(CursorPage):

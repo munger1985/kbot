@@ -1853,26 +1853,52 @@
 
   async function showInspection(item) {
     const detail = await KBotAIOpsAuth.request(`${api}/inspection-fires/${encodeURIComponent(item.fire_id)}`);
-    document.getElementById("case-title").textContent = `巡检 ${shell.fmt(detail.scheduled_at)}`;
+    document.getElementById("case-title").textContent = detail.plan_display_name || `巡检 ${shell.fmt(detail.scheduled_at)}`;
     const panel = document.getElementById("case-detail");
-    const runId = detail.run_ids[0];
-    let run = null; let result = null;
-    if (runId) { run = await KBotAIOpsAuth.request(`${api}/runs/${runId}`); result = await KBotAIOpsAuth.request(`${api}/runs/${runId}/result`); }
-    const source = run ? { target_id: run.target_id, source_run_id: run.ops_run_id } : null;
-    const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
-      ? ""
-      : reportAction({ runId: run?.ops_run_id, sourceKind: "INSPECTION", periodKind: "DAILY" });
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${detail.completed_count}/${detail.target_count} 个目标完成 · ${detail.failed_count} 个失败</div>${result ? `<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}` : '<div class="ops-empty">本次巡检尚未形成可展示结果。</div>'}`;
-    if (source) await bindContinue(source);
-    bindReportActions(panel);
-    bindReportArtifactActions(panel);
-    bindImplementationRunbookActions(panel);
+    const runs = detail.runs || [];
+    const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
+    const runSelector = runs.length > 1
+      ? `<div class="inspection-run-selector">${runs.map((run, index) => `<button type="button" data-inspection-run="${esc(run.run_id)}" aria-pressed="${index === 0}"><strong>${esc(targetNames.get(String(run.target_id)) || shell.short(run.target_id))}</strong>${shell.badge(run.status)}</button>`).join("")}</div>`
+      : "";
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${esc(detail.completed_count)}/${esc(detail.target_count)} 个目标完成 · ${esc(detail.failed_count)} 个失败</div>${runSelector}<div id="inspection-run-report"><div class="ops-empty">正在读取巡检报告…</div></div>`;
+    const reportPanel = document.getElementById("inspection-run-report");
+    const renderRun = async (runSummary) => {
+      panel.querySelectorAll("[data-inspection-run]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.inspectionRun === String(runSummary.run_id)));
+      });
+      let run = null; let result = null;
+      try {
+        run = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runSummary.run_id)}`);
+        result = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runSummary.run_id)}/result`);
+      } catch (error) {
+        reportPanel.innerHTML = `<div class="ops-empty">${esc(runSummary.error_message || error.message || "本次巡检尚未形成可展示结果")}</div>`;
+        return;
+      }
+      const source = { target_id: run.target_id, source_run_id: run.ops_run_id };
+      const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
+        ? ""
+        : reportAction({ runId: run.ops_run_id, sourceKind: "INSPECTION", periodKind: "DAILY" });
+      reportPanel.innerHTML = `<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}`;
+      await bindContinue(source);
+      bindReportActions(reportPanel);
+      bindReportArtifactActions(reportPanel);
+      bindImplementationRunbookActions(reportPanel);
+    };
+    panel.querySelectorAll("[data-inspection-run]").forEach((button) => {
+      button.onclick = () => {
+        const run = runs.find((candidate) => String(candidate.run_id) === button.dataset.inspectionRun);
+        if (run) renderRun(run).catch((error) => shell.toast(error.message));
+      };
+    });
+    if (runs[0]) await renderRun(runs[0]);
+    else reportPanel.innerHTML = '<div class="ops-empty">本次巡检没有生成目标运行记录。</div>';
   }
 
   async function initCases(page) {
     await agents();
     const requested = new URLSearchParams(location.search);
     const requestedTargetId = requested.get("target_id");
+    const requestedPlanId = page === "inspections" ? requested.get("plan_id") : "";
     const requestedSituationId = page === "situations" ? requested.get("situation") : "";
     state.caseTargets = page === "situations"
       ? values((await KBotAIOpsAuth.request(`${api}/targets?limit=200`))?.items)
@@ -1890,6 +1916,7 @@
       window.clearTimeout(situationRefreshTimer);
       const endpoint = page === "situations" ? "/situations" : "/inspection-fires";
       const query = new URLSearchParams({ limit: "100" });
+      if (requestedPlanId) query.set("plan_id", requestedPlanId);
       if (filters) {
         for (const name of ["agent_id", "severity", "target_id"]) {
           if (filters.elements[name].value) query.set(name, filters.elements[name].value);
@@ -1897,8 +1924,15 @@
       }
       const payload = await KBotAIOpsAuth.request(`${api}${endpoint}?${query}`);
       const rows = payload.items || [];
+      if (page === "inspections") {
+        const setCount = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = String(value); };
+        setCount("inspection-total", rows.length);
+        setCount("inspection-running", rows.filter((item) => ["QUEUED", "RUNNING"].includes(item.status)).length);
+        setCount("inspection-attention", rows.filter((item) => ["PARTIAL", "FAILED"].includes(item.status)).length);
+        setCount("inspection-completed", rows.filter((item) => item.status === "COMPLETED").length);
+      }
       const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
-      list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-case-row" data-id="${esc(item.situation_id || item.fire_id)}"><strong>${esc(item.title || `巡检 ${shell.fmt(item.scheduled_at)}`)}</strong>${shell.badge(item.severity || item.status)}<p>${esc(item.summary || targetNames.get(String(item.target_id)) || `${item.completed_count || 0}/${item.target_count || 0} 个目标已完成`)}</p></button>`).join("") : '<div class="ops-empty">当前筛选范围内暂无记录</div>';
+      list.innerHTML = rows.length ? rows.map((item) => `<button class="ops-case-row" data-id="${esc(item.situation_id || item.fire_id)}"><strong>${esc(item.title || item.plan_display_name || `巡检 ${shell.fmt(item.scheduled_at)}`)}</strong>${shell.badge(item.severity || item.status)}<p>${esc(item.summary || targetNames.get(String(item.target_id)) || `${item.completed_count || 0}/${item.target_count || 0} 个目标已完成`)}</p></button>`).join("") : '<div class="ops-empty">当前筛选范围内暂无记录</div>';
       list.querySelectorAll("button").forEach((button, index) => { button.onclick = () => (page === "situations" ? showSituation(rows[index]) : showInspection(rows[index])).catch((error) => shell.toast(error.message)); });
       const selected = page === "situations" && requestedSituationId
         ? rows.find((item) => String(item.situation_id) === requestedSituationId) || rows[0]

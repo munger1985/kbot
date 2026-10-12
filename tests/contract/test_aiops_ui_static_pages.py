@@ -362,13 +362,18 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         stylesheet = (AIOPS_ROOT / "css" / "workspaces.css").read_text(
             encoding="utf-8"
         )
-        for page_name in ("chat", "situations", "inspections"):
+        versions = {
+            "chat": "20261011_1",
+            "situations": "20261011_1",
+            "inspections": "20261012_1",
+        }
+        for page_name, version in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
                 encoding="utf-8"
             )
             self.assertIn("workspaces.css?v=20261008_2", page)
-            self.assertIn("aiops-shell.js?v=20261011_1", page)
-            self.assertIn("aiops-workspaces.js?v=20261011_1", page)
+            self.assertIn(f"aiops-shell.js?v={version}", page)
+            self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
         self.assertIn(".ops-chart-warning", stylesheet)
@@ -1036,12 +1041,25 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         situations = (AIOPS_ROOT / "situations.html").read_text(
             encoding="utf-8"
         )
+        inspections = (AIOPS_ROOT / "inspections.html").read_text(
+            encoding="utf-8"
+        )
+        plans = (AIOPS_ROOT / "inspection-plans.html").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('["chat", "智能运维"]', shell)
         self.assertIn('["situations", "告警诊断"]', shell)
         self.assertIn('["inspections", "日常巡检"]', shell)
+        self.assertNotIn('["inspection-plans", "巡检计划"]', shell)
         self.assertNotIn('["runs", "诊断运行"]', shell)
         self.assertIn('["reports", "报告中心"]', shell)
         self.assertIn('["report-templates", "模板管理"]', shell)
+        self.assertIn('aria-label="日常巡检视图"', inspections)
+        self.assertIn('data-plan-manage hidden', inspections)
+        self.assertIn('aria-current="page" href="./inspection-plans.html"', plans)
+        self.assertIn("plan_display_name", workspace)
+        self.assertIn("detail.runs || []", workspace)
+        self.assertIn("inspection-run-selector", workspace)
         business_workspace = shell.split('["资源配置"', 1)[0]
         self.assertNotIn('["report-templates", "模板管理"]', business_workspace)
         self.assertIn("source_run_id", workspace)

@@ -22,7 +22,7 @@
     ["资源配置", [
       ["diagnostic-sources", "监控源"], ["targets", "运维目标"], ["responsibility-groups", "责任组"],
       ["operations-knowledge", "运维知识库"], ["agents", "AIOps Agent"],
-      ["inspection-plans", "巡检计划"], ["report-templates", "模板管理"],
+      ["report-templates", "模板管理"],
       ["api-clients", "API 客户端"],
     ]],
   ];
@@ -56,11 +56,12 @@
   }
   function shellMarkup(access) {
     const current = document.body.dataset.page;
+    const currentNavigation = current === "inspection-plans" ? "inspections" : current;
     const permissions = new Set(access.permissions || []);
     const navigation = sections.map(([name, pages]) => {
       const visible = pages.filter(([id]) => permissions.has(pagePermissions[id]));
       if (!visible.length) return "";
-      return `<div class="ops-nav-label">${name}</div><nav class="ops-nav">${visible.map(([id, label]) => `<a href="./${id}.html" ${id === current ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+      return `<div class="ops-nav-label">${name}</div><nav class="ops-nav">${visible.map(([id, label]) => `<a href="./${id}.html" ${id === currentNavigation ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
     }).join("");
     return `<aside class="ops-sidebar"><a class="ops-brand" href="./dashboard.html"><span class="ops-brand-mark">AI</span><span><strong>Operations Desk</strong><small>KBot AIOps 4.0</small></span></a>${navigation}</aside><header class="ops-topbar"><div><small>当前工作域</small> <strong>KBot AIOps</strong></div><div class="ops-session"><span id="ops-domain">Domain —</span><span id="ops-user">验证用户中…</span><button id="ops-logout">退出登录</button></div></header>`;
   }
@@ -84,6 +85,10 @@
       };
       document.getElementById("ops-domain").textContent = `Domain ${access.domain_id}`;
       document.getElementById("ops-user").textContent = access.user_id;
+      const permissions = new Set(access.permissions || []);
+      document.querySelectorAll("[data-plan-manage]").forEach((element) => {
+        element.hidden = !permissions.has("aiops:plan_manage");
+      });
       return access;
     } catch (error) {
       toast(error.message);

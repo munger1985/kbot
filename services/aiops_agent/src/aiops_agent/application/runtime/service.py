@@ -156,6 +156,7 @@ from platform_core.contracts.aiops.public import (
     HitlResponse,
     HitlResult,
     InspectionFirePage,
+    InspectionRunSummary,
     InspectionFireSummary,
     InspectionFireView,
     OpsRunResult,
@@ -6417,9 +6418,18 @@ class AIOpsRuntimeService:
             summary = self._fire_summary(fire)
             return InspectionFireView(
                 **summary.model_dump(),
-                run_ids=tuple(item.ops_run_id for item in runs),
+                runs=tuple(
+                    InspectionRunSummary(
+                        run_id=item.ops_run_id,
+                        target_id=item.target_id,
+                        status=item.status,
+                        error_code=item.error_code,
+                        error_message=item.error_message,
+                        completed_at=item.completed_at,
+                    )
+                    for item in runs
+                ),
                 created_at=fire.created_at,
-                completed_at=fire.completed_at,
             )
 
     async def list_reports(
@@ -7456,14 +7466,19 @@ class AIOpsRuntimeService:
 
     @staticmethod
     def _fire_summary(fire) -> InspectionFireSummary:
+        snapshot = dict(fire.plan_snapshot_json or {})
         return InspectionFireSummary(
             fire_id=fire.inspection_fire_id,
             plan_id=fire.inspection_plan_id,
+            plan_display_name=str(
+                snapshot.get("display_name") or "未命名巡检计划"
+            ),
             scheduled_at=fire.scheduled_for,
             status=fire.status,
             target_count=int(fire.target_count),
             completed_count=int(fire.completed_count),
             failed_count=int(fire.failed_count),
+            completed_at=fire.completed_at,
         )
 
     @staticmethod

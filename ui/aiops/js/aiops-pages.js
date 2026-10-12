@@ -7,7 +7,7 @@
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]] },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
-    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["timezone", "时区"], ["status", "状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "inspection-actions"]] },
+    "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["status", "状态", "badge"], ["_latest_fire", "最近执行", "latest-inspection"], ["next_run_at", "下次执行", "date"], ["_actions", "操作", "inspection-actions"]] },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
@@ -58,7 +58,14 @@
           : item.status === "DISABLED"
             ? '<button type="button" class="primary" data-inspection-action="activate">启用</button><button type="button" class="danger" data-inspection-action="delete">删除</button>'
             : "";
-      return `<div class="ops-actions"><button type="button" data-inspection-action="detail">详情</button><button type="button" data-inspection-action="edit">编辑</button>${lifecycle}</div>`;
+      const report = item._latest_fire ? '<button type="button" data-inspection-action="reports">查看报告</button>' : "";
+      return `<div class="ops-actions">${report}<button type="button" data-inspection-action="detail">详情</button><button type="button" data-inspection-action="edit">编辑</button>${lifecycle}</div>`;
+    }
+    if (type === "latest-inspection") {
+      const latest = item._latest_fire;
+      return latest
+        ? `${shell.badge(latest.status)}<small>${shell.escape(shell.fmt(latest.scheduled_at))}</small>`
+        : '<span class="ops-badge">尚未执行</span>';
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {
       return shell.badge("检查中");
@@ -284,14 +291,19 @@
     const body = document.getElementById("ops-table-body");
     head.innerHTML = `<tr>${cfg.cols.map((col) => `<th>${col[1]}</th>`).join("")}</tr>`;
     try {
-      const [payload, agentRows] = await Promise.all([
+      const [payload, agentRows, firePage] = await Promise.all([
         KBotAIOpsAuth.request(appApi + cfg.path),
         page === "inspection-plans" ? KBotAIOpsAuth.request(`${appApi}/agents`) : Promise.resolve([]),
+        page === "inspection-plans" ? KBotAIOpsAuth.request(`${appApi}/inspection-fires?limit=100`) : Promise.resolve({ items: [] }),
       ]);
       const agentNames = new Map((Array.isArray(agentRows) ? agentRows : []).map((agent) => [String(agent.agent_id), agent.display_name]));
+      const latestFires = new Map();
+      for (const fire of firePage?.items || []) {
+        if (!latestFires.has(String(fire.plan_id))) latestFires.set(String(fire.plan_id), fire);
+      }
       const sourceItems = Array.isArray(payload) ? payload : payload?.items || [];
       const items = page === "inspection-plans"
-        ? sourceItems.map((item) => ({ ...item, agent_name: agentNames.get(String(item.agent_id)) || shell.short(item.agent_id) }))
+        ? sourceItems.map((item) => ({ ...item, agent_name: agentNames.get(String(item.agent_id)) || shell.short(item.agent_id), _latest_fire: latestFires.get(String(item.plan_id)) || null }))
         : sourceItems;
       if (!items.length) {
         body.innerHTML = `<tr><td class="ops-empty" colspan="${cfg.cols.length}">当前范围内暂无数据</td></tr>`;
@@ -348,6 +360,10 @@
             const item = items.find((candidate) => String(candidate.plan_id) === row.dataset.resourceId);
             if (!item) return;
             const action = button.dataset.inspectionAction;
+            if (action === "reports") {
+              location.href = `inspections.html?plan_id=${encodeURIComponent(item.plan_id)}`;
+              return;
+            }
             if (action === "detail") {
               location.href = `inspection-plan-detail.html?id=${encodeURIComponent(item.plan_id)}`;
               return;

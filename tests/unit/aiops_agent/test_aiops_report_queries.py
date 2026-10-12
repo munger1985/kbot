@@ -217,13 +217,14 @@ class ReportQueryTest(unittest.TestCase):
 
 
 class InspectionFireQueryTest(unittest.TestCase):
-    def test_fire_detail_returns_only_linked_run_ids(self) -> None:
+    def test_fire_detail_returns_plan_name_and_linked_run_summaries(self) -> None:
         fire_id = uuid7()
         plan_id = uuid7()
         now = datetime(2026, 7, 24, tzinfo=UTC)
         fire = SimpleNamespace(
             inspection_fire_id=fire_id,
             inspection_plan_id=plan_id,
+            plan_snapshot_json={"display_name": "生产数据库每日巡检"},
             scheduled_for=now,
             status="PARTIAL",
             target_count=2,
@@ -233,11 +234,22 @@ class InspectionFireQueryTest(unittest.TestCase):
             completed_at=now + timedelta(minutes=3),
         )
         run_ids = (uuid7(), uuid7())
+        target_ids = (uuid7(), uuid7())
         inspections = SimpleNamespace(
             get_fire_scoped=AsyncMock(return_value=fire),
             list_runs_for_fire=AsyncMock(
                 return_value=[
-                    SimpleNamespace(ops_run_id=item) for item in run_ids
+                    SimpleNamespace(
+                        ops_run_id=run_id,
+                        target_id=target_id,
+                        status="COMPLETED" if index == 0 else "FAILED",
+                        error_code=None if index == 0 else "INSPECTION_FAILED",
+                        error_message=None if index == 0 else "巡检失败",
+                        completed_at=now + timedelta(minutes=index + 1),
+                    )
+                    for index, (run_id, target_id) in enumerate(
+                        zip(run_ids, target_ids, strict=True)
+                    )
                 ]
             ),
         )
@@ -255,7 +267,9 @@ class InspectionFireQueryTest(unittest.TestCase):
             )
         )
         self.assertEqual(result.plan_id, plan_id)
-        self.assertEqual(result.run_ids, run_ids)
+        self.assertEqual(result.plan_display_name, "生产数据库每日巡检")
+        self.assertEqual(tuple(item.run_id for item in result.runs), run_ids)
+        self.assertEqual(tuple(item.target_id for item in result.runs), target_ids)
         scoped = inspections.get_fire_scoped.await_args.kwargs
         self.assertEqual(scoped["domain_id"], 200)
 

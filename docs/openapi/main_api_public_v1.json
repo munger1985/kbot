@@ -5961,6 +5961,18 @@
       "InspectionFireSummary": {
         "additionalProperties": false,
         "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
           "completed_count": {
             "minimum": 0.0,
             "title": "Completed Count",
@@ -5974,6 +5986,12 @@
           "fire_id": {
             "format": "uuid",
             "title": "Fire Id",
+            "type": "string"
+          },
+          "plan_display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Plan Display Name",
             "type": "string"
           },
           "plan_id": {
@@ -6004,6 +6022,7 @@
         "required": [
           "fire_id",
           "plan_id",
+          "plan_display_name",
           "scheduled_at",
           "status",
           "target_count",
@@ -6048,18 +6067,23 @@
             "title": "Fire Id",
             "type": "string"
           },
+          "plan_display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Plan Display Name",
+            "type": "string"
+          },
           "plan_id": {
             "format": "uuid",
             "title": "Plan Id",
             "type": "string"
           },
-          "run_ids": {
+          "runs": {
             "default": [],
             "items": {
-              "format": "uuid",
-              "type": "string"
+              "$ref": "#/components/schemas/InspectionRunSummary"
             },
-            "title": "Run Ids",
+            "title": "Runs",
             "type": "array"
           },
           "scheduled_at": {
@@ -6085,6 +6109,7 @@
         "required": [
           "fire_id",
           "plan_id",
+          "plan_display_name",
           "scheduled_at",
           "status",
           "target_count",
@@ -6554,6 +6579,71 @@
           "updated_at"
         ],
         "title": "InspectionPlanSummary",
+        "type": "object"
+      },
+      "InspectionRunSummary": {
+        "additionalProperties": false,
+        "description": "一次巡检批次中单个运维目标的执行摘要。",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "target_id",
+          "status"
+        ],
+        "title": "InspectionRunSummary",
         "type": "object"
       },
       "InspectionTemplateCreatePayload": {

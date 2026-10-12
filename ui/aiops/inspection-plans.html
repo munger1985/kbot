@@ -3,7 +3,8 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>巡检计划</title><link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
 <body data-page="inspection-plans">
   <main class="ops-main">
-    <header class="ops-head"><div><h1>巡检计划</h1><p>选择一名 DBA Agent，按计划对其负责的全部 Target 执行巡检。</p></div><button id="create-inspection-plan" class="primary" type="button" data-write-ready>新增计划</button></header>
+    <header class="ops-head"><div><h1>日常巡检</h1><p>配置巡检计划，并从计划回看已经形成的巡检报告。</p></div><button id="create-inspection-plan" class="primary" type="button" data-write-ready>新增计划</button></header>
+    <nav class="inspection-tabs" aria-label="日常巡检视图"><a href="./inspections.html">巡检报告</a><a aria-current="page" href="./inspection-plans.html">巡检计划</a></nav>
     <section class="ops-panel"><div class="ops-table-wrap"><table class="ops-table"><thead id="ops-table-head"></thead><tbody id="ops-table-body"></tbody></table></div></section>
   </main>
   <dialog id="inspection-plan-dialog" class="ops-dialog inspection-plan-dialog">
