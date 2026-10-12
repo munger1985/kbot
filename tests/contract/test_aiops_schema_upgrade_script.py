@@ -7,6 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_39.sql"
 RECOVERY_POLICY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_40.sql"
+TARGET_RESPONSIBILITY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_41.sql"
 
 
 class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
@@ -51,6 +52,31 @@ class AIOpsRecoveryPolicyUpgradeScriptTest(unittest.TestCase):
         required_at = self.upper.index("MODIFY DRILL_REQUIRED NOT NULL")
         self.assertLess(add_at, update_at)
         self.assertLess(update_at, required_at)
+
+
+class AIOpsTargetResponsibilityUpgradeScriptTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.upper = TARGET_RESPONSIBILITY_SCRIPT.read_text(
+            encoding="utf-8"
+        ).upper()
+
+    def test_upgrade_is_guarded_and_migrates_before_dropping_agent_field(self) -> None:
+        self.assertIn("L_SCHEMA_VERSION <> 40", self.upper)
+        self.assertIn("AIOPS-ORACLE-V30", self.upper)
+        self.assertIn("41 AS SCHEMA_VERSION", self.upper)
+        self.assertIn("AIOPS-ORACLE-V31", self.upper)
+        conflict_at = self.upper.index("L_CONFLICT_COUNT")
+        add_at = self.upper.index("ADD RESPONSIBILITY_GROUP_ID RAW(16)")
+        inherit_at = self.upper.index("RAWTOHEX(AGENT.DEFAULT_RESPONSIBILITY_GROUP_ID)")
+        drop_at = self.upper.index(
+            "KBOT_OPS_AGENT DROP COLUMN DEFAULT_RESPONSIBILITY_GROUP_ID"
+        )
+        self.assertLess(conflict_at, add_at)
+        self.assertLess(add_at, inherit_at)
+        self.assertLess(inherit_at, drop_at)
+        self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)
+        self.assertNotIn("TRUNCATE TABLE KBOT_OPS_", self.upper)
 
 
 if __name__ == "__main__":

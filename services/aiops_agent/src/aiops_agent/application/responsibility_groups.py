@@ -185,17 +185,13 @@ class ResponsibilityGroupService:
         return await self.get_group(group_id=group_id, scope=scope)
 
     async def _summary(self, uow, group) -> ResponsibilityGroupSummary:
-        agent_count, target_count, unassigned_count = (
-            await uow.work_items.group_routing_counts(
-                group_id=group.responsibility_group_id
-            )
+        target_count = await uow.work_items.target_binding_count(
+            group_id=group.responsibility_group_id
         )
         return ResponsibilityGroupSummary(
             responsibility_group_id=group.responsibility_group_id, name=group.name,
             description=group.description, status=group.status, lead_user_id=group.lead_user_id,
             active_member_count=await uow.work_items.active_member_count(group_id=group.responsibility_group_id),
-            agent_binding_count=agent_count,
             target_binding_count=target_count,
-            unassigned_work_item_count=unassigned_count,
             row_version=int(group.row_version), created_at=_utc(group.created_at), updated_at=_utc(group.updated_at),
         )

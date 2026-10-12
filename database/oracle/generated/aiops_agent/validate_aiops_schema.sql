@@ -241,7 +241,6 @@ BEGIN
             'IX_OPS_ACTIVITY_SCOPE_TIME',
             'IX_OPS_ACTIVITY_TARGET',
             'IX_OPS_AGENT_CURRENT_VERSION',
-            'IX_OPS_AGENT_RESP_GROUP',
             'IX_OPS_AGENT_SCOPE_STATUS',
             'IX_OPS_AGENT_VERSION_AGENT',
             'IX_OPS_AGENT_VERSION_POLICY',
@@ -527,7 +526,6 @@ BEGIN
             'IX_OPS_ACTIVITY_SCOPE_TIME',
             'IX_OPS_ACTIVITY_TARGET',
             'IX_OPS_AGENT_CURRENT_VERSION',
-            'IX_OPS_AGENT_RESP_GROUP',
             'IX_OPS_AGENT_SCOPE_STATUS',
             'IX_OPS_AGENT_VERSION_AGENT',
             'IX_OPS_AGENT_VERSION_POLICY',
@@ -801,7 +799,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 267 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 266 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -811,7 +809,6 @@ BEGIN
             'FK_OPS_ACTIVITY_TARGET',
             'FK_OPS_AGENT_CURRENT_VERSION',
             'FK_OPS_AGENT_DOMAIN',
-            'FK_OPS_AGENT_RESP_GROUP',
             'FK_OPS_AGENT_VERSION_AGENT',
             'FK_OPS_AGENT_VERSION_POLICY',
             'FK_OPS_AGENT_VER_TARGET_TARGET',
@@ -1062,7 +1059,6 @@ BEGIN
             'FK_OPS_ACTIVITY_TARGET',
             'FK_OPS_AGENT_CURRENT_VERSION',
             'FK_OPS_AGENT_DOMAIN',
-            'FK_OPS_AGENT_RESP_GROUP',
             'FK_OPS_AGENT_VERSION_AGENT',
             'FK_OPS_AGENT_VERSION_POLICY',
             'FK_OPS_AGENT_VER_TARGET_TARGET',
@@ -1301,7 +1297,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 232 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 231 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -3573,19 +3569,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 40
-           OR l_contract_version <> 'aiops-oracle-v30' THEN
+           OR l_schema_version <> 41
+           OR l_contract_version <> 'aiops-oracle-v31' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '40/aiops-oracle-v30'
+                || '41/aiops-oracle-v31'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/40/'
-                || 'aiops-oracle-v30'
+                '[通过] Schema 合同：AIOPS/41/'
+                || 'aiops-oracle-v31'
             );
         END IF;
     EXCEPTION
@@ -3612,7 +3608,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：63 张表、10 个视图、'
-        || '267 个命名索引、232 个命名约束、'
+        || '266 个命名索引、231 个命名约束、'
         || '1073 个表列；Schema 与当前规范一致。'
     );
 END;

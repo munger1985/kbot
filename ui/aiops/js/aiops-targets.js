@@ -57,7 +57,7 @@
       responsibilityGroupsLoaded = true;
     }
     const select = document.getElementById("target-responsibility-group");
-    select.innerHTML = '<option value="">继承 Agent 或进入未分派队列</option>' + responsibilityGroups
+    select.innerHTML = '<option value="">未分配责任组</option>' + responsibilityGroups
       .filter((group) => group.status === "ACTIVE")
       .map((group) => `<option value="${shell.escape(group.responsibility_group_id)}">${shell.escape(group.name)}</option>`)
       .join("");
@@ -438,7 +438,7 @@
       form.elements.environment.value = target.environment;
       form.elements.db_role.value = target.db_role;
       form.elements.importance_level.value = target.importance_level;
-      form.elements.default_responsibility_group_id.value = target.default_responsibility_group_id || "";
+      form.elements.responsibility_group_id.value = target.responsibility_group_id || "";
       readonlyEnabled.checked = Boolean(target.readonly_connection_enabled);
       changeEnabled.checked = Boolean(target.controlled_change_enabled);
       form.elements.host.value = target.endpoint?.host || "";
@@ -575,7 +575,7 @@
       readonly_connection_enabled: readonlyEnabled.checked,
       controlled_change_enabled: changeEnabled.checked,
       importance_level: Number(form.elements.importance_level.value),
-      default_responsibility_group_id: form.elements.default_responsibility_group_id.value || null,
+      responsibility_group_id: form.elements.responsibility_group_id.value || null,
       ...oracleContainerPayload(),
     };
     if (readonlyEnabled.checked) fields.endpoint = endpointPayload();

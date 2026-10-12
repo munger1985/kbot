@@ -95,11 +95,11 @@
             <small>用于 Agent 自动告警诊断过滤，5 表示最重要。</small>
           </div>
           <div class="ops-field span-6">
-            <label for="target-responsibility-group">默认责任组</label>
-            <select id="target-responsibility-group" name="default_responsibility_group_id">
-              <option value="">继承 Agent 或进入未分派队列</option>
+            <label for="target-responsibility-group">责任组</label>
+            <select id="target-responsibility-group" name="responsibility_group_id">
+              <option value="">未分配责任组</option>
             </select>
-            <small>优先于 Agent 默认责任组，只影响后续新建工作项。</small>
+            <small>工作项按运维目标的责任归属路由；Agent 只定义可运维范围。</small>
           </div>
           <section class="target-access-policy span-12" aria-labelledby="target-monitor-editor-title">
             <div class="target-access-policy-head">
@@ -232,6 +232,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-pages.js?v=20261010-13"></script>
-  <script src="./js/aiops-targets.js?v=20261010-7"></script>
+  <script src="./js/aiops-targets.js?v=20261012-1"></script>
 </body>
 </html>

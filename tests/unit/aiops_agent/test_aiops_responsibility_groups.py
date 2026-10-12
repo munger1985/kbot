@@ -50,9 +50,9 @@ class _Repository:
         self._check()
         return self.assignments.get(user_id, 0)
 
-    async def group_routing_counts(self, **kwargs):
+    async def target_binding_count(self, **kwargs):
         self._check()
-        return 2, 3, 4
+        return 3
 
 
 class _Uow:
@@ -96,9 +96,7 @@ class ResponsibilityGroupServiceTest(unittest.TestCase):
             group_id=self.group.responsibility_group_id, scope=self.scope
         ))
         self.assertEqual(1, result.active_member_count)
-        self.assertEqual(2, result.agent_binding_count)
         self.assertEqual(3, result.target_binding_count)
-        self.assertEqual(4, result.unassigned_work_item_count)
 
     def test_inactive_groups_are_hidden_from_manageable_list(self):
         self.group.status = "INACTIVE"

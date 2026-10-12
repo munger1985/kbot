@@ -75,8 +75,7 @@ class WorkItemResolutionCode(StrEnum):
 
 class WorkItemAssignmentSource(StrEnum):
     ROUTING_RULE = "ROUTING_RULE"
-    TARGET_DEFAULT = "TARGET_DEFAULT"
-    AGENT_DEFAULT = "AGENT_DEFAULT"
+    TARGET_RESPONSIBILITY = "TARGET_RESPONSIBILITY"
     MANUAL = "MANUAL"
     CLAIM = "CLAIM"
 
@@ -276,9 +275,7 @@ class ResponsibilityGroupSummary(AIOpsContract):
     status: ResponsibilityGroupStatus
     lead_user_id: str | None = None
     active_member_count: int = Field(ge=0)
-    agent_binding_count: int = Field(ge=0)
     target_binding_count: int = Field(ge=0)
-    unassigned_work_item_count: int = Field(ge=0)
     row_version: int = Field(ge=1)
     created_at: UtcDatetime
     updated_at: UtcDatetime

@@ -117,8 +117,8 @@ class FakeWorkItemRepository:
     async def get_group_member(self, **kwargs):
         return SimpleNamespace(status="ACTIVE")
 
-    async def default_responsibility_group(self, **kwargs):
-        return self.default_group_id, "AGENT_DEFAULT"
+    async def target_responsibility_group(self, **kwargs):
+        return self.default_group_id, "TARGET_RESPONSIBILITY"
 
 
 class _FakeUowContext:
@@ -165,8 +165,8 @@ class _ListWorkItemRepository:
             "pending_verification": 0,
         }
 
-    async def default_responsibility_group(self, **kwargs):
-        return self.default_group_id, "AGENT_DEFAULT"
+    async def target_responsibility_group(self, **kwargs):
+        return self.default_group_id, "TARGET_RESPONSIBILITY"
 
     async def group_name(self, **kwargs):
         return "测试责任组"
@@ -390,7 +390,8 @@ class WorkItemContractTest(unittest.TestCase):
         self.assertIn("KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER", sql)
         self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", sql)
         self.assertIn("CURRENT_VERSION_ID", sql)
-        self.assertIn("DEFAULT_RESPONSIBILITY_GROUP_ID", sql)
+        self.assertIn("RESPONSIBILITY_GROUP_ID", sql)
+        self.assertNotIn("DEFAULT_RESPONSIBILITY_GROUP_ID", sql)
         self.assertIn('"KBOT_OPS_WORK_ITEM".AGENT_ID', sql)
         self.assertIn('"KBOT_OPS_WORK_ITEM".TARGET_ID', sql)
         self.assertIn("RESPONSIBILITY_GROUP_ID IS NULL", sql)

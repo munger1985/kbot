@@ -491,9 +491,8 @@ class WorkItemService:
                 effective_assignment_source = item.assignment_source
                 if effective_group_id is None:
                     effective_group_id, effective_assignment_source = (
-                        await uow.work_items.default_responsibility_group(
+                        await uow.work_items.target_responsibility_group(
                             target_id=item.target_id,
-                            agent_id=item.agent_id,
                         )
                     )
                     group_name = await uow.work_items.group_name(
@@ -705,9 +704,8 @@ class WorkItemService:
             routing_source = item.assignment_source
             if item.responsibility_group_id is None:
                 group_id, routing_source = (
-                    await uow.work_items.default_responsibility_group(
+                    await uow.work_items.target_responsibility_group(
                         target_id=item.target_id,
-                        agent_id=item.agent_id,
                     )
                 )
                 if group_id is None:
@@ -896,9 +894,8 @@ class WorkItemService:
         effective_assignment_source = item.assignment_source
         if effective_group_id is None:
             effective_group_id, effective_assignment_source = (
-                await uow.work_items.default_responsibility_group(
+                await uow.work_items.target_responsibility_group(
                     target_id=item.target_id,
-                    agent_id=item.agent_id,
                 )
             )
         group_name = await uow.work_items.group_name(group_id=effective_group_id)
@@ -1454,8 +1451,8 @@ async def _upsert_occurrence(
     if item is None:
         item_id = uuid7()
         ack_due, resolution_due, verification_due = _sla(priority, now)
-        if hasattr(uow.work_items, "default_responsibility_group"):
-            group_id, assignment_source = await uow.work_items.default_responsibility_group(target_id=run.target_id, agent_id=run.agent_id)
+        if hasattr(uow.work_items, "target_responsibility_group"):
+            group_id, assignment_source = await uow.work_items.target_responsibility_group(target_id=run.target_id)
         else:
             group_id, assignment_source = None, None
         initial_status = (

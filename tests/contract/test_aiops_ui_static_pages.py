@@ -220,7 +220,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("返回工作项列表", detail)
         self.assertIn("/api/v1/apps/aiops/work-items", script)
         self.assertIn("loadScopedAgents", script)
-        self.assertIn("default_responsibility_group_id", script)
+        self.assertIn("target.responsibility_group_id", script)
+        self.assertNotIn("agent.default_responsibility_group_id", script)
         self.assertIn("userGroupIds", script)
         self.assertIn("agent_id: values.agent_id", script)
         self.assertIn('PENDING_VERIFICATION: "处理完成"', script)
@@ -272,11 +273,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("组内角色", page)
         self.assertIn("active_work_item_count", script)
         table = page.split('<table class="ops-table ops-responsibility-group-table">', 1)[1].split("</table>", 1)[0]
-        self.assertIn("绑定 Agent", table)
+        self.assertNotIn("绑定 Agent", table)
+        self.assertNotIn("关联 Target", table)
         self.assertNotIn("未领取", table)
-        self.assertNotIn("target_binding_count", script)
         self.assertNotIn("unassigned_work_item_count", script)
-        self.assertIn("运维目标由 Agent 关联", page)
+        self.assertIn("Target 的责任归属在运维目标中维护", page)
         self.assertIn('<dialog id="group-editor-dialog"', page)
         self.assertIn('<dialog id="group-members-dialog"', page)
         self.assertIn('<dialog id="group-confirm-dialog"', page)
@@ -304,9 +305,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         business_workspace, resource_configuration = shell.split('["资源配置"', 1)
         self.assertNotIn('["responsibility-groups", "责任组"]', business_workspace)
         self.assertIn('["responsibility-groups", "责任组"]', resource_configuration)
-        for markup, source in ((agents, agent_script), (targets, target_script)):
-            self.assertIn("default_responsibility_group_id", markup)
-            self.assertIn("default_responsibility_group_id", source)
+        self.assertNotIn("responsibility_group_id", agents)
+        self.assertNotIn("responsibility_group_id", agent_script)
+        self.assertIn('name="responsibility_group_id"', targets)
+        self.assertIn("responsibility_group_id", target_script)
+        self.assertNotIn("default_responsibility_group_id", targets)
+        self.assertNotIn("default_responsibility_group_id", target_script)
 
     def test_chat_code_copy_supports_insecure_http_context(self):
         renderer = (ROOT / "ui" / "shared" / "kbot-markdown.js").read_text(

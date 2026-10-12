@@ -241,13 +241,13 @@ class TargetConfigurationMixin:
         ) -> TargetDetail:
             assert uow.targets is not None and uow.managed_credentials is not None
             assert uow.work_items is not None
-            if request.default_responsibility_group_id is not None:
+            if request.responsibility_group_id is not None:
                 group = await uow.work_items.get_group(
-                    group_id=request.default_responsibility_group_id,
+                    group_id=request.responsibility_group_id,
                     domain_id=scope.domain_id,
                 )
                 if group is None or group.status != "ACTIVE":
-                    raise validation_failed("默认责任组不存在或已停用")
+                    raise validation_failed("责任组不存在或已停用")
             target_id = uuid7()
             diagnostic_id = execution_id = None
             for kind, value in (("DIAGNOSTIC", request.diagnostic_credential), ("EXECUTION", request.execution_credential)):
@@ -288,7 +288,7 @@ class TargetConfigurationMixin:
                 diagnostic_credential_id=diagnostic_id,
                 execution_credential_id=execution_id,
                 importance_level=request.importance_level,
-                default_responsibility_group_id=request.default_responsibility_group_id,
+                responsibility_group_id=request.responsibility_group_id,
                 capabilities_json=request.capabilities,
                 workload_snapshot_policy_json=(
                     request.workload_snapshot_policy.model_dump(mode="json")
@@ -442,8 +442,8 @@ class TargetConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Target")
             self._check_version(entity.row_version, expected_version)
-            if "default_responsibility_group_id" in fields:
-                group_id = request.default_responsibility_group_id
+            if "responsibility_group_id" in fields:
+                group_id = request.responsibility_group_id
                 if group_id is not None:
                     assert uow.work_items is not None
                     group = await uow.work_items.get_group(
@@ -451,7 +451,7 @@ class TargetConfigurationMixin:
                         domain_id=scope.domain_id,
                     )
                     if group is None or group.status != "ACTIVE":
-                        raise validation_failed("默认责任组不存在或已停用")
+                        raise validation_failed("责任组不存在或已停用")
             if "version_code" in fields:
                 version_code = fields["version_code"]
                 if version_code is None:

@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, case, exists, func, not_, or_, select
+from sqlalchemy import and_, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -39,23 +39,7 @@ class WorkItemRepository(AIOpsRepository):
         version_target = aliased(AIOpsAgentVersionTargetEntity)
         target = aliased(TargetEntity)
         group = aliased(ResponsibilityGroupEntity)
-        override_group = aliased(ResponsibilityGroupEntity)
         member = aliased(ResponsibilityGroupMemberEntity)
-        active_override = exists(
-            select(1).select_from(override_group).where(
-                override_group.responsibility_group_id
-                == target.default_responsibility_group_id,
-                override_group.domain_id == WorkItemEntity.domain_id,
-                override_group.status == "ACTIVE",
-            )
-        ).correlate(target, WorkItemEntity)
-        routed_group_id = case(
-            (
-                active_override,
-                target.default_responsibility_group_id,
-            ),
-            else_=agent.default_responsibility_group_id,
-        )
         statement = (
             select(1)
             .select_from(agent)
@@ -66,7 +50,7 @@ class WorkItemRepository(AIOpsRepository):
             .join(target, target.target_id == version_target.target_id)
             .join(
                 group,
-                group.responsibility_group_id == routed_group_id,
+                group.responsibility_group_id == target.responsibility_group_id,
             )
             .where(
                 agent.agent_id == WorkItemEntity.agent_id,
@@ -164,58 +148,34 @@ class WorkItemRepository(AIOpsRepository):
         ))
         return int(value or 0)
 
-    async def group_routing_counts(self, *, group_id: UUID) -> tuple[int, int, int]:
-        agent_count = await self._session.scalar(
-            select(func.count()).select_from(AIOpsAgentEntity).where(
-                AIOpsAgentEntity.default_responsibility_group_id == group_id
-            )
-        )
+    async def target_binding_count(self, *, group_id: UUID) -> int:
         target_count = await self._session.scalar(
             select(func.count()).select_from(TargetEntity).where(
-                TargetEntity.default_responsibility_group_id == group_id
+                TargetEntity.responsibility_group_id == group_id
             )
         )
-        unassigned_count = await self._session.scalar(
-            select(func.count()).select_from(WorkItemEntity).where(
-                WorkItemEntity.responsibility_group_id == group_id,
-                WorkItemEntity.assignee_user_id.is_(None),
-                WorkItemEntity.status.not_in(_TERMINAL_STATUSES),
-            )
-        )
-        return (
-            int(agent_count or 0),
-            int(target_count or 0),
-            int(unassigned_count or 0),
-        )
+        return int(target_count or 0)
 
-    async def default_responsibility_group(self, *, target_id: UUID, agent_id: UUID) -> tuple[UUID | None, str | None]:
+    async def target_responsibility_group(
+        self, *, target_id: UUID
+    ) -> tuple[UUID | None, str | None]:
         target_group = await self._session.scalar(
-            select(TargetEntity.default_responsibility_group_id)
+            select(TargetEntity.responsibility_group_id)
             .join(
                 ResponsibilityGroupEntity,
                 ResponsibilityGroupEntity.responsibility_group_id
-                == TargetEntity.default_responsibility_group_id,
+                == TargetEntity.responsibility_group_id,
             )
             .where(
                 TargetEntity.target_id == target_id,
                 ResponsibilityGroupEntity.status == "ACTIVE",
             )
         )
-        if target_group is not None:
-            return target_group, "TARGET_DEFAULT"
-        agent_group = await self._session.scalar(
-            select(AIOpsAgentEntity.default_responsibility_group_id)
-            .join(
-                ResponsibilityGroupEntity,
-                ResponsibilityGroupEntity.responsibility_group_id
-                == AIOpsAgentEntity.default_responsibility_group_id,
-            )
-            .where(
-                AIOpsAgentEntity.agent_id == agent_id,
-                ResponsibilityGroupEntity.status == "ACTIVE",
-            )
+        return (
+            (target_group, "TARGET_RESPONSIBILITY")
+            if target_group is not None
+            else (None, None)
         )
-        return (agent_group, "AGENT_DEFAULT") if agent_group is not None else (None, None)
 
     async def manual_work_item_routing(
         self, *, domain_id: int, agent_id: UUID, target_id: UUID
@@ -223,8 +183,7 @@ class WorkItemRepository(AIOpsRepository):
         row = (
             await self._session.execute(
                 select(
-                    AIOpsAgentEntity.default_responsibility_group_id,
-                    TargetEntity.default_responsibility_group_id,
+                    TargetEntity.responsibility_group_id,
                     AIOpsAgentEntity.display_name,
                 )
                 .join(
@@ -249,15 +208,13 @@ class WorkItemRepository(AIOpsRepository):
         ).one_or_none()
         if row is None:
             return None
-        agent_group_id, target_group_id, agent_name = row
-        group_id = target_group_id or agent_group_id
+        group_id, agent_name = row
         if group_id is None:
             return None
         group = await self.get_group(group_id=group_id, domain_id=domain_id)
         if group is None or group.status != "ACTIVE":
             return None
-        source = "TARGET_DEFAULT" if target_group_id is not None else "AGENT_DEFAULT"
-        return group_id, source, str(agent_name)
+        return group_id, "TARGET_RESPONSIBILITY", str(agent_name)
 
     async def recovery_drill_routing(
         self, *, domain_id: int, target_id: UUID
@@ -266,8 +223,7 @@ class WorkItemRepository(AIOpsRepository):
         rows = await self._session.execute(
             select(
                 AIOpsAgentEntity.agent_id,
-                AIOpsAgentEntity.default_responsibility_group_id,
-                TargetEntity.default_responsibility_group_id,
+                TargetEntity.responsibility_group_id,
                 AIOpsAgentEntity.display_name,
             )
             .join(
@@ -288,14 +244,17 @@ class WorkItemRepository(AIOpsRepository):
             )
             .order_by(AIOpsAgentEntity.agent_id)
         )
-        for agent_id, agent_group_id, target_group_id, agent_name in rows:
-            group_id = target_group_id or agent_group_id
+        for agent_id, group_id, agent_name in rows:
             if group_id is None:
                 continue
             group = await self.get_group(group_id=group_id, domain_id=domain_id)
             if group is not None and group.status == "ACTIVE":
-                source = "TARGET_DEFAULT" if target_group_id is not None else "AGENT_DEFAULT"
-                return agent_id, group_id, source, str(agent_name)
+                return (
+                    agent_id,
+                    group_id,
+                    "TARGET_RESPONSIBILITY",
+                    str(agent_name),
+                )
         return None
 
     async def agent_name(

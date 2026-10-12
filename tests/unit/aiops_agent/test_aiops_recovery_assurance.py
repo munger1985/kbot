@@ -94,7 +94,7 @@ class RecoveryContractTest(unittest.TestCase):
         manifest = json.loads(
             (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
         )
-        self.assertEqual(40, manifest["schema_version"])
+        self.assertEqual(41, manifest["schema_version"])
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
         self.assertIn("required_backup_source_types", (
@@ -297,7 +297,7 @@ class _WorkItems:
         self.group_id = uuid7()
 
     async def recovery_drill_routing(self, **_kwargs):
-        return self.agent_id, self.group_id, "TARGET_DEFAULT", "恢复保障 Agent"
+        return self.agent_id, self.group_id, "TARGET_RESPONSIBILITY", "恢复保障 Agent"
 
     async def get_active_by_target_fingerprint(self, *, target_id, fingerprint, **_kwargs):
         return next((item for item in self.items if item.target_id == target_id and item.fingerprint == fingerprint and item.status not in {"CLOSED", "CANCELLED"}), None)

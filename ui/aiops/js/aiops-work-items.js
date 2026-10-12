@@ -170,8 +170,9 @@
     return filters.status === "PENDING_VERIFICATION" && !filters.priority && !filters.assignee_user_id && !filters.unassigned && !filters.overdue;
   }
   async function loadScopedAgents() {
-    const [agents, groupPage] = await Promise.all([
+    const [agents, targetPage, groupPage] = await Promise.all([
       KBotAIOpsAuth.request(`${rootApi}/agents`),
+      KBotAIOpsAuth.request(`${rootApi}/targets?limit=200`),
       KBotAIOpsAuth.request(groupApi),
     ]);
     const groups = values(groupPage?.items).filter((group) => group.status === "ACTIVE");
@@ -182,8 +183,12 @@
       values(group.members).some((member) => member.status === "ACTIVE"
         && String(member.user_id) === String(state.access.user_id))
     ).map((group) => String(group.responsibility_group_id)));
+    const visibleTargetIds = new Set(values(targetPage?.items).filter((target) =>
+      target.responsibility_group_id
+      && userGroupIds.has(String(target.responsibility_group_id))
+    ).map((target) => String(target.target_id)));
     state.scopedAgents = values(agents).filter((agent) => agent.status === "ACTIVE"
-      && userGroupIds.has(String(agent.default_responsibility_group_id)));
+      && values(agent.target_ids).some((targetId) => visibleTargetIds.has(String(targetId))));
     const select = document.getElementById("work-item-agent-filter");
     select.innerHTML = '<option value="">责任组内全部 Agent</option>'
       + state.scopedAgents.map((agent) => `<option value="${shell.escape(agent.agent_id)}">${shell.escape(agent.display_name || agent.agent_key || shell.short(agent.agent_id))}</option>`).join("");
