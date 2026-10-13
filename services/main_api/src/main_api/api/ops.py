@@ -276,6 +276,7 @@ class ReportGenerationPayload(BaseModel):
     conversation_id: UUID | None = None
     ops_run_id: UUID | None = None
     template_ref: str = "system:diagnosis.standard"
+    template_version_id: UUID | None = None
     period_kind: str = "AD_HOC"
 
     @model_validator(mode="after")
@@ -284,6 +285,8 @@ class ReportGenerationPayload(BaseModel):
             raise ValueError("必须且只能选择一个报告来源")
         if self.conversation_id is not None and self.period_kind != "AD_HOC":
             raise ValueError("会话诊断报告仅支持 AD_HOC 周期")
+        if self.ops_run_id is not None and self.template_version_id is not None:
+            raise ValueError("系统报告版式不接受模板版本标识")
         return self
 
 
@@ -435,6 +438,7 @@ async def generate_report(
         conversation_id=payload.conversation_id,
         ops_run_id=payload.ops_run_id,
         template_ref=payload.template_ref,
+        template_version_id=payload.template_version_id,
         period_kind=payload.period_kind,
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,

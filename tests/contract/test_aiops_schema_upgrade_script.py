@@ -9,6 +9,7 @@ SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_39.sq
 RECOVERY_POLICY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_40.sql"
 TARGET_RESPONSIBILITY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_41.sql"
 BACKUP_POLICY_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_42.sql"
+REPORT_TEMPLATE_SCRIPT = ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_43.sql"
 
 
 class AIOpsSchemaUpgradeScriptTest(unittest.TestCase):
@@ -96,6 +97,24 @@ class AIOpsBackupPolicyUpgradeScriptTest(unittest.TestCase):
         self.assertLess(add_at, update_at)
         self.assertLess(update_at, required_at)
         self.assertIn("JSON_EXISTS(REQUIRED_BACKUP_SOURCE_TYPES_JSON, '$[0]')", self.upper)
+        self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)
+        self.assertNotIn("TRUNCATE TABLE KBOT_OPS_", self.upper)
+
+
+class AIOpsReportTemplateUpgradeScriptTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.upper = REPORT_TEMPLATE_SCRIPT.read_text(encoding="utf-8").upper()
+
+    def test_upgrade_adds_traceability_without_business_uniqueness(self) -> None:
+        self.assertIn("L_SCHEMA_VERSION <> 42", self.upper)
+        self.assertIn("AIOPS-ORACLE-V32", self.upper)
+        self.assertIn("43 AS SCHEMA_VERSION", self.upper)
+        self.assertIn("AIOPS-ORACLE-V33", self.upper)
+        self.assertIn("ADD IS_DEFAULT NUMBER(1) DEFAULT 0 NOT NULL", self.upper)
+        self.assertIn("ADD SOURCE_CONVERSATION_ID RAW(16)", self.upper)
+        self.assertIn("FK_OPS_REPORT_CONVERSATION", self.upper)
+        self.assertNotIn("CREATE UNIQUE INDEX", self.upper)
         self.assertNotIn("DELETE FROM KBOT_OPS_", self.upper)
         self.assertNotIn("TRUNCATE TABLE KBOT_OPS_", self.upper)
 

@@ -543,6 +543,131 @@ class FormalReportingTest(unittest.TestCase):
         self.assertEqual("PARTIAL", source_override["status"])
         uow.commit.assert_awaited_once()
 
+    def test_generate_conversation_report_reuses_same_snapshot_and_template(self) -> None:
+        conversation_id, turn_id, run_id = uuid7(), uuid7(), uuid7()
+        source_artifact_id, report_artifact_id = uuid7(), uuid7()
+        report_id = uuid7()
+        now = datetime(2026, 9, 1, 3, tzinfo=UTC)
+        source_hash = "a" * 64
+        conversation = SimpleNamespace(
+            conversation_id=conversation_id,
+            created_by="operator-1",
+            title="生产库锁等待排查",
+            agent_id=uuid7(),
+        )
+        turn = SimpleNamespace(
+            turn_id=turn_id, turn_no=1, status="COMPLETED"
+        )
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            status="COMPLETED",
+            final_artifact_id=source_artifact_id,
+            created_at=datetime(2026, 9, 1, tzinfo=UTC),
+            started_at=None,
+            completed_at=datetime(2026, 9, 1, 1, tzinfo=UTC),
+            plan_snapshot_json={
+                "diagnosis": {"question_summary": "确认锁等待"}
+            },
+        )
+        source_artifact = SimpleNamespace(
+            artifact_id=source_artifact_id,
+            content_hash=source_hash,
+            schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+            payload_json={
+                "status": "READY",
+                "root_cause": {"effective_level": "PROBABLE"},
+                "diagnosis_rationale": "锁等待已定位。",
+                "facts": [],
+            },
+        )
+        snapshot_hash = sha256_json({
+            "included_turns": [{
+                "turn_id": str(turn_id),
+                "turn_no": 1,
+                "turn_status": "COMPLETED",
+                "run_id": str(run_id),
+                "run_status": "COMPLETED",
+                "artifact_id": str(source_artifact_id),
+                "content_hash": source_hash,
+            }],
+            "missing_turns": [],
+        })
+        report_payload = {
+            "scope": {
+                "conversation": {"snapshot_hash": snapshot_hash}
+            }
+        }
+        report_hash = sha256_json(report_payload)
+        current_report = SimpleNamespace(
+            report_id=report_id,
+            status="READY",
+            template_id="system:diagnosis.standard",
+            template_version="1",
+            report_version=2,
+            content_artifact_id=report_artifact_id,
+            content_hash=report_hash,
+        )
+        current_artifact = SimpleNamespace(
+            artifact_id=report_artifact_id,
+            content_hash=report_hash,
+            payload_json=report_payload,
+        )
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                get_current_report_for_conversation_template=AsyncMock(
+                    return_value=current_report
+                )
+            ),
+            conversations=SimpleNamespace(
+                get_conversation=AsyncMock(return_value=conversation)
+            ),
+            turns=SimpleNamespace(
+                list_all_turns=AsyncMock(return_value=[turn]),
+                get_run_link=AsyncMock(
+                    return_value=SimpleNamespace(ops_run_id=run_id)
+                ),
+            ),
+            runs=SimpleNamespace(
+                get_run_scoped=AsyncMock(return_value=run),
+                get_artifact=AsyncMock(
+                    side_effect=lambda *, artifact_id: (
+                        source_artifact
+                        if artifact_id == source_artifact_id
+                        else current_artifact
+                    )
+                ),
+                list_tasks=AsyncMock(return_value=[
+                    SimpleNamespace(output_artifact_id=source_artifact_id)
+                ]),
+                database_now=AsyncMock(return_value=now),
+            ),
+            commit=AsyncMock(),
+        )
+
+        class UnitOfWorkContext:
+            async def __aenter__(self): return uow
+            async def __aexit__(self, exc_type, exc, traceback): return None
+
+        service = AIOpsRuntimeService(
+            uow_factory=lambda: UnitOfWorkContext(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+        service._publish_diagnosis_report = AsyncMock()
+
+        receipt = asyncio.run(service.generate_conversation_report(
+            domain_id=8,
+            actor_id="operator-1",
+            conversation_id=conversation_id,
+            template=SYSTEM_REPORT_TEMPLATES["system:diagnosis.standard"],
+            trace_id="trace-session-report-retry",
+        ))
+
+        self.assertEqual(report_id, receipt.report_id)
+        self.assertEqual(2, receipt.report_version)
+        service._publish_diagnosis_report.assert_not_awaited()
+        uow.commit.assert_not_awaited()
+
     def test_get_report_presentation_uses_report_type_when_snapshot_is_missing(self) -> None:
         cases = (
             ("INSPECTION_WEEKLY", "database_weekly", "system:inspection.weekly"),

@@ -5,7 +5,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, or_, select, update
+from sqlalchemy import (
+    Select,
+    and_,
+    case,
+    column,
+    func,
+    or_,
+    select,
+    table,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
@@ -100,14 +110,20 @@ class InspectionRepository(AIOpsRepository):
         return await self._add(entity)
 
     async def list_session_report_templates(self, *, domain_id: int):
-        rows = await self._session.scalars(select(
-            SessionReportTemplateEntity
-        ).where(SessionReportTemplateEntity.domain_id == domain_id).order_by(
-            SessionReportTemplateEntity.updated_at.desc()
-        ))
+        self._check_active()
+        rows = await self._session.scalars(
+            select(SessionReportTemplateEntity)
+            .where(SessionReportTemplateEntity.domain_id == domain_id)
+            .order_by(
+                SessionReportTemplateEntity.created_at.desc(),
+                SessionReportTemplateEntity.template_id.desc(),
+            )
+        )
         return list(rows)
 
-    async def get_session_report_template(self, *, domain_id: int, template_id: UUID, lock: bool = False):
+    async def get_session_report_template(
+        self, *, domain_id: int, template_id: UUID, lock: bool = False
+    ):
         statement = select(SessionReportTemplateEntity).where(
             SessionReportTemplateEntity.domain_id == domain_id,
             SessionReportTemplateEntity.template_id == template_id,
@@ -115,10 +131,88 @@ class InspectionRepository(AIOpsRepository):
         if lock: statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_session_report_template_version(self, *, template_version_id: UUID):
+    async def get_session_report_template_version(
+        self, *, template_version_id: UUID
+    ):
+        self._check_active()
         return await self._session.get(
             SessionReportTemplateVersionEntity, template_version_id
         )
+
+    async def list_session_report_template_versions(
+        self, *, template_id: UUID
+    ):
+        self._check_active()
+        rows = await self._session.scalars(
+            select(SessionReportTemplateVersionEntity)
+            .where(SessionReportTemplateVersionEntity.template_id == template_id)
+            .order_by(
+                SessionReportTemplateVersionEntity.version_no.desc(),
+                SessionReportTemplateVersionEntity.created_at.desc(),
+            )
+        )
+        return list(rows)
+
+    async def lock_domain(self, *, domain_id: int) -> bool:
+        """锁定父 Domain 行，串行化默认模板切换。"""
+        self._check_active()
+        domain = table("KBOT_PLATFORM_DOMAIN", column("DOMAIN_ID"))
+        value = await self._session.scalar(
+            select(domain.c.DOMAIN_ID)
+            .where(domain.c.DOMAIN_ID == domain_id)
+            .with_for_update()
+        )
+        return value is not None
+
+    async def clear_default_session_report_template(
+        self, *, domain_id: int, keep_template_id: UUID | None = None
+    ) -> None:
+        self._check_active()
+        statement = update(SessionReportTemplateEntity).where(
+            SessionReportTemplateEntity.domain_id == domain_id,
+            SessionReportTemplateEntity.is_default == 1,
+        )
+        if keep_template_id is not None:
+            statement = statement.where(
+                SessionReportTemplateEntity.template_id != keep_template_id
+            )
+        await self._session.execute(
+            statement
+            .values(
+                is_default=0,
+                row_version=SessionReportTemplateEntity.row_version + 1,
+                updated_at=datetime.now(UTC),
+            )
+            .execution_options(synchronize_session=False)
+        )
+
+    async def count_reports_by_template_refs(
+        self, *, domain_id: int, template_refs: Collection[str]
+    ) -> dict[str, int]:
+        self._check_active()
+        if not template_refs:
+            return {}
+        rows = await self._session.execute(
+            select(
+                ReportEntity.template_id,
+                func.count(ReportEntity.report_id),
+            )
+            .join(
+                OpsRunEntity,
+                OpsRunEntity.ops_run_id == ReportEntity.ops_run_id,
+            )
+            .where(
+                OpsRunEntity.domain_id == domain_id,
+                ReportEntity.template_id.in_(tuple(template_refs)),
+                ReportEntity.is_current == 1,
+                ReportEntity.source_conversation_id.is_not(None),
+            )
+            .group_by(ReportEntity.template_id)
+        )
+        return {
+            str(template_ref): int(count)
+            for template_ref, count in rows
+        }
 
     async def next_session_report_template_version(self, *, template_id: UUID) -> int:
         value = await self._session.scalar(select(func.coalesce(func.max(
@@ -588,12 +682,23 @@ class InspectionRepository(AIOpsRepository):
     async def publish_report(self, entity: ReportEntity) -> ReportEntity:
         """串行切换同一逻辑 Report 的当前版本。"""
         self._check_active()
+        scope_filters = (
+            (
+                ReportEntity.source_conversation_id
+                == entity.source_conversation_id,
+                ReportEntity.template_id == entity.template_id,
+            )
+            if entity.source_conversation_id is not None
+            else (
+                ReportEntity.ops_run_id == entity.ops_run_id,
+                ReportEntity.report_key == entity.report_key,
+            )
+        )
         current = (
             await self._session.execute(
                 select(ReportEntity)
                 .where(
-                    ReportEntity.ops_run_id == entity.ops_run_id,
-                    ReportEntity.report_key == entity.report_key,
+                    *scope_filters,
                     ReportEntity.is_current == 1,
                 )
                 .with_for_update()
@@ -641,7 +746,7 @@ class InspectionRepository(AIOpsRepository):
         return (await self._session.execute(statement)).scalars().first()
 
     async def get_current_report_for_run_template(
-        self, *, ops_run_id: UUID, template_id: str
+        self, *, ops_run_id: UUID, template_id: str, lock: bool = False
     ) -> ReportEntity | None:
         """按 Run 和冻结模板精确读取当前报告，保证重复请求可重放。"""
         self._check_active()
@@ -654,6 +759,30 @@ class InspectionRepository(AIOpsRepository):
             )
             .order_by(ReportEntity.report_version.desc())
         )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalars().first()
+
+    async def get_current_report_for_conversation_template(
+        self,
+        *,
+        conversation_id: UUID,
+        template_id: str,
+        lock: bool = False,
+    ) -> ReportEntity | None:
+        """按会话和模板引用读取当前报告版本。"""
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .where(
+                ReportEntity.source_conversation_id == conversation_id,
+                ReportEntity.template_id == template_id,
+                ReportEntity.is_current == 1,
+            )
+            .order_by(ReportEntity.report_version.desc())
+        )
+        if lock:
+            statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalars().first()
 
     async def get_report_scoped(
@@ -729,14 +858,20 @@ class InspectionRepository(AIOpsRepository):
         self,
         *,
         ops_run_id: UUID,
+        source_conversation_id: UUID | None,
         report_key: str,
         before_created_at: datetime | None,
         before_id: UUID | None,
         limit: int,
     ) -> list[ReportEntity]:
         self._check_active()
+        scope_filter = (
+            ReportEntity.source_conversation_id == source_conversation_id
+            if source_conversation_id is not None
+            else ReportEntity.ops_run_id == ops_run_id
+        )
         statement = select(ReportEntity).where(
-            ReportEntity.ops_run_id == ops_run_id,
+            scope_filter,
             ReportEntity.report_key == report_key,
         )
         if before_created_at is not None and before_id is not None:

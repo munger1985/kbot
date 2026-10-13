@@ -11,6 +11,7 @@ from aiops_agent.application.report_templates import (
     InspectionTemplateService,
     SessionReportTemplateService,
 )
+from aiops_agent.application.errors import AIOpsApplicationError
 from platform_core.identity import uuid7
 
 
@@ -51,6 +52,115 @@ class _PostCommitGuardedRow:
 
 
 class ReportTemplateVersionUpdateTest(unittest.IsolatedAsyncioTestCase):
+    async def test_resolve_freezes_requested_version_owned_by_template(self) -> None:
+        template_id = uuid7()
+        current_version_id = uuid7()
+        requested_version_id = uuid7()
+        definition, _ = SessionReportTemplateService._normalize_definition(
+            display_name="会话复盘",
+            definition={"sections": [{"kind": "FINDINGS"}]},
+        )
+        row = SimpleNamespace(
+            template_id=template_id,
+            status="ACTIVE",
+            display_name="会话复盘",
+            current_version_id=current_version_id,
+        )
+        version = SimpleNamespace(
+            template_version_id=requested_version_id,
+            domain_id=7,
+            template_id=template_id,
+            version_no=2,
+            definition_json=definition,
+        )
+        inspections = SimpleNamespace(
+            get_session_report_template=AsyncMock(return_value=row),
+            get_session_report_template_version=AsyncMock(return_value=version),
+        )
+        service = SessionReportTemplateService(
+            uow_factory=lambda: _UnitOfWorkContext(
+                SimpleNamespace(inspections=inspections)
+            )
+        )
+
+        result = await service.resolve(
+            domain_id=7,
+            template_ref=f"domain:{template_id}",
+            template_version_id=requested_version_id,
+        )
+
+        self.assertEqual("2", result.version)
+        inspections.get_session_report_template_version.assert_awaited_once_with(
+            template_version_id=requested_version_id
+        )
+
+        version.template_id = uuid7()
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await service.resolve(
+                domain_id=7,
+                template_ref=f"domain:{template_id}",
+                template_version_id=requested_version_id,
+            )
+        self.assertEqual("OPS_STATE_CONFLICT", caught.exception.code)
+
+    async def test_set_default_locks_domain_before_switching_template(self) -> None:
+        calls = []
+        template_id = uuid7()
+        row = SimpleNamespace(
+            template_id=template_id,
+            domain_id=7,
+            display_name="会话复盘",
+            status="ACTIVE",
+            is_default=0,
+            current_version_id=uuid7(),
+            row_version=1,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+            updated_by="actor:old",
+        )
+
+        async def lock_domain(*, domain_id):
+            calls.append(("lock", domain_id))
+            return True
+
+        async def clear_default(*, domain_id, keep_template_id=None):
+            calls.append(("clear", domain_id))
+            self.assertEqual(template_id, keep_template_id)
+
+        inspections = SimpleNamespace(
+            lock_domain=AsyncMock(side_effect=lock_domain),
+            clear_default_session_report_template=AsyncMock(
+                side_effect=clear_default
+            ),
+            get_session_report_template=AsyncMock(return_value=row),
+        )
+        uow = SimpleNamespace(inspections=inspections, commit=AsyncMock())
+        service = SessionReportTemplateService(
+            uow_factory=lambda: _UnitOfWorkContext(uow)
+        )
+
+        result = await service.set_default(
+            domain_id=7,
+            actor_id="actor:new",
+            template_ref=f"domain:{template_id}",
+        )
+
+        self.assertEqual([("lock", 7), ("clear", 7)], calls)
+        self.assertTrue(result["is_default"])
+        uow.commit.assert_awaited_once()
+
+    async def test_definition_requires_protected_sections_at_boundaries(self) -> None:
+        with self.assertRaises(AIOpsApplicationError):
+            SessionReportTemplateService._normalize_definition(
+                display_name="无效模板",
+                definition={
+                    "sections": [
+                        {"kind": "EVIDENCE_BOUNDARY"},
+                        {"kind": "FINDINGS"},
+                    ]
+                },
+            )
+
     async def test_session_template_response_does_not_load_expired_timestamp(
         self,
     ) -> None:

@@ -411,6 +411,9 @@ class ReportSummary(AIOpsContract):
     title: str = Field(min_length=1, max_length=512)
     status: ReportStatus
     target_id: UUIDv7
+    template_ref: str
+    template_version: str
+    source_conversation_id: UUIDv7 | None = None
     period_start: UtcDatetime
     period_end: UtcDatetime
     summary: str

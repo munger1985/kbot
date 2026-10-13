@@ -30,6 +30,9 @@ class SessionReportTemplateEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    is_default: Mapped[int] = mapped_column(
+        Numeric(1, 0), nullable=False, default=0
+    )
     current_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -234,11 +237,23 @@ class InspectionFireEntity(BaseEntity):
 
 class ReportEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_REPORT"
+    __table_args__ = (
+        Index(
+            "IX_OPS_REPORT_CONVERSATION",
+            "source_conversation_id",
+            "template_id",
+            "is_current",
+            "report_version",
+        ),
+    )
 
     report_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
     ops_run_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    source_conversation_id: Mapped[UUID | None] = mapped_column(
+        UUIDv7Type()
+    )
     target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     report_key: Mapped[str] = mapped_column(String(128), nullable=False)
     report_version: Mapped[int] = mapped_column(

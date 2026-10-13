@@ -1546,6 +1546,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         conversation_id: UUID | None,
         ops_run_id: UUID | None,
         template_ref: str,
+        template_version_id: UUID | None,
         period_kind: str,
         idempotency_key: str,
         auth_context: AuthContext,
@@ -1558,6 +1559,10 @@ class AIOpsManagementClient(_BaseAIOpsClient):
                 ),
                 "ops_run_id": str(ops_run_id) if ops_run_id is not None else None,
                 "template_ref": template_ref,
+                "template_version_id": (
+                    str(template_version_id)
+                    if template_version_id is not None else None
+                ),
                 "period_kind": period_kind,
             },
             idempotency_key=idempotency_key,

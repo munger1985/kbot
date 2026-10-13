@@ -1168,6 +1168,94 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
         self.assertEqual(source.ops_run_id, run_id)
         self.assertEqual(source.source_artifact_id, source_id)
 
+    def test_conversation_report_continues_version_chain(self) -> None:
+        conversation_id = uuid7()
+        previous_report_id = uuid7()
+        run_id = uuid7()
+        task_id = uuid7()
+        source_id = uuid7()
+        run = SimpleNamespace(
+            ops_run_id=run_id,
+            target_id=uuid7(),
+            created_at=datetime(2026, 7, 24, 1, tzinfo=UTC),
+            completed_at=datetime(2026, 7, 24, 2, tzinfo=UTC),
+            trigger_type="CHAT",
+            plan_snapshot_json={"diagnosis": {"question_summary": "复盘会话"}},
+        )
+        task = SimpleNamespace(ops_task_id=task_id)
+        source = SimpleNamespace(
+            artifact_id=source_id,
+            schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+            content_hash="a" * 64,
+            payload_json={},
+        )
+        current = SimpleNamespace(
+            report_id=previous_report_id,
+            report_version=2,
+        )
+
+        async def add_artifact(entity):
+            entity.artifact_id = uuid7()
+            return entity
+
+        async def publish_report(entity):
+            entity.is_current = 1
+            return entity
+
+        inspections = SimpleNamespace(
+            get_current_report_for_conversation_template=AsyncMock(
+                return_value=current
+            ),
+            publish_report=AsyncMock(side_effect=publish_report),
+            add_report_sources=AsyncMock(),
+        )
+        uow = SimpleNamespace(
+            inspections=inspections,
+            runs=SimpleNamespace(
+                add_artifact=AsyncMock(side_effect=add_artifact),
+                append_event=AsyncMock(),
+            ),
+            outbox=SimpleNamespace(add=AsyncMock(side_effect=lambda entity: entity)),
+            platform_notifications=SimpleNamespace(
+                emit_report_ready=AsyncMock()
+            ),
+        )
+        service = AIOpsRuntimeService(
+            uow_factory=AsyncMock(),
+            blueprint_registry=AsyncMock(),
+            handler_registry=AsyncMock(),
+        )
+
+        result = asyncio.run(service._publish_diagnosis_report(
+            uow=uow,
+            run=run,
+            task=task,
+            source_artifact=source,
+            now=datetime(2026, 7, 24, 3, tzinfo=UTC),
+            trace_id="trace-conversation-report",
+            template=resolve_system_template("system:diagnosis.standard"),
+            actor_id="operator-1",
+            source_override={
+                "status": "READY",
+                "root_cause": {"effective_level": "PROBABLE"},
+                "diagnosis_rationale": "已定位问题",
+                "facts": (),
+                "gaps": (),
+                "solution": {},
+                "evidence_refs": (),
+                "conversation": {
+                    "conversation_id": str(conversation_id),
+                    "snapshot_hash": "b" * 64,
+                },
+            },
+        ))
+
+        self.assertEqual(3, result.report_version)
+        self.assertEqual(conversation_id, result.source_conversation_id)
+        self.assertEqual(previous_report_id, result.supersedes_report_id)
+        artifact = uow.runs.add_artifact.await_args.args[0]
+        self.assertEqual("report:diagnosis.standard:v3", artifact.artifact_key)
+
 
 class ComparisonReportPublishingTest(unittest.TestCase):
     def test_verified_action_publishes_improved_comparison_report(

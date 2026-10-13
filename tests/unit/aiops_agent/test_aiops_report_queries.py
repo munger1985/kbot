@@ -38,6 +38,7 @@ class ReportQueryTest(unittest.TestCase):
         now = datetime(2026, 7, 24, tzinfo=UTC)
 
         def report(offset: int):
+            conversation_id = uuid7()
             return SimpleNamespace(
                 report_id=uuid7(),
                 report_key=f"inspection.daily.{offset}",
@@ -46,6 +47,9 @@ class ReportQueryTest(unittest.TestCase):
                 title="日常巡检报告",
                 status="READY",
                 target_id=uuid7(),
+                template_id="system:diagnosis.standard",
+                template_version="1",
+                source_conversation_id=conversation_id,
                 period_start=now - timedelta(days=1),
                 period_end=now,
                 summary="巡检完成",
@@ -76,6 +80,14 @@ class ReportQueryTest(unittest.TestCase):
         )
         self.assertEqual(len(result.items), 1)
         self.assertEqual(result.items[0].published_at, now - timedelta(seconds=1))
+        self.assertEqual(
+            result.items[0].template_ref, "system:diagnosis.standard"
+        )
+        self.assertEqual(result.items[0].template_version, "1")
+        self.assertEqual(
+            result.items[0].source_conversation_id,
+            entities[0].source_conversation_id,
+        )
         self.assertTrue(result.has_more)
         self.assertEqual(result.next_cursor, "signed-next")
         kwargs = inspections.page_current_reports.await_args.kwargs
@@ -94,6 +106,7 @@ class ReportQueryTest(unittest.TestCase):
         anchor = SimpleNamespace(
             report_id=report_id,
             ops_run_id=source_run_id,
+            source_conversation_id=None,
             report_key="comparison.action.example",
         )
         version = SimpleNamespace(
@@ -127,6 +140,7 @@ class ReportQueryTest(unittest.TestCase):
         self.assertEqual(anchor_scope["domain_id"], 200)
         page_scope = inspections.page_report_versions.await_args.kwargs
         self.assertEqual(page_scope["ops_run_id"], source_run_id)
+        self.assertIsNone(page_scope["source_conversation_id"])
         self.assertEqual(
             page_scope["report_key"], "comparison.action.example"
         )

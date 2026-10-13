@@ -77,6 +77,7 @@ class GenerateUserReportRequest(BaseModel):
     template_ref: str = Field(
         default="system:diagnosis.standard", min_length=1, max_length=128
     )
+    template_version_id: UUID | None = None
     period_kind: str = Field(default="AD_HOC", max_length=16)
 
     @model_validator(mode="after")
@@ -85,6 +86,8 @@ class GenerateUserReportRequest(BaseModel):
             raise ValueError("必须且只能选择一个报告来源")
         if self.conversation_id is not None and self.period_kind != "AD_HOC":
             raise ValueError("会话诊断报告仅支持 AD_HOC 周期")
+        if self.ops_run_id is not None and self.template_version_id is not None:
+            raise ValueError("系统报告版式不接受模板版本标识")
         return self
 
 
@@ -358,7 +361,9 @@ async def generate_user_report(
     actor_id = context.asserted_user_id or context.client_id
     if body.conversation_id is not None:
         template = await request.app.state.session_report_template_service.resolve(
-            domain_id=domain_id, template_ref=body.template_ref
+            domain_id=domain_id,
+            template_ref=body.template_ref,
+            template_version_id=body.template_version_id,
         )
         agent_id = await service.get_conversation_source_agent_id(
             conversation_id=body.conversation_id,

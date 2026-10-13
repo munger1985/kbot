@@ -706,6 +706,7 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
         )],
         ["报告周期", _pdf_paragraph(f"{report.get('period_start') or '未提供'} 至 {report.get('period_end') or '未提供'}")],
         ["报告模板", _pdf_paragraph(template.get("template_ref") or "未提供")],
+        ["模板版本", _pdf_paragraph(template.get("version") or "未提供")],
     ]
     info_table = Table(metadata, colWidths=(32 * mm, 128 * mm), hAlign="LEFT")
     info_table.setStyle(TableStyle([

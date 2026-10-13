@@ -242,6 +242,15 @@ class SessionReportTemplateVersionPayload(_Payload):
     definition: dict[str, Any]
 
 
+class SessionReportTemplateUpdatePayload(_Payload):
+    expected_row_version: int = Field(ge=1)
+    status: Literal["ACTIVE", "INACTIVE"]
+
+
+class SessionReportTemplateDefaultPayload(_Payload):
+    template_ref: str = Field(min_length=1, max_length=128)
+
+
 def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
 
@@ -1257,6 +1266,17 @@ async def get_session_report_template(template_id: UUID, request: Request):
     )
 
 
+@router.get("/session-report-templates/{template_id}/versions")
+async def list_session_report_template_versions(
+    template_id: UUID, request: Request
+):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).session_report_template_request(
+        "GET", f"/{template_id}/versions",
+        auth_context=request.state.auth_context,
+    )
+
+
 @router.post("/session-report-templates", status_code=201)
 async def create_session_report_template(
     payload: SessionReportTemplateCreatePayload, request: Request
@@ -1277,6 +1297,33 @@ async def create_session_report_template_version(
     await _require(request, "aiops:plan_manage")
     return await _client(request).session_report_template_request(
         "POST", f"/{template_id}/versions",
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.patch("/session-report-templates/{template_id}")
+async def update_session_report_template(
+    template_id: UUID,
+    payload: SessionReportTemplateUpdatePayload,
+    request: Request,
+):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).session_report_template_request(
+        "PATCH", f"/{template_id}",
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/session-report-templates/default")
+async def set_default_session_report_template(
+    payload: SessionReportTemplateDefaultPayload,
+    request: Request,
+):
+    await _require(request, "aiops:plan_manage")
+    return await _client(request).session_report_template_request(
+        "PUT", "/default",
         payload=payload.model_dump(mode="json"),
         auth_context=request.state.auth_context,
     )

@@ -3968,6 +3968,41 @@ class AIOpsRuntimeService:
             else "INCIDENT"
         )
         report_key = template.template_ref.removeprefix("system:")
+        conversation_snapshot = dict(source.get("conversation") or {})
+        source_conversation_id = None
+        if conversation_snapshot.get("conversation_id"):
+            try:
+                source_conversation_id = UUID(
+                    str(conversation_snapshot["conversation_id"])
+                )
+            except ValueError as exc:
+                raise state_conflict("会话报告来源引用无效") from exc
+        get_conversation_report = getattr(
+            uow.inspections,
+            "get_current_report_for_conversation_template",
+            None,
+        )
+        get_run_report = getattr(
+            uow.inspections, "get_current_report_for_run_template", None
+        )
+        current_report = (
+            await get_conversation_report(
+                conversation_id=source_conversation_id,
+                template_id=template.template_ref,
+                lock=True,
+            )
+            if source_conversation_id is not None and get_conversation_report
+            else await get_run_report(
+                ops_run_id=run.ops_run_id,
+                template_id=template.template_ref,
+                lock=True,
+            )
+            if get_run_report else None
+        )
+        report_version = (
+            int(current_report.report_version) + 1
+            if current_report is not None else 1
+        )
         root = dict(source.get("root_cause") or {})
         grade = str(root.get("effective_level") or "INCONCLUSIVE")
         status = (
@@ -4091,7 +4126,7 @@ class AIOpsRuntimeService:
             OpsArtifactEntity(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
-                artifact_key=f"report:{report_key}:v1",
+                artifact_key=f"report:{report_key}:v{report_version}",
                 artifact_type="REPORT_CONTENT",
                 schema_version="REPORT_CONTENT.v1",
                 payload_json=payload,
@@ -4110,9 +4145,14 @@ class AIOpsRuntimeService:
             ReportEntity(
                 report_id=uuid7(),
                 ops_run_id=run.ops_run_id,
+                source_conversation_id=source_conversation_id,
                 target_id=run.target_id,
                 report_key=report_key,
-                report_version=1,
+                report_version=report_version,
+                supersedes_report_id=(
+                    current_report.report_id
+                    if current_report is not None else None
+                ),
                 is_current=0,
                 report_type=report_type,
                 title=content.title,
@@ -4169,7 +4209,7 @@ class AIOpsRuntimeService:
                 "report_id": str(report.report_id),
                 "report_key": report_key,
                 "report_type": report_type,
-                "report_version": 1,
+                "report_version": report_version,
                 "status": status,
                 "summary": summary,
                 "trace_id": trace_id,
@@ -4185,7 +4225,7 @@ class AIOpsRuntimeService:
                 "ops_run_id": str(run.ops_run_id),
                 "report_key": report_key,
                 "report_type": report_type,
-                "report_version": 1,
+                "report_version": report_version,
                 "status": status,
             },
             trace_id=trace_id,
@@ -6517,6 +6557,9 @@ class AIOpsRuntimeService:
                 raise resource_not_found("Report")
             entities = await uow.inspections.page_report_versions(
                 ops_run_id=anchor.ops_run_id,
+                source_conversation_id=getattr(
+                    anchor, "source_conversation_id", None
+                ),
                 report_key=anchor.report_key,
                 before_created_at=before_at,
                 before_id=before_id,
@@ -6675,6 +6718,9 @@ class AIOpsRuntimeService:
                 ReportEntity(
                     report_id=uuid7(),
                     ops_run_id=report.ops_run_id,
+                    source_conversation_id=getattr(
+                        report, "source_conversation_id", None
+                    ),
                     target_id=report.target_id,
                     report_key=report.report_key,
                     report_version=version,
@@ -7013,6 +7059,49 @@ class AIOpsRuntimeService:
                 source_rows=source_rows,
                 missing_turns=missing_turns,
             )
+            get_current_report = getattr(
+                uow.inspections,
+                "get_current_report_for_conversation_template",
+                None,
+            )
+            current_report = (
+                await get_current_report(
+                    conversation_id=conversation_id,
+                    template_id=template.template_ref,
+                )
+                if get_current_report else None
+            )
+            if (
+                current_report is not None
+                and current_report.template_version == template.version
+                and current_report.content_artifact_id is not None
+            ):
+                current_artifact = await uow.runs.get_artifact(
+                    artifact_id=current_report.content_artifact_id
+                )
+                current_conversation = (
+                    dict(
+                        dict(
+                            dict(current_artifact.payload_json or {}).get(
+                                "scope"
+                            ) or {}
+                        ).get("conversation") or {}
+                    )
+                    if current_artifact is not None
+                    and current_artifact.content_hash
+                    == current_report.content_hash
+                    and current_artifact.content_hash
+                    == sha256_json(dict(current_artifact.payload_json or {}))
+                    else {}
+                )
+                requested_conversation = dict(
+                    source_override.get("conversation") or {}
+                )
+                if (
+                    current_conversation.get("snapshot_hash")
+                    == requested_conversation.get("snapshot_hash")
+                ):
+                    return GeneratedReportReceipt.from_entity(current_report)
             report = await self._publish_diagnosis_report(
                 uow=uow,
                 run=anchor_run,
@@ -7112,6 +7201,21 @@ class AIOpsRuntimeService:
             rationale += f"；另有 {len(missing_turns)} 个 Turn 未形成可报告终态结果。"
         else:
             rationale += "。"
+        snapshot_hash = sha256_json({
+            "included_turns": [
+                {
+                    "turn_id": str(turn.turn_id),
+                    "turn_no": int(turn.turn_no),
+                    "turn_status": str(getattr(turn, "status", "UNKNOWN")),
+                    "run_id": str(run.ops_run_id),
+                    "run_status": str(getattr(run, "status", "UNKNOWN")),
+                    "artifact_id": str(artifact.artifact_id),
+                    "content_hash": artifact.content_hash,
+                }
+                for turn, run, artifact in source_rows
+            ],
+            "missing_turns": missing_turns,
+        })
         return {
             "status": "READY" if ready and not gaps else "PARTIAL",
             "root_cause": {"effective_level": effective_grade},
@@ -7128,6 +7232,7 @@ class AIOpsRuntimeService:
                 "title": conversation.title,
                 "turn_count": len(source_rows) + len(missing_turns),
                 "included_turn_ids": [str(turn.turn_id) for turn, _, _ in source_rows],
+                "snapshot_hash": snapshot_hash,
                 "question_summaries": list(dict.fromkeys(questions)),
             },
         }
@@ -7492,6 +7597,13 @@ class AIOpsRuntimeService:
             title=report.title,
             status=report.status,
             target_id=report.target_id,
+            template_ref=getattr(
+                report, "template_id", "system:diagnosis.standard"
+            ),
+            template_version=getattr(report, "template_version", "1"),
+            source_conversation_id=getattr(
+                report, "source_conversation_id", None
+            ),
             period_start=report.period_start,
             period_end=report.period_end,
             summary=report.summary,
@@ -7521,6 +7633,13 @@ class AIOpsRuntimeService:
             title=report.title,
             status=report.status,
             target_id=report.target_id,
+            template_ref=getattr(
+                report, "template_id", "system:diagnosis.standard"
+            ),
+            template_version=getattr(report, "template_version", "1"),
+            source_conversation_id=getattr(
+                report, "source_conversation_id", None
+            ),
             period_start=report.period_start,
             period_end=report.period_end,
             summary=report.summary,

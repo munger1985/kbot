@@ -71,6 +71,8 @@ HTML、任意表达式或外部 URL。根因等级、数据缺口、证据边界
 
 生成报告时，系统将解析后的模板定义、模板引用、版本和模板哈希写入报告内容。
 模板之后被更新或停用不影响已发布报告的预览与再次导出。
+Domain 可将一个启用的自定义模板设为默认；未设置自定义默认模板时回退到
+`system:diagnosis.standard`。模板列表提供历史版本、启停状态和累计使用次数。
 
 ## 用户流程
 
@@ -103,6 +105,9 @@ POST /api/v1/apps/aiops/inspection-templates
 POST /api/v1/apps/aiops/inspection-templates/{template_id}/versions
 GET  /api/v1/apps/aiops/session-report-templates
 POST /api/v1/apps/aiops/session-report-templates
+PATCH /api/v1/apps/aiops/session-report-templates/{template_id}
+PUT   /api/v1/apps/aiops/session-report-templates/default
+GET  /api/v1/apps/aiops/session-report-templates/{template_id}/versions
 POST /api/v1/apps/aiops/session-report-templates/{template_id}/versions
 GET  /api/v1/apps/aiops/report-layouts
 POST /api/v1/apps/aiops/reports:generate
@@ -112,7 +117,8 @@ GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 
 生成请求仅可选择来源 Session 或来源 Run 和模板，不可提交事实正文。智能运维使用
 `conversation_id`，告警和巡检继续使用 `ops_run_id`；二者必须且只能选择其一。所有写请求带
-`Idempotency-Key`；模板新版本带并发版本校验。当前报告状态为 `READY`、`PARTIAL`
+`Idempotency-Key`；会话报告可同时提交 `template_version_id` 精确冻结自定义模板版本，且该
+版本必须属于 `template_ref` 指向的模板。模板新版本带并发版本校验。当前报告状态为 `READY`、`PARTIAL`
 或 `FAILED`，PDF 根据冻结内容同步渲染，导出不会修改正式报告。
 
 读取、生成、预览和下载均校验 Domain、Target 与来源 Agent 的 Domain 归属。报告
@@ -124,6 +130,11 @@ GET  /api/v1/apps/aiops/reports/{report_id}/pdf
 逐条记录产生报告的来源 Run、来源产物哈希和采集时间，周期报告可关联多个 Run；Report
 投影中的 `OPS_RUN_ID` 仅是用户发起生成时的锚点。PDF 依据冻结内容同步生成，不保存
 正文副本。所有规范 DDL、实体、Repository、OpenAPI 和测试同步更新，不保留兼容读写。
+
+会话报告额外保存 `SOURCE_CONVERSATION_ID`。同一会话、同一模板引用下，相同 Turn
+快照和相同模板版本重复生成时返回当前报告；Turn 快照或模板版本变化时创建下一版，写入
+`SUPERSEDES_REPORT_ID` 并撤销上一版的当前标记。报告列表、详情和 PDF 均展示冻结的模板
+引用与版本，详情同时公开来源会话标识。
 
 ## 报告与诊断案例
 

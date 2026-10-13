@@ -1266,7 +1266,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("SESSION_REPORT_TEMPLATE.v1", script)
         self.assertIn("data-edit-inspection-template", script)
         self.assertIn("data-edit-session-template", script)
+        self.assertIn("data-history-session-template", script)
+        self.assertIn("data-default-session-template", script)
+        self.assertIn("data-toggle-session-template", script)
+        self.assertIn("/session-report-templates/default", script)
+        self.assertIn("/versions", script)
         self.assertIn("expected_row_version", script)
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("template_version_id", workspace)
 
 
 if __name__ == "__main__":

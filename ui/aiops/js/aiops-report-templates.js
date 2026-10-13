@@ -6,6 +6,7 @@
   let checkCatalog = null;
   let editingInspectionTemplate = null;
   let editingSessionTemplate = null;
+  let sessionTemplates = [];
 
   const checkedValues = (form, name) => Array.from(form.querySelectorAll(`[name="${name}"]:checked`)).map((item) => item.value);
 
@@ -32,14 +33,73 @@
   async function loadSessionTemplates() {
     const body = document.getElementById("ops-session-report-template-body");
     try {
-      const rows = await KBotAIOpsAuth.request(`${api}/session-report-templates`);
-      body.innerHTML = rows.map((item) => `<tr><td>${shell.escape(item.display_name)}</td><td>${shell.escape((item.sections || []).join("、") || "受控章节")}</td><td>${shell.escape(item.version || item.version_no || "—")}</td><td><code>${shell.escape(shell.short(item.content_hash))}</code></td><td>${item.system_defined ? shell.badge("系统预设") : shell.badge(item.status || "ACTIVE")}</td><td>${item.system_defined ? "—" : `<button type="button" data-edit-session-template="${shell.escape(item.template_id)}">发布新版本</button>`}</td></tr>`).join("") || '<tr><td class="ops-empty" colspan="6">暂无会话报告模板</td></tr>';
+      sessionTemplates = await KBotAIOpsAuth.request(`${api}/session-report-templates`);
+      body.innerHTML = sessionTemplates.map((item) => {
+        const actions = item.system_defined
+          ? `<button type="button" data-copy-session-template="${shell.escape(item.template_ref)}">复制</button>${item.is_default ? "" : `<button type="button" data-default-session-template="${shell.escape(item.template_ref)}">设为默认</button>`}`
+          : `<button type="button" data-edit-session-template="${shell.escape(item.template_id)}">发布新版本</button><button type="button" data-history-session-template="${shell.escape(item.template_id)}">版本历史</button>${item.is_default ? "" : `<button type="button" data-default-session-template="${shell.escape(item.template_ref)}">设为默认</button>`}<button type="button" data-toggle-session-template="${shell.escape(item.template_id)}" data-row-version="${shell.escape(item.row_version)}" data-next-status="${item.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"}">${item.status === "ACTIVE" ? "停用" : "启用"}</button>`;
+        return `<tr><td>${shell.escape(item.display_name)}${item.is_default ? "（默认）" : ""}</td><td>${shell.escape((item.sections || []).join("、") || "受控章节")}</td><td>${shell.escape(item.version || item.version_no || "—")}</td><td><code>${shell.escape(shell.short(item.content_hash))}</code></td><td>${shell.escape(item.usage_count || 0)}</td><td>${item.system_defined ? shell.badge("系统预设") : shell.badge(item.status || "ACTIVE")}</td><td><div class="ops-actions">${actions}</div></td></tr>`;
+      }).join("") || '<tr><td class="ops-empty" colspan="7">暂无会话报告模板</td></tr>';
       body.querySelectorAll("[data-edit-session-template]").forEach((button) => {
         button.onclick = () => openSessionTemplateVersion(button.dataset.editSessionTemplate);
       });
+      body.querySelectorAll("[data-history-session-template]").forEach((button) => {
+        button.onclick = () => showSessionTemplateHistory(button.dataset.historySessionTemplate);
+      });
+      body.querySelectorAll("[data-default-session-template]").forEach((button) => {
+        button.onclick = () => setDefaultSessionTemplate(button.dataset.defaultSessionTemplate);
+      });
+      body.querySelectorAll("[data-toggle-session-template]").forEach((button) => {
+        button.onclick = () => toggleSessionTemplate(button);
+      });
+      body.querySelectorAll("[data-copy-session-template]").forEach((button) => {
+        button.onclick = () => copySystemTemplate(button.dataset.copySessionTemplate);
+      });
     } catch (error) {
-      body.innerHTML = `<tr><td class="ops-empty" colspan="6">${shell.escape(error.message)}</td></tr>`;
+      body.innerHTML = `<tr><td class="ops-empty" colspan="7">${shell.escape(error.message)}</td></tr>`;
     }
+  }
+
+  async function showSessionTemplateHistory(templateId) {
+    try {
+      const versions = await KBotAIOpsAuth.request(`${api}/session-report-templates/${encodeURIComponent(templateId)}/versions`);
+      globalThis.alert(versions.map((item) => `v${item.version_no}${item.current ? "（当前）" : ""} · ${item.content_hash}`).join("\n") || "暂无版本");
+    } catch (error) { shell.toast(error.message); }
+  }
+
+  async function setDefaultSessionTemplate(templateRef) {
+    try {
+      await KBotAIOpsAuth.request(`${api}/session-report-templates/default`, {
+        method: "PUT",
+        body: JSON.stringify({ template_ref: templateRef }),
+      });
+      shell.toast("默认会话报告模板已更新");
+      await loadSessionTemplates();
+    } catch (error) { shell.toast(error.message); }
+  }
+
+  async function toggleSessionTemplate(button) {
+    try {
+      await KBotAIOpsAuth.request(`${api}/session-report-templates/${encodeURIComponent(button.dataset.toggleSessionTemplate)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ expected_row_version: Number(button.dataset.rowVersion), status: button.dataset.nextStatus }),
+      });
+      await loadSessionTemplates();
+    } catch (error) { shell.toast(error.message); }
+  }
+
+  function copySystemTemplate(templateRef) {
+    const item = sessionTemplates.find((row) => row.template_ref === templateRef);
+    const dialog = document.getElementById("session-report-template-dialog");
+    const form = document.getElementById("session-report-template-form");
+    editingSessionTemplate = null;
+    form.reset();
+    form.elements.display_name.disabled = false;
+    form.elements.display_name.value = `${item?.display_name || "会话报告模板"} 副本`;
+    const selected = new Set(item?.sections || []);
+    form.querySelectorAll('[name="section"]').forEach((input) => { input.checked = selected.has(input.value); });
+    dialog.querySelector("h2").textContent = "复制系统会话报告模板";
+    dialog.showModal();
   }
 
   async function openInspectionTemplateVersion(templateId) {

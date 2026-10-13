@@ -41,6 +41,17 @@ class CreateSessionReportTemplateVersion(BaseModel):
     definition: dict[str, Any]
 
 
+class UpdateSessionReportTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int = Field(ge=1)
+    status: str = Field(pattern="^(ACTIVE|INACTIVE)$")
+
+
+class SetDefaultSessionReportTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    template_ref: str = Field(min_length=1, max_length=128)
+
+
 def _scope(request, context):
     require_service_scope(request, "aiops.manage")
     if context.domain_id is None or int(context.domain_id) < 1:
@@ -122,6 +133,18 @@ async def get_session_report_template(
     )
 
 
+@router.get("/session-report-templates/{template_id}/versions")
+async def list_session_report_template_versions(
+    template_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.session_report_template_service.list_versions(
+        domain_id=domain_id, template_id=template_id
+    )
+
+
 @router.post("/session-report-templates", status_code=201)
 async def create_session_report_template(
     body: CreateSessionReportTemplate,
@@ -149,6 +172,36 @@ async def create_session_report_template_version(
         actor_id=actor_id,
         template_id=template_id,
         **body.model_dump(),
+    )
+
+
+@router.patch("/session-report-templates/{template_id}")
+async def update_session_report_template(
+    template_id: UUID,
+    body: UpdateSessionReportTemplate,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.session_report_template_service.update(
+        domain_id=domain_id,
+        actor_id=actor_id,
+        template_id=template_id,
+        **body.model_dump(),
+    )
+
+
+@router.put("/session-report-templates/default")
+async def set_default_session_report_template(
+    body: SetDefaultSessionReportTemplate,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.session_report_template_service.set_default(
+        domain_id=domain_id,
+        actor_id=actor_id,
+        template_ref=body.template_ref,
     )
 
 

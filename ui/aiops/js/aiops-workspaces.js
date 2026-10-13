@@ -1086,7 +1086,8 @@
       const rows = await KBotAIOpsAuth.request(
         `${api}/${conversationId ? "session-report-templates" : "report-layouts"}`,
       );
-      const templates = values(rows).filter((item) => values(item.applicable_source_kinds).includes(sourceKind)
+      const templates = values(rows).filter((item) => item.status !== "INACTIVE"
+        && values(item.applicable_source_kinds).includes(sourceKind)
         && (sourceKind === "INSPECTION" || values(item.allowed_period_kinds).includes(periodKind)));
       if (!templates.length) throw new Error("当前诊断没有可用的报告模板");
       const periods = sourceKind === "INSPECTION"
@@ -1104,7 +1105,7 @@
       const populateTemplates = () => {
         const selectedPeriod = periodSelect?.value || periodKind;
         const available = templates.filter((item) => values(item.allowed_period_kinds).includes(selectedPeriod));
-        templateSelect.innerHTML = available.map((item) => `<option value="${esc(item.template_ref)}">${esc(item.display_name)}</option>`).join("");
+        templateSelect.innerHTML = available.map((item) => `<option value="${esc(item.template_ref)}" data-template-version-id="${esc(item.template_version_id || "")}" ${item.is_default ? "selected" : ""}>${esc(item.display_name)}${item.version || item.version_no ? ` · v${esc(item.version || item.version_no)}` : ""}</option>`).join("");
         if (!available.length) templateSelect.innerHTML = '<option value="">当前周期没有可用模板</option>';
       };
       periodSelect?.addEventListener("change", populateTemplates); populateTemplates();
@@ -1112,6 +1113,7 @@
         try {
           if (dialog.returnValue !== "confirm") return;
           const templateRef = templateSelect.value;
+          const templateVersionId = templateSelect.selectedOptions[0]?.dataset.templateVersionId || null;
           const selectedPeriod = periodSelect?.value || periodKind;
           if (!templateRef) throw new Error("当前周期没有可用模板");
           const reportSource = conversationId
@@ -1120,7 +1122,7 @@
           const result = await KBotAIOpsAuth.request(`${api}/reports:generate`, {
             method: "POST",
             headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
-            body: JSON.stringify({ ...reportSource, template_ref: templateRef, period_kind: selectedPeriod }),
+            body: JSON.stringify({ ...reportSource, template_ref: templateRef, template_version_id: templateVersionId, period_kind: selectedPeriod }),
           });
           location.href = `./report-detail.html?id=${encodeURIComponent(result.report_id)}`;
         } catch (error) { shell.toast(error.message); }

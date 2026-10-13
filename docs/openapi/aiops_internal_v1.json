@@ -3492,6 +3492,18 @@
             "minLength": 1,
             "title": "Template Ref",
             "type": "string"
+          },
+          "template_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Version Id"
           }
         },
         "title": "GenerateUserReportRequest",
@@ -8329,6 +8341,18 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
           "status": {
             "$ref": "#/components/schemas/ReportStatus"
           },
@@ -8339,6 +8363,14 @@
           "target_id": {
             "format": "uuid",
             "title": "Target Id",
+            "type": "string"
+          },
+          "template_ref": {
+            "title": "Template Ref",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
             "type": "string"
           },
           "title": {
@@ -8356,6 +8388,8 @@
           "title",
           "status",
           "target_id",
+          "template_ref",
+          "template_version",
           "period_start",
           "period_end",
           "summary"
@@ -8519,6 +8553,18 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
           "status": {
             "$ref": "#/components/schemas/ReportStatus"
           },
@@ -8529,6 +8575,14 @@
           "target_id": {
             "format": "uuid",
             "title": "Target Id",
+            "type": "string"
+          },
+          "template_ref": {
+            "title": "Template Ref",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
             "type": "string"
           },
           "title": {
@@ -8546,6 +8600,8 @@
           "title",
           "status",
           "target_id",
+          "template_ref",
+          "template_version",
           "period_start",
           "period_end",
           "summary",

@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 42,
-  "contract_version": "aiops-oracle-v32",
+  "schema_version": 43,
+  "contract_version": "aiops-oracle-v33",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -21,8 +21,8 @@
     },
     {
       "name": "004_ops_inspection.sql",
-      "statements": 33,
-      "sha256": "ba372165b54d692dfcec5f78d10fb83b2749540f8a1d45625cec03bd4efcf2c5"
+      "statements": 34,
+      "sha256": "597f07e33f32bb4c3fcfb278ef6fa4d93110a8ea186c9df1580d0d30789f4b2e"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "c49a86dff74d107683771cf826d22fa411937c660c9a3e4ac5927b6afcd11c1b"
+      "sha256": "e789332b3a1d6eb2cf248849762cefcde6866d0d37565d46d656d5b0f9e8ce3d"
     },
     {
       "name": "007_ops_agents.sql",
@@ -41,8 +41,8 @@
     },
     {
       "name": "008_ops_conversations_reports.sql",
-      "statements": 83,
-      "sha256": "edb4a82e2f83131b2cf394417c9a28fd6ce3369c4f4c2452043090955ef13ba4"
+      "statements": 84,
+      "sha256": "ef30ea32da367f4424e5cbb66f012b658ffc95156b57a78aa903424f45a01e31"
     },
     {
       "name": "009_ops_workload.sql",
@@ -317,6 +317,17 @@
       "table": "KBOT_OPS_REPORT_TEMPLATE_VER",
       "columns": [
         "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_REPORT_CONVERSATION",
+      "index": "IX_OPS_REPORT_CONVERSATION",
+      "table": "KBOT_OPS_REPORT",
+      "columns": [
+        "SOURCE_CONVERSATION_ID",
+        "TEMPLATE_ID",
+        "IS_CURRENT",
+        "REPORT_VERSION"
       ]
     },
     {

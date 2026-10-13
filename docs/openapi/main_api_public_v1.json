@@ -12431,6 +12431,18 @@
             "default": "system:diagnosis.standard",
             "title": "Template Ref",
             "type": "string"
+          },
+          "template_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Version Id"
           }
         },
         "title": "ReportGenerationPayload",
@@ -12580,6 +12592,18 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
           "status": {
             "$ref": "#/components/schemas/ReportStatus"
           },
@@ -12590,6 +12614,14 @@
           "target_id": {
             "format": "uuid",
             "title": "Target Id",
+            "type": "string"
+          },
+          "template_ref": {
+            "title": "Template Ref",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
             "type": "string"
           },
           "title": {
@@ -12607,6 +12639,8 @@
           "title",
           "status",
           "target_id",
+          "template_ref",
+          "template_version",
           "period_start",
           "period_end",
           "summary"
@@ -12770,6 +12804,18 @@
             "title": "Schema Version",
             "type": "string"
           },
+          "source_conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Conversation Id"
+          },
           "status": {
             "$ref": "#/components/schemas/ReportStatus"
           },
@@ -12780,6 +12826,14 @@
           "target_id": {
             "format": "uuid",
             "title": "Target Id",
+            "type": "string"
+          },
+          "template_ref": {
+            "title": "Template Ref",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
             "type": "string"
           },
           "title": {
@@ -12797,6 +12851,8 @@
           "title",
           "status",
           "target_id",
+          "template_ref",
+          "template_version",
           "period_start",
           "period_end",
           "summary",
@@ -13641,6 +13697,46 @@
           "definition"
         ],
         "title": "SessionReportTemplateCreatePayload",
+        "type": "object"
+      },
+      "SessionReportTemplateDefaultPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "template_ref": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Template Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_ref"
+        ],
+        "title": "SessionReportTemplateDefaultPayload",
+        "type": "object"
+      },
+      "SessionReportTemplateUpdatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status"
+        ],
+        "title": "SessionReportTemplateUpdatePayload",
         "type": "object"
       },
       "SessionReportTemplateVersionPayload": {
@@ -25162,6 +25258,45 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/session-report-templates/default": {
+      "put": {
+        "operationId": "set_default_session_report_template_api_v1_apps_aiops_session_report_templates_default_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionReportTemplateDefaultPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default Session Report Template",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/session-report-templates/{template_id}": {
       "get": {
         "operationId": "get_session_report_template_api_v1_apps_aiops_session_report_templates__template_id__get",
@@ -25201,9 +25336,97 @@
         "tags": [
           "AIOps App"
         ]
+      },
+      "patch": {
+        "operationId": "update_session_report_template_api_v1_apps_aiops_session_report_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionReportTemplateUpdatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Session Report Template",
+        "tags": [
+          "AIOps App"
+        ]
       }
     },
     "/api/v1/apps/aiops/session-report-templates/{template_id}/versions": {
+      "get": {
+        "operationId": "list_session_report_template_versions_api_v1_apps_aiops_session_report_templates__template_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Session Report Template Versions",
+        "tags": [
+          "AIOps App"
+        ]
+      },
       "post": {
         "operationId": "create_session_report_template_version_api_v1_apps_aiops_session_report_templates__template_id__versions_post",
         "parameters": [
