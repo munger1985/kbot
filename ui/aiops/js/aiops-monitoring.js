@@ -35,6 +35,7 @@
       || dimensions.slot_name || dimensions.type || series.instance_display_name;
   };
   const seriesLabel = (series) => [seriesSubject(series), series.dimensions?.__metric_label, series.source_display_name].filter(Boolean).join(" · ");
+  const capacityScopeLabel = (scope) => ({ FILESYSTEM: "文件系统", LOGICAL: "逻辑占用" })[scope] || "";
 
   function label(value) { return readinessLabels[value] || value || "不可用"; }
   function pointQualityLabel(value) {
@@ -385,9 +386,10 @@
     if (!capacityPanels.length) return regularPanels;
     const quality = capacityPanels.every((panel) => panel.quality === "NO_DATA")
       ? "NO_DATA" : capacityPanels.some((panel) => panel.quality !== "GOOD") ? "PARTIAL" : "GOOD";
+    const hasDatabaseCapacityLimit = capacityPanels.some((panel) => ["db.storage.free_bytes", "db.storage.max_bytes"].includes(panel.metric_code));
     regularPanels.push({
       panel_id: "database.storage.capacity", title: "数据库容量",
-      description: "Oracle 按表空间对比已用、可用和最大容量；MySQL 按 schema、PostgreSQL 按数据库展示逻辑占用。",
+      description: "Oracle 按表空间展示容量；MySQL schema 与 PostgreSQL database 展示逻辑占用，真实余量由承载主机文件系统容量反映。",
       visualization: "CAPACITY_BAR", metric_code: capacityPanels.map((panel) => panel.metric_code).join(","),
       semantic_role: "STORAGE_CAPACITY", unit: "bytes", value_kind: "GAUGE", quality,
       capacity_thresholds: {
@@ -397,7 +399,12 @@
       summary: { metric_count: capacityPanels.length },
       series: capacityPanels.flatMap((panel) => panel.series.map((series) => ({
         ...series,
-        dimensions: { ...(series.dimensions || {}), __metric_role: panel.semantic_role, __metric_label: capacityRoleLabels[panel.semantic_role] },
+        dimensions: {
+          ...(series.dimensions || {}), __metric_role: panel.semantic_role,
+          __metric_label: capacityRoleLabels[panel.semantic_role], __metric_code: panel.metric_code,
+          __capacity_scope: panel.metric_code.startsWith("host.filesystem.")
+            ? "FILESYSTEM" : hasDatabaseCapacityLimit ? "DATABASE" : "LOGICAL",
+        },
       }))),
     });
     return regularPanels;
@@ -428,10 +435,11 @@
     const groups = new Map();
     available.forEach((series) => {
       const role = series.dimensions?.__metric_role || "DATABASE_SIZE";
+      const scope = series.dimensions?.__capacity_scope || "DATABASE";
       const category = seriesSubject(series);
-      const key = `${series.source_id}:${series.instance_id}:${category}`;
+      const key = `${series.source_id}:${series.instance_id}:${scope}:${category}`;
       const group = groups.get(key) || {
-        key, category, sourceName: series.source_display_name,
+        key, category, scope, sourceName: series.source_display_name,
         instanceId: series.instance_id, roles: new Map(),
       };
       group.roles.set(role, series);
@@ -456,7 +464,8 @@
         || (reportedMax !== null && reportedMax <= 0)
         || (total !== null && used > total * 1.01));
       let status = "未提供容量上限"; let statusTone = "unknown";
-      if (inconsistent) { status = "容量数据不一致"; statusTone = "danger"; }
+      if (group.scope === "LOGICAL") { status = "容量余量见文件系统"; statusTone = "unknown"; }
+      else if (inconsistent) { status = "容量数据不一致"; statusTone = "danger"; }
       else if (utilization !== null && critical !== undefined && utilization >= critical) { status = "空间紧张"; statusTone = "danger"; }
       else if (utilization !== null && warning !== undefined && utilization >= warning) { status = "需要关注"; statusTone = "warning"; }
       else if (utilization !== null) { status = "空间充足"; statusTone = "success"; }
@@ -472,7 +481,7 @@
           : [];
       });
       return {
-        ...group, label: sourceCount > 1 ? `${group.category} · ${group.sourceName}` : group.category,
+        ...group, label: [group.category, capacityScopeLabel(group.scope), sourceCount > 1 ? group.sourceName : ""].filter(Boolean).join(" · "),
         used, free, total, utilization, inconsistent, status, statusTone, trend,
         barPercent: utilization === null ? 0 : Math.min(Math.max(utilization, 0), 100),
       };
@@ -488,7 +497,7 @@
     const rows = capacityRows(panel);
     if (!rows.length) return '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>';
     const thresholds = panel.capacity_thresholds || {};
-    const list = rows.map((row) => `<button type="button" class="ops-capacity-row" data-capacity-instance-id="${esc(row.instanceId)}"><span class="ops-capacity-heading"><strong title="${esc(row.label)}">${esc(row.label)}</strong><span class="ops-capacity-status is-${esc(row.statusTone)}">${esc(row.status)}</span></span>${row.total !== null && row.used !== null ? `<span class="ops-capacity-bar-shell"><span class="ops-capacity-bar ${row.inconsistent ? "is-inconsistent" : ""}"><i style="width:${row.barPercent}%"></i></span><strong>${row.utilization.toFixed(1)}%</strong></span>` : `<span class="ops-capacity-unbounded"><i></i><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>`}<span class="ops-capacity-values"><span><small>已用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>可用</small><strong>${esc(row.free === null ? "未提供" : formatValue(row.free, panel.unit))}</strong></span><span><small>最大容量</small><strong>${esc(row.total === null ? "未提供" : formatValue(row.total, panel.unit))}</strong></span></span></button>`).join("");
+    const list = rows.map((row) => `<button type="button" class="ops-capacity-row" data-capacity-instance-id="${esc(row.instanceId)}"><span class="ops-capacity-heading"><strong title="${esc(row.label)}">${esc(row.label)}</strong><span class="ops-capacity-status is-${esc(row.statusTone)}">${esc(row.status)}</span></span>${row.total !== null && row.used !== null ? `<span class="ops-capacity-bar-shell"><span class="ops-capacity-bar ${row.inconsistent ? "is-inconsistent" : ""}"><i style="width:${row.barPercent}%"></i></span><strong>${row.utilization.toFixed(1)}%</strong></span>` : `<span class="ops-capacity-unbounded"><i></i><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>`}${row.scope === "LOGICAL" ? `<span class="ops-capacity-values ops-capacity-values-logical"><span><small>逻辑占用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>容量余量</small><strong>见文件系统</strong></span></span>` : `<span class="ops-capacity-values"><span><small>已用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>可用</small><strong>${esc(row.free === null ? "未提供" : formatValue(row.free, panel.unit))}</strong></span><span><small>最大容量</small><strong>${esc(row.total === null ? "未提供" : formatValue(row.total, panel.unit))}</strong></span></span>`}</button>`).join("");
     const hasTrend = rows.some((row) => row.trend.length);
     return `<div class="ops-capacity-overview"><div class="ops-capacity-legend"><span><i class="is-used"></i>已用</span><span><i class="is-available"></i>可用</span><small>状态阈值由 ${esc(thresholds.warning_percent)}% / ${esc(thresholds.critical_percent)}% Monitoring Profile 下发</small></div><div class="ops-capacity-row-list">${list}</div>${hasTrend ? `<section class="ops-capacity-trend"><div><h3>使用率趋势</h3><p>按同一对象的已用容量与容量上限计算。</p></div><div id="monitoring-chart-${index}" class="ops-capacity-trend-chart" role="img" aria-label="${esc(panel.title)}使用率趋势"></div></section>` : '<p class="ops-capacity-trend-empty">当前监控数据未提供容量上限，因此不能计算使用率趋势。</p>'}</div>`;
   }

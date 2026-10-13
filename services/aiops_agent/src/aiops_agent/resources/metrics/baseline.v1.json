@@ -726,6 +726,99 @@
       }
     },
     {
+      "metric_code": "host.filesystem.used_bytes",
+      "semantic_role": "STORAGE_USED",
+      "semantic_version": "1.0.0",
+      "name": "文件系统已用容量",
+      "description": "数据库所在主机持久文件系统的已使用字节数。",
+      "unit": "bytes",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "device", "mountpoint", "fstype"],
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.filesystem.used",
+          "template_version": "1",
+          "query_template": "node_filesystem_size_bytes{job=\"node\",fstype!~\"tmpfs|overlay|squashfs\",target_key=\"${host_target}\"} - node_filesystem_avail_bytes{job=\"node\",fstype!~\"tmpfs|overlay|squashfs\",target_key=\"${host_target}\"}",
+          "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.filesystem.used",
+          "template_version": "1",
+          "exact_item_key": "vfs.fs.size[/,used]",
+          "value_type": "UNSIGNED",
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "metric_code": "host.filesystem.available_bytes",
+      "semantic_role": "STORAGE_FREE",
+      "semantic_version": "1.0.0",
+      "name": "文件系统可用容量",
+      "description": "数据库所在主机持久文件系统的当前可用字节数。",
+      "unit": "bytes",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "device", "mountpoint", "fstype"],
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.filesystem.available",
+          "template_version": "1",
+          "query_template": "node_filesystem_avail_bytes{job=\"node\",fstype!~\"tmpfs|overlay|squashfs\",target_key=\"${host_target}\"}",
+          "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.filesystem.available",
+          "template_version": "1",
+          "exact_item_key": "vfs.fs.size[/,free]",
+          "value_type": "UNSIGNED",
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "metric_code": "host.filesystem.size_bytes",
+      "semantic_role": "STORAGE_MAX",
+      "semantic_version": "1.0.0",
+      "name": "文件系统总容量",
+      "description": "数据库所在主机持久文件系统的总字节数。",
+      "unit": "bytes",
+      "value_kind": "GAUGE",
+      "expected_dimensions": ["target_key", "device", "mountpoint", "fstype"],
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "allowed_aggregations": ["AVG", "MAX", "LAST"],
+      "default_window_seconds": 3600,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 64,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.host.filesystem.size",
+          "template_version": "1",
+          "query_template": "node_filesystem_size_bytes{job=\"node\",fstype!~\"tmpfs|overlay|squashfs\",target_key=\"${host_target}\"}",
+          "required_labels": ["target_key"]
+        },
+        "ZABBIX": {
+          "template_id": "zabbix.host.filesystem.size",
+          "template_version": "1",
+          "exact_item_key": "vfs.fs.size[/,total]",
+          "value_type": "UNSIGNED",
+          "unit": "bytes"
+        }
+      }
+    },
+    {
       "metric_code": "host.disk.io.utilization",
       "semantic_role": "DISK_IO_UTILIZATION",
       "semantic_version": "1.0.0",

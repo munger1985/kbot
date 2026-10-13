@@ -85,3 +85,4 @@
 @media(max-width:1250px){.ops-action-workbench-grid{grid-template-columns:1fr}.ops-action-context{position:static;grid-row:1;grid-template-columns:repeat(3,minmax(0,1fr))}.ops-action-context-card:first-child{grid-column:span 2}}
 @media(max-width:850px){.ops-action-context{grid-template-columns:1fr}.ops-action-context-card:first-child{grid-column:auto}.ops-action-scope{justify-self:stretch}.ops-dashboard-head{align-items:flex-start;flex-direction:column}.ops-dashboard-head .ops-actions{width:100%}}
 @media(max-width:600px){.ops-action-runtime-metrics,.ops-action-context .ops-dashboard-automation{grid-template-columns:1fr}.ops-action-runtime-metrics>article:nth-child(even),.ops-action-context .ops-dashboard-automation section+section{border-left:0}.ops-action-runtime-metrics>article+article,.ops-action-context .ops-dashboard-automation section+section{border-top:1px solid var(--line)}}
+.ops-capacity-values-logical{grid-template-columns:repeat(2,minmax(0,1fr))}

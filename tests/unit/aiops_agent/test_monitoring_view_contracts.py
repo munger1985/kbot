@@ -76,6 +76,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             ["mysql-overview"],
             [item.profile_id for item in mysql],
         )
+        self.assertEqual("3.2.0", mysql[0].version)
+        self.assertEqual("3.1.0", self.profiles.get("oracle-overview").version)
         self.assertEqual(
             "oracle-overview",
             self.profiles.list_for_databases((("ORACLE", "19c"),))[0].profile_id,
@@ -124,6 +126,29 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertIn("host.cpu.utilization", oracle_codes)
         self.assertIn("host.memory.utilization", oracle_codes)
 
+    def test_host_filesystem_capacity_metrics_use_real_provider_values(self):
+        expected = {
+            "host.filesystem.used_bytes": ("STORAGE_USED", "vfs.fs.size[/,used]"),
+            "host.filesystem.available_bytes": ("STORAGE_FREE", "vfs.fs.size[/,free]"),
+            "host.filesystem.size_bytes": ("STORAGE_MAX", "vfs.fs.size[/,total]"),
+        }
+        for metric_code, (semantic_role, zabbix_item_key) in expected.items():
+            definition = self.metrics.get(metric_code)
+            with self.subTest(metric_code=metric_code):
+                self.assertEqual(semantic_role, definition.semantic_role)
+                self.assertEqual(
+                    ("ORACLE", "MYSQL", "POSTGRESQL"),
+                    definition.supported_db_types,
+                )
+                self.assertIn(
+                    "node_filesystem_",
+                    definition.providers["PROMETHEUS"].query_template,
+                )
+                self.assertEqual(
+                    zabbix_item_key,
+                    definition.providers["ZABBIX"].exact_item_key,
+                )
+
     def test_default_database_profiles_use_authorized_exporter_metrics(self):
         expected_profiles = {
             ("ORACLE", "19c"): "oracle-overview",
@@ -152,6 +177,9 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertIn("runtime.memory.utilization", mysql_codes)
         self.assertIn("db.storage.used_bytes", mysql_codes)
         self.assertIn("host.filesystem.utilization", mysql_codes)
+        self.assertIn("host.filesystem.used_bytes", mysql_codes)
+        self.assertIn("host.filesystem.available_bytes", mysql_codes)
+        self.assertIn("host.filesystem.size_bytes", mysql_codes)
         postgresql_codes = self.profiles.resolve(
             "postgresql-overview", (("POSTGRESQL", "16"),)
         ).metric_codes
@@ -159,6 +187,9 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertIn("runtime.memory.utilization", postgresql_codes)
         self.assertIn("postgresql.database.size_bytes", postgresql_codes)
         self.assertIn("host.filesystem.utilization", postgresql_codes)
+        self.assertIn("host.filesystem.used_bytes", postgresql_codes)
+        self.assertIn("host.filesystem.available_bytes", postgresql_codes)
+        self.assertIn("host.filesystem.size_bytes", postgresql_codes)
         self.assertNotIn(
             "postgresql.replication.lag_bytes", postgresql_codes
         )
