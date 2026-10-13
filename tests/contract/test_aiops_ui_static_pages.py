@@ -23,6 +23,17 @@ class _Parser(HTMLParser):
 
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
+    def test_page_heads_share_one_left_aligned_anatomy(self):
+        pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
+        for path in pages:
+            page = path.read_text(encoding="utf-8")
+            self.assertIn('class="ops-head', page, path.name)
+
+        stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
+        self.assertIn(".ops-main>.ops-head{box-sizing:border-box;align-items:flex-start", stylesheet)
+        self.assertIn("border-bottom:1px solid var(--line);text-align:left", stylesheet)
+        self.assertIn(".ops-main>.ops-head.agent-page-head>div:first-child{padding-left:0;border-left:0}", stylesheet)
+
     pages = {
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
