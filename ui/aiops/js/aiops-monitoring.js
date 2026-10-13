@@ -35,6 +35,7 @@
       || dimensions.slot_name || dimensions.type || series.instance_display_name;
   };
   const seriesLabel = (series) => [seriesSubject(series), series.dimensions?.__metric_label, series.source_display_name].filter(Boolean).join(" · ");
+  const tooltipSeriesLabel = (series) => [seriesSubject(series), series.dimensions?.__metric_label].filter(Boolean).join(" · ");
   const capacityScopeLabel = (scope) => ({ FILESYSTEM: "文件系统", LOGICAL: "逻辑占用" })[scope] || "";
 
   function label(value) { return readinessLabels[value] || value || "不可用"; }
@@ -522,17 +523,27 @@
     const series = panel.series.filter((item) => item.points.some((point) => numericValue(point.value) !== null));
     const selected = Object.fromEntries(series.map((item, index) => [seriesLabel(item), index < 6]));
     const common = { animationDuration: 220, color: colors, legend: { top: 0, type: "scroll", selected }, grid: { left: 64, right: 26, top: 52, bottom: 46 } };
+    const sourceNames = [...new Set(series.map((item) => item.source_display_name).filter(Boolean))].join(" / ");
     const tooltip = { trigger: "axis", formatter: (entries) => {
       const values = Array.isArray(entries) ? entries : [entries];
       const at = values[0]?.axisValue || values[0]?.name || "";
-      return [esc(shell.fmt(at)), ...values.map((entry) => `${entry.marker || ""}${esc(entry.seriesName)}：${esc(formatValue(Array.isArray(entry.value) ? entry.value[1] : entry.value, panel.unit))}`)].join("<br>");
+      return [esc(shell.fmt(at)), ...values.map((entry) => {
+        const item = ["STAT", "GAUGE"].includes(panel.visualization)
+          ? series[Number(entry.dataIndex || 0)]
+          : series[Number(entry.seriesIndex || 0)];
+        return `${entry.marker || ""}${esc(item ? tooltipSeriesLabel(item) : entry.seriesName)}：${esc(formatValue(Array.isArray(entry.value) ? entry.value[1] : entry.value, panel.unit))}`;
+      }), sourceNames ? `来源：${esc(sourceNames)}` : ""].filter(Boolean).join("<br>");
     } };
     if (panel.visualization === "CAPACITY_BAR") {
       const rows = capacityRows(panel).filter((row) => row.trend.length);
       const capacityTooltip = { trigger: "axis", formatter: (entries) => {
         const values = Array.isArray(entries) ? entries : [entries];
         const at = values[0]?.axisValue || "";
-        return [esc(shell.fmt(at)), ...values.map((entry) => `${entry.marker || ""}${esc(entry.seriesName)}：${esc(formatValue(entry.data?.value?.[1], "percent"))}<br>&nbsp;&nbsp;${esc(formatValue(entry.data?.used, "bytes"))} / ${esc(formatValue(entry.data?.total, "bytes"))}`)].join("<br>");
+        return [esc(shell.fmt(at)), ...values.map((entry) => {
+          const row = rows[Number(entry.seriesIndex || 0)];
+          const label = row ? [row.category, capacityScopeLabel(row.scope)].filter(Boolean).join(" · ") : entry.seriesName;
+          return `${entry.marker || ""}${esc(label)}：${esc(formatValue(entry.data?.value?.[1], "percent"))}<br>&nbsp;&nbsp;${esc(formatValue(entry.data?.used, "bytes"))} / ${esc(formatValue(entry.data?.total, "bytes"))}`;
+        }), sourceNames ? `来源：${esc(sourceNames)}` : ""].filter(Boolean).join("<br>");
       } };
       return {
         ...common, color: colors,
