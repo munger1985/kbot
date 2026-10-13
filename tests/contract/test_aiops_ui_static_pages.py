@@ -129,8 +129,12 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("过去 1 月平均值", page)
         self.assertNotIn('id="monitoring-compare-source"', page)
         self.assertNotIn("monitoring-query-drawer", page)
-        self.assertIn("aiops.css?v=20261013_4", page)
-        self.assertIn("aiops-monitoring.js?v=20261013_7", page)
+        self.assertIn("aiops.css?v=20261014_1", page)
+        self.assertIn("aiops-monitoring.js?v=20261014_1", page)
+        self.assertIn('id="monitoring-workspace" class="ops-special-workspace ops-monitoring-workspace"', page)
+        self.assertIn('id="monitoring-rail-toggle"', page)
+        self.assertIn('railCollapsed: false', script)
+        self.assertIn('setRailCollapsed(!state.railCollapsed)', script)
         self.assertIn('percent: "%"', script)
         self.assertIn('return `${text} %`', script)
         self.assertIn('transactions_per_second: "次/秒"', script)
@@ -389,6 +393,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('document.execCommand("copy")', renderer)
         self.assertIn("kbot-markdown.js?v=20260827_1", chat)
 
+    def test_chat_uses_the_monitoring_workspace_bone_and_starts_collapsed(self):
+        chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(encoding="utf-8")
+        stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
+        self.assertIn('id="chat-workspace" class="ops-special-workspace ops-workspace is-rail-collapsed"', chat)
+        self.assertIn('id="chat-rail-toggle"', chat)
+        self.assertIn('workspace.classList.toggle("is-rail-collapsed", collapsed)', workspace)
+        self.assertIn(".ops-special-workspace.is-rail-collapsed", stylesheet)
+        self.assertIn("grid-template-columns:238px minmax(0,1fr)", stylesheet)
+
     def test_chat_selects_attachment_before_submitting_it(self):
         chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
@@ -430,7 +444,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261011_1",
+            "chat": "20261014_1",
             "situations": "20261011_1",
             "inspections": "20261012_1",
         }

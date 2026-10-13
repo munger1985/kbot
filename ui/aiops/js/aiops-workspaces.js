@@ -1696,6 +1696,14 @@
   }
 
   async function initChat() {
+    const workspace = document.getElementById("chat-workspace");
+    const railToggle = document.getElementById("chat-rail-toggle");
+    const setRailCollapsed = (collapsed) => {
+      workspace.classList.toggle("is-rail-collapsed", collapsed);
+      railToggle.setAttribute("aria-expanded", String(!collapsed));
+      railToggle.setAttribute("aria-label", collapsed ? "展开诊断会话" : "收起诊断会话");
+    };
+    railToggle.onclick = () => setRailCollapsed(!workspace.classList.contains("is-rail-collapsed"));
     const select = document.getElementById("agent-select");
     await agents();
     const targetSelect = document.getElementById("target-select");

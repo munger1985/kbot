@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>实时监控 · KBot AIOps</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261013_4">
+  <link rel="stylesheet" href="./css/aiops.css?v=20261014_1">
 </head>
 <body data-page="monitoring">
   <main class="ops-main ops-monitoring-main">
@@ -20,6 +20,11 @@
       </div>
     </header>
 
+    <section id="monitoring-workspace" class="ops-special-workspace ops-monitoring-workspace">
+      <aside class="ops-special-rail ops-monitoring-rail" aria-label="实时监控查询上下文">
+        <button id="monitoring-rail-toggle" class="ops-special-rail-toggle" type="button" aria-label="收起实时监控查询上下文" aria-controls="monitoring-rail-content" aria-expanded="true">☰</button>
+        <span class="ops-special-rail-collapsed-label">监控上下文</span>
+        <div id="monitoring-rail-content" class="ops-special-rail-content">
     <section id="monitoring-context" class="ops-monitoring-context" aria-label="实时监控筛选" hidden>
       <label>监控源<select id="monitoring-source"></select></label>
       <label>时间范围<select id="monitoring-window"><option value="15m">15 分钟</option><option value="1h" selected>1 小时</option><option value="6h">6 小时</option><option value="24h">24 小时</option></select></label>
@@ -28,13 +33,15 @@
       <div id="monitoring-readiness" class="ops-monitoring-readiness"></div>
     </section>
 
-    <section id="monitoring-gate" class="ops-panel ops-monitoring-gate"><div class="ops-empty">正在读取监控源目录…</div></section>
-
     <section id="monitoring-instance-picker" class="ops-panel ops-monitoring-instance-picker" hidden>
       <div class="ops-panel-head"><div><h2>数据库实例</h2><p>每次选择一个实例查看实时指标和数据质量。</p></div><span id="monitoring-selection-count" class="ops-monitoring-selection-count"><strong>0</strong> / 0 请选择</span></div>
       <div class="ops-monitoring-instance-tools"><label>搜索实例<input id="monitoring-instance-search" type="search" placeholder="名称或数据库类型"></label></div>
       <div id="monitoring-instance-list" class="ops-monitoring-instance-list" role="radiogroup" aria-label="数据库实例单选"></div>
     </section>
+        </div>
+      </aside>
+      <div class="ops-special-main ops-monitoring-workspace-main">
+    <section id="monitoring-gate" class="ops-panel ops-monitoring-gate"><div class="ops-empty">正在读取监控源目录…</div></section>
 
     <section id="monitoring-loading" class="ops-panel ops-monitoring-loading" hidden><div class="ops-empty">正在查询实时指标…</div></section>
     <div id="monitoring-result" hidden>
@@ -46,6 +53,8 @@
         <div class="ops-monitoring-quality-layout"><dl id="monitoring-quality-context" class="ops-detail"></dl><div id="monitoring-gaps" class="ops-monitoring-gaps"></div></div>
       </section>
     </div>
+      </div>
+    </section>
   </main>
   <dialog id="monitoring-data-drawer" class="ops-monitoring-data-drawer" aria-labelledby="monitoring-data-drawer-title">
     <div class="ops-monitoring-data-drawer-shell">
@@ -77,6 +86,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261010_1"></script>
-  <script src="./js/aiops-monitoring.js?v=20261013_7"></script>
+  <script src="./js/aiops-monitoring.js?v=20261014_1"></script>
 </body>
 </html>

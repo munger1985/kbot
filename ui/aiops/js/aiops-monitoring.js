@@ -7,7 +7,7 @@
     sources: [], instances: [], profiles: [], view: null,
     sourceId: "", baseline: "1w", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
-    visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
+    visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null, railCollapsed: false,
   };
   const readinessLabels = {
     READY: "就绪", DISABLED: "已停用", DISCONNECTED: "连接失败",
@@ -38,6 +38,13 @@
   const capacityScopeLabel = (scope) => ({ FILESYSTEM: "文件系统", LOGICAL: "逻辑占用" })[scope] || "";
 
   function label(value) { return readinessLabels[value] || value || "不可用"; }
+  function setRailCollapsed(collapsed) {
+    state.railCollapsed = collapsed;
+    document.getElementById("monitoring-workspace").classList.toggle("is-rail-collapsed", collapsed);
+    const toggle = document.getElementById("monitoring-rail-toggle");
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", collapsed ? "展开实时监控查询上下文" : "收起实时监控查询上下文");
+  }
   function pointQualityLabel(value) {
     return ({ GOOD: "正常", INVALID: "无效", STALE: "已过期", ESTIMATED: "估算" })[value] || value || "未知";
   }
@@ -909,6 +916,7 @@
     trigger?.focus();
   });
   document.getElementById("refresh-monitoring").onclick = loadView;
+  document.getElementById("monitoring-rail-toggle").onclick = () => setRailCollapsed(!state.railCollapsed);
   document.getElementById("monitoring-refresh-interval").onchange = scheduleRefresh;
   addEventListener("resize", () => state.charts.forEach((chart) => chart.resize()));
   shell.ready.then(initialize);
