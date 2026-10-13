@@ -18,6 +18,7 @@ MonitoringReadiness = Literal[
 ]
 DiagnosticReadiness = Literal["READY", "PARTIAL", "UNAVAILABLE"]
 MonitoringWindowName = Literal["15m", "1h", "6h", "24h"]
+MonitoringBaselinePeriod = Literal["1d", "1w", "1m"]
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -95,8 +96,8 @@ class MonitoringWindow(_Contract):
             raise ValueError("监控时间必须包含时区")
         if self.start >= self.end:
             raise ValueError("监控时间窗无效")
-        if (self.end - self.start).total_seconds() > 86_400:
-            raise ValueError("监控时间窗不能超过 24 小时")
+        if (self.end - self.start).total_seconds() > 2_592_000:
+            raise ValueError("监控时间窗不能超过 30 天")
         return self
 
 
@@ -104,6 +105,15 @@ class MonitoringPoint(_Contract):
     observed_at: datetime
     value: float | str | bool | None
     quality: Literal["GOOD", "INVALID", "STALE", "ESTIMATED"] = "GOOD"
+
+
+class MonitoringSeriesBaseline(_Contract):
+    period: MonitoringBaselinePeriod
+    start: datetime
+    end: datetime
+    average: float | None = None
+    sample_count: int = Field(ge=0)
+    coverage_ratio: float = Field(ge=0, le=1)
 
 
 class MonitoringSeries(_Contract):
@@ -116,6 +126,7 @@ class MonitoringSeries(_Contract):
     dimensions: dict[str, str] = Field(default_factory=dict)
     points: tuple[MonitoringPoint, ...] = Field(default=(), max_length=240)
     coverage_ratio: float = Field(ge=0, le=1)
+    baseline: MonitoringSeriesBaseline | None = None
 
 
 class MonitoringPanel(_Contract):

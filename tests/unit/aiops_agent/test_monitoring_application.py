@@ -466,7 +466,9 @@ def test_target_view_can_compare_prometheus_and_zabbix_independently():
             "partial": True,
         }
     )
-    service.get_view = AsyncMock(side_effect=(primary, comparison))
+    service.get_view = AsyncMock(
+        side_effect=(primary, primary, comparison, comparison)
+    )
 
     result = asyncio.run(
         service.get_target_view(
@@ -479,11 +481,15 @@ def test_target_view_can_compare_prometheus_and_zabbix_independently():
         )
     )
 
-    assert service.get_view.await_count == 2
+    assert service.get_view.await_count == 4
     assert result.source.source_type == "PROMETHEUS"
     assert result.compare_source == compare_source
     assert result.partial is True
     assert result.gaps[0].source_id == compare_source_id
+    for call in (service.get_view.await_args_list[1], service.get_view.await_args_list[3]):
+        assert call.kwargs["reduce_observed_statuses"] is False
+        baseline_window = call.kwargs["window_override"]
+        assert baseline_window.end - baseline_window.start == timedelta(days=7)
 
 
 def test_target_view_rejects_comparing_source_with_itself_before_query():

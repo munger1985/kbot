@@ -16,9 +16,11 @@ from aiops_agent.application.errors import (
 )
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
 from platform_core.contracts.aiops.monitoring import (
+    MonitoringBaselinePeriod,
     MonitoringGap,
     MonitoringInstanceSummary,
     MonitoringSourceSummary,
+    MonitoringSeriesBaseline,
     MonitoringView,
     MonitoringViewRequest,
     MonitoringWindow,
@@ -31,6 +33,7 @@ from aiops_agent.monitoring import (
     build_monitoring_cache_key,
     project_source_readiness,
     resolve_metric_definitions,
+    resolve_monitoring_baseline_window,
     resolve_monitoring_window,
 )
 from aiops_agent.ports.diagnostic_source import (
@@ -222,6 +225,7 @@ class MonitoringApplicationService:
         window_start: datetime | None = None,
         window_end: datetime | None = None,
         compare_source_id: UUID | None = None,
+        baseline: MonitoringBaselinePeriod = "1w",
     ) -> MonitoringView:
         generated_at = datetime.now(UTC)
         explicit_window = self._explicit_window(
@@ -254,6 +258,20 @@ class MonitoringApplicationService:
             now=generated_at,
             window_override=explicit_window,
         )
+        primary = self._attach_baselines(
+            primary,
+            await self.get_view(
+                scope=scope,
+                source_id=source_id,
+                request=request,
+                now=generated_at,
+                window_override=resolve_monitoring_baseline_window(
+                    baseline, now=generated_at
+                ),
+                reduce_observed_statuses=False,
+            ),
+            baseline,
+        )
         if compare_source_id is None:
             return primary
         comparison = await self.get_view(
@@ -262,6 +280,20 @@ class MonitoringApplicationService:
             request=request,
             now=generated_at,
             window_override=explicit_window,
+        )
+        comparison = self._attach_baselines(
+            comparison,
+            await self.get_view(
+                scope=scope,
+                source_id=compare_source_id,
+                request=request,
+                now=generated_at,
+                window_override=resolve_monitoring_baseline_window(
+                    baseline, now=generated_at
+                ),
+                reduce_observed_statuses=False,
+            ),
+            baseline,
         )
         return self._merge_comparison(primary, comparison)
 
@@ -273,6 +305,7 @@ class MonitoringApplicationService:
         request: MonitoringViewRequest,
         now: datetime | None = None,
         window_override: MonitoringWindow | None = None,
+        reduce_observed_statuses: bool = True,
     ) -> MonitoringView:
         generated_at = (now or datetime.now(UTC)).astimezone(UTC)
         requested = set(request.instance_ids)
@@ -438,7 +471,8 @@ class MonitoringApplicationService:
                 message="标准化监控视图超过单次响应预算",
                 status_code=422,
             )
-        await self._reduce_observed_statuses(observations)
+        if reduce_observed_statuses:
+            await self._reduce_observed_statuses(observations)
         self._cache[cache_key] = (generated_at + timedelta(seconds=15), view)
         return view
 
@@ -547,6 +581,50 @@ class MonitoringApplicationService:
                     last_error_code=None,
                 )
             await uow.commit()
+
+    @staticmethod
+    def _attach_baselines(
+        current: MonitoringView,
+        historical: MonitoringView,
+        period: MonitoringBaselinePeriod,
+    ) -> MonitoringView:
+        historical_series = {
+            series.series_key: series
+            for panel in historical.panels
+            for series in panel.series
+        }
+        panels = []
+        for panel in current.panels:
+            series_with_baselines = []
+            for series in panel.series:
+                historical_item = historical_series.get(series.series_key)
+                values = [] if historical_item is None else [
+                    float(point.value)
+                    for point in historical_item.points
+                    if point.quality == "GOOD"
+                    and isinstance(point.value, (int, float, bool))
+                ]
+                series_with_baselines.append(
+                    series.model_copy(
+                        update={
+                            "baseline": MonitoringSeriesBaseline(
+                                period=period,
+                                start=historical.window.start,
+                                end=historical.window.end,
+                                average=(sum(values) / len(values)) if values else None,
+                                sample_count=len(values),
+                                coverage_ratio=(
+                                    historical_item.coverage_ratio
+                                    if historical_item is not None else 0
+                                ),
+                            )
+                        }
+                    )
+                )
+            panels.append(
+                panel.model_copy(update={"series": tuple(series_with_baselines)})
+            )
+        return current.model_copy(update={"panels": tuple(panels)})
 
     @staticmethod
     def _merge_comparison(

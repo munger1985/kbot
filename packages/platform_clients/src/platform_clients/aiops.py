@@ -384,12 +384,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         window: str,
         window_start: str | None,
         window_end: str | None,
+        baseline: str = "1w",
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         query = {
             "source_id": str(source_id),
             "profile_id": profile_id,
             "window": window,
+            "baseline": baseline,
         }
         if compare_source_id is not None:
             query["compare_source_id"] = str(compare_source_id)

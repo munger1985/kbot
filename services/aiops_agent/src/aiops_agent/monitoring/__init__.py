@@ -24,6 +24,7 @@ from .view import (
     build_monitoring_cache_key,
     project_source_readiness,
     resolve_monitoring_window,
+    resolve_monitoring_baseline_window,
 )
 
 __all__ = [
@@ -45,4 +46,5 @@ __all__ = [
     "project_source_readiness",
     "resolve_metric_definitions",
     "resolve_monitoring_window",
+    "resolve_monitoring_baseline_window",
 ]

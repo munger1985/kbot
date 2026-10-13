@@ -1,5 +1,5 @@
 {
-  "catalog_version": "monitoring-profiles.v3",
+  "catalog_version": "monitoring-profiles.v4",
   "profiles": [
     {
       "profile_id": "oracle-overview",
@@ -26,7 +26,7 @@
     },
     {
       "profile_id": "mysql-overview",
-      "version": "3.2.0",
+      "version": "3.3.0",
       "purpose": "OVERVIEW",
       "display_name": "MySQL 实时总览",
       "description": "MySQL 数据库、schema 逻辑容量和所在主机资源的统一实时总览。",
@@ -37,13 +37,13 @@
           "variant_id": "mysql-8-4",
           "db_type": "MYSQL",
           "version_codes": ["8.4"],
-          "metric_codes": ["mysql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent", "db.storage.used_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.filesystem.used_bytes", "host.filesystem.available_bytes", "host.filesystem.size_bytes", "host.disk.io.utilization", "host.network.throughput"]
+          "metric_codes": ["mysql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent", "db.storage.used_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         }
       ]
     },
     {
       "profile_id": "postgresql-overview",
-      "version": "3.2.0",
+      "version": "3.3.0",
       "purpose": "OVERVIEW",
       "display_name": "PostgreSQL 实时总览",
       "description": "PostgreSQL 数据库、数据库逻辑容量和所在主机资源的统一实时总览。",
@@ -54,7 +54,7 @@
           "variant_id": "postgresql-16",
           "db_type": "POSTGRESQL",
           "version_codes": ["16"],
-          "metric_codes": ["postgresql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.filesystem.used_bytes", "host.filesystem.available_bytes", "host.filesystem.size_bytes", "host.disk.io.utilization", "host.network.throughput"]
+          "metric_codes": ["postgresql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         }
       ]
     },

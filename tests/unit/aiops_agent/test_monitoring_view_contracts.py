@@ -19,6 +19,7 @@ from aiops_agent.monitoring import (
     load_monitoring_profile_catalog,
     project_source_readiness,
     resolve_metric_definitions,
+    resolve_monitoring_baseline_window,
     resolve_monitoring_window,
 )
 from aiops_agent.ports.diagnostic_source import (
@@ -70,13 +71,22 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.metrics = load_metric_catalog()
         self.profiles = load_monitoring_profile_catalog(self.metrics)
 
+    def test_baseline_windows_use_rolling_day_week_and_month_periods(self):
+        now = datetime(2026, 10, 13, 8, 0, tzinfo=UTC)
+        expected = {"1d": 1, "1w": 7, "1m": 30}
+        for period, days in expected.items():
+            with self.subTest(period=period):
+                window = resolve_monitoring_baseline_window(period, now=now)
+                self.assertEqual(now, window.end)
+                self.assertEqual(timedelta(days=days), window.end - window.start)
+
     def test_profiles_are_stable_and_provider_aligned(self):
         mysql = self.profiles.list_for_databases((("MYSQL", "8.4"),))
         self.assertEqual(
             ["mysql-overview"],
             [item.profile_id for item in mysql],
         )
-        self.assertEqual("3.2.0", mysql[0].version)
+        self.assertEqual("3.3.0", mysql[0].version)
         self.assertEqual("3.1.0", self.profiles.get("oracle-overview").version)
         self.assertEqual(
             "oracle-overview",
@@ -177,9 +187,9 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertIn("runtime.memory.utilization", mysql_codes)
         self.assertIn("db.storage.used_bytes", mysql_codes)
         self.assertIn("host.filesystem.utilization", mysql_codes)
-        self.assertIn("host.filesystem.used_bytes", mysql_codes)
-        self.assertIn("host.filesystem.available_bytes", mysql_codes)
-        self.assertIn("host.filesystem.size_bytes", mysql_codes)
+        self.assertNotIn("host.filesystem.used_bytes", mysql_codes)
+        self.assertNotIn("host.filesystem.available_bytes", mysql_codes)
+        self.assertNotIn("host.filesystem.size_bytes", mysql_codes)
         postgresql_codes = self.profiles.resolve(
             "postgresql-overview", (("POSTGRESQL", "16"),)
         ).metric_codes
@@ -187,9 +197,9 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertIn("runtime.memory.utilization", postgresql_codes)
         self.assertIn("postgresql.database.size_bytes", postgresql_codes)
         self.assertIn("host.filesystem.utilization", postgresql_codes)
-        self.assertIn("host.filesystem.used_bytes", postgresql_codes)
-        self.assertIn("host.filesystem.available_bytes", postgresql_codes)
-        self.assertIn("host.filesystem.size_bytes", postgresql_codes)
+        self.assertNotIn("host.filesystem.used_bytes", postgresql_codes)
+        self.assertNotIn("host.filesystem.available_bytes", postgresql_codes)
+        self.assertNotIn("host.filesystem.size_bytes", postgresql_codes)
         self.assertNotIn(
             "postgresql.replication.lag_bytes", postgresql_codes
         )

@@ -20,6 +20,7 @@ from platform_core.contracts.aiops.monitoring import (
     MonitoringSourceSummary,
     MonitoringView,
     MonitoringViewRequest,
+    MonitoringBaselinePeriod,
     MonitoringWindowName,
 )
 from platform_core.contracts import AuthContext
@@ -105,6 +106,7 @@ async def get_target_view(
     window: MonitoringWindowName = Query(default="1h"),
     window_start: datetime | None = Query(default=None),
     window_end: datetime | None = Query(default=None),
+    baseline: MonitoringBaselinePeriod = Query(default="1w"),
 ):
     return await service.get_target_view(
         scope=scope,
@@ -115,4 +117,5 @@ async def get_target_view(
         window=window,
         window_start=window_start,
         window_end=window_end,
+        baseline=baseline,
     )

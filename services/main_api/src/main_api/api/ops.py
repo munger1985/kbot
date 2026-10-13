@@ -119,6 +119,7 @@ from platform_core.contracts.aiops.monitoring import (
     MonitoringSourceSummary,
     MonitoringView,
     MonitoringViewRequest,
+    MonitoringBaselinePeriod,
     MonitoringWindowName,
 )
 from platform_core.identity import uuid7
@@ -702,6 +703,7 @@ async def get_target_monitoring_view(
     window: MonitoringWindowName = Query(default="1h"),
     window_start: datetime | None = Query(default=None),
     window_end: datetime | None = Query(default=None),
+    baseline: MonitoringBaselinePeriod = Query(default="1w"),
 ):
     return await _client(request).get_target_monitoring_view(
         target_id,
@@ -711,6 +713,7 @@ async def get_target_monitoring_view(
         window=window,
         window_start=window_start.isoformat() if window_start else None,
         window_end=window_end.isoformat() if window_end else None,
+        baseline=baseline,
         auth_context=request.state.auth_context,
     )
 

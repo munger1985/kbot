@@ -9382,6 +9382,16 @@
       "MonitoringSeries": {
         "additionalProperties": false,
         "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringSeriesBaseline"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "coverage_ratio": {
             "maximum": 1.0,
             "minimum": 0.0,
@@ -9450,6 +9460,61 @@
           "coverage_ratio"
         ],
         "title": "MonitoringSeries",
+        "type": "object"
+      },
+      "MonitoringSeriesBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average"
+          },
+          "coverage_ratio": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Coverage Ratio",
+            "type": "number"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "period": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "sample_count": {
+            "minimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "start",
+          "end",
+          "sample_count",
+          "coverage_ratio"
+        ],
+        "title": "MonitoringSeriesBaseline",
         "type": "object"
       },
       "MonitoringSourceSummary": {
@@ -27093,6 +27158,21 @@
                 }
               ],
               "title": "Window End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "baseline",
+            "required": false,
+            "schema": {
+              "default": "1w",
+              "enum": [
+                "1d",
+                "1w",
+                "1m"
+              ],
+              "title": "Baseline",
+              "type": "string"
             }
           }
         ],

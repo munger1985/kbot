@@ -10,6 +10,7 @@ from uuid import UUID
 from aiops_agent.contracts.evidence import MetricObservation
 from platform_core.contracts.aiops.monitoring import (
     MonitoringGap,
+    MonitoringBaselinePeriod,
     MonitoringInstanceSummary,
     MonitoringPanel,
     MonitoringPoint,
@@ -31,6 +32,11 @@ _WINDOW_SECONDS: dict[MonitoringWindowName, int] = {
     "6h": 21_600,
     "24h": 86_400,
 }
+_BASELINE_SECONDS: dict[MonitoringBaselinePeriod, int] = {
+    "1d": 86_400,
+    "1w": 604_800,
+    "1m": 2_592_000,
+}
 
 
 class MonitoringQueryError(ValueError):
@@ -46,6 +52,16 @@ def resolve_monitoring_window(
     return MonitoringWindow(
         name=window,
         start=end - timedelta(seconds=_WINDOW_SECONDS[window]),
+        end=end,
+    )
+
+
+def resolve_monitoring_baseline_window(
+    period: MonitoringBaselinePeriod, *, now: datetime
+) -> MonitoringWindow:
+    end = now.astimezone(UTC)
+    return MonitoringWindow(
+        start=end - timedelta(seconds=_BASELINE_SECONDS[period]),
         end=end,
     )
 

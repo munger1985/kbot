@@ -5,7 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   const state = {
     sources: [], instances: [], profiles: [], view: null,
-    sourceId: "", compareSourceId: "", profileId: "", window: "1h", selected: [], search: "",
+    sourceId: "", baseline: "1w", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
     visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
   };
@@ -24,8 +24,7 @@
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
   const profileById = () => state.profiles.find((item) => item.profile_id === state.profileId) || null;
-  const compareSources = () => state.sources.filter((item) => item.source_id !== state.sourceId
-    && item.source_type !== sourceById()?.source_type && item.monitoring_readiness === "READY");
+  const baselineLabel = () => ({ "1d": "过去 1 天", "1w": "过去 1 周", "1m": "过去 1 月" })[state.baseline] || "过去 1 周";
   const seriesSubject = (series) => {
     const dimensions = series.dimensions || {};
     return dimensions.tablespace || dimensions.tablespace_name
@@ -219,9 +218,7 @@
     document.getElementById("monitoring-source").innerHTML = state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("");
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
-    const compareField = document.getElementById("monitoring-compare-field");
-    compareField.hidden = state.selected.length !== 1;
-    document.getElementById("monitoring-compare-source").innerHTML = '<option value="">不对比</option>' + compareSources().map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.compareSourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(source.source_type)}</option>`).join("");
+    document.getElementById("monitoring-baseline").value = state.baseline;
     const diagnosticDetail = diagnosticGapText(sourceById());
     document.getElementById("monitoring-readiness").innerHTML = `${badge(sourceById()?.monitoring_readiness, `监控 ${label(sourceById()?.monitoring_readiness)}`)}<span title="${esc(diagnosticDetail)}">${badge(sourceById()?.diagnostic_readiness, `自动诊断 ${label(sourceById()?.diagnostic_readiness)}`)}</span>`;
   }
@@ -263,6 +260,7 @@
     next.delete("profile_id");
     next.delete("profileId");
     next.set("window", state.window);
+    next.set("baseline", state.baseline);
     history.replaceState(null, "", `${location.pathname}?${next}`);
   }
   async function loadSelectedTargetProfiles({ signal }) {
@@ -288,8 +286,7 @@
     state.controller = controller;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ source_id: state.sourceId, profile_id: state.profileId, window: state.window });
-      if (state.compareSourceId) params.set("compare_source_id", state.compareSourceId);
+      const params = new URLSearchParams({ source_id: state.sourceId, profile_id: state.profileId, window: state.window, baseline: state.baseline });
       state.view = await KBotAIOpsAuth.request(`/api/v1/apps/aiops/targets/${encodeURIComponent(state.selected[0])}/monitoring/view?${params}`, { signal: controller.signal });
       if (controller.signal.aborted) return;
       renderResult();
@@ -309,7 +306,7 @@
     const contextController = new AbortController();
     state.contextController = contextController;
     cancelViewRequest();
-    state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.compareSourceId = ""; state.profileId = "";
+    state.view = null; state.instances = []; state.profiles = []; state.selected = []; state.profileId = "";
     disposeCharts();
     document.getElementById("monitoring-result").hidden = true;
     renderContext(); renderInstances();
@@ -397,6 +394,48 @@
     if (unit === "state") return `状态由${formatValue(valid.at(-2).value, unit)}变为${formatValue(valid.at(-1).value, unit)}`;
     return `较前值${delta > 0 ? "上升" : "下降"} ${formatValue(Math.abs(delta), unit)}`;
   }
+  function buildCapacityTrendSeries(series, bounded) {
+    const groups = new Map();
+    series.forEach((item) => {
+      const key = `${item.source_id}:${item.instance_id}:${seriesSubject(item)}`;
+      const roles = groups.get(key) || new Map();
+      roles.set(item.dimensions?.__metric_role || "DATABASE_SIZE", item);
+      groups.set(key, roles);
+    });
+    return [...groups.values()].flatMap((roles) => {
+      const used = roles.get("STORAGE_USED") || roles.get("DATABASE_SIZE");
+      if (!used) return [];
+      if (!bounded) return [{
+        ...used, series_key: `${used.series_key}:logical-trend`,
+        dimensions: { ...(used.dimensions || {}), __metric_label: "逻辑占用" },
+      }];
+      const free = roles.get("STORAGE_FREE");
+      const max = roles.get("STORAGE_MAX");
+      const baselineUsed = used.baseline?.average ?? null;
+      const baselineFree = free?.baseline?.average ?? null;
+      const baselineMax = max?.baseline?.average ?? null;
+      const baselineTotal = baselineMax !== null && baselineMax > 0
+        ? baselineMax
+        : baselineUsed !== null && baselineFree !== null && baselineUsed + baselineFree > 0 ? baselineUsed + baselineFree : null;
+      const baseline = used.baseline ? {
+        ...used.baseline,
+        average: baselineUsed !== null && baselineTotal !== null ? baselineUsed / baselineTotal * 100 : null,
+      } : null;
+      const points = used.points.flatMap((point) => {
+        const usedValue = numericValue(point.value);
+        const freeValue = seriesValueAt(free, point.observed_at);
+        const maxValue = seriesValueAt(max, point.observed_at);
+        const total = maxValue !== null && maxValue > 0
+          ? maxValue
+          : usedValue !== null && freeValue !== null && usedValue + freeValue > 0 ? usedValue + freeValue : null;
+        return usedValue !== null && total !== null ? [{ ...point, value: usedValue / total * 100 }] : [];
+      });
+      return points.length ? [{
+        ...used, series_key: `${used.series_key}:utilization-trend`,
+        dimensions: { ...(used.dimensions || {}), __metric_label: "容量使用率" }, baseline, points,
+      }] : [];
+    });
+  }
   function mergeCapacityPanels(panels) {
     const capacityPanels = panels.filter((panel) => capacityMetricRoles.includes(panel.semantic_role));
     const regularPanels = panels.filter((panel) => panel.semantic_role !== "AVAILABILITY" && !capacityMetricRoles.includes(panel.semantic_role));
@@ -404,25 +443,42 @@
     const quality = capacityPanels.every((panel) => panel.quality === "NO_DATA")
       ? "NO_DATA" : capacityPanels.some((panel) => panel.quality !== "GOOD") ? "PARTIAL" : "GOOD";
     const hasDatabaseCapacityLimit = capacityPanels.some((panel) => ["db.storage.free_bytes", "db.storage.max_bytes"].includes(panel.metric_code));
+    const metricCode = capacityPanels.map((panel) => panel.metric_code).join(",");
+    const mergedSeries = capacityPanels.flatMap((panel) => panel.series.map((series) => ({
+      ...series,
+      dimensions: {
+        ...(series.dimensions || {}), __metric_role: panel.semantic_role,
+        __metric_label: capacityRoleLabels[panel.semantic_role], __metric_code: panel.metric_code,
+        __capacity_scope: panel.metric_code.startsWith("host.filesystem.")
+          ? "FILESYSTEM" : hasDatabaseCapacityLimit ? "DATABASE" : "LOGICAL",
+      },
+    })));
     regularPanels.push({
       panel_id: "database.storage.capacity", title: "数据库容量",
       description: "Oracle 按表空间展示容量；MySQL schema 与 PostgreSQL database 展示逻辑占用，真实余量由承载主机文件系统容量反映。",
-      visualization: "CAPACITY_BAR", metric_code: capacityPanels.map((panel) => panel.metric_code).join(","),
+      visualization: "CAPACITY_BAR", metric_code: metricCode,
       semantic_role: "STORAGE_CAPACITY", unit: "bytes", value_kind: "GAUGE", quality,
       capacity_thresholds: {
         warning_percent: state.view.profile.capacity_warning_percent,
         critical_percent: state.view.profile.capacity_critical_percent,
       },
       summary: { metric_count: capacityPanels.length },
-      series: capacityPanels.flatMap((panel) => panel.series.map((series) => ({
-        ...series,
-        dimensions: {
-          ...(series.dimensions || {}), __metric_role: panel.semantic_role,
-          __metric_label: capacityRoleLabels[panel.semantic_role], __metric_code: panel.metric_code,
-          __capacity_scope: panel.metric_code.startsWith("host.filesystem.")
-            ? "FILESYSTEM" : hasDatabaseCapacityLimit ? "DATABASE" : "LOGICAL",
-        },
-      }))),
+      series: mergedSeries,
+    });
+    regularPanels.push({
+      panel_id: "database.storage.capacity-trend",
+      title: hasDatabaseCapacityLimit ? "数据库容量使用率趋势" : "数据库逻辑占用趋势",
+      description: hasDatabaseCapacityLimit
+        ? "按时间展示各表空间容量使用率，阈值仍由 Monitoring Profile 下发。"
+        : "按时间展示各 schema 或 database 的逻辑占用绝对值，不换算为百分比。",
+      visualization: "TIME_SERIES", metric_code: metricCode,
+      semantic_role: "STORAGE_CAPACITY_TREND", unit: hasDatabaseCapacityLimit ? "percent" : "bytes",
+      value_kind: "GAUGE", quality, summary: { metric_count: capacityPanels.length },
+      capacity_thresholds: {
+        warning_percent: state.view.profile.capacity_warning_percent,
+        critical_percent: state.view.profile.capacity_critical_percent,
+      },
+      series: buildCapacityTrendSeries(mergedSeries, hasDatabaseCapacityLimit),
     });
     return regularPanels;
   }
@@ -464,7 +520,7 @@
     });
     const warning = panel.capacity_thresholds?.warning_percent;
     const critical = panel.capacity_thresholds?.critical_percent;
-    return [...groups.values()].map((group) => {
+    const rows = [...groups.values()].map((group) => {
       const usedSeries = group.roles.get("STORAGE_USED") || group.roles.get("DATABASE_SIZE");
       const freeSeries = group.roles.get("STORAGE_FREE");
       const maxSeries = group.roles.get("STORAGE_MAX");
@@ -476,33 +532,43 @@
         : used !== null && reportedFree !== null && used + reportedFree > 0 ? used + reportedFree : null;
       const free = total !== null && used !== null ? Math.max(total - used, 0) : null;
       const utilization = total !== null && used !== null ? used / total * 100 : null;
+      const baselineUsed = usedSeries?.baseline?.average ?? null;
+      const baselineFree = freeSeries?.baseline?.average ?? null;
+      const baselineMax = maxSeries?.baseline?.average ?? null;
+      const baselineTotal = baselineMax !== null && baselineMax > 0
+        ? baselineMax
+        : baselineUsed !== null && baselineFree !== null && baselineUsed + baselineFree > 0 ? baselineUsed + baselineFree : null;
+      const baselineAverage = group.scope === "LOGICAL"
+        ? baselineUsed
+        : baselineUsed !== null && baselineTotal !== null ? baselineUsed / baselineTotal * 100 : null;
       const inconsistent = used !== null && (used < 0
         || (reportedFree !== null && reportedFree < 0)
         || (reportedMax !== null && reportedMax <= 0)
         || (total !== null && used > total * 1.01));
       let status = "未提供容量上限"; let statusTone = "unknown";
-      if (group.scope === "LOGICAL") { status = "容量余量见文件系统"; statusTone = "unknown"; }
+      if (group.scope === "LOGICAL") { status = "逻辑占用"; statusTone = "unknown"; }
       else if (inconsistent) { status = "容量数据不一致"; statusTone = "danger"; }
       else if (utilization !== null && critical !== undefined && utilization >= critical) { status = "空间紧张"; statusTone = "danger"; }
       else if (utilization !== null && warning !== undefined && utilization >= warning) { status = "需要关注"; statusTone = "warning"; }
       else if (utilization !== null) { status = "空间充足"; statusTone = "success"; }
-      const trend = (usedSeries ? sortedPoints(usedSeries) : []).flatMap((point) => {
-        const pointUsed = numericValue(point.value);
-        const pointMax = seriesValueAt(maxSeries, point.observed_at);
-        const pointFree = seriesValueAt(freeSeries, point.observed_at);
-        const pointTotal = pointMax !== null && pointMax > 0
-          ? pointMax
-          : pointUsed !== null && pointFree !== null && pointUsed + pointFree > 0 ? pointUsed + pointFree : null;
-        return pointUsed !== null && pointTotal !== null
-          ? [{ observedAt: point.observed_at, utilization: pointUsed / pointTotal * 100, used: pointUsed, total: pointTotal }]
-          : [];
-      });
       return {
         ...group, label: [group.category, capacityScopeLabel(group.scope), sourceCount > 1 ? group.sourceName : ""].filter(Boolean).join(" · "),
-        used, free, total, utilization, inconsistent, status, statusTone, trend,
+        used, free, total, utilization, baselineAverage,
+        baselineSampleCount: usedSeries?.baseline?.sample_count || 0,
+        inconsistent, status, statusTone,
         barPercent: utilization === null ? 0 : Math.min(Math.max(utilization, 0), 100),
       };
-    }).sort((left, right) => {
+    });
+    const largestLogicalValue = Math.max(0, ...rows.flatMap((row) => (
+      row.scope === "LOGICAL" && row.used !== null ? [row.used] : []
+    )));
+    rows.forEach((row) => {
+      if (row.scope === "LOGICAL") {
+        row.barPercent = row.used !== null && largestLogicalValue > 0
+          ? Math.min(Math.max(row.used / largestLogicalValue * 100, 0), 100) : 0;
+      }
+    });
+    return rows.sort((left, right) => {
       if (left.utilization === null && right.utilization !== null) return 1;
       if (left.utilization !== null && right.utilization === null) return -1;
       return (right.utilization ?? -1) - (left.utilization ?? -1)
@@ -510,13 +576,16 @@
         || left.label.localeCompare(right.label, "zh-CN");
     });
   }
-  function capacityPanelHtml(panel, index) {
+  function capacityPanelHtml(panel) {
     const rows = capacityRows(panel);
     if (!rows.length) return '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>';
+    const logicalOnly = rows.every((row) => row.scope === "LOGICAL");
     const thresholds = panel.capacity_thresholds || {};
-    const list = rows.map((row) => `<button type="button" class="ops-capacity-row" data-capacity-instance-id="${esc(row.instanceId)}"><span class="ops-capacity-heading"><strong title="${esc(row.label)}">${esc(row.label)}</strong><span class="ops-capacity-status is-${esc(row.statusTone)}">${esc(row.status)}</span></span>${row.total !== null && row.used !== null ? `<span class="ops-capacity-bar-shell"><span class="ops-capacity-bar ${row.inconsistent ? "is-inconsistent" : ""}"><i style="width:${row.barPercent}%"></i></span><strong>${row.utilization.toFixed(1)}%</strong></span>` : `<span class="ops-capacity-unbounded"><i></i><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>`}${row.scope === "LOGICAL" ? `<span class="ops-capacity-values ops-capacity-values-logical"><span><small>逻辑占用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>容量余量</small><strong>见文件系统</strong></span></span>` : `<span class="ops-capacity-values"><span><small>已用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>可用</small><strong>${esc(row.free === null ? "未提供" : formatValue(row.free, panel.unit))}</strong></span><span><small>最大容量</small><strong>${esc(row.total === null ? "未提供" : formatValue(row.total, panel.unit))}</strong></span></span>`}</button>`).join("");
-    const hasTrend = rows.some((row) => row.trend.length);
-    return `<div class="ops-capacity-overview"><div class="ops-capacity-legend"><span><i class="is-used"></i>已用</span><span><i class="is-available"></i>可用</span><small>状态阈值由 ${esc(thresholds.warning_percent)}% / ${esc(thresholds.critical_percent)}% Monitoring Profile 下发</small></div><div class="ops-capacity-row-list">${list}</div>${hasTrend ? `<section class="ops-capacity-trend"><div><h3>使用率趋势</h3><p>按同一对象的已用容量与容量上限计算。</p></div><div id="monitoring-chart-${index}" class="ops-capacity-trend-chart" role="img" aria-label="${esc(panel.title)}使用率趋势"></div></section>` : '<p class="ops-capacity-trend-empty">当前监控数据未提供容量上限，因此不能计算使用率趋势。</p>'}</div>`;
+    const list = rows.map((row) => `<button type="button" class="ops-capacity-row" data-capacity-instance-id="${esc(row.instanceId)}"><span class="ops-capacity-heading"><strong title="${esc(row.label)}">${esc(row.label)}</strong><span class="ops-capacity-status is-${esc(row.statusTone)}">${esc(row.status)}</span></span>${row.scope === "LOGICAL" ? `<span class="ops-capacity-bar-shell ops-capacity-bar-shell-absolute"><span class="ops-capacity-bar"><i style="width:${row.barPercent}%"></i></span><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>` : row.total !== null && row.used !== null ? `<span class="ops-capacity-bar-shell"><span class="ops-capacity-bar ops-capacity-threshold-rail ${row.inconsistent ? "is-inconsistent" : ""}" style="--warning-at:${thresholds.warning_percent || 80}%;--critical-at:${thresholds.critical_percent || 90}%"><i style="width:${row.barPercent}%"></i></span><strong>${row.utilization.toFixed(1)}%</strong></span>` : `<span class="ops-capacity-unbounded"><i></i><strong>${esc(row.used === null ? "无有效采样" : formatValue(row.used, panel.unit))}</strong></span>`}${row.scope !== "LOGICAL" ? `<span class="ops-capacity-values"><span><small>已用</small><strong>${esc(formatValue(row.used, panel.unit))}</strong></span><span><small>可用</small><strong>${esc(row.free === null ? "未提供" : formatValue(row.free, panel.unit))}</strong></span><span><small>最大容量</small><strong>${esc(row.total === null ? "未提供" : formatValue(row.total, panel.unit))}</strong></span></span>` : ""}</button>`).join("");
+    const legend = logicalOnly
+      ? '<span><i class="is-used"></i>逻辑占用</span><small>柱长按当前最大逻辑占用归一，仅用于库间大小对比，不表示使用率。</small>'
+      : `<span><i class="is-used"></i>已用</span><span><i class="is-available"></i>可用</span><small>状态阈值由 ${esc(thresholds.warning_percent)}% / ${esc(thresholds.critical_percent)}% Monitoring Profile 下发</small>`;
+    return `<div class="ops-capacity-overview"><div class="ops-capacity-legend">${legend}</div><div class="ops-capacity-row-list">${list}</div></div>`;
   }
   function chartOption(panel) {
     const colors = ["#465f9e", "#247455", "#9a6518", "#ad3c45", "#526f8a", "#7a5f8f"];
@@ -534,39 +603,61 @@
         return `${entry.marker || ""}${esc(item ? tooltipSeriesLabel(item) : entry.seriesName)}：${esc(formatValue(Array.isArray(entry.value) ? entry.value[1] : entry.value, panel.unit))}`;
       }), sourceNames ? `来源：${esc(sourceNames)}` : ""].filter(Boolean).join("<br>");
     } };
-    if (panel.visualization === "CAPACITY_BAR") {
-      const rows = capacityRows(panel).filter((row) => row.trend.length);
-      const capacityTooltip = { trigger: "axis", formatter: (entries) => {
-        const values = Array.isArray(entries) ? entries : [entries];
-        const at = values[0]?.axisValue || "";
-        return [esc(shell.fmt(at)), ...values.map((entry) => {
-          const row = rows[Number(entry.seriesIndex || 0)];
-          const label = row ? [row.category, capacityScopeLabel(row.scope)].filter(Boolean).join(" · ") : entry.seriesName;
-          return `${entry.marker || ""}${esc(label)}：${esc(formatValue(entry.data?.value?.[1], "percent"))}<br>&nbsp;&nbsp;${esc(formatValue(entry.data?.used, "bytes"))} / ${esc(formatValue(entry.data?.total, "bytes"))}`;
-        }), sourceNames ? `来源：${esc(sourceNames)}` : ""].filter(Boolean).join("<br>");
-      } };
-      return {
-        ...common, color: colors,
-        tooltip: capacityTooltip,
-        legend: { top: 0, type: "scroll" },
-        grid: { left: 48, right: 18, top: 38, bottom: 30 },
-        xAxis: { type: "time", axisLabel: { hideOverlap: true } },
-        yAxis: { type: "value", min: 0, max: 100, axisLabel: { formatter: (value) => `${value}%` } },
-        series: rows.map((row) => ({ type: "line", name: row.label, showSymbol: false, connectNulls: false, lineStyle: { width: 2 }, emphasis: { focus: "series" }, data: row.trend.map((point) => ({ value: [point.observedAt, point.utilization], used: point.used, total: point.total, instanceId: row.instanceId })) })),
-      };
-    }
+    const axisBounds = panel.unit === "percent" ? { min: 0, max: 100 }
+      : panel.unit === "state" ? { min: 0, max: 1 } : { scale: true };
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
       xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
-      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, ...axisBounds },
       series: [{ type: "bar", name: panel.title, barMaxWidth: 28, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
     return {
       ...common, tooltip,
       xAxis: { type: "time", axisLabel: { hideOverlap: true } },
-      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
-      series: series.map((item) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]) })),
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, ...axisBounds },
+      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: index === 0 && panel.capacity_thresholds ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.capacity_thresholds.warning_percent, lineStyle: { color: "#9a6518", type: "dashed" } }, { yAxis: panel.capacity_thresholds.critical_percent, lineStyle: { color: "#ad3c45", type: "dashed" } }] } : undefined })),
     };
+  }
+
+  function panelTone(panel) {
+    if (panel.quality === "NO_DATA") return "none";
+    if (panel.visualization === "CAPACITY_BAR") {
+      const rows = capacityRows(panel);
+      if (rows.some((row) => row.statusTone === "danger")) return "danger";
+      if (rows.some((row) => row.statusTone === "warning")) return "warning";
+    }
+    return panel.quality === "PARTIAL" ? "warning" : "normal";
+  }
+  function primarySnapshot(panel) {
+    if (panel.visualization === "CAPACITY_BAR") {
+      const row = capacityRows(panel)[0];
+      if (!row) return null;
+      return { current: row.scope === "LOGICAL" ? row.used : row.utilization, average: row.baselineAverage,
+        sampleCount: row.baselineSampleCount, unit: row.scope === "LOGICAL" ? panel.unit : "percent", subject: row.label };
+    }
+    return chartSeries(panel).flatMap((series) => {
+      const current = numericValue(latestPoint(series)?.value);
+      return current === null ? [] : [{ current, average: series.baseline?.average ?? null,
+        sampleCount: series.baseline?.sample_count || 0, unit: panel.unit, subject: seriesSubject(series) }];
+    }).sort((left, right) => right.current - left.current)[0] || null;
+  }
+  function baselinePresentation(panel) {
+    const snapshot = primarySnapshot(panel);
+    const average = snapshot?.average;
+    const difference = snapshot && average !== null && average !== undefined ? snapshot.current - average : null;
+    const differenceText = difference === null ? "无有效基线" : difference === 0 ? "当前与基线持平"
+      : `当前${difference > 0 ? "高" : "低"} ${snapshot.unit === "percent" ? `${Math.abs(difference).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 个百分点` : formatValue(Math.abs(difference), snapshot.unit)}`;
+    return { snapshot, difference, differenceText };
+  }
+  function conclusionTitle(panel, toneValue, presentation) {
+    if (toneValue === "none") return `${panel.title}暂无有效采样`;
+    if (toneValue === "normal") return panel.title;
+    const { snapshot, difference } = presentation;
+    if (!snapshot || difference === null || difference === 0) return `${panel.title}采样不完整`;
+    const amount = snapshot.unit === "percent"
+      ? `${Math.abs(difference).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 个百分点`
+      : formatValue(Math.abs(difference), snapshot.unit);
+    return `${snapshot.subject}${difference > 0 ? "高于" : "低于"}${baselineLabel()}均值 ${amount}`;
   }
   function chartSeries(panel) {
     return panel.series.filter((item) => item.points.some((point) => numericValue(point.value) !== null));
@@ -681,17 +772,24 @@
       node.innerHTML = '<div class="ops-panel ops-empty">当前指标范围没有可展示图表。无采样不会显示为 0 或健康。</div>';
       return;
     }
-    node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel, index) : panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)} %</span>`).join("")}</div></article>`).join("");
+    node.innerHTML = panels.map((panel, index) => {
+      const toneValue = panelTone(panel);
+      const presentation = baselinePresentation(panel);
+      const snapshot = presentation.snapshot;
+      const statusLabel = ({ normal: "正常", warning: "关注", danger: "紧张", none: "无数据" })[toneValue];
+      const statusValue = toneValue === "normal" ? "GOOD" : toneValue === "danger" || toneValue === "none" ? "NO_DATA" : "PARTIAL";
+      const averageCoverage = panel.series.length
+        ? panel.series.reduce((total, series) => total + series.coverage_ratio, 0) / panel.series.length
+        : 0;
+      const hasData = panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null));
+      return `<article class="ops-panel ops-monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><div class="ops-panel-head"><div><h2>${esc(conclusionTitle(panel, toneValue, presentation))}</h2><p>${esc(panel.description)}</p></div><div>${badge(statusValue, statusLabel)}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="ops-monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div><div class="ops-monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty ops-monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></div></article>`;
+    }).join("");
     panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
       if (!container) return;
       const chart = globalThis.echarts.init(container);
       chart.setOption(chartOption(panel), true);
       chart.on("click", (event) => {
-        if (panel.visualization === "CAPACITY_BAR") {
-          if (event.data?.instanceId) drillInto(event.data.instanceId);
-          return;
-        }
         const availableSeries = chartSeries(panel);
         const series = ["STAT", "GAUGE"].includes(panel.visualization)
           ? availableSeries[event.dataIndex]
@@ -734,7 +832,9 @@
   }
   async function initialize() {
     state.window = ["15m", "1h", "6h", "24h"].includes(query.get("window")) ? query.get("window") : "1h";
+    state.baseline = ["1d", "1w", "1m"].includes(query.get("baseline")) ? query.get("baseline") : "1w";
     document.getElementById("monitoring-window").value = state.window;
+    document.getElementById("monitoring-baseline").value = state.baseline;
     try {
       state.sources = await KBotAIOpsAuth.request(`${api}/sources`);
       const requested = query.get("source_id") || query.get("sourceId") || "";
@@ -749,8 +849,8 @@
   }
 
   document.getElementById("monitoring-source").onchange = (event) => { state.sourceId = event.target.value; loadSourceContext(); };
-  document.getElementById("monitoring-window").onchange = (event) => { state.window = event.target.value; scheduleView(); };
-  document.getElementById("monitoring-compare-source").onchange = (event) => { state.compareSourceId = event.target.value; scheduleView(); };
+  document.getElementById("monitoring-window").onchange = (event) => { state.window = event.target.value; updateLocation(); scheduleView(); };
+  document.getElementById("monitoring-baseline").onchange = (event) => { state.baseline = event.target.value; updateLocation(); scheduleView(); };
   document.getElementById("monitoring-instance-search").oninput = (event) => { state.search = event.target.value; renderInstances(); };
   document.getElementById("monitoring-instance-list").onchange = (event) => {
     const input = event.target.closest("[data-instance-id]");
