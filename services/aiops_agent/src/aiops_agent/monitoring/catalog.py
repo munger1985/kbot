@@ -45,10 +45,14 @@ class MonitoringProfileDefinition(BaseModel):
     purpose: Literal["OVERVIEW", "REPLICATION", "CAPACITY", "HOST"]
     display_name: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=1000)
+    capacity_warning_percent: float = Field(ge=0, le=100)
+    capacity_critical_percent: float = Field(ge=0, le=100)
     variants: tuple[MonitoringProfileVariant, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_variants(self):
+        if self.capacity_warning_percent >= self.capacity_critical_percent:
+            raise ValueError("容量关注阈值必须小于紧张阈值")
         variant_ids = [item.variant_id for item in self.variants]
         if len(variant_ids) != len(set(variant_ids)):
             raise ValueError("Profile Variant ID 不能重复")
@@ -77,6 +81,14 @@ class ResolvedMonitoringProfile(BaseModel):
     supported_database_versions: dict[str, tuple[str, ...]]
     resolved_variant_ids: tuple[str, ...]
     metric_codes: tuple[str, ...]
+    capacity_warning_percent: float = Field(ge=0, le=100)
+    capacity_critical_percent: float = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_capacity_thresholds(self):
+        if self.capacity_warning_percent >= self.capacity_critical_percent:
+            raise ValueError("容量关注阈值必须小于紧张阈值")
+        return self
 
     def summary(self) -> MonitoringProfileSummary:
         return MonitoringProfileSummary.model_validate(
@@ -185,6 +197,8 @@ class MonitoringProfileCatalog:
                 sorted({variant.variant_id for variant in selected})
             ),
             metric_codes=selected[0].metric_codes,
+            capacity_warning_percent=profile.capacity_warning_percent,
+            capacity_critical_percent=profile.capacity_critical_percent,
         )
 
     def overview_for_database(

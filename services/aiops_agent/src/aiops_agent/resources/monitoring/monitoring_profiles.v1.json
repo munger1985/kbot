@@ -1,12 +1,14 @@
 {
-  "catalog_version": "monitoring-profiles.v1",
+  "catalog_version": "monitoring-profiles.v2",
   "profiles": [
     {
       "profile_id": "oracle-overview",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "purpose": "OVERVIEW",
       "display_name": "Oracle 实时总览",
       "description": "Oracle 数据库、表空间容量和所在主机资源的统一实时总览。",
+      "capacity_warning_percent": 80,
+      "capacity_critical_percent": 90,
       "variants": [
         {
           "variant_id": "oracle-19c",
@@ -24,10 +26,12 @@
     },
     {
       "profile_id": "mysql-overview",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "purpose": "OVERVIEW",
       "display_name": "MySQL 实时总览",
       "description": "MySQL 数据库、schema 逻辑容量和所在主机资源的统一实时总览。",
+      "capacity_warning_percent": 80,
+      "capacity_critical_percent": 90,
       "variants": [
         {
           "variant_id": "mysql-8-4",
@@ -39,10 +43,12 @@
     },
     {
       "profile_id": "postgresql-overview",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "purpose": "OVERVIEW",
       "display_name": "PostgreSQL 实时总览",
       "description": "PostgreSQL 数据库、数据库逻辑容量和所在主机资源的统一实时总览。",
+      "capacity_warning_percent": 80,
+      "capacity_critical_percent": 90,
       "variants": [
         {
           "variant_id": "postgresql-16",
@@ -54,10 +60,12 @@
     },
     {
       "profile_id": "postgresql-replication",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "purpose": "REPLICATION",
       "display_name": "PostgreSQL 复制状态",
       "description": "仅用于已配置流复制或复制 Slot 的 PostgreSQL 实例。",
+      "capacity_warning_percent": 80,
+      "capacity_critical_percent": 90,
       "variants": [
         {
           "variant_id": "postgresql-16",

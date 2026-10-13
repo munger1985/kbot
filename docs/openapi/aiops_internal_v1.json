@@ -5632,6 +5632,18 @@
       "MonitoringProfileSummary": {
         "additionalProperties": false,
         "properties": {
+          "capacity_critical_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Capacity Critical Percent",
+            "type": "number"
+          },
+          "capacity_warning_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Capacity Warning Percent",
+            "type": "number"
+          },
           "description": {
             "maxLength": 1000,
             "minLength": 1,
@@ -5652,7 +5664,7 @@
             "items": {
               "type": "string"
             },
-            "maxItems": 8,
+            "maxItems": 20,
             "minItems": 1,
             "title": "Metric Codes",
             "type": "array"
@@ -5719,7 +5731,9 @@
           "supported_db_types",
           "supported_database_versions",
           "resolved_variant_ids",
-          "metric_codes"
+          "metric_codes",
+          "capacity_warning_percent",
+          "capacity_critical_percent"
         ],
         "title": "MonitoringProfileSummary",
         "type": "object"
@@ -5906,7 +5920,7 @@
             "items": {
               "$ref": "#/components/schemas/MonitoringPanel"
             },
-            "maxItems": 8,
+            "maxItems": 20,
             "title": "Panels",
             "type": "array"
           },

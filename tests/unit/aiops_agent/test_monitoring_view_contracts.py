@@ -172,6 +172,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertEqual(("oracle-19c",), oracle_19c.resolved_variant_ids)
         self.assertEqual(("oracle-26ai",), oracle_26ai.resolved_variant_ids)
         self.assertEqual(oracle_19c.metric_codes, oracle_26ai.metric_codes)
+        self.assertEqual(80, oracle_19c.capacity_warning_percent)
+        self.assertEqual(90, oracle_19c.capacity_critical_percent)
         with self.assertRaises(LookupError):
             self.profiles.overview_for_database("POSTGRESQL", "17")
         with self.assertRaises(LookupError):
@@ -390,6 +392,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             supported_database_versions={"MYSQL": ("8.4",)},
             resolved_variant_ids=("mysql-8-4",),
             metric_codes=("mysql.availability",),
+            capacity_warning_percent=80,
+            capacity_critical_percent=90,
         )
 
         view = MonitoringViewBuilder(metric_catalog=self.metrics).build(
@@ -482,6 +486,8 @@ class MonitoringProfileContractTest(unittest.TestCase):
             supported_database_versions={"MYSQL": ("8.4",)},
             resolved_variant_ids=("mysql-8-4",),
             metric_codes=("mysql.availability", "mysql.sql.slow_query_rate"),
+            capacity_warning_percent=80,
+            capacity_critical_percent=90,
         )
         gap = MonitoringGap(
             scope="METRIC",

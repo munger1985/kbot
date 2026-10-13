@@ -74,6 +74,14 @@ class MonitoringProfileSummary(_Contract):
     supported_database_versions: dict[str, tuple[str, ...]]
     resolved_variant_ids: tuple[str, ...] = Field(min_length=1)
     metric_codes: tuple[str, ...] = Field(min_length=1, max_length=20)
+    capacity_warning_percent: float = Field(ge=0, le=100)
+    capacity_critical_percent: float = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_capacity_thresholds(self):
+        if self.capacity_warning_percent >= self.capacity_critical_percent:
+            raise ValueError("容量关注阈值必须小于紧张阈值")
+        return self
 
 
 class MonitoringWindow(_Contract):
