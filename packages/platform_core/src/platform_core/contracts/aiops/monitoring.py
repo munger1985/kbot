@@ -77,11 +77,26 @@ class MonitoringProfileSummary(_Contract):
     metric_codes: tuple[str, ...] = Field(min_length=1, max_length=20)
     capacity_warning_percent: float = Field(ge=0, le=100)
     capacity_critical_percent: float = Field(ge=0, le=100)
+    metric_thresholds: dict[str, "MonitoringThresholdBand"] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def validate_capacity_thresholds(self):
         if self.capacity_warning_percent >= self.capacity_critical_percent:
             raise ValueError("容量关注阈值必须小于紧张阈值")
+        return self
+
+
+class MonitoringThresholdBand(_Contract):
+    warning_value: float = Field(ge=0)
+    critical_value: float = Field(ge=0)
+    direction: Literal["ABOVE"] = "ABOVE"
+
+    @model_validator(mode="after")
+    def validate_thresholds(self):
+        if self.warning_value >= self.critical_value:
+            raise ValueError("指标关注阈值必须小于紧张阈值")
         return self
 
 
@@ -141,6 +156,7 @@ class MonitoringPanel(_Contract):
     series: tuple[MonitoringSeries, ...] = ()
     summary: dict[str, float | int | str | None] = Field(default_factory=dict)
     quality: Literal["GOOD", "PARTIAL", "NO_DATA"]
+    thresholds: MonitoringThresholdBand | None = None
 
 
 class MonitoringView(_Contract):

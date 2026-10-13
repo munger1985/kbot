@@ -591,7 +591,8 @@
     const colors = ["#465f9e", "#247455", "#9a6518", "#ad3c45", "#526f8a", "#7a5f8f"];
     const series = panel.series.filter((item) => item.points.some((point) => numericValue(point.value) !== null));
     const selected = Object.fromEntries(series.map((item, index) => [seriesLabel(item), index < 6]));
-    const common = { animationDuration: 220, color: colors, legend: { top: 0, type: "scroll", selected }, grid: { left: 64, right: 26, top: 52, bottom: 46 } };
+    const showLegend = series.length > 1;
+    const common = { animationDuration: 220, color: colors, legend: { show: showLegend, top: 0, type: "scroll", selected, textStyle: { color: "#697386", fontSize: 10 } }, grid: { left: 54, right: 18, top: showLegend ? 38 : 16, bottom: 34 } };
     const sourceNames = [...new Set(series.map((item) => item.source_display_name).filter(Boolean))].join(" / ");
     const tooltip = { trigger: "axis", formatter: (entries) => {
       const values = Array.isArray(entries) ? entries : [entries];
@@ -607,15 +608,15 @@
       : panel.unit === "state" ? { min: 0, max: 1 } : { scale: true };
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
-      xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
-      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, ...axisBounds },
-      series: [{ type: "bar", name: panel.title, barMaxWidth: 28, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
+      xAxis: { type: "category", data: series.map(seriesLabel), axisTick: { show: false }, axisLabel: { interval: 0, hideOverlap: true, color: "#697386", fontSize: 10 } },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#697386", fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: "#d8dde7", opacity: .62 } }, ...axisBounds },
+      series: [{ type: "bar", name: panel.title, barMaxWidth: 22, itemStyle: { borderRadius: [3, 3, 0, 0] }, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
     return {
       ...common, tooltip,
-      xAxis: { type: "time", axisLabel: { hideOverlap: true } },
-      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, ...axisBounds },
-      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: index === 0 && panel.capacity_thresholds ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.capacity_thresholds.warning_percent, lineStyle: { color: "#9a6518", type: "dashed" } }, { yAxis: panel.capacity_thresholds.critical_percent, lineStyle: { color: "#ad3c45", type: "dashed" } }] } : undefined })),
+      xAxis: { type: "time", axisTick: { show: false }, axisLabel: { hideOverlap: true, color: "#697386", fontSize: 10 } },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: "#697386", fontSize: 10, formatter: (value) => axisValueLabel(value, panel.unit) }, splitNumber: 3, splitLine: { lineStyle: { color: "#d8dde7", opacity: .62 } }, ...axisBounds },
+      series: series.map((item, index) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, smooth: .16, areaStyle: index === 0 ? { opacity: .08 } : undefined, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]), markLine: index === 0 && (panel.thresholds || panel.capacity_thresholds) ? { silent: true, symbol: "none", label: { show: false }, data: [{ yAxis: panel.thresholds?.warning_value ?? panel.capacity_thresholds?.warning_percent, lineStyle: { color: "#9a6518", type: "dashed" } }, { yAxis: panel.thresholds?.critical_value ?? panel.capacity_thresholds?.critical_percent, lineStyle: { color: "#ad3c45", type: "dashed" } }] } : undefined })),
     };
   }
 
@@ -625,6 +626,11 @@
       const rows = capacityRows(panel);
       if (rows.some((row) => row.statusTone === "danger")) return "danger";
       if (rows.some((row) => row.statusTone === "warning")) return "warning";
+    }
+    const current = primarySnapshot(panel)?.current;
+    if (current !== null && current !== undefined && panel.thresholds) {
+      if (current >= panel.thresholds.critical_value) return "danger";
+      if (current >= panel.thresholds.warning_value) return "warning";
     }
     return panel.quality === "PARTIAL" ? "warning" : "normal";
   }
@@ -648,6 +654,20 @@
     const differenceText = difference === null ? "无有效基线" : difference === 0 ? "当前与基线持平"
       : `当前${difference > 0 ? "高" : "低"} ${snapshot.unit === "percent" ? `${Math.abs(difference).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 个百分点` : formatValue(Math.abs(difference), snapshot.unit)}`;
     return { snapshot, difference, differenceText };
+  }
+  function thresholdPresentation(panel) {
+    const thresholds = panel.thresholds;
+    const snapshot = primarySnapshot(panel);
+    if (!thresholds || snapshot?.current === null || snapshot?.current === undefined) return null;
+    const maximum = panel.unit === "percent"
+      ? 100 : Math.max(thresholds.critical_value * 1.25, snapshot.current, snapshot.average || 0, 1);
+    const position = (value) => `${Math.min(Math.max(value / maximum * 100, 0), 100)}%`;
+    return {
+      warningAt: position(thresholds.warning_value), criticalAt: position(thresholds.critical_value),
+      currentAt: position(snapshot.current), baselineAt: snapshot.average === null || snapshot.average === undefined ? null : position(snapshot.average),
+      warningLabel: formatValue(thresholds.warning_value, snapshot.unit),
+      criticalLabel: formatValue(thresholds.critical_value, snapshot.unit), maximumLabel: formatValue(maximum, snapshot.unit),
+    };
   }
   function conclusionTitle(panel, toneValue, presentation) {
     if (toneValue === "none") return `${panel.title}暂无有效采样`;
@@ -775,6 +795,7 @@
     node.innerHTML = panels.map((panel, index) => {
       const toneValue = panelTone(panel);
       const presentation = baselinePresentation(panel);
+      const threshold = thresholdPresentation(panel);
       const snapshot = presentation.snapshot;
       const statusLabel = ({ normal: "正常", warning: "关注", danger: "紧张", none: "无数据" })[toneValue];
       const statusValue = toneValue === "normal" ? "GOOD" : toneValue === "danger" || toneValue === "none" ? "NO_DATA" : "PARTIAL";
@@ -782,7 +803,8 @@
         ? panel.series.reduce((total, series) => total + series.coverage_ratio, 0) / panel.series.length
         : 0;
       const hasData = panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null));
-      return `<article class="ops-panel ops-monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><div class="ops-panel-head"><div><h2>${esc(conclusionTitle(panel, toneValue, presentation))}</h2><p>${esc(panel.description)}</p></div><div>${badge(statusValue, statusLabel)}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="ops-monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div><div class="ops-monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty ops-monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></div></article>`;
+      const thresholdHtml = threshold ? `<div class="ops-monitoring-threshold-rail" style="--warning-at:${threshold.warningAt};--critical-at:${threshold.criticalAt};--current-at:${threshold.currentAt};--baseline-at:${threshold.baselineAt || "0%"}"><div class="ops-monitoring-threshold-track"><i class="is-${toneValue}"></i>${threshold.baselineAt ? '<b title="所选周期基线"></b>' : ""}</div><div><span>0</span><span>关注 ${esc(threshold.warningLabel)}</span><span>紧张 ${esc(threshold.criticalLabel)}</span><span>${esc(threshold.maximumLabel)}</span></div></div>` : "";
+      return `<article class="ops-panel ops-monitoring-panel tone-${toneValue} ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><div class="ops-panel-head"><div><h2>${esc(conclusionTitle(panel, toneValue, presentation))}</h2><p>${esc(panel.description)}</p></div><div>${badge(statusValue, statusLabel)}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p><div class="ops-monitoring-current-value"><strong>${esc(snapshot ? formatValue(snapshot.current, snapshot.unit) : "—")}</strong><span>${esc(snapshot?.subject || "当前值")}</span></div><div class="ops-monitoring-baseline"><span>${esc(baselineLabel())}均值 <strong>${esc(snapshot?.average === null || snapshot?.average === undefined ? "无有效采样" : formatValue(snapshot.average, snapshot.unit))}</strong></span><b>${esc(presentation.differenceText)}</b></div>${thresholdHtml}${panel.visualization === "CAPACITY_BAR" ? capacityPanelHtml(panel) : hasData ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty ops-monitoring-no-data">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span><span>覆盖率 ${(averageCoverage * 100).toFixed(1)} %</span></div></article>`;
     }).join("");
     panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);

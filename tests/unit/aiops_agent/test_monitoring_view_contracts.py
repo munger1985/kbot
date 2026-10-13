@@ -86,8 +86,11 @@ class MonitoringProfileContractTest(unittest.TestCase):
             ["mysql-overview"],
             [item.profile_id for item in mysql],
         )
-        self.assertEqual("3.3.0", mysql[0].version)
-        self.assertEqual("3.1.0", self.profiles.get("oracle-overview").version)
+        self.assertEqual("3.4.0", mysql[0].version)
+        oracle = self.profiles.get("oracle-overview")
+        self.assertEqual("3.2.0", oracle.version)
+        self.assertEqual(70, oracle.metric_thresholds["runtime.cpu.utilization"].warning_value)
+        self.assertEqual(85, oracle.metric_thresholds["runtime.cpu.utilization"].critical_value)
         self.assertEqual(
             "oracle-overview",
             self.profiles.list_for_databases((("ORACLE", "19c"),))[0].profile_id,

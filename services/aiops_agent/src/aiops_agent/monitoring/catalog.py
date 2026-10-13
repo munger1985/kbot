@@ -10,7 +10,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aiops_agent.contracts.evidence import MetricDefinition
-from platform_core.contracts.aiops.monitoring import MonitoringProfileSummary
+from platform_core.contracts.aiops.monitoring import (
+    MonitoringProfileSummary,
+    MonitoringThresholdBand,
+)
 from aiops_agent.monitoring.query_policy import (
     PromQueryPolicy,
     PromQueryPolicySnapshot,
@@ -47,6 +50,9 @@ class MonitoringProfileDefinition(BaseModel):
     description: str = Field(min_length=1, max_length=1000)
     capacity_warning_percent: float = Field(ge=0, le=100)
     capacity_critical_percent: float = Field(ge=0, le=100)
+    metric_thresholds: dict[str, MonitoringThresholdBand] = Field(
+        default_factory=dict
+    )
     variants: tuple[MonitoringProfileVariant, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -63,6 +69,14 @@ class MonitoringProfileDefinition(BaseModel):
         ]
         if len(selectors) != len(set(selectors)):
             raise ValueError("Profile 的数据库类型与版本必须唯一匹配 Variant")
+        metric_codes = {
+            metric_code
+            for variant in self.variants
+            for metric_code in variant.metric_codes
+        }
+        unknown_thresholds = set(self.metric_thresholds) - metric_codes
+        if unknown_thresholds:
+            raise ValueError("Profile 指标阈值引用了未声明的指标")
         return self
 
 
@@ -83,6 +97,9 @@ class ResolvedMonitoringProfile(BaseModel):
     metric_codes: tuple[str, ...]
     capacity_warning_percent: float = Field(ge=0, le=100)
     capacity_critical_percent: float = Field(ge=0, le=100)
+    metric_thresholds: dict[str, MonitoringThresholdBand] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def validate_capacity_thresholds(self):
@@ -199,6 +216,7 @@ class MonitoringProfileCatalog:
             metric_codes=selected[0].metric_codes,
             capacity_warning_percent=profile.capacity_warning_percent,
             capacity_critical_percent=profile.capacity_critical_percent,
+            metric_thresholds=profile.metric_thresholds,
         )
 
     def overview_for_database(

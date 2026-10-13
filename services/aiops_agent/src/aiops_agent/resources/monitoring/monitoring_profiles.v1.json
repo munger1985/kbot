@@ -1,14 +1,24 @@
 {
-  "catalog_version": "monitoring-profiles.v4",
+  "catalog_version": "monitoring-profiles.v5",
   "profiles": [
     {
       "profile_id": "oracle-overview",
-      "version": "3.1.0",
+      "version": "3.2.0",
       "purpose": "OVERVIEW",
       "display_name": "Oracle 实时总览",
       "description": "Oracle 数据库、表空间容量和所在主机资源的统一实时总览。",
       "capacity_warning_percent": 80,
       "capacity_critical_percent": 90,
+      "metric_thresholds": {
+        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "runtime.memory.utilization": {"warning_value": 75, "critical_value": 90},
+        "db.connection.utilization": {"warning_value": 70, "critical_value": 85},
+        "db.response.latency": {"warning_value": 40, "critical_value": 80},
+        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "host.memory.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.filesystem.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.disk.io.utilization": {"warning_value": 70, "critical_value": 85}
+      },
       "variants": [
         {
           "variant_id": "oracle-19c",
@@ -26,12 +36,21 @@
     },
     {
       "profile_id": "mysql-overview",
-      "version": "3.3.0",
+      "version": "3.4.0",
       "purpose": "OVERVIEW",
       "display_name": "MySQL 实时总览",
       "description": "MySQL 数据库、schema 逻辑容量和所在主机资源的统一实时总览。",
       "capacity_warning_percent": 80,
       "capacity_critical_percent": 90,
+      "metric_thresholds": {
+        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "runtime.memory.utilization": {"warning_value": 75, "critical_value": 90},
+        "mysql.connection.utilization": {"warning_value": 70, "critical_value": 85},
+        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "host.memory.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.filesystem.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.disk.io.utilization": {"warning_value": 70, "critical_value": 85}
+      },
       "variants": [
         {
           "variant_id": "mysql-8-4",
@@ -43,12 +62,20 @@
     },
     {
       "profile_id": "postgresql-overview",
-      "version": "3.3.0",
+      "version": "3.4.0",
       "purpose": "OVERVIEW",
       "display_name": "PostgreSQL 实时总览",
       "description": "PostgreSQL 数据库、数据库逻辑容量和所在主机资源的统一实时总览。",
       "capacity_warning_percent": 80,
       "capacity_critical_percent": 90,
+      "metric_thresholds": {
+        "runtime.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "runtime.memory.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.cpu.utilization": {"warning_value": 70, "critical_value": 85},
+        "host.memory.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.filesystem.utilization": {"warning_value": 75, "critical_value": 90},
+        "host.disk.io.utilization": {"warning_value": 70, "critical_value": 85}
+      },
       "variants": [
         {
           "variant_id": "postgresql-16",

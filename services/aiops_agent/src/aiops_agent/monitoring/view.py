@@ -200,6 +200,7 @@ class MonitoringViewBuilder:
         panels = tuple(
             self._panel(
                 source=source,
+                profile=profile,
                 metric_code=metric_code,
                 instances=instance_by_id,
                 observations=selected_observations,
@@ -292,7 +293,9 @@ class MonitoringViewBuilder:
                 "Profile 与选定实例的数据库类型不兼容",
             )
 
-    def _panel(self, *, source, metric_code, instances, observations, gaps):
+    def _panel(
+        self, *, source, profile, metric_code, instances, observations, gaps
+    ):
         definition = self._metric_catalog.get(metric_code)
         metric_observations = tuple(
             item for item in observations if item.metric_code == metric_code
@@ -362,6 +365,7 @@ class MonitoringViewBuilder:
             series=tuple(series),
             summary=_merge_summaries(summaries),
             quality=quality,
+            thresholds=profile.metric_thresholds.get(metric_code),
         )
 
 

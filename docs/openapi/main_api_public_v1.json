@@ -9180,6 +9180,16 @@
             "title": "Summary",
             "type": "object"
           },
+          "thresholds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringThresholdBand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "maxLength": 128,
             "minLength": 1,
@@ -9309,6 +9319,13 @@
             "minItems": 1,
             "title": "Metric Codes",
             "type": "array"
+          },
+          "metric_thresholds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MonitoringThresholdBand"
+            },
+            "title": "Metric Thresholds",
+            "type": "object"
           },
           "profile_id": {
             "pattern": "^[a-z][a-z0-9-]{2,63}$",
@@ -9584,6 +9601,33 @@
           "diagnostic_readiness"
         ],
         "title": "MonitoringSourceSummary",
+        "type": "object"
+      },
+      "MonitoringThresholdBand": {
+        "additionalProperties": false,
+        "properties": {
+          "critical_value": {
+            "minimum": 0.0,
+            "title": "Critical Value",
+            "type": "number"
+          },
+          "direction": {
+            "const": "ABOVE",
+            "default": "ABOVE",
+            "title": "Direction",
+            "type": "string"
+          },
+          "warning_value": {
+            "minimum": 0.0,
+            "title": "Warning Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "warning_value",
+          "critical_value"
+        ],
+        "title": "MonitoringThresholdBand",
         "type": "object"
       },
       "MonitoringView": {
