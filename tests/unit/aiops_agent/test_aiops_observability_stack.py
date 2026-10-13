@@ -220,6 +220,9 @@ password = postgres-secret
     generated = json.loads(
         (settings.runtime_dir / "compose.generated.yaml").read_text()
     )
+    assert "--collect.info_schema.tables" in generated["services"][
+        "mysql-mysql-all-modules-01-exporter"
+    ]["command"]
     loki_config = (settings.runtime_dir / "loki/loki.yml").read_text()
     assert "ruler:" in loki_config
     assert "alertmanager_url: http://alertmanager:9093" in loki_config
@@ -817,6 +820,16 @@ def test_oracle_rules_use_exporter_metric_contract_without_double_percentage() -
     assert 'oracledb_tablespace_used_percent{job="oracle"} * 100' not in rules
     assert "metric_code: db.error.rate" in rules
     assert 'diagnostic_window_seconds: "300"' in rules
+
+
+def test_mysql_rules_publish_truthful_logical_used_capacity() -> None:
+    stack = _load_stack_script()
+    rules = stack._prometheus_rules()
+
+    assert "record: kbot_db_storage_used_bytes" in rules
+    assert "mysql_info_schema_table_size" in rules
+    assert 'component=~"data_length|index_length"' in rules
+    assert '"database", "$1", "schema", "(.+)"' in rules
 
 
 def test_oracle_custom_metrics_use_pdb_compatible_sources() -> None:

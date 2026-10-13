@@ -872,6 +872,15 @@ def _prometheus_rules() -> str:
       - record: kbot_mysql_temp_disk_table_percent
         expr: 100 * rate(mysql_global_status_created_tmp_disk_tables{job="mysql"}[5m]) / clamp_min(rate(mysql_global_status_created_tmp_tables{job="mysql"}[5m]), 0.001)
 
+      - record: kbot_db_storage_used_bytes
+        expr: |
+          label_replace(
+            sum by (instance, target_key, job, schema) (
+              mysql_info_schema_table_size{job="mysql",component=~"data_length|index_length"}
+            ),
+            "database", "$1", "schema", "(.+)"
+          )
+
   - name: kbot-aiops-mysql-alerts
     interval: 15s
     rules:
@@ -1556,7 +1565,10 @@ password={password}
             exporter = {
                 **common,
                 "image": "${MYSQL_EXPORTER_IMAGE}",
-                "command": ["--config.my-cnf=/run/secrets/mysql_exporter_cnf"],
+                "command": [
+                    "--config.my-cnf=/run/secrets/mysql_exporter_cnf",
+                    "--collect.info_schema.tables",
+                ],
                 "secrets": [
                     {"source": secret_name, "target": "mysql_exporter_cnf"}
                 ],

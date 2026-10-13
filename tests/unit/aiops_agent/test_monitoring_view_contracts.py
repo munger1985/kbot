@@ -86,6 +86,25 @@ class MonitoringProfileContractTest(unittest.TestCase):
         )
         for profile in mysql:
             self.assertEqual(profile.purpose == "OVERVIEW", profile.is_default)
+        mysql_capacity_codes = self.profiles.resolve(
+            "database-capacity", (("MYSQL", "8.4"),)
+        ).metric_codes
+        self.assertEqual(("db.storage.used_bytes",), mysql_capacity_codes)
+        mysql_used_provider = self.metrics.get(
+            "db.storage.used_bytes"
+        ).providers["PROMETHEUS"]
+        self.assertTrue(
+            any(
+                "mysql_info_schema_table_size" in query
+                for query in mysql_used_provider.fallback_query_templates
+            )
+        )
+        self.assertEqual(
+            ("ORACLE",), self.metrics.get("db.storage.free_bytes").supported_db_types
+        )
+        self.assertEqual(
+            ("ORACLE",), self.metrics.get("db.storage.max_bytes").supported_db_types
+        )
         for profile in self.profiles._profiles.values():
             for variant in profile.variants:
                 self.assertLessEqual(len(variant.metric_codes), 8)

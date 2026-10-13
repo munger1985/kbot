@@ -72,7 +72,7 @@
       "version": "2.0.0",
       "purpose": "CAPACITY",
       "display_name": "数据库容量",
-      "description": "Oracle 与 MySQL 数据库存储已用、可用和最大容量。",
+      "description": "Oracle 展示表空间已用、可用和最大容量；MySQL 展示按 schema 聚合的数据与索引逻辑已用容量。",
       "variants": [
         {
           "variant_id": "oracle-19c",
@@ -90,7 +90,7 @@
           "variant_id": "mysql-8-4",
           "db_type": "MYSQL",
           "version_codes": ["8.4"],
-          "metric_codes": ["db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes"]
+          "metric_codes": ["db.storage.used_bytes"]
         }
       ]
     },
