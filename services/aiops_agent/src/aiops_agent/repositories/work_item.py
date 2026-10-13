@@ -35,27 +35,17 @@ class WorkItemRepository(AIOpsRepository):
 
     @staticmethod
     def _valid_routing_condition(*, actor_id: str | None = None):
-        agent = aliased(AIOpsAgentEntity)
-        version_target = aliased(AIOpsAgentVersionTargetEntity)
         target = aliased(TargetEntity)
         group = aliased(ResponsibilityGroupEntity)
         member = aliased(ResponsibilityGroupMemberEntity)
         statement = (
             select(1)
-            .select_from(agent)
-            .join(
-                version_target,
-                version_target.agent_version_id == agent.current_version_id,
-            )
-            .join(target, target.target_id == version_target.target_id)
+            .select_from(target)
             .join(
                 group,
                 group.responsibility_group_id == target.responsibility_group_id,
             )
             .where(
-                agent.agent_id == WorkItemEntity.agent_id,
-                agent.domain_id == WorkItemEntity.domain_id,
-                agent.status.in_(("ACTIVE", "DISABLED")),
                 target.target_id == WorkItemEntity.target_id,
                 target.domain_id == WorkItemEntity.domain_id,
                 group.domain_id == WorkItemEntity.domain_id,
@@ -178,43 +168,26 @@ class WorkItemRepository(AIOpsRepository):
         )
 
     async def manual_work_item_routing(
-        self, *, domain_id: int, agent_id: UUID, target_id: UUID
-    ) -> tuple[UUID, str, str] | None:
-        row = (
-            await self._session.execute(
-                select(
-                    TargetEntity.responsibility_group_id,
-                    AIOpsAgentEntity.display_name,
-                )
-                .join(
-                    AIOpsAgentVersionTargetEntity,
-                    AIOpsAgentVersionTargetEntity.agent_version_id
-                    == AIOpsAgentEntity.current_version_id,
-                )
-                .join(
-                    TargetEntity,
-                    TargetEntity.target_id
-                    == AIOpsAgentVersionTargetEntity.target_id,
-                )
-                .where(
-                    AIOpsAgentEntity.agent_id == agent_id,
-                    AIOpsAgentEntity.domain_id == domain_id,
-                    AIOpsAgentEntity.status == "ACTIVE",
-                    TargetEntity.target_id == target_id,
-                    TargetEntity.domain_id == domain_id,
-                    TargetEntity.status == "ENABLED",
-                )
+        self, *, domain_id: int, target_id: UUID
+    ) -> tuple[UUID, str] | None:
+        group_id = await self._session.scalar(
+            select(TargetEntity.responsibility_group_id)
+            .join(
+                ResponsibilityGroupEntity,
+                ResponsibilityGroupEntity.responsibility_group_id
+                == TargetEntity.responsibility_group_id,
             )
-        ).one_or_none()
-        if row is None:
-            return None
-        group_id, agent_name = row
+            .where(
+                TargetEntity.target_id == target_id,
+                TargetEntity.domain_id == domain_id,
+                TargetEntity.status == "ENABLED",
+                ResponsibilityGroupEntity.domain_id == domain_id,
+                ResponsibilityGroupEntity.status == "ACTIVE",
+            )
+        )
         if group_id is None:
             return None
-        group = await self.get_group(group_id=group_id, domain_id=domain_id)
-        if group is None or group.status != "ACTIVE":
-            return None
-        return group_id, "TARGET_RESPONSIBILITY", str(agent_name)
+        return group_id, "TARGET_RESPONSIBILITY"
 
     async def recovery_drill_routing(
         self, *, domain_id: int, target_id: UUID
@@ -487,6 +460,7 @@ class WorkItemRepository(AIOpsRepository):
         self, *, domain_id: int, actor_id: str, now: datetime,
         visibility: str = "SCOPE",
         agent_id: UUID | None = None,
+        target_id: UUID | None = None,
     ) -> dict[str, int]:
         self._check_active()
         open_condition = WorkItemEntity.status.not_in(_TERMINAL_STATUSES)
@@ -504,6 +478,8 @@ class WorkItemRepository(AIOpsRepository):
             statement = statement.where(visibility_condition)
         if agent_id is not None:
             statement = statement.where(WorkItemEntity.agent_id == agent_id)
+        if target_id is not None:
+            statement = statement.where(WorkItemEntity.target_id == target_id)
         row = (
             await self._session.execute(statement)
         ).one()

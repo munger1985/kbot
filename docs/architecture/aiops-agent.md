@@ -200,6 +200,12 @@ Scheduler 默认每小时重新检查 Target 和 Diagnostic Source，并加入�
 连通性状态作为路由条件；Webhook Key、HMAC签名、时间戳和防重放校验共同承担请求
 认证。否则一次周期检查失败会把合法事件错误地拒绝为`SOURCE_ROUTE_NOT_FOUND`。
 
+DBA 工作项以 Target 作为唯一人工登记入口和主要筛选维度。人工来源的 `WorkItemCreate` 不接收
+`agent_id`，工作项的责任组从启用 Target 的有效责任归属解析；自动告警、巡检和诊断工作项仍保留
+产生它们的 Agent/Run 关联作为证据。队列列表与摘要必须同时应用 `target_id`，不得出现数字与表格
+筛选范围不一致。普通 DBA 的队列可见范围由“当前用户 → 有效责任组 → Target → 工作项”计算，
+不得因人工工作项没有来源 Agent 而从责任组队列中消失。
+
 ## 建议、审批与执行
 
 分析结果可以只给解决思路，也可以生成版本化 Change Proposal。每条命令必须单独

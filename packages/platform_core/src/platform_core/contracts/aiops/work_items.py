@@ -221,7 +221,6 @@ class WorkItemPage(CursorPage):
 
 
 class WorkItemCreate(AIOpsContract):
-    agent_id: UUIDv7
     target_id: UUIDv7
     work_type: WorkItemType
     title: str = Field(min_length=1, max_length=512)

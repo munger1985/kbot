@@ -32,6 +32,11 @@ KBot AIOps 的核心目标不是建设一个新的通用监控平台，而是建
 新会话的 Target 感知功能菜单、参数表单和自由提问并行入口见
 [智能运维新会话功能引导](aiops-conversation-starters.md)。
 
+DBA 工作队列以 Target 为核心：筛选、责任组、责任人和 SLA 都围绕数据库实例呈现。Agent 只作为
+告警、巡检或诊断自动生成工作项时的来源证据，不是 DBA 人工登记事项的必填上下文。人工新建工作项
+只选择启用且已配置有效责任组的 Target，服务端据此冻结责任归属；队列摘要与列表使用同一个
+`target_id` 筛选范围。普通 DBA 按自己所属责任组负责的 Target 查看工作项，不依赖来源 Agent。
+
 ### Oracle 原生工作负载报告
 
 对已连接的 Oracle 19c+ Target，Agent 可以按实例生成原生 HTML 格式的 AWR、AWR

@@ -8,7 +8,7 @@
   const state = {
     access: null, cursor: null, filters: { visibility: "SCOPE" }, item: null,
     items: new Map(), processingItem: null, processingContext: null, assignmentItem: null,
-    scopedAgents: [], handling: false, assigning: false, suppressReset: false,
+    scopedTargets: [], handling: false, assigning: false, suppressReset: false,
   };
   const labels = {
     PENDING_TRIAGE: "待研判", OPEN: "待处理", IN_PROGRESS: "处理中",
@@ -169,9 +169,8 @@
     if (value === "overdue") return Boolean(filters.overdue) && !filters.status && !filters.priority && !filters.assignee_user_id && !filters.unassigned;
     return filters.status === "PENDING_VERIFICATION" && !filters.priority && !filters.assignee_user_id && !filters.unassigned && !filters.overdue;
   }
-  async function loadScopedAgents() {
-    const [agents, targetPage, groupPage] = await Promise.all([
-      KBotAIOpsAuth.request(`${rootApi}/agents`),
+  async function loadScopedTargets() {
+    const [targetPage, groupPage] = await Promise.all([
       KBotAIOpsAuth.request(`${rootApi}/targets?limit=200`),
       KBotAIOpsAuth.request(groupApi),
     ]);
@@ -183,15 +182,13 @@
       values(group.members).some((member) => member.status === "ACTIVE"
         && String(member.user_id) === String(state.access.user_id))
     ).map((group) => String(group.responsibility_group_id)));
-    const visibleTargetIds = new Set(values(targetPage?.items).filter((target) =>
-      target.responsibility_group_id
-      && userGroupIds.has(String(target.responsibility_group_id))
-    ).map((target) => String(target.target_id)));
-    state.scopedAgents = values(agents).filter((agent) => agent.status === "ACTIVE"
-      && values(agent.target_ids).some((targetId) => visibleTargetIds.has(String(targetId))));
-    const select = document.getElementById("work-item-agent-filter");
-    select.innerHTML = '<option value="">责任组内全部 Agent</option>'
-      + state.scopedAgents.map((agent) => `<option value="${shell.escape(agent.agent_id)}">${shell.escape(agent.display_name || agent.agent_key || shell.short(agent.agent_id))}</option>`).join("");
+    state.scopedTargets = values(targetPage?.items).filter((target) =>
+      target.status === "ENABLED"
+      && target.responsibility_group_id
+      && userGroupIds.has(String(target.responsibility_group_id)));
+    const select = document.getElementById("work-item-target-filter");
+    select.innerHTML = '<option value="">责任范围内全部实例</option>'
+      + state.scopedTargets.map((target) => `<option value="${shell.escape(target.target_id)}">${shell.escape(target.display_name || shell.short(target.target_id))} · ${shell.escape(target.db_type || "")}</option>`).join("");
   }
   function listRow(item) {
     const assignee = item.assignee_user_id || item.responsibility_group_name || item.responsibility_group_id || "未分派";
@@ -209,7 +206,7 @@
       ? `<button class="primary" type="button" data-handle-id="${shell.escape(item.work_item_id)}">${isMine && item.status === "IN_PROGRESS" ? "继续处理" : "处理"}</button>` : "";
     const assignmentAction = canAssign
       ? `<button type="button" data-assignment-id="${shell.escape(item.work_item_id)}">分派</button>` : "";
-    return `<tr><td>${priority(item.priority)}</td><td><a href="${detail}"><strong>${shell.escape(item.title)}</strong></a><small>${shell.escape(item.item_key)} · ${shell.escape(text(item.source_kind))}</small></td><td><strong>${shell.escape(item.agent_name || "来源 Agent 待归属")}</strong><small>${shell.escape(item.target_name)} · ${shell.escape(shell.short(item.target_id))}</small></td><td>${shell.badge(text(item.status))}<small>${shell.escape(text(item.phase))}</small></td><td>${shell.escape(assignee)}</td><td>${shell.escape(shell.fmt(item.last_observed_at))}</td><td>${due(item.resolution_due_at)}</td><td>${Number(item.occurrence_count || 0)}</td><td><div class="ops-actions">${processAction}${assignmentAction}</div></td></tr>`;
+    return `<tr><td>${priority(item.priority)}</td><td><a href="${detail}"><strong>${shell.escape(item.title)}</strong></a><small>${shell.escape(item.item_key)} · ${shell.escape(text(item.source_kind))}</small></td><td><strong>${shell.escape(item.target_name)}</strong><small>${shell.escape(shell.short(item.target_id))}</small></td><td>${shell.badge(text(item.status))}<small>${shell.escape(text(item.phase))}</small></td><td>${shell.escape(assignee)}</td><td>${shell.escape(shell.fmt(item.last_observed_at))}</td><td>${due(item.resolution_due_at)}</td><td>${Number(item.occurrence_count || 0)}</td><td><div class="ops-actions">${processAction}${assignmentAction}</div></td></tr>`;
   }
   async function handleItem(button) {
     if (state.handling) return;
@@ -298,16 +295,16 @@
   }
   function applyQueue(value) {
     const form = document.getElementById("work-item-filters");
-    const agentId = state.filters.agent_id || "";
+    const targetId = state.filters.target_id || "";
     const visibility = state.filters.visibility || "SCOPE";
     state.suppressReset = true;
     form.reset();
     state.suppressReset = false;
-    form.elements.agent_id.value = agentId;
+    form.elements.target_id.value = targetId;
     form.elements.visibility.value = visibility;
     state.filters = {
       visibility,
-      agent_id: agentId,
+      target_id: targetId,
     };
     if (value === "mine") state.filters.assignee_user_id = state.access.user_id;
     if (value === "unassigned") state.filters.unassigned = true;
@@ -322,7 +319,7 @@
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form));
       state.filters = {
-        agent_id: values.agent_id, status: values.status, priority: values.priority,
+        target_id: values.target_id, status: values.status, priority: values.priority,
         assignee_user_id: values.ownership === "mine" ? state.access.user_id : "",
         unassigned: values.ownership === "unassigned",
         visibility: values.visibility || "SCOPE",
@@ -468,8 +465,8 @@
         visibility.value = state.filters.visibility;
       }
       bindList();
-      void loadScopedAgents()
-        .catch((error) => shell.toast(`无法读取责任组 Agent：${error.message}`))
+      void loadScopedTargets()
+        .catch((error) => shell.toast(`无法读取责任范围内数据库实例：${error.message}`))
         .finally(() => loadList());
     }
     if (document.body.dataset.page === "work-item-detail") { bindDetail(); loadDetail(); }

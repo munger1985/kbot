@@ -472,7 +472,7 @@ class WorkItemService:
             )
             counts = await uow.work_items.queue_summary(
                 domain_id=scope.domain_id, actor_id=scope.actor_id, now=now,
-                visibility=visibility, agent_id=agent_id,
+                visibility=visibility, agent_id=agent_id, target_id=target_id,
             )
             has_more = len(rows) > limit
             selected = rows[:limit]
@@ -531,17 +531,16 @@ class WorkItemService:
             assert uow.work_items is not None
             routing = await uow.work_items.manual_work_item_routing(
                 domain_id=scope.domain_id,
-                agent_id=body.agent_id,
                 target_id=body.target_id,
             )
             if routing is None:
-                raise state_conflict("所选 Agent、数据库实例或责任组不在有效运维范围内")
-            group_id, assignment_source, agent_name = routing
+                raise state_conflict("所选数据库实例或责任组不在有效运维范围内")
+            group_id, assignment_source = routing
             if (
                 body.responsibility_group_id is not None
                 and body.responsibility_group_id != group_id
             ):
-                raise state_conflict("责任组必须与 Agent 和数据库实例的有效路由一致")
+                raise state_conflict("责任组必须与数据库实例的有效路由一致")
             if body.assignee_user_id is not None:
                 member = await uow.work_items.get_group_member(
                     group_id=group_id,
@@ -557,7 +556,7 @@ class WorkItemService:
                     work_item_id=item_id,
                     domain_id=scope.domain_id,
                     item_key=f"WI-{item_id.hex[:12].upper()}",
-                    agent_id=body.agent_id,
+                    agent_id=None,
                     target_id=body.target_id,
                     work_type=body.work_type,
                     source_kind=WorkItemSourceKind.MANUAL.value,
@@ -591,8 +590,7 @@ class WorkItemService:
                 uow, item=item, activity_type="CREATED", actor_id=scope.actor_id,
                 detail={
                     "source": "MANUAL",
-                    "agent_id": str(body.agent_id),
-                    "agent_name": agent_name,
+                    "target_id": str(body.target_id),
                     "assignment_source": assignment_source,
                 }, now=now,
             )

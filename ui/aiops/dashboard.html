@@ -45,9 +45,9 @@
     <section class="ops-action-workbench-grid">
       <div class="ops-action-primary">
         <section class="ops-panel ops-work-item-filter-panel" aria-labelledby="work-item-filter-title">
-          <div class="ops-panel-head"><div><h2 id="work-item-filter-title">筛选条件</h2><p>按 Agent、状态、优先级和责任范围缩小队列。</p></div></div>
+          <div class="ops-panel-head"><div><h2 id="work-item-filter-title">筛选条件</h2><p>按数据库实例、状态、优先级和责任范围缩小队列。</p></div></div>
           <form id="work-item-filters" class="ops-work-item-filters">
-            <label>Agent<select id="work-item-agent-filter" name="agent_id"><option value="">责任组内全部 Agent</option></select></label>
+            <label>数据库实例<select id="work-item-target-filter" name="target_id"><option value="">责任范围内全部实例</option></select></label>
             <label>状态<select name="status"><option value="">全部活动事项</option><option value="PENDING_TRIAGE">待研判</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="WAITING">等待中</option><option value="PENDING_VERIFICATION">待验证</option><option value="RESOLVED">已解决</option><option value="CLOSED">已关闭</option><option value="CANCELLED">已取消</option></select></label>
             <label>优先级<select name="priority"><option value="">全部优先级</option><option>P1</option><option>P2</option><option>P3</option><option>P4</option></select></label>
             <label>责任范围<select name="ownership"><option value="">范围内全部</option><option value="mine">分派给我</option><option value="unassigned">未分派</option></select></label>
@@ -58,7 +58,7 @@
 
         <section class="ops-panel ops-action-work-list">
           <div class="ops-panel-head"><div><h2>处理队列</h2><p id="work-item-count">按解决 SLA 排序</p></div></div>
-          <div class="ops-table-wrap"><table class="ops-table ops-work-item-table"><thead><tr><th>优先级</th><th>工作项</th><th>来源 Agent / 数据库实例</th><th>状态 / 阶段</th><th>责任人</th><th>最后发现</th><th>解决 SLA</th><th>发生次数</th><th>操作</th></tr></thead><tbody id="work-item-body"><tr><td colspan="9" class="ops-empty">正在加载工作项…</td></tr></tbody></table></div>
+          <div class="ops-table-wrap"><table class="ops-table ops-work-item-table"><thead><tr><th>优先级</th><th>工作项</th><th>数据库实例</th><th>状态 / 阶段</th><th>责任人</th><th>最后发现</th><th>解决 SLA</th><th>发生次数</th><th>操作</th></tr></thead><tbody id="work-item-body"><tr><td colspan="9" class="ops-empty">正在加载工作项…</td></tr></tbody></table></div>
           <div class="ops-work-item-more"><button id="work-item-more" type="button" hidden>加载更多</button></div>
         </section>
       </div>

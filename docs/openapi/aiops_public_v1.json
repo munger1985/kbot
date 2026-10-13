@@ -9570,11 +9570,6 @@
       "WorkItemCreate": {
         "additionalProperties": false,
         "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
           "assignee_user_id": {
             "anyOf": [
               {
@@ -9627,7 +9622,6 @@
           }
         },
         "required": [
-          "agent_id",
           "target_id",
           "work_type",
           "title",

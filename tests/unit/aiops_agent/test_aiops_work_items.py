@@ -23,6 +23,7 @@ from aiops_agent.repositories.work_item import WorkItemRepository
 from platform_core.contracts.aiops import (
     FindingCard,
     FindingCompilation,
+    WorkItemCreate,
     WorkItemPriority,
     WorkItemCompletion,
     WorkItemStatus,
@@ -51,10 +52,15 @@ class _CapturedResult:
 
 class _CapturingSession:
     statement = None
+    scalar_result = None
 
     async def execute(self, statement):
         self.statement = statement
         return _CapturedResult()
+
+    async def scalar(self, statement):
+        self.statement = statement
+        return self.scalar_result
 
 
 class FakeWorkItemRepository:
@@ -122,6 +128,27 @@ class FakeWorkItemRepository:
 
     async def target_responsibility_group(self, **kwargs):
         return self.default_group_id, "TARGET_RESPONSIBILITY"
+
+    async def manual_work_item_routing(self, **kwargs):
+        return self.default_group_id, "TARGET_RESPONSIBILITY"
+
+    async def target_name(self, **kwargs):
+        return "核心数据库"
+
+    async def group_name(self, **kwargs):
+        return "核心数据库责任组"
+
+    async def agent_name(self, **kwargs):
+        return None
+
+    async def list_occurrences(self, **kwargs):
+        return self.occurrences
+
+    async def list_links(self, **kwargs):
+        return self.links
+
+    async def list_activities(self, **kwargs):
+        return self.activities
 
 
 class _FakeUowContext:
@@ -231,6 +258,47 @@ def fake_run(*, run_id, trigger_type: str = "ALERT"):
 
 
 class WorkItemContractTest(unittest.TestCase):
+    def test_manual_work_item_is_target_centered_without_agent(self):
+        now = datetime(2026, 10, 13, tzinfo=UTC)
+        repository = FakeWorkItemRepository()
+
+        async def commit():
+            return None
+
+        uow = SimpleNamespace(
+            work_items=repository,
+            runs=SimpleNamespace(database_now=lambda: asyncio.sleep(0, result=now)),
+            commit=commit,
+        )
+        service = WorkItemService(
+            uow_factory=lambda: _FakeUowContext(uow),
+            cursor_codec=SimpleNamespace(),
+        )
+        actor_id = "user:dba-test"
+        scope = ConfigurationScope(
+            domain_id=7, principal_id=actor_id, actor_id=actor_id,
+            request_id="request-test", trace_id="trace-test",
+        )
+        target_id = uuid7()
+
+        result = asyncio.run(service.create_item(
+            body=WorkItemCreate(
+                target_id=target_id,
+                work_type="PROBLEM_INVESTIGATION",
+                title="检查数据库空间增长",
+                summary="DBA 人工登记的数据库处理事项。",
+                severity="MEDIUM",
+                priority="P3",
+            ),
+            scope=scope,
+        ))
+
+        self.assertEqual(target_id, result.target_id)
+        self.assertIsNone(result.agent_id)
+        self.assertEqual(repository.default_group_id, result.responsibility_group_id)
+        self.assertNotIn("agent_id", repository.activities[0].detail_json)
+        self.assertEqual(str(target_id), repository.activities[0].detail_json["target_id"])
+
     def test_claim_starts_processing_and_completion_needs_no_manual_transition(self):
         now = datetime(2026, 10, 11, tzinfo=UTC)
         actor_id = "dba:test"
@@ -341,6 +409,7 @@ class WorkItemContractTest(unittest.TestCase):
         self.assertEqual("测试责任组", page.items[0].responsibility_group_name)
         self.assertEqual(page.items[0].agent_id, context.uow.work_items.page_kwargs["agent_id"])
         self.assertEqual(page.items[0].agent_id, context.uow.work_items.summary_kwargs["agent_id"])
+        self.assertIsNone(context.uow.work_items.summary_kwargs["target_id"])
 
     def test_locked_fingerprint_lookup_avoids_oracle_row_limit_view(self):
         session = _CapturingSession()
@@ -396,7 +465,45 @@ class WorkItemContractTest(unittest.TestCase):
             "pending_verification": 0,
         }, summary)
 
-    def test_scope_visibility_follows_member_agent_current_version_and_target(self):
+    def test_target_filter_is_applied_to_queue_summary(self):
+        session = _CapturingSession()
+        repository = WorkItemRepository(session)
+        target_id = uuid7()
+
+        asyncio.run(repository.queue_summary(
+            domain_id=7,
+            actor_id="user:dba-1",
+            now=datetime(2026, 10, 13, tzinfo=UTC),
+            visibility="ALL",
+            target_id=target_id,
+        ))
+
+        compiled = session.statement.compile(dialect=oracle.dialect())
+        sql = str(compiled).upper()
+        self.assertIn("TARGET_ID", sql)
+        self.assertIn(target_id, compiled.params.values())
+
+    def test_manual_routing_uses_target_responsibility_without_agent(self):
+        session = _CapturingSession()
+        group_id = uuid7()
+        session.scalar_result = group_id
+        repository = WorkItemRepository(session)
+
+        routing = asyncio.run(repository.manual_work_item_routing(
+            domain_id=7,
+            target_id=uuid7(),
+        ))
+
+        compiled = session.statement.compile(dialect=oracle.dialect())
+        sql = str(compiled).upper()
+        self.assertEqual((group_id, "TARGET_RESPONSIBILITY"), routing)
+        self.assertIn("KBOT_OPS_TARGET", sql)
+        self.assertIn("KBOT_OPS_RESPONSIBILITY_GROUP", sql)
+        self.assertIn("ENABLED", compiled.params.values())
+        self.assertIn("ACTIVE", compiled.params.values())
+        self.assertNotIn("KBOT_OPS_AGENT ", sql)
+
+    def test_scope_visibility_follows_member_and_target_responsibility(self):
         actor_id = "user:dba-1"
         condition = WorkItemRepository._visibility_condition(
             actor_id=actor_id,
@@ -412,14 +519,11 @@ class WorkItemContractTest(unittest.TestCase):
         ).upper()
 
         self.assertIn("KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER", sql)
-        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", sql)
-        self.assertIn("CURRENT_VERSION_ID", sql)
         self.assertIn("RESPONSIBILITY_GROUP_ID", sql)
-        self.assertNotIn("DEFAULT_RESPONSIBILITY_GROUP_ID", sql)
-        self.assertIn('"KBOT_OPS_WORK_ITEM".AGENT_ID', sql)
         self.assertIn('"KBOT_OPS_WORK_ITEM".TARGET_ID', sql)
         self.assertIn("RESPONSIBILITY_GROUP_ID IS NULL", sql)
         self.assertIn(actor_id.upper(), sql)
+        self.assertNotIn("KBOT_OPS_AGENT ", sql)
         self.assertNotIn("MONITOR", sql)
 
     def test_exception_visibility_and_processing_continuity_are_explicit(self):
