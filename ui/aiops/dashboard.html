@@ -3,19 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Dashboard · KBot AIOps</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20260929_3">
+  <title>AIOps 工作台 · KBot</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261013_1">
+  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261011_3">
+  <link rel="stylesheet" href="./css/workspaces.css?v=20261008_2">
 </head>
 <body data-page="dashboard">
-  <main class="ops-main ops-dashboard-main">
+  <main class="ops-main ops-dashboard-main ops-action-workbench">
     <header class="ops-head ops-dashboard-head">
       <div>
-        <h1>Dashboard</h1>
-        <p>DBA 运维态势与待处理事项。异常优先展示，并明确区分健康、数据过期和无有效数据。</p>
-        <small id="dashboard-freshness" class="ops-dashboard-freshness">正在读取运维态势…</small>
+        <small class="ops-action-eyebrow">行动优先工作台</small>
+        <h1>AIOps 工作台</h1>
+        <p>先处理属于你的责任事项，再结合业务空间运行态势研判影响；工作项是唯一承载责任人、SLA、处理和验证的对象。</p>
       </div>
       <div class="ops-actions">
-        <label class="ops-dashboard-refresh">自动刷新
+        <a class="ops-button" href="./chat.html">发起智能运维</a>
+        <label class="ops-dashboard-refresh">态势刷新
           <select id="dashboard-refresh-interval">
             <option value="0">关闭</option>
             <option value="30">30 秒</option>
@@ -23,67 +26,92 @@
             <option value="300">5 分钟</option>
           </select>
         </label>
-        <button id="refresh-dashboard" type="button">立即刷新</button>
+        <button id="refresh-dashboard" type="button">刷新工作台</button>
       </div>
     </header>
 
-    <form id="dashboard-filters" class="ops-dashboard-filters" aria-label="数据库清单筛选">
-      <p>清单筛选 · 上方态势、优先队列与风险热点始终覆盖当前 Domain 全部 Target。</p>
-      <label>搜索数据库<input name="search" type="search" placeholder="名称或风险内容"></label>
-      <label>环境<select name="environment"><option value="">全部环境</option><option>PROD</option><option>STG</option><option>DEV</option></select></label>
-      <label>数据库<select name="db_type"><option value="">全部类型</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select></label>
-      <label>最低重要程度<select name="importance"><option value="1">L1 及以上</option><option value="3" selected>L3 及以上</option><option value="4">L4 及以上</option><option value="5">仅 L5</option></select></label>
-      <label>健康状态<select name="health"><option value="">全部状态</option><option value="CRITICAL">严重</option><option value="UNREACHABLE">不可达</option><option value="WARNING">警告</option><option value="BLIND_SPOT">数据盲区</option><option value="STALE">数据过期</option><option value="UNKNOWN">无有效数据</option><option value="HEALTHY">健康</option><option value="DISABLED">停用</option></select></label>
-      <label class="ops-dashboard-check"><input name="attention_only" type="checkbox">仅显示需要关注</label>
-      <button type="reset">重置</button>
-    </form>
+    <section class="ops-action-scope" aria-label="工作台默认范围">
+      <strong>默认范围</strong><span>我的责任范围</span><small>管理员可在筛选中切换全部工作项或异常归属</small>
+    </section>
 
-    <section id="dashboard-summary" class="ops-dashboard-summary" aria-label="当前态势"></section>
+    <section class="ops-panel ops-work-item-queue-panel" aria-labelledby="work-item-queue-title">
+      <div class="ops-panel-head">
+        <div><h2 id="work-item-queue-title">我的责任队列</h2><p>选择队列可快速聚焦需要立即处理的事项。</p></div>
+        <button id="work-items-refresh" type="button">刷新队列</button>
+      </div>
+      <div id="work-item-queues" class="ops-work-item-queues"><div class="ops-empty">正在加载队列…</div></div>
+    </section>
 
-    <section class="ops-dashboard-primary">
-      <article class="ops-panel ops-dashboard-attention">
-        <div class="ops-panel-head"><div><h2>优先处理队列</h2><p>按健康状态、Target Level、告警级别和持续时间排序。</p></div><span id="dashboard-attention-count"></span></div>
-        <div id="dashboard-attention" class="ops-dashboard-attention-list"><div class="ops-empty">正在读取待处理事项…</div></div>
-      </article>
-      <aside class="ops-panel ops-dashboard-health">
-        <div class="ops-panel-head"><div><h2>库群健康分布</h2><p>无数据不会计入健康。</p></div></div>
-        <div id="dashboard-health" class="ops-dashboard-health-list"></div>
+    <section class="ops-action-workbench-grid">
+      <div class="ops-action-primary">
+        <section class="ops-panel ops-work-item-filter-panel" aria-labelledby="work-item-filter-title">
+          <div class="ops-panel-head"><div><h2 id="work-item-filter-title">筛选条件</h2><p>按 Agent、状态、优先级和责任范围缩小队列。</p></div></div>
+          <form id="work-item-filters" class="ops-work-item-filters">
+            <label>Agent<select id="work-item-agent-filter" name="agent_id"><option value="">责任组内全部 Agent</option></select></label>
+            <label>状态<select name="status"><option value="">全部活动事项</option><option value="PENDING_TRIAGE">待研判</option><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="WAITING">等待中</option><option value="PENDING_VERIFICATION">待验证</option><option value="RESOLVED">已解决</option><option value="CLOSED">已关闭</option><option value="CANCELLED">已取消</option></select></label>
+            <label>优先级<select name="priority"><option value="">全部优先级</option><option>P1</option><option>P2</option><option>P3</option><option>P4</option></select></label>
+            <label>责任范围<select name="ownership"><option value="">范围内全部</option><option value="mine">分派给我</option><option value="unassigned">未分派</option></select></label>
+            <label hidden>查看范围<select name="visibility"><option value="SCOPE">我的责任范围</option><option value="ALL">全部工作项</option><option value="EXCEPTIONS">异常归属</option></select></label>
+            <div><button class="primary" type="submit">应用筛选</button><button type="reset">清空</button></div>
+          </form>
+        </section>
+
+        <section class="ops-panel ops-action-work-list">
+          <div class="ops-panel-head"><div><h2>处理队列</h2><p id="work-item-count">按解决 SLA 排序</p></div></div>
+          <div class="ops-table-wrap"><table class="ops-table ops-work-item-table"><thead><tr><th>优先级</th><th>工作项</th><th>来源 Agent / 数据库实例</th><th>状态 / 阶段</th><th>责任人</th><th>最后发现</th><th>解决 SLA</th><th>发生次数</th><th>操作</th></tr></thead><tbody id="work-item-body"><tr><td colspan="9" class="ops-empty">正在加载工作项…</td></tr></tbody></table></div>
+          <div class="ops-work-item-more"><button id="work-item-more" type="button" hidden>加载更多</button></div>
+        </section>
+      </div>
+
+      <aside class="ops-action-context" aria-label="AIOps 运行态势上下文">
+        <section class="ops-panel ops-action-context-card">
+          <div class="ops-panel-head"><div><small class="ops-action-eyebrow">业务空间</small><h2>运行态势</h2></div><span id="dashboard-freshness" class="ops-dashboard-freshness">正在读取运行态势…</span></div>
+          <p class="ops-action-boundary">以下是系统观测，不代表已形成个人责任；需要处理时以左侧正式工作项为准。</p>
+          <div id="dashboard-summary" class="ops-action-runtime-metrics"><div class="ops-empty">正在读取运行态势…</div></div>
+          <section class="ops-action-attention">
+            <header><h3>需关注目标</h3><a href="./monitoring.html">查看监控</a></header>
+            <div id="dashboard-attention" class="ops-action-attention-list"><div class="ops-empty">正在读取需关注目标…</div></div>
+            <a class="ops-action-context-link" href="./situations.html"><span><strong>告警与诊断上下文</strong><small id="dashboard-attention-count">—</small></span><b>查看 →</b></a>
+          </section>
+        </section>
+
+        <section class="ops-panel ops-action-context-card">
+          <div class="ops-panel-head"><div><small class="ops-action-eyebrow">自动化</small><h2>近 24 小时执行</h2></div></div>
+          <div id="dashboard-automation" class="ops-dashboard-automation"><div class="ops-empty">正在读取执行结果…</div></div>
+        </section>
+
+        <section class="ops-panel ops-action-context-card">
+          <div class="ops-panel-head"><div><small class="ops-action-eyebrow">结果沉淀</small><h2>最新正式报告</h2></div><a href="./reports.html">全部报告</a></div>
+          <div id="dashboard-latest-report" class="ops-action-latest-report"><div class="ops-empty">正在读取最新报告…</div></div>
+        </section>
       </aside>
     </section>
-
-    <section class="ops-panel ops-dashboard-risk-panel">
-      <div class="ops-panel-head">
-        <div><h2>风险热点</h2><p>容量、复制、备份和会话风险保持各自指标语义。</p></div>
-        <div id="dashboard-risk-tabs" class="ops-dashboard-tabs" role="tablist">
-          <button type="button" class="is-active" data-risk-category="">全部</button>
-          <button type="button" data-risk-category="CAPACITY">容量</button>
-          <button type="button" data-risk-category="REPLICATION">复制</button>
-          <button type="button" data-risk-category="BACKUP">备份</button>
-          <button type="button" data-risk-category="SESSION">会话与锁</button>
-        </div>
-      </div>
-      <div class="ops-table-wrap"><table class="ops-table ops-dashboard-table"><thead><tr><th>数据库</th><th>风险对象</th><th>类别</th><th>当前值</th><th>级别</th><th>证据时间</th><th>操作</th></tr></thead><tbody id="dashboard-risks"></tbody></table></div>
-    </section>
-
-    <section class="ops-dashboard-secondary">
-      <article class="ops-panel">
-        <div class="ops-panel-head"><div><h2>最近 24 小时运维结果</h2><p>自动诊断和日常巡检分别统计。</p></div></div>
-        <div id="dashboard-automation" class="ops-dashboard-automation"></div>
-      </article>
-      <article class="ops-panel">
-        <div class="ops-panel-head"><div><h2>最近活动</h2><p>只展示可下钻的告警和诊断状态变化。</p></div></div>
-        <div id="dashboard-activities" class="ops-dashboard-activities"></div>
-      </article>
-    </section>
-
-    <section class="ops-panel ops-dashboard-target-panel">
-      <div class="ops-panel-head"><div><h2>数据库清单</h2><p id="dashboard-target-count">按当前筛选显示数据库。</p></div></div>
-      <div class="ops-table-wrap"><table class="ops-table ops-dashboard-table ops-dashboard-target-table"><thead><tr><th>数据库</th><th>Level</th><th>环境 / 角色</th><th>健康</th><th>未关闭告警</th><th>容量风险</th><th>复制延迟</th><th>数据新鲜度</th><th>最近诊断</th><th>操作</th></tr></thead><tbody id="dashboard-targets"></tbody></table></div>
-    </section>
   </main>
+
+  <dialog id="work-item-processing-dialog" class="ops-dialog ops-work-item-dialog ops-work-item-processing-dialog">
+    <form id="work-item-processing-form">
+      <header><div><small>当前由你处理</small><h2>处理工作项</h2><p id="work-item-processing-title"></p></div><button type="button" aria-label="关闭处理窗口" data-close-work-item-dialog>关闭</button></header>
+      <div class="ops-dialog-body">
+        <section class="ops-work-item-dialog-summary"><article><span>数据库实例</span><strong id="work-item-processing-target">—</strong></article><article><span>当前状态</span><strong id="work-item-processing-status">—</strong></article><article><span>开始处理时间</span><strong id="work-item-processing-started">—</strong></article></section>
+        <section class="ops-work-item-processing-context"><article class="ops-work-item-context-card"><header><div><small>现场上下文</small><h3>错误 / 告警信息</h3></div></header><div id="work-item-alert-context"></div></article><article class="ops-work-item-context-card"><header><div><small>Agent 结论</small><h3>初步诊断结果</h3></div></header><div id="work-item-agent-diagnosis" class="ops-result-markdown"></div></article></section>
+        <section class="ops-work-item-continue"><header><div><small>继承诊断上下文</small><h3>继续深入诊断</h3></div><p id="work-item-diagnosis-note">正在识别可继承的诊断上下文…</p></header><div class="ops-work-item-continue-fields"><div class="ops-field"><label class="ops-field-label" for="work-item-diagnosis-agent">Agent</label><select id="work-item-diagnosis-agent"><option value="">正在读取可用 Agent…</option></select></div><div class="ops-field"><label class="ops-field-label" for="work-item-diagnosis-prompt">继续追问</label><textarea id="work-item-diagnosis-prompt" maxlength="32000"></textarea></div><button id="work-item-continue-diagnosis" class="primary" type="button" disabled>进入诊断对话</button></div></section>
+        <section class="ops-work-item-completion"><h3>记录处理结果</h3><div class="ops-field"><label class="ops-field-label" for="work-item-resolution-code">处理结论</label><select id="work-item-resolution-code" name="resolution_code"><option value="FIXED">已修复</option><option value="MITIGATED">已缓解</option><option value="OBSERVED_STABLE">观察稳定</option><option value="ACCEPTED_RISK">风险已接受</option><option value="FALSE_POSITIVE">误报</option><option value="DUPLICATE">重复事项</option></select></div><div class="ops-field"><label class="ops-field-label" for="work-item-completion-note">处理结果</label><textarea id="work-item-completion-note" name="completion_note" maxlength="4000" required placeholder="记录采取的措施、结果与后续观察建议"></textarea></div><p class="ops-dialog-note">领取时间由系统自动记录；提交时自动记录完成人和完成时间，并进入待验证状态。</p></section>
+      </div>
+      <footer><button type="button" data-close-work-item-dialog>暂不完成</button><button class="primary" type="submit">标记工作完成</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="work-item-assignment-dialog" class="ops-dialog ops-work-item-dialog ops-work-item-assignment-dialog">
+    <form id="work-item-assignment-form"><header><div><small>Manager 分派</small><h2>分派工作项</h2><p id="work-item-assignment-title"></p></div><button type="button" aria-label="关闭分派窗口" data-close-work-item-dialog>关闭</button></header><div class="ops-dialog-body"><div class="ops-field"><label class="ops-field-label" for="work-item-assignment-group">责任组</label><input id="work-item-assignment-group" disabled></div><div class="ops-field"><label class="ops-field-label" for="work-item-assignment-user">指派给</label><select id="work-item-assignment-user" required><option value="" disabled>请选择组内其他成员</option></select></div><p class="ops-dialog-note">这里只分派责任，不开始处理；被分派人点击“处理”后，工作项才进入处理中。</p></div><footer><button type="button" data-close-work-item-dialog>取消</button><button class="primary" type="submit">确认分派</button></footer></form>
+  </dialog>
+
   <script src="../runtime-config.js"></script>
+  <script src="../vendor/marked.umd.js"></script>
+  <script src="../vendor/purify.min.js"></script>
+  <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-dashboard.js?v=20260929_1"></script>
+  <script src="./js/aiops-dashboard.js?v=20261013_1"></script>
+  <script src="./js/aiops-work-items.js?v=20261013_1"></script>
 </body>
 </html>

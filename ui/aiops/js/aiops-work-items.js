@@ -155,7 +155,7 @@
       ["unassigned", "未分派", "unassigned", "等待责任组内 DBA 领取", ""],
       ["urgent", "P1 / P2", "urgent", "需要优先研判与处置", "warning"],
       ["overdue", "已超 SLA", "overdue", "解决时限已经超期", "danger"],
-      ["pending_verification", "处理完成", "verification", "等待复核处理结果", "info"],
+      ["pending_verification", "待验证", "verification", "等待复核处理结果", "info"],
     ];
     document.getElementById("work-item-queues").innerHTML = definitions.map(([key, label, filter, description, tone]) =>
       `<button class="${tone ? `is-${tone} ` : ""}${queueIsActive(filter) ? "is-active" : ""}" type="button" data-queue="${filter}" aria-pressed="${queueIsActive(filter)}"><header><span>${label}</span><strong>${Number(summary?.[key] || 0)}</strong></header><p>${description}</p></button>`
@@ -447,7 +447,7 @@
     }
     try {
       const item = await KBotAIOpsAuth.request(`${api}/${encodeURIComponent(id)}?visibility=${encodeURIComponent(visibility)}`);
-      document.querySelector(".ops-back-link").href = `./work-items.html?visibility=${encodeURIComponent(visibility)}`;
+      document.querySelector(".ops-back-link").href = `./dashboard.html?visibility=${encodeURIComponent(visibility)}`;
       renderDetail(item);
     } catch (error) {
       document.getElementById("work-item-overview").innerHTML = `<div class="ops-empty">${shell.escape(error.message)}</div>`;
@@ -458,7 +458,7 @@
   }
   shell.ready.then((access) => {
     state.access = access;
-    if (document.body.dataset.page === "work-items") {
+    if (document.body.dataset.page === "dashboard") {
       const canManage = new Set(access.permissions || []).has("aiops:work_item_manage");
       const requested = new URLSearchParams(location.search).get("visibility") || "SCOPE";
       state.filters.visibility = canManage && ["ALL", "EXCEPTIONS"].includes(requested) ? requested : "SCOPE";

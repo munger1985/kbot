@@ -24,7 +24,7 @@ class _Parser(HTMLParser):
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
-        "chat", "situations", "dashboard", "work-items", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "targets", "target-detail",
         "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
@@ -61,7 +61,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_dashboard_is_exception_first_and_truthful_about_missing_data(self):
+    def test_dashboard_is_the_action_first_aiops_workbench(self):
         page = (AIOPS_ROOT / "dashboard.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-dashboard.js").read_text(
             encoding="utf-8"
@@ -69,7 +69,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["dashboard", "Dashboard"]', shell)
+        self.assertIn('["dashboard", "AIOps 工作台"]', shell)
+        self.assertNotIn('["work-items", "工作项中心"]', shell)
         self.assertLess(
             shell.index('["diagnostic-sources", "监控源"]'),
             shell.index('["targets", "运维目标"]'),
@@ -80,18 +81,15 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             AIOPS_ROOT / "login.html"
         ).read_text(encoding="utf-8"))
         self.assertIn("/dashboard", script)
-        self.assertIn("优先处理队列", page)
-        self.assertIn("风险热点", page)
-        self.assertIn("最近 24 小时运维结果", page)
-        self.assertIn("无数据不会计入健康", page)
+        self.assertIn("/reports?limit=1", script)
+        self.assertIn("行动优先工作台", page)
+        self.assertIn("工作项是唯一承载责任人、SLA、处理和验证的对象", page)
+        self.assertIn("以下是系统观测，不代表已形成个人责任", page)
+        self.assertIn("需关注目标", page)
+        self.assertIn("最新正式报告", page)
+        self.assertNotIn("优先处理队列", page)
         self.assertIn('UNKNOWN: "无有效数据"', script)
         self.assertIn('STALE: "数据过期"', script)
-        self.assertIn('health === "BLIND_SPOT"', script)
-        self.assertIn("data-risk-category=\"CAPACITY\"", page)
-        self.assertIn("data-risk-category=\"REPLICATION\"", page)
-        self.assertIn("data-risk-category=\"BACKUP\"", page)
-        self.assertIn("data-risk-category=\"SESSION\"", page)
-        self.assertNotIn("scrollIntoView", script)
         self.assertFalse((AIOPS_ROOT / "fleet.html").exists())
         self.assertFalse((AIOPS_ROOT / "js" / "aiops-fleet.js").exists())
 
@@ -192,7 +190,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("locator", script.lower())
 
     def test_work_items_are_a_compact_operational_queue(self):
-        page = (AIOPS_ROOT / "work-items.html").read_text(encoding="utf-8")
+        page = (AIOPS_ROOT / "dashboard.html").read_text(encoding="utf-8")
         detail = (AIOPS_ROOT / "work-item-detail.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-work-items.js").read_text(
             encoding="utf-8"
@@ -200,7 +198,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["work-items", "工作项中心"]', shell)
+        self.assertIn('["dashboard", "AIOps 工作台"]', shell)
+        self.assertNotIn('["work-items", "工作项中心"]', shell)
+        self.assertFalse((AIOPS_ROOT / "work-items.html").exists())
         self.assertIn("处理队列", page)
         self.assertIn("解决 SLA", page)
         self.assertIn('class="ops-panel ops-work-item-queue-panel"', page)
@@ -217,7 +217,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("关联资源", detail)
         self.assertIn("活动时间线", detail)
         self.assertIn('class="ops-button ops-back-link"', detail)
-        self.assertIn("返回工作项列表", detail)
+        self.assertIn("返回 AIOps 工作台", detail)
+        self.assertIn('document.body.dataset.page === "dashboard"', script)
+        self.assertIn("./dashboard.html?visibility=", script)
         self.assertIn("/api/v1/apps/aiops/work-items", script)
         self.assertIn("loadScopedAgents", script)
         self.assertIn("target.responsibility_group_id", script)
