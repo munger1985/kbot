@@ -52,7 +52,7 @@
       state: "状态", percent: "%", count: "个", milliseconds: "毫秒",
       seconds: "秒", transactions_per_second: "次/秒",
       queries_per_second: "次/秒", waits_per_second: "次/秒",
-      errors_per_second: "次/秒", bytes_per_second: "GB/秒",
+      errors_per_second: "次/秒", bytes_per_second: "B/秒（自适应）",
       bytes: "GB", "1": "",
     })[unit] ?? unit;
   }
@@ -64,7 +64,7 @@
       const text = number.toLocaleString("zh-CN", { maximumFractionDigits: Math.abs(number) >= 100 ? 1 : 2 });
       if (unit === "percent") return `${text} %`;
       if (unit === "bytes") return formatBytes(number);
-      if (unit === "bytes_per_second") return `${formatBytes(number)}/秒`;
+      if (unit === "bytes_per_second") return formatByteRate(number);
       const translatedUnit = unitLabel(unit);
       return `${text}${translatedUnit ? ` ${translatedUnit}` : ""}`;
     }
@@ -81,11 +81,27 @@
     if (number > 0 && gigabytes < 0.01) return "<0.01 GB";
     return `${gigabytes.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} GB`;
   }
+  function formatByteRate(value) {
+    const number = numericValue(value);
+    if (number === null) return "—";
+    const absolute = Math.abs(number);
+    const scale = absolute >= 1024 ** 3
+      ? { divisor: 1024 ** 3, unit: "GB/秒" }
+      : absolute >= 1024 ** 2
+        ? { divisor: 1024 ** 2, unit: "MB/秒" }
+        : absolute >= 1024
+          ? { divisor: 1024, unit: "KB/秒" }
+          : { divisor: 1, unit: "B/秒" };
+    const scaled = number / scale.divisor;
+    if (scaled !== 0 && Math.abs(scaled) < 0.01) return `${scaled < 0 ? "-" : ""}<0.01 ${scale.unit}`;
+    return `${scaled.toLocaleString("zh-CN", { maximumFractionDigits: Math.abs(scaled) >= 100 ? 1 : 2 })} ${scale.unit}`;
+  }
   function axisValueLabel(value, unit) {
     if (unit === "state") return Number(value) > 0 ? "可用" : "不可用";
-    if (unit === "bytes" || unit === "bytes_per_second") {
+    if (unit === "bytes") {
       return (Number(value) / (1024 ** 3)).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
     }
+    if (unit === "bytes_per_second") return formatByteRate(Number(value));
     return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
   function latestPoint(series) {
@@ -531,13 +547,13 @@
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
       xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
-      yAxis: { type: "value", name: unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
       series: [{ type: "bar", name: panel.title, barMaxWidth: 28, data: series.map((item) => numericValue(latestPoint(item)?.value)) }],
     };
     return {
       ...common, tooltip,
       xAxis: { type: "time", axisLabel: { hideOverlap: true } },
-      yAxis: { type: "value", name: unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
+      yAxis: { type: "value", name: panel.unit === "bytes_per_second" ? undefined : unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) }, scale: true },
       series: series.map((item) => ({ type: "line", name: seriesLabel(item), showSymbol: false, connectNulls: false, step: panel.visualization === "STATE_TIMELINE" ? "end" : false, data: item.points.map((point) => [point.observed_at, numericValue(point.value)]) })),
     };
   }
