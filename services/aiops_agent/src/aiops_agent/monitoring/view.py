@@ -197,6 +197,15 @@ class MonitoringViewBuilder:
                 "MONITORING_QUERY_BUDGET_EXCEEDED",
                 "标准化 Series 数量超过单次请求预算",
             )
+        current_instances = tuple(
+            self._current_instance_summary(
+                instance=instance,
+                metric_codes=profile.metric_codes,
+                observations=selected_observations,
+                gaps=gaps,
+            )
+            for instance in instances
+        )
         partial = bool(gaps) or any(
             item.quality != "GOOD" for item in panels
         )
@@ -205,11 +214,48 @@ class MonitoringViewBuilder:
             source=source,
             profile=profile.summary(),
             window=window,
-            instances=instances,
+            instances=current_instances,
             panels=panels,
             gaps=gaps,
             partial=partial,
         )
+
+    @staticmethod
+    def _current_instance_summary(
+        *, instance, metric_codes, observations, gaps
+    ):
+        """使用本次查询证据覆盖历史 Binding 健康状态。"""
+
+        instance_id = str(instance.instance_id)
+        current_observations = tuple(
+            item
+            for item in observations
+            if str(item.target_id) == instance_id
+        )
+        observed_metric_codes = {
+            item.metric_code
+            for item in current_observations
+            if any(series.points for series in item.series)
+        }
+        if not observed_metric_codes:
+            status = "UNAVAILABLE"
+        else:
+            has_gap = any(
+                item.instance_id is None
+                or str(item.instance_id) == instance_id
+                for item in gaps
+            )
+            incomplete = observed_metric_codes != set(metric_codes)
+            degraded_observation = any(
+                item.coverage_ratio < 0.8 or item.truncated
+                for item in current_observations
+            )
+            status = (
+                "PARTIAL"
+                if has_gap or incomplete or degraded_observation
+                else "AVAILABLE"
+            )
+        return instance.model_copy(update={"status": status})
 
     @staticmethod
     def _validate_request(source, profile, instances) -> None:

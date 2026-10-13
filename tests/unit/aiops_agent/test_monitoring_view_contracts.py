@@ -314,6 +314,96 @@ class MonitoringProfileContractTest(unittest.TestCase):
         self.assertNotEqual(first, profile_changed)
         self.assertNotEqual(first, variant_changed)
 
+    def test_view_uses_current_evidence_instead_of_stale_binding_health(self):
+        now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
+        source_id, target_id, binding_id = uuid7(), uuid7(), uuid7()
+        source = project_source_readiness(
+            source_id=source_id,
+            display_name="Prometheus",
+            source_type="PROMETHEUS",
+            status="ENABLED",
+            connectivity_status="CONNECTED",
+            capabilities={
+                CAPABILITY_METRIC_QUERY_RANGE,
+                CAPABILITY_EVENT_QUERY,
+            },
+            active_binding_count=1,
+            metrics_aligned=True,
+            alert_ingress_ready=True,
+        )
+        instance = MonitoringInstanceSummary(
+            instance_id=target_id,
+            display_name="核心 MySQL",
+            db_type="MYSQL",
+            status="PARTIAL",
+            monitoring_readiness="READY",
+            diagnostic_readiness="READY",
+        )
+        definition = self.metrics.get("mysql.availability")
+        observation = ZabbixAdapter(
+            context=DiagnosticSourceContext(
+                source_id=str(source_id),
+                source_type="ZABBIX",
+                adapter_id="zabbix",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="https://zabbix.example.com/api_jsonrpc.php",
+                credentials={"token": "test"},
+            ),
+            session=_Session([]),
+            request_timeout_seconds=5,
+            webhook_replay_seconds=300,
+        )._observation(
+            request=MetricsEvidenceRequest(
+                target_id=str(target_id),
+                binding_id=str(binding_id),
+                source_locator_key="mysql-01",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(hours=1),
+                window_end=now,
+                requested_step_seconds=60,
+                max_response_bytes=1024 * 1024,
+                trace_id="trace-current-quality",
+            ),
+            definition=definition,
+            raw_series=[
+                (
+                    {},
+                    [
+                        (now - timedelta(minutes=minute), 1)
+                        for minute in range(60, -1, -1)
+                    ],
+                )
+            ],
+            provider_response_hash="a" * 64,
+            effective_step=60,
+            truncated=False,
+        )
+        profile = ResolvedMonitoringProfile(
+            profile_id="mysql-state",
+            version="1.0.0",
+            display_name="MySQL 状态",
+            description="MySQL 可用性状态。",
+            purpose="OVERVIEW",
+            is_default=True,
+            supported_db_types=("MYSQL",),
+            supported_database_versions={"MYSQL": ("8.4",)},
+            resolved_variant_ids=("mysql-8-4",),
+            metric_codes=("mysql.availability",),
+        )
+
+        view = MonitoringViewBuilder(metric_catalog=self.metrics).build(
+            source=source,
+            profile=profile,
+            window=resolve_monitoring_window("1h", now=now),
+            instances=(instance,),
+            observations=(observation,),
+            generated_at=now,
+        )
+
+        self.assertFalse(view.partial)
+        self.assertEqual("AVAILABLE", view.instances[0].status)
+
     def test_view_keeps_no_data_as_gap_instead_of_zero(self):
         now = datetime(2026, 10, 10, 8, 0, tzinfo=UTC)
         source_id, target_id, binding_id = uuid7(), uuid7(), uuid7()
