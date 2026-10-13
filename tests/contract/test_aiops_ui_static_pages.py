@@ -113,7 +113,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("source_display_name", script)
         self.assertIn('id="monitoring-compare-source"', page)
         self.assertIn("aiops.css?v=20261013_2", page)
-        self.assertIn("aiops-monitoring.js?v=20261013_2", page)
+        self.assertIn("aiops-monitoring.js?v=20261013_3", page)
         self.assertIn('percent: "%"', script)
         self.assertIn('return `${text} %`', script)
         self.assertIn('transactions_per_second: "次/秒"', script)
@@ -151,6 +151,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('class="ops-monitoring-instance-list" role="radiogroup" aria-label="数据库实例单选"', page)
         self.assertIn('class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"', script)
         self.assertIn('class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}', script)
+        self.assertIn("function targetPickerStatus(instance, result)", script)
+        self.assertIn('instance.monitoring_readiness === "READY" ? "监控就绪"', script)
+        self.assertNotIn('selected ? "待查询" : "未选择"', script)
         self.assertIn(".ops-monitoring-instance-card.is-selected", (
             AIOPS_ROOT / "css" / "aiops.css"
         ).read_text(encoding="utf-8"))

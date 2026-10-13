@@ -222,10 +222,9 @@
     const cards = instances.map((instance) => {
       const selected = state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
-      const quality = result ? instanceQuality(result) : selected ? "待查询" : "未选择";
-      const qualityState = quality === "正常" ? "GOOD" : quality === "部分成功" ? "PARTIAL" : quality === "不可用" ? "UNAVAILABLE" : quality === "无有效采样" ? "NO_DATA" : "PARTIAL";
+      const queryStatus = targetPickerStatus(instance, result);
       const current = state.selected.length === 1 && selected;
-      return `<label class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span class="ops-monitoring-instance-copy"><span><strong>${esc(instance.display_name)}</strong><em>${esc(instance.db_type)}</em></span><small>${esc(instance.instance_id.slice(0, 8))}</small></span><span class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}</span><span class="ops-monitoring-instance-meta"><span><small>接入状态</small><span>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></span></span><span><small>查询状态</small>${badge(qualityState, quality)}</span><span><small>最新采样</small><time>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</time></span></span></label>`;
+      return `<label class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span class="ops-monitoring-instance-copy"><span><strong>${esc(instance.display_name)}</strong><em>${esc(instance.db_type)}</em></span><small>${esc(instance.instance_id.slice(0, 8))}</small></span><span class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}</span><span class="ops-monitoring-instance-meta"><span><small>接入状态</small><span>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></span></span><span><small>查询状态</small>${badge(queryStatus.value, queryStatus.label)}</span><span><small>最新采样</small><time>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</time></span></span></label>`;
     }).join("");
     document.getElementById("monitoring-instance-list").innerHTML = cards || '<div class="ops-empty">当前筛选条件下没有数据库实例。</div>';
     renderFreshness();
@@ -359,6 +358,18 @@
     if (!panels.length || panels.every((panel) => panel.quality === "NO_DATA")) return "无有效采样";
     if (instance.status === "PARTIAL" || panels.some((panel) => panel.quality !== "GOOD")) return "部分成功";
     return "正常";
+  }
+  function targetPickerStatus(instance, result) {
+    if (result) {
+      const quality = instanceQuality(result);
+      const value = quality === "正常" ? "GOOD" : quality === "部分成功" ? "PARTIAL"
+        : quality === "不可用" ? "UNAVAILABLE" : "NO_DATA";
+      return { value, label: quality };
+    }
+    return {
+      value: instance.monitoring_readiness,
+      label: instance.monitoring_readiness === "READY" ? "监控就绪" : label(instance.monitoring_readiness),
+    };
   }
   function deltaText(points, unit) {
     const valid = points.filter((point) => numericValue(point.value) !== null);
