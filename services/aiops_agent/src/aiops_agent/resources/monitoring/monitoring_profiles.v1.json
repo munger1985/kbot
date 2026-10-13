@@ -3,52 +3,52 @@
   "profiles": [
     {
       "profile_id": "oracle-overview",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "purpose": "OVERVIEW",
       "display_name": "Oracle 实时总览",
-      "description": "Oracle 可用性、运行环境 CPU、运行环境内存、连接、吞吐、延迟和存储趋势。",
+      "description": "Oracle 数据库、表空间容量和所在主机资源的统一实时总览。",
       "variants": [
         {
           "variant_id": "oracle-19c",
           "db_type": "ORACLE",
           "version_codes": ["19c"],
-          "metric_codes": ["db.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization"]
+          "metric_codes": ["db.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         },
         {
           "variant_id": "oracle-26ai",
           "db_type": "ORACLE",
           "version_codes": ["26ai"],
-          "metric_codes": ["db.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.utilization"]
+          "metric_codes": ["db.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "db.connection.active", "db.connection.utilization", "db.transaction.throughput", "db.response.latency", "db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         }
       ]
     },
     {
       "profile_id": "mysql-overview",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "purpose": "OVERVIEW",
       "display_name": "MySQL 实时总览",
-      "description": "MySQL 可用性、运行环境 CPU、运行环境内存、连接、事务、慢查询、锁等待和 Buffer Pool 指标。",
+      "description": "MySQL 数据库、schema 逻辑容量和所在主机资源的统一实时总览。",
       "variants": [
         {
           "variant_id": "mysql-8-4",
           "db_type": "MYSQL",
           "version_codes": ["8.4"],
-          "metric_codes": ["mysql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent"]
+          "metric_codes": ["mysql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "mysql.connection.utilization", "mysql.transaction.throughput", "mysql.sql.slow_query_rate", "mysql.lock.row_wait_rate", "mysql.innodb.buffer_pool_hit_percent", "db.storage.used_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         }
       ]
     },
     {
       "profile_id": "postgresql-overview",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "purpose": "OVERVIEW",
       "display_name": "PostgreSQL 实时总览",
-      "description": "PostgreSQL 可用性、运行环境 CPU、运行环境内存、连接、事务和数据库容量指标。",
+      "description": "PostgreSQL 数据库、数据库逻辑容量和所在主机资源的统一实时总览。",
       "variants": [
         {
           "variant_id": "postgresql-16",
           "db_type": "POSTGRESQL",
           "version_codes": ["16"],
-          "metric_codes": ["postgresql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes"]
+          "metric_codes": ["postgresql.availability", "runtime.cpu.utilization", "runtime.memory.utilization", "postgresql.connection.active", "postgresql.transaction.throughput", "postgresql.database.size_bytes", "host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         }
       ]
     },
@@ -64,60 +64,6 @@
           "db_type": "POSTGRESQL",
           "version_codes": ["16"],
           "metric_codes": ["postgresql.replication.lag_bytes", "postgresql.replication.slot_retained_bytes"]
-        }
-      ]
-    },
-    {
-      "profile_id": "database-capacity",
-      "version": "2.0.0",
-      "purpose": "CAPACITY",
-      "display_name": "数据库容量",
-      "description": "Oracle 展示表空间已用、可用和最大容量；MySQL 展示按 schema 聚合的数据与索引逻辑已用容量。",
-      "variants": [
-        {
-          "variant_id": "oracle-19c",
-          "db_type": "ORACLE",
-          "version_codes": ["19c"],
-          "metric_codes": ["db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes"]
-        },
-        {
-          "variant_id": "oracle-26ai",
-          "db_type": "ORACLE",
-          "version_codes": ["26ai"],
-          "metric_codes": ["db.storage.used_bytes", "db.storage.free_bytes", "db.storage.max_bytes"]
-        },
-        {
-          "variant_id": "mysql-8-4",
-          "db_type": "MYSQL",
-          "version_codes": ["8.4"],
-          "metric_codes": ["db.storage.used_bytes"]
-        }
-      ]
-    },
-    {
-      "profile_id": "host-overview",
-      "version": "2.0.0",
-      "purpose": "HOST",
-      "display_name": "主机资源",
-      "description": "数据库所在主机的 CPU、内存、文件系统、磁盘和网络趋势。",
-      "variants": [
-        {
-          "variant_id": "oracle-19c",
-          "db_type": "ORACLE",
-          "version_codes": ["19c"],
-          "metric_codes": ["host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
-        },
-        {
-          "variant_id": "oracle-26ai",
-          "db_type": "ORACLE",
-          "version_codes": ["26ai"],
-          "metric_codes": ["host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
-        },
-        {
-          "variant_id": "mysql-8-4",
-          "db_type": "MYSQL",
-          "version_codes": ["8.4"],
-          "metric_codes": ["host.cpu.utilization", "host.memory.utilization", "host.filesystem.utilization", "host.disk.io.utilization", "host.network.throughput"]
         }
       ]
     }

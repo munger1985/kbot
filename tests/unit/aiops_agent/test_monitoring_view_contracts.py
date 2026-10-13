@@ -73,11 +73,7 @@ class MonitoringProfileContractTest(unittest.TestCase):
     def test_profiles_are_stable_and_provider_aligned(self):
         mysql = self.profiles.list_for_databases((("MYSQL", "8.4"),))
         self.assertEqual(
-            [
-                "mysql-overview",
-                "database-capacity",
-                "host-overview",
-            ],
+            ["mysql-overview"],
             [item.profile_id for item in mysql],
         )
         self.assertEqual(
@@ -86,10 +82,12 @@ class MonitoringProfileContractTest(unittest.TestCase):
         )
         for profile in mysql:
             self.assertEqual(profile.purpose == "OVERVIEW", profile.is_default)
-        mysql_capacity_codes = self.profiles.resolve(
-            "database-capacity", (("MYSQL", "8.4"),)
+        mysql_codes = self.profiles.resolve(
+            "mysql-overview", (("MYSQL", "8.4"),)
         ).metric_codes
-        self.assertEqual(("db.storage.used_bytes",), mysql_capacity_codes)
+        self.assertIn("db.storage.used_bytes", mysql_codes)
+        self.assertIn("host.cpu.utilization", mysql_codes)
+        self.assertIn("host.memory.utilization", mysql_codes)
         mysql_used_provider = self.metrics.get(
             "db.storage.used_bytes"
         ).providers["PROMETHEUS"]
@@ -107,7 +105,7 @@ class MonitoringProfileContractTest(unittest.TestCase):
         )
         for profile in self.profiles._profiles.values():
             for variant in profile.variants:
-                self.assertLessEqual(len(variant.metric_codes), 8)
+                self.assertLessEqual(len(variant.metric_codes), 20)
                 for code in variant.metric_codes:
                     definition = self.metrics.get(code)
                     self.assertIn("PROMETHEUS", definition.providers)
@@ -120,8 +118,11 @@ class MonitoringProfileContractTest(unittest.TestCase):
         ).metric_codes
         self.assertIn("runtime.cpu.utilization", oracle_codes)
         self.assertIn("runtime.memory.utilization", oracle_codes)
-        self.assertNotIn("host.cpu.utilization", oracle_codes)
-        self.assertNotIn("host.memory.utilization", oracle_codes)
+        self.assertIn("db.storage.used_bytes", oracle_codes)
+        self.assertIn("db.storage.free_bytes", oracle_codes)
+        self.assertIn("db.storage.max_bytes", oracle_codes)
+        self.assertIn("host.cpu.utilization", oracle_codes)
+        self.assertIn("host.memory.utilization", oracle_codes)
 
     def test_default_database_profiles_use_authorized_exporter_metrics(self):
         expected_profiles = {
@@ -147,19 +148,17 @@ class MonitoringProfileContractTest(unittest.TestCase):
         mysql_codes = self.profiles.resolve(
             "mysql-overview", (("MYSQL", "8.4"),)
         ).metric_codes
-        self.assertTrue(
-            all(
-                code.startswith("mysql.") or code.startswith("runtime.")
-                for code in mysql_codes
-            )
-        )
         self.assertIn("runtime.cpu.utilization", mysql_codes)
         self.assertIn("runtime.memory.utilization", mysql_codes)
+        self.assertIn("db.storage.used_bytes", mysql_codes)
+        self.assertIn("host.filesystem.utilization", mysql_codes)
         postgresql_codes = self.profiles.resolve(
             "postgresql-overview", (("POSTGRESQL", "16"),)
         ).metric_codes
         self.assertIn("runtime.cpu.utilization", postgresql_codes)
         self.assertIn("runtime.memory.utilization", postgresql_codes)
+        self.assertIn("postgresql.database.size_bytes", postgresql_codes)
+        self.assertIn("host.filesystem.utilization", postgresql_codes)
         self.assertNotIn(
             "postgresql.replication.lag_bytes", postgresql_codes
         )

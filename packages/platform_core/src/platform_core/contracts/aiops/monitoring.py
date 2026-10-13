@@ -73,7 +73,7 @@ class MonitoringProfileSummary(_Contract):
     ]
     supported_database_versions: dict[str, tuple[str, ...]]
     resolved_variant_ids: tuple[str, ...] = Field(min_length=1)
-    metric_codes: tuple[str, ...] = Field(min_length=1, max_length=8)
+    metric_codes: tuple[str, ...] = Field(min_length=1, max_length=20)
 
 
 class MonitoringWindow(_Contract):
@@ -135,7 +135,7 @@ class MonitoringView(_Contract):
     instances: tuple[MonitoringInstanceSummary, ...] = Field(
         min_length=1, max_length=12
     )
-    panels: tuple[MonitoringPanel, ...] = Field(default=(), max_length=8)
+    panels: tuple[MonitoringPanel, ...] = Field(default=(), max_length=20)
     gaps: tuple[MonitoringGap, ...] = ()
     partial: bool
 

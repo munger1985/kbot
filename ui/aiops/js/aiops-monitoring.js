@@ -15,14 +15,26 @@
     PARTIAL: "部分就绪", UNAVAILABLE: "不可用", AVAILABLE: "可用",
   };
   const qualityLabels = { GOOD: "正常", PARTIAL: "部分成功", NO_DATA: "无有效采样" };
-  const capacityMetricRoles = ["STORAGE_USED", "STORAGE_FREE", "STORAGE_MAX"];
+  const capacityMetricRoles = ["STORAGE_USED", "STORAGE_FREE", "STORAGE_MAX", "DATABASE_SIZE"];
+  const capacityRoleLabels = {
+    STORAGE_USED: "已用容量", STORAGE_FREE: "可用容量",
+    STORAGE_MAX: "最大容量", DATABASE_SIZE: "数据库容量",
+  };
   const esc = shell.escape;
   const query = new URLSearchParams(location.search);
   const sourceById = () => state.sources.find((item) => item.source_id === state.sourceId) || null;
   const profileById = () => state.profiles.find((item) => item.profile_id === state.profileId) || null;
   const compareSources = () => state.sources.filter((item) => item.source_id !== state.sourceId
     && item.source_type !== sourceById()?.source_type && item.monitoring_readiness === "READY");
-  const seriesLabel = (series) => `${series.instance_display_name} · ${series.source_display_name}`;
+  const seriesSubject = (series) => {
+    const dimensions = series.dimensions || {};
+    return dimensions.tablespace || dimensions.tablespace_name
+      || dimensions.schema || dimensions.schema_name
+      || dimensions.database || dimensions.database_name || dimensions.datname
+      || dimensions.mountpoint || dimensions.device || dimensions.application_name
+      || dimensions.slot_name || dimensions.type || series.instance_display_name;
+  };
+  const seriesLabel = (series) => [seriesSubject(series), series.dimensions?.__metric_label, series.source_display_name].filter(Boolean).join(" · ");
 
   function label(value) { return readinessLabels[value] || value || "不可用"; }
   function pointQualityLabel(value) {
@@ -187,8 +199,6 @@
     const context = document.getElementById("monitoring-context");
     context.hidden = !state.sources.length;
     document.getElementById("monitoring-source").innerHTML = state.sources.map((source) => `<option value="${esc(source.source_id)}" ${source.source_id === state.sourceId ? "selected" : ""}>${esc(source.display_name)} · ${esc(label(source.monitoring_readiness))}</option>`).join("");
-    document.getElementById("monitoring-profile").innerHTML = state.profiles.map((profile) => `<option value="${esc(profile.profile_id)}" ${profile.profile_id === state.profileId ? "selected" : ""}>${esc(profile.display_name)}</option>`).join("");
-    document.getElementById("monitoring-profile").disabled = !state.profiles.length;
     document.getElementById("monitoring-window").disabled = sourceById()?.monitoring_readiness !== "READY";
     document.getElementById("monitoring-window").value = state.window;
     const compareField = document.getElementById("monitoring-compare-field");
@@ -233,11 +243,12 @@
     const next = new URLSearchParams(location.search);
     next.set("source_id", state.sourceId);
     next.set("target_id", state.selected[0] || "");
-    next.set("profile_id", state.profileId);
+    next.delete("profile_id");
+    next.delete("profileId");
     next.set("window", state.window);
     history.replaceState(null, "", `${location.pathname}?${next}`);
   }
-  async function loadSelectedTargetProfiles({ signal, preferredProfileId = "" }) {
+  async function loadSelectedTargetProfiles({ signal }) {
     const targetId = state.selected[0];
     if (!targetId) {
       state.profiles = [];
@@ -250,8 +261,7 @@
     );
     if (signal.aborted) return;
     state.profiles = profiles;
-    state.profileId = state.profiles.find((item) => item.profile_id === preferredProfileId)?.profile_id
-      || state.profiles.find((item) => item.is_default)?.profile_id
+    state.profileId = state.profiles.find((item) => item.is_default)?.profile_id
       || state.profiles[0]?.profile_id || "";
   }
   async function loadView() {
@@ -301,8 +311,7 @@
       const currentQuery = new URLSearchParams(location.search);
       const targetId = currentQuery.get("target_id") || currentQuery.get("targetId") || "";
       state.selected = [(state.instances.find((item) => item.instance_id === targetId) || state.instances[0])?.instance_id].filter(Boolean);
-      const profileId = currentQuery.get("profile_id") || currentQuery.get("profileId") || "";
-      await loadSelectedTargetProfiles({ signal: contextController.signal, preferredProfileId: profileId });
+      await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
       renderContext(); renderInstances(); scheduleView();
@@ -330,9 +339,7 @@
     renderContext(); renderInstances();
     setLoading(true, "正在读取所选实例的监控指标…");
     try {
-      const currentQuery = new URLSearchParams(location.search);
-      const preferredProfileId = currentQuery.get("profile_id") || currentQuery.get("profileId") || "";
-      await loadSelectedTargetProfiles({ signal: contextController.signal, preferredProfileId });
+      await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
       renderContext(); renderInstances(); scheduleView();
@@ -361,63 +368,29 @@
     if (unit === "state") return `状态由${formatValue(valid.at(-2).value, unit)}变为${formatValue(valid.at(-1).value, unit)}`;
     return `较前值${delta > 0 ? "上升" : "下降"} ${formatValue(Math.abs(delta), unit)}`;
   }
-  function capacitySeriesIdentity(series) {
-    const dimensions = series.dimensions || {};
-    return JSON.stringify([
-      series.instance_id || "", series.source_id || "", dimensions.database || "", dimensions.tablespace || "", dimensions.type || "",
-    ]);
-  }
-  function capacityRows(instances, panels) {
-    const instanceIds = new Set(instances.map((instance) => instance.instance_id));
-    const rows = new Map();
-    panels.forEach((panel) => panel.series.filter((series) => instanceIds.has(series.instance_id)).forEach((series) => {
-      const key = capacitySeriesIdentity(series);
-      const row = rows.get(key) || { instance: series.instance_display_name, dimensions: series.dimensions || {}, source: series.source_display_name, metrics: {} };
-      row.metrics[panel.semantic_role] = { panel, series, point: latestPoint(series) };
-      rows.set(key, row);
-    }));
-    return [...rows.values()].sort((left, right) => {
-      const leftName = left.dimensions.tablespace || left.dimensions.database || left.dimensions.type || "";
-      const rightName = right.dimensions.tablespace || right.dimensions.database || right.dimensions.type || "";
-      return left.instance.localeCompare(right.instance, "zh-CN") || leftName.localeCompare(rightName, "zh-CN") || left.source.localeCompare(right.source, "zh-CN");
+  function mergeCapacityPanels(panels) {
+    const capacityPanels = panels.filter((panel) => capacityMetricRoles.includes(panel.semantic_role));
+    const regularPanels = panels.filter((panel) => panel.semantic_role !== "AVAILABILITY" && !capacityMetricRoles.includes(panel.semantic_role));
+    if (!capacityPanels.length) return regularPanels;
+    const quality = capacityPanels.every((panel) => panel.quality === "NO_DATA")
+      ? "NO_DATA" : capacityPanels.some((panel) => panel.quality !== "GOOD") ? "PARTIAL" : "GOOD";
+    regularPanels.push({
+      panel_id: "database.storage.capacity", title: "数据库容量",
+      description: "Oracle 按表空间对比已用、可用和最大容量；MySQL 按 schema、PostgreSQL 按数据库展示逻辑占用。",
+      visualization: "CAPACITY_BAR", metric_code: capacityPanels.map((panel) => panel.metric_code).join(","),
+      semantic_role: "STORAGE_CAPACITY", unit: "bytes", value_kind: "GAUGE", quality,
+      summary: { metric_count: capacityPanels.length },
+      series: capacityPanels.flatMap((panel) => panel.series.map((series) => ({
+        ...series,
+        dimensions: { ...(series.dimensions || {}), __metric_role: panel.semantic_role, __metric_label: capacityRoleLabels[panel.semantic_role] },
+      }))),
     });
-  }
-  function capacityDeltaText(points) {
-    const valid = points.map((point) => numericValue(point.value)).filter((value) => value !== null);
-    if (valid.length < 2) return "暂无变化基线";
-    const delta = valid.at(-1) - valid.at(-2);
-    if (delta === 0) return "较前值持平";
-    return `较前值${delta > 0 ? "上升" : "下降"} ${formatBytes(Math.abs(delta))}`;
-  }
-  function capacityMetricCell(metric) {
-    if (!metric?.point) return '<span class="ops-monitoring-capacity-missing">无有效采样</span>';
-    return `<strong>${esc(formatBytes(metric.point.value))}</strong><small>${esc(capacityDeltaText(metric.series.points))}<br>${esc(shell.fmt(metric.point.observed_at))}</small>`;
-  }
-  function renderCapacityTable(node, instances, panels) {
-    const rows = capacityRows(instances, panels);
-    const body = rows.length ? rows.map((row) => {
-      const used = row.metrics[capacityMetricRoles[0]];
-      const free = row.metrics[capacityMetricRoles[1]];
-      const maximum = row.metrics[capacityMetricRoles[2]];
-      const usedValue = numericValue(used?.point?.value);
-      const freeValue = numericValue(free?.point?.value);
-      const maximumValue = numericValue(maximum?.point?.value);
-      const usedPercent = maximumValue > 0 && usedValue !== null ? Math.max(0, Math.min(100, usedValue / maximumValue * 100)) : null;
-      const freePercent = maximumValue > 0 && freeValue !== null ? Math.max(0, Math.min(100, freeValue / maximumValue * 100)) : null;
-      const freeBarPercent = freePercent === null ? 0 : Math.min(100 - (usedPercent || 0), freePercent);
-      const comparison = usedPercent === null && freePercent === null
-        ? '<span class="ops-monitoring-capacity-missing">无法计算</span>'
-        : `<div class="ops-monitoring-capacity-bar" role="img" aria-label="已用 ${usedPercent?.toFixed(1) || "—"}%，可用 ${freePercent?.toFixed(1) || "—"}%"><i class="is-used" style="width:${usedPercent || 0}%"></i><i class="is-free" style="width:${freeBarPercent}%"></i></div><small>已用 ${usedPercent?.toFixed(1) || "—"}% · 可用 ${freePercent?.toFixed(1) || "—"}%</small>`;
-      const name = row.dimensions.tablespace || row.dimensions.database || "实例汇总";
-      const dimensions = [row.dimensions.database, row.dimensions.type, row.source].filter((value) => value && value !== name);
-      return `<tr><td><strong>${esc(row.instance)}</strong><small>${esc(row.source)}</small></td><td><strong>${esc(name)}</strong><small>${esc(dimensions.join(" · "))}</small></td><td>${capacityMetricCell(used)}</td><td>${capacityMetricCell(free)}</td><td>${capacityMetricCell(maximum)}</td><td>${comparison}</td></tr>`;
-    }).join("") : '<tr><td colspan="6" class="ops-empty">当前查询未返回容量序列。</td></tr>';
-    node.innerHTML = `<div class="ops-table-wrap ops-monitoring-capacity-wrap"><table class="ops-table ops-monitoring-capacity-table"><caption>数据库容量对比 · ${instances.length} 个实例</caption><thead><tr><th>数据库实例</th><th>表空间</th><th>已用容量</th><th>可用容量</th><th>最大容量</th><th>容量构成</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    return regularPanels;
   }
   function renderSingleSummary() {
     const node = document.getElementById("monitoring-single-summary");
     const panels = (state.view.panels || []).slice(0, 6);
-    node.hidden = state.view.profile.purpose === "CAPACITY" || state.view.instances.length !== 1 || !panels.length;
+    node.hidden = state.view.instances.length !== 1 || !panels.length;
     if (node.hidden) return;
     const instance = state.view.instances[0];
     node.innerHTML = panels.map((panel) => {
@@ -437,6 +410,44 @@
       const at = values[0]?.axisValue || values[0]?.name || "";
       return [esc(shell.fmt(at)), ...values.map((entry) => `${entry.marker || ""}${esc(entry.seriesName)}：${esc(formatValue(Array.isArray(entry.value) ? entry.value[1] : entry.value, panel.unit))}`)].join("<br>");
     } };
+    if (panel.visualization === "CAPACITY_BAR") {
+      const categories = [...new Set(series.map(seriesSubject))];
+      const sourceCount = new Set(series.map((item) => item.source_id)).size;
+      const groups = new Map();
+      series.forEach((item) => {
+        const role = item.dimensions?.__metric_role || "DATABASE_SIZE";
+        const key = `${role}:${item.source_id}`;
+        const group = groups.get(key) || { role, name: item.dimensions?.__metric_label || "容量", sourceName: item.source_display_name, series: [] };
+        group.series.push(item);
+        groups.set(key, group);
+      });
+      const orderedGroups = [...groups.values()].sort((left, right) => capacityMetricRoles.indexOf(left.role) - capacityMetricRoles.indexOf(right.role) || left.sourceName.localeCompare(right.sourceName, "zh-CN"));
+      const capacityTooltip = { trigger: "axis", axisPointer: { type: "shadow" }, formatter: (entries) => {
+        const values = Array.isArray(entries) ? entries : [entries];
+        const category = values[0]?.axisValue || values[0]?.name || "";
+        return [esc(category), ...values.map((entry) => {
+          const value = entry.data && typeof entry.data === "object" ? entry.data.value : entry.value;
+          return `${entry.marker || ""}${esc(entry.seriesName)}：${esc(formatValue(value, panel.unit))}`;
+        })].join("<br>");
+      } };
+      return {
+        ...common,
+        color: orderedGroups.map((group) => ({ STORAGE_USED: "#465f9e", STORAGE_FREE: "#247455", STORAGE_MAX: "#9a6518", DATABASE_SIZE: "#465f9e" })[group.role] || "#465f9e"),
+        tooltip: capacityTooltip,
+        legend: { top: 0, type: "scroll" },
+        grid: { left: 64, right: 26, top: 52, bottom: 64 },
+        xAxis: { type: "category", data: categories, axisLabel: { interval: 0, hideOverlap: true, rotate: categories.length > 5 ? 24 : 0 } },
+        yAxis: { type: "value", min: 0, name: unitLabel(panel.unit), axisLabel: { formatter: (value) => axisValueLabel(value, panel.unit) } },
+        series: orderedGroups.map((group) => ({
+          type: "bar", name: sourceCount > 1 ? `${group.name} · ${group.sourceName}` : group.name, barMaxWidth: 34,
+          emphasis: { focus: "series" },
+          data: categories.map((category) => {
+            const item = group.series.find((candidate) => seriesSubject(candidate) === category);
+            return item ? { value: numericValue(latestPoint(item)?.value), instanceId: item.instance_id } : null;
+          }),
+        })),
+      };
+    }
     if (["STAT", "GAUGE"].includes(panel.visualization)) return {
       ...common, tooltip: { ...tooltip, axisPointer: { type: "shadow" } },
       xAxis: { type: "category", data: series.map(seriesLabel), axisLabel: { interval: 0, hideOverlap: true } },
@@ -556,29 +567,24 @@
   function renderPanels() {
     const node = document.getElementById("monitoring-panels");
     disposeCharts();
-    const isCapacity = state.view.profile.purpose === "CAPACITY";
-    const panels = isCapacity
-      ? state.view.panels
-      : state.view.panels.filter((panel) => panel.semantic_role !== "AVAILABILITY");
-    state.visiblePanels = isCapacity ? [] : panels;
-    node.classList.toggle("is-capacity", isCapacity);
+    const panels = mergeCapacityPanels(state.view.panels || []);
+    state.visiblePanels = panels;
     if (!panels.length) {
       closeDataDrawer();
-      node.innerHTML = '<div class="ops-panel ops-empty">当前 Profile 没有可展示 Panel。无采样不会显示为 0 或健康。</div>';
+      node.innerHTML = '<div class="ops-panel ops-empty">当前指标范围没有可展示图表。无采样不会显示为 0 或健康。</div>';
       return;
     }
-    if (isCapacity) {
-      closeDataDrawer();
-      renderCapacityTable(node, state.view.instances, panels.filter((panel) => capacityMetricRoles.includes(panel.semantic_role)));
-      return;
-    }
-    node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)} %</span>`).join("")}</div></article>`).join("");
+    node.innerHTML = panels.map((panel, index) => `<article class="ops-panel ops-monitoring-panel ${panel.visualization === "CAPACITY_BAR" ? "is-capacity-comparison" : ""}"><div class="ops-panel-head"><div><h2>${esc(panel.title)}</h2><p>${esc(panel.description)}</p></div><div>${badge(panel.quality, qualityLabels[panel.quality])}<button type="button" aria-haspopup="dialog" data-panel-id="${esc(panel.panel_id)}">查看数据</button></div></div><p class="ops-monitoring-chart-summary">${esc(panel.title)}，${panel.series.length} 个实例序列，数据质量${esc(qualityLabels[panel.quality])}。</p>${panel.series.some((series) => series.points.some((point) => numericValue(point.value) !== null)) ? `<div id="monitoring-chart-${index}" class="ops-monitoring-chart" role="img" aria-label="${esc(panel.title)}趋势图"></div>` : '<div class="ops-empty">无有效采样。缺失点保持为空，不按 0 绘制。</div>'}<div class="ops-monitoring-panel-meta"><span>指标 ${esc(panel.metric_code)}</span><span>单位 ${esc(unitLabel(panel.unit) || "无量纲")}</span>${panel.series.map((series) => `<span>${esc(seriesLabel(series))} 覆盖率 ${(series.coverage_ratio * 100).toFixed(1)} %</span>`).join("")}</div></article>`).join("");
     panels.forEach((panel, index) => {
       const container = document.getElementById(`monitoring-chart-${index}`);
       if (!container) return;
       const chart = globalThis.echarts.init(container);
       chart.setOption(chartOption(panel), true);
       chart.on("click", (event) => {
+        if (panel.visualization === "CAPACITY_BAR") {
+          if (event.data?.instanceId) drillInto(event.data.instanceId);
+          return;
+        }
         const availableSeries = chartSeries(panel);
         const series = ["STAT", "GAUGE"].includes(panel.visualization)
           ? availableSeries[event.dataIndex]
@@ -597,7 +603,7 @@
     const gaps = allGaps();
     document.getElementById("monitoring-result-state").innerHTML = badge(state.view.partial ? "PARTIAL" : "GOOD", state.view.partial ? "部分成功" : "查询完成");
     const sourceLabel = [state.view.source, state.view.compare_source].filter(Boolean).map((source) => `${source.display_name} · ${source.source_type}`).join(" / ");
-    document.getElementById("monitoring-quality-context").innerHTML = `<dt>监控源</dt><dd>${esc(sourceLabel)}</dd><dt>采样窗口</dt><dd>${esc(shell.fmt(state.view.window.start))} 至 ${esc(shell.fmt(state.view.window.end))}</dd><dt>Profile</dt><dd>${esc(state.view.profile.display_name)} · ${esc(state.view.profile.version)}</dd><dt>返回实例</dt><dd>${state.view.instances.length}</dd>`;
+    document.getElementById("monitoring-quality-context").innerHTML = `<dt>监控源</dt><dd>${esc(sourceLabel)}</dd><dt>采样窗口</dt><dd>${esc(shell.fmt(state.view.window.start))} 至 ${esc(shell.fmt(state.view.window.end))}</dd><dt>指标范围</dt><dd>${esc(state.view.profile.display_name)} · ${esc(state.view.profile.version)}</dd><dt>返回实例</dt><dd>${state.view.instances.length}</dd>`;
     document.getElementById("monitoring-gaps").innerHTML = gaps.length ? gaps.map((gap) => `<article>${badge("PARTIAL", gap.scope)}<div><strong>${esc(gap.code)}${gap.metric_code ? ` · ${esc(gap.metric_code)}` : ""}</strong><p>${esc(gap.detail)}</p></div><small>${gap.retryable ? "可重试" : "需配置或检查"}</small></article>`).join("") : '<div class="ops-empty">当前查询未返回能力或采样缺口。</div>';
   }
   function renderResult() {
@@ -637,13 +643,6 @@
 
   document.getElementById("monitoring-source").onchange = (event) => { state.sourceId = event.target.value; loadSourceContext(); };
   document.getElementById("monitoring-window").onchange = (event) => { state.window = event.target.value; scheduleView(); };
-  document.getElementById("monitoring-profile").onchange = (event) => {
-    state.profileId = event.target.value;
-    const next = new URLSearchParams(location.search);
-    next.set("profile_id", state.profileId);
-    history.replaceState(null, "", `${location.pathname}?${next}`);
-    scheduleView();
-  };
   document.getElementById("monitoring-compare-source").onchange = (event) => { state.compareSourceId = event.target.value; scheduleView(); };
   document.getElementById("monitoring-instance-search").oninput = (event) => { state.search = event.target.value; renderInstances(); };
   document.getElementById("monitoring-instance-list").onchange = (event) => {

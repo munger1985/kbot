@@ -26,7 +26,7 @@ class MonitoringProfileVariant(BaseModel):
     variant_id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     db_type: DatabaseType
     version_codes: tuple[str, ...] = Field(min_length=1)
-    metric_codes: tuple[str, ...] = Field(min_length=1, max_length=8)
+    metric_codes: tuple[str, ...] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
     def validate_uniqueness(self):
