@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PAGE = (ROOT / "ui/aiops/business-systems.html").read_text(encoding="utf-8")
 SCRIPT = (ROOT / "ui/aiops/js/aiops-business-systems.js").read_text(encoding="utf-8")
 STYLES = (ROOT / "ui/aiops/css/aiops-forms.css").read_text(encoding="utf-8")
+GLOBAL_STYLES = (ROOT / "ui/aiops/css/aiops.css").read_text(encoding="utf-8")
 
 
 class BusinessSystemCardContractTests(unittest.TestCase):
@@ -32,7 +33,9 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn(".business-system-directory-card", STYLES)
         self.assertIn("background:var(--paper)", STYLES)
         self.assertIn("border:1px solid var(--line)", STYLES)
-        self.assertIn("box-shadow:var(--shadow)", STYLES)
+        self.assertIn("--card-border:", GLOBAL_STYLES)
+        self.assertIn("--card-shadow:", GLOBAL_STYLES)
+        self.assertIn('[class$="-card"]', GLOBAL_STYLES)
 
     def test_cards_use_subtle_importance_tones_and_badges(self):
         self.assertIn('class="business-importance"', SCRIPT)
