@@ -822,6 +822,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('document.addEventListener("click"', systems)
         self.assertIn('addEventListener("beforeunload"', systems)
         self.assertNotIn("架构层是当前系统中的展示位置，不会改变资源类型。", systems)
+        self.assertNotIn('name="architecture_layer_key"', systems)
+        self.assertIn("item.architecture_layer_key = activeLayer;", systems)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
