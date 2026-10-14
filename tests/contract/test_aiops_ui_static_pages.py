@@ -798,6 +798,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("描述业务影响和整体责任，不在这里填写数据库部署形态。", systems)
         self.assertNotIn("保存后按 SYS-xxxxxx 规则自动生成", systems)
         self.assertNotIn("编码由租户规则生成，创建后不可修改。", systems)
+        self.assertIn('role="tablist" aria-label="系统构成"', systems)
+        self.assertIn('class="business-resource-card"', systems)
+        self.assertIn('id="business-resource-drawer"', workspace)
+        self.assertIn(".business-resource-card-grid", forms)
+        self.assertIn("overflow-y:auto", forms)
+        self.assertNotIn("架构层是当前系统中的展示位置，不会改变资源类型。", systems)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(

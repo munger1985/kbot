@@ -52,7 +52,8 @@
   let loading = true;
   let saving = false;
   let dirty = false;
-  let showAdd = false;
+  let resourceDrawerOpen = false;
+  let resourceDrawerMode = "CATALOG";
   let detail = null;
   let groups = [];
   let sources = [];
@@ -124,6 +125,26 @@
     };
   }
 
+  function closeResourceDrawer() {
+    resourceDrawerOpen = false;
+    const drawer = document.getElementById("business-resource-drawer");
+    if (drawer?.open) drawer.close();
+  }
+
+  function openResourceCatalog() {
+    catalogType = "DATABASE";
+    resourceDrawerMode = "CATALOG";
+    resourceDrawerOpen = true;
+    renderComposition();
+  }
+
+  function openResourceEditor(resourceId) {
+    activeResourceId = resourceId;
+    resourceDrawerMode = "EDITOR";
+    resourceDrawerOpen = true;
+    renderComposition();
+  }
+
   function renderBusiness() {
     panel.innerHTML = `<section class="business-step-surface">
       <header><div><p class="business-eyebrow">STEP 1</p><h2>业务信息</h2></div></header>
@@ -143,7 +164,8 @@
     const groupsByName = new Map();
     resourceCatalog.forEach((item) => { if (!groupsByName.has(item[2])) groupsByName.set(item[2], []); groupsByName.get(item[2]).push(item); });
     const options = [...groupsByName.entries()].map(([name, items]) => `<optgroup label="${esc(name)}">${items.map((item) => `<option value="${esc(item[0])}" ${catalogType === item[0] ? "selected" : ""}>${esc(item[1])}${item[3] ? "" : "（后续开放）"}</option>`).join("")}</optgroup>`).join("");
-    return `<div class="business-catalog-picker"><label><span>资源类型</span><select id="catalog-type">${options}</select></label><div><p>一期开放数据库；其余类型先保留统一目录位置，后续按同一资源合同扩展。</p><button id="confirm-add-resource" class="primary" type="button">添加${esc(typeName(catalogType))}</button></div></div>`;
+    const enabled = resourceCatalog.find((item) => item[0] === catalogType)?.[3];
+    return `<div class="business-resource-drawer-shell"><header><div><span>${esc(layerName(activeLayer))}</span><h2>添加资源</h2><p>选择要接入当前架构层的运维资源类型。</p></div><button id="close-resource-drawer" type="button" aria-label="关闭添加资源">关闭</button></header><div class="business-resource-drawer-body"><label class="business-resource-type-field"><span>资源类型</span><select id="catalog-type">${options}</select></label><article class="business-resource-type-summary"><span class="business-resource-icon">${catalogType === "DATABASE" ? "DB" : "R"}</span><div><strong>${esc(typeName(catalogType))}</strong><p>${enabled ? "支持新接入、复用已有数据库，并自动发现承载环境。" : "该资源类型将在后续版本开放。"}</p></div></article></div><footer><button id="cancel-resource-drawer" type="button">取消</button><button id="confirm-add-resource" class="primary" type="button">配置${esc(typeName(catalogType))}</button></footer></div>`;
   }
 
   function resourceEditorHtml(item) {
@@ -159,31 +181,58 @@
       const discovery = usesDiscovery(item);
       connection = `<div class="business-editor-grid business-connection-grid"><label class="span-4"><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label class="span-2"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-6"><span>${database.db_type === "ORACLE" ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${database.db_type === "ORACLE" ? `<label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions([["NON_CDB", "非 CDB"], ["CDB", "CDB"], ["PDB", "PDB"]], database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-3"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}` : ""}<label class="span-6"><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-6"><span>监控源</span><select name="source_id"><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label class="span-6"><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<div class="span-6 business-discovery-action"><button id="discover-resources" type="button" ${database.discovering ? "disabled" : ""}>${database.discovering ? "正在发现…" : "从监控源发现"}</button></div><label class="span-6"><span>数据库候选</span><select name="candidate_ref"><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_hint)}</option>`).join("")}</select></label><label class="span-6"><span>承载主机候选</span><select name="host_candidate_ref"><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_hint)}</option>`).join("")}</select></label>`}${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；承载主机指标随数据库一次接入，无需重复登记服务器。</p>` : ""}</div>`;
     }
-    return `<form id="resource-editor" class="business-resource-editor"><header><div><p class="business-eyebrow">DATABASE RESOURCE</p><h3>${esc(item.display_name || "配置数据库")}</h3></div><button id="remove-resource" class="business-danger" type="button">移除</button></header>${mode}${reuse}<div class="business-editor-grid"><label class="span-6"><span>数据库名称</span><input name="resource_name" value="${esc(item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-4"><span>架构层</span><select name="architecture_layer_key">${selectOptions(layers.map((row) => [row[0], row[1]]), item.architecture_layer_key)}</select></label><label class="span-4"><span>本系统责任覆盖</span><select name="resource_group_id">${groupOptions(item.responsibility_group_id, "继承技术责任组")}</select></label><label class="span-4"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>${databaseFields}${connection}<footer><p>${editing ? "版本、环境、角色和责任归属允许随实际升级调整。" : item.saved ? "连接与监控映射已验证。" : "验证只读取连接，不会提前创建正式资源。"}</p>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>验证数据库</button>` : ""}</footer></form>`;
+    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "接入资源并验证连接与监控映射"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${mode}${reuse}<div class="business-editor-grid"><label class="span-6"><span>数据库名称</span><input name="resource_name" value="${esc(item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-4"><span>架构层</span><select name="architecture_layer_key">${selectOptions(layers.map((row) => [row[0], row[1]]), item.architecture_layer_key)}</select></label><label class="span-4"><span>本系统责任覆盖</span><select name="resource_group_id">${groupOptions(item.responsibility_group_id, "继承技术责任组")}</select></label><label class="span-4"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${editing ? "修改将在保存业务系统时提交" : item.saved ? "连接与监控映射已验证" : "连接验证通过后才可进入下一步"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>验证数据库</button>` : ""}</footer></form>`;
   }
 
   function renderComposition() {
     const visible = resources.filter((item) => item.architecture_layer_key === activeLayer);
-    panel.innerHTML = `<section class="business-composition-layout"><aside class="business-layer-nav"><header><p class="business-eyebrow">STEP 2</p><h2>系统构成</h2><p>架构层是当前系统中的展示位置，不会改变资源类型。</p></header>${layers.map((layer) => `<button type="button" data-layer="${layer[0]}" class="${activeLayer === layer[0] ? "active" : ""}"><span><strong>${layer[1]}</strong><small>${layer[2]}</small></span><em>${resources.filter((item) => item.architecture_layer_key === layer[0]).length}</em></button>`).join("")}</aside><section class="business-resource-panel"><header><div><p class="business-eyebrow">${esc(activeLayer)}</p><h2>${esc(layerName(activeLayer))}</h2><p>${visible.length} 个资源；数据库接入时可一次发现承载环境与关系。</p></div><button id="toggle-add-resource" class="primary" type="button">＋ 添加资源</button></header>${showAdd ? catalogHtml() : ""}<div class="business-resource-workbench"><nav class="business-resource-list">${visible.length ? visible.map((item) => `<button type="button" data-resource="${esc(item.draft_resource_id)}" class="${item.draft_resource_id === activeResourceId ? "active" : ""}"><span class="business-resource-icon">DB</span><span><strong>${esc(item.display_name || "未命名数据库")}</strong><small>${esc(item.database?.db_type || "")} ${esc(item.database?.version_code || "")} · ${esc(groupName(item.owner_group_id))}</small></span><em class="${item.saved ? "ready" : ""}">${item.saved ? "已就绪" : "待验证"}</em></button>`).join("") : `<p class="ops-empty">当前架构层还没有资源。</p>`}</nav>${resourceEditorHtml(currentResource())}</div></section></section>`;
+    const cards = visible.map((item) => `<button type="button" data-resource="${esc(item.draft_resource_id)}" class="business-resource-card"><header><span class="business-resource-icon">${item.resource_type_key === "DATABASE" ? "DB" : "R"}</span><em class="${item.saved ? "ready" : ""}">${item.saved ? "已就绪" : "待验证"}</em></header><div><small>${esc(typeName(item.resource_type_key))}</small><h3>${esc(item.display_name || "未命名数据库")}</h3><p>${item.database ? `${esc(item.database.db_type)} ${esc(item.database.version_code)} · ${item.database.db_role === "PRIMARY" ? "主库" : item.database.db_role === "STANDBY" ? "备库" : "角色待识别"}` : ""}</p></div><dl><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(item.location_name || "未填写")}</dd></div></dl><footer><span>${item.mode === "REUSE" ? "复用已有资源" : "新接入资源"}</span><strong>编辑 →</strong></footer></button>`).join("");
+    panel.innerHTML = `<section class="business-composition-layout"><aside class="business-layer-nav" role="tablist" aria-label="系统构成"><header><p class="business-eyebrow">STEP 2</p><h2>系统构成</h2></header>${layers.map((layer) => `<button type="button" role="tab" aria-selected="${activeLayer === layer[0]}" data-layer="${layer[0]}" class="${activeLayer === layer[0] ? "active" : ""}"><span><strong>${layer[1]}</strong><small>${layer[2]}</small></span><em>${resources.filter((item) => item.architecture_layer_key === layer[0]).length}</em></button>`).join("")}</aside><section class="business-resource-panel" role="tabpanel"><header><div><p class="business-eyebrow">${esc(activeLayer)}</p><h2>${esc(layerName(activeLayer))}</h2><p>已配置 ${visible.length} 个运维资源</p></div></header><div class="business-resource-card-grid">${cards}<button id="add-resource-card" class="business-resource-add-card" type="button" aria-label="＋ 添加资源"><span>＋</span><strong>添加资源</strong><small>接入当前架构层</small></button></div></section></section>`;
+    renderResourceDrawer();
     bindComposition();
   }
 
+  function renderResourceDrawer() {
+    const drawer = document.getElementById("business-resource-drawer");
+    if (!resourceDrawerOpen) {
+      if (drawer.open) drawer.close();
+      drawer.innerHTML = "";
+      return;
+    }
+    drawer.innerHTML = resourceDrawerMode === "CATALOG" ? catalogHtml() : resourceEditorHtml(currentResource());
+    if (!drawer.open) drawer.showModal();
+  }
+
   function bindComposition() {
-    panel.querySelectorAll("[data-layer]").forEach((button) => button.onclick = () => { activeLayer = button.dataset.layer; activeResourceId = resources.find((item) => item.architecture_layer_key === activeLayer)?.draft_resource_id || ""; renderComposition(); });
-    panel.querySelectorAll("[data-resource]").forEach((button) => button.onclick = () => { activeResourceId = button.dataset.resource; renderComposition(); });
-    document.getElementById("toggle-add-resource").onclick = () => { showAdd = !showAdd; renderComposition(); };
+    panel.querySelectorAll("[data-layer]").forEach((button) => button.onclick = () => { closeResourceDrawer(); activeLayer = button.dataset.layer; activeResourceId = ""; renderComposition(); });
+    panel.querySelectorAll("[data-resource]").forEach((button) => button.onclick = () => openResourceEditor(button.dataset.resource));
+    document.getElementById("add-resource-card").onclick = openResourceCatalog;
+    bindResourceDrawer();
+  }
+
+  function bindResourceDrawer() {
+    const drawer = document.getElementById("business-resource-drawer");
+    drawer.onclose = () => { resourceDrawerOpen = false; };
+    drawer.onclick = (event) => { if (event.target === drawer) closeResourceDrawer(); };
+    const close = document.getElementById("close-resource-drawer");
+    if (close) close.onclick = closeResourceDrawer;
+    const cancel = document.getElementById("cancel-resource-drawer");
+    if (cancel) cancel.onclick = closeResourceDrawer;
+    const finish = document.getElementById("finish-resource-drawer");
+    if (finish) finish.onclick = closeResourceDrawer;
     const catalog = document.getElementById("catalog-type");
-    if (catalog) catalog.onchange = () => { catalogType = catalog.value; renderComposition(); };
+    if (catalog) catalog.onchange = () => { catalogType = catalog.value; renderResourceDrawer(); bindResourceDrawer(); };
     const confirmAdd = document.getElementById("confirm-add-resource");
     if (confirmAdd) confirmAdd.onclick = () => {
       const selected = resourceCatalog.find((item) => item[0] === catalogType);
       if (!selected?.[3]) { shell.toast(`${selected?.[1] || "该资源类型"}将在后续版本开放接入。`); return; }
       const item = emptyDatabaseResource();
-      resources.push(item); activeLayer = "DATA"; activeResourceId = item.draft_resource_id; showAdd = false; mark(); renderComposition();
+      item.architecture_layer_key = activeLayer;
+      resources.push(item); activeResourceId = item.draft_resource_id; resourceDrawerMode = "EDITOR"; mark(); renderComposition();
     };
     const item = currentResource();
-    if (!item) return;
-    panel.querySelectorAll("[data-mode]").forEach((button) => button.onclick = () => {
+    if (resourceDrawerMode !== "EDITOR" || !item) return;
+    drawer.querySelectorAll("[data-mode]").forEach((button) => button.onclick = () => {
       const replacement = emptyDatabaseResource(button.dataset.mode);
       Object.assign(replacement, { draft_resource_id: item.draft_resource_id, architecture_layer_key: item.architecture_layer_key, owner_group_id: item.owner_group_id || system.responsibility_group_id, responsibility_group_id: item.responsibility_group_id, location_name: item.location_name, display_order: item.display_order });
       resources.splice(resources.indexOf(item), 1, replacement); mark(); renderComposition();
@@ -197,7 +246,7 @@
       resources = resources.filter((row) => row !== item);
       relations = relations.filter((relation) => !relation.participants.some((participant) => participant.draft_resource_id === item.draft_resource_id));
       activeResourceId = resources.find((row) => row.architecture_layer_key === activeLayer)?.draft_resource_id || resources[0]?.draft_resource_id || "";
-      mark(); renderComposition();
+      closeResourceDrawer(); mark(); renderComposition();
     };
     const discoverButton = document.getElementById("discover-resources");
     if (discoverButton) discoverButton.onclick = () => void discover(item);
@@ -340,7 +389,7 @@
       document.getElementById("remove-relation").onclick = () => { relations = relations.filter((row) => row !== relation); activeRelationId = ""; mark(); renderTopology(); };
     }
     const open = document.getElementById("open-resource");
-    if (open) open.onclick = () => { step = 1; activeLayer = currentResource().architecture_layer_key; render(); };
+    if (open) open.onclick = () => { const item = currentResource(); step = 1; activeLayer = item.architecture_layer_key; resourceDrawerMode = "EDITOR"; resourceDrawerOpen = true; render(); };
   }
 
   function validateStep() {
