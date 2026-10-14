@@ -65,6 +65,7 @@ from platform_core.contracts.aiops import (
     BusinessSystemDraftSave,
     BusinessSystemDraftView,
     BusinessSystemInfoPatch,
+    BusinessSystemLifecycleCommand,
     BusinessSystemResourceCommit,
     BusinessSystemResourceGraphCommit,
     BusinessSystemResourceGraphDetail,
@@ -230,20 +231,26 @@ async def abandon_business_system_draft(draft_id: UUID, service: Service, scope:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def _command_business_system(business_system_id: UUID, command: str, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> BusinessSystemResourceGraphDetail:
-    result = await service.command_business_system(scope=scope, business_system_id=business_system_id, command=command, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
+async def _command_business_system(business_system_id: UUID, command: str, body: BusinessSystemLifecycleCommand, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> BusinessSystemResourceGraphDetail:
+    result = await service.command_business_system(scope=scope, business_system_id=business_system_id, command=command, request=body, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 
 
 @router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemResourceGraphDetail)
-async def enable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
-    return await _command_business_system(business_system_id, "enable", response, service, scope, idempotency_key, if_match)
+async def enable_business_system(business_system_id: UUID, body: BusinessSystemLifecycleCommand, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
+    return await _command_business_system(business_system_id, "enable", body, response, service, scope, idempotency_key, if_match)
 
 
 @router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemResourceGraphDetail)
-async def disable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
-    return await _command_business_system(business_system_id, "disable", response, service, scope, idempotency_key, if_match)
+async def disable_business_system(business_system_id: UUID, body: BusinessSystemLifecycleCommand, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
+    return await _command_business_system(business_system_id, "disable", body, response, service, scope, idempotency_key, if_match)
+
+
+@router.delete("/business-systems/{business_system_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_business_system_draft(business_system_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
+    await service.delete_business_system_draft(scope=scope, business_system_id=business_system_id, expected_version=parse_etag(if_match))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

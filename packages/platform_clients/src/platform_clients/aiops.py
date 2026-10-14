@@ -675,8 +675,11 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def abandon_business_system_draft(self, draft_id: UUID, *, if_match: str, auth_context: AuthContext) -> None:
         await self._json("DELETE", f"{self._CONFIG}/business-system-drafts/{draft_id}", if_match=if_match, auth_context=auth_context)
 
-    async def command_business_system(self, business_system_id: UUID, command: str, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
-        return await self._json("POST", f"{self._CONFIG}/business-systems/{business_system_id}/{command}", payload={}, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
+    async def command_business_system(self, business_system_id: UUID, command: str, payload: dict[str, Any], *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/business-systems/{business_system_id}/{command}", payload=payload, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def delete_business_system_draft(self, business_system_id: UUID, *, if_match: str, auth_context: AuthContext) -> None:
+        await self._json("DELETE", f"{self._CONFIG}/business-systems/{business_system_id}", if_match=if_match, auth_context=auth_context)
 
     async def test_target_connection(
         self,

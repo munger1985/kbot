@@ -41,6 +41,11 @@ class BusinessSystemInfoPatch(AIOpsContract):
     description: str | None = Field(default=None, max_length=1000)
 
 
+class BusinessSystemLifecycleCommand(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    reason: str | None = Field(default=None, max_length=1000)
+
+
 class ResourceTypeSummary(AIOpsContract):
     resource_type_key: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=128)

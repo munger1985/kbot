@@ -4,6 +4,8 @@
     dashboard: "aiops:use", "work-item-detail": "aiops:use", "responsibility-groups": "aiops:work_item_manage", monitoring: "aiops:use", chat: "aiops:use", situations: "aiops:use", inspections: "aiops:use",
     reports: "aiops:use", "report-detail": "aiops:use",
     "run-detail": "aiops:use", targets: "aiops:target_manage",
+    "business-systems": "aiops:target_manage",
+    "business-system-workspace": "aiops:target_manage",
     "target-detail": "aiops:target_manage",
     "recovery-drills": "aiops:work_item_handle",
     "data-protection": "aiops:target_manage",
@@ -58,7 +60,7 @@
   function shellMarkup(access) {
     const current = document.body.dataset.page;
     const currentNavigation = current === "inspection-plans"
-      ? "inspections" : current === "work-item-detail" ? "dashboard" : current;
+      ? "inspections" : current === "work-item-detail" ? "dashboard" : current === "business-system-workspace" ? "business-systems" : current;
     const permissions = new Set(access.permissions || []);
     const navigation = sections.map(([name, pages]) => {
       const visible = pages.filter(([id]) => permissions.has(pagePermissions[id]));

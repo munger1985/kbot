@@ -6,7 +6,6 @@
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
   const esc = shell.escape;
   const panel = document.getElementById("workspace-panel");
-  const result = document.getElementById("workspace-result");
   const systemId = new URLSearchParams(location.search).get("id") || "new";
   const creating = systemId === "new";
   const draftKey = `kbot.aiops.business-system.${systemId}`;
@@ -98,7 +97,6 @@
     return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
   }
 
-  function message(value, tone = "") { result.textContent = value || ""; result.dataset.tone = tone; }
   function mark() { dirty = true; updateFooter(); }
   function currentResource() { return resources.find((item) => item.draft_resource_id === activeResourceId); }
   function currentRelation() { return relations.find((item) => item.draft_relation_id === activeRelationId); }
@@ -106,6 +104,10 @@
   function layerName(value) { return layers.find((item) => item[0] === value)?.[1] || value; }
   function typeName(value) { return resourceCatalog.find((item) => item[0] === value)?.[1] || value; }
   function relationName(value) { return relationTypes.find((item) => item[0] === value)?.[1] || value; }
+  function notifyValidationIssues(value) {
+    if (!value?.validation_issues?.length) return;
+    shell.toast(value.validation_issues.map((item) => item.message).join("；"));
+  }
   function sourceFor(item) { return sources.find((source) => source.source_id === item.database?.source_id); }
   function usesDiscovery(item) { return ["PROMETHEUS", "ZABBIX"].includes(sourceFor(item)?.source_type || ""); }
   function selectOptions(items, selected, labels = null) {
@@ -304,14 +306,14 @@
   }
 
   async function discover(item) {
-    if (!item.database?.source_id) { message("请先选择监控源。", "bad"); return; }
+    if (!item.database?.source_id) { shell.toast("请先选择监控源。"); return; }
     item.database.discovering = true; renderComposition();
     try {
       const found = await request(`/diagnostic-sources/${encodeURIComponent(item.database.source_id)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [item.database.db_type], page_size: 100 }) });
       item.database.candidates = (found.items || []).filter((row) => row.mapping_status !== "MAPPED");
       item.database.host_candidates = found.host_items || [];
-      message(`发现 ${item.database.candidates.length} 个数据库候选。`, "good");
-    } catch (error) { message(error.message, "bad"); }
+      shell.toast(`发现 ${item.database.candidates.length} 个数据库候选。`);
+    } catch (error) { shell.toast(error.message); }
     finally { item.database.discovering = false; renderComposition(); }
   }
 
@@ -328,24 +330,23 @@
   }
 
   async function validateResource(item) {
-    message("");
     if (item.mode === "REUSE") {
-      if (!item.resource_id) message("请选择要关联的已有数据库。", "bad");
-      else { item.saved = true; mark(); renderComposition(); }
+      if (!item.resource_id) shell.toast("请选择要关联的已有数据库。");
+      else { item.saved = true; mark(); renderComposition(); shell.toast("已有数据库已关联。"); }
       return;
     }
     const database = item.database;
     const source = sourceFor(item);
-    if (!database || !item.display_name.trim() || !item.owner_group_id || !database.host.trim() || !database.database.trim() || !database.username || !database.password || !source) { message("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。", "bad"); return; }
-    if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) { message("PDB 接入必须填写 PDB 名称。", "bad"); return; }
-    if (usesDiscovery(item) ? !database.candidate_ref || (source.source_type === "PROMETHEUS" && !database.host_candidate_ref) : !database.locator_key.trim()) { message("请完成数据库与监控源的定位映射。", "bad"); return; }
+    if (!database || !item.display_name.trim() || !item.owner_group_id || !database.host.trim() || !database.database.trim() || !database.username || !database.password || !source) { shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。"); return; }
+    if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) { shell.toast("PDB 接入必须填写 PDB 名称。"); return; }
+    if (usesDiscovery(item) ? !database.candidate_ref || (source.source_type === "PROMETHEUS" && !database.host_candidate_ref) : !database.locator_key.trim()) { shell.toast("请完成数据库与监控源的定位映射。"); return; }
     saving = true; updateFooter();
     try {
       const target = targetPayload(item);
       const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, diagnostic_credential: target.diagnostic_credential }) });
       if (!response.ok) throw new Error(response.error_code || "连接验证失败");
-      item.saved = true; mark(); message("数据库连接验证通过；正式提交前不会创建资源。", "good");
-    } catch (error) { message(error.message, "bad"); }
+      item.saved = true; mark(); shell.toast("数据库连接验证通过；正式提交前不会创建资源。");
+    } catch (error) { shell.toast(error.message); }
     finally { saving = false; renderComposition(); updateFooter(); }
   }
 
@@ -368,7 +369,7 @@
 
   function renderTopology() {
     const relation = currentRelation();
-    panel.innerHTML = `<section class="business-topology-step"><header><div><p class="business-eyebrow">STEP 3</p><h2>拓扑确认</h2><p>系统根据资源和关系推导单实例、RAC、Data Guard 或复制架构。</p></div><button id="add-relation" class="primary" type="button">＋ 添加关系</button></header><div class="business-topology-layout">${topologyBoardHtml()}<aside class="business-topology-property">${relation ? relationEditorHtml(relation) : resourceSummaryHtml(currentResource())}</aside></div>${detail?.validation_issues?.length ? `<section class="business-validation-list"><h3>校验结果</h3>${detail.validation_issues.map((issue) => `<p class="${issue.severity.toLowerCase()}">${esc(issue.message)}</p>`).join("")}</section>` : ""}</section>`;
+    panel.innerHTML = `<section class="business-topology-step"><header><div><p class="business-eyebrow">STEP 3</p><h2>拓扑确认</h2><p>系统根据资源和关系推导单实例、RAC、Data Guard 或复制架构。</p></div><button id="add-relation" class="primary" type="button">＋ 添加关系</button></header><div class="business-topology-layout">${topologyBoardHtml()}<aside class="business-topology-property">${relation ? relationEditorHtml(relation) : resourceSummaryHtml(currentResource())}</aside></div></section>`;
     bindTopology();
   }
   function defaultParticipants(type) {
@@ -405,7 +406,6 @@
   }
 
   function validateStep() {
-    message("");
     if (step === 0 && (!system.display_name.trim() || !system.responsibility_group_id)) { shell.toast("请填写业务系统名称并选择业务责任组。"); return false; }
     if (step === 1 && (!resources.length || resources.some((item) => !item.display_name.trim() || !item.owner_group_id || !item.saved))) { shell.toast("至少接入一个资源，并完成所有数据库的连接验证。"); return false; }
     if (step === 2 && relations.some((item) => item.participants.length < 2 || new Set(item.participants.map((participant) => participant.draft_resource_id)).size !== item.participants.length)) { shell.toast("每个关系至少需要两个不重复的参与资源。"); return false; }
@@ -452,13 +452,13 @@
 
   async function commit() {
     if (!validateStep()) return;
-    saving = true; updateFooter(); message(creating ? "正在创建业务系统与资源拓扑…" : "正在保存业务系统与资源拓扑…");
+    saving = true; updateFooter();
     try {
       const saved = creating ? await createSystem() : await updateSystem();
       dirty = false; sessionStorage.removeItem(draftKey); shell.toast(creating ? "业务系统与资源拓扑已创建。" : "业务系统与资源拓扑已更新。");
       if (creating) location.replace(`./business-system-workspace.html?id=${encodeURIComponent(saved.business_system_id)}`);
-      else { hydrate(saved); message("业务系统与资源拓扑已保存。", "good"); render(); }
-    } catch (error) { message(error.message, "bad"); }
+      else { hydrate(saved); notifyValidationIssues(saved); render(); }
+    } catch (error) { shell.toast(error.message); }
     finally { saving = false; updateFooter(); }
   }
   function saveDraft() {
@@ -509,7 +509,7 @@
       groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
       sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED");
       reusableResources = resourcePage || [];
-      if (loadedDetail) hydrate(loadedDetail);
+      if (loadedDetail) { hydrate(loadedDetail); notifyValidationIssues(loadedDetail); }
       const saved = sessionStorage.getItem(draftKey);
       if (saved) {
         const draft = JSON.parse(saved);
@@ -517,8 +517,8 @@
         step = Number(draft.step || 0); furthest = Math.max(Number(draft.furthest || 0), step);
         activeResourceId = resources[0]?.draft_resource_id || ""; activeLayer = resources[0]?.architecture_layer_key || "DATA";
       }
-      dirty = false; message("");
-    } catch (error) { message(error.message, "bad"); }
+      dirty = false;
+    } catch (error) { shell.toast(error.message); }
     finally { loading = false; render(); }
   }
 
@@ -548,5 +548,5 @@
   document.getElementById("cancel-workspace-leave").onclick = () => { pendingLeaveHref = ""; document.getElementById("workspace-leave-dialog").close(); };
   document.getElementById("workspace-leave-dialog").addEventListener("cancel", (event) => { event.preventDefault(); pendingLeaveHref = ""; event.currentTarget.close(); });
   addEventListener("beforeunload", (event) => { if (dirty) event.preventDefault(); });
-  shell.ready.then(load).catch((error) => message(error.message, "bad"));
+  shell.ready.then(load).catch((error) => shell.toast(error.message));
 })();

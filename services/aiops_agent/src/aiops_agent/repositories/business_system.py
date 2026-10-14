@@ -59,12 +59,14 @@ class BusinessSystemRepository(AIOpsRepository):
     async def add_discovery_job(self, entity: ResourceDiscoveryJobEntity) -> ResourceDiscoveryJobEntity:
         return await self._add(entity)
 
-    async def get_scoped(self, *, business_system_id: UUID, domain_id: int, lock: bool = False) -> BusinessSystemEntity | None:
+    async def get_scoped(self, *, business_system_id: UUID, domain_id: int, lock: bool = False, include_deleted: bool = False) -> BusinessSystemEntity | None:
         self._check_active()
         statement = select(BusinessSystemEntity).where(
             BusinessSystemEntity.business_system_id == business_system_id,
             BusinessSystemEntity.domain_id == domain_id,
         )
+        if not include_deleted:
+            statement = statement.where(BusinessSystemEntity.status != "DELETED")
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
@@ -73,6 +75,7 @@ class BusinessSystemRepository(AIOpsRepository):
         self._check_active()
         statement = select(BusinessSystemEntity).where(
             BusinessSystemEntity.domain_id == domain_id,
+            BusinessSystemEntity.status != "DELETED",
         )
         if status is not None:
             statement = statement.where(BusinessSystemEntity.status == status)
@@ -82,6 +85,7 @@ class BusinessSystemRepository(AIOpsRepository):
         self._check_active()
         statement = select(BusinessSystemEntity).where(
             BusinessSystemEntity.domain_id == domain_id,
+            BusinessSystemEntity.status != "DELETED",
             func.lower(BusinessSystemEntity.display_name) == display_name.casefold(),
         ).limit(1)
         return (await self._session.execute(statement)).scalar_one_or_none()
@@ -90,6 +94,7 @@ class BusinessSystemRepository(AIOpsRepository):
         self._check_active()
         statement = select(BusinessSystemEntity).where(
             BusinessSystemEntity.domain_id == domain_id,
+            BusinessSystemEntity.status != "DELETED",
             func.lower(BusinessSystemEntity.system_code) == system_code.casefold(),
         ).limit(1)
         return (await self._session.execute(statement)).scalar_one_or_none()

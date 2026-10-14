@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
@@ -15,6 +15,7 @@ from aiops_agent.application.configuration import (
 )
 from aiops_agent.application.configuration.business_system_service import _summary
 from platform_core.contracts.aiops import (
+    BusinessSystemLifecycleCommand,
     BusinessSystemResourceGraphCommit,
     BusinessSystemResourceGraphDetail,
     ManagedResourcePatch,
@@ -35,6 +36,11 @@ def _resource(draft_id, resource_id, group_id, name):
 
 
 class BusinessSystemResourceGraphContractTest(unittest.TestCase):
+    def test_lifecycle_command_limits_reason_length(self) -> None:
+        self.assertIsNone(BusinessSystemLifecycleCommand().reason)
+        with self.assertRaises(ValidationError):
+            BusinessSystemLifecycleCommand(reason="x" * 1001)
+
     def test_detail_is_projected_to_strict_list_summary(self) -> None:
         now = datetime.now(UTC)
         detail = BusinessSystemResourceGraphDetail(
@@ -91,6 +97,71 @@ class BusinessSystemResourceGraphContractTest(unittest.TestCase):
 
 
 class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
+    def scope(self) -> ConfigurationScope:
+        return ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:aiops",
+            actor_id="operator-1",
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+
+    async def test_disable_requires_reason_before_writing(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._idempotent = AsyncMock()
+        with self.assertRaisesRegex(Exception, "请填写下线原因"):
+            await service.command_business_system(
+                scope=self.scope(),
+                business_system_id=uuid7(),
+                command="disable",
+                request=BusinessSystemLifecycleCommand(reason="   "),
+                expected_version=1,
+                idempotency_key=str(uuid7()),
+            )
+        service._idempotent.assert_not_awaited()
+
+    async def test_delete_draft_is_soft_and_does_not_delete_resources(self) -> None:
+        entity = SimpleNamespace(
+            business_system_id=uuid7(),
+            status="DRAFT",
+            row_version=1,
+            updated_by=None,
+            updated_at=None,
+        )
+        repository = SimpleNamespace(get_scoped=AsyncMock(return_value=entity))
+        uow = SimpleNamespace(business_systems=repository, flush=AsyncMock())
+
+        class UowContext:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        service = object.__new__(AIOpsConfigurationService)
+        service._uow_factory = UowContext
+        service._now = lambda: datetime.now(UTC)
+        scope = self.scope()
+        with patch(
+            "aiops_agent.application.configuration.business_system_service.add_configuration_event",
+            new_callable=AsyncMock,
+        ) as add_event:
+            await service.delete_business_system_draft(
+                scope=scope,
+                business_system_id=entity.business_system_id,
+                expected_version=1,
+            )
+
+        self.assertEqual("DELETED", entity.status)
+        repository.get_scoped.assert_awaited_once_with(
+            business_system_id=entity.business_system_id,
+            lock=True,
+            include_deleted=True,
+            domain_id=scope.domain_id,
+        )
+        uow.flush.assert_awaited_once()
+        self.assertEqual({"cascade": False}, add_event.await_args.kwargs["details"])
+
     async def test_list_business_systems_awaits_each_detail_projection(self) -> None:
         now = datetime.now(UTC)
 

@@ -27,6 +27,7 @@ from platform_core.contracts.aiops import (
     BusinessSystemDraftView,
     BusinessSystemInfoInput,
     BusinessSystemInfoPatch,
+    BusinessSystemLifecycleCommand,
     BusinessSystemResourcePatch,
     BusinessSystemResourceCommit,
     BusinessSystemResourceGraphCommit,
@@ -1008,7 +1009,11 @@ class BusinessSystemConfigurationMixin:
             await uow.flush()
             return await self._system_detail(uow=uow, scope=scope, system=entity)
 
-    async def command_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, command: str, expected_version: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+    async def command_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, command: str, request: BusinessSystemLifecycleCommand, expected_version: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        reason = request.reason.strip() if request.reason else None
+        if command == "disable" and not reason:
+            raise validation_failed("请填写下线原因")
+
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
             assert uow.business_systems is not None
             entity = await uow.business_systems.get_scoped(business_system_id=business_system_id, lock=True, **_scope_args(scope))
@@ -1016,6 +1021,10 @@ class BusinessSystemConfigurationMixin:
                 raise resource_not_found("Business System")
             self._check_version(entity.row_version, expected_version)
             desired = "ENABLED" if command == "enable" else "DISABLED"
+            allowed_current = {"DRAFT", "DISABLED"} if desired == "ENABLED" else {"ENABLED"}
+            if entity.status not in allowed_current:
+                action = "上线" if desired == "ENABLED" else "下线"
+                raise state_conflict(f"当前状态不允许{action}业务系统")
             detail = await self._system_detail(uow=uow, scope=scope, system=entity)
             if desired == "ENABLED":
                 blockers = [item.message for item in detail.validation_issues if item.severity == "BLOCKING"]
@@ -1025,7 +1034,7 @@ class BusinessSystemConfigurationMixin:
             entity.updated_by = scope.actor_id
             entity.updated_at = now
             await uow.flush()
-            await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=entity.business_system_id, event_type=f"BUSINESS_SYSTEM_{desired}", row_version=int(entity.row_version), details={"cascade": False})
+            await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=entity.business_system_id, event_type=f"BUSINESS_SYSTEM_{desired}", row_version=int(entity.row_version), details={"cascade": False, "reason": reason})
             return await self._system_detail(uow=uow, scope=scope, system=entity)
 
         return await self._idempotent(
@@ -1033,7 +1042,35 @@ class BusinessSystemConfigurationMixin:
             operation=f"BUSINESS_SYSTEM_{command.upper()}",
             parent_resource=str(business_system_id),
             idempotency_key=idempotency_key,
-            payload={"row_version": expected_version},
+            payload={"row_version": expected_version, "reason": reason},
             response_type=BusinessSystemResourceGraphDetail,
             handler=handler,
         )
+
+    async def delete_business_system_draft(self, *, scope: ConfigurationScope, business_system_id: UUID, expected_version: int) -> None:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            entity = await uow.business_systems.get_scoped(
+                business_system_id=business_system_id,
+                lock=True,
+                include_deleted=True,
+                **_scope_args(scope),
+            )
+            if entity is None or entity.status == "DELETED":
+                raise resource_not_found("Business System")
+            self._check_version(entity.row_version, expected_version)
+            if entity.status != "DRAFT":
+                raise state_conflict("只有草稿业务系统可以删除")
+            entity.status = "DELETED"
+            entity.updated_by = scope.actor_id
+            entity.updated_at = self._now()
+            await uow.flush()
+            await add_configuration_event(
+                uow=uow,
+                scope=scope,
+                aggregate_type="BUSINESS_SYSTEM",
+                aggregate_id=entity.business_system_id,
+                event_type="BUSINESS_SYSTEM_DRAFT_DELETED",
+                row_version=int(entity.row_version),
+                details={"cascade": False},
+            )

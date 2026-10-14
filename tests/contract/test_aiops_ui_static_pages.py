@@ -812,6 +812,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("复用已有数据库", systems)
         self.assertIn('shell.toast("至少有两个资源后才能建立关系。")', systems)
         self.assertNotIn('message("至少有两个资源后才能建立关系。"', systems)
+        self.assertIn('shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。")', systems)
+        self.assertIn('shell.toast("数据库连接验证通过；正式提交前不会创建资源。")', systems)
+        self.assertNotIn("function message(", systems)
+        self.assertNotIn('id="workspace-result"', workspace)
+        self.assertNotIn("business-validation-list", systems)
         self.assertIn('id="workspace-leave-dialog"', workspace)
         self.assertIn('id="workspace-leave-form"', workspace)
         self.assertIn('document.addEventListener("click"', systems)
@@ -840,6 +845,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("L2 较低", workspace)
         self.assertNotIn("级别越高", workspace)
         self.assertNotIn("级别越高", targets)
+
+    def test_business_system_directory_exposes_business_lifecycle_actions(self):
+        page = (AIOPS_ROOT / "business-systems.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-business-systems.js").read_text(encoding="utf-8")
+
+        for label in ("全部", "运行中", "草稿", "已下线"):
+            self.assertIn(label, page + script)
+        self.assertIn("下线原因", page)
+        self.assertIn("删除草稿", script)
+        self.assertIn("重新上线", script)
+        self.assertIn("已接入的资源会保留，不会删除资源、拓扑或历史数据", script)
+        self.assertNotIn("已停用", script)
 
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
