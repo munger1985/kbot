@@ -327,6 +327,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("../shared/kbot-markdown.js", page)
         self.assertIn('member.status === "ACTIVE"', script)
         self.assertIn('member.user_id) !== String(state.access.user_id)', script)
+        self.assertIn('`${groupApi}/${groupId}/member-candidates`', script)
+        self.assertIn('member.display_name || member.username || member.user_id', script)
         self.assertNotIn('id="work-item-assignment-panel"', detail)
         self.assertNotIn('id="work-item-handle-panel"', detail)
         self.assertNotIn("loadAssignmentMembers", script)

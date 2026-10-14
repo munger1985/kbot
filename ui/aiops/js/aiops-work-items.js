@@ -264,11 +264,21 @@
     state.assigning = true;
     button.disabled = true;
     try {
-      const group = await KBotAIOpsAuth.request(`${groupApi}/${encodeURIComponent(item.responsibility_group_id)}`);
-      const members = (group.members || []).filter((member) => member.status === "ACTIVE" && String(member.user_id) !== String(state.access.user_id));
+      const groupId = encodeURIComponent(item.responsibility_group_id);
+      const [group, directory] = await Promise.all([
+        KBotAIOpsAuth.request(`${groupApi}/${groupId}`),
+        KBotAIOpsAuth.request(`${groupApi}/${groupId}/member-candidates`),
+      ]);
+      const eligiblePeople = new Map(values(directory.items).map((person) => [String(person.user_id), person]));
+      const members = values(group.members).flatMap((member) => {
+        const person = eligiblePeople.get(String(member.user_id));
+        return member.status === "ACTIVE" && String(member.user_id) !== String(state.access.user_id) && person
+          ? [{ ...member, ...person }]
+          : [];
+      });
       const select = document.getElementById("work-item-assignment-user");
       select.innerHTML = `<option value="" disabled>${members.length ? "请选择组内其他成员" : "责任组内没有其他有效成员"}</option>`
-        + members.map((member) => `<option value="${shell.escape(member.user_id)}">${shell.escape(member.user_id)} · ${member.member_role === "LEAD" ? "组长" : "成员"}</option>`).join("");
+        + members.map((member) => `<option value="${shell.escape(member.user_id)}">${shell.escape(member.display_name || member.username || member.user_id)} · ${member.member_role === "LEAD" ? "组长" : "成员"}</option>`).join("");
       select.value = members.some((member) => String(member.user_id) === String(item.assignee_user_id)) ? item.assignee_user_id : "";
       select.disabled = !members.length;
       document.getElementById("work-item-assignment-title").textContent = item.title;
