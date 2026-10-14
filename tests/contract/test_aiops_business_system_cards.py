@@ -23,7 +23,8 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn('POSTGRES_STREAMING: "PostgreSQL 流复制"', SCRIPT)
         self.assertNotIn("个组件 ·", SCRIPT)
         self.assertNotIn("已覆盖", SCRIPT)
-        self.assertIn("<dt>恢复目标</dt>", SCRIPT)
+        self.assertIn("<dt>数据保护</dt>", SCRIPT)
+        self.assertNotIn("<dt>恢复目标</dt>", SCRIPT)
 
     def test_cards_resolve_responsibility_groups_and_reuse_global_tokens(self):
         self.assertIn('request("/responsibility-groups")', SCRIPT)
@@ -32,6 +33,13 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("background:var(--paper)", STYLES)
         self.assertIn("border:1px solid var(--line)", STYLES)
         self.assertIn("box-shadow:var(--shadow)", STYLES)
+
+    def test_cards_use_subtle_importance_tones_and_badges(self):
+        self.assertIn('class="business-importance"', SCRIPT)
+        self.assertIn("importance-level-${importanceLevel}", SCRIPT)
+        self.assertIn("box-shadow:var(--shadow)", STYLES)
+        for level in range(1, 6):
+            self.assertIn(f".business-system-directory-card.importance-level-{level}", STYLES)
 
 
 if __name__ == "__main__":

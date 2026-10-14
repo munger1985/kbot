@@ -55,6 +55,7 @@
   }
 
   function card(item, groupsById) {
+    const importanceLevel = Math.min(5, Math.max(1, Number(item.importance_level) || 1));
     const labels = (item.architecture_labels || []).length
       ? item.architecture_labels.map((label) => `<span>${shell.escape(architectureLabel(label))}</span>`).join("")
       : "<span>待推导</span>";
@@ -64,11 +65,11 @@
       : item.status === "DRAFT"
         ? `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">上线</button><details class="business-system-more"><summary>更多⌄</summary><div><button class="danger" type="button" data-delete-system="${shell.escape(item.business_system_id)}">删除草稿</button></div></details>`
         : `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">重新上线</button>`;
-    return `<article class="business-system-directory-card">
+    return `<article class="business-system-directory-card importance-level-${importanceLevel}">
       <header><div><small>${shell.escape(item.system_code)}</small><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, statusLabel(item.status))}</header>
       <div class="business-architecture-tags">${labels}</div>
       <dl>
-        <div><dt>环境 / 重要级</dt><dd>${shell.escape(environmentLabel(item.environment))} · ${shell.escape(importanceLabel(Number(item.importance_level)))}</dd></div>
+        <div><dt>环境 / 重要级</dt><dd class="business-system-context"><span>${shell.escape(environmentLabel(item.environment))}</span><strong class="business-importance">${shell.escape(importanceLabel(importanceLevel))}</strong></dd></div>
         <div><dt>资源构成</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
         <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
         <div><dt>数据保护</dt><dd>${shell.escape(protectionLabel(item.protection_status))}</dd></div>
