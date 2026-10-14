@@ -35,14 +35,24 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("border:1px solid var(--line)", STYLES)
         self.assertIn("--card-border:", GLOBAL_STYLES)
         self.assertIn("--card-shadow:", GLOBAL_STYLES)
+        self.assertIn("--card-shadow-hover:", GLOBAL_STYLES)
+        self.assertIn("box-shadow:var(--card-shadow-hover)", GLOBAL_STYLES)
+        self.assertIn("transform:translateY(-2px)", GLOBAL_STYLES)
         self.assertIn('[class$="-card"]', GLOBAL_STYLES)
 
-    def test_cards_use_subtle_importance_tones_and_badges(self):
+    def test_cards_use_importance_badges_without_tinting_the_card(self):
         self.assertIn('class="business-importance"', SCRIPT)
         self.assertIn("importance-level-${importanceLevel}", SCRIPT)
-        self.assertIn("box-shadow:var(--shadow)", STYLES)
+        self.assertNotIn(".business-system-directory-card::before", STYLES)
+        self.assertNotIn("background:linear-gradient", STYLES)
+        self.assertNotIn(".business-system-directory-card:hover", STYLES)
         for level in range(1, 6):
             self.assertIn(f".business-system-directory-card.importance-level-{level}", STYLES)
+
+    def test_card_actions_use_two_rows_to_avoid_horizontal_overflow(self):
+        self.assertIn(".business-system-directory-card>.business-system-card-actions{display:grid", STYLES)
+        self.assertIn(".business-system-card-actions>span{grid-column:1/-1", STYLES)
+        self.assertIn(".business-system-card-actions>div{display:flex;grid-column:1/-1", STYLES)
 
 
 if __name__ == "__main__":
