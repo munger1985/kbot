@@ -60,6 +60,21 @@ class AIOpsDisplayDictionaryTest(unittest.TestCase):
         ):
             self.assertNotIn(code, rendered)
 
+    def test_monitoring_evidence_codes_have_user_facing_labels(self) -> None:
+        codes = (
+            "MONITORING_UNAVAILABLE",
+            "MONITORING_FORECAST_INSUFFICIENT",
+            "MONITORING_FORECAST_LOW_CONFIDENCE",
+            "MONITORING_COVERAGE_INSUFFICIENT",
+            "MONITORING_WINDOW_INSUFFICIENT",
+            "MONITORING_EVIDENCE_INSUFFICIENT",
+        )
+
+        rendered = display_text("、".join(codes))
+
+        for code in codes:
+            self.assertNotIn(code, rendered)
+
     def test_model_receives_only_relevant_dictionary_entries(self) -> None:
         payload = {
             "status": "PARTIAL",

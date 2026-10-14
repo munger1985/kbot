@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
+from aiops_agent.application.display_dictionary import dictionary_for_payload
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     dependency_unavailable,
@@ -6359,6 +6360,14 @@ class AIOpsRuntimeService:
                 ):
                     artifact = candidate
 
+            payload = (
+                dict(artifact.payload_json or {})
+                if artifact is not None
+                else None
+            )
+            if payload is not None:
+                payload["display_dictionary"] = dictionary_for_payload(payload)
+
             return OpsRunResult(
                 ops_run_id=run.ops_run_id,
                 status=run.status,
@@ -6372,11 +6381,7 @@ class AIOpsRuntimeService:
                     if artifact is not None
                     else None
                 ),
-                payload=(
-                    artifact.payload_json
-                    if artifact is not None
-                    else None
-                ),
+                payload=payload,
                 completed_at=run.completed_at,
             )
 

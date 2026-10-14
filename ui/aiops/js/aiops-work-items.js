@@ -23,6 +23,13 @@
   };
   const text = (value) => labels[value] || value || "—";
   const values = (items) => Array.isArray(items) ? items : [];
+  const displayText = (value, dictionary = {}) => String(value ?? "")
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g)
+    .map((part, index) => index % 2 ? part : part.replace(
+      /(^|[^A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?=$|[^A-Za-z0-9_])/g,
+      (match, prefix, code) => `${prefix}${dictionary[code] || code}`,
+    ))
+    .join("");
   const jsonBody = (value) => ({ method: "POST", body: JSON.stringify(value) });
   const query = (values) => {
     const params = new URLSearchParams();
@@ -65,13 +72,14 @@
       return '<div class="ops-empty">该工作项没有关联可展示的 Agent 初步诊断。</div>';
     }
     const blocks = values(result.payload?.blocks);
+    const dictionary = result.payload?.display_dictionary || {};
     if (result.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1" && blocks.length) {
       const html = blocks.map((block) => {
         const payload = block.payload || {};
         if (block.block_type === "FINDING_CARDS") return findingSummaryHtml(payload);
         if (["ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN", "MARKDOWN"].includes(block.block_type)) {
           const heading = block.block_type === "ANALYSIS_MARKDOWN" ? "分析" : block.block_type === "SOLUTION_MARKDOWN" ? "解决方案" : "";
-          const body = markdown.render(String(payload.markdown || payload.text || ""));
+          const body = markdown.render(displayText(payload.markdown || payload.text || "", dictionary));
           return heading ? `<section class="ops-analysis"><header><strong>${heading}</strong></header>${body}</section>` : body;
         }
         return "";
@@ -80,7 +88,7 @@
     }
     const payload = result.payload || {};
     const answer = payload.direct_answer?.answer_text || payload.diagnosis_rationale || payload.summary || "Agent 已完成初步诊断，但没有可展示的文字结论。";
-    return `<div class="ops-result-markdown">${markdown.render(String(answer))}</div>`;
+    return `<div class="ops-result-markdown">${markdown.render(displayText(answer, dictionary))}</div>`;
   }
   async function loadProcessingContext(item) {
     document.getElementById("work-item-alert-context").innerHTML = '<div class="ops-empty">正在读取错误与告警上下文…</div>';

@@ -101,7 +101,13 @@ class AIOpsRunResultTest(unittest.TestCase):
             artifact_type="DIAGNOSIS_REPORT",
             schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
             content_hash="a" * 64,
-            payload_json={"status": "READY", "facts": []},
+            payload_json={
+                "status": "READY",
+                "facts": [],
+                "evidence_gaps": [
+                    {"code": "MONITORING_COVERAGE_INSUFFICIENT"}
+                ],
+            },
         )
         runs = SimpleNamespace(
             get_run_scoped=AsyncMock(return_value=run),
@@ -121,6 +127,12 @@ class AIOpsRunResultTest(unittest.TestCase):
         )
 
         self.assertEqual(result.payload["status"], "READY")
+        self.assertEqual(
+            result.payload["display_dictionary"][
+                "MONITORING_COVERAGE_INSUFFICIENT"
+            ],
+            "监控采样覆盖不足",
+        )
         self.assertEqual(result.final_artifact.artifact_id, artifact_id)
         runs.get_run_scoped.assert_awaited_once_with(
             ops_run_id=run_id,

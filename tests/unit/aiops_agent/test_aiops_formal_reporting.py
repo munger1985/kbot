@@ -244,6 +244,44 @@ class FormalReportingTest(unittest.TestCase):
             findings["items"],
         )
 
+    def test_evidence_boundary_translates_deduplicates_and_removes_generic_prefix(self) -> None:
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            payload={
+                "gaps": [
+                    {
+                        "code": "SOURCE_NO_DATA",
+                        "detail": "Prometheus 主查询和回退查询均未返回采样",
+                    },
+                    {
+                        "code": "SOURCE_NO_DATA",
+                        "detail": "Prometheus 主查询和回退查询均未返回采样",
+                    },
+                    {
+                        "code": "MONITORING_COVERAGE_INSUFFICIENT",
+                        "detail": "监控时间序列有效采样覆盖率低于0.8",
+                    },
+                    {
+                        "code": "INVESTIGATION_EVIDENCE_GAP",
+                        "detail": "复制状态证据缺失",
+                    },
+                ],
+            },
+        )
+
+        boundary = next(
+            item for item in presentation["sections"]
+            if item["kind"] == "EVIDENCE_BOUNDARY"
+        )
+        self.assertEqual(
+            [
+                "监控源未返回有效数据：Prometheus 主查询和回退查询均未返回采样",
+                "监控采样覆盖不足：监控时间序列有效采样覆盖率低于0.8",
+                "复制状态证据缺失",
+            ],
+            boundary["items"],
+        )
+
     def test_inspection_result_uses_the_same_source_normalizer(self) -> None:
         source = normalize_report_source(
             schema_version="DB_DIAGNOSTIC_REPORT.v1",

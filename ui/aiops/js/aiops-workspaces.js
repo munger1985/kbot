@@ -118,12 +118,13 @@
   }
 
   function inspectionAnswerHtml(result, turn) {
+    const context = turn || { display_dictionary: result?.payload?.display_dictionary || {} };
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
       const narrative = values(result?.payload?.blocks).filter(
         (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type),
       );
-      return narrative.map((block) => answerBlockHtml(block, turn)).join("")
+      return narrative.map((block) => answerBlockHtml(block, context)).join("")
         || markdown.render("本次巡检已完成，但未生成可展示的巡检结论。");
     }
     if (schemaVersion === "REPORT_CONTENT.v1") {
@@ -153,12 +154,13 @@
   }
 
   function conversationAnswerHtml(result, turn) {
+    const context = turn || { display_dictionary: result?.payload?.display_dictionary || {} };
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
       const narrative = values(result?.payload?.blocks).filter(
         (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type),
       );
-      return narrative.map((block) => answerBlockHtml(block, turn)).join("")
+      return narrative.map((block) => answerBlockHtml(block, context)).join("")
         || markdown.render("Agent 已完成诊断，但本轮没有生成可展示的文字结论。");
     }
     return markdown.render(conversationAnswerMarkdown(result));
@@ -166,7 +168,11 @@
 
   function evidenceDetails(result) {
     if (result?.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1") {
-      return turnEvidenceHtml(values(result?.payload?.blocks));
+      return turnEvidenceHtml(
+        values(result?.payload?.blocks),
+        values(result?.payload?.evidence_gaps),
+        result?.payload?.display_dictionary || {},
+      );
     }
     const payload = result?.payload || {};
     const facts = values(payload.facts);

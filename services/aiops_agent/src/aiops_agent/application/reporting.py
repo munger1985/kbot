@@ -72,14 +72,30 @@ def _report_gap_item(value: object) -> str:
     """把证据缺口代码及其上下文转换为可读说明。"""
     if not isinstance(value, dict):
         return _report_display_text(value)
-    label = _report_display_text(value.get("code") or "未知证据缺口")
+    code = str(value.get("code") or "")
+    label = _report_display_text(code or "未知证据缺口")
     turn_no = value.get("turn_no")
     detail = str(value.get("detail") or "").strip()
+    if code == "INVESTIGATION_EVIDENCE_GAP" and detail:
+        label = _report_display_text(detail)
+        detail = ""
     if turn_no is not None:
         label = f"第 {turn_no} 轮：{label}"
     if detail and detail not in label:
         label = f"{label}：{_report_display_text(detail)}"
     return label
+
+
+def _report_gap_items(values: list[object]) -> list[str]:
+    """按用户可见文本去重，避免不同采集步骤重复报告同一缺口。"""
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = _report_gap_item(value).strip()
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
 
 
 def _report_briefing_display(briefing: dict[str, Any]) -> dict[str, Any]:
@@ -593,7 +609,7 @@ def report_presentation(
         elif kind == "ACTIONS":
             body = [str(item) for item in list(scope.get("actions") or ())] or ["当前没有已记录的处置或验证动作。"]
         elif kind == "EVIDENCE_BOUNDARY":
-            body = [_report_gap_item(item) for item in gaps] or [
+            body = _report_gap_items(gaps) or [
                 "未发现额外的数据缺口。"
             ]
         else:
