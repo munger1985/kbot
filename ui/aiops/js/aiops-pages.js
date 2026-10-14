@@ -81,7 +81,7 @@
       return shell.escape({ DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期" }[value] || value || "—");
     }
     if (type === "importance") {
-      const labels = { 1: "可按需忽略", 2: "较低", 3: "普通", 4: "重要", 5: "最重要" };
+      const labels = { 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" };
       return `<strong>L${shell.escape(value)}</strong><small>${shell.escape(labels[value] || "未知")}</small>`;
     }
     if (type === "badge") return shell.badge(value);
@@ -690,7 +690,7 @@
     const credential = (value) => value?.configured
       ? `已配置${value.updated_at ? ` · ${shell.fmt(value.updated_at)}` : ""}`
       : "未配置";
-    const importance = { 1: "可按需忽略", 2: "较低", 3: "普通", 4: "重要", 5: "最重要" }[target.importance_level] || "未知";
+    const importance = { 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" }[target.importance_level] || "未知";
     const oracleScope = [
       target.observed_oracle_database_name || target.oracle_pdb_name,
       target.observed_oracle_container_scope || target.oracle_container_scope,

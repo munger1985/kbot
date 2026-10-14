@@ -5,7 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
   const environmentLabels = { PROD: "生产", STG: "预发布", DEV: "开发" };
-  const importanceLabels = { 1: "一般", 2: "较低", 3: "重要", 4: "核心", 5: "关键" };
+  const importanceLabels = { 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" };
   const architectureLabels = {
     SINGLE_INSTANCE: "单实例",
     RAC: "Oracle RAC",

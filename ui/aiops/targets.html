@@ -79,13 +79,13 @@
           <div class="ops-field span-3">
             <label for="target-importance-level">重要程度</label>
             <select id="target-importance-level" name="importance_level" required>
-              <option value="1">1 · 可按需忽略</option>
-              <option value="2">2 · 较低</option>
-              <option value="3" selected>3 · 普通</option>
-              <option value="4">4 · 重要</option>
-              <option value="5">5 · 最重要</option>
+              <option value="1">L1 · 低</option>
+              <option value="2">L2 · 一般</option>
+              <option value="3" selected>L3 · 重要</option>
+              <option value="4">L4 · 关键</option>
+              <option value="5">L5 · 核心</option>
             </select>
-            <small>用于 Agent 自动告警诊断过滤，5 表示最重要。</small>
+            <small>级别越高，告警诊断和异常处置优先级越高。</small>
           </div>
           <div class="ops-field span-6">
             <label for="target-responsibility-group">责任组</label>
@@ -236,7 +236,7 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
-  <script src="./js/aiops-pages.js?v=20261012-14"></script>
+  <script src="./js/aiops-pages.js?v=20261014-1"></script>
   <script src="./js/aiops-targets.js?v=20261012-2"></script>
 </body>
 </html>

@@ -793,6 +793,27 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertNotIn("`编辑 · ${value.display_name}`", systems)
 
+    def test_aiops_importance_labels_increase_from_low_to_core(self):
+        workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
+            encoding="utf-8"
+        )
+        systems = (AIOPS_ROOT / "js" / "aiops-business-systems.js").read_text(
+            encoding="utf-8"
+        )
+        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        targets = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
+
+        for label in ["L1 低", "L2 一般", "L3 重要", "L4 关键", "L5 核心"]:
+            self.assertIn(label, workspace)
+        self.assertIn('{ 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" }', systems)
+        self.assertIn('{ 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" }', pages)
+        self.assertIn("L1 · 低", targets)
+        self.assertIn("L5 · 核心", targets)
+        self.assertNotIn("可按需忽略", targets)
+        self.assertNotIn("L2 较低", workspace)
+
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
