@@ -812,6 +812,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("复用已有数据库", systems)
         self.assertIn('shell.toast("至少有两个资源后才能建立关系。")', systems)
         self.assertNotIn('message("至少有两个资源后才能建立关系。"', systems)
+        self.assertIn('id="workspace-leave-dialog"', workspace)
+        self.assertIn('id="workspace-leave-form"', workspace)
+        self.assertIn('document.addEventListener("click"', systems)
+        self.assertIn('addEventListener("beforeunload"', systems)
         self.assertNotIn("架构层是当前系统中的展示位置，不会改变资源类型。", systems)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):

@@ -71,6 +71,7 @@
   let activeResourceId = "";
   let activeRelationId = "";
   let catalogType = "DATABASE";
+  let pendingLeaveHref = "";
   let system = { display_name: "", environment: "PROD", importance_level: 3, responsibility_group_id: "", description: "" };
   let lastTimestamp = -1;
   let sequence = 0;
@@ -526,6 +527,26 @@
   document.getElementById("commit").onclick = () => void commit();
   document.getElementById("save-draft").onclick = saveDraft;
   document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (next <= furthest) { step = next; render(); } });
+  document.addEventListener("click", (event) => {
+    const anchor = event.target.closest?.("a[href]");
+    if (!dirty || !anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+    const destination = new URL(anchor.href, location.href);
+    if (destination.href === location.href || (destination.origin === location.origin && destination.pathname === location.pathname && destination.search === location.search)) return;
+    event.preventDefault();
+    pendingLeaveHref = destination.href;
+    const dialog = document.getElementById("workspace-leave-dialog");
+    if (!dialog.open) dialog.showModal();
+  });
+  document.getElementById("workspace-leave-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const destination = pendingLeaveHref;
+    pendingLeaveHref = "";
+    dirty = false;
+    document.getElementById("workspace-leave-dialog").close();
+    if (destination) location.assign(destination);
+  });
+  document.getElementById("cancel-workspace-leave").onclick = () => { pendingLeaveHref = ""; document.getElementById("workspace-leave-dialog").close(); };
+  document.getElementById("workspace-leave-dialog").addEventListener("cancel", (event) => { event.preventDefault(); pendingLeaveHref = ""; event.currentTarget.close(); });
   addEventListener("beforeunload", (event) => { if (dirty) event.preventDefault(); });
   shell.ready.then(load).catch((error) => message(error.message, "bad"));
 })();
