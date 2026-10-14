@@ -805,6 +805,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("overflow-y:auto", forms)
         self.assertIn('activeLayer === "DATA"', systems)
         self.assertIn("catalogTypesByLayer[activeLayer].includes(item[0])", systems)
+        self.assertIn('DATA: ["DATABASE", "CACHE"]', systems)
+        self.assertNotIn('["DATA_WAREHOUSE", "数据仓库"', systems)
         self.assertIn("功能未完成，敬请期待", systems)
         self.assertIn("关联已有数据库", systems)
         self.assertNotIn("复用已有数据库", systems)

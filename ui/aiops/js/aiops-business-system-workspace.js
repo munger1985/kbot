@@ -16,12 +16,12 @@
     ["ACCESS", "接入层", "负载均衡、网关与反向代理"],
     ["APPLICATION", "应用层", "应用服务及其专属计算资源"],
     ["MIDDLEWARE", "中间件层", "消息队列、应用服务器与集成平台"],
-    ["DATA", "数据层", "数据库、缓存、数据仓库与专属存储"],
+    ["DATA", "数据层", "数据库与缓存服务"],
     ["INFRASTRUCTURE", "基础设施层", "共享计算、网络和存储"],
   ];
   const resourceCatalog = [
-    ["DATABASE", "数据库", "数据平台", true], ["DATA_WAREHOUSE", "数据仓库", "数据平台", false],
-    ["CACHE", "缓存", "数据平台", false], ["PHYSICAL_SERVER", "物理服务器", "计算资源", false],
+    ["DATABASE", "数据库", "数据平台", true], ["CACHE", "缓存", "数据平台", false],
+    ["PHYSICAL_SERVER", "物理服务器", "计算资源", false],
     ["VIRTUAL_MACHINE", "虚拟机", "计算资源", false], ["KUBERNETES_CLUSTER", "容器集群", "计算资源", false],
     ["APPLICATION_SERVICE", "应用服务", "应用与服务", false], ["APPLICATION_SERVER", "应用服务器", "中间件", false],
     ["MESSAGE_QUEUE", "消息队列", "中间件", false], ["LOAD_BALANCER", "负载均衡", "网络设施", false],
@@ -31,7 +31,7 @@
     ACCESS: ["LOAD_BALANCER", "NETWORK_DEVICE"],
     APPLICATION: ["APPLICATION_SERVICE"],
     MIDDLEWARE: ["APPLICATION_SERVER", "MESSAGE_QUEUE"],
-    DATA: ["DATABASE", "DATA_WAREHOUSE", "CACHE", "STORAGE"],
+    DATA: ["DATABASE", "CACHE"],
     INFRASTRUCTURE: ["PHYSICAL_SERVER", "VIRTUAL_MACHINE", "KUBERNETES_CLUSTER", "NETWORK_DEVICE", "STORAGE"],
   };
   const versions = { ORACLE: ["19c", "26ai"], MYSQL: ["8.4"], POSTGRESQL: ["16", "17"] };
