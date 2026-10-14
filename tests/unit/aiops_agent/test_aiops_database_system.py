@@ -7,6 +7,7 @@ import unittest
 from pydantic import ValidationError
 
 from platform_core.contracts.aiops import (
+    DatabaseSystemCommit,
     DatabaseSystemCreate,
     DatabaseSystemTopologyPut,
 )
@@ -67,6 +68,21 @@ class DatabaseSystemContractTest(unittest.TestCase):
                     {"member_key": "STANDBY-1", "target_id": target_id, "site_code": "STANDBY", "member_type": "INSTANCE", "expected_role": "STANDBY"},
                 ),
             )
+
+    def test_atomic_commit_supports_new_and_reused_members(self) -> None:
+        request = DatabaseSystemCommit.model_validate({
+            "system": {"display_name": "ERP DG", "db_type": "ORACLE", "version_code": "19c", "deployment_shape": "HIGH_AVAILABILITY", "deployment_category": "REPLICATION", "capabilities": ["DATA_GUARD"], "environment": "PROD"},
+            "sites": [{"site_code": "PRIMARY", "display_name": "主站点"}, {"site_code": "STANDBY", "display_name": "备站点"}],
+            "members": [
+                {"member_key": "PRIMARY-1", "site_code": "PRIMARY", "member_type": "INSTANCE", "expected_role": "PRIMARY", "mode": "NEW", "target": {"display_name": "ERP-PRI", "db_type": "ORACLE", "version_code": "19c", "environment": "PROD"}},
+                {"member_key": "STANDBY-1", "site_code": "STANDBY", "member_type": "INSTANCE", "expected_role": "STANDBY", "mode": "REUSE", "target_id": uuid7()},
+            ],
+            "relations": [{"relation_key": "DG-1", "source_member_key": "PRIMARY-1", "target_member_key": "STANDBY-1", "relation_type": "DATA_GUARD", "transport_mode": "ASYNC"}],
+        })
+        self.assertEqual("NEW", request.members[0].mode)
+        self.assertEqual("REUSE", request.members[1].mode)
+        with self.assertRaises(ValidationError):
+            DatabaseSystemCommit.model_validate({**request.model_dump(mode="json"), "members": [{**request.members[0].model_dump(mode="json"), "target_id": str(uuid7())}]})
 
 
 if __name__ == "__main__":

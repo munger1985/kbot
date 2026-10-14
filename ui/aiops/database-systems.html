@@ -43,7 +43,7 @@
             </div>
           </section>
           <section data-system-panel="members" hidden>
-            <header class="target-wizard-heading"><p>步骤 03</p><h3>逐个配置成员</h3><small>每个成员分别保存 Endpoint、凭据、监控源和严格匹配的 target_key。</small></header>
+            <header class="target-wizard-heading"><p>步骤 03</p><h3>逐个配置成员</h3><small>每个成员配置站点、角色、成员组、Endpoint、访问模式和监控映射。</small><div class="ops-actions"><button id="add-system-site" type="button">添加站点</button><button id="add-system-member" type="button">添加成员</button></div></header>
             <div class="system-member-layout"><nav id="member-slots" class="system-member-slots"></nav><div id="member-editor" class="ops-form"></div></div>
           </section>
           <section data-system-panel="topology" hidden>
@@ -55,7 +55,7 @@
           <p id="system-result" class="ops-connection-result" role="status"></p>
         </div>
       </div>
-      <footer><span id="system-draft-state">尚未保存服务端草稿</span><button id="system-previous" type="button" hidden>上一步</button><button id="system-next" class="primary" type="button">下一步：数据库与架构</button><button id="enable-system" class="primary" type="submit" hidden>创建并启用监控</button></footer>
+      <footer><span id="system-draft-state">提交前不会创建 Database System 或 Target</span><button id="system-save-draft" type="button">保存草稿</button><button id="system-previous" type="button" hidden>上一步</button><button id="system-next" class="primary" type="button">下一步：数据库与架构</button><button id="enable-system" class="primary" type="submit" hidden>创建并启用监控</button></footer>
     </form>
   </dialog>
 

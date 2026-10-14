@@ -121,6 +121,45 @@ def _validate_oracle_container_expectation(
 
 
 class TargetConfigurationMixin:
+    async def _create_target_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, request: TargetCreate, now: datetime) -> TargetEntity:
+        """在调用方事务内创建 Target，供数据库系统原子提交复用。"""
+        assert uow.targets is not None and uow.managed_credentials is not None and uow.work_items is not None
+        if request.responsibility_group_id is not None:
+            group = await uow.work_items.get_group(group_id=request.responsibility_group_id, tenant_id=scope.tenant_id, domain_id=scope.domain_id)
+            if group is None or group.status != "ACTIVE": raise validation_failed("责任组不存在或已停用")
+        target_id = uuid7(); diagnostic_id = execution_id = None
+        for kind, value in (("DIAGNOSTIC", request.diagnostic_credential), ("EXECUTION", request.execution_credential)):
+            if value is None: continue
+            credential = await self._managed_credentials.put(uow=uow, tenant_id=scope.tenant_id, domain_id=scope.domain_id, external_key=target_id, credential_kind=f"target_{kind.lower()}", values={"username": value.username, "password": value.password}, actor_id=scope.actor_id)
+            if kind == "DIAGNOSTIC": diagnostic_id = credential.credential_id
+            else: execution_id = credential.credential_id
+        request_id = uuid7() if request.readonly_connection_enabled else None
+        entity = TargetEntity(
+            target_id=target_id, tenant_id=scope.tenant_id, domain_id=scope.domain_id,
+            display_name=request.display_name, db_type=request.db_type, version_code=request.version_code,
+            environment=request.environment, db_role=request.db_role, oracle_container_scope=request.oracle_container_scope,
+            oracle_pdb_name=request.oracle_pdb_name, observed_oracle_container_scope=None,
+            observed_oracle_container_name=None, observed_oracle_container_number=None, observed_oracle_database_name=None,
+            endpoint_json=request.endpoint.model_dump(mode="json") if request.endpoint is not None else None,
+            readonly_connection_enabled=request.readonly_connection_enabled, controlled_change_enabled=request.controlled_change_enabled,
+            diagnostic_credential_id=diagnostic_id, execution_credential_id=execution_id,
+            importance_level=request.importance_level, responsibility_group_id=request.responsibility_group_id,
+            capabilities_json=request.capabilities, workload_snapshot_policy_json=request.workload_snapshot_policy.model_dump(mode="json"),
+            activity_sampler_policy_json=request.activity_sampler_policy.model_dump(mode="json"),
+            workload_next_run_at=now if request.workload_snapshot_policy.enabled else None, workload_consecutive_failures=0,
+            activity_next_sample_at=now if request.activity_sampler_policy.enabled else None,
+            activity_sampler_status="READY" if request.activity_sampler_policy.enabled else "DISABLED", activity_sampler_disabled_reason=None,
+            status="DISABLED", connectivity_status="CHECKING" if request.readonly_connection_enabled else "UNKNOWN",
+            observed_status="UNKNOWN", connectivity_check_request_id=request_id,
+            connectivity_check_requested_at=now if request.readonly_connection_enabled else None,
+            row_version=1, connectivity_version=1, created_by=scope.actor_id, updated_by=scope.actor_id, created_at=now, updated_at=now,
+        )
+        await uow.targets.add_target(entity)
+        await add_configuration_event(uow=uow, scope=scope, aggregate_type="TARGET", aggregate_id=entity.target_id, event_type="TARGET_CREATED", row_version=1)
+        if request_id is not None:
+            await add_configuration_event(uow=uow, scope=scope, aggregate_type="TARGET", aggregate_id=entity.target_id, event_type="TARGET_CONNECTIVITY_CHECK_REQUESTED", row_version=1, details={"connectivity_check_request_id": str(request_id), "connectivity_version": 1})
+        return entity
+
     async def test_target_connection(
         self,
         *,

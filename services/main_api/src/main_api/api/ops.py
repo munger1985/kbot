@@ -94,6 +94,7 @@ from platform_core.contracts.aiops import (
     TargetFactView,
     DatabaseSystemProtectionProfileUpsert,
     DatabaseSystemProtectionProfileView,
+    DatabaseSystemCommit,
     DatabaseSystemCreate,
     DatabaseSystemDetail,
     DatabaseSystemPage,
@@ -1247,6 +1248,12 @@ async def stream_ops_run_events(
 @router.post("/database-systems", response_model=DatabaseSystemDetail, status_code=201)
 async def create_database_system(body: DatabaseSystemCreate, request: Request, response: Response, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
     payload = await _client(request).create_database_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(DatabaseSystemDetail, payload, response)
+
+
+@router.post("/database-systems:commit", response_model=DatabaseSystemDetail, status_code=201)
+async def commit_database_system(body: DatabaseSystemCommit, request: Request, response: Response, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
+    payload = await _client(request).commit_database_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
     return _validated(DatabaseSystemDetail, payload, response)
 
 

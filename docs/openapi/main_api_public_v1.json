@@ -4267,6 +4267,54 @@
         "title": "DatabaseCredentialStatus",
         "type": "object"
       },
+      "DatabaseSystemCommit": {
+        "additionalProperties": false,
+        "description": "将系统、成员 Target、监控映射和拓扑作为一个事务提交。",
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/DatabaseSystemMemberCommit"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DatabaseSystemRelationInput"
+            },
+            "maxItems": 256,
+            "title": "Relations",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/DatabaseSystemSiteInput"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Sites",
+            "type": "array"
+          },
+          "system": {
+            "$ref": "#/components/schemas/DatabaseSystemCreate"
+          }
+        },
+        "required": [
+          "system",
+          "sites",
+          "members"
+        ],
+        "title": "DatabaseSystemCommit",
+        "type": "object"
+      },
       "DatabaseSystemCreate": {
         "additionalProperties": false,
         "properties": {
@@ -4557,6 +4605,113 @@
         "title": "DatabaseSystemDetail",
         "type": "object"
       },
+      "DatabaseSystemMemberCommit": {
+        "additionalProperties": false,
+        "description": "原子提交中的成员草稿，可新建 Target 或复用未归属 Target。",
+        "properties": {
+          "expected_role": {
+            "enum": [
+              "INSTANCE",
+              "PRIMARY",
+              "STANDBY",
+              "SOURCE",
+              "REPLICA",
+              "RAC_INSTANCE"
+            ],
+            "title": "Expected Role",
+            "type": "string"
+          },
+          "group_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Key"
+          },
+          "member_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Member Key",
+            "type": "string"
+          },
+          "member_type": {
+            "enum": [
+              "INSTANCE",
+              "RAC_INSTANCE"
+            ],
+            "title": "Member Type",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "NEW",
+              "REUSE"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "monitoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatabaseSystemMonitoringInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Site Code",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          }
+        },
+        "required": [
+          "member_key",
+          "site_code",
+          "member_type",
+          "expected_role",
+          "mode"
+        ],
+        "title": "DatabaseSystemMemberCommit",
+        "type": "object"
+      },
       "DatabaseSystemMemberInput": {
         "additionalProperties": false,
         "properties": {
@@ -4731,6 +4886,58 @@
           "monitoring_ready"
         ],
         "title": "DatabaseSystemMemberView",
+        "type": "object"
+      },
+      "DatabaseSystemMonitoringInput": {
+        "additionalProperties": false,
+        "description": "Wizard 成员的监控映射；发现型来源只接受有时效的候选引用。",
+        "properties": {
+          "candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Ref"
+          },
+          "host_candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Candidate Ref"
+          },
+          "source_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceBindingCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "DatabaseSystemMonitoringInput",
         "type": "object"
       },
       "DatabaseSystemPage": {
@@ -22333,6 +22540,58 @@
           }
         },
         "summary": "Put Database System Topology",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/database-systems:commit": {
+      "post": {
+        "operationId": "commit_database_system_api_v1_apps_aiops_database_systems_commit_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseSystemCommit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseSystemDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commit Database System",
         "tags": [
           "AIOps"
         ]

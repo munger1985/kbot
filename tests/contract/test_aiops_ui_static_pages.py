@@ -37,7 +37,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
     pages = {
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "database-systems", "targets", "target-detail",
-        "recovery-drills",
+        "recovery-drills", "data-protection",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
         "agents",
         "inspection-plans", "inspection-plan-detail",
@@ -61,7 +61,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(15, len(scripts))
+        self.assertEqual(16, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -745,10 +745,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('name="responsibility_group_id" required', page)
         self.assertNotIn('name="backup_policy_enabled"', page)
         self.assertNotIn("saveTargetRecovery", targets)
-        self.assertIn("backup_policy_enabled", systems)
-        self.assertIn("backup_success_max_age_hours", systems)
-        self.assertNotIn("复用已有 Target", systems)
-        self.assertNotIn('/targets?limit=200', systems)
+        protection = (AIOPS_ROOT / "js" / "aiops-data-protection.js").read_text(encoding="utf-8")
+        self.assertIn("backup_policy_enabled", protection)
+        self.assertIn("backup_success_max_age_hours", protection)
+        self.assertIn("复用已有 Target", systems)
+        self.assertIn('/targets?limit=200', systems)
+        self.assertIn('/database-systems:commit', systems)
+        self.assertNotIn('system-protection-form', systems)
         self.assertIn("该成员归属于当前数据库系统", systems)
         self.assertIn('database-systems.html?open=', targets)
         self.assertIn('new URLSearchParams(location.search).get("open")', systems)
@@ -804,8 +807,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("计划外演练记录已提交", drill_script)
         self.assertIn('["recovery-drills", "恢复演练"]', shell)
         systems = (AIOPS_ROOT / "js" / "aiops-database-systems.js").read_text(encoding="utf-8")
-        self.assertIn("protection-profile", systems)
-        self.assertIn("recovery-drills.html?database_system_id=", systems)
+        protection = (AIOPS_ROOT / "js" / "aiops-data-protection.js").read_text(encoding="utf-8")
+        self.assertNotIn("protection-profile", systems)
+        self.assertIn("protection-profile", protection)
+        self.assertIn("data-protection.html?database_system_id=", systems)
 
     def test_target_edit_and_chat_own_target_fact_confirmation(self):
         page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")

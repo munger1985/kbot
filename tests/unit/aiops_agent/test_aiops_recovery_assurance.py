@@ -102,7 +102,7 @@ class RecoveryContractTest(unittest.TestCase):
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
         self.assertIn("required_backup_source_types", (
-            root / "ui/aiops/js/aiops-database-systems.js"
+            root / "ui/aiops/js/aiops-data-protection.js"
         ).read_text())
         system_page = (root / "ui/aiops/database-systems.html").read_text()
         drill_page = (root / "ui/aiops/recovery-drills.html").read_text()

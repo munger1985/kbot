@@ -945,6 +945,33 @@ class DiagnosticSourceConfigurationMixin:
             has_more=has_more,
         )
 
+    async def _create_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime) -> TargetSourceBindingEntity:
+        """重新验证发现候选并在调用方事务内创建映射。"""
+        assert uow.diagnostic_sources is not None
+        source = await uow.diagnostic_sources.get_scoped(diagnostic_source_id=source_id, domain_id=scope.domain_id, lock=True)
+        if source is None: raise resource_not_found("Diagnostic Source")
+        adapter = await self._instance_discovery_adapter(uow=uow, scope=scope, source=source)
+        value = self._instance_candidate_refs.decode(candidate_ref, tenant_id=scope.tenant_id, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
+        locator_key = str(value.get("source_locator_key") or ""); locator = value.get("source_locator"); db_type = str(value.get("db_type") or "")
+        if value.get("candidate_kind") != "DATABASE" or not locator_key or not isinstance(locator, dict) or db_type not in {"ORACLE", "MYSQL", "POSTGRESQL"}: raise validation_failed("实例候选引用内容无效")
+        host_key = None
+        if host_candidate_ref is not None:
+            host_value = self._instance_candidate_refs.decode(host_candidate_ref, tenant_id=scope.tenant_id, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
+            host_key = str(host_value.get("host_target_key") or "")
+            if host_value.get("candidate_kind") != "HOST" or not host_key: raise validation_failed("主机候选引用内容无效")
+        if source.source_type == "PROMETHEUS" and host_key is None: raise validation_failed("Prometheus 映射必须选择主机 Label")
+        if source.source_type != "PROMETHEUS" and host_key is not None: raise validation_failed("当前监控源不支持独立主机 Label")
+        try:
+            verified = await adapter.discover_instances(ProviderInstanceDiscoveryRequest(db_types=(db_type,), locator_keys=(locator_key,), include_hosts=source.source_type == "PROMETHEUS", host_locator_keys=(host_key,) if host_key is not None else (), limit=1, trace_id=scope.trace_id))
+        except DiagnosticSourceAdapterError as exc:
+            raise AIOpsApplicationError(code="INSTANCE_DISCOVERY_FAILED", message="保存映射前重新验证实例失败", status_code=502, retryable=exc.retryable) from exc
+        current = next((item for item in verified.candidates if item.source_locator_key == locator_key), None)
+        if current is None or current.db_type != db_type or canonical_json(current.source_locator) != canonical_json(locator): raise state_conflict("实例候选已变化或不存在，请重新执行发现")
+        if host_key is not None and host_key not in {item.source_locator_key for item in verified.host_candidates}: raise state_conflict("主机候选已变化或不存在，请重新执行发现")
+        source_locator = dict(current.source_locator)
+        if host_key is not None: source_locator["host_target_key"] = host_key
+        return await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target_id, request=SourceBindingCreate(source_id=source_id, source_locator_key=locator_key, source_locator=source_locator), now=now, source=source, expected_db_type=db_type, discovery_verified=True)
+
     async def map_source_instances(
         self,
         *,

@@ -10,6 +10,7 @@ from aiops_agent.application.errors import resource_not_found, state_conflict, v
 from aiops_agent.entities import DatabaseSystemEntity, DatabaseSystemMemberEntity, DatabaseSystemRelationEntity, DatabaseSystemSiteEntity
 from aiops_agent.persistence import AIOpsUnitOfWork
 from platform_core.contracts.aiops import (
+    DatabaseSystemCommit,
     DatabaseSystemCreate,
     DatabaseSystemDetail,
     DatabaseSystemMemberView,
@@ -212,6 +213,60 @@ class DatabaseSystemConfigurationMixin:
             await add_configuration_event(uow=uow, scope=scope, aggregate_type="DATABASE_SYSTEM", aggregate_id=entity.database_system_id, event_type="DATABASE_SYSTEM_DRAFT_CREATED", row_version=1, details={"deployment_category": entity.deployment_category})
             return await self._system_detail(uow=uow, scope=scope, system=entity)
         return await self._idempotent(scope=scope, operation="DATABASE_SYSTEM_CREATE", parent_resource="database-systems", idempotency_key=idempotency_key, payload=request.model_dump(mode="json"), response_type=DatabaseSystemDetail, handler=handler)
+
+    async def commit_database_system(self, *, scope: ConfigurationScope, request: DatabaseSystemCommit, idempotency_key: str) -> DatabaseSystemDetail:
+        """原子创建并启用数据库系统，任何成员或映射失败都整体回滚。"""
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> DatabaseSystemDetail:
+            assert uow.database_systems is not None and uow.targets is not None and uow.work_items is not None
+            system_request = request.system
+            if await uow.database_systems.get_by_name(display_name=system_request.display_name, **_scope_args(scope)) is not None: raise state_conflict("当前 Domain 已存在同名数据库系统")
+            if system_request.responsibility_group_id is None: raise validation_failed("数据库系统必须绑定责任组")
+            group = await uow.work_items.get_group(group_id=system_request.responsibility_group_id, **_scope_args(scope))
+            if group is None or group.status != "ACTIVE": raise validation_failed("责任组不存在或已停用")
+            values = dict(database_system_id=uuid7(), domain_id=scope.domain_id, display_name=system_request.display_name, db_type=system_request.db_type.value, version_code=system_request.version_code, deployment_shape=system_request.deployment_shape, deployment_category=system_request.deployment_category, capabilities_json=list(system_request.capabilities), environment=system_request.environment, importance_level=system_request.importance_level, responsibility_group_id=system_request.responsibility_group_id, description=system_request.description, status="DRAFT", row_version=1, created_by=scope.actor_id, updated_by=scope.actor_id, created_at=now, updated_at=now)
+            if hasattr(scope, "tenant_id"): values["tenant_id"] = scope.tenant_id
+            system = DatabaseSystemEntity(**values); await uow.database_systems.add_system(system)
+            target_ids: dict[str, UUID] = {}
+            for member in request.members:
+                if member.mode == "NEW":
+                    assert member.target is not None
+                    if member.target.responsibility_group_id != system_request.responsibility_group_id: raise validation_failed(f"成员 {member.member_key} 的责任组必须与数据库系统一致")
+                    target = await self._create_target_in_uow(uow=uow, scope=scope, request=member.target, now=now)
+                    await uow.flush(); await self._check_target_connectivity_now(uow=uow, scope=scope, entity=target, checked_at=now)
+                    if target.connectivity_status != "CONNECTED": raise validation_failed(f"成员 {member.member_key} 数据库连接验证失败：{target.last_error_code or target.connectivity_status}")
+                else:
+                    assert member.target_id is not None
+                    target = await uow.targets.get_scoped(target_id=member.target_id, domain_id=scope.domain_id, lock=True)
+                    if target is None: raise validation_failed(f"成员 {member.member_key} 引用的 Target 不存在")
+                    if await uow.database_systems.target_is_assigned_elsewhere(target_id=target.target_id, database_system_id=system.database_system_id): raise state_conflict(f"成员 {member.member_key} 已属于其他数据库系统")
+                    if target.connectivity_status != "CONNECTED": raise validation_failed(f"成员 {member.member_key} 尚未通过数据库连接验证")
+                if target.db_type != system.db_type or target.version_code != system.version_code: raise validation_failed(f"成员 {member.member_key} 的数据库引擎或版本不一致")
+                bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
+                if member.monitoring is not None:
+                    if bindings: raise state_conflict(f"成员 {member.member_key} 已有监控映射")
+                    mapping = member.monitoring
+                    if mapping.candidate_ref is not None:
+                        await self._create_discovered_source_binding_in_uow(uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id, candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref, now=now)
+                    else:
+                        assert mapping.source_binding is not None
+                        await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target.target_id, request=mapping.source_binding, now=now)
+                elif not bindings: raise validation_failed(f"成员 {member.member_key} 必须配置监控映射")
+                target_ids[member.member_key] = target.target_id
+            site_entities = [DatabaseSystemSiteEntity(site_id=uuid7(), database_system_id=system.database_system_id, site_code=item.site_code, display_name=item.display_name, expected_role=item.expected_role, sort_order=item.sort_order) for item in request.sites]
+            await uow.database_systems.add_sites(site_entities); site_ids = {item.site_code: item.site_id for item in site_entities}
+            member_entities = [DatabaseSystemMemberEntity(member_id=uuid7(), database_system_id=system.database_system_id, site_id=site_ids[item.site_code], target_id=target_ids[item.member_key], member_key=item.member_key, group_key=item.group_key, member_type=item.member_type, expected_role=item.expected_role, sort_order=item.sort_order) for item in request.members]
+            await uow.database_systems.add_members(member_entities); member_ids = {item.member_key: item.member_id for item in member_entities}
+            await uow.database_systems.add_relations([DatabaseSystemRelationEntity(relation_id=uuid7(), database_system_id=system.database_system_id, source_member_id=member_ids[item.source_member_key], target_member_id=member_ids[item.target_member_key], relation_key=item.relation_key, relation_type=item.relation_type, transport_mode=item.transport_mode, sort_order=item.sort_order) for item in request.relations])
+            await uow.flush(); detail = await self._system_detail(uow=uow, scope=scope, system=system)
+            blocking = [item.message for item in detail.validation_issues if item.severity == "BLOCKING"]
+            if blocking: raise validation_failed("；".join(blocking))
+            system.status = "ENABLED"
+            for member in member_entities:
+                target = await uow.targets.get_scoped(target_id=member.target_id, domain_id=scope.domain_id, lock=True); assert target is not None
+                target.status = "ENABLED"; target.updated_by = scope.actor_id; target.updated_at = now
+            await add_configuration_event(uow=uow, scope=scope, aggregate_type="DATABASE_SYSTEM", aggregate_id=system.database_system_id, event_type="DATABASE_SYSTEM_COMMITTED", row_version=1, details={"member_count": len(member_entities)})
+            await uow.flush(); return await self._system_detail(uow=uow, scope=scope, system=system)
+        return await self._idempotent(scope=scope, operation="DATABASE_SYSTEM_COMMIT", parent_resource="database-systems", idempotency_key=idempotency_key, payload=request.model_dump(mode="json"), response_type=DatabaseSystemDetail, handler=handler)
 
     async def list_database_systems(self, *, scope: ConfigurationScope, status: str | None, limit: int) -> DatabaseSystemPage:
         async with self._uow_factory() as uow:

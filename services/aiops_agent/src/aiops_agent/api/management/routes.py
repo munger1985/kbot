@@ -61,6 +61,7 @@ from platform_core.contracts.aiops import (
     TargetFactView,
     DatabaseSystemProtectionProfileUpsert,
     DatabaseSystemProtectionProfileView,
+    DatabaseSystemCommit,
     DatabaseSystemCreate,
     DatabaseSystemDetail,
     DatabaseSystemPage,
@@ -107,6 +108,13 @@ def _etag(response: Response, row_version: int) -> None:
 @router.post("/database-systems", response_model=DatabaseSystemDetail, status_code=201)
 async def create_database_system(body: DatabaseSystemCreate, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
     result = await service.create_database_system(scope=scope, request=body, idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post("/database-systems:commit", response_model=DatabaseSystemDetail, status_code=201)
+async def commit_database_system(body: DatabaseSystemCommit, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
+    result = await service.commit_database_system(scope=scope, request=body, idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 

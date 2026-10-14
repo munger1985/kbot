@@ -618,6 +618,9 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def create_database_system(self, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("POST", f"{self._CONFIG}/database-systems", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
 
+    async def commit_database_system(self, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/database-systems:commit", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
+
     async def list_database_systems(self, *, status: str | None, limit: int, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("GET", self._list_path(f"{self._CONFIG}/database-systems", status=status, cursor=None, limit=limit), auth_context=auth_context)
 

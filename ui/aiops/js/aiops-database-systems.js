@@ -17,21 +17,18 @@
     MYSQL: [["MYSQL_REPLICATION", "主从复制"]],
     POSTGRESQL: [["POSTGRES_STREAMING", "Streaming Replication"]],
   };
-  const protectionSources = {
-    ORACLE: [["ORACLE_RMAN", "Oracle RMAN"], ["FILESYSTEM_SNAPSHOT", "文件系统快照"], ["STORAGE_SNAPSHOT", "存储快照"], ["CLOUD_MANAGED_BACKUP", "云托管备份"], ["THIRD_PARTY_BACKUP", "第三方备份"]],
-    MYSQL: [["MYSQL_XTRABACKUP", "Percona XtraBackup"], ["MYSQL_ENTERPRISE_BACKUP", "MySQL Enterprise Backup"], ["MYSQL_LOGICAL_DUMP", "逻辑导出"], ["FILESYSTEM_SNAPSHOT", "文件系统快照"], ["STORAGE_SNAPSHOT", "存储快照"], ["CLOUD_MANAGED_BACKUP", "云托管备份"], ["THIRD_PARTY_BACKUP", "第三方备份"]],
-    POSTGRESQL: [["POSTGRESQL_BASEBACKUP", "pg_basebackup"], ["POSTGRESQL_PGBACKREST", "pgBackRest"], ["POSTGRESQL_BARMAN", "Barman"], ["POSTGRESQL_WALG", "WAL-G"], ["FILESYSTEM_SNAPSHOT", "文件系统快照"], ["STORAGE_SNAPSHOT", "存储快照"], ["CLOUD_MANAGED_BACKUP", "云托管备份"], ["THIRD_PARTY_BACKUP", "第三方备份"]],
-  };
   let step = "shape";
   let system = null;
   let systems = [];
   let sources = [];
   let groups = [];
+  let targets = [];
   let sites = [];
   let members = [];
   let relations = [];
   let activeMember = 0;
   let detail = null;
+  let editingSystem = null;
   let openedRequestedSystem = false;
 
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
@@ -90,7 +87,7 @@
 
   function member(memberKey, label, siteCode, role, order, groupKey = "", memberType = "INSTANCE") {
     const port = dbType() === "ORACLE" ? 1521 : dbType() === "MYSQL" ? 3306 : 5432;
-    return { member_key: memberKey, label, site_code: siteCode, expected_role: role, sort_order: order, group_key: groupKey, member_type: memberType, target_id: "", saved: false, display_name: `${field("display_name").value}-${label}`, host: "", port, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", target_key: "", candidate_ref: "", host_candidate_ref: "", discovery_candidates: [], host_candidates: [], discovery_loading: false };
+    return { member_key: memberKey, label, site_code: siteCode, expected_role: role, sort_order: order, group_key: groupKey, member_type: memberType, mode: "NEW", target_id: "", saved: false, display_name: `${field("display_name").value}-${label}`, host: "", port, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", target_key: "", candidate_ref: "", host_candidate_ref: "", discovery_candidates: [], host_candidates: [], discovery_loading: false };
   }
 
   const memberSource = (item) => sources.find((source) => source.source_id === item.source_id);
@@ -142,7 +139,10 @@
       : `<div class="ops-field span-4"><label>稳定定位键</label><input name="member_target_key" value="${shell.escape(item.target_key)}"><small>Loki 使用精确 target_key 标签；OEM 等来源使用稳定目标标识。</small></div>`;
     document.getElementById("member-editor").innerHTML = `
       <div class="ops-field span-12"><h3>${shell.escape(item.label)}</h3><small>${shell.escape(item.site_code)} · 期望角色 ${shell.escape(item.expected_role)} · 该成员归属于当前数据库系统</small></div>
-      <div id="member-new" class="ops-form span-12">
+      <div class="ops-field span-3"><label>成员标识</label><input name="member_key" value="${shell.escape(item.member_key)}"></div><div class="ops-field span-3"><label>站点</label><select name="member_site_code">${sites.map((site) => `<option value="${shell.escape(site.site_code)}" ${site.site_code === item.site_code ? "selected" : ""}>${shell.escape(site.display_name)}</option>`).join("")}</select></div><div class="ops-field span-3"><label>期望角色</label><select name="member_expected_role">${["INSTANCE","PRIMARY","STANDBY","SOURCE","REPLICA","RAC_INSTANCE"].map((role) => `<option ${role === item.expected_role ? "selected" : ""}>${role}</option>`).join("")}</select></div><div class="ops-field span-3"><label>成员组</label><input name="member_group_key" value="${shell.escape(item.group_key)}" placeholder="如 RAC-PRIMARY"></div><div class="ops-field span-3"><label>成员类型</label><select name="member_type"><option value="INSTANCE" ${item.member_type === "INSTANCE" ? "selected" : ""}>独立实例</option><option value="RAC_INSTANCE" ${item.member_type === "RAC_INSTANCE" ? "selected" : ""}>RAC 实例</option></select></div>
+      <div class="ops-actions span-12"><button type="button" data-member-mode="NEW" class="${item.mode === "NEW" ? "primary" : ""}" ${editingSystem ? "disabled" : ""}>新建 Target</button><button type="button" data-member-mode="REUSE" class="${item.mode === "REUSE" ? "primary" : ""}" ${editingSystem ? "disabled" : ""}>复用已有 Target</button></div>
+      <div id="member-reuse" class="ops-field span-12" ${item.mode === "REUSE" ? "" : "hidden"}><label>已有 Target</label><select name="member_target_id" ${editingSystem ? "disabled" : ""}><option value="">请选择未归属数据库系统的 Target</option>${targets.filter((target) => target.db_type === dbType() && target.version_code === field("version_code").value).map((target) => `<option value="${shell.escape(target.target_id)}" ${target.target_id === item.target_id ? "selected" : ""}>${shell.escape(target.display_name)} · ${shell.escape(target.connectivity_status)}</option>`).join("")}</select><small>提交时服务端再次校验未归属、引擎版本、连接和监控映射。</small></div>
+      <div id="member-new" class="ops-form span-12" ${item.mode === "NEW" ? "" : "hidden"}>
         <div class="ops-field span-6"><label>Target 名称</label><input name="member_display_name" value="${shell.escape(item.display_name)}"></div><div class="ops-field span-6"><label>Host</label><input name="member_host" value="${shell.escape(item.host)}"></div>
         <div class="ops-field span-3"><label>端口</label><input name="member_port" type="number" value="${item.port}"></div><div class="ops-field span-5"><label>${dbType() === "ORACLE" ? "Service Name" : "Database"}</label><input name="member_database" value="${shell.escape(item.database)}"></div>${dbType() === "ORACLE" ? `<div class="ops-field span-4"><label>Oracle 容器范围</label><select name="member_oracle_scope"><option value="NON_CDB" ${item.oracle_scope === "NON_CDB" ? "selected" : ""}>Non-CDB</option><option value="CDB_ROOT" ${item.oracle_scope === "CDB_ROOT" ? "selected" : ""}>CDB Root</option><option value="PDB" ${item.oracle_scope === "PDB" ? "selected" : ""}>PDB</option></select></div>${item.oracle_scope === "PDB" ? `<div class="ops-field span-4"><label>PDB Name</label><input name="member_oracle_pdb_name" value="${shell.escape(item.oracle_pdb_name)}"><small>Service Name 只负责路由，PDB Name 用于核验实际容器。</small></div>` : ""}` : ""}
         <div class="ops-field span-4"><label>诊断用户名</label><input name="member_username" value="${shell.escape(item.username)}" autocomplete="off"></div><div class="ops-field span-4"><label>诊断密码</label><input name="member_password" type="password" value="${shell.escape(item.password)}" autocomplete="new-password"></div>
@@ -155,6 +155,7 @@
       saveEditor(item); item.oracle_scope = event.target.value; renderMembers();
     });
     document.getElementById("discover-member-labels")?.addEventListener("click", () => discoverMemberLabels(item).catch((error) => setResult(error.message, "bad")));
+    document.querySelectorAll("[data-member-mode]").forEach((button) => { button.onclick = () => { item.mode = button.dataset.memberMode; item.saved = false; renderMembers(); }; });
     document.getElementById("save-member").onclick = () => saveMember(item);
   }
 
@@ -172,6 +173,12 @@
     item.target_key = editor.querySelector('[name="member_target_key"]')?.value || item.target_key;
     item.candidate_ref = editor.querySelector('[name="member_candidate_ref"]')?.value || item.candidate_ref;
     item.host_candidate_ref = editor.querySelector('[name="member_host_candidate_ref"]')?.value || item.host_candidate_ref;
+    item.target_id = editor.querySelector('[name="member_target_id"]')?.value || item.target_id;
+    item.member_key = editor.querySelector('[name="member_key"]')?.value || item.member_key;
+    item.site_code = editor.querySelector('[name="member_site_code"]')?.value || item.site_code;
+    item.expected_role = editor.querySelector('[name="member_expected_role"]')?.value || item.expected_role;
+    item.group_key = editor.querySelector('[name="member_group_key"]')?.value || "";
+    item.member_type = editor.querySelector('[name="member_type"]')?.value || item.member_type;
   }
 
   function endpoint(item) {
@@ -181,6 +188,12 @@
   async function saveMember(item) {
     saveEditor(item); setResult("", "");
     try {
+      if (item.mode === "REUSE") {
+        const target = targets.find((candidate) => candidate.target_id === item.target_id);
+        if (!target) throw new Error("请选择未归属数据库系统的已有 Target");
+        if (target.connectivity_status !== "CONNECTED") throw new Error("复用 Target 必须先通过数据库连接验证");
+        item.display_name = target.display_name; item.saved = true; renderMembers(); updateStepStatuses(); return;
+      }
       const source = memberSource(item);
         if (![item.display_name, item.host, item.database, item.username, item.password, source].every(Boolean)) throw new Error("请完整填写连接、凭据和监控源");
         if (dbType() === "ORACLE" && item.oracle_scope === "PDB" && !item.oracle_pdb_name) throw new Error("PDB 范围必须填写独立的 PDB Name");
@@ -189,14 +202,10 @@
         const targetRequest = { display_name: item.display_name, db_type: dbType(), version_code: field("version_code").value, environment: field("environment").value, db_role: ["PRIMARY", "STANDBY"].includes(item.expected_role) ? item.expected_role : "UNKNOWN", oracle_container_scope: dbType() === "ORACLE" ? item.oracle_scope : null, oracle_pdb_name: dbType() === "ORACLE" && item.oracle_scope === "PDB" ? item.oracle_pdb_name : null, endpoint: endpoint(item), readonly_connection_enabled: true, controlled_change_enabled: false, diagnostic_credential: { username: item.username, password: item.password }, importance_level: Number(field("importance_level").value), responsibility_group_id: field("responsibility_group_id").value, capabilities: {} };
         const tested = await request("/targets/test-connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ db_type: dbType(), version_code: field("version_code").value, oracle_container_scope: targetRequest.oracle_container_scope, oracle_pdb_name: targetRequest.oracle_pdb_name, endpoint: targetRequest.endpoint, diagnostic_credential: targetRequest.diagnostic_credential }) });
         if (!tested.ok) throw new Error(tested.error_code || "数据库连接验证失败");
-        const target = await request("/targets", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify(targetRequest) });
-        if (memberUsesDiscovery(item)) {
-          await request(`/diagnostic-sources/${encodeURIComponent(item.source_id)}/instance-mappings`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify({ mappings: [{ candidate_ref: item.candidate_ref, host_candidate_ref: source.source_type === "PROMETHEUS" ? item.host_candidate_ref : null, target_id: target.target_id }] }) });
-        } else {
-          const locator = source.source_type === "LOKI" ? { labels: { target_key: item.target_key } } : { target_key: item.target_key };
-          await request(`/targets/${target.target_id}/source-bindings`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify({ source_id: item.source_id, source_locator_key: item.target_key, source_locator: locator }) });
-        }
-        item.target_id = target.target_id;
+        item.target_request = targetRequest;
+        item.monitoring = memberUsesDiscovery(item)
+          ? { source_id: item.source_id, candidate_ref: item.candidate_ref, host_candidate_ref: source.source_type === "PROMETHEUS" ? item.host_candidate_ref : null }
+          : { source_id: item.source_id, source_binding: { source_id: item.source_id, source_locator_key: item.target_key, source_locator: source.source_type === "LOKI" ? { labels: { target_key: item.target_key } } : { target_key: item.target_key } } };
       item.saved = true;
       const pending = members.findIndex((candidate) => !candidate.saved);
       if (pending >= 0) activeMember = pending;
@@ -206,7 +215,7 @@
 
   function renderTopology() {
     const board = document.getElementById("topology-board");
-    board.innerHTML = (detail.sites || []).map((site) => `<section><header><strong>${shell.escape(site.display_name)}</strong><small>${shell.escape(site.site_code)}</small></header><div>${detail.members.filter((item) => item.site_code === site.site_code).map((node) => `<button type="button" data-member-key="${shell.escape(node.member_key)}"><strong>${shell.escape(node.target_display_name)}</strong><span>${shell.escape(node.expected_role)} / ${shell.escape(node.observed_role)}</span><small>${node.monitoring_ready ? "监控已映射" : "监控未映射"}</small></button>`).join("")}</div></section>`).join("") + `<div class="system-relation-list">${(detail.relations || []).map((relation) => `<span>${shell.escape(relation.source_member_key)} → ${shell.escape(relation.target_member_key)} · ${shell.escape(relation.relation_type)} · ${shell.escape(relation.transport_mode)}</span>`).join("")}</div>`;
+    board.innerHTML = (detail.sites || []).map((site) => `<section><header><strong>${shell.escape(site.display_name)}</strong><small>${shell.escape(site.site_code)}</small></header><div>${detail.members.filter((item) => item.site_code === site.site_code).map((node) => `<div class="system-topology-group ${node.group_key ? "rac" : ""}">${node.group_key ? `<small>成员组 · ${shell.escape(node.group_key)}</small>` : ""}<button type="button" data-member-key="${shell.escape(node.member_key)}"><strong>${shell.escape(node.target_display_name)}</strong><span>${shell.escape(node.expected_role)} / ${shell.escape(node.observed_role)}</span><small>${node.monitoring_ready ? "监控已映射" : "监控未映射"}</small></button></div>`).join("")}</div></section>`).join("") + `<div class="system-relation-list">${(detail.relations || []).map((relation) => `<span>${shell.escape(relation.source_member_key)} → ${shell.escape(relation.target_member_key)} · ${shell.escape(relation.relation_type)} · ${shell.escape(relation.transport_mode)}</span>`).join("")}</div><div class="ops-table-wrap"><table><thead><tr><th>成员</th><th>站点</th><th>成员组</th><th>角色</th><th>接入方式</th></tr></thead><tbody>${detail.members.map((node) => `<tr><td>${shell.escape(node.target_display_name)}</td><td>${shell.escape(node.site_code)}</td><td>${shell.escape(node.group_key || "—")}</td><td>${shell.escape(node.expected_role)}</td><td>${node.mode === "REUSE" ? "复用 Target" : "新建 Target"}</td></tr>`).join("")}</tbody></table></div>`;
     board.querySelectorAll("[data-member-key]").forEach((button) => { button.onclick = () => { activeMember = members.findIndex((item) => item.member_key === button.dataset.memberKey); renderMembers(); setStep("members"); }; });
     const issues = detail.validation_issues || [];
     document.getElementById("topology-issues").innerHTML = issues.length ? `<div class="system-issue-list">${issues.map((issue) => `<span class="${issue.severity === "BLOCKING" ? "bad" : "warn"}">${shell.escape(issue.message)}</span>`).join("")}</div>` : "";
@@ -215,15 +224,15 @@
 
   async function createDraft() {
     if (!field("display_name").value.trim() || !field("responsibility_group_id").value || (shape() === "HIGH_AVAILABILITY" && !selectedArchitecture())) throw new Error("请完整填写系统名称、架构和责任组");
-    system = await request("/database-systems", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify({ display_name: field("display_name").value.trim(), db_type: dbType(), version_code: field("version_code").value, deployment_shape: shape(), ...architecturePayload(), environment: field("environment").value, importance_level: Number(field("importance_level").value), responsibility_group_id: field("responsibility_group_id").value, description: field("description").value.trim() || null }) });
-    document.getElementById("system-draft-state").textContent = `草稿 ${system.database_system_id}`;
+    system = { display_name: field("display_name").value.trim(), db_type: dbType(), version_code: field("version_code").value, deployment_shape: shape(), ...architecturePayload(), environment: field("environment").value, importance_level: Number(field("importance_level").value), responsibility_group_id: field("responsibility_group_id").value, description: field("description").value.trim() || null };
+    document.getElementById("system-draft-state").textContent = "浏览器会话草稿 · 尚未创建资源";
     buildTemplate(); setStep("members");
   }
 
   async function saveTopology() {
     if (!members.every((item) => item.saved)) throw new Error("请先完成全部成员配置");
-    detail = await request(`/database-systems/${system.database_system_id}/topology`, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match": `"rv-${system.row_version}"` }, body: JSON.stringify({ sites, members: members.map((item) => ({ member_key: item.member_key, target_id: item.target_id, site_code: item.site_code, group_key: item.group_key || null, member_type: item.member_type, expected_role: item.expected_role, sort_order: item.sort_order })), relations }) });
-    system = detail; renderTopology(); setStep("topology");
+    detail = { sites, members: members.map((item) => ({ ...item, target_display_name: item.display_name, observed_role: "UNKNOWN", monitoring_ready: true })), relations, validation_issues: [] };
+    renderTopology(); setStep("topology");
   }
 
   async function advance() {
@@ -231,7 +240,9 @@
     try {
       if (step === "shape") {
         if (!shape()) throw new Error("请选择单实例或高可用系统");
-        renderArchitecture(); setStep("system");
+        renderArchitecture();
+        if (editingSystem) document.querySelectorAll('[name="architecture"]').forEach((control) => { control.disabled = true; });
+        setStep("system");
       } else if (step === "system") await createDraft();
       else if (step === "members") await saveTopology();
     } catch (error) { setResult(error.message, "bad"); }
@@ -246,13 +257,31 @@
   async function enableSystem(event) {
     event.preventDefault();
     try {
-      detail = await request(`/database-systems/${system.database_system_id}/enable`, { method: "POST", headers: { "Idempotency-Key": idempotency(), "If-Match": `"rv-${system.row_version}"` } });
-      shell.toast("数据库系统已创建并启用监控；保护状态为未配置"); dialog.close(); await load();
+      if (editingSystem) {
+        let updated = editingSystem;
+        if (updated.status === "ENABLED") updated = await request(`/database-systems/${updated.database_system_id}/disable`, { method: "POST", headers: { "Idempotency-Key": idempotency(), "If-Match": `"rv-${updated.row_version}"` } });
+        updated = await request(`/database-systems/${updated.database_system_id}`, { method: "PATCH", headers: { "Content-Type": "application/json", "If-Match": `"rv-${updated.row_version}"` }, body: JSON.stringify({ display_name: system.display_name, environment: system.environment, importance_level: system.importance_level, responsibility_group_id: system.responsibility_group_id, description: system.description }) });
+        updated = await request(`/database-systems/${updated.database_system_id}/topology`, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match": `"rv-${updated.row_version}"` }, body: JSON.stringify({ sites, members: members.map((item) => ({ member_key: item.member_key, target_id: item.target_id, site_code: item.site_code, group_key: item.group_key || null, member_type: item.member_type, expected_role: item.expected_role, sort_order: item.sort_order })), relations }) });
+        detail = await request(`/database-systems/${updated.database_system_id}/enable`, { method: "POST", headers: { "Idempotency-Key": idempotency(), "If-Match": `"rv-${updated.row_version}"` } });
+        shell.toast("数据库系统已通过同一 Wizard 更新");
+      } else {
+        detail = await request("/database-systems:commit", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify({ system, sites, members: members.map((item) => ({ member_key: item.member_key, site_code: item.site_code, group_key: item.group_key || null, member_type: item.member_type, expected_role: item.expected_role, sort_order: item.sort_order, mode: item.mode, target_id: item.mode === "REUSE" ? item.target_id : null, target: item.mode === "NEW" ? item.target_request : null, monitoring: item.mode === "NEW" ? item.monitoring : null })), relations }) });
+        shell.toast("数据库系统与全部成员已原子创建并启用");
+      }
+      form.querySelector(".database-system-wizard").innerHTML = `<section class="ops-empty"><span class="ops-badge good">完成</span><h2>${editingSystem ? "数据库系统更新完成" : "数据库系统创建完成"}</h2><p>${shell.escape(detail.display_name)} 已包含 ${detail.member_count} 个成员，没有产生孤儿 Target。</p><div class="ops-actions"><button id="system-success-back" type="button">返回数据库系统</button><a class="ops-button primary" href="./data-protection.html?database_system_id=${encodeURIComponent(detail.database_system_id)}">配置数据保护</a></div></section>`;
+      form.querySelector("footer").innerHTML = "";
+      document.getElementById("system-success-back").onclick = () => { location.href = "./database-systems.html"; };
     } catch (error) { setResult(error.message, "bad"); }
   }
 
   function reset() {
-    form.reset(); system = null; detail = null; sites = []; members = []; relations = []; activeMember = 0; setResult("", ""); document.getElementById("system-draft-state").textContent = "尚未保存服务端草稿"; renderArchitecture(); setStep("shape");
+    form.reset(); system = null; editingSystem = null; detail = null; sites = []; members = []; relations = []; activeMember = 0; setResult("", ""); document.getElementById("system-draft-state").textContent = "尚未保存服务端草稿"; renderArchitecture(); setStep("shape");
+  }
+
+  function saveDraft() {
+    const safeMembers = members.map(({ password, username, candidate_ref, host_candidate_ref, discovery_candidates, host_candidates, ...item }) => ({ ...item, saved: false }));
+    sessionStorage.setItem("kbot.aiops.database-system.wizard", JSON.stringify({ system, sites, members: safeMembers, relations, step }));
+    shell.toast("草稿已保存在当前浏览器会话；凭据和发现候选未保存"); dialog.close();
   }
 
   function renderList() {
@@ -267,68 +296,66 @@
   }
 
   async function openDetail(systemId) {
-    const [item, profile] = await Promise.all([
-      request(`/database-systems/${systemId}`),
-      request(`/database-systems/${systemId}/protection-profile`),
-    ]);
-    const selectedSources = new Set(profile?.required_backup_source_types || []);
-    const value = (name, fallback) => profile?.[name] ?? fallback;
-    document.getElementById("system-detail").innerHTML = `<header><div><small>DATABASE SYSTEM</small><h2>${shell.escape(item.display_name)}</h2><p>${shell.escape(item.db_type)} ${shell.escape(item.version_code)} · ${shell.escape(item.deployment_category)}</p></div></header><div class="ops-dialog-body"><section class="ops-panel"><div class="ops-panel-head"><div><h3>系统拓扑与成员</h3><p>${item.member_count} 个成员；展开节点查看连接、监控与维护入口。</p></div></div><div class="ops-panel-body system-topology-board">${item.sites.map((site) => `<section><header><strong>${shell.escape(site.display_name)}</strong><small>${shell.escape(site.site_code)}</small></header><div>${item.members.filter((memberItem) => memberItem.site_code === site.site_code).map((memberItem) => memberDetailMarkup(item, memberItem)).join("")}</div></section>`).join("")}</div></section><section class="ops-panel"><div class="ops-panel-head"><div><h3>备份与恢复保护</h3><p>保护配置归属整个数据库系统；未配置只告警，不影响监控启用。</p></div><a class="ops-button" href="./recovery-drills.html?database_system_id=${encodeURIComponent(item.database_system_id)}">恢复演练</a></div><div class="ops-panel-body"><form id="system-protection-form" class="ops-form"><label class="ops-field span-6">备份策略校验<select name="backup_policy_enabled"><option value="true" ${value("backup_policy_enabled", true) ? "selected" : ""}>启用</option><option value="false" ${!value("backup_policy_enabled", true) ? "selected" : ""}>停用</option></select></label><label class="ops-field span-3">备份频率（小时）<input name="backup_frequency_hours" type="number" min="1" value="${value("backup_frequency_hours", 24)}"></label><label class="ops-field span-3">成功备份最大时效（小时）<input name="backup_success_max_age_hours" type="number" min="1" value="${value("backup_success_max_age_hours", 26)}"></label><label class="ops-field span-3">保留天数<input name="backup_retention_days" type="number" min="1" value="${value("backup_retention_days", 30)}"></label><label class="ops-field span-3">RPO（秒）<input name="rpo_seconds" type="number" min="0" value="${value("rpo_seconds", 3600)}"></label><label class="ops-field span-3">RTO（秒）<input name="rto_seconds" type="number" min="60" value="${value("rto_seconds", 14400)}"></label><label class="ops-field span-3">定期恢复演练<select name="drill_required"><option value="true" ${value("drill_required", true) ? "selected" : ""}>要求</option><option value="false" ${!value("drill_required", true) ? "selected" : ""}>不要求</option></select></label><label class="ops-field span-3">演练周期（天）<input name="required_drill_interval_days" type="number" min="1" value="${value("required_drill_interval_days", 180)}"></label><label class="ops-field span-6">最低保障等级<select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN">数据库可打开</option><option value="APPLICATION_VALIDATED">业务验证通过</option></select></label><label class="ops-field span-12">必需备份来源<select name="required_backup_source_types" multiple size="${Math.min(6, (protectionSources[item.db_type] || []).length)}">${(protectionSources[item.db_type] || []).map(([source, label]) => `<option value="${source}" ${selectedSources.has(source) ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="ops-field span-12">策略说明<textarea name="source_note" rows="3" maxlength="1000">${shell.escape(profile?.source_note || "")}</textarea></label><div class="ops-actions span-12"><button class="primary" type="submit">${profile ? "保存新版本" : "创建保护配置"}</button><span id="system-protection-result" class="ops-connection-result"></span></div></form></div></section></div>`;
-    const protectionForm = document.getElementById("system-protection-form");
-    protectionForm.elements.required_assurance_level.value = value("required_assurance_level", "DATABASE_OPEN");
-    protectionForm.onsubmit = async (event) => {
-      event.preventDefault();
-      const submit = protectionForm.querySelector('button[type="submit"]');
-      const status = document.getElementById("system-protection-result");
-      const requiredSources = [...protectionForm.elements.required_backup_source_types.selectedOptions].map((option) => option.value);
-      const payload = {
-        backup_policy_enabled: protectionForm.elements.backup_policy_enabled.value === "true",
-        backup_frequency_hours: Number(protectionForm.elements.backup_frequency_hours.value),
-        backup_success_max_age_hours: Number(protectionForm.elements.backup_success_max_age_hours.value),
-        backup_retention_days: Number(protectionForm.elements.backup_retention_days.value),
-        rpo_seconds: Number(protectionForm.elements.rpo_seconds.value),
-        rto_seconds: Number(protectionForm.elements.rto_seconds.value),
-        drill_required: protectionForm.elements.drill_required.value === "true",
-        required_drill_interval_days: Number(protectionForm.elements.required_drill_interval_days.value),
-        required_assurance_level: protectionForm.elements.required_assurance_level.value,
-        required_backup_source_types: requiredSources,
-        rto_clock_basis: "SERVICE_UNAVAILABLE_TO_VALIDATED",
-        source_note: protectionForm.elements.source_note.value.trim() || null,
-      };
-      if ((payload.backup_policy_enabled || payload.drill_required) && !requiredSources.length) {
-        status.textContent = "启用备份校验或恢复演练时，请至少选择一个备份来源。";
-        status.dataset.tone = "bad";
-        return;
-      }
-      submit.disabled = true;
-      try {
-        await request(`/database-systems/${systemId}/protection-profile`, { method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify(payload) });
-        shell.toast("数据库系统保护配置已保存为新版本");
-        await openDetail(systemId);
-      } catch (error) {
-        status.textContent = error.message;
-        status.dataset.tone = "bad";
-        submit.disabled = false;
-      }
+    const item = await request(`/database-systems/${systemId}`);
+    const groupsBySite = item.sites.map((site) => {
+      const siteMembers = item.members.filter((member) => member.site_code === site.site_code);
+      const groupKeys = [...new Set(siteMembers.map((member) => member.group_key || `member:${member.member_key}`))];
+      return `<section><header><strong>${shell.escape(site.display_name)}</strong><small>${shell.escape(site.site_code)} · ${shell.escape(site.expected_role)}</small></header><div>${groupKeys.map((key) => {
+        const nodes = siteMembers.filter((member) => (member.group_key || `member:${member.member_key}`) === key);
+        const isRac = nodes.some((member) => member.member_type === "RAC_INSTANCE");
+        return `<div class="system-topology-group ${isRac ? "rac" : ""}"><strong>${isRac ? `RAC 成员组 · ${shell.escape(key)}` : "独立实例"}</strong>${nodes.map((member) => memberDetailMarkup(item, member)).join("")}</div>`;
+      }).join("")}</div></section>`;
+    }).join("");
+    document.getElementById("system-detail").innerHTML = `<header><div><small>DATABASE SYSTEM</small><h2>${shell.escape(item.display_name)}</h2><p>${shell.escape(item.db_type)} ${shell.escape(item.version_code)} · ${shell.escape(item.deployment_category)}</p></div><div class="ops-actions"><button id="edit-database-system" class="primary" type="button">编辑系统</button><a class="ops-button" href="./data-protection.html?database_system_id=${encodeURIComponent(item.database_system_id)}">配置数据保护</a></div></header><div class="ops-dialog-body"><section class="ops-panel"><div class="ops-panel-head"><div><h3>系统拓扑与成员</h3><p>${item.member_count} 个成员；站点、RAC 成员组、节点和复制方向统一展示。</p></div></div><div class="ops-panel-body system-topology-board">${groupsBySite}<div class="system-relation-list">${item.relations.map((relation) => `<span>${shell.escape(relation.source_member_key)} → ${shell.escape(relation.target_member_key)} · ${shell.escape(relation.relation_type)} · ${shell.escape(relation.transport_mode)}</span>`).join("")}</div></div></section><section class="ops-panel"><div class="ops-panel-head"><div><h3>数据保护摘要</h3><p>${item.protection_status === "CONFIGURED" ? "已配置外部备份校验与恢复目标" : "尚未配置；不影响监控启用"}</p></div><a class="ops-button" href="./data-protection.html?database_system_id=${encodeURIComponent(item.database_system_id)}">独立管理</a></div></section></div>`;
+    document.getElementById("edit-database-system").onclick = () => {
+      shell.toast("编辑使用同一四步 Wizard；部署形态、引擎与架构保持锁定");
+      document.getElementById("system-detail-dialog").close();
+      location.href = `./database-systems.html?edit=${encodeURIComponent(item.database_system_id)}`;
     };
     document.getElementById("system-detail-dialog").showModal();
   }
 
+  async function openEditor(systemId) {
+    const item = await request(`/database-systems/${systemId}`);
+    reset(); editingSystem = item;
+    form.querySelector(`[name="deployment_shape"][value="${item.deployment_shape}"]`).checked = true;
+    field("db_type").value = item.db_type; renderArchitecture(); field("version_code").value = item.version_code;
+    const architecture = item.capabilities.includes("RAC") && item.capabilities.includes("DATA_GUARD") ? "RAC_DG" : item.capabilities[0] || "";
+    if (architecture) form.querySelector(`[name="architecture"][value="${architecture}"]`).checked = true;
+    field("display_name").value = item.display_name; field("environment").value = item.environment; field("importance_level").value = item.importance_level;
+    field("responsibility_group_id").value = item.responsibility_group_id || ""; field("description").value = item.description || "";
+    sites = item.sites.map(({ site_code, display_name, expected_role, sort_order }) => ({ site_code, display_name, expected_role, sort_order }));
+    members = item.members.map((memberItem) => ({ ...member(memberItem.member_key, memberItem.target_display_name, memberItem.site_code, memberItem.expected_role, memberItem.sort_order, memberItem.group_key || "", memberItem.member_type), mode: "REUSE", target_id: memberItem.target_id, display_name: memberItem.target_display_name, saved: memberItem.connectivity_status === "CONNECTED" && memberItem.monitoring_ready }));
+    relations = item.relations.map(({ relation_key, source_member_key, target_member_key, relation_type, transport_mode, sort_order }) => ({ relation_key, source_member_key, target_member_key, relation_type, transport_mode, sort_order }));
+    system = { display_name: item.display_name, db_type: item.db_type, version_code: item.version_code, deployment_shape: item.deployment_shape, deployment_category: item.deployment_category, capabilities: item.capabilities, environment: item.environment, importance_level: item.importance_level, responsibility_group_id: item.responsibility_group_id, description: item.description };
+    document.querySelectorAll('[name="deployment_shape"], [name="db_type"], [name="version_code"], [name="architecture"]').forEach((control) => { control.disabled = true; });
+    document.getElementById("system-form").querySelector("h2").textContent = `编辑数据库系统 · ${item.display_name}`;
+    document.getElementById("add-system-member").disabled = true; document.getElementById("add-system-site").disabled = true;
+    document.getElementById("system-draft-state").textContent = "编辑模式 · 部署形态、引擎与架构锁定";
+    renderMembers(); setStep("shape"); dialog.showModal();
+    history.replaceState(null, "", location.pathname);
+  }
+
   async function load() {
-    const [systemPage, sourcePage, groupPage] = await Promise.all([request("/database-systems?limit=200"), request("/diagnostic-sources?limit=200"), request("/responsibility-groups")]);
-    systems = systemPage.items || []; sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED"); groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
+    const [systemPage, sourcePage, groupPage, targetPage] = await Promise.all([request("/database-systems?limit=200"), request("/diagnostic-sources?limit=200"), request("/responsibility-groups"), request("/targets?limit=200")]);
+    systems = systemPage.items || []; sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED"); groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE"); targets = targetPage.items || [];
     field("responsibility_group_id").innerHTML = '<option value="">请选择责任组</option>' + groups.map((group) => `<option value="${shell.escape(group.responsibility_group_id)}">${shell.escape(group.name)}</option>`).join(""); renderList();
     const requestedSystemId = new URLSearchParams(location.search).get("open");
     if (requestedSystemId && !openedRequestedSystem && systems.some((item) => item.database_system_id === requestedSystemId)) {
       openedRequestedSystem = true;
       await openDetail(requestedSystemId);
     }
+    const editSystemId = new URLSearchParams(location.search).get("edit");
+    if (editSystemId && systems.some((item) => item.database_system_id === editSystemId)) await openEditor(editSystemId);
   }
 
   shell.ready.then(() => {
-    document.getElementById("create-system").onclick = () => { reset(); dialog.showModal(); };
+    document.getElementById("create-system").onclick = () => { reset(); document.querySelectorAll('[name="deployment_shape"], [name="db_type"], [name="version_code"], [name="architecture"]').forEach((control) => { control.disabled = false; }); document.getElementById("add-system-member").disabled = false; document.getElementById("add-system-site").disabled = false; document.getElementById("system-form").querySelector("h2").textContent = "新增数据库系统"; dialog.showModal(); };
     document.getElementById("close-system-dialog").onclick = () => dialog.close();
     document.getElementById("refresh-systems").onclick = load;
+    document.getElementById("system-save-draft").onclick = saveDraft;
+    document.getElementById("add-system-member").onclick = () => { const index = members.length + 1; members.push(member(`MEMBER-${index}`, `成员 ${index}`, sites[0]?.site_code || "MAIN", "INSTANCE", members.length)); activeMember = members.length - 1; renderMembers(); };
+    document.getElementById("add-system-site").onclick = () => { const index = sites.length + 1; sites.push({ site_code: `SITE-${index}`, display_name: `站点 ${index}`, expected_role: "UNKNOWN", sort_order: sites.length }); renderMembers(); };
     document.getElementById("close-system-detail").onclick = () => document.getElementById("system-detail-dialog").close();
     field("db_type").onchange = renderArchitecture;
     next.onclick = advance; previous.onclick = retreat; form.onsubmit = enableSystem;
