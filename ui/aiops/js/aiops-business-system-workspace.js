@@ -377,7 +377,7 @@
 
   function bindTopology() {
     document.getElementById("add-relation").onclick = () => {
-      if (resources.length < 2) { message("至少有两个资源后才能建立关系。", "bad"); return; }
+      if (resources.length < 2) { shell.toast("至少有两个资源后才能建立关系。"); return; }
       const relation = { draft_relation_id: uuid7(), relation_type_key: "ORACLE_RAC", display_name: "", responsibility_group_id: "", participants: defaultParticipants("ORACLE_RAC"), attributes: {} };
       relations.push(relation); activeRelationId = relation.draft_relation_id; activeResourceId = ""; mark(); renderTopology();
     };
