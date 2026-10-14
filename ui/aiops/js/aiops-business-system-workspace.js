@@ -185,15 +185,19 @@
     const database = item.database;
     const source = sourceFor(item);
     const editing = Boolean(item.system_resource_id);
+    const linking = item.mode === "REUSE" && !editing;
     const mode = !editing ? `<div class="business-mode-switch"><button type="button" data-mode="NEW" class="${item.mode === "NEW" ? "active" : ""}">新接入数据库</button><button type="button" data-mode="REUSE" class="${item.mode === "REUSE" ? "active" : ""}">关联已有数据库</button></div>` : "";
-    const reuse = item.mode === "REUSE" && !editing ? `<label class="span-12"><span>已有数据库</span><select id="existing-resource"><option value="">请选择</option>${reusableResources.map((row) => `<option value="${esc(row.resource_id)}" ${row.resource_id === item.resource_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.database?.db_type || "")} ${esc(row.database?.version_code || "")}</option>`).join("")}</select></label>` : "";
-    const databaseFields = database ? `<div class="business-editor-grid business-database-grid"><label class="span-3"><span>数据库引擎</span><select name="db_type" ${editing || item.mode === "REUSE" ? "disabled" : ""}>${selectOptions([["ORACLE", "Oracle"], ["MYSQL", "MySQL"], ["POSTGRESQL", "PostgreSQL"]], database.db_type)}</select></label><label class="span-3"><span>数据库版本</span><select name="version_code">${selectOptions(versions[database.db_type], database.version_code)}</select></label><label class="span-3"><span>数据库环境</span><select name="db_environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], database.environment)}</select></label><label class="span-3"><span>数据库角色</span><select name="db_role">${selectOptions([["UNKNOWN", "待识别"], ["PRIMARY", "主库"], ["STANDBY", "备库"]], database.db_role)}</select></label></div>` : "";
+    const available = reusableResources.filter((row) => !resources.some((resource) => resource !== item && resource.resource_id === row.resource_id));
+    const selectedExisting = reusableResources.find((row) => row.resource_id === item.resource_id);
+    const reuse = linking ? `<label class="span-12"><span>已有数据库</span><select id="existing-resource"><option value="">请选择</option>${available.map((row) => `<option value="${esc(row.resource_id)}" ${row.resource_id === item.resource_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.database?.db_type || "")} ${esc(row.database?.version_code || "")}</option>`).join("")}</select></label>${selectedExisting ? `<article class="business-linked-resource-preview"><header><div><small>${esc(selectedExisting.resource_code || "数据库资源")}</small><h3>${esc(selectedExisting.display_name)}</h3></div><span>${selectedExisting.database?.monitoring_ready ? "监控已接入" : "监控待完善"}</span></header><dl><div><dt>数据库</dt><dd>${esc(`${selectedExisting.database?.db_type || ""} ${selectedExisting.database?.version_code || ""}`)}</dd></div><div><dt>技术责任组</dt><dd>${esc(groupName(selectedExisting.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(selectedExisting.location_name || "未填写")}</dd></div><div><dt>连接状态</dt><dd>${["CONNECTED", "HEALTHY"].includes(selectedExisting.database?.connectivity_status) ? "连接正常" : "待检查"}</dd></div></dl><p>关联只建立业务系统归属，不会修改数据库名称、技术责任组或监控配置。</p></article>` : ""}` : "";
+    const baseFields = `<div class="business-editor-grid"><label class="span-6"><span>数据库名称</span><input name="resource_name" value="${esc(item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-12"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>`;
+    const databaseFields = database && !linking ? `<div class="business-editor-grid business-database-grid"><label class="span-3"><span>数据库引擎</span><select name="db_type" ${editing ? "disabled" : ""}>${selectOptions([["ORACLE", "Oracle"], ["MYSQL", "MySQL"], ["POSTGRESQL", "PostgreSQL"]], database.db_type)}</select></label><label class="span-3"><span>数据库版本</span><select name="version_code">${selectOptions(versions[database.db_type], database.version_code)}</select></label><label class="span-3"><span>数据库环境</span><select name="db_environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], database.environment)}</select></label><label class="span-3"><span>数据库角色</span><select name="db_role">${selectOptions([["UNKNOWN", "待识别"], ["PRIMARY", "主库"], ["STANDBY", "备库"]], database.db_role)}</select></label></div>` : "";
     let connection = "";
     if (item.mode === "NEW" && database) {
       const discovery = usesDiscovery(item);
       connection = `<div class="business-editor-grid business-connection-grid"><label class="span-4"><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label class="span-2"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-6"><span>${database.db_type === "ORACLE" ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${database.db_type === "ORACLE" ? `<label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions([["NON_CDB", "非 CDB"], ["CDB", "CDB"], ["PDB", "PDB"]], database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-3"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}` : ""}<label class="span-6"><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-6"><span>监控源</span><select name="source_id"><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label class="span-6"><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<div class="span-6 business-discovery-action"><button id="discover-resources" type="button" ${database.discovering ? "disabled" : ""}>${database.discovering ? "正在发现…" : "从监控源发现"}</button></div><label class="span-6"><span>数据库候选</span><select name="candidate_ref"><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_hint)}</option>`).join("")}</select></label><label class="span-6"><span>承载主机候选</span><select name="host_candidate_ref"><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_hint)}</option>`).join("")}</select></label>`}${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；承载主机指标随数据库一次接入，无需重复登记服务器。</p>` : ""}</div>`;
     }
-    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "接入资源并验证连接与监控映射"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${mode}${reuse}<div class="business-editor-grid"><label class="span-6"><span>数据库名称</span><input name="resource_name" value="${esc(item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-6"><span>本系统责任覆盖</span><select name="resource_group_id">${groupOptions(item.responsibility_group_id, "继承技术责任组")}</select></label><label class="span-6"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${editing ? "修改将在保存业务系统时提交" : item.saved ? "连接与监控映射已验证" : "连接验证通过后才可进入下一步"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>验证数据库</button>` : ""}</footer></form>`;
+    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "接入资源并验证连接与监控映射"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${mode}${linking ? reuse : `${baseFields}${databaseFields}${connection}`}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${linking ? "只建立关联，不修改数据库资料" : editing ? "修改将在保存业务系统时提交" : item.saved ? "连接与监控映射已验证" : "连接验证通过后才可进入下一步"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>${linking ? "确认关联" : "验证数据库"}</button>` : ""}</footer></form>`;
   }
 
   function renderComposition() {
@@ -248,7 +252,7 @@
     if (resourceDrawerMode !== "EDITOR" || !item) return;
     drawer.querySelectorAll("[data-mode]").forEach((button) => button.onclick = () => {
       const replacement = emptyDatabaseResource(button.dataset.mode);
-      Object.assign(replacement, { draft_resource_id: item.draft_resource_id, architecture_layer_key: item.architecture_layer_key, owner_group_id: item.owner_group_id || system.responsibility_group_id, responsibility_group_id: item.responsibility_group_id, location_name: item.location_name, display_order: item.display_order });
+      Object.assign(replacement, { draft_resource_id: item.draft_resource_id, architecture_layer_key: item.architecture_layer_key, display_order: item.display_order });
       resources.splice(resources.indexOf(item), 1, replacement); mark(); renderComposition();
     });
     const existing = document.getElementById("existing-resource");
@@ -269,8 +273,8 @@
 
   function updateResourceField(item, input) {
     const name = input.name;
-    if (["resource_name", "owner_group_id", "resource_group_id", "location_name"].includes(name)) {
-      const key = { resource_name: "display_name", resource_group_id: "responsibility_group_id" }[name] || name;
+    if (["resource_name", "owner_group_id", "location_name"].includes(name)) {
+      const key = { resource_name: "display_name" }[name] || name;
       item[key] = input.value;
       if (name === "resource_name" && !item.system_resource_id) item.saved = false;
       mark();
@@ -297,8 +301,13 @@
   function useExisting(resourceId) {
     const existing = reusableResources.find((item) => item.resource_id === resourceId);
     const item = currentResource();
-    if (!existing || !item) return;
-    Object.assign(item, { resource_id: existing.resource_id, resource_row_version: existing.row_version, display_name: existing.display_name, owner_group_id: existing.owner_group_id, location_name: existing.location_name || "", saved: true });
+    if (!item) return;
+    if (!existing) {
+      const empty = emptyDatabaseResource("REUSE");
+      Object.assign(item, { resource_id: undefined, resource_row_version: undefined, display_name: "", owner_group_id: empty.owner_group_id, location_name: "", database: empty.database, saved: false });
+      mark(); renderComposition(); return;
+    }
+    Object.assign(item, { resource_id: existing.resource_id, resource_row_version: existing.row_version, display_name: existing.display_name, owner_group_id: existing.owner_group_id, location_name: existing.location_name || "", saved: false });
     if (existing.database) item.database = { db_type: existing.database.db_type, version_code: existing.database.version_code, environment: existing.database.environment, db_role: existing.database.db_role, host: "", port: 0, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false };
     mark(); renderComposition();
   }
@@ -330,7 +339,7 @@
   async function validateResource(item) {
     if (item.mode === "REUSE") {
       if (!item.resource_id) shell.toast("请选择要关联的已有数据库。");
-      else { item.saved = true; mark(); renderComposition(); shell.toast("已有数据库已关联。"); }
+      else { item.saved = true; mark(); closeResourceDrawer(); renderComposition(); shell.toast("已有数据库已加入当前业务系统，保存业务系统后生效。"); }
       return;
     }
     const database = item.database;
@@ -411,7 +420,7 @@
   }
   function systemPayload() { return { display_name: system.display_name.trim(), environment: system.environment, importance_level: Number(system.importance_level), responsibility_group_id: system.responsibility_group_id, description: system.description.trim() || null }; }
   function resourcePayload(item) {
-    return { draft_resource_id: item.draft_resource_id, mode: item.mode, resource_id: item.mode === "REUSE" ? item.resource_id : null, resource_type_key: item.resource_type_key, display_name: item.display_name.trim(), identity_kind: "STABLE", owner_group_id: item.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || null, location_name: item.location_name.trim() || null, display_order: item.display_order, attributes: {}, database: item.mode === "NEW" ? { target: targetPayload(item), monitoring: monitoringPayload(item) } : null };
+    return { draft_resource_id: item.draft_resource_id, mode: item.mode, resource_id: item.mode === "REUSE" ? item.resource_id : null, resource_type_key: item.resource_type_key, display_name: item.display_name.trim(), identity_kind: "STABLE", owner_group_id: item.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, location_name: item.location_name.trim() || null, display_order: item.display_order, attributes: {}, database: item.mode === "NEW" ? { target: targetPayload(item), monitoring: monitoringPayload(item) } : null };
   }
   function relationPayload(item, systemIdByDraft = null) {
     return { relation_type_key: item.relation_type_key, display_name: item.display_name.trim() || null, responsibility_group_id: item.responsibility_group_id || null, origin: "MANUAL", confirmation_status: "CONFIRMED", attributes: item.attributes || {}, participants: item.participants.map((participant) => systemIdByDraft ? { system_resource_id: systemIdByDraft.get(participant.draft_resource_id), participant_role: participant.participant_role, display_order: participant.display_order } : participant) };
@@ -430,7 +439,7 @@
     for (const item of resources) {
       if (item.system_resource_id) {
         await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? { version_code: item.database.version_code, environment: item.database.environment, db_role: item.database.db_role } : null }) });
-        current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(item.system_resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.system_row_version}"` }, body: JSON.stringify({ architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || null, display_order: item.display_order }) });
+        current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(item.system_resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.system_row_version}"` }, body: JSON.stringify({ architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, display_order: item.display_order }) });
       } else {
         const before = new Set(current.resources.map((row) => row.system_resource_id));
         current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources`, { method: "POST", headers: { "Idempotency-Key": uuid7() }, body: JSON.stringify(resourcePayload(item)) });
