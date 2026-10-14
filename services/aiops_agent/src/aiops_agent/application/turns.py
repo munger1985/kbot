@@ -387,12 +387,21 @@ class ConversationTurnService:
                     database_type=str(target.db_type),
                 )
                 recovery_repository = getattr(uow, "recovery", None)
-                recovery_profile = (
-                    await recovery_repository.get_active_profile(
+                database_system_repository = getattr(uow, "database_systems", None)
+                database_system = (
+                    await database_system_repository.find_system_for_target(
                         target_id=target_id,
                         domain_id=domain_id,
                     )
-                    if recovery_repository is not None
+                    if database_system_repository is not None
+                    else None
+                )
+                recovery_profile = (
+                    await recovery_repository.get_active_profile(
+                        database_system_id=database_system.database_system_id,
+                        domain_id=domain_id,
+                    )
+                    if recovery_repository is not None and database_system is not None
                     else None
                 )
                 backup_policy = None

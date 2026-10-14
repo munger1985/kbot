@@ -23,9 +23,13 @@ from platform_core.identity import uuid7
 from pydantic import ValidationError
 
 
-def _drill_request(*, marker: dict, source: str, evidence: bool = True):
+def _drill_request(
+    *, marker: dict, source: str, evidence: bool = True,
+    execution_target_id=None,
+):
     failure = datetime(2026, 10, 8, 1, tzinfo=UTC)
     return {
+        "execution_target_id": execution_target_id or uuid7(),
         "scenario": "FULL_INSTANCE",
         "assurance_level": "DATABASE_OPEN",
         "backup_source_type": source,
@@ -94,33 +98,32 @@ class RecoveryContractTest(unittest.TestCase):
         manifest = json.loads(
             (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
         )
-        self.assertEqual(43, manifest["schema_version"])
+        self.assertEqual(44, manifest["schema_version"])
         self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
         self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
         self.assertIn("required_backup_source_types", (
-            root / "ui/aiops/js/aiops-pages.js"
+            root / "ui/aiops/js/aiops-database-systems.js"
         ).read_text())
-        target_page = (root / "ui/aiops/target-detail.html").read_text()
+        system_page = (root / "ui/aiops/database-systems.html").read_text()
         drill_page = (root / "ui/aiops/recovery-drills.html").read_text()
         drill_script = (root / "ui/aiops/js/aiops-recovery-drills.js").read_text()
-        self.assertIn("恢复保障", target_page)
-        self.assertNotIn('id="target-recovery-drill-form"', target_page)
+        self.assertIn("数据库系统", system_page)
         self.assertIn('id="recovery-drill-form"', drill_page)
         self.assertIn("recovery-drills", drill_script)
         self.assertNotIn("Oracle SCN", drill_page)
         self.assertNotIn("Resetlogs ID", drill_page)
         self.assertNotIn('name="evidence_hash"', drill_page)
-        self.assertIn("recovery_marker: { kind: currentTarget.db_type }", drill_script)
+        self.assertIn("recovery_marker: { kind: currentSystem.db_type }", drill_script)
         self.assertIn("evidence: []", drill_script)
         public_openapi = json.loads(
             (root / "docs/openapi/aiops_public_v1.json").read_text()
         )
         self.assertIn(
-            "/api/v1/apps/aiops/targets/{target_id}/recovery-profile",
+            "/api/v1/apps/aiops/database-systems/{database_system_id}/protection-profile",
             public_openapi["paths"],
         )
         self.assertIn(
-            "/api/v1/apps/aiops/targets/{target_id}/recovery-drills",
+            "/api/v1/apps/aiops/database-systems/{database_system_id}/recovery-drills",
             public_openapi["paths"],
         )
 
@@ -164,7 +167,7 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
         profile_id = uuid7()
         profile = RecoveryProfileEntity(
             recovery_profile_id=profile_id,
-            target_id=target_id,
+            database_system_id=target_id,
             domain_id=1,
             version_no=2,
             backup_policy_enabled=1,
@@ -195,7 +198,8 @@ class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
 
         def drill(*, days: int, result: str, status: str, version: int):
             return RecoveryDrillEntity(
-                drill_id=uuid7(), target_id=target_id, domain_id=1,
+                drill_id=uuid7(), database_system_id=target_id,
+                execution_target_id=target_id, domain_id=1,
                 recovery_profile_id=profile_id, recovery_profile_version=version,
                 db_type="POSTGRESQL", scenario="FULL_INSTANCE",
                 assurance_level="DATABASE_OPEN",
@@ -324,10 +328,22 @@ class _WorkItems:
 class _Uow:
     def __init__(self, target, recovery):
         self.targets = _TargetRepository(target)
+        system = SimpleNamespace(
+            database_system_id=target.target_id,
+            db_type=target.db_type,
+        )
+        member = SimpleNamespace(target_id=target.target_id)
+        self.database_systems = SimpleNamespace(
+            get_scoped=lambda **_: _async_value(system),
+            list_members=lambda *_: _async_value([member]),
+        )
         self.recovery = recovery
         self.work_items = _WorkItems()
         self.outbox = _Outbox()
         self.session = _Session()
+
+    async def flush(self):
+        return None
 
 
 class _RecoveryService(RecoveryConfigurationMixin):
@@ -341,6 +357,10 @@ class _RecoveryService(RecoveryConfigurationMixin):
 
     async def _idempotent(self, *, handler, **_kwargs):
         return await handler(self.uow, datetime(2026, 10, 8, tzinfo=UTC))
+
+
+async def _async_value(value):
+    return value
 
 
 class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -357,13 +377,13 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
             request_id="request",
             trace_id="trace",
         )
-        from platform_core.contracts.aiops import TargetRecoveryProfileUpsert
+        from platform_core.contracts.aiops import DatabaseSystemProtectionProfileUpsert
 
         with self.assertRaises(AIOpsApplicationError) as caught:
             await service.upsert_recovery_profile(
                 scope=scope,
-                target_id=target.target_id,
-                request=TargetRecoveryProfileUpsert(
+                database_system_id=target.target_id,
+                request=DatabaseSystemProtectionProfileUpsert(
                     rpo_seconds=300,
                     rto_seconds=900,
                     drill_required=True,
@@ -391,14 +411,14 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace",
         )
         from platform_core.contracts.aiops import (
+            DatabaseSystemProtectionProfileUpsert,
             RecoveryDrillReview,
-            TargetRecoveryProfileUpsert,
         )
 
         first = await service.upsert_recovery_profile(
             scope=scope,
-            target_id=target.target_id,
-            request=TargetRecoveryProfileUpsert(
+            database_system_id=target.target_id,
+            request=DatabaseSystemProtectionProfileUpsert(
                 rpo_seconds=300,
                 rto_seconds=900,
                 drill_required=True,
@@ -410,8 +430,8 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         second = await service.upsert_recovery_profile(
             scope=scope,
-            target_id=target.target_id,
-            request=TargetRecoveryProfileUpsert(
+            database_system_id=target.target_id,
+            request=DatabaseSystemProtectionProfileUpsert(
                 rpo_seconds=600,
                 rto_seconds=1200,
                 drill_required=True,
@@ -426,7 +446,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
 
         drill = await service.create_recovery_drill(
             scope=scope,
-            target_id=target.target_id,
+            database_system_id=target.target_id,
             request=RecoveryDrillCreate.model_validate(
                 _drill_request(
                     marker={
@@ -436,6 +456,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
                         "binlog_position": 120,
                     },
                     source="MYSQL_XTRABACKUP",
+                    execution_target_id=target.target_id,
                 )
             ),
             idempotency_key="drill-1",
@@ -444,7 +465,7 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(900, drill.achieved_rto_seconds)
         reviewed = await service.review_recovery_drill(
             scope=scope,
-            target_id=target.target_id,
+            database_system_id=target.target_id,
             drill_id=drill.drill_id,
             request=RecoveryDrillReview(decision="VERIFY"),
             expected_version=1,
@@ -465,11 +486,11 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
             domain_id=1, principal_id="principal", actor_id="operator",
             request_id="request", trace_id="trace",
         )
-        from platform_core.contracts.aiops import TargetRecoveryProfileUpsert
+        from platform_core.contracts.aiops import DatabaseSystemProtectionProfileUpsert
 
         await service.upsert_recovery_profile(
-            scope=scope, target_id=target.target_id,
-            request=TargetRecoveryProfileUpsert(
+            scope=scope, database_system_id=target.target_id,
+            request=DatabaseSystemProtectionProfileUpsert(
                 rpo_seconds=300, rto_seconds=900, drill_required=True,
                 required_drill_interval_days=30,
                 required_assurance_level="DATABASE_OPEN",
@@ -480,8 +501,8 @@ class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
         scheduled = uow.work_items.items[0]
 
         await service.upsert_recovery_profile(
-            scope=scope, target_id=target.target_id,
-            request=TargetRecoveryProfileUpsert(
+            scope=scope, database_system_id=target.target_id,
+            request=DatabaseSystemProtectionProfileUpsert(
                 backup_policy_enabled=False,
                 rpo_seconds=300, rto_seconds=900, drill_required=False,
                 required_drill_interval_days=30,

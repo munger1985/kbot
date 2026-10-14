@@ -12,9 +12,9 @@
     <header class="ops-head">
       <div>
         <h1>恢复演练</h1>
-        <p>登记隔离环境恢复结果、审核证据并查看历史。这里记录运维活动，不修改 Target 连接配置。</p>
+        <p>按数据库系统登记恢复结果，并明确选择本次实际执行的成员 Target。</p>
       </div>
-      <a id="recovery-target-detail-link" class="ops-button" href="./targets.html">查看 Target</a>
+      <a id="recovery-target-detail-link" class="ops-button" href="./database-systems.html">查看数据库系统</a>
     </header>
 
     <section id="recovery-work-item-context" class="ops-panel" hidden>
@@ -22,10 +22,11 @@
     </section>
 
     <section class="ops-panel recovery-drill-context">
-      <div class="ops-panel-head"><div><h2>演练对象</h2><p>从菜单进入可补录计划外演练；从工作项进入时 Target 会自动锁定。</p></div><span id="recovery-workspace-state" class="ops-badge">请选择</span></div>
+      <div class="ops-panel-head"><div><h2>演练对象</h2><p>恢复目标与策略归属数据库系统，执行端点由本次演练显式选择。</p></div><span id="recovery-workspace-state" class="ops-badge">请选择</span></div>
       <div class="ops-panel-body recovery-drill-context-grid">
-        <label class="ops-field span-6">Target<select id="recovery-target-select"><option value="">请选择 Target</option></select></label>
-        <div id="recovery-profile-summary" class="recovery-profile-summary span-6"><p class="ops-empty">尚未选择 Target。</p></div>
+        <label class="ops-field span-6">数据库系统<select id="recovery-target-select"><option value="">请选择数据库系统</option></select></label>
+        <label class="ops-field span-6">恢复执行成员<select id="recovery-execution-target" name="execution_target_id" form="recovery-drill-form" required></select></label>
+        <div id="recovery-profile-summary" class="recovery-profile-summary span-12"><p class="ops-empty">尚未选择数据库系统。</p></div>
       </div>
     </section>
 
@@ -51,7 +52,7 @@
 
     <section class="ops-panel">
       <div class="ops-panel-head"><div><h2>演练历史</h2><p>最新失败与无法确认记录始终保留，不会被更早的成功记录覆盖。</p></div></div>
-      <div id="recovery-drill-history" class="ops-table-wrap"><p class="ops-empty">请选择 Target。</p></div>
+      <div id="recovery-drill-history" class="ops-table-wrap"><p class="ops-empty">请选择数据库系统。</p></div>
     </section>
   </main>
 

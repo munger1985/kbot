@@ -615,6 +615,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def create_database_system(self, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/database-systems", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def list_database_systems(self, *, status: str | None, limit: int, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", self._list_path(f"{self._CONFIG}/database-systems", status=status, cursor=None, limit=limit), auth_context=auth_context)
+
+    async def get_database_system(self, database_system_id: UUID, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", f"{self._CONFIG}/database-systems/{database_system_id}", auth_context=auth_context)
+
+    async def patch_database_system(self, database_system_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PATCH", f"{self._CONFIG}/database-systems/{database_system_id}", payload=payload, if_match=if_match, auth_context=auth_context)
+
+    async def put_database_system_topology(self, database_system_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PUT", f"{self._CONFIG}/database-systems/{database_system_id}/topology", payload=payload, if_match=if_match, auth_context=auth_context)
+
+    async def command_database_system(self, database_system_id: UUID, command: str, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/database-systems/{database_system_id}/{command}", payload={}, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
+
     async def test_target_connection(
         self,
         payload: dict[str, Any],
@@ -763,17 +781,17 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def get_recovery_profile(
-        self, target_id: UUID, *, auth_context: AuthContext
+        self, database_system_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any] | None:
         return await self._json(
             "GET",
-            f"{self._CONFIG}/targets/{target_id}/recovery-profile",
+            f"{self._CONFIG}/database-systems/{database_system_id}/protection-profile",
             auth_context=auth_context,
         )
 
     async def upsert_recovery_profile(
         self,
-        target_id: UUID,
+        database_system_id: UUID,
         payload: dict[str, Any],
         *,
         idempotency_key: str,
@@ -781,24 +799,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "PUT",
-            f"{self._CONFIG}/targets/{target_id}/recovery-profile",
+            f"{self._CONFIG}/database-systems/{database_system_id}/protection-profile",
             payload=payload,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
     async def list_recovery_drills(
-        self, target_id: UUID, *, auth_context: AuthContext
+        self, database_system_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
-            f"{self._CONFIG}/targets/{target_id}/recovery-drills",
+            f"{self._CONFIG}/database-systems/{database_system_id}/recovery-drills",
             auth_context=auth_context,
         )
 
     async def create_recovery_drill(
         self,
-        target_id: UUID,
+        database_system_id: UUID,
         payload: dict[str, Any],
         *,
         idempotency_key: str,
@@ -806,7 +824,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/targets/{target_id}/recovery-drills",
+            f"{self._CONFIG}/database-systems/{database_system_id}/recovery-drills",
             payload=payload,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
@@ -814,7 +832,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     async def review_recovery_drill(
         self,
-        target_id: UUID,
+        database_system_id: UUID,
         drill_id: UUID,
         payload: dict[str, Any],
         *,
@@ -824,7 +842,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/targets/{target_id}/recovery-drills/{drill_id}:review",
+            f"{self._CONFIG}/database-systems/{database_system_id}/recovery-drills/{drill_id}:review",
             payload=payload,
             if_match=if_match,
             idempotency_key=idempotency_key,

@@ -164,9 +164,6 @@ class TargetRepository(AIOpsRepository):
         situation_ids = select(SituationEntity.situation_id).where(
             SituationEntity.target_id == target_id
         )
-        recovery_profile_ids = select(
-            RecoveryProfileEntity.recovery_profile_id
-        ).where(RecoveryProfileEntity.target_id == target_id)
 
         # 先解除其他 Target 可能持有的可空历史引用，避免误删共享父对象。
         await self._execute_update(
@@ -376,7 +373,7 @@ class TargetRepository(AIOpsRepository):
         )
         await self._execute_delete(
             RecoveryDrillEntity,
-            RecoveryDrillEntity.target_id == target_id,
+            RecoveryDrillEntity.execution_target_id == target_id,
         )
         await self._execute_delete(
             OpsRunEntity,
@@ -407,14 +404,6 @@ class TargetRepository(AIOpsRepository):
         await self._execute_delete(
             WorkItemEntity,
             WorkItemEntity.work_item_id.in_(work_item_ids),
-        )
-        await self._execute_delete(
-            RecoveryDrillEntity,
-            RecoveryDrillEntity.recovery_profile_id.in_(recovery_profile_ids),
-        )
-        await self._execute_delete(
-            RecoveryProfileEntity,
-            RecoveryProfileEntity.recovery_profile_id.in_(recovery_profile_ids),
         )
         for model in (
             WorkloadStatementEntity,

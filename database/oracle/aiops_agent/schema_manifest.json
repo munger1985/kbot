@@ -1,13 +1,13 @@
 {
   "component": "aiops_agent",
-  "schema_version": 43,
-  "contract_version": "aiops-oracle-v33",
+  "schema_version": 44,
+  "contract_version": "aiops-oracle-v34",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 31,
-      "sha256": "e4a0f119a80f2b7ae1d6acf4bf8504880cddf5fbbbe816963eb23d23a58d30ff"
+      "statements": 40,
+      "sha256": "3e869a4fe2151c446dfabb4289bb1a0637288dc917d32d6757ec131fedae9a0f"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 36,
-      "sha256": "e789332b3a1d6eb2cf248849762cefcde6866d0d37565d46d656d5b0f9e8ce3d"
+      "sha256": "dbb6cd9d755047cf806d019c11d613d754f0be2bc5b2da4271e0b92d9dad6f14"
     },
     {
       "name": "007_ops_agents.sql",
@@ -56,8 +56,8 @@
     },
     {
       "name": "011_ops_recovery.sql",
-      "statements": 8,
-      "sha256": "222eeff0dd13ef711823c7edb82ebd8aa507d50a097bcfe661378799be6b0343"
+      "statements": 9,
+      "sha256": "3e2af53606c0a1013e5fabbe2f1795fe53d8205e91430f4cfa8f6ef1a85f1992"
     },
     {
       "name": "012_ops_work_items.sql",
@@ -73,6 +73,10 @@
     "KBOT_OPS_NOTIFICATION_SUBSCRIPTION",
     "KBOT_OPS_DIAGNOSTIC_SOURCE",
     "KBOT_OPS_TARGET_SOURCE_BINDING",
+    "KBOT_OPS_DATABASE_SYSTEM",
+    "KBOT_OPS_DATABASE_SYSTEM_SITE",
+    "KBOT_OPS_DATABASE_SYSTEM_MEMBER",
+    "KBOT_OPS_DATABASE_SYSTEM_RELATION",
     "KBOT_OPS_SIGNAL_EVENT",
     "KBOT_OPS_SITUATION",
     "KBOT_OPS_SITUATION_EVENT",

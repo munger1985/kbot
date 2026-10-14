@@ -20,55 +20,55 @@ class RecoveryRepository(AIOpsRepository):
     async def add_drill(self, entity: RecoveryDrillEntity) -> RecoveryDrillEntity:
         return await self._add(entity)
 
-    async def list_profile_versions(self, *, target_id: UUID, domain_id: int, lock: bool = False) -> list[RecoveryProfileEntity]:
+    async def list_profile_versions(self, *, database_system_id: UUID, domain_id: int, lock: bool = False) -> list[RecoveryProfileEntity]:
         self._check_active()
         statement: Select = select(RecoveryProfileEntity).where(
-            RecoveryProfileEntity.target_id == target_id,
+            RecoveryProfileEntity.database_system_id == database_system_id,
             RecoveryProfileEntity.domain_id == domain_id,
         ).order_by(RecoveryProfileEntity.version_no.desc(), RecoveryProfileEntity.created_at.desc())
         if lock:
             statement = statement.with_for_update()
         return list((await self._session.execute(statement)).scalars())
 
-    async def get_active_profile(self, *, target_id: UUID, domain_id: int) -> RecoveryProfileEntity | None:
+    async def get_active_profile(self, *, database_system_id: UUID, domain_id: int) -> RecoveryProfileEntity | None:
         self._check_active()
         return (await self._session.execute(
             select(RecoveryProfileEntity).where(
-                RecoveryProfileEntity.target_id == target_id,
+                RecoveryProfileEntity.database_system_id == database_system_id,
                 RecoveryProfileEntity.domain_id == domain_id,
                 RecoveryProfileEntity.status == "ACTIVE",
             ).order_by(RecoveryProfileEntity.version_no.desc()).limit(1)
         )).scalar_one_or_none()
 
-    async def get_drill_scoped(self, *, drill_id: UUID, target_id: UUID, domain_id: int, lock: bool = False) -> RecoveryDrillEntity | None:
+    async def get_drill_scoped(self, *, drill_id: UUID, database_system_id: UUID, domain_id: int, lock: bool = False) -> RecoveryDrillEntity | None:
         self._check_active()
         statement: Select = select(RecoveryDrillEntity).where(
             RecoveryDrillEntity.drill_id == drill_id,
-            RecoveryDrillEntity.target_id == target_id,
+            RecoveryDrillEntity.database_system_id == database_system_id,
             RecoveryDrillEntity.domain_id == domain_id,
         )
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def list_recent_drills(self, *, target_id: UUID, domain_id: int, limit: int = 50) -> list[RecoveryDrillEntity]:
+    async def list_recent_drills(self, *, database_system_id: UUID, domain_id: int, limit: int = 50) -> list[RecoveryDrillEntity]:
         self._check_active()
         return list((await self._session.execute(
             select(RecoveryDrillEntity).where(
-                RecoveryDrillEntity.target_id == target_id,
+                RecoveryDrillEntity.database_system_id == database_system_id,
                 RecoveryDrillEntity.domain_id == domain_id,
             ).order_by(RecoveryDrillEntity.simulated_failure_at.desc(), RecoveryDrillEntity.created_at.desc()).limit(limit)
         )).scalars())
 
-    async def latest_attempt(self, *, target_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
-        rows = await self.list_recent_drills(target_id=target_id, domain_id=domain_id, limit=1)
+    async def latest_attempt(self, *, database_system_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
+        rows = await self.list_recent_drills(database_system_id=database_system_id, domain_id=domain_id, limit=1)
         return rows[0] if rows else None
 
-    async def latest_verified_success(self, *, target_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
+    async def latest_verified_success(self, *, database_system_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
         self._check_active()
         return (await self._session.execute(
             select(RecoveryDrillEntity).where(
-                RecoveryDrillEntity.target_id == target_id,
+                RecoveryDrillEntity.database_system_id == database_system_id,
                 RecoveryDrillEntity.domain_id == domain_id,
                 RecoveryDrillEntity.status == "VERIFIED",
                 RecoveryDrillEntity.result == "PASS",

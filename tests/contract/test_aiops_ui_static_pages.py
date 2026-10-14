@@ -36,7 +36,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     pages = {
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
-        "targets", "target-detail",
+        "database-systems", "targets", "target-detail",
         "recovery-drills",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
         "agents",
@@ -61,7 +61,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(14, len(scripts))
+        self.assertEqual(15, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -84,7 +84,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn('["work-items", "工作项中心"]', shell)
         self.assertLess(
             shell.index('["diagnostic-sources", "监控源"]'),
-            shell.index('["targets", "运维目标"]'),
+            shell.index('["database-systems", "数据库系统"]'),
+        )
+        self.assertLess(
+            shell.index('["database-systems", "数据库系统"]'),
+            shell.index('["targets", "成员 Target"]'),
         )
         self.assertNotIn('["fleet", "库群总览"]', shell)
         self.assertIn('href="./dashboard.html"', shell)
@@ -728,27 +732,24 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('id="target-monitor-binding-form"', page)
         self.assertNotIn('id="target-recovery-profile-form"', page)
         self.assertNotIn('id="target-facts-form"', page)
-        self.assertIn('id="target-recovery-profile-form"', editor_page)
+        self.assertNotIn('id="target-recovery-profile-form"', editor_page)
         self.assertIn('id="target-facts-form"', editor_page)
 
-    def test_target_editor_uses_four_step_wizard_and_backup_policy(self):
+    def test_target_editor_uses_three_steps_and_system_owns_protection(self):
         page = (AIOPS_ROOT / "targets.html").read_text(encoding="utf-8")
         targets = (AIOPS_ROOT / "js" / "aiops-targets.js").read_text(encoding="utf-8")
-        pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(encoding="utf-8")
+        systems = (AIOPS_ROOT / "js" / "aiops-database-systems.js").read_text(encoding="utf-8")
         identity = page.index('data-target-wizard-step="identity"')
         monitoring = page.index('data-target-wizard-step="monitoring"')
         access = page.index('data-target-wizard-step="access"')
-        recovery = page.index('data-target-wizard-step="recovery"')
         self.assertLess(identity, monitoring)
         self.assertLess(monitoring, access)
-        self.assertLess(access, recovery)
         self.assertIn("目标身份与责任归属", page)
         self.assertIn('name="responsibility_group_id" required', page)
-        self.assertIn('name="backup_policy_enabled"', page)
-        self.assertIn('name="backup_success_max_age_hours"', page)
-        self.assertIn("补录计划外恢复演练", page)
-        self.assertIn("saveTargetRecovery", targets)
-        self.assertIn("backup_success_max_age_hours", pages)
+        self.assertNotIn('name="backup_policy_enabled"', page)
+        self.assertNotIn("saveTargetRecovery", targets)
+        self.assertIn("backup_policy_enabled", systems)
+        self.assertIn("backup_success_max_age_hours", systems)
 
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
@@ -781,7 +782,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         self.assertNotIn('id="target-recovery-drill-form"', target_page)
-        self.assertIn('id="target-recovery-drills-link"', target_page)
+        self.assertNotIn('id="target-recovery-drills-link"', target_page)
         self.assertIn('id="recovery-drill-form"', drill_page)
         self.assertIn('id="recovery-drill-history"', drill_page)
         self.assertIn("/recovery-drills", drill_script)
@@ -791,14 +792,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="evidence_kind"', drill_page)
         self.assertNotIn('name="evidence_reference"', drill_page)
         self.assertNotIn('name="evidence_hash"', drill_page)
-        self.assertIn("recovery_marker: { kind: currentTarget.db_type }", drill_script)
+        self.assertIn("recovery_marker: { kind: currentSystem.db_type }", drill_script)
         self.assertIn("evidence: []", drill_script)
         self.assertIn("数据时间不能晚于模拟故障时间", drill_script)
         self.assertIn("验证完成时间不能早于模拟故障时间", drill_script)
         self.assertIn('query.get("work_item_id")', drill_script)
         self.assertIn("source_work_item_id: sourceWorkItemId || null", drill_script)
-        self.assertIn("补录计划外演练", drill_page)
+        self.assertIn("登记恢复演练", drill_page)
+        self.assertIn("计划外演练记录已提交", drill_script)
         self.assertIn('["recovery-drills", "恢复演练"]', shell)
+        systems = (AIOPS_ROOT / "js" / "aiops-database-systems.js").read_text(encoding="utf-8")
+        self.assertIn("protection-profile", systems)
+        self.assertIn("recovery-drills.html?database_system_id=", systems)
 
     def test_target_edit_and_chat_own_target_fact_confirmation(self):
         page = (AIOPS_ROOT / "target-detail.html").read_text(encoding="utf-8")

@@ -39,7 +39,7 @@
   const monitorHostSection = document.getElementById("target-monitor-editor-host-section");
   const monitorHostCandidates = document.getElementById("target-monitor-editor-host-candidates");
   const discoverMonitorLabels = document.getElementById("discover-target-monitor-editor-labels");
-  const wizardSteps = ["identity", "monitoring", "access", "recovery"];
+  const wizardSteps = ["identity", "monitoring", "access"];
   const wizardButtons = [...document.querySelectorAll("[data-target-wizard-step]")];
   const wizardPanels = [...document.querySelectorAll("[data-target-wizard-panel]")];
   const wizardPrevious = document.getElementById("target-wizard-previous");
@@ -65,7 +65,7 @@
     const index = wizardSteps.indexOf(step);
     wizardPrevious.hidden = index === 0;
     wizardNext.hidden = index === wizardSteps.length - 1;
-    wizardNext.textContent = index === 0 ? "继续：监控接入" : index === 1 ? "继续：数据库接入" : "继续：备份与恢复策略";
+    wizardNext.textContent = index === 0 ? "继续：监控接入" : "继续：数据库接入";
     submit.hidden = index !== wizardSteps.length - 1;
     testConnectionButton.hidden = step !== "access" || !readonlyEnabled.checked;
     updateWizardStatuses();
@@ -76,7 +76,6 @@
       identity: Boolean(form.elements.display_name.value.trim() && version.value && form.elements.responsibility_group_id.value),
       monitoring: Boolean(currentMonitorBindings.some((item) => item.status === "ACTIVE") || monitorSource.value),
       access: !readonlyEnabled.checked || Boolean(form.elements.host.value.trim() && port.value && (dbType.value === "ORACLE" ? service.value.trim() : database.value.trim())),
-      recovery: Boolean(document.querySelector('[name="required_backup_source_types"]')?.selectedOptions.length),
     };
     wizardButtons.forEach((button) => {
       const complete = states[button.dataset.targetWizardStep];
@@ -468,7 +467,6 @@
     document.getElementById("target-dialog-title").textContent = "新增运维目标";
     document.getElementById("target-advanced-editor").hidden = true;
     submit.textContent = "创建目标";
-    globalThis.KBotAIOpsPages.prepareTargetRecovery(dbType.value);
     setWizardStep("identity");
     dialog.showModal();
     try {
@@ -517,10 +515,7 @@
       dialog.showModal();
       await loadMonitorEditor(target.target_id);
       document.getElementById("target-advanced-editor").hidden = false;
-      await Promise.all([
-        globalThis.KBotAIOpsPages.initializeTargetRecovery(target.target_id, target),
-        globalThis.KBotAIOpsPages.initializeTargetFacts(target.target_id),
-      ]);
+      await globalThis.KBotAIOpsPages.initializeTargetFacts(target.target_id);
       form.elements.display_name.focus();
     } catch (error) {
       shell.toast(error.message);
@@ -686,7 +681,6 @@
         editingTarget = created;
         baseSaved = true;
         await saveSelectedMonitorBinding(created);
-        await globalThis.KBotAIOpsPages.saveTargetRecovery(created.target_id, created.db_type);
       } else {
         let updated = editingTarget;
         const targetUrl = `${api}/targets/${encodeURIComponent(editingTarget.target_id)}`;
@@ -726,16 +720,15 @@
         editingTarget = updated;
         baseSaved = true;
         await saveSelectedMonitorBinding(updated);
-        await globalThis.KBotAIOpsPages.saveTargetRecovery(updated.target_id, updated.db_type);
       }
       dialog.close();
-      shell.toast(creating ? "运维目标四步配置已创建" : "运维目标四步配置已更新");
+      shell.toast(creating ? "运维目标已创建" : "运维目标已更新");
       editingTarget = null;
       await KBotAIOpsPages.reload();
     } catch (error) {
       result.dataset.tone = "bad";
       result.textContent = baseSaved
-        ? `Target 基本信息已保存，但监控映射或备份恢复策略失败：${error.message}`
+        ? `Target 基本信息已保存，但监控映射失败：${error.message}`
         : versionSavedBeforeCredential
           ? `数据库版本已保存，但后续操作失败：${error.message}`
           : error.message;
@@ -748,7 +741,7 @@
 
   globalThis.KBotAIOpsTargets = { openEdit };
   shell.ready.then(() => {
-    document.getElementById("create-target").addEventListener("click", () => void openCreate());
+    document.getElementById("create-target")?.addEventListener("click", () => void openCreate());
     document.getElementById("close-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("cancel-target-dialog").addEventListener("click", () => dialog.close());
     document.getElementById("test-target-connection").addEventListener("click", testConnection);
@@ -758,7 +751,6 @@
     dbType.addEventListener("change", () => {
       configureEndpoint();
       configureMonitorSource();
-      if (!editingTarget) globalThis.KBotAIOpsPages.prepareTargetRecovery(dbType.value);
     });
     monitorSource.addEventListener("change", configureMonitorSource);
     discoverMonitorLabels.addEventListener("click", () => void discoverMonitorCandidates());

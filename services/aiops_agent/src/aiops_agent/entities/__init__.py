@@ -41,6 +41,12 @@ from .runtime import (
 )
 from .target import PolicyEntity, TargetBindingEntity, TargetEntity, TargetFactEntity
 from .recovery import RecoveryDrillEntity, RecoveryProfileEntity
+from .database_system import (
+    DatabaseSystemEntity,
+    DatabaseSystemMemberEntity,
+    DatabaseSystemRelationEntity,
+    DatabaseSystemSiteEntity,
+)
 from .workload import (
     ActivitySampleEntity,
     WorkloadMetricEntity,
@@ -118,6 +124,10 @@ __all__ = [
     "TargetFactEntity",
     "RecoveryDrillEntity",
     "RecoveryProfileEntity",
+    "DatabaseSystemEntity",
+    "DatabaseSystemMemberEntity",
+    "DatabaseSystemRelationEntity",
+    "DatabaseSystemSiteEntity",
     "TargetSourceBindingEntity",
     "ActivitySampleEntity",
     "WorkloadMetricEntity",

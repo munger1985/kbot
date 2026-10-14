@@ -14,7 +14,7 @@
         <h1>运维目标</h1>
         <p>管理数据库目标的监控、只读诊断和人工审批后受控变更边界。</p>
       </div>
-      <button id="create-target" class="primary" type="button" data-write-ready>新增目标</button>
+      <a class="ops-button primary" href="./database-systems.html">通过数据库系统新增成员</a>
     </header>
     <section class="ops-panel">
       <div class="ops-table-wrap">
@@ -38,7 +38,6 @@
             <button type="button" data-target-wizard-step="identity"><span>01</span><span><strong>目标身份与责任归属</strong><small>定义目标身份并确定工作路由</small></span><em>待配置</em></button>
             <button type="button" data-target-wizard-step="monitoring"><span>02</span><span><strong>监控接入</strong><small>绑定监控源和稳定 Label</small></span><em>待配置</em></button>
             <button type="button" data-target-wizard-step="access"><span>03</span><span><strong>数据库接入</strong><small>按需开通诊断和受控执行</small></span><em>待配置</em></button>
-            <button type="button" data-target-wizard-step="recovery"><span>04</span><span><strong>备份与恢复策略</strong><small>定义备份验证、恢复目标与演练要求</small></span><em>待配置</em></button>
           </nav>
           <div class="target-wizard-content">
             <section data-target-wizard-panel="identity">
@@ -205,24 +204,6 @@
           </div>
               </div>
               <p id="target-credential-note" class="ops-dialog-note">诊断凭据仅通过 Main API 提交给 AIOps 加密凭据存储，列表和详情不会返回密码明文。</p>
-            </section>
-            <section data-target-wizard-panel="recovery" hidden>
-              <header class="target-wizard-heading"><p>步骤 04</p><h3>备份与恢复策略</h3><small>日常巡检按备份策略验证最近结果；恢复演练按责任组自动生成工作项。</small></header>
-              <div id="target-recovery-profile-form" class="ops-form target-recovery-form">
-                <div class="ops-field span-12"><label><input name="backup_policy_enabled" type="checkbox" checked> 启用备份策略校验</label><small>日常巡检会校验最近成功备份；仅能观测 WAL/Binlog 时会明确报告证据缺口。</small></div>
-                <div class="ops-field"><label>备份频率（小时）</label><input name="backup_frequency_hours" type="number" min="1" max="8760" required value="24"></div>
-                <div class="ops-field"><label>成功备份最大时效（小时）</label><input name="backup_success_max_age_hours" type="number" min="1" max="8760" required value="26"></div>
-                <div class="ops-field"><label>备份保留期（天）</label><input name="backup_retention_days" type="number" min="1" max="3650" required value="30"></div>
-                <div class="ops-field"><label>备份来源</label><select name="required_backup_source_types" multiple required size="4"></select><small>启用备份校验或定期演练时至少选择一种。</small></div>
-                <div class="ops-field"><label>RPO（分钟）</label><input name="rpo_minutes" type="number" min="0" max="525600" required value="60"></div>
-                <div class="ops-field"><label>RTO（分钟）</label><input name="rto_minutes" type="number" min="1" max="525600" required value="240"></div>
-                <div class="ops-field span-12"><label><input name="drill_required" type="checkbox" checked> 要求系统按周期生成恢复演练工作项</label><small>关闭后保留 RPO/RTO 目标，但不生成计划工单，并取消尚未完成的系统演练工单；计划外数据可从恢复演练入口补录。</small></div>
-                <div class="ops-field"><label>演练周期（天）</label><input name="required_drill_interval_days" type="number" min="1" max="3650" required value="90"></div>
-                <div class="ops-field"><label>最低演练等级</label><select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN" selected>数据库可打开</option><option value="APPLICATION_VALIDATED">应用验证通过</option></select></div>
-                <div class="ops-field span-12"><label>策略说明</label><input name="source_note" maxlength="1000" placeholder="例如：生产系统灾备规范 2026-Q3，或不做定期演练的原因"></div>
-                <p id="target-recovery-profile-result" class="ops-connection-result span-12" role="status"></p>
-              </div>
-              <div class="target-recovery-summary"><div class="target-wizard-summary-head"><h3>当前保障状态</h3><span id="target-recovery-state" class="ops-badge">尚未保存</span></div><div id="target-recovery-summary">创建 Target 后保存策略。</div><a id="target-recovery-drills-link" class="ops-button" href="./recovery-drills.html">补录计划外恢复演练</a></div>
             </section>
           </div>
         </div>

@@ -59,8 +59,13 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
-    TargetRecoveryProfileUpsert,
-    TargetRecoveryProfileView,
+    DatabaseSystemProtectionProfileUpsert,
+    DatabaseSystemProtectionProfileView,
+    DatabaseSystemCreate,
+    DatabaseSystemDetail,
+    DatabaseSystemPage,
+    DatabaseSystemPatch,
+    DatabaseSystemTopologyPut,
     RecoveryDrillCreate,
     RecoveryDrillReview,
     RecoveryDrillView,
@@ -97,6 +102,55 @@ Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 def _etag(response: Response, row_version: int) -> None:
     response.headers["ETag"] = format_etag(row_version)
+
+
+@router.post("/database-systems", response_model=DatabaseSystemDetail, status_code=201)
+async def create_database_system(body: DatabaseSystemCreate, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
+    result = await service.create_database_system(scope=scope, request=body, idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.get("/database-systems", response_model=DatabaseSystemPage)
+async def list_database_systems(service: Service, scope: Scope, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> DatabaseSystemPage:
+    return await service.list_database_systems(scope=scope, status=resource_status, limit=limit)
+
+
+@router.get("/database-systems/{database_system_id}", response_model=DatabaseSystemDetail)
+async def get_database_system(database_system_id: UUID, response: Response, service: Service, scope: Scope) -> DatabaseSystemDetail:
+    result = await service.get_database_system(scope=scope, database_system_id=database_system_id)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.patch("/database-systems/{database_system_id}", response_model=DatabaseSystemDetail)
+async def patch_database_system(database_system_id: UUID, body: DatabaseSystemPatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> DatabaseSystemDetail:
+    result = await service.patch_database_system(scope=scope, database_system_id=database_system_id, request=body, expected_version=parse_etag(if_match))
+    _etag(response, result.row_version)
+    return result
+
+
+@router.put("/database-systems/{database_system_id}/topology", response_model=DatabaseSystemDetail)
+async def put_database_system_topology(database_system_id: UUID, body: DatabaseSystemTopologyPut, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> DatabaseSystemDetail:
+    result = await service.put_database_system_topology(scope=scope, database_system_id=database_system_id, request=body, expected_version=parse_etag(if_match))
+    _etag(response, result.row_version)
+    return result
+
+
+async def _command_database_system(database_system_id: UUID, command: str, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> DatabaseSystemDetail:
+    result = await service.command_database_system(scope=scope, database_system_id=database_system_id, command=command, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.post("/database-systems/{database_system_id}/enable", response_model=DatabaseSystemDetail)
+async def enable_database_system(database_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> DatabaseSystemDetail:
+    return await _command_database_system(database_system_id, "enable", response, service, scope, idempotency_key, if_match)
+
+
+@router.post("/database-systems/{database_system_id}/disable", response_model=DatabaseSystemDetail)
+async def disable_database_system(database_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> DatabaseSystemDetail:
+    return await _command_database_system(database_system_id, "disable", response, service, scope, idempotency_key, if_match)
 
 
 @router.get(
@@ -389,30 +443,30 @@ async def retire_target_fact(
 
 
 @router.get(
-    "/targets/{target_id}/recovery-profile",
-    response_model=TargetRecoveryProfileView | None,
+    "/database-systems/{database_system_id}/protection-profile",
+    response_model=DatabaseSystemProtectionProfileView | None,
 )
 async def get_recovery_profile(
-    target_id: UUID, service: Service, scope: Scope
-) -> TargetRecoveryProfileView | None:
-    return await service.get_recovery_profile(scope=scope, target_id=target_id)
+    database_system_id: UUID, service: Service, scope: Scope
+) -> DatabaseSystemProtectionProfileView | None:
+    return await service.get_recovery_profile(scope=scope, database_system_id=database_system_id)
 
 
 @router.put(
-    "/targets/{target_id}/recovery-profile",
-    response_model=TargetRecoveryProfileView,
+    "/database-systems/{database_system_id}/protection-profile",
+    response_model=DatabaseSystemProtectionProfileView,
 )
 async def upsert_recovery_profile(
-    target_id: UUID,
-    body: TargetRecoveryProfileUpsert,
+    database_system_id: UUID,
+    body: DatabaseSystemProtectionProfileUpsert,
     response: Response,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
-) -> TargetRecoveryProfileView:
+) -> DatabaseSystemProtectionProfileView:
     result = await service.upsert_recovery_profile(
         scope=scope,
-        target_id=target_id,
+        database_system_id=database_system_id,
         request=body,
         idempotency_key=idempotency_key,
     )
@@ -421,22 +475,22 @@ async def upsert_recovery_profile(
 
 
 @router.get(
-    "/targets/{target_id}/recovery-drills",
+    "/database-systems/{database_system_id}/recovery-drills",
     response_model=RecoveryDrillPage,
 )
 async def list_recovery_drills(
-    target_id: UUID, service: Service, scope: Scope
+    database_system_id: UUID, service: Service, scope: Scope
 ) -> RecoveryDrillPage:
-    return await service.list_recovery_drills(scope=scope, target_id=target_id)
+    return await service.list_recovery_drills(scope=scope, database_system_id=database_system_id)
 
 
 @router.post(
-    "/targets/{target_id}/recovery-drills",
+    "/database-systems/{database_system_id}/recovery-drills",
     response_model=RecoveryDrillView,
     status_code=201,
 )
 async def create_recovery_drill(
-    target_id: UUID,
+    database_system_id: UUID,
     body: RecoveryDrillCreate,
     response: Response,
     service: Service,
@@ -445,7 +499,7 @@ async def create_recovery_drill(
 ) -> RecoveryDrillView:
     result = await service.create_recovery_drill(
         scope=scope,
-        target_id=target_id,
+        database_system_id=database_system_id,
         request=body,
         idempotency_key=idempotency_key,
     )
@@ -454,11 +508,11 @@ async def create_recovery_drill(
 
 
 @router.post(
-    "/targets/{target_id}/recovery-drills/{drill_id}:review",
+    "/database-systems/{database_system_id}/recovery-drills/{drill_id}:review",
     response_model=RecoveryDrillView,
 )
 async def review_recovery_drill(
-    target_id: UUID,
+    database_system_id: UUID,
     drill_id: UUID,
     body: RecoveryDrillReview,
     response: Response,
@@ -469,7 +523,7 @@ async def review_recovery_drill(
 ) -> RecoveryDrillView:
     result = await service.review_recovery_drill(
         scope=scope,
-        target_id=target_id,
+        database_system_id=database_system_id,
         drill_id=drill_id,
         request=body,
         expected_version=parse_etag(if_match),

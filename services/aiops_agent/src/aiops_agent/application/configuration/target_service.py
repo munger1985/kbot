@@ -667,11 +667,17 @@ class TargetConfigurationMixin:
 
     async def delete_target(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
-            assert uow.targets is not None and uow.managed_credentials is not None
+            assert uow.targets is not None and uow.managed_credentials is not None and uow.database_systems is not None
             target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
             if target.status != "DISABLED": raise state_conflict("仅允许删除已停用的 Target")
+            assigned_system = await uow.database_systems.find_system_for_target(
+                target_id=target_id,
+                domain_id=scope.domain_id,
+            )
+            if assigned_system is not None:
+                raise state_conflict("Target 已属于数据库系统，请先从系统拓扑中移除该成员")
             if await uow.targets.has_active_runs(target_id=target_id):
                 raise state_conflict("Target 仍有运行中的任务，请先等待完成或取消运行")
             result = _target_detail(target)

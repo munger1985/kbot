@@ -371,7 +371,7 @@ RecoveryMarker = Annotated[
 ]
 
 
-class TargetRecoveryProfileUpsert(AIOpsContract):
+class DatabaseSystemProtectionProfileUpsert(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     backup_policy_enabled: bool = True
     backup_frequency_hours: int = Field(default=24, ge=1, le=8760)
@@ -391,7 +391,7 @@ class TargetRecoveryProfileUpsert(AIOpsContract):
     source_note: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
-    def validate_source_types(self) -> "TargetRecoveryProfileUpsert":
+    def validate_source_types(self) -> "DatabaseSystemProtectionProfileUpsert":
         if (self.backup_policy_enabled or self.drill_required) and not self.required_backup_source_types:
             raise ValueError("启用备份策略或定期恢复演练时必须配置备份来源")
         if self.backup_policy_enabled and self.backup_success_max_age_hours < self.backup_frequency_hours:
@@ -403,9 +403,9 @@ class TargetRecoveryProfileUpsert(AIOpsContract):
         return self
 
 
-class TargetRecoveryProfileView(TargetRecoveryProfileUpsert):
+class DatabaseSystemProtectionProfileView(DatabaseSystemProtectionProfileUpsert):
     recovery_profile_id: UUIDv7
-    target_id: UUIDv7
+    database_system_id: UUIDv7
     version_no: int = Field(ge=1)
     status: Literal["ACTIVE", "RETIRED"]
     effective_at: UtcDatetime
@@ -433,6 +433,7 @@ class RecoveryDrillEvidence(AIOpsContract):
 class RecoveryDrillCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     source_work_item_id: UUIDv7 | None = None
+    execution_target_id: UUIDv7
     scenario: Literal[
         "FULL_INSTANCE",
         "POINT_IN_TIME",
@@ -492,7 +493,7 @@ class RecoveryDrillReview(AIOpsContract):
 
 class RecoveryDrillView(RecoveryDrillCreate):
     drill_id: UUIDv7
-    target_id: UUIDv7
+    database_system_id: UUIDv7
     recovery_profile_id: UUIDv7 | None = None
     recovery_profile_version: int | None = Field(default=None, ge=1)
     db_type: DatabaseType

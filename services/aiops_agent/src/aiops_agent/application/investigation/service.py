@@ -3723,9 +3723,10 @@ class TurnPlanningService:
                     existing_prompt_snapshot or None
                 )
             )
-            assert uow.recovery is not None
+            assert uow.recovery is not None and uow.database_systems is not None
             recovery_assurance = await build_recovery_assurance_snapshot(
                 recovery_repository=uow.recovery,
+                database_system_repository=uow.database_systems,
                 target=target,
             )
             return TurnPlanningContext(

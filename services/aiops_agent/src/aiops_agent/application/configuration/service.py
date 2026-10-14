@@ -8,9 +8,11 @@ from .diagnostic_source_service import DiagnosticSourceConfigurationMixin
 from .policy_service import PolicyConfigurationMixin
 from .target_service import TargetConfigurationMixin
 from .recovery_service import RecoveryConfigurationMixin
+from .database_system_service import DatabaseSystemConfigurationMixin
 
 
 class AIOpsConfigurationService(
+    DatabaseSystemConfigurationMixin,
     RecoveryConfigurationMixin,
     TargetConfigurationMixin,
     DiagnosticSourceConfigurationMixin,
