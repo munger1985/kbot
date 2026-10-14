@@ -17,7 +17,7 @@ SystemResourceStatus = Literal["ACTIVE", "REMOVED"]
 RelationOrigin = Literal["MANUAL", "DISCOVERY", "IMPORT"]
 RelationConfirmationStatus = Literal["SUGGESTED", "CONFIRMED", "REJECTED"]
 RelationVerificationStatus = Literal["UNKNOWN", "MATCHED", "DRIFTED", "UNREACHABLE"]
-ResourceCommitMode = Literal["NEW", "REUSE"]
+ResourceCommitMode = Literal["NEW"]
 DraftMode = Literal["CREATE", "EDIT"]
 DraftStep = Literal["BUSINESS_INFO", "SYSTEM_COMPOSITION", "TOPOLOGY_CONFIRMATION"]
 DraftStatus = Literal["ACTIVE", "COMMITTED", "ABANDONED", "EXPIRED"]
@@ -73,15 +73,14 @@ class ResourceMonitoringInput(AIOpsContract):
 
 class DatabaseResourceCommit(AIOpsContract):
     target: TargetCreate
-    monitoring: ResourceMonitoringInput | None = None
+    monitoring: ResourceMonitoringInput
 
 
 class BusinessSystemResourceCommit(AIOpsContract):
     """Wizard 草稿中的资源；draft_resource_id 由客户端生成但不向用户展示。"""
 
     draft_resource_id: UUIDv7
-    mode: ResourceCommitMode
-    resource_id: UUIDv7 | None = None
+    mode: ResourceCommitMode = "NEW"
     resource_type_key: str = Field(min_length=1, max_length=64, pattern=r"^[A-Z][A-Z0-9_]*$")
     display_name: str = Field(min_length=1, max_length=256)
     identity_kind: ResourceIdentityKind = "STABLE"
@@ -95,17 +94,10 @@ class BusinessSystemResourceCommit(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_mode(self) -> "BusinessSystemResourceCommit":
-        if self.mode == "REUSE":
-            if self.resource_id is None or self.database is not None:
-                raise ValueError("复用资源必须提交 Resource ID，且不能提交新数据库配置")
-        elif self.resource_id is not None:
-            raise ValueError("新资源不能提交 Resource ID")
-        if self.resource_type_key == "DATABASE" and self.mode == "NEW" and self.database is None:
+        if self.resource_type_key == "DATABASE" and self.database is None:
             raise ValueError("新数据库资源必须提交数据库连接配置")
         if self.resource_type_key != "DATABASE" and self.database is not None:
             raise ValueError("非数据库资源不能提交数据库连接配置")
-        if self.identity_kind == "EPHEMERAL" and self.mode == "REUSE":
-            raise ValueError("短生命周期资源不能通过复用模式加入")
         return self
 
 
@@ -136,6 +128,8 @@ class ResourceRelationCommit(AIOpsContract):
 class DatabaseResourcePatch(AIOpsContract):
     version_code: str | None = Field(default=None, min_length=1, max_length=64)
     environment: Literal["PROD", "STG", "DEV"] | None = None
+    deployment_type: Literal["SINGLE_INSTANCE", "RAC"] | None = None
+    rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
 
 
@@ -281,6 +275,8 @@ class DatabaseResourceView(AIOpsContract):
     db_type: DatabaseType
     version_code: str
     environment: str
+    deployment_type: Literal["SINGLE_INSTANCE", "RAC"]
+    rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: str
     connectivity_status: str
     monitoring_ready: bool

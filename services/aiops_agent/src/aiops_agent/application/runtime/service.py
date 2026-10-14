@@ -518,6 +518,8 @@ class AIOpsRuntimeService:
                 "version_code": target.version_code,
                 "environment": target.environment,
                 "db_role": target.db_role,
+                "deployment_type": target.deployment_type or "SINGLE_INSTANCE",
+                "rac_node_number": target.rac_node_number,
                 "status": getattr(target, "status", "ENABLED"),
                 "connectivity_status": target.connectivity_status,
                 "database_endpoint_configured": bool(target.endpoint_json),

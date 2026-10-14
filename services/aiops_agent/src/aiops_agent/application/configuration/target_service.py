@@ -82,6 +82,7 @@ from platform_core.contracts.aiops import (
     WebhookKeyRotation,
 )
 from platform_core.contracts.aiops.configuration import (
+    validate_database_deployment,
     validate_supported_database_version,
 )
 from platform_core.identity import uuid7
@@ -137,7 +138,8 @@ class TargetConfigurationMixin:
         entity = TargetEntity(
             target_id=target_id, domain_id=scope.domain_id,
             display_name=request.display_name, db_type=request.db_type, version_code=request.version_code,
-            environment=request.environment, db_role=request.db_role, oracle_container_scope=request.oracle_container_scope,
+            environment=request.environment, deployment_type=request.deployment_type,
+            rac_node_number=request.rac_node_number, db_role=request.db_role, oracle_container_scope=request.oracle_container_scope,
             oracle_pdb_name=request.oracle_pdb_name, observed_oracle_container_scope=None,
             observed_oracle_container_name=None, observed_oracle_container_number=None, observed_oracle_database_name=None,
             endpoint_json=request.endpoint.model_dump(mode="json") if request.endpoint is not None else None,
@@ -310,6 +312,8 @@ class TargetConfigurationMixin:
                 db_type=request.db_type,
                 version_code=request.version_code,
                 environment=request.environment,
+                deployment_type=request.deployment_type,
+                rac_node_number=request.rac_node_number,
                 db_role=request.db_role,
                 oracle_container_scope=request.oracle_container_scope,
                 oracle_pdb_name=request.oracle_pdb_name,
@@ -499,6 +503,27 @@ class TargetConfigurationMixin:
                     validate_supported_database_version(entity.db_type, version_code)
                 except ValueError as exc:
                     raise validation_failed(str(exc)) from exc
+            effective_deployment = fields.get(
+                "deployment_type", entity.deployment_type
+            )
+            effective_rac_node_number = fields.get(
+                "rac_node_number", entity.rac_node_number
+            )
+            if (
+                "deployment_type" in fields
+                and effective_deployment == "SINGLE_INSTANCE"
+                and "rac_node_number" not in fields
+            ):
+                effective_rac_node_number = None
+                fields["rac_node_number"] = None
+            try:
+                validate_database_deployment(
+                    entity.db_type,
+                    effective_deployment,
+                    effective_rac_node_number,
+                )
+            except ValueError as exc:
+                raise validation_failed(str(exc)) from exc
             effective_readonly = fields.get(
                 "readonly_connection_enabled", entity.readonly_connection_enabled
             )

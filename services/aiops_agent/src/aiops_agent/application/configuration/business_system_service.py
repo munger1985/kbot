@@ -52,6 +52,7 @@ from platform_core.contracts.aiops import (
 )
 from platform_core.identity import uuid7
 from platform_core.contracts.aiops.configuration import (
+    validate_database_deployment,
     validate_supported_database_version,
 )
 
@@ -210,6 +211,8 @@ class BusinessSystemConfigurationMixin:
                         db_type=target.db_type,
                         version_code=target.version_code or "UNKNOWN",
                         environment=target.environment,
+                        deployment_type=target.deployment_type or "SINGLE_INSTANCE",
+                        rac_node_number=target.rac_node_number,
                         db_role=target.db_role,
                         connectivity_status=target.connectivity_status,
                         monitoring_ready=bool(bindings),
@@ -340,25 +343,8 @@ class BusinessSystemConfigurationMixin:
                 await self._validate_group(uow=uow, scope=scope, group_id=item.owner_group_id, label=f"资源 {item.display_name}")
                 if item.responsibility_group_id is not None:
                     await self._validate_group(uow=uow, scope=scope, group_id=item.responsibility_group_id, label=f"资源 {item.display_name} 在本系统中的责任覆盖")
-                if item.mode == "REUSE":
-                    assert item.resource_id is not None
-                    resource = await uow.business_systems.get_resource_scoped(resource_id=item.resource_id, lock=True, **_scope_args(scope))
-                    if resource is None or resource.lifecycle_status == "RETIRED":
-                        raise validation_failed(f"资源 {item.display_name} 不存在或已退役")
-                    if resource.resource_type_key != item.resource_type_key:
-                        raise validation_failed(f"资源 {item.display_name} 的类型与已有资源不一致")
-                    if resource.resource_id in used_resource_ids:
-                        raise validation_failed(f"资源 {item.display_name} 在同一业务系统中不能重复加入")
-                    if item.resource_type_key == "DATABASE":
-                        database_profile = await uow.business_systems.get_database_profile(resource.resource_id)
-                        if database_profile is None:
-                            raise validation_failed(f"资源 {item.display_name} 缺少数据库 Profile")
-                        target = await uow.targets.get_scoped(target_id=database_profile.target_id, domain_id=scope.domain_id)
-                        if target is None or target.connectivity_status != "CONNECTED":
-                            raise validation_failed(f"数据库 {item.display_name} 尚未通过连接验证")
-                        bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
-                        if not bindings:
-                            raise validation_failed(f"数据库 {item.display_name} 尚未完成监控映射")
+                if item.mode != "NEW":
+                    raise validation_failed("当前版本只支持新接入资源")
                 else:
                     resource_id = uuid7()
                     prefix = RESOURCE_CODE_PREFIXES.get(item.resource_type_key, "RES")
@@ -543,12 +529,8 @@ class BusinessSystemConfigurationMixin:
             await self._validate_group(uow=uow, scope=scope, group_id=request.owner_group_id, label=f"资源 {request.display_name}")
             if request.responsibility_group_id is not None:
                 await self._validate_group(uow=uow, scope=scope, group_id=request.responsibility_group_id, label="资源责任覆盖")
-            if request.mode == "REUSE":
-                resource = await uow.business_systems.get_resource_scoped(resource_id=request.resource_id, lock=True, **_scope_args(scope))
-                if resource is None or resource.lifecycle_status == "RETIRED":
-                    raise resource_not_found("Managed Resource")
-                if resource.resource_type_key != request.resource_type_key:
-                    raise validation_failed("已有资源类型与本次选择不一致")
+            if request.mode != "NEW":
+                raise validation_failed("当前版本只支持新接入资源")
             else:
                 resource_id = uuid7()
                 values = dict(
@@ -647,12 +629,35 @@ class BusinessSystemConfigurationMixin:
                         )
                     except ValueError as exc:
                         raise validation_failed(str(exc)) from exc
+                effective_deployment = database_changes.get(
+                    "deployment_type", target.deployment_type
+                )
+                effective_rac_node_number = database_changes.get(
+                    "rac_node_number", target.rac_node_number
+                )
+                if (
+                    "deployment_type" in database_changes
+                    and effective_deployment == "SINGLE_INSTANCE"
+                    and "rac_node_number" not in database_changes
+                ):
+                    effective_rac_node_number = None
+                    database_changes["rac_node_number"] = None
+                try:
+                    validate_database_deployment(
+                        target.db_type,
+                        effective_deployment,
+                        effective_rac_node_number,
+                    )
+                except ValueError as exc:
+                    raise validation_failed(str(exc)) from exc
                 for key, value in database_changes.items():
                     setattr(target, key, value)
                 database_view = DatabaseResourceView(
                     db_type=target.db_type,
                     version_code=target.version_code,
                     environment=target.environment,
+                    deployment_type=target.deployment_type or "SINGLE_INSTANCE",
+                    rac_node_number=target.rac_node_number,
                     db_role=target.db_role,
                     connectivity_status=target.connectivity_status,
                     monitoring_ready=bool(

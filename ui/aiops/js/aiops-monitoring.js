@@ -915,7 +915,6 @@
   };
   document.getElementById("close-monitoring-data-drawer").onclick = closeDataDrawer;
   document.getElementById("finish-monitoring-data-drawer").onclick = closeDataDrawer;
-  document.getElementById("monitoring-data-drawer").onclick = (event) => { if (event.target === event.currentTarget) closeDataDrawer(); };
   document.getElementById("monitoring-data-drawer").addEventListener("close", () => {
     const currentTrigger = [...document.querySelectorAll("[data-panel-id]")]
       .find((button) => button.dataset.panelId === state.dataDrawerPanelId);

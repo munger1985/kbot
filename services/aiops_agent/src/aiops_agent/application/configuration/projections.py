@@ -124,6 +124,8 @@ def _target_summary(entity: TargetEntity) -> TargetSummary:
         db_type=entity.db_type,
         version_code=entity.version_code,
         environment=entity.environment,
+        deployment_type=entity.deployment_type or "SINGLE_INSTANCE",
+        rac_node_number=entity.rac_node_number,
         db_role=entity.db_role,
         importance_level=int(entity.importance_level),
         responsibility_group_id=entity.responsibility_group_id,

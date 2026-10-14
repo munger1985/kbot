@@ -66,6 +66,25 @@ def validate_supported_database_version(
         raise ValueError("数据库版本缺少固定SQL档案")
 
 
+def validate_database_deployment(
+    db_type: DatabaseType | str,
+    deployment_type: str,
+    rac_node_number: int | None,
+) -> None:
+    """部署形态与数据库角色正交；RAC 仅约束引擎和节点编号。"""
+    database_type = DatabaseType(db_type)
+    if deployment_type == "RAC":
+        if database_type != DatabaseType.ORACLE:
+            raise ValueError("只有 Oracle 数据库可以选择 RAC 部署形态")
+        if rac_node_number is None:
+            raise ValueError("RAC 数据库必须填写节点编号")
+        return
+    if deployment_type != "SINGLE_INSTANCE":
+        raise ValueError("数据库部署形态无效")
+    if rac_node_number is not None:
+        raise ValueError("单实例数据库不能填写 RAC 节点编号")
+
+
 class SecretRefStatus(AIOpsContract):
     """只暴露 Secret 引用是否配置及不可逆指纹。"""
 
@@ -114,6 +133,8 @@ class TargetCreate(AIOpsContract):
     db_type: DatabaseType
     version_code: SupportedDatabaseVersion
     environment: Literal["PROD", "STG", "DEV"]
+    deployment_type: Literal["SINGLE_INSTANCE", "RAC"] = "SINGLE_INSTANCE"
+    rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] = "UNKNOWN"
     oracle_container_scope: OracleContainerScope | None = None
     oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
@@ -135,6 +156,9 @@ class TargetCreate(AIOpsContract):
     @model_validator(mode="after")
     def validate_database_endpoint(self) -> "TargetCreate":
         validate_supported_database_version(self.db_type, self.version_code)
+        validate_database_deployment(
+            self.db_type, self.deployment_type, self.rac_node_number
+        )
         if self.readonly_connection_enabled and (
             self.endpoint is None or self.diagnostic_credential is None
         ):
@@ -242,6 +266,8 @@ class TargetPatch(AIOpsContract):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     version_code: SupportedDatabaseVersion | None = None
     environment: Literal["PROD", "STG", "DEV"] | None = None
+    deployment_type: Literal["SINGLE_INSTANCE", "RAC"] | None = None
+    rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
     oracle_container_scope: OracleContainerScope | None = None
     oracle_pdb_name: str | None = Field(default=None, min_length=1, max_length=128)
@@ -262,6 +288,8 @@ class TargetSummary(AIOpsContract):
     db_type: DatabaseType
     version_code: str
     environment: str
+    deployment_type: Literal["SINGLE_INSTANCE", "RAC"]
+    rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: str
     importance_level: int = Field(ge=1, le=5)
     responsibility_group_id: UUIDv7 | None = None
@@ -805,7 +833,7 @@ class InstanceDiscoveryCandidate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     candidate_ref: str = Field(min_length=1, max_length=8192)
     display_name: str = Field(min_length=1, max_length=256)
-    locator_hint: str = Field(min_length=1, max_length=256)
+    locator_key: str = Field(min_length=1, max_length=512)
     db_type: DatabaseType
     mapping_status: Literal["UNMAPPED", "MAPPED"]
     mapped_target_id: UUIDv7 | None = None
@@ -815,7 +843,7 @@ class HostDiscoveryCandidate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     candidate_ref: str = Field(min_length=1, max_length=8192)
     display_name: str = Field(min_length=1, max_length=256)
-    locator_hint: str = Field(min_length=1, max_length=256)
+    locator_key: str = Field(min_length=1, max_length=512)
 
 
 class InstanceDiscoveryPage(CursorPage):

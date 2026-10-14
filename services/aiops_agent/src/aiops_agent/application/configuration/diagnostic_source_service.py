@@ -896,7 +896,7 @@ class DiagnosticSourceConfigurationMixin:
                     },
                 ),
                 display_name=item.display_name,
-                locator_hint=self._locator_hint(item.source_locator_key),
+                locator_key=item.source_locator_key,
                 db_type=item.db_type,
                 mapping_status=(
                     "MAPPED"
@@ -920,7 +920,7 @@ class DiagnosticSourceConfigurationMixin:
                     },
                 ),
                 display_name=item.display_name,
-                locator_hint=self._locator_hint(item.source_locator_key),
+                locator_key=item.source_locator_key,
             )
             for item in discovered.host_candidates
         )

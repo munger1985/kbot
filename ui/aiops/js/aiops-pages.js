@@ -950,14 +950,14 @@
         candidates = (page.items || []).filter((item) => item.mapping_status !== "MAPPED");
         if (!binding) {
           candidateList.innerHTML = candidates.length
-            ? `<div class="target-monitor-candidates">${candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
+            ? `<div class="target-monitor-candidates">${candidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>${shell.escape(candidate.db_type)} · <code>${shell.escape(candidate.locator_key)}</code></small></span></label>`).join("")}</div>`
             : '<div class="ops-empty">没有尚未映射且与当前数据库类型一致的候选 Label。</div>';
         } else {
           candidateList.innerHTML = `<div class="ops-empty">已绑定数据库 Label：<code>${shell.escape(binding.source_locator_key || binding.locator_hint)}</code>；本次仅修改主机 Label。</div>`;
         }
         const hostCandidates = page.host_items || [];
         hostCandidateList.innerHTML = hostCandidates.length
-          ? `<div class="target-monitor-candidates">${hostCandidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_host_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>主机 · <code>${shell.escape(candidate.locator_hint)}</code></small></span></label>`).join("")}</div>`
+          ? `<div class="target-monitor-candidates">${hostCandidates.map((candidate, index) => `<label class="agent-switch-row"><input type="radio" name="monitor_host_candidate_ref" value="${shell.escape(candidate.candidate_ref)}" ${index === 0 ? "checked" : ""}><span><strong>${shell.escape(candidate.display_name)}</strong><small>主机 · <code>${shell.escape(candidate.locator_key)}</code></small></span></label>`).join("")}</div>`
           : '<div class="ops-error">未发现 Node Exporter 主机 Label；请先接入目标主机监控。</div>';
         result.textContent = `已发现 ${candidates.length} 个数据库候选、${hostCandidates.length} 个主机候选。`;
         result.dataset.tone = (binding || candidates.length) && (source.source_type !== "PROMETHEUS" || hostCandidates.length) ? "good" : "";

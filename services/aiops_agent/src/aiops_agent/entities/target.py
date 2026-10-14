@@ -27,6 +27,10 @@ class TargetEntity(BaseEntity):
     db_type: Mapped[str] = mapped_column(String(32), nullable=False)
     version_code: Mapped[str | None] = mapped_column(String(64))
     environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    deployment_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="SINGLE_INSTANCE"
+    )
+    rac_node_number: Mapped[int | None] = mapped_column(Numeric(10, 0))
     db_role: Mapped[str] = mapped_column(
         String(16), nullable=False, default="UNKNOWN"
     )

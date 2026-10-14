@@ -96,6 +96,7 @@ class InstanceDiscoveryTransactionTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.detached)
         self.assertEqual("MAPPED", page.items[0].mapping_status)
         self.assertEqual(target_id, page.items[0].mapped_target_id)
+        self.assertEqual("oracle-test", page.items[0].locator_key)
 
 
 if __name__ == "__main__":

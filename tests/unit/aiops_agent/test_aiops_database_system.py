@@ -26,12 +26,15 @@ from platform_core.identity import uuid7
 def _resource(draft_id, resource_id, group_id, name):
     return {
         "draft_resource_id": draft_id,
-        "mode": "REUSE",
-        "resource_id": resource_id,
+        "mode": "NEW",
         "resource_type_key": "DATABASE",
         "display_name": name,
         "owner_group_id": group_id,
         "architecture_layer_key": "DATA",
+        "database": {
+            "target": {"display_name": name, "db_type": "ORACLE", "version_code": "19c", "environment": "PROD"},
+            "monitoring": {"source_id": uuid7(), "candidate_ref": "signed-candidate"},
+        },
     }
 
 
@@ -40,6 +43,26 @@ class BusinessSystemResourceGraphContractTest(unittest.TestCase):
         self.assertIsNone(BusinessSystemLifecycleCommand().reason)
         with self.assertRaises(ValidationError):
             BusinessSystemLifecycleCommand(reason="x" * 1001)
+
+    def test_existing_resource_cannot_be_attached_to_another_system(self) -> None:
+        payload = _resource(uuid7(), uuid7(), uuid7(), "共享数据库")
+        payload["mode"] = "REUSE"
+        payload["resource_id"] = uuid7()
+        with self.assertRaises(ValidationError):
+            BusinessSystemResourceGraphCommit.model_validate({"system": {"display_name": "MES", "environment": "PROD", "responsibility_group_id": payload["owner_group_id"]}, "resources": [payload]})
+
+    def test_new_database_requires_monitoring_mapping(self) -> None:
+        payload = _resource(uuid7(), uuid7(), uuid7(), "核心数据库")
+        payload["database"].pop("monitoring")
+        with self.assertRaises(ValidationError):
+            BusinessSystemResourceGraphCommit.model_validate({"system": {"display_name": "MES", "environment": "PROD", "responsibility_group_id": payload["owner_group_id"]}, "resources": [payload]})
+
+    def test_rac_requires_oracle_and_node_number(self) -> None:
+        group_id = uuid7()
+        payload = _resource(uuid7(), uuid7(), group_id, "MES RAC")
+        payload["database"]["target"]["deployment_type"] = "RAC"
+        with self.assertRaisesRegex(ValidationError, "必须填写节点编号"):
+            BusinessSystemResourceGraphCommit.model_validate({"system": {"display_name": "MES", "environment": "PROD", "responsibility_group_id": group_id}, "resources": [payload]})
 
     def test_detail_is_projected_to_strict_list_summary(self) -> None:
         now = datetime.now(UTC)
@@ -91,8 +114,10 @@ class BusinessSystemResourceGraphContractTest(unittest.TestCase):
             })
 
     def test_database_version_environment_and_role_are_mutable(self) -> None:
-        patch = ManagedResourcePatch(database={"version_code": "26ai", "environment": "STG", "db_role": "STANDBY"})
+        patch = ManagedResourcePatch(database={"version_code": "26ai", "environment": "STG", "deployment_type": "RAC", "rac_node_number": 2, "db_role": "STANDBY"})
         self.assertEqual("26ai", patch.database.version_code)
+        self.assertEqual("RAC", patch.database.deployment_type)
+        self.assertEqual(2, patch.database.rac_node_number)
         self.assertEqual("STANDBY", patch.database.db_role)
 
 

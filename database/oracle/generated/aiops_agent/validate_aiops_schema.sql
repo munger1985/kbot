@@ -2356,6 +2356,7 @@ BEGIN
             'KBOT_OPS_TARGET|CREATED_BY',
             'KBOT_OPS_TARGET|DB_ROLE',
             'KBOT_OPS_TARGET|DB_TYPE',
+            'KBOT_OPS_TARGET|DEPLOYMENT_TYPE',
             'KBOT_OPS_TARGET|DIAGNOSTIC_CREDENTIAL_ID',
             'KBOT_OPS_TARGET|DISPLAY_NAME',
             'KBOT_OPS_TARGET|DOMAIN_ID',
@@ -2374,6 +2375,7 @@ BEGIN
             'KBOT_OPS_TARGET|OBSERVED_STATUS',
             'KBOT_OPS_TARGET|ORACLE_CONTAINER_SCOPE',
             'KBOT_OPS_TARGET|ORACLE_PDB_NAME',
+            'KBOT_OPS_TARGET|RAC_NODE_NUMBER',
             'KBOT_OPS_TARGET|READONLY_CONNECTION_ENABLED',
             'KBOT_OPS_TARGET|RESPONSIBILITY_GROUP_ID',
             'KBOT_OPS_TARGET|ROW_VERSION',
@@ -3554,6 +3556,7 @@ BEGIN
             'KBOT_OPS_TARGET|CREATED_BY',
             'KBOT_OPS_TARGET|DB_ROLE',
             'KBOT_OPS_TARGET|DB_TYPE',
+            'KBOT_OPS_TARGET|DEPLOYMENT_TYPE',
             'KBOT_OPS_TARGET|DIAGNOSTIC_CREDENTIAL_ID',
             'KBOT_OPS_TARGET|DISPLAY_NAME',
             'KBOT_OPS_TARGET|DOMAIN_ID',
@@ -3572,6 +3575,7 @@ BEGIN
             'KBOT_OPS_TARGET|OBSERVED_STATUS',
             'KBOT_OPS_TARGET|ORACLE_CONTAINER_SCOPE',
             'KBOT_OPS_TARGET|ORACLE_PDB_NAME',
+            'KBOT_OPS_TARGET|RAC_NODE_NUMBER',
             'KBOT_OPS_TARGET|READONLY_CONNECTION_ENABLED',
             'KBOT_OPS_TARGET|RESPONSIBILITY_GROUP_ID',
             'KBOT_OPS_TARGET|ROW_VERSION',
@@ -3823,7 +3827,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1181 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1183 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3956,7 +3960,7 @@ BEGIN
         '验证通过：73 张表、10 个视图、'
         || '1 个属性图、'
         || '284 个命名索引、250 个命名约束、'
-        || '1181 个表列；Schema 与当前规范一致。'
+        || '1183 个表列；Schema 与当前规范一致。'
     );
 END;
 /

@@ -57,6 +57,22 @@
     document.body.append(node);
     setTimeout(() => node.remove(), 5000);
   }
+  function enforceDrawerClosePolicy() {
+    const blockBackdropInteraction = (event) => {
+      if (event.target instanceof HTMLDialogElement && event.target.matches('[class*="drawer"]')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    ["pointerdown", "mousedown", "click"].forEach((eventName) => {
+      document.addEventListener(eventName, blockBackdropInteraction, true);
+    });
+    document.addEventListener("cancel", (event) => {
+      if (event.target instanceof HTMLDialogElement && event.target.matches('[class*="drawer"]')) {
+        event.preventDefault();
+      }
+    }, true);
+  }
   function shellMarkup(access) {
     const current = document.body.dataset.page;
     const currentNavigation = current === "inspection-plans"
@@ -76,6 +92,7 @@
       return null;
     }
     try {
+      enforceDrawerClosePolicy();
       const access = await KBotAIOpsAuth.request("/api/v1/apps/aiops/access");
       const current = document.body.dataset.page;
       if (!new Set(access.permissions || []).has(pagePermissions[current])) {
