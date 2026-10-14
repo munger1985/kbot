@@ -42,6 +42,7 @@
   const wizardSteps = ["identity", "monitoring", "access"];
   const wizardButtons = [...document.querySelectorAll("[data-target-wizard-step]")];
   const wizardPanels = [...document.querySelectorAll("[data-target-wizard-panel]")];
+  const sourceDatabaseSystemId = new URLSearchParams(location.search).get("database_system_id");
   const wizardPrevious = document.getElementById("target-wizard-previous");
   const wizardNext = document.getElementById("target-wizard-next");
   const testConnectionButton = document.getElementById("test-target-connection");
@@ -637,6 +638,13 @@
     return fields;
   }
 
+  function closeTargetEditor() {
+    dialog.close();
+    if (sourceDatabaseSystemId) {
+      location.href = `database-systems.html?open=${encodeURIComponent(sourceDatabaseSystemId)}`;
+    }
+  }
+
   async function saveTarget(event) {
     event.preventDefault();
     if (!monitorSelectionIsValid()) return;
@@ -721,7 +729,7 @@
         baseSaved = true;
         await saveSelectedMonitorBinding(updated);
       }
-      dialog.close();
+      closeTargetEditor();
       shell.toast(creating ? "运维目标已创建" : "运维目标已更新");
       editingTarget = null;
       await KBotAIOpsPages.reload();
@@ -742,8 +750,8 @@
   globalThis.KBotAIOpsTargets = { openEdit };
   shell.ready.then(() => {
     document.getElementById("create-target")?.addEventListener("click", () => void openCreate());
-    document.getElementById("close-target-dialog").addEventListener("click", () => dialog.close());
-    document.getElementById("cancel-target-dialog").addEventListener("click", () => dialog.close());
+    document.getElementById("close-target-dialog").addEventListener("click", closeTargetEditor);
+    document.getElementById("cancel-target-dialog").addEventListener("click", closeTargetEditor);
     document.getElementById("test-target-connection").addEventListener("click", testConnection);
     wizardNext.addEventListener("click", advanceWizard);
     wizardPrevious.addEventListener("click", retreatWizard);

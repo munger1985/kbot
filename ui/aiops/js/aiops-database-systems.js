@@ -25,7 +25,6 @@
   let step = "shape";
   let system = null;
   let systems = [];
-  let targets = [];
   let sources = [];
   let groups = [];
   let sites = [];
@@ -33,6 +32,7 @@
   let relations = [];
   let activeMember = 0;
   let detail = null;
+  let openedRequestedSystem = false;
 
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
   const idempotency = () => crypto.randomUUID();
@@ -90,7 +90,7 @@
 
   function member(memberKey, label, siteCode, role, order, groupKey = "", memberType = "INSTANCE") {
     const port = dbType() === "ORACLE" ? 1521 : dbType() === "MYSQL" ? 3306 : 5432;
-    return { member_key: memberKey, label, site_code: siteCode, expected_role: role, sort_order: order, group_key: groupKey, member_type: memberType, mode: "NEW", target_id: "", saved: false, display_name: `${field("display_name").value}-${label}`, host: "", port, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", target_key: "", candidate_ref: "", host_candidate_ref: "", discovery_candidates: [], host_candidates: [], discovery_loading: false };
+    return { member_key: memberKey, label, site_code: siteCode, expected_role: role, sort_order: order, group_key: groupKey, member_type: memberType, target_id: "", saved: false, display_name: `${field("display_name").value}-${label}`, host: "", port, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", target_key: "", candidate_ref: "", host_candidate_ref: "", discovery_candidates: [], host_candidates: [], discovery_loading: false };
   }
 
   const memberSource = (item) => sources.find((source) => source.source_id === item.source_id);
@@ -136,23 +136,18 @@
     slots.innerHTML = members.map((item, index) => `<button type="button" data-member-index="${index}" class="${activeMember === index ? "active" : ""}"><span>${index + 1}</span><span><strong>${shell.escape(item.label)}</strong><small>${shell.escape(item.site_code)} · ${shell.escape(item.expected_role)}</small></span><em class="${item.saved ? "good" : ""}">${item.saved ? "验证通过" : "待配置"}</em></button>`).join("");
     slots.querySelectorAll("[data-member-index]").forEach((button) => { button.onclick = () => { activeMember = Number(button.dataset.memberIndex); renderMembers(); }; });
     const item = members[activeMember];
-    const selectedTargetIds = new Set(members.filter((memberItem) => memberItem !== item && memberItem.target_id).map((memberItem) => memberItem.target_id));
-    const reusable = targets.filter((target) => target.db_type === dbType() && target.version_code === field("version_code").value && !selectedTargetIds.has(target.target_id));
     const selectedSource = memberSource(item);
     const discoveryFields = memberUsesDiscovery(item)
       ? `<div class="ops-field span-4"><label>数据库 Label</label><select name="member_candidate_ref"><option value="">请选择</option>${item.discovery_candidates.map((candidate) => `<option value="${shell.escape(candidate.candidate_ref)}" ${candidate.candidate_ref === item.candidate_ref ? "selected" : ""}>${shell.escape(candidate.display_name)} · ${shell.escape(candidate.locator_hint)}</option>`).join("")}</select></div>${selectedSource?.source_type === "PROMETHEUS" ? `<div class="ops-field span-4"><label>主机 Label</label><select name="member_host_candidate_ref"><option value="">请选择</option>${item.host_candidates.map((candidate) => `<option value="${shell.escape(candidate.candidate_ref)}" ${candidate.candidate_ref === item.host_candidate_ref ? "selected" : ""}>${shell.escape(candidate.display_name)} · ${shell.escape(candidate.locator_hint)}</option>`).join("")}</select></div>` : ""}<div class="ops-field span-4"><button id="discover-member-labels" type="button">${item.discovery_loading ? "发现中…" : "发现数据库与主机 Label"}</button></div>`
       : `<div class="ops-field span-4"><label>稳定定位键</label><input name="member_target_key" value="${shell.escape(item.target_key)}"><small>Loki 使用精确 target_key 标签；OEM 等来源使用稳定目标标识。</small></div>`;
     document.getElementById("member-editor").innerHTML = `
-      <div class="ops-field span-12"><h3>${shell.escape(item.label)}</h3><small>${shell.escape(item.site_code)} · 期望角色 ${shell.escape(item.expected_role)}</small></div>
-      <div class="ops-field span-12 system-mode"><label><input name="member_mode" type="radio" value="NEW" ${item.mode === "NEW" ? "checked" : ""}>新建 Target</label><label><input name="member_mode" type="radio" value="REUSE" ${item.mode === "REUSE" ? "checked" : ""}>复用已有 Target</label></div>
-      <div id="member-reuse" class="ops-field span-12" ${item.mode === "REUSE" ? "" : "hidden"}><label>已有 Target</label><select name="member_target_id"><option value="">请选择</option>${reusable.map((target) => `<option value="${shell.escape(target.target_id)}" ${target.target_id === item.target_id ? "selected" : ""}>${shell.escape(target.display_name)} · ${shell.escape(target.connectivity_status)}</option>`).join("")}</select></div>
-      <div id="member-new" class="ops-form span-12" ${item.mode === "NEW" ? "" : "hidden"}>
+      <div class="ops-field span-12"><h3>${shell.escape(item.label)}</h3><small>${shell.escape(item.site_code)} · 期望角色 ${shell.escape(item.expected_role)} · 该成员归属于当前数据库系统</small></div>
+      <div id="member-new" class="ops-form span-12">
         <div class="ops-field span-6"><label>Target 名称</label><input name="member_display_name" value="${shell.escape(item.display_name)}"></div><div class="ops-field span-6"><label>Host</label><input name="member_host" value="${shell.escape(item.host)}"></div>
         <div class="ops-field span-3"><label>端口</label><input name="member_port" type="number" value="${item.port}"></div><div class="ops-field span-5"><label>${dbType() === "ORACLE" ? "Service Name" : "Database"}</label><input name="member_database" value="${shell.escape(item.database)}"></div>${dbType() === "ORACLE" ? `<div class="ops-field span-4"><label>Oracle 容器范围</label><select name="member_oracle_scope"><option value="NON_CDB" ${item.oracle_scope === "NON_CDB" ? "selected" : ""}>Non-CDB</option><option value="CDB_ROOT" ${item.oracle_scope === "CDB_ROOT" ? "selected" : ""}>CDB Root</option><option value="PDB" ${item.oracle_scope === "PDB" ? "selected" : ""}>PDB</option></select></div>${item.oracle_scope === "PDB" ? `<div class="ops-field span-4"><label>PDB Name</label><input name="member_oracle_pdb_name" value="${shell.escape(item.oracle_pdb_name)}"><small>Service Name 只负责路由，PDB Name 用于核验实际容器。</small></div>` : ""}` : ""}
         <div class="ops-field span-4"><label>诊断用户名</label><input name="member_username" value="${shell.escape(item.username)}" autocomplete="off"></div><div class="ops-field span-4"><label>诊断密码</label><input name="member_password" type="password" value="${shell.escape(item.password)}" autocomplete="new-password"></div>
         <div class="ops-field span-4"><label>监控源</label><select name="member_source_id"><option value="">请选择</option>${sources.map((source) => `<option value="${shell.escape(source.source_id)}" ${source.source_id === item.source_id ? "selected" : ""}>${shell.escape(source.display_name)} · ${shell.escape(source.source_type)}</option>`).join("")}</select></div>${discoveryFields}
       </div><div class="ops-actions span-12"><button id="save-member" class="primary" type="button">${item.saved ? "重新验证成员" : "验证并保存成员"}</button></div>`;
-    document.querySelectorAll('[name="member_mode"]').forEach((radio) => { radio.onchange = () => { saveEditor(item); item.mode = radio.value; renderMembers(); }; });
     document.querySelector('[name="member_source_id"]')?.addEventListener("change", (event) => {
       saveEditor(item); item.source_id = event.target.value; item.candidate_ref = ""; item.host_candidate_ref = ""; item.discovery_candidates = []; item.host_candidates = []; renderMembers();
     });
@@ -165,7 +160,6 @@
 
   function saveEditor(item) {
     const editor = document.getElementById("member-editor");
-    item.target_id = editor.querySelector('[name="member_target_id"]')?.value || item.target_id;
     item.display_name = editor.querySelector('[name="member_display_name"]')?.value || item.display_name;
     item.host = editor.querySelector('[name="member_host"]')?.value || item.host;
     item.port = Number(editor.querySelector('[name="member_port"]')?.value || item.port);
@@ -187,12 +181,7 @@
   async function saveMember(item) {
     saveEditor(item); setResult("", "");
     try {
-      if (item.mode === "REUSE") {
-        if (!item.target_id) throw new Error("请选择已有 Target");
-        const bindings = await request(`/targets/${item.target_id}/source-bindings`);
-        if (!bindings.some((binding) => binding.status === "ACTIVE")) throw new Error("所选 Target 尚未配置有效监控映射");
-      } else {
-        const source = memberSource(item);
+      const source = memberSource(item);
         if (![item.display_name, item.host, item.database, item.username, item.password, source].every(Boolean)) throw new Error("请完整填写连接、凭据和监控源");
         if (dbType() === "ORACLE" && item.oracle_scope === "PDB" && !item.oracle_pdb_name) throw new Error("PDB 范围必须填写独立的 PDB Name");
         if (memberUsesDiscovery(item) && (!item.candidate_ref || (source.source_type === "PROMETHEUS" && !item.host_candidate_ref))) throw new Error("请发现并选择数据库 Label；Prometheus 还必须选择主机 Label");
@@ -207,8 +196,7 @@
           const locator = source.source_type === "LOKI" ? { labels: { target_key: item.target_key } } : { target_key: item.target_key };
           await request(`/targets/${target.target_id}/source-bindings`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotency() }, body: JSON.stringify({ source_id: item.source_id, source_locator_key: item.target_key, source_locator: locator }) });
         }
-        item.target_id = target.target_id; targets.push(target);
-      }
+        item.target_id = target.target_id;
       item.saved = true;
       const pending = members.findIndex((candidate) => !candidate.saved);
       if (pending >= 0) activeMember = pending;
@@ -272,6 +260,12 @@
     document.querySelectorAll("[data-system-id]").forEach((button) => { button.onclick = () => openDetail(button.dataset.systemId); });
   }
 
+  function memberDetailMarkup(item, memberItem) {
+    const systemId = encodeURIComponent(item.database_system_id);
+    const targetId = encodeURIComponent(memberItem.target_id);
+    return `<details class="system-member-card"><summary><span><strong>${shell.escape(memberItem.target_display_name)}</strong><small>${shell.escape(memberItem.expected_role)} / ${shell.escape(memberItem.observed_role)}</small></span>${shell.badge(memberItem.connectivity_status)}</summary><dl><dt>成员类型</dt><dd>${shell.escape(memberItem.member_type)}</dd><dt>连接状态</dt><dd>${shell.escape(memberItem.connectivity_status)}</dd><dt>监控映射</dt><dd>${memberItem.monitoring_ready ? "已配置" : "未配置"}</dd><dt>成员键</dt><dd>${shell.escape(memberItem.member_key)}</dd></dl><div class="ops-actions"><a class="ops-button" href="./target-detail.html?id=${targetId}&database_system_id=${systemId}">成员详情</a><a class="ops-button" href="./targets.html?edit=${targetId}&database_system_id=${systemId}">维护成员配置</a></div></details>`;
+  }
+
   async function openDetail(systemId) {
     const [item, profile] = await Promise.all([
       request(`/database-systems/${systemId}`),
@@ -279,7 +273,7 @@
     ]);
     const selectedSources = new Set(profile?.required_backup_source_types || []);
     const value = (name, fallback) => profile?.[name] ?? fallback;
-    document.getElementById("system-detail").innerHTML = `<header><div><small>DATABASE SYSTEM</small><h2>${shell.escape(item.display_name)}</h2><p>${shell.escape(item.db_type)} ${shell.escape(item.version_code)} · ${shell.escape(item.deployment_category)}</p></div></header><div class="ops-dialog-body"><section class="ops-panel"><div class="ops-panel-head"><div><h3>系统拓扑</h3><p>${item.member_count} 个成员，保护状态 ${item.protection_status === "CONFIGURED" ? "已配置" : "未配置"}</p></div></div><div class="ops-panel-body system-topology-board">${item.sites.map((site) => `<section><header><strong>${shell.escape(site.display_name)}</strong><small>${shell.escape(site.site_code)}</small></header><div>${item.members.filter((memberItem) => memberItem.site_code === site.site_code).map((memberItem) => `<a href="./target-detail.html?id=${encodeURIComponent(memberItem.target_id)}"><strong>${shell.escape(memberItem.target_display_name)}</strong><span>${shell.escape(memberItem.expected_role)} / ${shell.escape(memberItem.observed_role)}</span></a>`).join("")}</div></section>`).join("")}</div></section><section class="ops-panel"><div class="ops-panel-head"><div><h3>备份与恢复保护</h3><p>保护配置归属整个数据库系统；未配置只告警，不影响监控启用。</p></div><a class="ops-button" href="./recovery-drills.html?database_system_id=${encodeURIComponent(item.database_system_id)}">恢复演练</a></div><div class="ops-panel-body"><form id="system-protection-form" class="ops-form"><label class="ops-field span-6">备份策略校验<select name="backup_policy_enabled"><option value="true" ${value("backup_policy_enabled", true) ? "selected" : ""}>启用</option><option value="false" ${!value("backup_policy_enabled", true) ? "selected" : ""}>停用</option></select></label><label class="ops-field span-3">备份频率（小时）<input name="backup_frequency_hours" type="number" min="1" value="${value("backup_frequency_hours", 24)}"></label><label class="ops-field span-3">成功备份最大时效（小时）<input name="backup_success_max_age_hours" type="number" min="1" value="${value("backup_success_max_age_hours", 26)}"></label><label class="ops-field span-3">保留天数<input name="backup_retention_days" type="number" min="1" value="${value("backup_retention_days", 30)}"></label><label class="ops-field span-3">RPO（秒）<input name="rpo_seconds" type="number" min="0" value="${value("rpo_seconds", 3600)}"></label><label class="ops-field span-3">RTO（秒）<input name="rto_seconds" type="number" min="60" value="${value("rto_seconds", 14400)}"></label><label class="ops-field span-3">定期恢复演练<select name="drill_required"><option value="true" ${value("drill_required", true) ? "selected" : ""}>要求</option><option value="false" ${!value("drill_required", true) ? "selected" : ""}>不要求</option></select></label><label class="ops-field span-3">演练周期（天）<input name="required_drill_interval_days" type="number" min="1" value="${value("required_drill_interval_days", 180)}"></label><label class="ops-field span-6">最低保障等级<select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN">数据库可打开</option><option value="APPLICATION_VALIDATED">业务验证通过</option></select></label><label class="ops-field span-12">必需备份来源<select name="required_backup_source_types" multiple size="${Math.min(6, (protectionSources[item.db_type] || []).length)}">${(protectionSources[item.db_type] || []).map(([source, label]) => `<option value="${source}" ${selectedSources.has(source) ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="ops-field span-12">策略说明<textarea name="source_note" rows="3" maxlength="1000">${shell.escape(profile?.source_note || "")}</textarea></label><div class="ops-actions span-12"><button class="primary" type="submit">${profile ? "保存新版本" : "创建保护配置"}</button><span id="system-protection-result" class="ops-connection-result"></span></div></form></div></section></div>`;
+    document.getElementById("system-detail").innerHTML = `<header><div><small>DATABASE SYSTEM</small><h2>${shell.escape(item.display_name)}</h2><p>${shell.escape(item.db_type)} ${shell.escape(item.version_code)} · ${shell.escape(item.deployment_category)}</p></div></header><div class="ops-dialog-body"><section class="ops-panel"><div class="ops-panel-head"><div><h3>系统拓扑与成员</h3><p>${item.member_count} 个成员；展开节点查看连接、监控与维护入口。</p></div></div><div class="ops-panel-body system-topology-board">${item.sites.map((site) => `<section><header><strong>${shell.escape(site.display_name)}</strong><small>${shell.escape(site.site_code)}</small></header><div>${item.members.filter((memberItem) => memberItem.site_code === site.site_code).map((memberItem) => memberDetailMarkup(item, memberItem)).join("")}</div></section>`).join("")}</div></section><section class="ops-panel"><div class="ops-panel-head"><div><h3>备份与恢复保护</h3><p>保护配置归属整个数据库系统；未配置只告警，不影响监控启用。</p></div><a class="ops-button" href="./recovery-drills.html?database_system_id=${encodeURIComponent(item.database_system_id)}">恢复演练</a></div><div class="ops-panel-body"><form id="system-protection-form" class="ops-form"><label class="ops-field span-6">备份策略校验<select name="backup_policy_enabled"><option value="true" ${value("backup_policy_enabled", true) ? "selected" : ""}>启用</option><option value="false" ${!value("backup_policy_enabled", true) ? "selected" : ""}>停用</option></select></label><label class="ops-field span-3">备份频率（小时）<input name="backup_frequency_hours" type="number" min="1" value="${value("backup_frequency_hours", 24)}"></label><label class="ops-field span-3">成功备份最大时效（小时）<input name="backup_success_max_age_hours" type="number" min="1" value="${value("backup_success_max_age_hours", 26)}"></label><label class="ops-field span-3">保留天数<input name="backup_retention_days" type="number" min="1" value="${value("backup_retention_days", 30)}"></label><label class="ops-field span-3">RPO（秒）<input name="rpo_seconds" type="number" min="0" value="${value("rpo_seconds", 3600)}"></label><label class="ops-field span-3">RTO（秒）<input name="rto_seconds" type="number" min="60" value="${value("rto_seconds", 14400)}"></label><label class="ops-field span-3">定期恢复演练<select name="drill_required"><option value="true" ${value("drill_required", true) ? "selected" : ""}>要求</option><option value="false" ${!value("drill_required", true) ? "selected" : ""}>不要求</option></select></label><label class="ops-field span-3">演练周期（天）<input name="required_drill_interval_days" type="number" min="1" value="${value("required_drill_interval_days", 180)}"></label><label class="ops-field span-6">最低保障等级<select name="required_assurance_level"><option value="BACKUP_METADATA">备份元数据</option><option value="RESTORE_VALIDATE">恢复校验</option><option value="DATABASE_OPEN">数据库可打开</option><option value="APPLICATION_VALIDATED">业务验证通过</option></select></label><label class="ops-field span-12">必需备份来源<select name="required_backup_source_types" multiple size="${Math.min(6, (protectionSources[item.db_type] || []).length)}">${(protectionSources[item.db_type] || []).map(([source, label]) => `<option value="${source}" ${selectedSources.has(source) ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="ops-field span-12">策略说明<textarea name="source_note" rows="3" maxlength="1000">${shell.escape(profile?.source_note || "")}</textarea></label><div class="ops-actions span-12"><button class="primary" type="submit">${profile ? "保存新版本" : "创建保护配置"}</button><span id="system-protection-result" class="ops-connection-result"></span></div></form></div></section></div>`;
     const protectionForm = document.getElementById("system-protection-form");
     protectionForm.elements.required_assurance_level.value = value("required_assurance_level", "DATABASE_OPEN");
     protectionForm.onsubmit = async (event) => {
@@ -321,9 +315,14 @@
   }
 
   async function load() {
-    const [systemPage, targetPage, sourcePage, groupPage] = await Promise.all([request("/database-systems?limit=200"), request("/targets?limit=200"), request("/diagnostic-sources?limit=200"), request("/responsibility-groups")]);
-    systems = systemPage.items || []; targets = targetPage.items || []; sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED"); groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
+    const [systemPage, sourcePage, groupPage] = await Promise.all([request("/database-systems?limit=200"), request("/diagnostic-sources?limit=200"), request("/responsibility-groups")]);
+    systems = systemPage.items || []; sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED"); groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
     field("responsibility_group_id").innerHTML = '<option value="">请选择责任组</option>' + groups.map((group) => `<option value="${shell.escape(group.responsibility_group_id)}">${shell.escape(group.name)}</option>`).join(""); renderList();
+    const requestedSystemId = new URLSearchParams(location.search).get("open");
+    if (requestedSystemId && !openedRequestedSystem && systems.some((item) => item.database_system_id === requestedSystemId)) {
+      openedRequestedSystem = true;
+      await openDetail(requestedSystemId);
+    }
   }
 
   shell.ready.then(() => {

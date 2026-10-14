@@ -32,6 +32,10 @@ PRESERVED_TABLES = (
     ("KBOT_OPS_TARGET", "KBOT_KEEP_AIOPS_TARGET"),
     ("KBOT_OPS_DIAGNOSTIC_SOURCE", "KBOT_KEEP_AIOPS_SOURCE"),
     ("KBOT_OPS_TARGET_FACT", "KBOT_KEEP_AIOPS_TARGET_FACT"),
+    ("KBOT_OPS_DATABASE_SYSTEM", "KBOT_KEEP_AIOPS_DB_SYSTEM"),
+    ("KBOT_OPS_DATABASE_SYSTEM_SITE", "KBOT_KEEP_AIOPS_DB_SITE"),
+    ("KBOT_OPS_DATABASE_SYSTEM_MEMBER", "KBOT_KEEP_AIOPS_DB_MEMBER"),
+    ("KBOT_OPS_DATABASE_SYSTEM_RELATION", "KBOT_KEEP_AIOPS_DB_RELATION"),
     ("KBOT_OPS_RECOVERY_PROFILE", "KBOT_KEEP_AIOPS_REC_PROFILE"),
     ("KBOT_OPS_TARGET_SOURCE_BINDING", "KBOT_KEEP_AIOPS_TSRC_BIND"),
 )
@@ -776,9 +780,64 @@ def _render_restore_and_verify(
     restore_sql = "\n\n".join(restore_statements)
     pairs_sql = "\n        UNION ALL\n        ".join(row_pairs)
     preserved_names = ", ".join(f"'{table}'" for table, _ in PRESERVED_TABLES)
+    topology_names = ", ".join(
+        f"'{table}'"
+        for table in (
+            "KBOT_OPS_DATABASE_SYSTEM",
+            "KBOT_OPS_DATABASE_SYSTEM_SITE",
+            "KBOT_OPS_DATABASE_SYSTEM_MEMBER",
+            "KBOT_OPS_DATABASE_SYSTEM_RELATION",
+        )
+    )
     return f"""PROMPT === 正在恢复监控源和运维目标配置 ===
 
 {restore_sql}
+
+PROMPT === 正在为历史孤立 Target 补齐单实例数据库系统 ===
+
+INSERT INTO KBOT_OPS_DATABASE_SYSTEM (
+    DATABASE_SYSTEM_ID, DOMAIN_ID, DISPLAY_NAME, DB_TYPE, VERSION_CODE,
+    DEPLOYMENT_SHAPE, DEPLOYMENT_CATEGORY, CAPABILITIES_JSON, ENVIRONMENT,
+    IMPORTANCE_LEVEL, RESPONSIBILITY_GROUP_ID, DESCRIPTION, STATUS,
+    ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
+)
+SELECT t.TARGET_ID, t.DOMAIN_ID, t.DISPLAY_NAME, t.DB_TYPE,
+       NVL(t.VERSION_CODE, 'UNKNOWN'), 'SINGLE_INSTANCE', 'SINGLE_INSTANCE',
+       JSON_ARRAY(), t.ENVIRONMENT, t.IMPORTANCE_LEVEL,
+       t.RESPONSIBILITY_GROUP_ID, NULL,
+       CASE WHEN t.STATUS = 'ENABLED' THEN 'ENABLED' ELSE 'DISABLED' END,
+       1, t.CREATED_BY, t.UPDATED_BY, t.CREATED_AT, t.UPDATED_AT
+  FROM KBOT_OPS_TARGET t
+ WHERE NOT EXISTS (
+       SELECT 1 FROM KBOT_OPS_DATABASE_SYSTEM_MEMBER m
+        WHERE m.TARGET_ID = t.TARGET_ID
+ );
+
+INSERT INTO KBOT_OPS_DATABASE_SYSTEM_SITE (
+    SITE_ID, DATABASE_SYSTEM_ID, SITE_CODE, DISPLAY_NAME, EXPECTED_ROLE,
+    SORT_ORDER
+)
+SELECT t.TARGET_ID, t.TARGET_ID, 'MAIN', '默认站点', 'ACTIVE', 0
+  FROM KBOT_OPS_TARGET t
+ WHERE NOT EXISTS (
+       SELECT 1 FROM KBOT_OPS_DATABASE_SYSTEM_MEMBER m
+        WHERE m.TARGET_ID = t.TARGET_ID
+ );
+
+INSERT INTO KBOT_OPS_DATABASE_SYSTEM_MEMBER (
+    MEMBER_ID, DATABASE_SYSTEM_ID, SITE_ID, TARGET_ID, MEMBER_KEY,
+    GROUP_KEY, MEMBER_TYPE, EXPECTED_ROLE, SORT_ORDER
+)
+SELECT t.TARGET_ID, t.TARGET_ID, t.TARGET_ID, t.TARGET_ID, 'INSTANCE-1',
+       NULL, 'INSTANCE',
+       CASE WHEN t.DB_ROLE IN ('PRIMARY', 'STANDBY')
+            THEN t.DB_ROLE ELSE 'INSTANCE' END,
+       0
+  FROM KBOT_OPS_TARGET t
+ WHERE NOT EXISTS (
+       SELECT 1 FROM KBOT_OPS_DATABASE_SYSTEM_MEMBER m
+        WHERE m.TARGET_ID = t.TARGET_ID
+ );
 
 COMMIT;
 
@@ -788,6 +847,7 @@ DECLARE
     l_current_count PLS_INTEGER;
     l_backup_count PLS_INTEGER;
     l_other_row_count PLS_INTEGER := 0;
+    l_orphan_target_count PLS_INTEGER;
 BEGIN
     FOR keep_row IN (
         {pairs_sql}
@@ -800,7 +860,10 @@ BEGIN
             'SELECT COUNT(*) FROM '
             || dbms_assert.enquote_name(keep_row.backup_name, FALSE)
             INTO l_backup_count;
-        IF l_current_count <> l_backup_count THEN
+        IF (keep_row.table_name IN ({topology_names})
+            AND l_current_count < l_backup_count)
+           OR (keep_row.table_name NOT IN ({topology_names})
+               AND l_current_count <> l_backup_count) THEN
             raise_application_error(
                 -20110,
                 keep_row.table_name || ' 恢复行数不一致：当前='
@@ -828,6 +891,16 @@ BEGIN
 
     IF l_other_row_count <> 0 THEN
         raise_application_error(-20111, '非保留 AIOps 表仍存在业务数据。');
+    END IF;
+
+    SELECT COUNT(*)
+      INTO l_orphan_target_count
+      FROM KBOT_OPS_TARGET target_row
+      LEFT JOIN KBOT_OPS_DATABASE_SYSTEM_MEMBER member_row
+        ON member_row.TARGET_ID = target_row.TARGET_ID
+     WHERE member_row.TARGET_ID IS NULL;
+    IF l_orphan_target_count <> 0 THEN
+        raise_application_error(-20112, '仍有 Target 未归属数据库系统。');
     END IF;
 END;
 /"""

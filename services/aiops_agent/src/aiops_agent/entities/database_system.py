@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Numeric, String, Text, func
+from sqlalchemy import Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from platform_core.identity import uuid7
@@ -47,6 +47,9 @@ class DatabaseSystemSiteEntity(BaseEntity):
 
 class DatabaseSystemMemberEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_DATABASE_SYSTEM_MEMBER"
+    __table_args__ = (
+        UniqueConstraint("target_id", name="UX_OPS_DB_MEMBER_TARGET"),
+    )
 
     member_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     database_system_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)

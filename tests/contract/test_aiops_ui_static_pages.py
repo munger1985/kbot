@@ -86,10 +86,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             shell.index('["diagnostic-sources", "监控源"]'),
             shell.index('["database-systems", "数据库系统"]'),
         )
-        self.assertLess(
-            shell.index('["database-systems", "数据库系统"]'),
-            shell.index('["targets", "成员 Target"]'),
-        )
+        self.assertNotIn('["targets", "成员 Target"]', shell)
         self.assertNotIn('["fleet", "库群总览"]', shell)
         self.assertIn('href="./dashboard.html"', shell)
         self.assertIn("location.replace('./dashboard.html')", (
@@ -750,6 +747,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("saveTargetRecovery", targets)
         self.assertIn("backup_policy_enabled", systems)
         self.assertIn("backup_success_max_age_hours", systems)
+        self.assertNotIn("复用已有 Target", systems)
+        self.assertNotIn('/targets?limit=200', systems)
+        self.assertIn("该成员归属于当前数据库系统", systems)
+        self.assertIn('database-systems.html?open=', targets)
+        self.assertIn('new URLSearchParams(location.search).get("open")', systems)
 
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(

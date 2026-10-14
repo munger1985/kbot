@@ -168,7 +168,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             sections,
         )
 
-    def test_preserving_rebuild_keeps_only_sources_targets_and_direct_data(
+    def test_preserving_rebuild_keeps_sources_targets_and_database_systems(
         self,
     ) -> None:
         preserved = {
@@ -176,6 +176,10 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
             "KBOT_OPS_TARGET_FACT": "KBOT_KEEP_AIOPS_TARGET_FACT",
             "KBOT_OPS_DIAGNOSTIC_SOURCE": "KBOT_KEEP_AIOPS_SOURCE",
             "KBOT_OPS_TARGET_SOURCE_BINDING": "KBOT_KEEP_AIOPS_TSRC_BIND",
+            "KBOT_OPS_DATABASE_SYSTEM": "KBOT_KEEP_AIOPS_DB_SYSTEM",
+            "KBOT_OPS_DATABASE_SYSTEM_SITE": "KBOT_KEEP_AIOPS_DB_SITE",
+            "KBOT_OPS_DATABASE_SYSTEM_MEMBER": "KBOT_KEEP_AIOPS_DB_MEMBER",
+            "KBOT_OPS_DATABASE_SYSTEM_RELATION": "KBOT_KEEP_AIOPS_DB_RELATION",
         }
         for table_name, backup_name in preserved.items():
             self.assertIn(f"CREATE TABLE {backup_name} AS", self.preserving_sql)
@@ -187,11 +191,23 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertNotIn("KBOT_KEEP_AIOPS_AGENT", self.preserving_sql)
         self.assertNotIn("KBOT_KEEP_AIOPS_POLICY", self.preserving_sql)
         self.assertIn("非保留 AIOps 表仍存在业务数据", self.preserving_sql)
+        self.assertIn("正在为历史孤立 Target 补齐单实例数据库系统", self.preserving_sql)
+        self.assertIn("仍有 Target 未归属数据库系统", self.preserving_sql)
         self.assertIn("正在删除临时备份表", self.preserving_sql)
         self.assertLess(
             self.preserving_sql.index("正在验证保留行数和清空边界"),
             self.preserving_sql.index("正在删除临时备份表"),
         )
+
+    def test_database_system_upgrade_backfills_only_orphan_targets(self) -> None:
+        upgrade = (
+            SCHEMA_DIR / "upgrade_database_system.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertGreaterEqual(upgrade.count("WHERE m.TARGET_ID = t.TARGET_ID"), 3)
+        self.assertIn("CREATE UNIQUE INDEX UX_OPS_DB_MEMBER_TARGET", upgrade)
+        self.assertIn("m.DATABASE_SYSTEM_ID", upgrade)
+        self.assertIn("NVL(t.VERSION_CODE, 'UNKNOWN')", upgrade)
 
     def test_canonical_schema_does_not_enumerate_business_values(
         self,
