@@ -125,17 +125,17 @@ class TargetConfigurationMixin:
         """在调用方事务内创建 Target，供业务系统原子提交复用。"""
         assert uow.targets is not None and uow.managed_credentials is not None and uow.work_items is not None
         if request.responsibility_group_id is not None:
-            group = await uow.work_items.get_group(group_id=request.responsibility_group_id, tenant_id=scope.tenant_id, domain_id=scope.domain_id)
+            group = await uow.work_items.get_group(group_id=request.responsibility_group_id, domain_id=scope.domain_id)
             if group is None or group.status != "ACTIVE": raise validation_failed("责任组不存在或已停用")
         target_id = uuid7(); diagnostic_id = execution_id = None
         for kind, value in (("DIAGNOSTIC", request.diagnostic_credential), ("EXECUTION", request.execution_credential)):
             if value is None: continue
-            credential = await self._managed_credentials.put(uow=uow, tenant_id=scope.tenant_id, domain_id=scope.domain_id, external_key=target_id, credential_kind=f"target_{kind.lower()}", values={"username": value.username, "password": value.password}, actor_id=scope.actor_id)
+            credential = await self._managed_credentials.put(uow=uow, domain_id=scope.domain_id, external_key=target_id, credential_kind=f"target_{kind.lower()}", values={"username": value.username, "password": value.password}, actor_id=scope.actor_id)
             if kind == "DIAGNOSTIC": diagnostic_id = credential.credential_id
             else: execution_id = credential.credential_id
         request_id = uuid7() if request.readonly_connection_enabled else None
         entity = TargetEntity(
-            target_id=target_id, tenant_id=scope.tenant_id, domain_id=scope.domain_id,
+            target_id=target_id, domain_id=scope.domain_id,
             display_name=request.display_name, db_type=request.db_type, version_code=request.version_code,
             environment=request.environment, db_role=request.db_role, oracle_container_scope=request.oracle_container_scope,
             oracle_pdb_name=request.oracle_pdb_name, observed_oracle_container_scope=None,

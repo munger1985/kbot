@@ -50,6 +50,8 @@ class AIOpsSchemaValidationScriptTest(unittest.TestCase):
             self.assertIn(f"'{name}'", self.sql)
         for name in self.manifest["views"]:
             self.assertIn(f"'{name}'", self.sql)
+        for name in self.manifest["property_graphs"]:
+            self.assertIn(f"'{name}'", self.sql)
         for name in indexes:
             self.assertIn(f"'{name}'", self.sql)
         for name in constraints:
@@ -63,6 +65,7 @@ class AIOpsSchemaValidationScriptTest(unittest.TestCase):
             "[缺失] AIOps 表",
             "[多余] AIOps 表",
             "[缺失] AIOps 视图",
+            "[缺失] AIOps 属性图",
             "[缺失] AIOps 命名索引",
             "[缺失] AIOps 命名约束",
             "[缺失] AIOps 表列",

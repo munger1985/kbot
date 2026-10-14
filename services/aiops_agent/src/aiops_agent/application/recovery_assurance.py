@@ -24,10 +24,10 @@ async def build_recovery_assurance_snapshot(
     """保留最新尝试与合格成功；较早成功不能遮蔽最新失败。"""
     captured_at = now or datetime.now(UTC)
     scope = {"domain_id": int(target.domain_id)}
-    component = await business_system_repository.find_component_for_target(target_id=target.target_id, **scope) if business_system_repository is not None else None
-    component_id = component.component_id if component is not None else target.target_id
-    profile = await recovery_repository.get_active_profile(component_id=component_id, **scope)
-    drills = await recovery_repository.list_recent_drills(component_id=component_id, limit=100, **scope)
+    resource = await business_system_repository.get_resource_for_target(target_id=target.target_id, **scope) if business_system_repository is not None else None
+    resource_id = resource.resource_id if resource is not None else target.target_id
+    profile = await recovery_repository.get_active_profile(resource_id=resource_id, **scope)
+    drills = await recovery_repository.list_recent_drills(resource_id=resource_id, limit=100, **scope)
     latest_attempt = drills[0] if drills else None
     drill_required = bool(profile and profile.drill_required)
     required_rank = _ASSURANCE_RANK.get(
@@ -145,7 +145,7 @@ async def build_recovery_assurance_snapshot(
     return {
         "schema_version": "TARGET_RECOVERY_ASSURANCE.v1",
         "target_id": str(target.target_id),
-        "component_id": str(component_id),
+        "resource_id": str(resource_id),
         "db_type": str(target.db_type),
         "captured_at": captured_at.isoformat(),
         "assurance_status": assurance_status,

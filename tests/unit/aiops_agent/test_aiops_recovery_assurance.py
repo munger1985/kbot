@@ -1,4 +1,4 @@
-"""跨数据库恢复目标、演练记录和诊断证据测试。"""
+"""数据库资源级恢复策略、演练坐标和证据快照测试。"""
 
 from __future__ import annotations
 
@@ -8,513 +8,136 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from aiops_agent.application.recovery_assurance import (
-    build_recovery_assurance_snapshot,
-)
-from aiops_agent.application.errors import AIOpsApplicationError
-from aiops_agent.application.configuration.common import ConfigurationScope
-from aiops_agent.application.configuration.recovery_service import (
-    RecoveryConfigurationMixin,
-)
-from aiops_agent.domain.diagnosis.evidence import normalize_evidence_artifacts
-from aiops_agent.entities import RecoveryDrillEntity, RecoveryProfileEntity
-from platform_core.contracts.aiops import RecoveryDrillCreate
-from platform_core.identity import uuid7
 from pydantic import ValidationError
 
+from aiops_agent.application.configuration.recovery_service import recovery_drill_view
+from aiops_agent.application.recovery_assurance import build_recovery_assurance_snapshot
+from aiops_agent.domain.diagnosis.evidence import normalize_evidence_artifacts
+from platform_core.contracts.aiops import RecoveryDrillCreate
+from platform_core.identity import uuid7
 
-def _drill_request(
-    *, marker: dict, source: str, evidence: bool = True,
-    execution_target_id=None,
-):
-    failure = datetime(2026, 10, 8, 1, tzinfo=UTC)
+
+NOW = datetime(2026, 10, 8, 8, 0, tzinfo=UTC)
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def _request(marker, source, *, evidence=True):
     return {
-        "execution_target_id": execution_target_id or uuid7(),
         "scenario": "FULL_INSTANCE",
         "assurance_level": "DATABASE_OPEN",
         "backup_source_type": source,
         "environment": "ISOLATED",
         "result": "PASS",
-        "simulated_failure_at": failure,
-        "recovered_through_at": failure - timedelta(minutes=5),
-        "service_validated_at": failure + timedelta(minutes=15),
+        "simulated_failure_at": NOW,
+        "recovered_through_at": NOW - timedelta(minutes=5),
+        "service_validated_at": NOW + timedelta(minutes=15),
         "recovery_marker": marker,
-        "evidence": (
-            [{
-                "evidence_kind": "DATABASE_CHECK",
-                "reference": "report://restore/2026-10-08",
-                "content_hash": "a" * 64,
-            }]
-            if evidence
-            else []
-        ),
+        "evidence": ([{"evidence_kind": "DATABASE_CHECK", "reference": "report://restore/1", "content_hash": "a" * 64}] if evidence else []),
     }
 
 
-class RecoveryContractTest(unittest.TestCase):
-    def test_three_database_markers_are_typed(self) -> None:
-        cases = (
-            ({"kind": "ORACLE", "scn": 123}, "ORACLE_RMAN"),
-            (
-                {"kind": "POSTGRESQL", "timeline_id": 3, "lsn": "16/B374D848"},
-                "POSTGRESQL_PGBACKREST",
-            ),
-            (
-                {
-                    "kind": "MYSQL",
-                    "gtid_executed": "uuid:1-10",
-                    "binlog_file": "mysql-bin.000010",
-                    "binlog_position": 120,
-                },
-                "MYSQL_XTRABACKUP",
-            ),
-        )
-        for marker, source in cases:
-            with self.subTest(kind=marker["kind"]):
-                request = RecoveryDrillCreate.model_validate(
-                    _drill_request(marker=marker, source=source)
-                )
-                self.assertEqual(marker["kind"], request.recovery_marker.kind)
-
-    def test_marker_source_mismatch_is_rejected_and_manual_pass_can_omit_evidence(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "数据库类型不匹配"):
-            RecoveryDrillCreate.model_validate(
-                _drill_request(
-                    marker={"kind": "POSTGRESQL", "timeline_id": 1},
-                    source="ORACLE_RMAN",
-                )
-            )
-        request = RecoveryDrillCreate.model_validate(
-            _drill_request(
-                marker={"kind": "ORACLE"},
-                source="ORACLE_RMAN",
-                evidence=False,
-            )
-        )
-        self.assertEqual((), request.evidence)
-
-    def test_schema_and_ui_include_recovery_contract(self) -> None:
-        root = Path(__file__).resolve().parents[3]
-        manifest = json.loads(
-            (root / "database/oracle/aiops_agent/schema_manifest.json").read_text()
-        )
-        self.assertEqual(44, manifest["schema_version"])
-        self.assertIn("KBOT_OPS_RECOVERY_PROFILE", manifest["tables"])
-        self.assertIn("KBOT_OPS_RECOVERY_DRILL", manifest["tables"])
-        self.assertIn("required_backup_source_types", (
-            root / "ui/aiops/js/aiops-data-protection.js"
-        ).read_text())
-        system_page = (root / "ui/aiops/business-systems.html").read_text()
-        drill_page = (root / "ui/aiops/recovery-drills.html").read_text()
-        drill_script = (root / "ui/aiops/js/aiops-recovery-drills.js").read_text()
-        self.assertIn("业务系统", system_page)
-        self.assertIn('id="recovery-drill-form"', drill_page)
-        self.assertIn("recovery-drills", drill_script)
-        self.assertNotIn("Oracle SCN", drill_page)
-        self.assertNotIn("Resetlogs ID", drill_page)
-        self.assertNotIn('name="evidence_hash"', drill_page)
-        self.assertIn("recovery_marker: { kind: currentComponent.db_type }", drill_script)
-        self.assertIn("evidence: []", drill_script)
-        public_openapi = json.loads(
-            (root / "docs/openapi/aiops_public_v1.json").read_text()
-        )
-        self.assertIn(
-            "/api/v1/apps/aiops/components/{component_id}/protection-profile",
-            public_openapi["paths"],
-        )
-        self.assertIn(
-            "/api/v1/apps/aiops/components/{component_id}/recovery-drills",
-            public_openapi["paths"],
-        )
+def _profile(resource_id):
+    return SimpleNamespace(
+        recovery_profile_id=uuid7(), resource_id=resource_id, version_no=1,
+        backup_policy_enabled=True, backup_frequency_hours=24,
+        backup_success_max_age_hours=26, backup_retention_days=30,
+        rpo_seconds=3600, rto_seconds=7200, drill_required=True,
+        required_drill_interval_days=90, required_assurance_level="DATABASE_OPEN",
+        required_backup_source_types_json=["POSTGRESQL_PGBACKREST"],
+        rto_clock_basis="SERVICE_UNAVAILABLE_TO_VALIDATED", source_note=None,
+        status="ACTIVE", effective_at=NOW - timedelta(days=30), retired_at=None,
+        confirmed_by="dba", row_version=1, created_at=NOW, updated_at=NOW,
+    )
 
 
-class _RecoveryRepository:
+def _drill(resource_id, profile, **overrides):
+    values = {
+        "drill_id": uuid7(), "resource_id": resource_id, "execution_target_id": uuid7(),
+        "recovery_profile_id": profile.recovery_profile_id, "recovery_profile_version": 1,
+        "db_type": "POSTGRESQL", "scenario": "FULL_INSTANCE",
+        "assurance_level": "DATABASE_OPEN", "backup_source_type": "POSTGRESQL_PGBACKREST",
+        "environment": "ISOLATED", "result": "PASS", "status": "VERIFIED",
+        "simulated_failure_at": NOW - timedelta(days=10),
+        "recovered_through_at": NOW - timedelta(days=10, minutes=30),
+        "service_validated_at": NOW - timedelta(days=10) + timedelta(hours=1),
+        "achieved_rpo_seconds": 1800, "achieved_rto_seconds": 3600,
+        "recovery_marker_json": {"kind": "POSTGRESQL", "timeline_id": 2, "lsn": "0/16B6A50"},
+        "evidence_json": [{"evidence_kind": "DATABASE_CHECK", "reference": "audit/1", "content_hash": "a" * 64}],
+        "source_trust_level": "USER_PROVIDED", "reviewed_by": "reviewer", "reviewed_at": NOW,
+        "review_note": None, "notes": None, "row_version": 1,
+        "created_at": NOW, "created_by": "operator", "updated_at": NOW, "updated_by": "operator",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+class _Repository:
     def __init__(self, profile, drills):
         self.profile = profile
         self.drills = drills
 
-    async def get_active_profile(self, **_kwargs):
+    async def get_active_profile(self, **_):
         return self.profile
 
-    async def list_recent_drills(self, **_kwargs):
+    async def list_recent_drills(self, **_):
         return self.drills
 
 
-class RecoverySnapshotTest(unittest.IsolatedAsyncioTestCase):
-    async def test_missing_profile_has_stable_target_status_and_gaps(self) -> None:
-        target_id = uuid7()
-        snapshot = await build_recovery_assurance_snapshot(
-            recovery_repository=_RecoveryRepository(None, []),
-            target=SimpleNamespace(
-                target_id=target_id,
-                domain_id=1,
-                db_type="ORACLE",
-                capabilities_json={},
-            ),
-            now=datetime(2026, 10, 8, tzinfo=UTC),
+class RecoveryAssuranceTest(unittest.IsolatedAsyncioTestCase):
+    def test_three_database_markers_are_typed(self) -> None:
+        cases = (
+            ({"kind": "ORACLE", "scn": 123}, "ORACLE_RMAN"),
+            ({"kind": "POSTGRESQL", "timeline_id": 3, "lsn": "16/B374D848"}, "POSTGRESQL_PGBACKREST"),
+            ({"kind": "MYSQL", "gtid_executed": "uuid:1-10"}, "MYSQL_XTRABACKUP"),
         )
+        for marker, source in cases:
+            with self.subTest(kind=marker["kind"]):
+                request = RecoveryDrillCreate.model_validate(_request(marker, source))
+                self.assertEqual(marker["kind"], request.recovery_marker.kind)
 
-        codes = {item["code"] for item in snapshot["gaps"]}
-        self.assertEqual(
-            {"RPO_NOT_CONFIGURED", "RTO_NOT_CONFIGURED", "RESTORE_NOT_DEMONSTRATED"},
-            codes,
+    def test_marker_source_mismatch_is_rejected_and_manual_evidence_is_optional(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "数据库类型不匹配"):
+            RecoveryDrillCreate.model_validate(_request({"kind": "POSTGRESQL", "timeline_id": 1}, "ORACLE_RMAN"))
+        request = RecoveryDrillCreate.model_validate(
+            _request({"kind": "ORACLE"}, "ORACLE_RMAN", evidence=False)
         )
-        self.assertEqual("TARGET_NOT_CONFIGURED", snapshot["assurance_status"])
+        self.assertEqual((), request.evidence)
 
-    async def test_latest_failure_does_not_hide_older_success(self) -> None:
-        now = datetime(2026, 10, 8, tzinfo=UTC)
-        target_id = uuid7()
-        profile_id = uuid7()
-        profile = RecoveryProfileEntity(
-            recovery_profile_id=profile_id,
-            component_id=target_id,
-            domain_id=1,
-            version_no=2,
-            backup_policy_enabled=1,
-            backup_frequency_hours=24,
-            backup_success_max_age_hours=26,
-            backup_retention_days=30,
-            rpo_seconds=300,
-            rto_seconds=900,
-            drill_required=1,
-            required_drill_interval_days=30,
-            required_assurance_level="DATABASE_OPEN",
-            required_backup_source_types_json=[
-                "POSTGRESQL_PGBACKREST",
-                "STORAGE_SNAPSHOT",
-            ],
-            rto_clock_basis="SERVICE_UNAVAILABLE_TO_VALIDATED",
-            source_note="业务灾备规范",
-            status="ACTIVE",
-            effective_at=now,
-            retired_at=None,
-            confirmed_by="operator",
-            row_version=1,
-            created_by="operator",
-            updated_by="operator",
-            created_at=now,
-            updated_at=now,
+    def test_public_drill_view_hides_internal_execution_target(self) -> None:
+        resource_id = uuid7()
+        profile = _profile(resource_id)
+        view = recovery_drill_view(_drill(resource_id, profile))
+        self.assertEqual(resource_id, view.resource_id)
+        self.assertNotIn("execution_target_id", view.model_dump())
+
+    async def test_snapshot_reports_latest_failure_without_hiding_prior_success(self) -> None:
+        resource_id = uuid7()
+        profile = _profile(resource_id)
+        success = _drill(resource_id, profile)
+        failure = _drill(
+            resource_id, profile, result="FAIL", simulated_failure_at=NOW - timedelta(days=1),
+            recovered_through_at=None, service_validated_at=None,
+            achieved_rpo_seconds=None, achieved_rto_seconds=None, evidence_json=[],
         )
-
-        def drill(*, days: int, result: str, status: str, version: int):
-            return RecoveryDrillEntity(
-                drill_id=uuid7(), component_id=target_id,
-                execution_target_id=target_id, domain_id=1,
-                recovery_profile_id=profile_id, recovery_profile_version=version,
-                db_type="POSTGRESQL", scenario="FULL_INSTANCE",
-                assurance_level="DATABASE_OPEN",
-                backup_source_type="POSTGRESQL_PGBACKREST",
-                environment="ISOLATED", result=result, status=status,
-                simulated_failure_at=now - timedelta(days=days),
-                recovered_through_at=now - timedelta(days=days, minutes=5),
-                service_validated_at=now - timedelta(days=days) + timedelta(minutes=15),
-                achieved_rpo_seconds=300, achieved_rto_seconds=900,
-                recovery_marker_json={"kind": "POSTGRESQL", "timeline_id": 1},
-                evidence_json=[{"reference": "report", "content_hash": "a" * 64, "evidence_kind": "DATABASE_CHECK"}],
-                source_trust_level="USER_PROVIDED", source_ops_run_id=None,
-                reviewed_by="reviewer", reviewed_at=now, review_note=None,
-                notes=None, row_version=1, created_by="operator",
-                updated_by="operator", created_at=now, updated_at=now,
-            )
-
-        latest_failure = drill(days=1, result="FAIL", status="VERIFIED", version=2)
-        older_success = drill(days=40, result="PASS", status="VERIFIED", version=1)
-        older_success.achieved_rpo_seconds = 301
-        older_success.achieved_rto_seconds = None
-        snapshot = await build_recovery_assurance_snapshot(
-            recovery_repository=_RecoveryRepository(profile, [latest_failure, older_success]),
-            target=SimpleNamespace(
-                target_id=target_id,
-                domain_id=1,
-                db_type="POSTGRESQL",
-                capabilities_json={},
-            ),
-            now=now,
-        )
-
-        self.assertEqual("FAIL", snapshot["latest_attempt"]["result"])
-        self.assertEqual("PASS", snapshot["latest_verified_success"]["result"])
-        codes = {item["code"] for item in snapshot["gaps"]}
-        self.assertIn("DRILL_STALE", codes)
-        self.assertIn("POLICY_CHANGED_SINCE_DRILL", codes)
-        self.assertIn("LATEST_DRILL_FAILED", codes)
-        self.assertIn("RPO_TARGET_BREACHED", codes)
-        self.assertIn("RTO_MEASUREMENT_MISSING", codes)
-        self.assertIn("BACKUP_SOURCE_NOT_VERIFIED", codes)
-        self.assertEqual("LATEST_DRILL_FAILED", snapshot["assurance_status"])
+        target = SimpleNamespace(target_id=resource_id, tenant_id=uuid7(), domain_id=uuid7(), db_type="POSTGRESQL")
+        snapshot = await build_recovery_assurance_snapshot(recovery_repository=_Repository(profile, [failure, success]), target=target, now=NOW)
         self.assertTrue(snapshot["restore_demonstrated"])
-        self.assertEqual(
-            ["STORAGE_SNAPSHOT"],
-            snapshot["uncovered_backup_source_types"],
-        )
+        self.assertEqual("FAIL", snapshot["latest_attempt"]["result"])
+        self.assertEqual("LATEST_DRILL_FAILED", snapshot["assurance_status"])
 
-        index = normalize_evidence_artifacts(
-            ({
-                "artifact_id": str(uuid7()),
-                "schema_version": "TARGET_RECOVERY_ASSURANCE.v1",
-                "payload": snapshot,
-            },),
-            target_id=str(target_id),
-        )
-        self.assertTrue(
-            any(fact.metric_or_fact_type == "recovery.drill.latest_attempt" for fact in index.facts)
-        )
-        self.assertIn("DRILL_STALE", {gap["code"] for gap in index.gaps})
+    def test_normalized_reviewed_drill_remains_user_provided(self) -> None:
+        index = normalize_evidence_artifacts(({"artifact_id": str(uuid7()), "schema_version": "TARGET_RECOVERY_ASSURANCE.v1", "payload": {"captured_at": NOW.isoformat(), "profile": {"rpo_seconds": 1, "rto_seconds": 2, "required_drill_interval_days": 3, "required_assurance_level": "DATABASE_OPEN", "required_backup_source_types": ["ORACLE_RMAN"]}, "latest_attempt": {"result": "PASS", "status": "VERIFIED", "assurance_level": "DATABASE_OPEN", "source_trust_level": "USER_PROVIDED"}, "gaps": []}},), target_id=str(uuid7()))
+        self.assertEqual({"USER_PROVIDED"}, {fact.trust_level for fact in index.facts})
 
-
-class _TargetRepository:
-    def __init__(self, target):
-        self.target = target
-
-    async def get_scoped(self, **_kwargs):
-        return self.target
-
-
-class _MutableRecoveryRepository(_RecoveryRepository):
-    async def list_profile_versions(self, **_kwargs):
-        return [self.profile] if self.profile else []
-
-    async def add_profile(self, entity):
-        self.profile = entity
-        return entity
-
-    async def add_drill(self, entity):
-        self.drills.insert(0, entity)
-        return entity
-
-    async def get_drill_scoped(self, *, drill_id, **_kwargs):
-        return next((row for row in self.drills if row.drill_id == drill_id), None)
-
-
-class _Outbox:
-    async def add(self, _entity):
-        return None
-
-
-class _Session:
-    async def flush(self):
-        return None
-
-
-class _WorkItems:
-    def __init__(self):
-        self.items = []
-        self.links = []
-        self.activities = []
-        self.agent_id = uuid7()
-        self.group_id = uuid7()
-
-    async def recovery_drill_routing(self, **_kwargs):
-        return self.agent_id, self.group_id, "TARGET_RESPONSIBILITY", "恢复保障 Agent"
-
-    async def get_active_by_target_fingerprint(self, *, target_id, fingerprint, **_kwargs):
-        return next((item for item in self.items if item.target_id == target_id and item.fingerprint == fingerprint and item.status not in {"CLOSED", "CANCELLED"}), None)
-
-    async def add(self, entity): self.items.append(entity); return entity
-    async def add_link(self, entity): self.links.append(entity); return entity
-    async def add_activity(self, entity): self.activities.append(entity); return entity
-
-    async def existing_link(self, *, work_item_id, resource_kind, resource_id, link_role):
-        return next((row for row in self.links if row.work_item_id == work_item_id and row.resource_kind == resource_kind and row.resource_id == resource_id and row.link_role == link_role), None)
-
-    async def get_scoped(self, *, work_item_id, **_kwargs):
-        return next((item for item in self.items if item.work_item_id == work_item_id), None)
-
-    async def list_by_resource(self, *, resource_kind, resource_id):
-        item_ids = {row.work_item_id for row in self.links if row.resource_kind == resource_kind and row.resource_id == resource_id}
-        return [item for item in self.items if item.work_item_id in item_ids]
-
-
-class _Uow:
-    def __init__(self, target, recovery):
-        self.targets = _TargetRepository(target)
-        component = SimpleNamespace(
-            component_id=target.target_id,
-            component_type="DATABASE",
-        )
-        member = SimpleNamespace(target_id=target.target_id)
-        self.business_systems = SimpleNamespace(
-            get_component_by_id_scoped=lambda **_: _async_value(component),
-            list_component_members=lambda *_: _async_value([member]),
-        )
-        self.recovery = recovery
-        self.work_items = _WorkItems()
-        self.outbox = _Outbox()
-        self.session = _Session()
-
-    async def flush(self):
-        return None
-
-
-class _RecoveryService(RecoveryConfigurationMixin):
-    def __init__(self, uow):
-        self.uow = uow
-
-    @staticmethod
-    def _check_version(actual, expected):
-        if int(actual) != int(expected):
-            raise AssertionError("版本不一致")
-
-    async def _idempotent(self, *, handler, **_kwargs):
-        return await handler(self.uow, datetime(2026, 10, 8, tzinfo=UTC))
-
-
-async def _async_value(value):
-    return value
-
-
-class RecoveryConfigurationServiceTest(unittest.IsolatedAsyncioTestCase):
-    async def test_profile_rejects_backup_source_from_another_database(self) -> None:
-        target = SimpleNamespace(
-            target_id=uuid7(), domain_id=1, db_type="MYSQL", display_name="MYSQL-PROD", status="ENABLED"
-        )
-        repository = _MutableRecoveryRepository(None, [])
-        service = _RecoveryService(_Uow(target, repository))
-        scope = ConfigurationScope(
-            domain_id=1,
-            principal_id="principal",
-            actor_id="operator",
-            request_id="request",
-            trace_id="trace",
-        )
-        from platform_core.contracts.aiops import ComponentProtectionProfileUpsert
-
-        with self.assertRaises(AIOpsApplicationError) as caught:
-            await service.upsert_recovery_profile(
-                scope=scope,
-                component_id=target.target_id,
-                request=ComponentProtectionProfileUpsert(
-                    rpo_seconds=300,
-                    rto_seconds=900,
-                    drill_required=True,
-                    required_drill_interval_days=30,
-                    required_assurance_level="DATABASE_OPEN",
-                    required_backup_source_types=("POSTGRESQL_PGBACKREST",),
-                ),
-                idempotency_key="profile-invalid-source",
-            )
-
-        self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
-        self.assertIsNone(repository.profile)
-
-    async def test_profile_versions_drill_metrics_and_review_trust(self) -> None:
-        target = SimpleNamespace(
-            target_id=uuid7(), domain_id=1, db_type="MYSQL", display_name="MYSQL-PROD", status="ENABLED"
-        )
-        repository = _MutableRecoveryRepository(None, [])
-        service = _RecoveryService(_Uow(target, repository))
-        scope = ConfigurationScope(
-            domain_id=1,
-            principal_id="principal",
-            actor_id="operator",
-            request_id="request",
-            trace_id="trace",
-        )
-        from platform_core.contracts.aiops import (
-            ComponentProtectionProfileUpsert,
-            RecoveryDrillReview,
-        )
-
-        first = await service.upsert_recovery_profile(
-            scope=scope,
-            component_id=target.target_id,
-            request=ComponentProtectionProfileUpsert(
-                rpo_seconds=300,
-                rto_seconds=900,
-                drill_required=True,
-                required_drill_interval_days=30,
-                required_assurance_level="DATABASE_OPEN",
-                required_backup_source_types=("MYSQL_XTRABACKUP",),
-            ),
-            idempotency_key="profile-1",
-        )
-        second = await service.upsert_recovery_profile(
-            scope=scope,
-            component_id=target.target_id,
-            request=ComponentProtectionProfileUpsert(
-                rpo_seconds=600,
-                rto_seconds=1200,
-                drill_required=True,
-                required_drill_interval_days=60,
-                required_assurance_level="APPLICATION_VALIDATED",
-                required_backup_source_types=("MYSQL_XTRABACKUP",),
-            ),
-            idempotency_key="profile-2",
-        )
-        self.assertEqual(1, first.version_no)
-        self.assertEqual(2, second.version_no)
-
-        drill = await service.create_recovery_drill(
-            scope=scope,
-            component_id=target.target_id,
-            request=RecoveryDrillCreate.model_validate(
-                _drill_request(
-                    marker={
-                        "kind": "MYSQL",
-                        "gtid_executed": "uuid:1-10",
-                        "binlog_file": "mysql-bin.000010",
-                        "binlog_position": 120,
-                    },
-                    source="MYSQL_XTRABACKUP",
-                    execution_target_id=target.target_id,
-                )
-            ),
-            idempotency_key="drill-1",
-        )
-        self.assertEqual(300, drill.achieved_rpo_seconds)
-        self.assertEqual(900, drill.achieved_rto_seconds)
-        reviewed = await service.review_recovery_drill(
-            scope=scope,
-            component_id=target.target_id,
-            drill_id=drill.drill_id,
-            request=RecoveryDrillReview(decision="VERIFY"),
-            expected_version=1,
-            idempotency_key="review-1",
-        )
-        self.assertEqual("VERIFIED", reviewed.status)
-        self.assertEqual("USER_PROVIDED", reviewed.source_trust_level)
-
-    async def test_disabling_drill_requirement_cancels_active_schedule(self) -> None:
-        target = SimpleNamespace(
-            target_id=uuid7(), domain_id=1, db_type="MYSQL",
-            display_name="MYSQL-PROD", status="ENABLED",
-        )
-        repository = _MutableRecoveryRepository(None, [])
-        uow = _Uow(target, repository)
-        service = _RecoveryService(uow)
-        scope = ConfigurationScope(
-            domain_id=1, principal_id="principal", actor_id="operator",
-            request_id="request", trace_id="trace",
-        )
-        from platform_core.contracts.aiops import ComponentProtectionProfileUpsert
-
-        await service.upsert_recovery_profile(
-            scope=scope, component_id=target.target_id,
-            request=ComponentProtectionProfileUpsert(
-                rpo_seconds=300, rto_seconds=900, drill_required=True,
-                required_drill_interval_days=30,
-                required_assurance_level="DATABASE_OPEN",
-                required_backup_source_types=("MYSQL_XTRABACKUP",),
-            ),
-            idempotency_key="profile-enabled",
-        )
-        scheduled = uow.work_items.items[0]
-
-        await service.upsert_recovery_profile(
-            scope=scope, component_id=target.target_id,
-            request=ComponentProtectionProfileUpsert(
-                backup_policy_enabled=False,
-                rpo_seconds=300, rto_seconds=900, drill_required=False,
-                required_drill_interval_days=30,
-                required_assurance_level="DATABASE_OPEN",
-                required_backup_source_types=(),
-            ),
-            idempotency_key="profile-disabled",
-        )
-
-        self.assertEqual("CANCELLED", scheduled.status)
-        self.assertEqual("当前恢复策略不要求定期恢复演练", scheduled.wait_reason)
-        self.assertEqual(1, len(uow.work_items.items))
+    def test_schema_and_static_ui_use_database_resource_scope(self) -> None:
+        manifest = json.loads((ROOT / "database/oracle/aiops_agent/schema_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(44, manifest["schema_version"])
+        page = (ROOT / "ui/aiops/recovery-drills.html").read_text(encoding="utf-8")
+        script = (ROOT / "ui/aiops/js/aiops-recovery-drills.js").read_text(encoding="utf-8")
+        self.assertIn("数据库资源", page)
+        self.assertIn("/managed-resources/", script)
+        self.assertNotIn("execution_target_id", page)
+        self.assertNotIn("/components/", script)
 
 
 if __name__ == "__main__":

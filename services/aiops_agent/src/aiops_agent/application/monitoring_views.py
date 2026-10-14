@@ -881,15 +881,15 @@ class MonitoringApplicationService:
     @staticmethod
     def _instance_summary(*, target, binding, source, context=None):
         degraded = binding.health_status not in {"READY", "HEALTHY", "UNKNOWN"}
-        system_id, system_name, component_id, component_name = context or (None, None, None, None)
+        system_id, system_name, resource_id, resource_name = context or (None, None, None, None)
         return MonitoringInstanceSummary(
             instance_id=target.target_id,
             display_name=target.display_name,
             db_type=target.db_type,
             business_system_id=system_id,
             business_system_name=system_name,
-            component_id=component_id,
-            component_name=component_name,
+            resource_id=resource_id,
+            resource_name=resource_name,
             status="PARTIAL" if degraded else "AVAILABLE",
             monitoring_readiness=source.monitoring_readiness,
             diagnostic_readiness=source.diagnostic_readiness,

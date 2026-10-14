@@ -388,8 +388,8 @@ class ConversationTurnService:
                 )
                 recovery_repository = getattr(uow, "recovery", None)
                 business_system_repository = getattr(uow, "business_systems", None)
-                component = (
-                    await business_system_repository.find_component_for_target(
+                resource = (
+                    await business_system_repository.get_resource_for_target(
                         target_id=target_id,
                         domain_id=domain_id,
                     )
@@ -398,10 +398,10 @@ class ConversationTurnService:
                 )
                 recovery_profile = (
                     await recovery_repository.get_active_profile(
-                        component_id=component.component_id,
+                        resource_id=resource.resource_id,
                         domain_id=domain_id,
                     )
-                    if recovery_repository is not None and component is not None
+                    if recovery_repository is not None and resource is not None
                     else None
                 )
                 backup_policy = None

@@ -1,4 +1,4 @@
-"""业务系统、可管理组件与资源拓扑 Repository。"""
+"""业务系统资源图谱 Repository。"""
 
 from collections.abc import Callable
 from uuid import UUID
@@ -7,12 +7,17 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
-    BusinessSystemComponentEntity,
+    BusinessSystemDraftChangeEntity,
+    BusinessSystemDraftEntity,
     BusinessSystemEntity,
-    BusinessSystemSiteEntity,
-    ComponentMembershipEntity,
-    ManagedComponentEntity,
+    BusinessSystemResourceEntity,
+    ComputeResourceEntity,
+    DatabaseResourceEntity,
+    ManagedResourceEntity,
+    RelationParticipantEntity,
+    ResourceDiscoveryJobEntity,
     ResourceRelationEntity,
+    TargetEntity,
 )
 from aiops_agent.repositories._base import AIOpsRepository
 
@@ -24,25 +29,35 @@ class BusinessSystemRepository(AIOpsRepository):
     async def add_system(self, entity: BusinessSystemEntity) -> BusinessSystemEntity:
         return await self._add(entity)
 
-    async def add_components(self, entities: list[ManagedComponentEntity]) -> None:
-        self._check_active()
-        self._session.add_all(entities)
+    async def add_resource(self, entity: ManagedResourceEntity) -> ManagedResourceEntity:
+        return await self._add(entity)
 
-    async def add_component_links(self, entities: list[BusinessSystemComponentEntity]) -> None:
-        self._check_active()
-        self._session.add_all(entities)
+    async def add_database_resource(self, entity: DatabaseResourceEntity) -> DatabaseResourceEntity:
+        return await self._add(entity)
 
-    async def add_sites(self, entities: list[BusinessSystemSiteEntity]) -> None:
-        self._check_active()
-        self._session.add_all(entities)
+    async def add_compute_resource(self, entity: ComputeResourceEntity) -> ComputeResourceEntity:
+        return await self._add(entity)
 
-    async def add_members(self, entities: list[ComponentMembershipEntity]) -> None:
+    async def add_system_resources(self, entities: list[BusinessSystemResourceEntity]) -> None:
         self._check_active()
         self._session.add_all(entities)
 
     async def add_relations(self, entities: list[ResourceRelationEntity]) -> None:
         self._check_active()
         self._session.add_all(entities)
+
+    async def add_participants(self, entities: list[RelationParticipantEntity]) -> None:
+        self._check_active()
+        self._session.add_all(entities)
+
+    async def add_draft(self, entity: BusinessSystemDraftEntity) -> BusinessSystemDraftEntity:
+        return await self._add(entity)
+
+    async def add_draft_change(self, entity: BusinessSystemDraftChangeEntity) -> BusinessSystemDraftChangeEntity:
+        return await self._add(entity)
+
+    async def add_discovery_job(self, entity: ResourceDiscoveryJobEntity) -> ResourceDiscoveryJobEntity:
+        return await self._add(entity)
 
     async def get_scoped(self, *, business_system_id: UUID, domain_id: int, lock: bool = False) -> BusinessSystemEntity | None:
         self._check_active()
@@ -61,204 +76,214 @@ class BusinessSystemRepository(AIOpsRepository):
         )
         if status is not None:
             statement = statement.where(BusinessSystemEntity.status == status)
-        return list((await self._session.execute(statement.order_by(BusinessSystemEntity.updated_at.desc(), BusinessSystemEntity.business_system_id.desc()).limit(limit))).scalars())
-
+        statement = statement.order_by(BusinessSystemEntity.updated_at.desc(), BusinessSystemEntity.business_system_id.desc()).limit(limit)
+        return list((await self._session.execute(statement)).scalars())
     async def get_by_name(self, *, domain_id: int, display_name: str) -> BusinessSystemEntity | None:
         self._check_active()
-        return (await self._session.execute(select(BusinessSystemEntity).where(
+        statement = select(BusinessSystemEntity).where(
             BusinessSystemEntity.domain_id == domain_id,
             func.lower(BusinessSystemEntity.display_name) == display_name.casefold(),
-        ).limit(1))).scalar_one_or_none()
+        ).limit(1)
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def get_by_code(self, *, domain_id: int, system_code: str) -> BusinessSystemEntity | None:
         self._check_active()
-        return (await self._session.execute(select(BusinessSystemEntity).where(
+        statement = select(BusinessSystemEntity).where(
             BusinessSystemEntity.domain_id == domain_id,
             func.lower(BusinessSystemEntity.system_code) == system_code.casefold(),
-        ).limit(1))).scalar_one_or_none()
+        ).limit(1)
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def list_sites(self, business_system_id: UUID) -> list[BusinessSystemSiteEntity]:
+    async def get_resource_scoped(self, *, resource_id: UUID, domain_id: int, lock: bool = False) -> ManagedResourceEntity | None:
         self._check_active()
-        return list((await self._session.execute(select(BusinessSystemSiteEntity).where(BusinessSystemSiteEntity.business_system_id == business_system_id).order_by(BusinessSystemSiteEntity.sort_order, BusinessSystemSiteEntity.site_id))).scalars())
-
-    async def list_components(self, business_system_id: UUID) -> list[ManagedComponentEntity]:
-        self._check_active()
-        statement = (
-            select(ManagedComponentEntity)
-            .join(BusinessSystemComponentEntity, BusinessSystemComponentEntity.component_id == ManagedComponentEntity.component_id)
-            .where(BusinessSystemComponentEntity.business_system_id == business_system_id)
-            .order_by(BusinessSystemComponentEntity.sort_order, ManagedComponentEntity.component_id)
+        statement = select(ManagedResourceEntity).where(
+            ManagedResourceEntity.resource_id == resource_id,
+            ManagedResourceEntity.domain_id == domain_id,
         )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_database_profile(self, resource_id: UUID) -> DatabaseResourceEntity | None:
+        self._check_active()
+        return (await self._session.execute(select(DatabaseResourceEntity).where(DatabaseResourceEntity.resource_id == resource_id))).scalar_one_or_none()
+
+    async def list_resources_scoped(self, *, domain_id: int, resource_type_key: str | None, limit: int) -> list[ManagedResourceEntity]:
+        self._check_active()
+        statement = select(ManagedResourceEntity).where(
+            ManagedResourceEntity.domain_id == domain_id,
+            ManagedResourceEntity.lifecycle_status != "RETIRED",
+        )
+        if resource_type_key is not None:
+            statement = statement.where(ManagedResourceEntity.resource_type_key == resource_type_key)
+        statement = statement.order_by(ManagedResourceEntity.updated_at.desc(), ManagedResourceEntity.resource_id.desc()).limit(limit)
         return list((await self._session.execute(statement)).scalars())
 
-    async def list_component_links(self, business_system_id: UUID) -> list[BusinessSystemComponentEntity]:
+    async def get_system_resource_scoped(self, *, business_system_id: UUID, system_resource_id: UUID, lock: bool = False) -> BusinessSystemResourceEntity | None:
         self._check_active()
-        return list((await self._session.execute(select(BusinessSystemComponentEntity).where(
-            BusinessSystemComponentEntity.business_system_id == business_system_id
+        statement = select(BusinessSystemResourceEntity).where(
+            BusinessSystemResourceEntity.business_system_id == business_system_id,
+            BusinessSystemResourceEntity.system_resource_id == system_resource_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_relation_scoped(self, *, business_system_id: UUID, relation_id: UUID, lock: bool = False) -> ResourceRelationEntity | None:
+        self._check_active()
+        statement = select(ResourceRelationEntity).where(
+            ResourceRelationEntity.business_system_id == business_system_id,
+            ResourceRelationEntity.relation_id == relation_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def delete_relation_participants(self, relation_id: UUID) -> None:
+        self._check_active()
+        await self._session.execute(delete(RelationParticipantEntity).where(RelationParticipantEntity.relation_id == relation_id))
+
+    async def delete_relation(self, relation_id: UUID) -> None:
+        self._check_active()
+        await self.delete_relation_participants(relation_id)
+        await self._session.execute(delete(ResourceRelationEntity).where(ResourceRelationEntity.relation_id == relation_id))
+
+    async def remove_system_resource(self, system_resource_id: UUID) -> None:
+        self._check_active()
+        relation_ids = list((await self._session.execute(select(RelationParticipantEntity.relation_id).where(
+            RelationParticipantEntity.system_resource_id == system_resource_id
         ))).scalars())
+        if relation_ids:
+            await self._session.execute(delete(RelationParticipantEntity).where(RelationParticipantEntity.relation_id.in_(relation_ids)))
+            await self._session.execute(delete(ResourceRelationEntity).where(ResourceRelationEntity.relation_id.in_(relation_ids)))
+        await self._session.execute(delete(BusinessSystemResourceEntity).where(BusinessSystemResourceEntity.system_resource_id == system_resource_id))
 
-    async def get_component_scoped(self, *, business_system_id: UUID, component_id: UUID, domain_id: int, lock: bool = False) -> ManagedComponentEntity | None:
+    async def get_discovery_job_scoped(self, *, discovery_job_id: UUID, draft_id: UUID) -> ResourceDiscoveryJobEntity | None:
+        self._check_active()
+        statement = select(ResourceDiscoveryJobEntity).where(
+            ResourceDiscoveryJobEntity.discovery_job_id == discovery_job_id,
+            ResourceDiscoveryJobEntity.draft_id == draft_id,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def get_resource_for_target(self, *, target_id: UUID, domain_id: int) -> ManagedResourceEntity | None:
         self._check_active()
         statement = (
-            select(ManagedComponentEntity)
-            .join(BusinessSystemComponentEntity, BusinessSystemComponentEntity.component_id == ManagedComponentEntity.component_id)
-            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemComponentEntity.business_system_id)
+            select(ManagedResourceEntity)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .where(
-                BusinessSystemComponentEntity.business_system_id == business_system_id,
-                ManagedComponentEntity.component_id == component_id,
-                BusinessSystemEntity.domain_id == domain_id,
+                DatabaseResourceEntity.target_id == target_id,
+                ManagedResourceEntity.domain_id == domain_id,
             )
+            .limit(1)
         )
-        if lock:
-            statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def get_component_by_id_scoped(self, *, component_id: UUID, domain_id: int, lock: bool = False) -> ManagedComponentEntity | None:
-        self._check_active()
-        statement = select(ManagedComponentEntity).where(
-            ManagedComponentEntity.component_id == component_id,
-            ManagedComponentEntity.domain_id == domain_id,
-        )
-        if lock:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def list_members(self, business_system_id: UUID) -> list[ComponentMembershipEntity]:
+    async def get_database_resource_for_target(self, *, target_id: UUID, domain_id: int) -> tuple[ManagedResourceEntity, DatabaseResourceEntity] | None:
         self._check_active()
         statement = (
-            select(ComponentMembershipEntity)
-            .join(BusinessSystemComponentEntity, BusinessSystemComponentEntity.component_id == ComponentMembershipEntity.component_id)
-            .where(BusinessSystemComponentEntity.business_system_id == business_system_id)
-            .order_by(ComponentMembershipEntity.sort_order, ComponentMembershipEntity.membership_id)
+            select(ManagedResourceEntity, DatabaseResourceEntity)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .where(
+                DatabaseResourceEntity.target_id == target_id,
+                ManagedResourceEntity.domain_id == domain_id,
+            )
+            .limit(1)
         )
-        return list((await self._session.execute(statement)).scalars())
+        return (await self._session.execute(statement)).one_or_none()
 
-    async def list_component_members(self, component_id: UUID) -> list[ComponentMembershipEntity]:
+    async def list_system_resource_rows(self, business_system_id: UUID) -> list[tuple[BusinessSystemResourceEntity, ManagedResourceEntity, DatabaseResourceEntity | None, TargetEntity | None]]:
         self._check_active()
-        return list((await self._session.execute(select(ComponentMembershipEntity).where(ComponentMembershipEntity.component_id == component_id).order_by(ComponentMembershipEntity.sort_order, ComponentMembershipEntity.membership_id))).scalars())
+        statement = (
+            select(BusinessSystemResourceEntity, ManagedResourceEntity, DatabaseResourceEntity, TargetEntity)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
+            .outerjoin(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .outerjoin(TargetEntity, TargetEntity.target_id == DatabaseResourceEntity.target_id)
+            .where(BusinessSystemResourceEntity.business_system_id == business_system_id)
+            .order_by(BusinessSystemResourceEntity.display_order, BusinessSystemResourceEntity.system_resource_id)
+        )
+        return list((await self._session.execute(statement)).all())
 
     async def list_relations(self, business_system_id: UUID) -> list[ResourceRelationEntity]:
         self._check_active()
-        return list((await self._session.execute(select(ResourceRelationEntity).where(ResourceRelationEntity.business_system_id == business_system_id).order_by(ResourceRelationEntity.sort_order, ResourceRelationEntity.relation_id))).scalars())
+        statement = select(ResourceRelationEntity).where(ResourceRelationEntity.business_system_id == business_system_id).order_by(ResourceRelationEntity.created_at, ResourceRelationEntity.relation_id)
+        return list((await self._session.execute(statement)).scalars())
 
-    async def component_count(self, business_system_id: UUID) -> int:
+    async def list_participants(self, relation_ids: list[UUID]) -> list[RelationParticipantEntity]:
         self._check_active()
-        return int((await self._session.execute(select(func.count()).select_from(BusinessSystemComponentEntity).where(BusinessSystemComponentEntity.business_system_id == business_system_id))).scalar_one())
+        if not relation_ids:
+            return []
+        statement = select(RelationParticipantEntity).where(RelationParticipantEntity.relation_id.in_(relation_ids)).order_by(RelationParticipantEntity.display_order, RelationParticipantEntity.participant_id)
+        return list((await self._session.execute(statement)).scalars())
 
-    async def member_count(self, business_system_id: UUID) -> int:
+    async def resource_count(self, business_system_id: UUID) -> int:
         self._check_active()
-        statement = select(func.count()).select_from(ComponentMembershipEntity).join(
-            BusinessSystemComponentEntity,
-            BusinessSystemComponentEntity.component_id == ComponentMembershipEntity.component_id,
-        ).where(BusinessSystemComponentEntity.business_system_id == business_system_id)
+        statement = select(func.count()).select_from(BusinessSystemResourceEntity).where(
+            BusinessSystemResourceEntity.business_system_id == business_system_id,
+            BusinessSystemResourceEntity.status == "ACTIVE",
+        )
         return int((await self._session.execute(statement)).scalar_one())
 
     async def find_system_for_target(self, *, target_id: UUID, domain_id: int) -> BusinessSystemEntity | None:
         self._check_active()
         statement = (
             select(BusinessSystemEntity)
-            .join(BusinessSystemComponentEntity, BusinessSystemComponentEntity.business_system_id == BusinessSystemEntity.business_system_id)
-            .join(ComponentMembershipEntity, ComponentMembershipEntity.component_id == BusinessSystemComponentEntity.component_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.business_system_id == BusinessSystemEntity.business_system_id)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
             .where(
-                ComponentMembershipEntity.target_id == target_id,
+                DatabaseResourceEntity.target_id == target_id,
                 BusinessSystemEntity.domain_id == domain_id,
+                BusinessSystemResourceEntity.status == "ACTIVE",
             )
+            .order_by(BusinessSystemEntity.updated_at.desc())
             .limit(1)
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def find_component_for_target(self, *, target_id: UUID, domain_id: int) -> ManagedComponentEntity | None:
-        self._check_active()
-        statement = select(ManagedComponentEntity).join(
-            ComponentMembershipEntity,
-            ComponentMembershipEntity.component_id == ManagedComponentEntity.component_id,
-        ).where(
-            ComponentMembershipEntity.target_id == target_id,
-            ManagedComponentEntity.domain_id == domain_id,
-        ).limit(1)
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def find_contexts_for_targets(
-        self,
-        *,
-        target_ids: set[UUID],
-        domain_id: int,
-    ) -> dict[UUID, tuple[UUID, str, UUID, str]]:
-        """批量返回 Target 所属业务系统和组件，供监控选择器分组。"""
+    async def find_contexts_for_targets(self, *, target_ids: set[UUID], domain_id: int) -> dict[UUID, tuple[UUID, str, UUID, str]]:
+        """批量返回 Target 所属业务系统和资源，供监控选择器分组。"""
 
         self._check_active()
         if not target_ids:
             return {}
         statement = (
             select(
-                ComponentMembershipEntity.target_id,
+                DatabaseResourceEntity.target_id,
                 BusinessSystemEntity.business_system_id,
                 BusinessSystemEntity.display_name,
-                ManagedComponentEntity.component_id,
-                ManagedComponentEntity.display_name,
+                ManagedResourceEntity.resource_id,
+                ManagedResourceEntity.display_name,
             )
-            .join(ManagedComponentEntity, ManagedComponentEntity.component_id == ComponentMembershipEntity.component_id)
-            .join(BusinessSystemComponentEntity, BusinessSystemComponentEntity.component_id == ManagedComponentEntity.component_id)
-            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemComponentEntity.business_system_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(BusinessSystemEntity, BusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
             .where(
-                ComponentMembershipEntity.target_id.in_(target_ids),
+                DatabaseResourceEntity.target_id.in_(target_ids),
                 BusinessSystemEntity.domain_id == domain_id,
+                BusinessSystemResourceEntity.status == "ACTIVE",
             )
         )
         return {
-            target_id: (system_id, system_name, component_id, component_name)
-            for target_id, system_id, system_name, component_id, component_name in (await self._session.execute(statement)).all()
+            target_id: (system_id, system_name, resource_id, resource_name)
+            for target_id, system_id, system_name, resource_id, resource_name in (await self._session.execute(statement)).all()
         }
 
-    async def target_is_assigned_elsewhere(self, *, target_id: UUID, component_id: UUID) -> bool:
+    async def target_has_resource(self, *, target_id: UUID) -> bool:
         self._check_active()
-        count = (await self._session.execute(select(func.count()).select_from(ComponentMembershipEntity).where(ComponentMembershipEntity.target_id == target_id, ComponentMembershipEntity.component_id != component_id))).scalar_one()
+        count = (await self._session.execute(select(func.count()).select_from(DatabaseResourceEntity).where(DatabaseResourceEntity.target_id == target_id))).scalar_one()
         return bool(count)
 
-    async def target_is_assigned(self, *, target_id: UUID) -> bool:
+    async def get_draft_scoped(self, *, draft_id: UUID, domain_id: int, lock: bool = False) -> BusinessSystemDraftEntity | None:
         self._check_active()
-        count = (await self._session.execute(select(func.count()).select_from(ComponentMembershipEntity).where(ComponentMembershipEntity.target_id == target_id))).scalar_one()
-        return bool(count)
+        statement = select(BusinessSystemDraftEntity).where(
+            BusinessSystemDraftEntity.draft_id == draft_id,
+            BusinessSystemDraftEntity.domain_id == domain_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def clear_topology_edges(self, business_system_id: UUID) -> None:
+    async def list_draft_changes(self, draft_id: UUID) -> list[BusinessSystemDraftChangeEntity]:
         self._check_active()
-        component_ids = list((await self._session.execute(
-            select(BusinessSystemComponentEntity.component_id).where(
-                BusinessSystemComponentEntity.business_system_id == business_system_id
-            )
-        )).scalars())
-        await self._session.execute(delete(ResourceRelationEntity).where(ResourceRelationEntity.business_system_id == business_system_id))
-        if component_ids:
-            await self._session.execute(delete(ComponentMembershipEntity).where(ComponentMembershipEntity.component_id.in_(component_ids)))
-        await self._session.execute(delete(BusinessSystemSiteEntity).where(BusinessSystemSiteEntity.business_system_id == business_system_id))
-
-    async def remove_components(self, *, business_system_id: UUID, component_ids: list[UUID]) -> None:
-        self._check_active()
-        if not component_ids:
-            return
-        await self._session.execute(delete(BusinessSystemComponentEntity).where(
-            BusinessSystemComponentEntity.business_system_id == business_system_id,
-            BusinessSystemComponentEntity.component_id.in_(component_ids),
-        ))
-        await self._session.execute(delete(ManagedComponentEntity).where(
-            ManagedComponentEntity.component_id.in_(component_ids),
-            ~ManagedComponentEntity.component_id.in_(select(BusinessSystemComponentEntity.component_id)),
-        ))
-
-    async def replace_topology(self, business_system_id: UUID) -> None:
-        self._check_active()
-        component_ids = list((await self._session.execute(
-            select(BusinessSystemComponentEntity.component_id).where(
-                BusinessSystemComponentEntity.business_system_id == business_system_id
-            )
-        )).scalars())
-        await self._session.execute(delete(ResourceRelationEntity).where(ResourceRelationEntity.business_system_id == business_system_id))
-        if component_ids:
-            await self._session.execute(delete(ComponentMembershipEntity).where(ComponentMembershipEntity.component_id.in_(component_ids)))
-        await self._session.execute(delete(BusinessSystemComponentEntity).where(BusinessSystemComponentEntity.business_system_id == business_system_id))
-        await self._session.execute(delete(BusinessSystemSiteEntity).where(BusinessSystemSiteEntity.business_system_id == business_system_id))
-        if component_ids:
-            await self._session.execute(delete(ManagedComponentEntity).where(
-                ManagedComponentEntity.component_id.in_(component_ids),
-                ~ManagedComponentEntity.component_id.in_(select(BusinessSystemComponentEntity.component_id)),
-            ))
+        statement = select(BusinessSystemDraftChangeEntity).where(BusinessSystemDraftChangeEntity.draft_id == draft_id).order_by(BusinessSystemDraftChangeEntity.sequence_no)
+        return list((await self._session.execute(statement)).scalars())

@@ -356,6 +356,9 @@ class _PlanningUow:
             get_active_profile=self._get_recovery_profile,
             list_recent_drills=self._list_recovery_drills,
         )
+        self.business_systems = SimpleNamespace(
+            get_resource_for_target=self._get_resource_for_target,
+        )
 
     async def __aenter__(self):
         self._uow_active = True
@@ -469,6 +472,9 @@ class _PlanningUow:
 
     async def _list_recovery_drills(self, **_):
         return []
+
+    async def _get_resource_for_target(self, **_):
+        return SimpleNamespace(resource_id=self.target.target_id)
 
     async def _get_situation(self, *, situation_id, domain_id):
         if situation_id == self.situation.situation_id and domain_id == 7:

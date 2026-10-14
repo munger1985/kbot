@@ -51,6 +51,19 @@ class AIOpsOracleSchemaTest(unittest.TestCase):
             set(self.manifest["views"]),
         )
         self.assertEqual(
+            {"KBOT_OPS_RESOURCE_GRAPH"},
+            set(self.manifest["property_graphs"]),
+        )
+        self.assertEqual(
+            {"KBOT_OPS_RESOURCE_GRAPH"},
+            set(
+                re.findall(
+                    r"\bCREATE\s+PROPERTY\s+GRAPH\s+([A-Z][A-Z0-9_]*)",
+                    self.upper_sql,
+                )
+            ),
+        )
+        self.assertEqual(
             SERVICE_TABLES["aiops_agent"],
             set(
                 re.findall(

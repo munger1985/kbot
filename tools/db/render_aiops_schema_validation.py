@@ -133,6 +133,17 @@ def render_validation_sql() -> str:
             error_code="AIOPS_SCHEMA_VIEWS",
         ),
         _render_set_check(
+            label="AIOps 属性图",
+            expected_names=list(manifest["property_graphs"]),
+            actual_query=(
+                "        SELECT property_graph_name AS object_name\n"
+                "          FROM user_property_graphs\n"
+                "         WHERE property_graph_name LIKE "
+                "'KBOT\\_OPS\\_%' ESCAPE '\\'"
+            ),
+            error_code="AIOPS_SCHEMA_PROPERTY_GRAPHS",
+        ),
+        _render_set_check(
             label="AIOps 命名索引",
             expected_names=indexes,
             actual_query=(
@@ -257,7 +268,7 @@ BEGIN
                 object_name LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\'
              OR object_name LIKE 'KBOT\\_V\\_OPS\\_%' ESCAPE '\\'
          )
-           AND object_type NOT IN ('TABLE', 'VIEW', 'INDEX')
+           AND object_type NOT IN ('TABLE', 'VIEW', 'INDEX', 'PROPERTY GRAPH')
          ORDER BY object_type, object_name
     ) LOOP
         l_issue_count := l_issue_count + 1;
@@ -316,6 +327,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：{len(manifest['tables'])} 张表、{len(manifest['views'])} 个视图、'
+        || '{len(manifest['property_graphs'])} 个属性图、'
         || '{len(indexes)} 个命名索引、{len(constraints)} 个命名约束、'
         || '{len(columns)} 个表列；Schema 与当前规范一致。'
     );

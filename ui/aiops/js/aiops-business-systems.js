@@ -9,7 +9,8 @@
   const architectureLabels = {
     SINGLE_INSTANCE: "单实例",
     RAC: "Oracle RAC",
-    DG: "Data Guard",
+    DATA_GUARD: "Data Guard",
+    RAC_DATA_GUARD: "RAC + Data Guard",
     MYSQL_REPLICATION: "MySQL 主从复制",
     POSTGRES_STREAMING: "PostgreSQL 流复制",
     OGG: "Oracle GoldenGate",
@@ -28,9 +29,11 @@
     return architectureLabels[value] || "待识别架构";
   }
 
-  function databaseScale(count) {
-    const value = Number(count || 0);
-    return value === 0 ? "尚未添加数据库" : value === 1 ? "1 个数据库" : `${value} 个数据库实例`;
+  function resourceScale(item) {
+    const count = Number(item.resource_count || 0);
+    if (!count) return "尚未添加资源";
+    const details = (item.resource_type_summary || []).slice(0, 2).map((row) => `${Number(row.count)} 个${row.display_name}`);
+    return details.length ? details.join(" · ") : `${count} 个资源`;
   }
 
   function protectionLabel(value) {
@@ -60,9 +63,9 @@
       <div class="business-architecture-tags">${labels}</div>
       <dl>
         <div><dt>环境 / 重要级</dt><dd>${shell.escape(environmentLabel(item.environment))} · ${shell.escape(importanceLabel(Number(item.importance_level)))}</dd></div>
-        <div><dt>数据库规模</dt><dd>${shell.escape(databaseScale(item.target_count))}</dd></div>
-        <div><dt>责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
-        <div><dt>恢复目标</dt><dd>${shell.escape(protectionLabel(item.protection_status))}</dd></div>
+        <div><dt>资源构成</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
+        <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
+        <div><dt>数据保护</dt><dd>${shell.escape(protectionLabel(item.protection_status))}</dd></div>
       </dl>
       <footer><span>更新于 ${shell.escape(shell.fmt(item.updated_at))}</span><a href="./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}">${action} →</a></footer>
     </article>`;
@@ -71,7 +74,7 @@
   function addCard(empty) {
     const help = empty
       ? "当前暂无业务系统；从业务归属开始建立第一个运维对象"
-      : "先登记业务归属，再添加数据库、应用服务器、中间件或网络组件";
+      : "登记业务归属，再接入数据库、应用服务、中间件、网络或存储资源";
     return `<a class="business-system-add-card" href="./business-system-workspace.html?id=new" data-write-ready>
       <span aria-hidden="true">＋</span><strong>新增业务系统</strong><small>${help}</small>
     </a>`;

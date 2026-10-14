@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 
@@ -29,15 +30,21 @@ PRESERVING_OUTPUT_PATH = (
 )
 
 PRESERVED_TABLES = (
+    ("KBOT_OPS_RESPONSIBILITY_GROUP", "KBOT_KEEP_AIOPS_RESP_GROUP"),
+    (
+        "KBOT_OPS_RESPONSIBILITY_GROUP_MEMBER",
+        "KBOT_KEEP_AIOPS_RESP_GROUP_MEMBER",
+    ),
     ("KBOT_OPS_TARGET", "KBOT_KEEP_AIOPS_TARGET"),
     ("KBOT_OPS_DIAGNOSTIC_SOURCE", "KBOT_KEEP_AIOPS_SOURCE"),
     ("KBOT_OPS_TARGET_FACT", "KBOT_KEEP_AIOPS_TARGET_FACT"),
     ("KBOT_OPS_BUSINESS_SYSTEM", "KBOT_KEEP_AIOPS_BUS_SYSTEM"),
-    ("KBOT_OPS_MANAGED_COMPONENT", "KBOT_KEEP_AIOPS_COMPONENT"),
-    ("KBOT_OPS_BUSINESS_SYSTEM_COMPONENT", "KBOT_KEEP_AIOPS_BUS_COMPONENT"),
-    ("KBOT_OPS_BUSINESS_SYSTEM_SITE", "KBOT_KEEP_AIOPS_BUS_SITE"),
-    ("KBOT_OPS_COMPONENT_MEMBERSHIP", "KBOT_KEEP_AIOPS_MEMBERSHIP"),
+    ("KBOT_OPS_MANAGED_RESOURCE", "KBOT_KEEP_AIOPS_RESOURCE"),
+    ("KBOT_OPS_DATABASE_RESOURCE", "KBOT_KEEP_AIOPS_DB_RESOURCE"),
+    ("KBOT_OPS_COMPUTE_RESOURCE", "KBOT_KEEP_AIOPS_COMPUTE"),
+    ("KBOT_OPS_BUSINESS_SYSTEM_RESOURCE", "KBOT_KEEP_AIOPS_BUS_RESOURCE"),
     ("KBOT_OPS_RESOURCE_RELATION", "KBOT_KEEP_AIOPS_RELATION"),
+    ("KBOT_OPS_RELATION_PARTICIPANT", "KBOT_KEEP_AIOPS_PARTICIPANT"),
     ("KBOT_OPS_RECOVERY_PROFILE", "KBOT_KEEP_AIOPS_REC_PROFILE"),
     ("KBOT_OPS_TARGET_SOURCE_BINDING", "KBOT_KEEP_AIOPS_TSRC_BIND"),
 )
@@ -134,6 +141,17 @@ PROMPT === 正在删除旧 AIOps 视图和表 ===
 
 DECLARE
 BEGIN
+    FOR graph_row IN (
+        SELECT property_graph_name
+          FROM user_property_graphs
+         WHERE property_graph_name = 'KBOT_OPS_RESOURCE_GRAPH'
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP PROPERTY GRAPH '
+            || dbms_assert.enquote_name(graph_row.property_graph_name, FALSE);
+        dbms_output.put_line('已删除属性图 ' || graph_row.property_graph_name);
+    END LOOP;
+
     FOR view_row IN (
         SELECT view_name
         FROM user_views
@@ -178,6 +196,8 @@ DECLARE
     l_required_column_count PLS_INTEGER;
     l_report_summary_count PLS_INTEGER;
     l_business_check_constraint_count PLS_INTEGER;
+    l_property_graph_count PLS_INTEGER;
+    l_missing_property_graph_count PLS_INTEGER;
     l_component VARCHAR2(32);
     l_schema_version NUMBER;
     l_contract_version VARCHAR2(64);
@@ -316,6 +336,22 @@ BEGIN
        AND constraint_type = 'C'
        AND generated = 'USER NAME';
 
+    SELECT COUNT(*)
+      INTO l_property_graph_count
+      FROM user_property_graphs
+     WHERE property_graph_name LIKE 'KBOT\\_OPS\\_%' ESCAPE '\\';
+
+    SELECT COUNT(*)
+      INTO l_missing_property_graph_count
+      FROM TABLE(sys.odcivarchar2list(
+{expected_property_graphs}
+      )) expected
+     WHERE NOT EXISTS (
+            SELECT 1
+              FROM user_property_graphs actual
+             WHERE actual.property_graph_name = expected.column_value
+     );
+
     SELECT component, schema_version, contract_version
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
@@ -353,6 +389,10 @@ BEGIN
     END IF;
     IF l_business_check_constraint_count <> 0 THEN
         raise_application_error(-20009, 'AIOps 业务表不得包含命名 CHECK 约束。');
+    END IF;
+    IF l_property_graph_count <> {property_graph_count}
+       OR l_missing_property_graph_count <> 0 THEN
+        raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
        OR l_schema_version <> {schema_version}
@@ -513,6 +553,8 @@ def _render_validation(manifest: dict) -> str:
         view_count=len(manifest["views"]),
         expected_tables=_format_expected_names(manifest["tables"]),
         expected_views=_format_expected_names(manifest["views"]),
+        property_graph_count=len(manifest["property_graphs"]),
+        expected_property_graphs=_format_expected_names(manifest["property_graphs"]),
         schema_version=int(manifest["schema_version"]),
         contract_version=str(manifest["contract_version"]),
     ).strip()
@@ -542,6 +584,13 @@ def _extract_table_columns(
                     f"无法解析规范表列：{name}:{table_name}:{stripped}"
                 )
             columns.append(column_name)
+        canonical_sql = "\n".join(section for _, section in canonical_sections)
+        added_columns = re.findall(
+            rf"(?im)^\s*ALTER\s+TABLE\s+{re.escape(table_name)}\s+"
+            r"ADD\s+(?!CONSTRAINT\b)([A-Z][A-Z0-9_$#]*)\s+",
+            canonical_sql,
+        )
+        columns.extend(column for column in added_columns if column not in columns)
         if not columns:
             raise RuntimeError(f"规范表没有可保存列：{name}:{table_name}")
         return tuple(columns)
@@ -557,7 +606,7 @@ def _render_preserving_header(
     manifest: dict,
     canonical_sections: list[tuple[str, str]],
 ) -> str:
-    """生成保存监控源、运维目标及直接子数据的重建前半段。"""
+    """生成保存责任组、运维目标及资源拓扑配置的重建前半段。"""
     source_tables = ", ".join(f"'{table}'" for table, _ in PRESERVED_TABLES)
     backup_tables = ", ".join(f"'{backup}'" for _, backup in PRESERVED_TABLES)
     backup_statements: list[str] = []
@@ -583,7 +632,7 @@ def _render_preserving_header(
     return f"""-- KBot 4.0 AIOps 保留配置数据的全量重建脚本。
 -- 本文件由 tools/db/render_aiops_rebuild_schema.py 生成，请勿手工修改内嵌 DDL。
 -- 使用 KBot Schema 所有者在 SQL Developer 中以 Run Script（F5）执行。
--- 仅保留运维目标、目标事实、恢复目标、监控源以及目标与监控源绑定；其他 AIOps 数据全部清空。
+-- 保留责任组、运维目标、资源拓扑、恢复目标、监控源及绑定；其他 AIOps 数据全部清空。
 -- Managed Credential、平台用户、Domain、权限、角色和 KC Collection 位于共享表，不会删除。
 -- 执行前必须停止 AIOps API、Worker、Scheduler 和 DB Executor，并完成数据库备份。
 -- Oracle DDL 会自动提交；中途失败时 KBOT_KEEP_AIOPS_% 备份表会保留，请勿直接删除。
@@ -726,6 +775,17 @@ PROMPT === 正在删除旧 AIOps 视图和表 ===
 
 DECLARE
 BEGIN
+    FOR graph_row IN (
+        SELECT property_graph_name
+          FROM user_property_graphs
+         WHERE property_graph_name = 'KBOT_OPS_RESOURCE_GRAPH'
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP PROPERTY GRAPH '
+            || dbms_assert.enquote_name(graph_row.property_graph_name, FALSE);
+        dbms_output.put_line('已删除属性图 ' || graph_row.property_graph_name);
+    END LOOP;
+
     FOR view_row IN (
         SELECT view_name
         FROM user_views
@@ -782,91 +842,9 @@ def _render_restore_and_verify(
     restore_sql = "\n\n".join(restore_statements)
     pairs_sql = "\n        UNION ALL\n        ".join(row_pairs)
     preserved_names = ", ".join(f"'{table}'" for table, _ in PRESERVED_TABLES)
-    topology_names = ", ".join(
-        f"'{table}'"
-        for table in (
-            "KBOT_OPS_BUSINESS_SYSTEM",
-            "KBOT_OPS_MANAGED_COMPONENT",
-            "KBOT_OPS_BUSINESS_SYSTEM_COMPONENT",
-            "KBOT_OPS_BUSINESS_SYSTEM_SITE",
-            "KBOT_OPS_COMPONENT_MEMBERSHIP",
-            "KBOT_OPS_RESOURCE_RELATION",
-        )
-    )
-    return f"""PROMPT === 正在恢复监控源和运维目标配置 ===
+    return f"""PROMPT === 正在恢复责任组、监控源、运维目标与资源拓扑配置 ===
 
 {restore_sql}
-
-PROMPT === 正在为历史孤立 Target 补齐业务系统和数据库组件 ===
-
-INSERT INTO KBOT_OPS_BUSINESS_SYSTEM (
-    BUSINESS_SYSTEM_ID, DOMAIN_ID, SYSTEM_CODE, DISPLAY_NAME, ENVIRONMENT,
-    IMPORTANCE_LEVEL, RESPONSIBILITY_GROUP_ID, DESCRIPTION, STATUS,
-    ROW_VERSION, CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
-)
-SELECT t.TARGET_ID, t.DOMAIN_ID, 'SYSTEM-' || LOWER(RAWTOHEX(t.TARGET_ID)),
-       t.DISPLAY_NAME, t.ENVIRONMENT, t.IMPORTANCE_LEVEL,
-       t.RESPONSIBILITY_GROUP_ID, '由历史孤立 Target 自动补齐',
-       CASE WHEN t.STATUS = 'ENABLED' THEN 'ENABLED' ELSE 'DISABLED' END,
-       1, t.CREATED_BY, t.UPDATED_BY, t.CREATED_AT, t.UPDATED_AT
-  FROM KBOT_OPS_TARGET t
- WHERE NOT EXISTS (
-       SELECT 1 FROM KBOT_OPS_COMPONENT_MEMBERSHIP m
-        WHERE m.TARGET_ID = t.TARGET_ID
- );
-
-INSERT INTO KBOT_OPS_MANAGED_COMPONENT (
-    COMPONENT_ID, DOMAIN_ID, COMPONENT_KEY, DISPLAY_NAME, COMPONENT_TYPE,
-    RESPONSIBILITY_GROUP_ID, DESCRIPTION, STATUS,
-    CREATED_BY, UPDATED_BY, CREATED_AT, UPDATED_AT
-)
-SELECT t.TARGET_ID, t.DOMAIN_ID, 'DATABASE-1', t.DISPLAY_NAME || '数据库',
-       'DATABASE', t.RESPONSIBILITY_GROUP_ID, '由历史孤立 Target 自动补齐',
-       'ACTIVE', t.CREATED_BY, t.UPDATED_BY, t.CREATED_AT, t.UPDATED_AT
-  FROM KBOT_OPS_TARGET t
- WHERE NOT EXISTS (
-       SELECT 1 FROM KBOT_OPS_COMPONENT_MEMBERSHIP m
-        WHERE m.TARGET_ID = t.TARGET_ID
- );
-
-INSERT INTO KBOT_OPS_BUSINESS_SYSTEM_COMPONENT (
-    SYSTEM_COMPONENT_ID, BUSINESS_SYSTEM_ID, COMPONENT_ID, SORT_ORDER
-)
-SELECT t.TARGET_ID, t.TARGET_ID, t.TARGET_ID, 0
-  FROM KBOT_OPS_TARGET t
- WHERE NOT EXISTS (
-       SELECT 1 FROM KBOT_OPS_COMPONENT_MEMBERSHIP m
-        WHERE m.TARGET_ID = t.TARGET_ID
- );
-
-INSERT INTO KBOT_OPS_BUSINESS_SYSTEM_SITE (
-    SITE_ID, BUSINESS_SYSTEM_ID, SITE_CODE, DISPLAY_NAME, SITE_ROLE, SORT_ORDER
-)
-SELECT t.TARGET_ID, t.TARGET_ID, 'MAIN', '默认站点',
-       CASE WHEN t.DB_ROLE = 'STANDBY' THEN 'DR'
-            WHEN t.DB_ROLE = 'PRIMARY' THEN 'PRIMARY'
-            ELSE 'ACTIVE' END,
-       0
-  FROM KBOT_OPS_TARGET t
- WHERE NOT EXISTS (
-       SELECT 1 FROM KBOT_OPS_COMPONENT_MEMBERSHIP m
-        WHERE m.TARGET_ID = t.TARGET_ID
- );
-
-INSERT INTO KBOT_OPS_COMPONENT_MEMBERSHIP (
-    MEMBERSHIP_ID, COMPONENT_ID, SITE_ID, TARGET_ID, MEMBER_KEY,
-    CLUSTER_GROUP_KEY, EXPECTED_ROLE, SORT_ORDER
-)
-SELECT t.TARGET_ID, t.TARGET_ID, t.TARGET_ID, t.TARGET_ID, 'INSTANCE-1',
-       NULL,
-       CASE WHEN t.DB_ROLE IN ('PRIMARY', 'STANDBY')
-            THEN t.DB_ROLE ELSE 'INSTANCE' END,
-       0
-  FROM KBOT_OPS_TARGET t
- WHERE NOT EXISTS (
-       SELECT 1 FROM KBOT_OPS_COMPONENT_MEMBERSHIP m
-        WHERE m.TARGET_ID = t.TARGET_ID
- );
 
 COMMIT;
 
@@ -889,10 +867,7 @@ BEGIN
             'SELECT COUNT(*) FROM '
             || dbms_assert.enquote_name(keep_row.backup_name, FALSE)
             INTO l_backup_count;
-        IF (keep_row.table_name IN ({topology_names})
-            AND l_current_count < l_backup_count)
-           OR (keep_row.table_name NOT IN ({topology_names})
-               AND l_current_count <> l_backup_count) THEN
+        IF l_current_count <> l_backup_count THEN
             raise_application_error(
                 -20110,
                 keep_row.table_name || ' 恢复行数不一致：当前='
@@ -925,11 +900,14 @@ BEGIN
     SELECT COUNT(*)
       INTO l_orphan_target_count
       FROM KBOT_OPS_TARGET target_row
-      LEFT JOIN KBOT_OPS_COMPONENT_MEMBERSHIP member_row
-        ON member_row.TARGET_ID = target_row.TARGET_ID
-     WHERE member_row.TARGET_ID IS NULL;
+      LEFT JOIN KBOT_OPS_DATABASE_RESOURCE database_row
+        ON database_row.TARGET_ID = target_row.TARGET_ID
+      LEFT JOIN KBOT_OPS_BUSINESS_SYSTEM_RESOURCE system_row
+        ON system_row.RESOURCE_ID = database_row.RESOURCE_ID
+     WHERE database_row.TARGET_ID IS NULL
+        OR system_row.RESOURCE_ID IS NULL;
     IF l_orphan_target_count <> 0 THEN
-        raise_application_error(-20112, '仍有 Target 未归属业务系统组件。');
+        raise_application_error(-20112, '仍有 Target 未归属业务系统资源图谱。');
     END IF;
 END;
 /"""
@@ -972,7 +950,7 @@ def render_rebuild_sql() -> str:
 
 
 def render_preserving_rebuild_sql() -> str:
-    """生成仅保留监控源和运维目标配置的单文件重建脚本。"""
+    """生成仅保留责任组、运维目标及资源拓扑配置的单文件重建脚本。"""
     manifest, canonical_sections = _load_canonical_sections()
     sections = [_render_preserving_header(manifest, canonical_sections).rstrip()]
     sections.extend(_render_canonical_sections(canonical_sections))

@@ -1,13 +1,13 @@
 {
   "component": "aiops_agent",
   "schema_version": 44,
-  "contract_version": "aiops-oracle-v34",
+  "contract_version": "aiops-oracle-v44-resource-graph",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 47,
-      "sha256": "d3e85945934cfdc615539aad2b1d3efe491f2200b984a418cc112133d54f839e"
+      "statements": 53,
+      "sha256": "f18aaf641e7c7c3f8728496c3356d2b27d8303d6444559de5dd20206b6333728"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -31,8 +31,8 @@
     },
     {
       "name": "006_ops_fks_views.sql",
-      "statements": 36,
-      "sha256": "dbb6cd9d755047cf806d019c11d613d754f0be2bc5b2da4271e0b92d9dad6f14"
+      "statements": 37,
+      "sha256": "f616fd17d3f68be29372d60ec6599a94e67a832440d5c5ed10ef0246269390f2"
     },
     {
       "name": "007_ops_agents.sql",
@@ -57,12 +57,12 @@
     {
       "name": "011_ops_recovery.sql",
       "statements": 9,
-      "sha256": "a582f7b6cf3bc5e43d2e920f0402934905c3607b9ef4a024cb6dc4ee50f6b1f0"
+      "sha256": "a95bda2983cd8c8012d8db3d932f07b647e8357487ba0fec0dc1faf40b13a255"
     },
     {
       "name": "012_ops_work_items.sql",
-      "statements": 31,
-      "sha256": "d66ef2ed3b9cb2c5efcb3b66da1bb31ec907e92b5dd1fd5adb14578c724c6f89"
+      "statements": 33,
+      "sha256": "4066c0e0f95cb627ab49466e627c9ee71544fa2c08edb7f90f54fec012e6b977"
     }
   ],
   "tables": [
@@ -74,11 +74,15 @@
     "KBOT_OPS_DIAGNOSTIC_SOURCE",
     "KBOT_OPS_TARGET_SOURCE_BINDING",
     "KBOT_OPS_BUSINESS_SYSTEM",
-    "KBOT_OPS_MANAGED_COMPONENT",
-    "KBOT_OPS_BUSINESS_SYSTEM_COMPONENT",
-    "KBOT_OPS_BUSINESS_SYSTEM_SITE",
-    "KBOT_OPS_COMPONENT_MEMBERSHIP",
+    "KBOT_OPS_MANAGED_RESOURCE",
+    "KBOT_OPS_DATABASE_RESOURCE",
+    "KBOT_OPS_COMPUTE_RESOURCE",
+    "KBOT_OPS_BUSINESS_SYSTEM_RESOURCE",
     "KBOT_OPS_RESOURCE_RELATION",
+    "KBOT_OPS_RELATION_PARTICIPANT",
+    "KBOT_OPS_BUSINESS_SYSTEM_DRAFT",
+    "KBOT_OPS_BUSINESS_SYSTEM_DRAFT_CHANGE",
+    "KBOT_OPS_RESOURCE_DISCOVERY_JOB",
     "KBOT_OPS_SIGNAL_EVENT",
     "KBOT_OPS_SITUATION",
     "KBOT_OPS_SITUATION_EVENT",
@@ -147,6 +151,9 @@
     "KBOT_V_OPS_REPORT",
     "KBOT_V_OPS_CHAT_PENDING",
     "KBOT_V_OPS_SCHEMA_VERSION"
+  ],
+  "property_graphs": [
+    "KBOT_OPS_RESOURCE_GRAPH"
   ],
   "deferred_foreign_keys": [
     "FK_OPS_RUN_FINAL_ART",

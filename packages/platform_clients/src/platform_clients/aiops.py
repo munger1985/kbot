@@ -615,11 +615,8 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def create_business_system(self, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
-        return await self._json("POST", f"{self._CONFIG}/business-systems", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
-
     async def commit_business_system(self, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
-        return await self._json("POST", f"{self._CONFIG}/business-systems:commit", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
+        return await self._json("POST", f"{self._CONFIG}/business-systems", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
 
     async def list_business_systems(self, *, status: str | None, limit: int, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("GET", self._list_path(f"{self._CONFIG}/business-systems", status=status, cursor=None, limit=limit), auth_context=auth_context)
@@ -630,8 +627,53 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def patch_business_system(self, business_system_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("PATCH", f"{self._CONFIG}/business-systems/{business_system_id}", payload=payload, if_match=if_match, auth_context=auth_context)
 
-    async def put_business_system_topology(self, business_system_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
-        return await self._json("PUT", f"{self._CONFIG}/business-systems/{business_system_id}/topology", payload=payload, if_match=if_match, auth_context=auth_context)
+    async def list_managed_resources(self, *, resource_type_key: str | None, limit: int, auth_context: AuthContext) -> list[dict[str, Any]]:
+        query = {"limit": str(limit)}
+        if resource_type_key:
+            query["resource_type_key"] = resource_type_key
+        return await self._json("GET", f"{self._CONFIG}/managed-resources?{urlencode(query)}", auth_context=auth_context)
+
+    async def patch_managed_resource(self, resource_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PATCH", f"{self._CONFIG}/managed-resources/{resource_id}", payload=payload, if_match=if_match, auth_context=auth_context)
+
+    async def add_system_resource(self, business_system_id: UUID, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/business-systems/{business_system_id}/resources", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def patch_system_resource(self, business_system_id: UUID, system_resource_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PATCH", f"{self._CONFIG}/business-systems/{business_system_id}/resources/{system_resource_id}", payload=payload, if_match=if_match, auth_context=auth_context)
+
+    async def remove_system_resource(self, business_system_id: UUID, system_resource_id: UUID, *, if_match: str, auth_context: AuthContext) -> None:
+        await self._json("DELETE", f"{self._CONFIG}/business-systems/{business_system_id}/resources/{system_resource_id}", if_match=if_match, auth_context=auth_context)
+
+    async def create_resource_relation(self, business_system_id: UUID, payload: dict[str, Any], *, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/business-systems/{business_system_id}/relations", payload=payload, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def patch_resource_relation(self, business_system_id: UUID, relation_id: UUID, payload: dict[str, Any], *, if_match: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PATCH", f"{self._CONFIG}/business-systems/{business_system_id}/relations/{relation_id}", payload=payload, if_match=if_match, auth_context=auth_context)
+
+    async def delete_resource_relation(self, business_system_id: UUID, relation_id: UUID, *, if_match: str, auth_context: AuthContext) -> None:
+        await self._json("DELETE", f"{self._CONFIG}/business-systems/{business_system_id}/relations/{relation_id}", if_match=if_match, auth_context=auth_context)
+
+    async def get_business_system_topology(self, business_system_id: UUID, *, focus_resource_id: UUID | None, max_depth: int, max_nodes: int, auth_context: AuthContext) -> dict[str, Any]:
+        query = {"max_depth": str(max_depth), "max_nodes": str(max_nodes)}
+        if focus_resource_id is not None:
+            query["focus_resource_id"] = str(focus_resource_id)
+        return await self._json("GET", f"{self._CONFIG}/business-systems/{business_system_id}/topology?{urlencode(query)}", auth_context=auth_context)
+
+    async def create_business_system_draft(self, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/business-system-drafts", payload=payload, auth_context=auth_context)
+
+    async def get_business_system_draft(self, draft_id: UUID, *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", f"{self._CONFIG}/business-system-drafts/{draft_id}", auth_context=auth_context)
+
+    async def save_business_system_draft(self, draft_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("PUT", f"{self._CONFIG}/business-system-drafts/{draft_id}", payload=payload, auth_context=auth_context)
+
+    async def commit_business_system_draft(self, draft_id: UUID, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("POST", f"{self._CONFIG}/business-system-drafts/{draft_id}:commit", payload={}, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
+
+    async def abandon_business_system_draft(self, draft_id: UUID, *, if_match: str, auth_context: AuthContext) -> None:
+        await self._json("DELETE", f"{self._CONFIG}/business-system-drafts/{draft_id}", if_match=if_match, auth_context=auth_context)
 
     async def command_business_system(self, business_system_id: UUID, command: str, *, if_match: str, idempotency_key: str, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("POST", f"{self._CONFIG}/business-systems/{business_system_id}/{command}", payload={}, if_match=if_match, idempotency_key=idempotency_key, auth_context=auth_context)
@@ -784,17 +826,17 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def get_recovery_profile(
-        self, component_id: UUID, *, auth_context: AuthContext
+        self, resource_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any] | None:
         return await self._json(
             "GET",
-            f"{self._CONFIG}/components/{component_id}/protection-profile",
+            f"{self._CONFIG}/managed-resources/{resource_id}/protection-profile",
             auth_context=auth_context,
         )
 
     async def upsert_recovery_profile(
         self,
-        component_id: UUID,
+        resource_id: UUID,
         payload: dict[str, Any],
         *,
         idempotency_key: str,
@@ -802,24 +844,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "PUT",
-            f"{self._CONFIG}/components/{component_id}/protection-profile",
+            f"{self._CONFIG}/managed-resources/{resource_id}/protection-profile",
             payload=payload,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
         )
 
     async def list_recovery_drills(
-        self, component_id: UUID, *, auth_context: AuthContext
+        self, resource_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
-            f"{self._CONFIG}/components/{component_id}/recovery-drills",
+            f"{self._CONFIG}/managed-resources/{resource_id}/recovery-drills",
             auth_context=auth_context,
         )
 
     async def create_recovery_drill(
         self,
-        component_id: UUID,
+        resource_id: UUID,
         payload: dict[str, Any],
         *,
         idempotency_key: str,
@@ -827,7 +869,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/components/{component_id}/recovery-drills",
+            f"{self._CONFIG}/managed-resources/{resource_id}/recovery-drills",
             payload=payload,
             idempotency_key=idempotency_key,
             auth_context=auth_context,
@@ -835,7 +877,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     async def review_recovery_drill(
         self,
-        component_id: UUID,
+        resource_id: UUID,
         drill_id: UUID,
         payload: dict[str, Any],
         *,
@@ -845,7 +887,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
-            f"{self._CONFIG}/components/{component_id}/recovery-drills/{drill_id}:review",
+            f"{self._CONFIG}/managed-resources/{resource_id}/recovery-drills/{drill_id}:review",
             payload=payload,
             if_match=if_match,
             idempotency_key=idempotency_key,

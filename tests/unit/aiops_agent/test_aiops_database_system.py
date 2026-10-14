@@ -1,68 +1,87 @@
-"""业务系统 Wizard 共享契约测试。"""
+"""业务系统资源图谱共享契约测试。"""
 
 from __future__ import annotations
 
 import unittest
+from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from platform_core.contracts.aiops import BusinessSystemCommit, BusinessSystemTopologyPut
+from aiops_agent.application.configuration.business_system_service import _summary
+from platform_core.contracts.aiops import (
+    BusinessSystemResourceGraphCommit,
+    BusinessSystemResourceGraphDetail,
+    ManagedResourcePatch,
+)
 from platform_core.identity import uuid7
 
 
-def _component(group_id):
-    return {"component_key": "DATABASE-1", "display_name": "ERP 数据库", "component_type": "DATABASE", "responsibility_group_id": group_id}
+def _resource(draft_id, resource_id, group_id, name):
+    return {
+        "draft_resource_id": draft_id,
+        "mode": "REUSE",
+        "resource_id": resource_id,
+        "resource_type_key": "DATABASE",
+        "display_name": name,
+        "owner_group_id": group_id,
+        "architecture_layer_key": "DATA",
+    }
 
 
-class BusinessSystemContractTest(unittest.TestCase):
-    def test_topology_is_inferred_from_relations_and_cluster_groups(self) -> None:
-        topology = BusinessSystemTopologyPut.model_validate({
-            "components": [_component(uuid7())],
-            "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
-            "members": [
-                {"member_key": "RAC-1", "component_key": "DATABASE-1", "site_code": "MAIN", "cluster_group_key": "ERP-RAC", "expected_role": "PRIMARY", "mode": "REUSE", "target_id": uuid7()},
-                {"member_key": "RAC-2", "component_key": "DATABASE-1", "site_code": "MAIN", "cluster_group_key": "ERP-RAC", "expected_role": "STANDBY", "mode": "REUSE", "target_id": uuid7()},
-            ],
-            "relations": [{"relation_key": "DG-1", "source_component_key": "DATABASE-1", "target_component_key": "DATABASE-1", "source_member_key": "RAC-1", "target_member_key": "RAC-2", "relation_type": "DATA_GUARD", "transport_mode": "ASYNC"}],
+class BusinessSystemResourceGraphContractTest(unittest.TestCase):
+    def test_detail_is_projected_to_strict_list_summary(self) -> None:
+        now = datetime.now(UTC)
+        detail = BusinessSystemResourceGraphDetail(
+            business_system_id=uuid7(), system_code="SYS-123456", display_name="ERP 生产系统",
+            environment="PROD", importance_level=3, responsibility_group_id=uuid7(),
+            description="详情字段不应进入摘要校验", status="DRAFT",
+            protection_status="UNCONFIGURED", resource_count=2,
+            resource_type_summary=({"resource_type_key": "DATABASE", "display_name": "数据库", "count": 2},),
+            architecture_labels=("DATA_GUARD",), row_version=1, created_at=now, updated_at=now,
+        )
+        summary = _summary(detail)
+        self.assertEqual(detail.business_system_id, summary.business_system_id)
+        self.assertEqual(2, summary.resource_count)
+        self.assertNotIn("description", summary.model_dump())
+        self.assertNotIn("resources", summary.model_dump())
+
+    def test_commit_uses_resources_and_multi_participant_relations(self) -> None:
+        group_id = uuid7()
+        first, second = uuid7(), uuid7()
+        request = BusinessSystemResourceGraphCommit.model_validate({
+            "system": {"display_name": "ERP 生产系统", "environment": "PROD", "responsibility_group_id": group_id},
+            "resources": [_resource(first, uuid7(), group_id, "ERP 主库"), _resource(second, uuid7(), group_id, "ERP 备库")],
+            "relations": [{"draft_relation_id": uuid7(), "relation_type_key": "DATA_GUARD", "participants": [{"draft_resource_id": first, "participant_role": "PRIMARY"}, {"draft_resource_id": second, "participant_role": "STANDBY"}]}],
         })
-        self.assertEqual("ERP-RAC", topology.members[0].cluster_group_key)
-        self.assertFalse(hasattr(topology, "deployment_shape"))
+        self.assertEqual(2, len(request.resources))
+        self.assertEqual("DATA_GUARD", request.relations[0].relation_type_key)
+        self.assertEqual(("PRIMARY", "STANDBY"), tuple(item.participant_role for item in request.relations[0].participants))
+        self.assertFalse(hasattr(request, "components"))
 
-    def test_target_cannot_be_reused_as_two_members(self) -> None:
-        target_id = uuid7()
-        with self.assertRaises(ValidationError):
-            BusinessSystemTopologyPut.model_validate({
-                "components": [_component(uuid7())], "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
-                "members": [
-                    {"member_key": "DB-1", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "INSTANCE", "mode": "REUSE", "target_id": target_id},
-                    {"member_key": "DB-2", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "INSTANCE", "mode": "REUSE", "target_id": target_id},
-                ],
+    def test_relation_cannot_repeat_a_resource(self) -> None:
+        group_id = uuid7()
+        draft_id = uuid7()
+        with self.assertRaisesRegex(ValidationError, "同一资源不能在一个关系中重复出现"):
+            BusinessSystemResourceGraphCommit.model_validate({
+                "system": {"display_name": "MES", "environment": "PROD", "responsibility_group_id": group_id},
+                "resources": [_resource(draft_id, uuid7(), group_id, "MES DB")],
+                "relations": [{"draft_relation_id": uuid7(), "relation_type_key": "ORACLE_RAC", "participants": [{"draft_resource_id": draft_id, "participant_role": "MEMBER"}, {"draft_resource_id": draft_id, "participant_role": "MEMBER"}]}],
             })
 
-    def test_relation_member_must_belong_to_declared_component(self) -> None:
+    def test_relation_must_reference_a_resource_in_the_same_draft(self) -> None:
         group_id = uuid7()
-        with self.assertRaisesRegex(ValidationError, "成员必须属于对应"):
-            BusinessSystemTopologyPut.model_validate({
-                "components": [
-                    _component(group_id),
-                    {**_component(group_id), "component_key": "DATABASE-2"},
-                ],
-                "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
-                "members": [
-                    {"member_key": "DB-1", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "SOURCE", "mode": "REUSE", "target_id": uuid7()},
-                    {"member_key": "DB-2", "component_key": "DATABASE-2", "site_code": "MAIN", "expected_role": "REPLICA", "mode": "REUSE", "target_id": uuid7()},
-                ],
-                "relations": [{"relation_key": "OGG-1", "source_component_key": "DATABASE-2", "target_component_key": "DATABASE-1", "source_member_key": "DB-1", "target_member_key": "DB-2", "relation_type": "OGG"}],
+        first = uuid7()
+        with self.assertRaisesRegex(ValidationError, "不在当前业务系统草稿中的资源"):
+            BusinessSystemResourceGraphCommit.model_validate({
+                "system": {"display_name": "MES", "environment": "PROD", "responsibility_group_id": group_id},
+                "resources": [_resource(first, uuid7(), group_id, "MES DB")],
+                "relations": [{"draft_relation_id": uuid7(), "relation_type_key": "DATA_GUARD", "participants": [{"draft_resource_id": first, "participant_role": "PRIMARY"}, {"draft_resource_id": uuid7(), "participant_role": "STANDBY"}]}],
             })
 
-    def test_atomic_commit_can_update_reused_target_version(self) -> None:
-        group_id = uuid7()
-        request = BusinessSystemCommit.model_validate({
-            "system": {"system_code": "ERP-PROD", "display_name": "ERP 生产系统", "environment": "PROD", "responsibility_group_id": group_id},
-            "components": [_component(group_id)], "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
-            "members": [{"member_key": "DB-1", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "INSTANCE", "mode": "REUSE", "target_id": uuid7(), "target_patch": {"display_name": "ERP-DB", "version_code": "23ai", "environment": "PROD"}, "target_row_version": 1}],
-        })
-        self.assertEqual("23ai", request.members[0].target_patch.version_code)
+    def test_database_version_environment_and_role_are_mutable(self) -> None:
+        patch = ManagedResourcePatch(database={"version_code": "26ai", "environment": "STG", "db_role": "STANDBY"})
+        self.assertEqual("26ai", patch.database.version_code)
+        self.assertEqual("STANDBY", patch.database.db_role)
 
 
 if __name__ == "__main__":

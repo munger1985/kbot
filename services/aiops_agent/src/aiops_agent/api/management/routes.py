@@ -59,14 +59,22 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
-    ComponentProtectionProfileUpsert,
-    ComponentProtectionProfileView,
-    BusinessSystemCommit,
-    BusinessSystemCreate,
-    BusinessSystemDetail,
-    BusinessSystemPage,
-    BusinessSystemPatch,
-    BusinessSystemTopologyPut,
+    ResourceProtectionProfileUpsert,
+    ResourceProtectionProfileView,
+    BusinessSystemDraftCreate,
+    BusinessSystemDraftSave,
+    BusinessSystemDraftView,
+    BusinessSystemInfoPatch,
+    BusinessSystemResourceCommit,
+    BusinessSystemResourceGraphCommit,
+    BusinessSystemResourceGraphDetail,
+    BusinessSystemResourceGraphPage,
+    BusinessSystemResourcePatch,
+    ManagedResourcePatch,
+    ManagedResourceView,
+    ResourceRelationInputV2,
+    ResourceRelationPatchV2,
+    TopologySubgraph,
     RecoveryDrillCreate,
     RecoveryDrillReview,
     RecoveryDrillView,
@@ -105,59 +113,136 @@ def _etag(response: Response, row_version: int) -> None:
     response.headers["ETag"] = format_etag(row_version)
 
 
-@router.post("/business-systems", response_model=BusinessSystemDetail, status_code=201)
-async def create_business_system(body: BusinessSystemCreate, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
-    result = await service.create_business_system(scope=scope, request=body, idempotency_key=idempotency_key)
-    _etag(response, result.row_version)
-    return result
-
-
-@router.post("/business-systems:commit", response_model=BusinessSystemDetail, status_code=201)
-async def commit_business_system(body: BusinessSystemCommit, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+@router.post("/business-systems", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def commit_business_system(body: BusinessSystemResourceGraphCommit, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
     result = await service.commit_business_system(scope=scope, request=body, idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 
 
-@router.get("/business-systems", response_model=BusinessSystemPage)
-async def list_business_systems(service: Service, scope: Scope, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> BusinessSystemPage:
+@router.get("/business-systems", response_model=BusinessSystemResourceGraphPage)
+async def list_business_systems(service: Service, scope: Scope, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> BusinessSystemResourceGraphPage:
     return await service.list_business_systems(scope=scope, status=resource_status, limit=limit)
 
 
-@router.get("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
-async def get_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope) -> BusinessSystemDetail:
+@router.get("/business-systems/{business_system_id}", response_model=BusinessSystemResourceGraphDetail)
+async def get_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope) -> BusinessSystemResourceGraphDetail:
     result = await service.get_business_system(scope=scope, business_system_id=business_system_id)
     _etag(response, result.row_version)
     return result
 
 
-@router.patch("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
-async def patch_business_system(business_system_id: UUID, body: BusinessSystemPatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemDetail:
+@router.patch("/business-systems/{business_system_id}", response_model=BusinessSystemResourceGraphDetail)
+async def patch_business_system(business_system_id: UUID, body: BusinessSystemInfoPatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
     result = await service.patch_business_system(scope=scope, business_system_id=business_system_id, request=body, expected_version=parse_etag(if_match))
     _etag(response, result.row_version)
     return result
 
 
-@router.put("/business-systems/{business_system_id}/topology", response_model=BusinessSystemDetail)
-async def put_business_system_topology(business_system_id: UUID, body: BusinessSystemTopologyPut, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemDetail:
-    result = await service.put_business_system_topology(scope=scope, business_system_id=business_system_id, request=body, expected_version=parse_etag(if_match))
+@router.get("/managed-resources", response_model=tuple[ManagedResourceView, ...])
+async def list_managed_resources(service: Service, scope: Scope, resource_type_key: str | None = Query(default=None), limit: int = Query(default=50, ge=1, le=200)) -> tuple[ManagedResourceView, ...]:
+    return await service.list_managed_resources(scope=scope, resource_type_key=resource_type_key, limit=limit)
+
+
+@router.patch("/managed-resources/{resource_id}", response_model=ManagedResourceView)
+async def patch_managed_resource(resource_id: UUID, body: ManagedResourcePatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> ManagedResourceView:
+    result = await service.patch_managed_resource(scope=scope, resource_id=resource_id, request=body, expected_version=parse_etag(if_match))
     _etag(response, result.row_version)
     return result
 
 
-async def _command_business_system(business_system_id: UUID, command: str, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> BusinessSystemDetail:
+@router.post("/business-systems/{business_system_id}/resources", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def add_system_resource(business_system_id: UUID, body: BusinessSystemResourceCommit, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
+    result = await service.add_system_resource(scope=scope, business_system_id=business_system_id, request=body, idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.patch("/business-systems/{business_system_id}/resources/{system_resource_id}", response_model=BusinessSystemResourceGraphDetail)
+async def patch_system_resource(business_system_id: UUID, system_resource_id: UUID, body: BusinessSystemResourcePatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
+    result = await service.patch_system_resource(scope=scope, business_system_id=business_system_id, system_resource_id=system_resource_id, request=body, expected_version=parse_etag(if_match))
+    _etag(response, result.row_version)
+    return result
+
+
+@router.delete("/business-systems/{business_system_id}/resources/{system_resource_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_system_resource(business_system_id: UUID, system_resource_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
+    await service.remove_system_resource(scope=scope, business_system_id=business_system_id, system_resource_id=system_resource_id, expected_version=parse_etag(if_match))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/business-systems/{business_system_id}/relations", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def create_resource_relation(business_system_id: UUID, body: ResourceRelationInputV2, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
+    result = await service.create_resource_relation(scope=scope, business_system_id=business_system_id, request=body, idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.patch("/business-systems/{business_system_id}/relations/{relation_id}", response_model=BusinessSystemResourceGraphDetail)
+async def patch_resource_relation(business_system_id: UUID, relation_id: UUID, body: ResourceRelationPatchV2, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
+    result = await service.patch_resource_relation(scope=scope, business_system_id=business_system_id, relation_id=relation_id, request=body, expected_version=parse_etag(if_match))
+    _etag(response, result.row_version)
+    return result
+
+
+@router.delete("/business-systems/{business_system_id}/relations/{relation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_resource_relation(business_system_id: UUID, relation_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
+    await service.delete_resource_relation(scope=scope, business_system_id=business_system_id, relation_id=relation_id, expected_version=parse_etag(if_match))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/business-systems/{business_system_id}/topology", response_model=TopologySubgraph)
+async def get_business_system_topology(business_system_id: UUID, service: Service, scope: Scope, focus_resource_id: UUID | None = Query(default=None), max_depth: int = Query(default=2, ge=0, le=6), max_nodes: int = Query(default=200, ge=1, le=500)) -> TopologySubgraph:
+    return await service.get_topology_subgraph(scope=scope, business_system_id=business_system_id, focus_resource_id=focus_resource_id, max_depth=max_depth, max_nodes=max_nodes)
+
+
+@router.post("/business-system-drafts", response_model=BusinessSystemDraftView, status_code=201)
+async def create_business_system_draft(body: BusinessSystemDraftCreate, response: Response, service: Service, scope: Scope) -> BusinessSystemDraftView:
+    result = await service.create_business_system_draft(scope=scope, request=body)
+    _etag(response, result.revision)
+    return result
+
+
+@router.get("/business-system-drafts/{draft_id}", response_model=BusinessSystemDraftView)
+async def get_business_system_draft(draft_id: UUID, response: Response, service: Service, scope: Scope) -> BusinessSystemDraftView:
+    result = await service.get_business_system_draft(scope=scope, draft_id=draft_id)
+    _etag(response, result.revision)
+    return result
+
+
+@router.put("/business-system-drafts/{draft_id}", response_model=BusinessSystemDraftView)
+async def save_business_system_draft(draft_id: UUID, body: BusinessSystemDraftSave, response: Response, service: Service, scope: Scope) -> BusinessSystemDraftView:
+    result = await service.save_business_system_draft(scope=scope, draft_id=draft_id, request=body)
+    _etag(response, result.revision)
+    return result
+
+
+@router.post("/business-system-drafts/{draft_id}:commit", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def commit_business_system_draft(draft_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
+    result = await service.commit_business_system_draft(scope=scope, draft_id=draft_id, expected_revision=parse_etag(if_match), idempotency_key=idempotency_key)
+    _etag(response, result.row_version)
+    return result
+
+
+@router.delete("/business-system-drafts/{draft_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def abandon_business_system_draft(draft_id: UUID, service: Service, scope: Scope, if_match: IfMatch = None) -> Response:
+    await service.abandon_business_system_draft(scope=scope, draft_id=draft_id, expected_revision=parse_etag(if_match))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def _command_business_system(business_system_id: UUID, command: str, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> BusinessSystemResourceGraphDetail:
     result = await service.command_business_system(scope=scope, business_system_id=business_system_id, command=command, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 
 
-@router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemDetail)
-async def enable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemDetail:
+@router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemResourceGraphDetail)
+async def enable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
     return await _command_business_system(business_system_id, "enable", response, service, scope, idempotency_key, if_match)
 
 
-@router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemDetail)
-async def disable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemDetail:
+@router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemResourceGraphDetail)
+async def disable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemResourceGraphDetail:
     return await _command_business_system(business_system_id, "disable", response, service, scope, idempotency_key, if_match)
 
 
@@ -451,30 +536,30 @@ async def retire_target_fact(
 
 
 @router.get(
-    "/components/{component_id}/protection-profile",
-    response_model=ComponentProtectionProfileView | None,
+    "/managed-resources/{resource_id}/protection-profile",
+    response_model=ResourceProtectionProfileView | None,
 )
 async def get_recovery_profile(
-    component_id: UUID, service: Service, scope: Scope
-) -> ComponentProtectionProfileView | None:
-    return await service.get_recovery_profile(scope=scope, component_id=component_id)
+    resource_id: UUID, service: Service, scope: Scope
+) -> ResourceProtectionProfileView | None:
+    return await service.get_recovery_profile(scope=scope, resource_id=resource_id)
 
 
 @router.put(
-    "/components/{component_id}/protection-profile",
-    response_model=ComponentProtectionProfileView,
+    "/managed-resources/{resource_id}/protection-profile",
+    response_model=ResourceProtectionProfileView,
 )
 async def upsert_recovery_profile(
-    component_id: UUID,
-    body: ComponentProtectionProfileUpsert,
+    resource_id: UUID,
+    body: ResourceProtectionProfileUpsert,
     response: Response,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
-) -> ComponentProtectionProfileView:
+) -> ResourceProtectionProfileView:
     result = await service.upsert_recovery_profile(
         scope=scope,
-        component_id=component_id,
+        resource_id=resource_id,
         request=body,
         idempotency_key=idempotency_key,
     )
@@ -483,22 +568,22 @@ async def upsert_recovery_profile(
 
 
 @router.get(
-    "/components/{component_id}/recovery-drills",
+    "/managed-resources/{resource_id}/recovery-drills",
     response_model=RecoveryDrillPage,
 )
 async def list_recovery_drills(
-    component_id: UUID, service: Service, scope: Scope
+    resource_id: UUID, service: Service, scope: Scope
 ) -> RecoveryDrillPage:
-    return await service.list_recovery_drills(scope=scope, component_id=component_id)
+    return await service.list_recovery_drills(scope=scope, resource_id=resource_id)
 
 
 @router.post(
-    "/components/{component_id}/recovery-drills",
+    "/managed-resources/{resource_id}/recovery-drills",
     response_model=RecoveryDrillView,
     status_code=201,
 )
 async def create_recovery_drill(
-    component_id: UUID,
+    resource_id: UUID,
     body: RecoveryDrillCreate,
     response: Response,
     service: Service,
@@ -507,7 +592,7 @@ async def create_recovery_drill(
 ) -> RecoveryDrillView:
     result = await service.create_recovery_drill(
         scope=scope,
-        component_id=component_id,
+        resource_id=resource_id,
         request=body,
         idempotency_key=idempotency_key,
     )
@@ -516,11 +601,11 @@ async def create_recovery_drill(
 
 
 @router.post(
-    "/components/{component_id}/recovery-drills/{drill_id}:review",
+    "/managed-resources/{resource_id}/recovery-drills/{drill_id}:review",
     response_model=RecoveryDrillView,
 )
 async def review_recovery_drill(
-    component_id: UUID,
+    resource_id: UUID,
     drill_id: UUID,
     body: RecoveryDrillReview,
     response: Response,
@@ -531,7 +616,7 @@ async def review_recovery_drill(
 ) -> RecoveryDrillView:
     result = await service.review_recovery_drill(
         scope=scope,
-        component_id=component_id,
+        resource_id=resource_id,
         drill_id=drill_id,
         request=body,
         expected_version=parse_etag(if_match),

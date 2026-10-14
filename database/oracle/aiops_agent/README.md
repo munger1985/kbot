@@ -33,7 +33,7 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 权限/角色/成员关系以及 `operations-manuals`、`diagnosis-cases` 两个固定 KC Collection 位于共享平台/KC 表，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 44 / aiops-oracle-v34`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 44 / aiops-oracle-v44-resource-graph`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
@@ -55,7 +55,7 @@ SQL Developer 中使用 Run Script（F5）执行，会保留下列配置数据�
 - `KBOT_OPS_TARGET_FACT`：人工确认或发现的目标事实；
 - `KBOT_OPS_DIAGNOSTIC_SOURCE`：监控源、Webhook 和能力配置；
 - `KBOT_OPS_TARGET_SOURCE_BINDING`：目标与监控源的定位和能力绑定；
-- `KBOT_OPS_BUSINESS_SYSTEM`、`KBOT_OPS_MANAGED_COMPONENT` 及资源拓扑表；
+- `KBOT_OPS_BUSINESS_SYSTEM`、`KBOT_OPS_MANAGED_RESOURCE` 及资源拓扑表；
 - `KBOT_OPS_RECOVERY_PROFILE`：数据库组件当前及历史恢复目标版本。
 
 恢复后，脚本会为仍未归属组件的历史 Target 各自补建一个业务系统和数据库组件；

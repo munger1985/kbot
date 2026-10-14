@@ -203,7 +203,7 @@
       DISABLED: ["监控源未启用", "该来源已配置但当前处于停用状态。"],
       DISCONNECTED: ["监控源连接失败", "连接验证未通过，实时指标查询不会被发起。"],
       CAPABILITY_MISSING: ["监控能力不完整", "该来源缺少第一阶段所需的时序查询能力。"],
-      NO_MAPPED_INSTANCE: ["尚未关联数据库实例", "请在监控接入中将发现的实例映射到运维目标。"],
+      NO_MAPPED_INSTANCE: ["尚未关联数据库资源", "请在监控接入中将发现的数据库映射到已登记资源。"],
     };
     const entry = mapping[source?.monitoring_readiness];
     if (entry) {
@@ -231,7 +231,7 @@
   }
   function filteredInstances() {
     const value = state.search.trim().toLowerCase();
-    return state.instances.filter((item) => !value || `${item.business_system_name || ""} ${item.component_name || ""} ${item.display_name} ${item.db_type}`.toLowerCase().includes(value));
+    return state.instances.filter((item) => !value || `${item.business_system_name || ""} ${item.resource_name || ""} ${item.display_name} ${item.db_type}`.toLowerCase().includes(value));
   }
   function renderInstances() {
     const picker = document.getElementById("monitoring-instance-picker");
@@ -243,8 +243,8 @@
     count.innerHTML = `<strong>${state.selected.length}</strong> / ${instances.length} ${state.selected.length ? "已选择" : "请选择"}`;
     const groups = new Map();
     instances.forEach((instance) => {
-      const key = `${instance.business_system_id || "unassigned"}:${instance.component_id || "unassigned"}`;
-      const group = groups.get(key) || { systemName: instance.business_system_name || "未归属业务系统", componentName: instance.component_name || "未归属组件", items: [] };
+      const key = `${instance.business_system_id || "unassigned"}:${instance.resource_id || "unassigned"}`;
+      const group = groups.get(key) || { systemName: instance.business_system_name || "未归属业务系统", resourceName: instance.resource_name || "未归属数据库资源", items: [] };
       group.items.push(instance);
       groups.set(key, group);
     });
@@ -253,9 +253,10 @@
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const queryStatus = targetPickerStatus(instance, result);
       const current = state.selected.length === 1 && selected;
-      return `<label class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(instance.display_name)}" ${selected ? "checked" : ""}><span class="ops-monitoring-instance-copy"><span><strong>${esc(instance.display_name)}</strong><em>${esc(instance.db_type)}</em></span><small>${esc(instance.instance_id.slice(0, 8))}</small></span><span class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}</span><span class="ops-monitoring-instance-meta"><span><small>接入状态</small><span>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></span></span><span><small>查询状态</small>${badge(queryStatus.value, queryStatus.label)}</span><span><small>最新采样</small><time>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</time></span></span></label>`;
+      const displayName = instance.resource_name || instance.display_name;
+      return `<label class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(displayName)}" ${selected ? "checked" : ""}><span class="ops-monitoring-instance-copy"><span><strong>${esc(displayName)}</strong><em>${esc(instance.db_type)}</em></span><small>${esc(instance.business_system_name || "未归属业务系统")}</small></span><span class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}</span><span class="ops-monitoring-instance-meta"><span><small>接入状态</small><span>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></span></span><span><small>查询状态</small>${badge(queryStatus.value, queryStatus.label)}</span><span><small>最新采样</small><time>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</time></span></span></label>`;
     };
-    const cards = [...groups.values()].map((group) => `<section class="ops-monitoring-instance-group"><header><strong>${esc(group.systemName)}</strong><span>${esc(group.componentName)} · ${group.items.length} 个 Target</span></header><div>${group.items.map(card).join("")}</div></section>`).join("");
+    const cards = [...groups.values()].map((group) => `<section class="ops-monitoring-instance-group"><header><strong>${esc(group.systemName)}</strong><span>${esc(group.resourceName)} · ${group.items.length} 个数据库入口</span></header><div>${group.items.map(card).join("")}</div></section>`).join("");
     document.getElementById("monitoring-instance-list").innerHTML = cards || '<div class="ops-empty">当前筛选条件下没有数据库实例。</div>';
     renderFreshness();
   }

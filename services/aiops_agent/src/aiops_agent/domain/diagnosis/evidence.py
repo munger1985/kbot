@@ -208,21 +208,23 @@ def normalize_evidence_artifacts(
                     ("rto_seconds", "s"),
                     ("required_drill_interval_days", "d"),
                     ("required_assurance_level", None),
+                    ("required_backup_source_types", None),
                 ):
                     value = profile.get(name)
                     facts.append(
                         _fact(
                             artifact_id=artifact_id,
                             pointer=f"/profile/{name}",
-                            source_type="DATABASE_OBSERVATION",
+                            source_type="USER_RESULT",
                             source_group_id=source_group,
                             target_id=target_id,
                             fact_type=f"recovery.objective.{name}",
                             value=value,
                             unit=unit,
                             captured_at=payload.get("captured_at"),
-                            summary=f"恢复目标 {name}={value}",
-                            trust_level="SOURCE_VERIFIED",
+                            quality_flags=("USER_PROVIDED",),
+                            summary=f"恢复策略 {name}={value}",
+                            trust_level="USER_PROVIDED",
                         )
                     )
             for field_name, fact_type in (
@@ -254,6 +256,7 @@ def normalize_evidence_artifacts(
                 )
             gaps.extend(
                 {
+                    **item,
                     "code": str(item.get("code")),
                     "detail": str(item.get("detail") or "恢复保障证据不完整"),
                     "retryable": False,

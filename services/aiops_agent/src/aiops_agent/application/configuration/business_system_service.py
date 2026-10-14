@@ -1,37 +1,101 @@
-"""业务系统、组件与资源拓扑配置用例。"""
+"""业务系统资源图谱配置用例。"""
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections import deque
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from aiops_agent.application.configuration.common import ConfigurationScope, add_configuration_event
 from aiops_agent.application.errors import resource_not_found, state_conflict, validation_failed
 from aiops_agent.entities import (
-    BusinessSystemComponentEntity,
+    BusinessSystemDraftChangeEntity,
+    BusinessSystemDraftEntity,
     BusinessSystemEntity,
-    BusinessSystemSiteEntity,
-    ComponentMembershipEntity,
-    ManagedComponentEntity,
+    BusinessSystemResourceEntity,
+    ComputeResourceEntity,
+    DatabaseResourceEntity,
+    ManagedResourceEntity,
+    RelationParticipantEntity,
+    ResourceDiscoveryJobEntity,
     ResourceRelationEntity,
 )
 from aiops_agent.persistence import AIOpsUnitOfWork
 from platform_core.contracts.aiops import (
-    BusinessSystemCommit,
-    BusinessSystemCreate,
-    BusinessSystemDetail,
-    BusinessSystemPage,
-    BusinessSystemPatch,
-    BusinessSystemSiteView,
-    BusinessSystemSummary,
-    BusinessSystemTopologyPut,
-    ComponentMemberView,
-    ManagedComponentView,
-    ResourceRelationView,
-    TopologyValidationIssue,
+    BusinessSystemDraftCreate,
+    BusinessSystemDraftSave,
+    BusinessSystemDraftView,
+    BusinessSystemInfoInput,
+    BusinessSystemInfoPatch,
+    BusinessSystemResourcePatch,
+    BusinessSystemResourceCommit,
+    BusinessSystemResourceGraphCommit,
+    BusinessSystemResourceGraphDetail,
+    BusinessSystemResourceGraphPage,
+    BusinessSystemResourceGraphSummary,
+    BusinessSystemResourceView,
+    DatabaseResourceView,
+    ManagedResourcePatch,
+    ManagedResourceView,
+    RelationParticipantInput,
+    RelationParticipantView,
+    ResourceGraphValidationIssue,
+    ResourceRelationInputV2,
+    ResourceRelationPatchV2,
+    ResourceRelationViewV2,
+    ResourceTypeSummary,
+    TopologyParticipantEdge,
+    TopologyRelationNode,
+    TopologyResourceNode,
+    TopologySubgraph,
 )
-from platform_core.contracts.aiops.configuration import validate_supported_database_version
 from platform_core.identity import uuid7
+from platform_core.contracts.aiops.configuration import (
+    validate_supported_database_version,
+)
+
+
+RESOURCE_TYPE_NAMES = {
+    "DATABASE": "数据库",
+    "PHYSICAL_SERVER": "物理服务器",
+    "VIRTUAL_MACHINE": "虚拟机",
+    "CONTAINER": "容器",
+    "POD": "Pod",
+    "KUBERNETES_CLUSTER": "Kubernetes 集群",
+    "APPLICATION_SERVICE": "应用服务",
+    "APPLICATION_SERVER": "应用服务器",
+    "MESSAGE_QUEUE": "消息队列",
+    "LOAD_BALANCER": "负载均衡",
+    "NETWORK_DEVICE": "网络设备",
+    "STORAGE": "存储",
+}
+
+RESOURCE_CODE_PREFIXES = {
+    "DATABASE": "DB",
+    "PHYSICAL_SERVER": "SRV",
+    "VIRTUAL_MACHINE": "SRV",
+    "CONTAINER": "CTR",
+    "POD": "POD",
+    "KUBERNETES_CLUSTER": "K8S",
+    "APPLICATION_SERVICE": "APP",
+    "APPLICATION_SERVER": "MID",
+    "MESSAGE_QUEUE": "MQ",
+    "LOAD_BALANCER": "LB",
+    "NETWORK_DEVICE": "NET",
+    "STORAGE": "STG",
+}
+
+RELATION_RULES: dict[str, dict[str, tuple[int, int | None]]] = {
+    "ORACLE_RAC": {"MEMBER": (2, None)},
+    "DATA_GUARD": {"PRIMARY": (1, None), "STANDBY": (1, None)},
+    "OGG": {"SOURCE": (1, None), "TARGET": (1, None)},
+    "MYSQL_REPLICATION": {"SOURCE": (1, 1), "REPLICA": (1, None)},
+    "POSTGRES_STREAMING": {"PRIMARY": (1, 1), "STANDBY": (1, None)},
+    "RUNS_ON": {"WORKLOAD": (1, 1), "HOST": (1, 1)},
+    "USES_STORAGE": {"CONSUMER": (1, None), "PROVIDER": (1, None)},
+    "DEPENDS_ON": {"CONSUMER": (1, None), "PROVIDER": (1, None)},
+    "LOAD_BALANCES": {"BALANCER": (1, None), "BACKEND": (1, None)},
+}
 
 
 def _scope_args(scope: ConfigurationScope) -> dict:
@@ -41,235 +105,85 @@ def _scope_args(scope: ConfigurationScope) -> dict:
     return values
 
 
-def _issue(
-    severity: str,
-    code: str,
-    message: str,
-    *,
-    component_key: str | None = None,
-    member_key: str | None = None,
-) -> TopologyValidationIssue:
-    return TopologyValidationIssue(
+def _code(prefix: str, value: UUID) -> str:
+    return f"{prefix}-{value.hex[-6:].upper()}"
+
+
+def _summary(detail: BusinessSystemResourceGraphDetail) -> BusinessSystemResourceGraphSummary:
+    return BusinessSystemResourceGraphSummary.model_validate(
+        detail.model_dump(include=set(BusinessSystemResourceGraphSummary.model_fields))
+    )
+
+
+def _issue(severity: str, code: str, message: str, *, resource_id: UUID | None = None, relation_id: UUID | None = None) -> ResourceGraphValidationIssue:
+    return ResourceGraphValidationIssue(
         severity=severity,
         code=code,
         message=message,
-        component_key=component_key,
-        member_key=member_key,
+        resource_id=resource_id,
+        relation_id=relation_id,
     )
 
 
-def _summary(detail: BusinessSystemDetail) -> BusinessSystemSummary:
-    return BusinessSystemSummary.model_validate(
-        detail.model_dump(include=set(BusinessSystemSummary.model_fields))
-    )
+def _relation_rule_issues(
+    relation: ResourceRelationEntity,
+    participants: list[RelationParticipantEntity],
+    resource_views: dict[UUID, BusinessSystemResourceView],
+) -> list[ResourceGraphValidationIssue]:
+    issues: list[ResourceGraphValidationIssue] = []
+    rules = RELATION_RULES.get(relation.relation_type_key)
+    if rules is None:
+        return [_issue("BLOCKING", "RELATION_TYPE_UNKNOWN", f"不支持的关系类型：{relation.relation_type_key}", relation_id=relation.relation_id)]
+    counts: dict[str, int] = {}
+    for participant in participants:
+        counts[participant.participant_role] = counts.get(participant.participant_role, 0) + 1
+        if participant.participant_role not in rules:
+            issues.append(_issue("BLOCKING", "RELATION_ROLE_INVALID", f"{relation.relation_type_key} 不允许角色 {participant.participant_role}", relation_id=relation.relation_id))
+        if participant.system_resource_id not in resource_views:
+            issues.append(_issue("BLOCKING", "RELATION_RESOURCE_MISSING", "关系参与者不属于当前业务系统", relation_id=relation.relation_id))
+    for role, (minimum, maximum) in rules.items():
+        count = counts.get(role, 0)
+        if count < minimum or (maximum is not None and count > maximum):
+            limit = f"{minimum}～{maximum}" if maximum is not None else f"至少 {minimum}"
+            issues.append(_issue("BLOCKING", "RELATION_ROLE_COUNT_INVALID", f"{relation.relation_type_key} 的 {role} 角色需要{limit}个资源", relation_id=relation.relation_id))
+    database_views = [resource_views[item.system_resource_id].resource.database for item in participants if item.system_resource_id in resource_views and resource_views[item.system_resource_id].resource.database is not None]
+    engines = {str(item.db_type) for item in database_views}
+    expected_engine = {
+        "ORACLE_RAC": "ORACLE",
+        "DATA_GUARD": "ORACLE",
+        "MYSQL_REPLICATION": "MYSQL",
+        "POSTGRES_STREAMING": "POSTGRESQL",
+    }.get(relation.relation_type_key)
+    if expected_engine is not None and engines != {expected_engine}:
+        issues.append(_issue("BLOCKING", "RELATION_ENGINE_INVALID", f"{relation.relation_type_key} 的数据库资源必须全部为 {expected_engine}", relation_id=relation.relation_id))
+    return issues
 
 
-def _component_architecture_labels(*, members: list[ComponentMemberView], relations: list[ResourceRelationView]) -> tuple[str, ...]:
+def _architecture_labels(resources: list[BusinessSystemResourceView], relations: list[ResourceRelationViewV2]) -> tuple[str, ...]:
     labels: list[str] = []
-    groups: dict[str, list[ComponentMemberView]] = {}
-    for member in members:
-        if member.cluster_group_key:
-            groups.setdefault(member.cluster_group_key, []).append(member)
-    if any(len(group_members) >= 2 for group_members in groups.values()):
+    relation_types = {item.relation_type_key for item in relations if item.confirmation_status == "CONFIRMED"}
+    if "ORACLE_RAC" in relation_types:
         labels.append("RAC")
-    relation_types = {relation.relation_type for relation in relations}
     if "DATA_GUARD" in relation_types:
-        labels.append("DG")
+        labels.append("DATA_GUARD")
+    if "ORACLE_RAC" in relation_types and "DATA_GUARD" in relation_types:
+        labels.insert(0, "RAC_DATA_GUARD")
     if "MYSQL_REPLICATION" in relation_types:
         labels.append("MYSQL_REPLICATION")
     if "POSTGRES_STREAMING" in relation_types:
         labels.append("POSTGRES_STREAMING")
     if "OGG" in relation_types:
         labels.append("OGG")
-    versions = {(str(member.target_db_type), member.target_version_code) for member in members}
+    databases = [item.resource.database for item in resources if item.resource.database is not None]
+    if len(databases) == 1 and not relation_types:
+        labels.append("SINGLE_INSTANCE")
+    versions = {(str(item.db_type), item.version_code) for item in databases}
     if len(versions) > 1:
         labels.append("MIXED_VERSION")
-    if len(members) == 1 and not labels:
-        labels.append("SINGLE_INSTANCE")
-    return tuple(labels)
+    return tuple(dict.fromkeys(labels))
 
 
 class BusinessSystemConfigurationMixin:
-    async def _system_detail(
-        self,
-        *,
-        uow: AIOpsUnitOfWork,
-        scope: ConfigurationScope,
-        system: BusinessSystemEntity,
-    ) -> BusinessSystemDetail:
-        assert uow.business_systems is not None
-        assert uow.targets is not None
-        assert uow.recovery is not None
-        sites = await uow.business_systems.list_sites(system.business_system_id)
-        components = await uow.business_systems.list_components(system.business_system_id)
-        component_links = await uow.business_systems.list_component_links(system.business_system_id)
-        memberships = await uow.business_systems.list_members(system.business_system_id)
-        relations = await uow.business_systems.list_relations(system.business_system_id)
-        site_by_id = {site.site_id: site for site in sites}
-        component_by_id = {component.component_id: component for component in components}
-        membership_by_id = {member.membership_id: member for member in memberships}
-        component_key_by_id = {component.component_id: component.component_key for component in components}
-
-        issues: list[TopologyValidationIssue] = []
-        member_views: list[ComponentMemberView] = []
-        target_by_membership: dict[UUID, object] = {}
-        for membership in memberships:
-            component = component_by_id.get(membership.component_id)
-            site = site_by_id.get(membership.site_id)
-            if component is None or site is None:
-                issues.append(_issue("BLOCKING", "MEMBERSHIP_PARENT_MISSING", "成员缺少组件或站点"))
-                continue
-            target = await uow.targets.get_scoped(target_id=membership.target_id, domain_id=scope.domain_id)
-            if target is None:
-                issues.append(_issue("BLOCKING", "TARGET_MISSING", "成员 Target 不存在", component_key=component.component_key, member_key=membership.member_key))
-                continue
-            target_by_membership[membership.membership_id] = target
-            bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
-            observed = target.db_role if target.db_role in {"PRIMARY", "STANDBY", "SOURCE", "REPLICA", "REPORTING"} else "UNKNOWN"
-            member_views.append(ComponentMemberView(
-                membership_id=membership.membership_id,
-                component_id=component.component_id,
-                component_key=component.component_key,
-                member_key=membership.member_key,
-                target_id=membership.target_id,
-                target_display_name=target.display_name,
-                target_db_type=target.db_type,
-                target_version_code=target.version_code,
-                target_environment=target.environment,
-                target_row_version=int(target.row_version),
-                site_code=site.site_code,
-                cluster_group_key=membership.cluster_group_key,
-                expected_role=membership.expected_role,
-                observed_role=observed,
-                connectivity_status=target.connectivity_status,
-                monitoring_ready=bool(bindings),
-                sort_order=int(membership.sort_order),
-            ))
-            if target.connectivity_status != "CONNECTED":
-                issues.append(_issue("BLOCKING", "TARGET_NOT_CONNECTED", "成员连接验证尚未通过", component_key=component.component_key, member_key=membership.member_key))
-            if not bindings:
-                issues.append(_issue("BLOCKING", "MONITORING_NOT_READY", "成员监控映射尚未完成", component_key=component.component_key, member_key=membership.member_key))
-            if observed != "UNKNOWN" and membership.expected_role != "INSTANCE" and observed != membership.expected_role:
-                issues.append(_issue("WARNING", "ROLE_DEVIATION", "期望角色与探测角色不一致", component_key=component.component_key, member_key=membership.member_key))
-
-        member_key_to_entity = {member.member_key: member for member in memberships}
-        relation_views: list[ResourceRelationView] = []
-        for relation in relations:
-            source_component_key = component_key_by_id.get(relation.source_component_id)
-            target_component_key = component_key_by_id.get(relation.target_component_id)
-            if source_component_key is None or target_component_key is None:
-                issues.append(_issue("BLOCKING", "RELATION_COMPONENT_MISSING", "资源关系缺少组件端点"))
-                continue
-            source_member = membership_by_id.get(relation.source_membership_id) if relation.source_membership_id else None
-            target_member = membership_by_id.get(relation.target_membership_id) if relation.target_membership_id else None
-            view = ResourceRelationView(
-                relation_id=relation.relation_id,
-                relation_key=relation.relation_key,
-                source_component_key=source_component_key,
-                target_component_key=target_component_key,
-                source_member_key=source_member.member_key if source_member else None,
-                target_member_key=target_member.member_key if target_member else None,
-                relation_type=relation.relation_type,
-                transport_mode=relation.transport_mode,
-                responsibility_group_id=relation.responsibility_group_id,
-                sort_order=int(relation.sort_order),
-            )
-            relation_views.append(view)
-            if (source_member is None) != (target_member is None):
-                issues.append(_issue("BLOCKING", "RELATION_ENDPOINT_MISMATCH", "资源关系端点层级不一致"))
-            if source_member and target_member:
-                source_target = target_by_membership.get(source_member.membership_id)
-                target_target = target_by_membership.get(target_member.membership_id)
-                if source_target is None or target_target is None:
-                    continue
-                engines = {str(source_target.db_type), str(target_target.db_type)}
-                if relation.relation_type == "DATA_GUARD" and engines != {"ORACLE"}:
-                    issues.append(_issue("BLOCKING", "DG_ENGINE_INVALID", "Data Guard 两端必须为 Oracle"))
-                if relation.relation_type == "MYSQL_REPLICATION" and engines != {"MYSQL"}:
-                    issues.append(_issue("BLOCKING", "MYSQL_REPLICATION_ENGINE_INVALID", "MySQL 复制两端必须为 MySQL"))
-                if relation.relation_type == "POSTGRES_STREAMING" and engines != {"POSTGRESQL"}:
-                    issues.append(_issue("BLOCKING", "POSTGRES_STREAMING_ENGINE_INVALID", "Streaming Replication 两端必须为 PostgreSQL"))
-            if source_member and target_member and site_by_id[source_member.site_id].site_code != site_by_id[target_member.site_id].site_code and relation.transport_mode == "UNKNOWN":
-                issues.append(_issue("WARNING", "TRANSPORT_MODE_UNKNOWN", "跨站点复制关系尚未填写同步模式"))
-
-        component_views: list[ManagedComponentView] = []
-        sort_order_by_component = {item.component_id: int(item.sort_order) for item in component_links}
-        all_architecture_labels: list[str] = []
-        configured_components = 0
-        for component in components:
-            component_members = [item for item in member_views if item.component_id == component.component_id]
-            if component.component_type == "DATABASE" and not component_members:
-                issues.append(_issue("BLOCKING", "DATABASE_COMPONENT_EMPTY", "数据库组件至少需要一个 Target", component_key=component.component_key))
-            component_relations = [
-                item for item in relation_views
-                if item.source_component_key == component.component_key or item.target_component_key == component.component_key
-            ]
-            group_counts: dict[str, int] = {}
-            for member in component_members:
-                if member.cluster_group_key:
-                    group_counts[member.cluster_group_key] = group_counts.get(member.cluster_group_key, 0) + 1
-                    if str(member.target_db_type) != "ORACLE":
-                        issues.append(_issue("BLOCKING", "RAC_ENGINE_INVALID", "RAC 集群成员必须为 Oracle", component_key=component.component_key, member_key=member.member_key))
-            for group_key, count in group_counts.items():
-                if count < 2:
-                    issues.append(_issue("BLOCKING", "CLUSTER_GROUP_TOO_SMALL", f"集群组 {group_key} 至少需要两个成员", component_key=component.component_key))
-            labels = _component_architecture_labels(members=component_members, relations=component_relations)
-            all_architecture_labels.extend(labels)
-            profile = await uow.recovery.get_active_profile(component_id=component.component_id, **_scope_args(scope))
-            if profile is not None:
-                configured_components += 1
-            component_views.append(ManagedComponentView(
-                component_id=component.component_id,
-                component_key=component.component_key,
-                display_name=component.display_name,
-                component_type=component.component_type,
-                responsibility_group_id=component.responsibility_group_id,
-                description=component.description,
-                sort_order=sort_order_by_component.get(component.component_id, 0),
-                status=component.status,
-                member_count=len(component_members),
-                engine_types=tuple(sorted({item.target_db_type for item in component_members}, key=str)),
-                versions=tuple(sorted({item.target_version_code for item in component_members})),
-                architecture_labels=labels,
-                protection_status="CONFIGURED" if profile else "UNCONFIGURED",
-            ))
-
-        database_components = [item for item in component_views if item.component_type == "DATABASE"]
-        protection_status = "UNCONFIGURED"
-        if database_components and configured_components == len(database_components):
-            protection_status = "CONFIGURED"
-        elif configured_components:
-            protection_status = "PARTIAL"
-
-        return BusinessSystemDetail(
-            business_system_id=system.business_system_id,
-            system_code=system.system_code,
-            display_name=system.display_name,
-            environment=system.environment,
-            importance_level=int(system.importance_level),
-            responsibility_group_id=system.responsibility_group_id,
-            status=system.status,
-            protection_status=protection_status,
-            component_count=len(component_views),
-            target_count=len(member_views),
-            architecture_labels=tuple(dict.fromkeys(all_architecture_labels)),
-            row_version=int(system.row_version),
-            updated_at=system.updated_at,
-            description=system.description,
-            sites=tuple(BusinessSystemSiteView(
-                site_id=item.site_id,
-                site_code=item.site_code,
-                display_name=item.display_name,
-                site_role=item.site_role,
-                sort_order=int(item.sort_order),
-            ) for item in sites),
-            components=tuple(component_views),
-            members=tuple(member_views),
-            relations=tuple(relation_views),
-            validation_issues=tuple(issues),
-            created_at=system.created_at,
-        )
-
     async def _validate_group(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, group_id: UUID | None, label: str) -> None:
         assert uow.work_items is not None
         if group_id is None:
@@ -278,222 +192,312 @@ class BusinessSystemConfigurationMixin:
         if group is None or group.status != "ACTIVE":
             raise validation_failed(f"{label}责任组不存在或已停用")
 
-    async def _add_topology(
-        self,
-        *,
-        uow: AIOpsUnitOfWork,
-        scope: ConfigurationScope,
-        system: BusinessSystemEntity,
-        components,
-        sites,
-        member_target_ids: dict[str, UUID],
-        members,
-        relations,
-        now: datetime,
-        existing_components: dict[str, ManagedComponentEntity] | None = None,
-    ) -> None:
-        assert uow.business_systems is not None
-        existing_components = existing_components or {}
-        component_entities: list[ManagedComponentEntity] = []
-        component_ids: dict[str, UUID] = {}
-        for item in components:
-            await self._validate_group(uow=uow, scope=scope, group_id=item.responsibility_group_id, label=f"组件 {item.display_name}")
-            if item.component_type != "DATABASE":
-                raise validation_failed("一期只开放数据库组件；应用服务器、中间件和网络暂为占位")
-            component = existing_components.get(item.component_key)
-            if component is None:
-                values = dict(
-                    component_id=uuid7(), domain_id=scope.domain_id,
-                    component_key=item.component_key, display_name=item.display_name,
-                    component_type=item.component_type,
-                    responsibility_group_id=item.responsibility_group_id,
-                    description=item.description, status="ACTIVE",
-                    created_by=scope.actor_id, updated_by=scope.actor_id,
-                    created_at=now, updated_at=now,
+    async def _system_detail(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, system: BusinessSystemEntity) -> BusinessSystemResourceGraphDetail:
+        assert uow.business_systems is not None and uow.targets is not None
+        rows = await uow.business_systems.list_system_resource_rows(system.business_system_id)
+        resource_views: list[BusinessSystemResourceView] = []
+        issues: list[ResourceGraphValidationIssue] = []
+        type_counts: dict[str, int] = {}
+        for link, resource, database_profile, target in rows:
+            database_view = None
+            if database_profile is not None:
+                if target is None:
+                    issues.append(_issue("BLOCKING", "DATABASE_TARGET_MISSING", "数据库资源缺少内部连接端点", resource_id=resource.resource_id))
+                else:
+                    bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
+                    database_view = DatabaseResourceView(
+                        db_type=target.db_type,
+                        version_code=target.version_code or "UNKNOWN",
+                        environment=target.environment,
+                        db_role=target.db_role,
+                        connectivity_status=target.connectivity_status,
+                        monitoring_ready=bool(bindings),
+                    )
+                    if target.connectivity_status != "CONNECTED":
+                        issues.append(_issue("BLOCKING", "DATABASE_NOT_CONNECTED", "数据库连接验证尚未通过", resource_id=resource.resource_id))
+                    if not bindings:
+                        issues.append(_issue("BLOCKING", "MONITORING_NOT_READY", "数据库监控映射尚未完成", resource_id=resource.resource_id))
+            view = BusinessSystemResourceView(
+                system_resource_id=link.system_resource_id,
+                business_system_id=link.business_system_id,
+                architecture_layer_key=link.architecture_layer_key,
+                responsibility_group_id=link.responsibility_group_id,
+                effective_responsibility_group_id=link.responsibility_group_id or resource.owner_group_id,
+                display_order=int(link.display_order),
+                status=link.status,
+                row_version=int(link.row_version),
+                resource=ManagedResourceView(
+                    resource_id=resource.resource_id,
+                    resource_code=resource.resource_code,
+                    resource_type_key=resource.resource_type_key,
+                    display_name=resource.display_name,
+                    identity_kind=resource.identity_kind,
+                    lifecycle_status=resource.lifecycle_status,
+                    owner_group_id=resource.owner_group_id,
+                    location_name=resource.location_name,
+                    row_version=int(resource.row_version),
+                    database=database_view,
+                ),
+            )
+            resource_views.append(view)
+            if link.status == "ACTIVE":
+                type_counts[resource.resource_type_key] = type_counts.get(resource.resource_type_key, 0) + 1
+
+        relations = await uow.business_systems.list_relations(system.business_system_id)
+        participants = await uow.business_systems.list_participants([item.relation_id for item in relations])
+        participants_by_relation: dict[UUID, list[RelationParticipantEntity]] = {}
+        for participant in participants:
+            participants_by_relation.setdefault(participant.relation_id, []).append(participant)
+        view_by_system_resource = {item.system_resource_id: item for item in resource_views}
+        relation_views: list[ResourceRelationViewV2] = []
+        for relation in relations:
+            relation_participants = participants_by_relation.get(relation.relation_id, [])
+            issues.extend(_relation_rule_issues(relation, relation_participants, view_by_system_resource))
+            participant_views = tuple(
+                RelationParticipantView(
+                    participant_id=item.participant_id,
+                    system_resource_id=item.system_resource_id,
+                    resource_id=view_by_system_resource[item.system_resource_id].resource.resource_id,
+                    participant_role=item.participant_role,
+                    display_order=int(item.display_order),
                 )
-                if hasattr(scope, "tenant_id"):
-                    values["tenant_id"] = scope.tenant_id
-                component = ManagedComponentEntity(**values)
-                component_entities.append(component)
-            else:
-                component.display_name = item.display_name
-                component.component_type = item.component_type
-                component.responsibility_group_id = item.responsibility_group_id
-                component.description = item.description
-                component.updated_by = scope.actor_id
-                component.updated_at = now
-            component_ids[item.component_key] = component.component_id
-        await uow.business_systems.add_components(component_entities)
-        existing_links = {item.component_id: item for item in await uow.business_systems.list_component_links(system.business_system_id)}
-        for item in components:
-            if component_ids[item.component_key] in existing_links:
-                existing_links[component_ids[item.component_key]].sort_order = item.sort_order
-        await uow.business_systems.add_component_links([
-            BusinessSystemComponentEntity(
-                system_component_id=uuid7(),
-                business_system_id=system.business_system_id,
-                component_id=component_ids[item.component_key],
-                sort_order=item.sort_order,
+                for item in relation_participants
+                if item.system_resource_id in view_by_system_resource
             )
-            for item in components if component_ids[item.component_key] not in existing_links
-        ])
-        site_entities = [BusinessSystemSiteEntity(
-            site_id=uuid7(),
+            relation_views.append(ResourceRelationViewV2(
+                relation_id=relation.relation_id,
+                business_system_id=relation.business_system_id,
+                relation_type_key=relation.relation_type_key,
+                display_name=relation.display_name,
+                responsibility_group_id=relation.responsibility_group_id,
+                origin=relation.origin,
+                confirmation_status=relation.confirmation_status,
+                verification_status=relation.verification_status,
+                attributes=dict(relation.attributes_json or {}),
+                participants=participant_views,
+                row_version=int(relation.row_version),
+            ))
+
+        if not resource_views:
+            issues.append(_issue("BLOCKING", "BUSINESS_SYSTEM_EMPTY", "业务系统至少需要一个资源"))
+        summary = tuple(
+            ResourceTypeSummary(resource_type_key=key, display_name=RESOURCE_TYPE_NAMES.get(key, key), count=count)
+            for key, count in sorted(type_counts.items())
+        )
+        return BusinessSystemResourceGraphDetail(
             business_system_id=system.business_system_id,
-            site_code=item.site_code,
-            display_name=item.display_name,
-            site_role=item.site_role,
-            sort_order=item.sort_order,
-        ) for item in sites]
-        await uow.business_systems.add_sites(site_entities)
-        site_ids = {item.site_code: item.site_id for item in site_entities}
-        membership_entities = [ComponentMembershipEntity(
-            membership_id=uuid7(),
-            component_id=component_ids[item.component_key],
-            site_id=site_ids[item.site_code],
-            target_id=member_target_ids[item.member_key],
-            member_key=item.member_key,
-            cluster_group_key=item.cluster_group_key,
-            expected_role=item.expected_role,
-            sort_order=item.sort_order,
-        ) for item in members]
-        await uow.business_systems.add_members(membership_entities)
-        membership_ids = {item.member_key: item.membership_id for item in membership_entities}
-        await uow.business_systems.add_relations([ResourceRelationEntity(
-            relation_id=uuid7(),
-            business_system_id=system.business_system_id,
-            source_component_id=component_ids[item.source_component_key],
-            target_component_id=component_ids[item.target_component_key],
-            source_membership_id=membership_ids[item.source_member_key] if item.source_member_key else None,
-            target_membership_id=membership_ids[item.target_member_key] if item.target_member_key else None,
-            relation_key=item.relation_key,
-            relation_type=item.relation_type,
-            transport_mode=item.transport_mode,
-            responsibility_group_id=item.responsibility_group_id,
-            sort_order=item.sort_order,
-        ) for item in relations])
+            system_code=system.system_code,
+            display_name=system.display_name,
+            environment=system.environment,
+            importance_level=int(system.importance_level),
+            responsibility_group_id=system.responsibility_group_id,
+            description=system.description,
+            status=system.status,
+            protection_status="UNCONFIGURED",
+            resource_count=sum(type_counts.values()),
+            resource_type_summary=summary,
+            architecture_labels=_architecture_labels(resource_views, relation_views),
+            resources=tuple(resource_views),
+            relations=tuple(relation_views),
+            validation_issues=tuple(issues),
+            row_version=int(system.row_version),
+            created_at=system.created_at,
+            updated_at=system.updated_at,
+        )
 
-    async def create_business_system(self, *, scope: ConfigurationScope, request: BusinessSystemCreate, idempotency_key: str) -> BusinessSystemDetail:
-        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemDetail:
-            assert uow.business_systems is not None
-            if await uow.business_systems.get_by_name(display_name=request.display_name, **_scope_args(scope)) is not None:
-                raise state_conflict("当前 Domain 已存在同名业务系统")
-            if await uow.business_systems.get_by_code(system_code=request.system_code, **_scope_args(scope)) is not None:
-                raise state_conflict("当前 Domain 已存在相同系统编码")
-            await self._validate_group(uow=uow, scope=scope, group_id=request.responsibility_group_id, label="业务系统")
-            values = dict(
-                business_system_id=uuid7(), domain_id=scope.domain_id, system_code=request.system_code,
-                display_name=request.display_name, environment=request.environment,
-                importance_level=request.importance_level,
-                responsibility_group_id=request.responsibility_group_id,
-                description=request.description, status="DRAFT", row_version=1,
-                created_by=scope.actor_id, updated_by=scope.actor_id,
-                created_at=now, updated_at=now,
-            )
-            if hasattr(scope, "tenant_id"):
-                values["tenant_id"] = scope.tenant_id
-            entity = BusinessSystemEntity(**values)
-            await uow.business_systems.add_system(entity)
-            await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=entity.business_system_id, event_type="BUSINESS_SYSTEM_DRAFT_CREATED", row_version=1, details={})
-            return await self._system_detail(uow=uow, scope=scope, system=entity)
-        return await self._idempotent(scope=scope, operation="BUSINESS_SYSTEM_CREATE", parent_resource="business-systems", idempotency_key=idempotency_key, payload=request.model_dump(mode="json"), response_type=BusinessSystemDetail, handler=handler)
-
-    async def commit_business_system(self, *, scope: ConfigurationScope, request: BusinessSystemCommit, idempotency_key: str) -> BusinessSystemDetail:
-        """原子创建业务系统、组件、成员 Target、监控映射与关系。"""
-
-        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemDetail:
+    async def commit_business_system(self, *, scope: ConfigurationScope, request: BusinessSystemResourceGraphCommit, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
             assert uow.business_systems is not None and uow.targets is not None
-            system_request = request.system
-            if await uow.business_systems.get_by_name(display_name=system_request.display_name, **_scope_args(scope)) is not None:
+            if await uow.business_systems.get_by_name(display_name=request.system.display_name, **_scope_args(scope)) is not None:
                 raise state_conflict("当前 Domain 已存在同名业务系统")
-            if await uow.business_systems.get_by_code(system_code=system_request.system_code, **_scope_args(scope)) is not None:
-                raise state_conflict("当前 Domain 已存在相同系统编码")
-            await self._validate_group(uow=uow, scope=scope, group_id=system_request.responsibility_group_id, label="业务系统")
-            values = dict(
-                business_system_id=uuid7(), domain_id=scope.domain_id, system_code=system_request.system_code,
-                display_name=system_request.display_name, environment=system_request.environment,
-                importance_level=system_request.importance_level,
-                responsibility_group_id=system_request.responsibility_group_id,
-                description=system_request.description, status="DRAFT", row_version=1,
-                created_by=scope.actor_id, updated_by=scope.actor_id,
-                created_at=now, updated_at=now,
+            await self._validate_group(uow=uow, scope=scope, group_id=request.system.responsibility_group_id, label="业务系统")
+            system_id = uuid7()
+            system_values = dict(
+                business_system_id=system_id,
+                domain_id=scope.domain_id,
+                system_code=_code("SYS", system_id),
+                display_name=request.system.display_name,
+                environment=request.system.environment,
+                importance_level=request.system.importance_level,
+                responsibility_group_id=request.system.responsibility_group_id,
+                description=request.system.description,
+                status="DRAFT",
+                row_version=1,
+                created_by=scope.actor_id,
+                updated_by=scope.actor_id,
+                created_at=now,
+                updated_at=now,
             )
             if hasattr(scope, "tenant_id"):
-                values["tenant_id"] = scope.tenant_id
-            system = BusinessSystemEntity(**values)
+                system_values["tenant_id"] = scope.tenant_id
+            system = BusinessSystemEntity(**system_values)
             await uow.business_systems.add_system(system)
 
-            component_group = {item.component_key: item.responsibility_group_id for item in request.components}
-            target_ids: dict[str, UUID] = {}
-            for member in request.members:
-                if member.mode == "NEW":
-                    assert member.target is not None
-                    if member.target.responsibility_group_id != component_group[member.component_key]:
-                        raise validation_failed(f"成员 {member.member_key} 的 Target 责任组必须继承组件责任组")
-                    target = await self._create_target_in_uow(uow=uow, scope=scope, request=member.target, now=now)
-                    await uow.flush()
-                    await self._check_target_connectivity_now(uow=uow, scope=scope, entity=target, checked_at=now)
-                    if target.connectivity_status != "CONNECTED":
-                        raise validation_failed(f"成员 {member.member_key} 数据库连接验证失败：{target.last_error_code or target.connectivity_status}")
+            system_resource_by_draft: dict[UUID, BusinessSystemResourceEntity] = {}
+            used_resource_ids: set[UUID] = set()
+            for item in request.resources:
+                await self._validate_group(uow=uow, scope=scope, group_id=item.owner_group_id, label=f"资源 {item.display_name}")
+                if item.responsibility_group_id is not None:
+                    await self._validate_group(uow=uow, scope=scope, group_id=item.responsibility_group_id, label=f"资源 {item.display_name} 在本系统中的责任覆盖")
+                if item.mode == "REUSE":
+                    assert item.resource_id is not None
+                    resource = await uow.business_systems.get_resource_scoped(resource_id=item.resource_id, lock=True, **_scope_args(scope))
+                    if resource is None or resource.lifecycle_status == "RETIRED":
+                        raise validation_failed(f"资源 {item.display_name} 不存在或已退役")
+                    if resource.resource_type_key != item.resource_type_key:
+                        raise validation_failed(f"资源 {item.display_name} 的类型与已有资源不一致")
+                    if resource.resource_id in used_resource_ids:
+                        raise validation_failed(f"资源 {item.display_name} 在同一业务系统中不能重复加入")
+                    if item.resource_type_key == "DATABASE":
+                        database_profile = await uow.business_systems.get_database_profile(resource.resource_id)
+                        if database_profile is None:
+                            raise validation_failed(f"资源 {item.display_name} 缺少数据库 Profile")
+                        target = await uow.targets.get_scoped(target_id=database_profile.target_id, domain_id=scope.domain_id)
+                        if target is None or target.connectivity_status != "CONNECTED":
+                            raise validation_failed(f"数据库 {item.display_name} 尚未通过连接验证")
+                        bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
+                        if not bindings:
+                            raise validation_failed(f"数据库 {item.display_name} 尚未完成监控映射")
                 else:
-                    assert member.target_id is not None
-                    target = await uow.targets.get_scoped(target_id=member.target_id, domain_id=scope.domain_id, lock=True)
-                    if target is None:
-                        raise validation_failed(f"成员 {member.member_key} 引用的 Target 不存在")
-                    if await uow.business_systems.target_is_assigned(target_id=target.target_id):
-                        raise state_conflict(f"成员 {member.member_key} 已属于其他组件")
-                    if target.connectivity_status != "CONNECTED":
-                        raise validation_failed(f"成员 {member.member_key} 尚未通过数据库连接验证")
-                existing_bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
-                if member.monitoring is not None:
-                    if existing_bindings:
-                        raise state_conflict(f"成员 {member.member_key} 已有监控映射")
-                    mapping = member.monitoring
-                    if mapping.candidate_ref is not None:
-                        await self._create_discovered_source_binding_in_uow(uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id, candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref, now=now)
-                    else:
-                        assert mapping.source_binding is not None
-                        await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target.target_id, request=mapping.source_binding, now=now)
-                elif not existing_bindings:
-                    raise validation_failed(f"成员 {member.member_key} 必须配置监控映射")
-                target_ids[member.member_key] = target.target_id
+                    resource_id = uuid7()
+                    prefix = RESOURCE_CODE_PREFIXES.get(item.resource_type_key, "RES")
+                    resource_values = dict(
+                        resource_id=resource_id,
+                        domain_id=scope.domain_id,
+                        resource_code=None if item.identity_kind == "EPHEMERAL" else _code(prefix, resource_id),
+                        resource_type_key=item.resource_type_key,
+                        display_name=item.display_name,
+                        identity_kind=item.identity_kind,
+                        lifecycle_status="DISCOVERED" if item.identity_kind != "STABLE" else "ACTIVE",
+                        owner_group_id=item.owner_group_id,
+                        location_name=item.location_name,
+                        identity_fingerprint=None,
+                        attributes_json=dict(item.attributes),
+                        row_version=1,
+                        created_by=scope.actor_id,
+                        updated_by=scope.actor_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    if hasattr(scope, "tenant_id"):
+                        resource_values["tenant_id"] = scope.tenant_id
+                    resource = ManagedResourceEntity(**resource_values)
+                    await uow.business_systems.add_resource(resource)
+                    if item.resource_type_key == "DATABASE":
+                        assert item.database is not None
+                        target_request = item.database.target.model_copy(update={"responsibility_group_id": item.owner_group_id})
+                        target = await self._create_target_in_uow(uow=uow, scope=scope, request=target_request, now=now)
+                        await uow.flush()
+                        await self._check_target_connection_now(uow=uow, scope=scope, entity=target)
+                        if target.connectivity_status != "CONNECTED":
+                            raise validation_failed(f"数据库 {item.display_name} 连接验证失败：{target.last_error_code or target.connectivity_status}")
+                        mapping = item.database.monitoring
+                        if mapping is None:
+                            raise validation_failed(f"数据库 {item.display_name} 必须配置监控映射")
+                        if mapping.candidate_ref is not None:
+                            await self._create_discovered_source_binding_in_uow(
+                                uow=uow,
+                                scope=scope,
+                                source_id=mapping.source_id,
+                                target_id=target.target_id,
+                                candidate_ref=mapping.candidate_ref,
+                                host_candidate_ref=mapping.host_candidate_ref,
+                                now=now,
+                            )
+                        else:
+                            assert mapping.source_binding is not None
+                            await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target.target_id, request=mapping.source_binding, now=now)
+                        await uow.business_systems.add_database_resource(DatabaseResourceEntity(resource_id=resource.resource_id, target_id=target.target_id))
+                    elif item.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "POD", "KUBERNETES_CLUSTER"}:
+                        await uow.business_systems.add_compute_resource(ComputeResourceEntity(
+                            resource_id=resource.resource_id,
+                            compute_kind=item.resource_type_key,
+                            platform_name=str(item.attributes.get("platform_name")) if item.attributes.get("platform_name") else None,
+                            platform_version=str(item.attributes.get("platform_version")) if item.attributes.get("platform_version") else None,
+                        ))
+                used_resource_ids.add(resource.resource_id)
+                link = BusinessSystemResourceEntity(
+                    system_resource_id=uuid7(),
+                    business_system_id=system.business_system_id,
+                    resource_id=resource.resource_id,
+                    architecture_layer_key=item.architecture_layer_key,
+                    responsibility_group_id=item.responsibility_group_id,
+                    display_order=item.display_order,
+                    status="ACTIVE",
+                    row_version=1,
+                    created_by=scope.actor_id,
+                    updated_by=scope.actor_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                await uow.business_systems.add_system_resources([link])
+                system_resource_by_draft[item.draft_resource_id] = link
+            await uow.flush()
 
-            await self._add_topology(
-                uow=uow, scope=scope, system=system,
-                components=request.components, sites=request.sites,
-                member_target_ids=target_ids, members=request.members,
-                relations=request.relations, now=now,
-            )
+            relation_entities: list[ResourceRelationEntity] = []
+            participant_entities: list[RelationParticipantEntity] = []
+            for item in request.relations:
+                if item.responsibility_group_id is not None:
+                    await self._validate_group(uow=uow, scope=scope, group_id=item.responsibility_group_id, label=f"关系 {item.display_name or item.relation_type_key}")
+                relation = ResourceRelationEntity(
+                    relation_id=uuid7(),
+                    business_system_id=system.business_system_id,
+                    relation_type_key=item.relation_type_key,
+                    display_name=item.display_name,
+                    responsibility_group_id=item.responsibility_group_id,
+                    origin=item.origin,
+                    confirmation_status=item.confirmation_status,
+                    verification_status="UNKNOWN",
+                    attributes_json=dict(item.attributes),
+                    row_version=1,
+                    created_by=scope.actor_id,
+                    updated_by=scope.actor_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                relation_entities.append(relation)
+                participant_entities.extend(RelationParticipantEntity(
+                    participant_id=uuid7(),
+                    relation_id=relation.relation_id,
+                    system_resource_id=system_resource_by_draft[participant.draft_resource_id].system_resource_id,
+                    participant_role=participant.participant_role,
+                    display_order=participant.display_order,
+                ) for participant in item.participants)
+            await uow.business_systems.add_relations(relation_entities)
+            await uow.business_systems.add_participants(participant_entities)
             await uow.flush()
             detail = await self._system_detail(uow=uow, scope=scope, system=system)
-            blocking = [issue for issue in detail.validation_issues if issue.severity == "BLOCKING"]
-            if blocking:
-                raise validation_failed("；".join(issue.message for issue in blocking))
-            system.status = "ENABLED"
-            system.updated_at = now
-            system.updated_by = scope.actor_id
-            await uow.flush()
-            await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=system.business_system_id, event_type="BUSINESS_SYSTEM_COMMITTED", row_version=int(system.row_version), details={"component_count": len(request.components), "target_count": len(request.members)})
-            return await self._system_detail(uow=uow, scope=scope, system=system)
-        return await self._idempotent(scope=scope, operation="BUSINESS_SYSTEM_COMMIT", parent_resource="business-systems", idempotency_key=idempotency_key, payload=request.model_dump(mode="json"), response_type=BusinessSystemDetail, handler=handler)
+            blockers = [item.message for item in detail.validation_issues if item.severity == "BLOCKING"]
+            if blockers:
+                raise validation_failed("；".join(blockers))
+            await add_configuration_event(
+                uow=uow,
+                scope=scope,
+                aggregate_type="BUSINESS_SYSTEM",
+                aggregate_id=system.business_system_id,
+                event_type="BUSINESS_SYSTEM_RESOURCE_GRAPH_CREATED",
+                row_version=int(system.row_version),
+                details={"resource_count": detail.resource_count, "relation_count": len(detail.relations)},
+            )
+            return detail
 
-    async def list_business_systems(self, *, scope: ConfigurationScope, status: str | None, limit: int) -> BusinessSystemPage:
+        return await self._idempotent(
+            scope=scope,
+            operation="BUSINESS_SYSTEM_RESOURCE_GRAPH_COMMIT",
+            parent_resource="business-systems",
+            idempotency_key=idempotency_key,
+            payload=request.model_dump(mode="json"),
+            response_type=BusinessSystemResourceGraphDetail,
+            handler=handler,
+        )
+
+    async def list_business_systems(self, *, scope: ConfigurationScope, status: str | None, limit: int) -> BusinessSystemResourceGraphPage:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
             rows = await uow.business_systems.list_scoped(status=status, limit=limit, **_scope_args(scope))
-            items = [
-                _summary(
-                    await self._system_detail(
-                        uow=uow,
-                        scope=scope,
-                        system=row,
-                    )
-                )
-                for row in rows
-            ]
-            return BusinessSystemPage(items=tuple(items))
+            return BusinessSystemResourceGraphPage(items=tuple(_summary(await self._system_detail(uow=uow, scope=scope, system=row)) for row in rows))
 
-    async def get_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID) -> BusinessSystemDetail:
+    async def get_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID) -> BusinessSystemResourceGraphDetail:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
             entity = await uow.business_systems.get_scoped(business_system_id=business_system_id, **_scope_args(scope))
@@ -501,7 +505,481 @@ class BusinessSystemConfigurationMixin:
                 raise resource_not_found("Business System")
             return await self._system_detail(uow=uow, scope=scope, system=entity)
 
-    async def patch_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, request: BusinessSystemPatch, expected_version: int) -> BusinessSystemDetail:
+    async def list_managed_resources(self, *, scope: ConfigurationScope, resource_type_key: str | None, limit: int) -> tuple[ManagedResourceView, ...]:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            rows = await uow.business_systems.list_resources_scoped(
+                resource_type_key=resource_type_key,
+                limit=limit,
+                **_scope_args(scope),
+            )
+            return tuple(ManagedResourceView(
+                resource_id=item.resource_id,
+                resource_code=item.resource_code,
+                resource_type_key=item.resource_type_key,
+                display_name=item.display_name,
+                identity_kind=item.identity_kind,
+                lifecycle_status=item.lifecycle_status,
+                owner_group_id=item.owner_group_id,
+                location_name=item.location_name,
+                row_version=int(item.row_version),
+            ) for item in rows)
+
+    async def add_system_resource(self, *, scope: ConfigurationScope, business_system_id: UUID, request: BusinessSystemResourceCommit, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
+            assert uow.business_systems is not None and uow.targets is not None
+            system = await uow.business_systems.get_scoped(business_system_id=business_system_id, lock=True, **_scope_args(scope))
+            if system is None:
+                raise resource_not_found("Business System")
+            await self._validate_group(uow=uow, scope=scope, group_id=request.owner_group_id, label=f"资源 {request.display_name}")
+            if request.responsibility_group_id is not None:
+                await self._validate_group(uow=uow, scope=scope, group_id=request.responsibility_group_id, label="资源责任覆盖")
+            if request.mode == "REUSE":
+                resource = await uow.business_systems.get_resource_scoped(resource_id=request.resource_id, lock=True, **_scope_args(scope))
+                if resource is None or resource.lifecycle_status == "RETIRED":
+                    raise resource_not_found("Managed Resource")
+                if resource.resource_type_key != request.resource_type_key:
+                    raise validation_failed("已有资源类型与本次选择不一致")
+            else:
+                resource_id = uuid7()
+                values = dict(
+                    resource_id=resource_id, domain_id=scope.domain_id,
+                    resource_code=None if request.identity_kind == "EPHEMERAL" else _code(RESOURCE_CODE_PREFIXES.get(request.resource_type_key, "RES"), resource_id),
+                    resource_type_key=request.resource_type_key, display_name=request.display_name,
+                    identity_kind=request.identity_kind,
+                    lifecycle_status="DISCOVERED" if request.identity_kind != "STABLE" else "ACTIVE",
+                    owner_group_id=request.owner_group_id, location_name=request.location_name,
+                    identity_fingerprint=None, attributes_json=dict(request.attributes), row_version=1,
+                    created_by=scope.actor_id, updated_by=scope.actor_id, created_at=now, updated_at=now,
+                )
+                if hasattr(scope, "tenant_id"):
+                    values["tenant_id"] = scope.tenant_id
+                resource = ManagedResourceEntity(**values)
+                await uow.business_systems.add_resource(resource)
+                if request.resource_type_key == "DATABASE":
+                    assert request.database is not None
+                    target_request = request.database.target.model_copy(update={"responsibility_group_id": request.owner_group_id})
+                    target = await self._create_target_in_uow(uow=uow, scope=scope, request=target_request, now=now)
+                    await uow.flush()
+                    await self._check_target_connection_now(uow=uow, scope=scope, entity=target)
+                    if target.connectivity_status != "CONNECTED":
+                        raise validation_failed(f"数据库连接验证失败：{target.last_error_code or target.connectivity_status}")
+                    mapping = request.database.monitoring
+                    if mapping is None:
+                        raise validation_failed("数据库必须配置监控映射")
+                    if mapping.candidate_ref is not None:
+                        await self._create_discovered_source_binding_in_uow(
+                            uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id,
+                            candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref, now=now,
+                        )
+                    else:
+                        await self._create_source_binding_in_uow(
+                            uow=uow, scope=scope, target_id=target.target_id,
+                            request=mapping.source_binding, now=now,
+                        )
+                    await uow.business_systems.add_database_resource(DatabaseResourceEntity(resource_id=resource.resource_id, target_id=target.target_id))
+                elif request.resource_type_key in {"PHYSICAL_SERVER", "VIRTUAL_MACHINE", "CONTAINER", "POD", "KUBERNETES_CLUSTER"}:
+                    await uow.business_systems.add_compute_resource(ComputeResourceEntity(
+                        resource_id=resource.resource_id, compute_kind=request.resource_type_key,
+                        platform_name=str(request.attributes.get("platform_name")) if request.attributes.get("platform_name") else None,
+                        platform_version=str(request.attributes.get("platform_version")) if request.attributes.get("platform_version") else None,
+                    ))
+            existing = [row for row, _, _, _ in await uow.business_systems.list_system_resource_rows(business_system_id) if row.resource_id == resource.resource_id and row.status == "ACTIVE"]
+            if existing:
+                raise state_conflict("该资源已经加入当前业务系统")
+            await uow.business_systems.add_system_resources([BusinessSystemResourceEntity(
+                system_resource_id=uuid7(), business_system_id=business_system_id, resource_id=resource.resource_id,
+                architecture_layer_key=request.architecture_layer_key,
+                responsibility_group_id=request.responsibility_group_id, display_order=request.display_order,
+                status="ACTIVE", row_version=1, created_by=scope.actor_id, updated_by=scope.actor_id,
+                created_at=now, updated_at=now,
+            )])
+            await uow.flush()
+            return await self._system_detail(uow=uow, scope=scope, system=system)
+        return await self._idempotent(
+            scope=scope, operation="BUSINESS_SYSTEM_RESOURCE_ADD", parent_resource=str(business_system_id),
+            idempotency_key=idempotency_key, payload=request.model_dump(mode="json"),
+            response_type=BusinessSystemResourceGraphDetail, handler=handler,
+        )
+
+    async def patch_managed_resource(self, *, scope: ConfigurationScope, resource_id: UUID, request: ManagedResourcePatch, expected_version: int) -> ManagedResourceView:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            assert uow.targets is not None
+            entity = await uow.business_systems.get_resource_scoped(resource_id=resource_id, lock=True, **_scope_args(scope))
+            if entity is None:
+                raise resource_not_found("Managed Resource")
+            self._check_version(entity.row_version, expected_version)
+            changes = request.model_dump(exclude_unset=True, exclude={"schema_version", "database"})
+            owner_group_id = changes.get("owner_group_id")
+            if owner_group_id is not None:
+                await self._validate_group(uow=uow, scope=scope, group_id=owner_group_id, label="资源")
+            if "attributes" in changes:
+                changes["attributes_json"] = changes.pop("attributes")
+            for key, value in changes.items():
+                setattr(entity, key, value)
+            database_view = None
+            if request.database is not None:
+                profile = await uow.business_systems.get_database_profile(resource_id)
+                if profile is None:
+                    raise validation_failed("只有数据库资源可以修改数据库版本、环境或角色")
+                target = await uow.targets.get_scoped(
+                    target_id=profile.target_id,
+                    domain_id=scope.domain_id,
+                    lock=True,
+                )
+                if target is None:
+                    raise resource_not_found("Database Target")
+                database_changes = request.database.model_dump(exclude_unset=True)
+                if "version_code" in database_changes:
+                    try:
+                        validate_supported_database_version(
+                            target.db_type, database_changes["version_code"]
+                        )
+                    except ValueError as exc:
+                        raise validation_failed(str(exc)) from exc
+                for key, value in database_changes.items():
+                    setattr(target, key, value)
+                database_view = DatabaseResourceView(
+                    db_type=target.db_type,
+                    version_code=target.version_code,
+                    environment=target.environment,
+                    db_role=target.db_role,
+                    connectivity_status=target.connectivity_status,
+                    monitoring_ready=bool(
+                        await uow.targets.list_source_bindings(
+                            target_id=target.target_id,
+                            domain_id=scope.domain_id,
+                        )
+                    ),
+                )
+            entity.updated_by = scope.actor_id
+            entity.updated_at = self._now()
+            await uow.flush()
+            return ManagedResourceView(
+                resource_id=entity.resource_id,
+                resource_code=entity.resource_code,
+                resource_type_key=entity.resource_type_key,
+                display_name=entity.display_name,
+                identity_kind=entity.identity_kind,
+                lifecycle_status=entity.lifecycle_status,
+                owner_group_id=entity.owner_group_id,
+                location_name=entity.location_name,
+                row_version=int(entity.row_version),
+                database=database_view,
+            )
+
+    async def patch_system_resource(self, *, scope: ConfigurationScope, business_system_id: UUID, system_resource_id: UUID, request: BusinessSystemResourcePatch, expected_version: int) -> BusinessSystemResourceGraphDetail:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            system = await uow.business_systems.get_scoped(business_system_id=business_system_id, **_scope_args(scope))
+            if system is None:
+                raise resource_not_found("Business System")
+            entity = await uow.business_systems.get_system_resource_scoped(
+                business_system_id=business_system_id,
+                system_resource_id=system_resource_id,
+                lock=True,
+            )
+            if entity is None:
+                raise resource_not_found("Business System Resource")
+            self._check_version(entity.row_version, expected_version)
+            changes = request.model_dump(exclude_unset=True, exclude={"schema_version"})
+            if changes.get("responsibility_group_id") is not None:
+                await self._validate_group(uow=uow, scope=scope, group_id=changes["responsibility_group_id"], label="资源责任覆盖")
+            for key, value in changes.items():
+                setattr(entity, key, value)
+            entity.updated_by = scope.actor_id
+            entity.updated_at = self._now()
+            await uow.flush()
+            return await self._system_detail(uow=uow, scope=scope, system=system)
+
+    async def remove_system_resource(self, *, scope: ConfigurationScope, business_system_id: UUID, system_resource_id: UUID, expected_version: int) -> None:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            system = await uow.business_systems.get_scoped(business_system_id=business_system_id, **_scope_args(scope))
+            if system is None:
+                raise resource_not_found("Business System")
+            entity = await uow.business_systems.get_system_resource_scoped(
+                business_system_id=business_system_id,
+                system_resource_id=system_resource_id,
+                lock=True,
+            )
+            if entity is None:
+                raise resource_not_found("Business System Resource")
+            self._check_version(entity.row_version, expected_version)
+            if await uow.business_systems.resource_count(business_system_id) <= 1:
+                raise validation_failed("业务系统至少保留一个资源")
+            await uow.business_systems.remove_system_resource(system_resource_id)
+
+    async def _validate_relation_participants(self, *, uow: AIOpsUnitOfWork, business_system_id: UUID, relation_type_key: str, participants: tuple[RelationParticipantInput, ...]) -> dict[UUID, BusinessSystemResourceView]:
+        if relation_type_key not in RELATION_RULES:
+            raise validation_failed(f"不支持的关系类型：{relation_type_key}")
+        detail_rows = await uow.business_systems.list_system_resource_rows(business_system_id)
+        known = {link.system_resource_id for link, _, _, _ in detail_rows if link.status == "ACTIVE"}
+        missing = [item.system_resource_id for item in participants if item.system_resource_id not in known]
+        if missing:
+            raise validation_failed("资源关系包含不属于当前业务系统的资源")
+        rules = RELATION_RULES[relation_type_key]
+        counts: dict[str, int] = {}
+        for item in participants:
+            if item.participant_role not in rules:
+                raise validation_failed(f"{relation_type_key} 不允许角色 {item.participant_role}")
+            counts[item.participant_role] = counts.get(item.participant_role, 0) + 1
+        for role, (minimum, maximum) in rules.items():
+            count = counts.get(role, 0)
+            if count < minimum or (maximum is not None and count > maximum):
+                raise validation_failed(f"{relation_type_key} 的 {role} 参与者数量无效")
+        return {}
+
+    async def create_resource_relation(self, *, scope: ConfigurationScope, business_system_id: UUID, request: ResourceRelationInputV2, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
+            assert uow.business_systems is not None
+            system = await uow.business_systems.get_scoped(business_system_id=business_system_id, lock=True, **_scope_args(scope))
+            if system is None:
+                raise resource_not_found("Business System")
+            await self._validate_relation_participants(uow=uow, business_system_id=business_system_id, relation_type_key=request.relation_type_key, participants=request.participants)
+            if request.responsibility_group_id is not None:
+                await self._validate_group(uow=uow, scope=scope, group_id=request.responsibility_group_id, label="资源关系")
+            relation = ResourceRelationEntity(
+                relation_id=uuid7(), business_system_id=business_system_id,
+                relation_type_key=request.relation_type_key, display_name=request.display_name,
+                responsibility_group_id=request.responsibility_group_id, origin=request.origin,
+                confirmation_status=request.confirmation_status, verification_status="UNKNOWN",
+                attributes_json=dict(request.attributes), row_version=1,
+                created_by=scope.actor_id, updated_by=scope.actor_id, created_at=now, updated_at=now,
+            )
+            await uow.business_systems.add_relations([relation])
+            await uow.business_systems.add_participants([RelationParticipantEntity(
+                participant_id=uuid7(), relation_id=relation.relation_id,
+                system_resource_id=item.system_resource_id, participant_role=item.participant_role,
+                display_order=item.display_order,
+            ) for item in request.participants])
+            await uow.flush()
+            return await self._system_detail(uow=uow, scope=scope, system=system)
+        return await self._idempotent(
+            scope=scope, operation="RESOURCE_RELATION_CREATE", parent_resource=str(business_system_id),
+            idempotency_key=idempotency_key, payload=request.model_dump(mode="json"),
+            response_type=BusinessSystemResourceGraphDetail, handler=handler,
+        )
+
+    async def patch_resource_relation(self, *, scope: ConfigurationScope, business_system_id: UUID, relation_id: UUID, request: ResourceRelationPatchV2, expected_version: int) -> BusinessSystemResourceGraphDetail:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            system = await uow.business_systems.get_scoped(business_system_id=business_system_id, **_scope_args(scope))
+            if system is None:
+                raise resource_not_found("Business System")
+            relation = await uow.business_systems.get_relation_scoped(business_system_id=business_system_id, relation_id=relation_id, lock=True)
+            if relation is None:
+                raise resource_not_found("Resource Relation")
+            self._check_version(relation.row_version, expected_version)
+            changes = request.model_dump(exclude_unset=True, exclude={"schema_version", "participants"})
+            if changes.get("responsibility_group_id") is not None:
+                await self._validate_group(uow=uow, scope=scope, group_id=changes["responsibility_group_id"], label="资源关系")
+            if "attributes" in changes:
+                changes["attributes_json"] = changes.pop("attributes")
+            for key, value in changes.items():
+                setattr(relation, key, value)
+            if request.participants is not None:
+                await self._validate_relation_participants(uow=uow, business_system_id=business_system_id, relation_type_key=relation.relation_type_key, participants=request.participants)
+                await uow.business_systems.delete_relation_participants(relation_id)
+                await uow.business_systems.add_participants([RelationParticipantEntity(
+                    participant_id=uuid7(), relation_id=relation_id,
+                    system_resource_id=item.system_resource_id, participant_role=item.participant_role,
+                    display_order=item.display_order,
+                ) for item in request.participants])
+            relation.updated_by = scope.actor_id
+            relation.updated_at = self._now()
+            await uow.flush()
+            return await self._system_detail(uow=uow, scope=scope, system=system)
+
+    async def delete_resource_relation(self, *, scope: ConfigurationScope, business_system_id: UUID, relation_id: UUID, expected_version: int) -> None:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            system = await uow.business_systems.get_scoped(business_system_id=business_system_id, **_scope_args(scope))
+            if system is None:
+                raise resource_not_found("Business System")
+            relation = await uow.business_systems.get_relation_scoped(business_system_id=business_system_id, relation_id=relation_id, lock=True)
+            if relation is None:
+                raise resource_not_found("Resource Relation")
+            self._check_version(relation.row_version, expected_version)
+            await uow.business_systems.delete_relation(relation_id)
+
+    async def get_topology_subgraph(self, *, scope: ConfigurationScope, business_system_id: UUID, focus_resource_id: UUID | None, max_depth: int, max_nodes: int) -> TopologySubgraph:
+        detail = await self.get_business_system(scope=scope, business_system_id=business_system_id)
+        resources = [item for item in detail.resources if item.status == "ACTIVE"]
+        resource_by_system = {item.system_resource_id: item for item in resources}
+        if focus_resource_id is None:
+            selected_system_ids = set(resource_by_system)
+            truncated = len(selected_system_ids) > max_nodes
+            selected_system_ids = set(list(selected_system_ids)[:max_nodes])
+        else:
+            focus = next((item for item in resources if item.resource.resource_id == focus_resource_id), None)
+            if focus is None:
+                raise resource_not_found("Managed Resource")
+            relation_by_system: dict[UUID, set[UUID]] = {}
+            relation_map = {item.relation_id: item for item in detail.relations}
+            for relation in detail.relations:
+                ids = {item.system_resource_id for item in relation.participants}
+                for system_id in ids:
+                    relation_by_system.setdefault(system_id, set()).update(ids - {system_id})
+            selected_system_ids = {focus.system_resource_id}
+            queue = deque([(focus.system_resource_id, 0)])
+            truncated = False
+            while queue:
+                current, depth = queue.popleft()
+                if depth >= max_depth:
+                    continue
+                for neighbor in relation_by_system.get(current, set()):
+                    if neighbor in selected_system_ids:
+                        continue
+                    if len(selected_system_ids) >= max_nodes:
+                        truncated = True
+                        queue.clear()
+                        break
+                    selected_system_ids.add(neighbor)
+                    queue.append((neighbor, depth + 1))
+        selected_relations = [item for item in detail.relations if any(p.system_resource_id in selected_system_ids for p in item.participants)]
+        selected_relation_ids = {item.relation_id for item in selected_relations}
+        return TopologySubgraph(
+            business_system_id=business_system_id,
+            resources=tuple(TopologyResourceNode(
+                system_resource_id=item.system_resource_id,
+                resource_id=item.resource.resource_id,
+                resource_code=item.resource.resource_code,
+                display_name=item.resource.display_name,
+                resource_type_key=item.resource.resource_type_key,
+                architecture_layer_key=item.architecture_layer_key,
+                lifecycle_status=item.resource.lifecycle_status,
+            ) for item in resources if item.system_resource_id in selected_system_ids),
+            relations=tuple(TopologyRelationNode(
+                relation_id=item.relation_id, relation_type_key=item.relation_type_key,
+                display_name=item.display_name, verification_status=item.verification_status,
+            ) for item in selected_relations),
+            participants=tuple(TopologyParticipantEdge(
+                participant_id=item.participant_id, relation_id=relation.relation_id,
+                system_resource_id=item.system_resource_id, participant_role=item.participant_role,
+            ) for relation in selected_relations for item in relation.participants
+              if relation.relation_id in selected_relation_ids and item.system_resource_id in selected_system_ids),
+            truncated=truncated,
+        )
+
+    async def _draft_view(self, *, uow: AIOpsUnitOfWork, entity: BusinessSystemDraftEntity) -> BusinessSystemDraftView:
+        changes = await uow.business_systems.list_draft_changes(entity.draft_id)
+        snapshot = next((item.payload_json for item in reversed(changes) if item.change_type == "SNAPSHOT"), None)
+        resources = snapshot.get("resources", []) if snapshot else []
+        relations = snapshot.get("relations", []) if snapshot else []
+        return BusinessSystemDraftView(
+            draft_id=entity.draft_id,
+            mode=entity.mode,
+            business_system_id=entity.business_system_id,
+            current_step=entity.current_step,
+            revision=int(entity.revision),
+            status=entity.status,
+            system=BusinessSystemInfoInput.model_validate(entity.system_payload_json),
+            resources=tuple(resources),
+            relations=tuple(relations),
+            expires_at=entity.expires_at,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+        )
+
+    async def create_business_system_draft(self, *, scope: ConfigurationScope, request: BusinessSystemDraftCreate) -> BusinessSystemDraftView:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            await self._validate_group(uow=uow, scope=scope, group_id=request.system.responsibility_group_id, label="业务系统")
+            base_row_version = None
+            if request.business_system_id is not None:
+                system = await uow.business_systems.get_scoped(business_system_id=request.business_system_id, **_scope_args(scope))
+                if system is None:
+                    raise resource_not_found("Business System")
+                base_row_version = int(system.row_version)
+            now = self._now()
+            values = dict(
+                draft_id=uuid7(), domain_id=scope.domain_id, business_system_id=request.business_system_id,
+                mode=request.mode, current_step="BUSINESS_INFO", revision=1, status="ACTIVE",
+                base_row_version=base_row_version, system_payload_json=request.system.model_dump(mode="json"),
+                expires_at=now + timedelta(days=7), created_by=scope.actor_id, updated_by=scope.actor_id,
+                created_at=now, updated_at=now,
+            )
+            if hasattr(scope, "tenant_id"):
+                values["tenant_id"] = scope.tenant_id
+            entity = BusinessSystemDraftEntity(**values)
+            await uow.business_systems.add_draft(entity)
+            await uow.flush()
+            return await self._draft_view(uow=uow, entity=entity)
+
+    async def get_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID) -> BusinessSystemDraftView:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            entity = await uow.business_systems.get_draft_scoped(draft_id=draft_id, **_scope_args(scope))
+            if entity is None:
+                raise resource_not_found("Business System Draft")
+            if entity.status == "ACTIVE" and entity.expires_at <= self._now():
+                entity.status = "EXPIRED"
+                entity.updated_at = self._now()
+                await uow.flush()
+            return await self._draft_view(uow=uow, entity=entity)
+
+    async def save_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, request: BusinessSystemDraftSave) -> BusinessSystemDraftView:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            entity = await uow.business_systems.get_draft_scoped(draft_id=draft_id, lock=True, **_scope_args(scope))
+            if entity is None:
+                raise resource_not_found("Business System Draft")
+            if entity.status != "ACTIVE" or entity.expires_at <= self._now():
+                raise state_conflict("草稿已提交、放弃或过期")
+            if int(entity.revision) != request.revision:
+                raise state_conflict("草稿已被其他会话修改，请刷新后继续")
+            await self._validate_group(uow=uow, scope=scope, group_id=request.system.responsibility_group_id, label="业务系统")
+            next_revision = int(entity.revision) + 1
+            now = self._now()
+            await uow.business_systems.add_draft_change(BusinessSystemDraftChangeEntity(
+                draft_change_id=uuid7(), draft_id=draft_id, sequence_no=next_revision,
+                change_type="SNAPSHOT", payload_json=request.model_dump(mode="json", exclude={"schema_version", "revision", "current_step", "system"}),
+                created_by=scope.actor_id, created_at=now,
+            ))
+            entity.system_payload_json = request.system.model_dump(mode="json")
+            entity.current_step = request.current_step
+            entity.revision = next_revision
+            entity.updated_by = scope.actor_id
+            entity.updated_at = now
+            entity.expires_at = now + timedelta(days=7)
+            await uow.flush()
+            return await self._draft_view(uow=uow, entity=entity)
+
+    async def abandon_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, expected_revision: int) -> None:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            entity = await uow.business_systems.get_draft_scoped(draft_id=draft_id, lock=True, **_scope_args(scope))
+            if entity is None:
+                raise resource_not_found("Business System Draft")
+            if int(entity.revision) != expected_revision:
+                raise state_conflict("草稿已被其他会话修改，请刷新后继续")
+            if entity.status != "ACTIVE":
+                raise state_conflict("草稿已结束")
+            entity.status = "ABANDONED"
+            entity.updated_by = scope.actor_id
+            entity.updated_at = self._now()
+
+    async def commit_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, expected_revision: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        draft = await self.get_business_system_draft(scope=scope, draft_id=draft_id)
+        if draft.status != "ACTIVE" or draft.revision != expected_revision:
+            raise state_conflict("草稿状态或版本已变化")
+        if draft.mode != "CREATE":
+            raise validation_failed("编辑既有业务系统请使用资源和关系的增量接口")
+        request = BusinessSystemResourceGraphCommit(system=draft.system, resources=draft.resources, relations=draft.relations)
+        result = await self.commit_business_system(scope=scope, request=request, idempotency_key=idempotency_key)
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            entity = await uow.business_systems.get_draft_scoped(draft_id=draft_id, lock=True, **_scope_args(scope))
+            if entity is not None and entity.status == "ACTIVE" and int(entity.revision) == expected_revision:
+                entity.status = "COMMITTED"
+                entity.business_system_id = result.business_system_id
+                entity.updated_by = scope.actor_id
+                entity.updated_at = self._now()
+        return result
+
+    async def patch_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, request: BusinessSystemInfoPatch, expected_version: int) -> BusinessSystemResourceGraphDetail:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
             entity = await uow.business_systems.get_scoped(business_system_id=business_system_id, lock=True, **_scope_args(scope))
@@ -509,16 +987,12 @@ class BusinessSystemConfigurationMixin:
                 raise resource_not_found("Business System")
             self._check_version(entity.row_version, expected_version)
             changes = request.model_dump(exclude_unset=True, exclude={"schema_version"})
-            if "responsibility_group_id" in changes:
+            if changes.get("responsibility_group_id") is not None:
                 await self._validate_group(uow=uow, scope=scope, group_id=changes["responsibility_group_id"], label="业务系统")
             if "display_name" in changes and changes["display_name"] != entity.display_name:
                 duplicate = await uow.business_systems.get_by_name(display_name=changes["display_name"], **_scope_args(scope))
                 if duplicate is not None and duplicate.business_system_id != entity.business_system_id:
                     raise state_conflict("当前 Domain 已存在同名业务系统")
-            if "system_code" in changes and changes["system_code"].casefold() != entity.system_code.casefold():
-                duplicate = await uow.business_systems.get_by_code(system_code=changes["system_code"], **_scope_args(scope))
-                if duplicate is not None and duplicate.business_system_id != entity.business_system_id:
-                    raise state_conflict("当前 Domain 已存在相同系统编码")
             for key, value in changes.items():
                 setattr(entity, key, value)
             entity.updated_by = scope.actor_id
@@ -526,93 +1000,32 @@ class BusinessSystemConfigurationMixin:
             await uow.flush()
             return await self._system_detail(uow=uow, scope=scope, system=entity)
 
-    async def put_business_system_topology(self, *, scope: ConfigurationScope, business_system_id: UUID, request: BusinessSystemTopologyPut, expected_version: int) -> BusinessSystemDetail:
-        async with self._uow_factory() as uow:
-            assert uow.business_systems is not None and uow.targets is not None
-            entity = await uow.business_systems.get_scoped(business_system_id=business_system_id, lock=True, **_scope_args(scope))
-            if entity is None:
-                raise resource_not_found("Business System")
-            self._check_version(entity.row_version, expected_version)
-            component_group = {item.component_key: item.responsibility_group_id for item in request.components}
-            target_ids: dict[str, UUID] = {}
-            for member in request.members:
-                if member.mode == "NEW":
-                    assert member.target is not None
-                    if member.target.responsibility_group_id != component_group[member.component_key]:
-                        raise validation_failed(f"成员 {member.member_key} 的 Target 责任组必须继承组件责任组")
-                    target = await self._create_target_in_uow(uow=uow, scope=scope, request=member.target, now=self._now())
-                    await uow.flush()
-                    await self._check_target_connectivity_now(uow=uow, scope=scope, entity=target, checked_at=self._now())
-                    if target.connectivity_status != "CONNECTED":
-                        raise validation_failed(f"成员 {member.member_key} 数据库连接验证失败：{target.last_error_code or target.connectivity_status}")
-                else:
-                    assert member.target_id is not None
-                    target = await uow.targets.get_scoped(target_id=member.target_id, domain_id=scope.domain_id, lock=True)
-                    if target is None:
-                        raise validation_failed(f"成员 {member.member_key} 引用的 Target 不存在")
-                    assigned_system = await uow.business_systems.find_system_for_target(target_id=target.target_id, **_scope_args(scope))
-                    if assigned_system is not None and assigned_system.business_system_id != business_system_id:
-                        raise state_conflict(f"成员 {member.member_key} 已属于其他业务系统")
-                    if member.target_patch is not None:
-                        assert member.target_row_version is not None
-                        self._check_version(target.row_version, member.target_row_version)
-                        try:
-                            validate_supported_database_version(target.db_type, member.target_patch.version_code)
-                        except ValueError as exc:
-                            raise validation_failed(str(exc)) from exc
-                        target.display_name = member.target_patch.display_name
-                        target.version_code = member.target_patch.version_code
-                        target.environment = member.target_patch.environment
-                        target.db_role = member.target_patch.db_role
-                        target.responsibility_group_id = component_group[member.component_key]
-                        target.updated_by = scope.actor_id
-                        target.updated_at = self._now()
-                    if target.connectivity_status != "CONNECTED":
-                        raise validation_failed(f"成员 {member.member_key} 尚未通过数据库连接验证")
-                existing_bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
-                if member.monitoring is not None:
-                    if existing_bindings:
-                        raise state_conflict(f"成员 {member.member_key} 已有监控映射")
-                    mapping = member.monitoring
-                    if mapping.candidate_ref is not None:
-                        await self._create_discovered_source_binding_in_uow(uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id, candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref, now=self._now())
-                    else:
-                        assert mapping.source_binding is not None
-                        await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target.target_id, request=mapping.source_binding, now=self._now())
-                elif not existing_bindings:
-                    raise validation_failed(f"成员 {member.member_key} 必须配置监控映射")
-                target_ids[member.member_key] = target.target_id
-            current_components = {item.component_key: item for item in await uow.business_systems.list_components(business_system_id)}
-            desired_keys = {item.component_key for item in request.components}
-            removed = [item for key, item in current_components.items() if key not in desired_keys]
-            for component in removed:
-                if await uow.recovery.component_has_history(component_id=component.component_id):
-                    raise state_conflict(f"组件 {component.display_name} 已有数据保护历史，不能直接移除")
-            await uow.business_systems.clear_topology_edges(business_system_id)
-            await uow.business_systems.remove_components(business_system_id=business_system_id, component_ids=[item.component_id for item in removed])
-            remaining = {key: item for key, item in current_components.items() if key in desired_keys}
-            await self._add_topology(uow=uow, scope=scope, system=entity, components=request.components, sites=request.sites, member_target_ids=target_ids, members=request.members, relations=request.relations, now=self._now(), existing_components=remaining)
-            entity.updated_by = scope.actor_id
-            entity.updated_at = self._now()
-            await uow.flush()
-            detail = await self._system_detail(uow=uow, scope=scope, system=entity)
-            blocking = [issue for issue in detail.validation_issues if issue.severity == "BLOCKING"]
-            if blocking:
-                raise validation_failed("；".join(issue.message for issue in blocking))
-            return detail
-
-    async def command_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, command: str, expected_version: int, idempotency_key: str) -> BusinessSystemDetail:
-        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemDetail:
+    async def command_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, command: str, expected_version: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
+        async def handler(uow: AIOpsUnitOfWork, now: datetime) -> BusinessSystemResourceGraphDetail:
             assert uow.business_systems is not None
             entity = await uow.business_systems.get_scoped(business_system_id=business_system_id, lock=True, **_scope_args(scope))
             if entity is None:
                 raise resource_not_found("Business System")
             self._check_version(entity.row_version, expected_version)
             desired = "ENABLED" if command == "enable" else "DISABLED"
+            detail = await self._system_detail(uow=uow, scope=scope, system=entity)
+            if desired == "ENABLED":
+                blockers = [item.message for item in detail.validation_issues if item.severity == "BLOCKING"]
+                if blockers:
+                    raise validation_failed("；".join(blockers))
             entity.status = desired
             entity.updated_by = scope.actor_id
             entity.updated_at = now
             await uow.flush()
             await add_configuration_event(uow=uow, scope=scope, aggregate_type="BUSINESS_SYSTEM", aggregate_id=entity.business_system_id, event_type=f"BUSINESS_SYSTEM_{desired}", row_version=int(entity.row_version), details={"cascade": False})
             return await self._system_detail(uow=uow, scope=scope, system=entity)
-        return await self._idempotent(scope=scope, operation=f"BUSINESS_SYSTEM_{command.upper()}", parent_resource=str(business_system_id), idempotency_key=idempotency_key, payload={"row_version": expected_version}, response_type=BusinessSystemDetail, handler=handler)
+
+        return await self._idempotent(
+            scope=scope,
+            operation=f"BUSINESS_SYSTEM_{command.upper()}",
+            parent_resource=str(business_system_id),
+            idempotency_key=idempotency_key,
+            payload={"row_version": expected_version},
+            response_type=BusinessSystemResourceGraphDetail,
+            handler=handler,
+        )

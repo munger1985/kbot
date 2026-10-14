@@ -92,14 +92,22 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
-    ComponentProtectionProfileUpsert,
-    ComponentProtectionProfileView,
-    BusinessSystemCommit,
-    BusinessSystemCreate,
-    BusinessSystemDetail,
-    BusinessSystemPage,
-    BusinessSystemPatch,
-    BusinessSystemTopologyPut,
+    ResourceProtectionProfileUpsert,
+    ResourceProtectionProfileView,
+    BusinessSystemDraftCreate,
+    BusinessSystemDraftSave,
+    BusinessSystemDraftView,
+    BusinessSystemInfoPatch,
+    BusinessSystemResourceCommit,
+    BusinessSystemResourceGraphCommit,
+    BusinessSystemResourceGraphDetail,
+    BusinessSystemResourceGraphPage,
+    BusinessSystemResourcePatch,
+    ManagedResourcePatch,
+    ManagedResourceView,
+    ResourceRelationInputV2,
+    ResourceRelationPatchV2,
+    TopologySubgraph,
     RecoveryDrillCreate,
     RecoveryDrillReview,
     RecoveryDrillView,
@@ -1245,54 +1253,126 @@ async def stream_ops_run_events(
     )
 
 
-@router.post("/business-systems", response_model=BusinessSystemDetail, status_code=201)
-async def create_business_system(body: BusinessSystemCreate, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
-    payload = await _client(request).create_business_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
-    return _validated(BusinessSystemDetail, payload, response)
-
-
-@router.post("/business-systems:commit", response_model=BusinessSystemDetail, status_code=201)
-async def commit_business_system(body: BusinessSystemCommit, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+@router.post("/business-systems", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def commit_business_system(body: BusinessSystemResourceGraphCommit, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
     payload = await _client(request).commit_business_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
-    return _validated(BusinessSystemDetail, payload, response)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
 
 
-@router.get("/business-systems", response_model=BusinessSystemPage)
-async def list_business_systems(request: Request, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> BusinessSystemPage:
+@router.get("/business-systems", response_model=BusinessSystemResourceGraphPage)
+async def list_business_systems(request: Request, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> BusinessSystemResourceGraphPage:
     payload = await _client(request).list_business_systems(status=resource_status, limit=limit, auth_context=request.state.auth_context)
-    return BusinessSystemPage.model_validate(payload)
+    return BusinessSystemResourceGraphPage.model_validate(payload)
 
 
-@router.get("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
-async def get_business_system(business_system_id: UUID, request: Request, response: Response) -> BusinessSystemDetail:
+@router.get("/business-systems/{business_system_id}", response_model=BusinessSystemResourceGraphDetail)
+async def get_business_system(business_system_id: UUID, request: Request, response: Response) -> BusinessSystemResourceGraphDetail:
     payload = await _client(request).get_business_system(business_system_id, auth_context=request.state.auth_context)
-    return _validated(BusinessSystemDetail, payload, response)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
 
 
-@router.patch("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
-async def patch_business_system(business_system_id: UUID, body: BusinessSystemPatch, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemDetail:
+@router.patch("/business-systems/{business_system_id}", response_model=BusinessSystemResourceGraphDetail)
+async def patch_business_system(business_system_id: UUID, body: BusinessSystemInfoPatch, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemResourceGraphDetail:
     payload = await _client(request).patch_business_system(business_system_id, body.model_dump(mode="json", exclude_unset=True), if_match=if_match, auth_context=request.state.auth_context)
-    return _validated(BusinessSystemDetail, payload, response)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
 
 
-@router.put("/business-systems/{business_system_id}/topology", response_model=BusinessSystemDetail)
-async def put_business_system_topology(business_system_id: UUID, body: BusinessSystemTopologyPut, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemDetail:
-    payload = await _client(request).put_business_system_topology(business_system_id, body.model_dump(mode="json"), if_match=if_match, auth_context=request.state.auth_context)
-    return _validated(BusinessSystemDetail, payload, response)
+@router.get("/managed-resources", response_model=tuple[ManagedResourceView, ...])
+async def list_managed_resources(request: Request, resource_type_key: str | None = Query(default=None), limit: int = Query(default=50, ge=1, le=200)) -> tuple[ManagedResourceView, ...]:
+    payload = await _client(request).list_managed_resources(resource_type_key=resource_type_key, limit=limit, auth_context=request.state.auth_context)
+    return tuple(ManagedResourceView.model_validate(item) for item in payload)
 
 
-async def _command_business_system(business_system_id: UUID, command: str, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+@router.patch("/managed-resources/{resource_id}", response_model=ManagedResourceView)
+async def patch_managed_resource(resource_id: UUID, body: ManagedResourcePatch, request: Request, response: Response, if_match: IfMatch) -> ManagedResourceView:
+    payload = await _client(request).patch_managed_resource(resource_id, body.model_dump(mode="json", exclude_unset=True), if_match=if_match, auth_context=request.state.auth_context)
+    return _validated(ManagedResourceView, payload, response)
+
+
+@router.post("/business-systems/{business_system_id}/resources", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def add_system_resource(business_system_id: UUID, body: BusinessSystemResourceCommit, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
+    payload = await _client(request).add_system_resource(business_system_id, body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
+
+
+@router.patch("/business-systems/{business_system_id}/resources/{system_resource_id}", response_model=BusinessSystemResourceGraphDetail)
+async def patch_system_resource(business_system_id: UUID, system_resource_id: UUID, body: BusinessSystemResourcePatch, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemResourceGraphDetail:
+    payload = await _client(request).patch_system_resource(business_system_id, system_resource_id, body.model_dump(mode="json", exclude_unset=True), if_match=if_match, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
+
+
+@router.delete("/business-systems/{business_system_id}/resources/{system_resource_id}", status_code=204)
+async def remove_system_resource(business_system_id: UUID, system_resource_id: UUID, request: Request, if_match: IfMatch) -> Response:
+    await _client(request).remove_system_resource(business_system_id, system_resource_id, if_match=if_match, auth_context=request.state.auth_context)
+    return Response(status_code=204)
+
+
+@router.post("/business-systems/{business_system_id}/relations", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def create_resource_relation(business_system_id: UUID, body: ResourceRelationInputV2, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
+    payload = await _client(request).create_resource_relation(business_system_id, body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
+
+
+@router.patch("/business-systems/{business_system_id}/relations/{relation_id}", response_model=BusinessSystemResourceGraphDetail)
+async def patch_resource_relation(business_system_id: UUID, relation_id: UUID, body: ResourceRelationPatchV2, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemResourceGraphDetail:
+    payload = await _client(request).patch_resource_relation(business_system_id, relation_id, body.model_dump(mode="json", exclude_unset=True), if_match=if_match, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
+
+
+@router.delete("/business-systems/{business_system_id}/relations/{relation_id}", status_code=204)
+async def delete_resource_relation(business_system_id: UUID, relation_id: UUID, request: Request, if_match: IfMatch) -> Response:
+    await _client(request).delete_resource_relation(business_system_id, relation_id, if_match=if_match, auth_context=request.state.auth_context)
+    return Response(status_code=204)
+
+
+@router.get("/business-systems/{business_system_id}/topology", response_model=TopologySubgraph)
+async def get_business_system_topology(business_system_id: UUID, request: Request, focus_resource_id: UUID | None = Query(default=None), max_depth: int = Query(default=2, ge=0, le=6), max_nodes: int = Query(default=200, ge=1, le=500)) -> TopologySubgraph:
+    payload = await _client(request).get_business_system_topology(business_system_id, focus_resource_id=focus_resource_id, max_depth=max_depth, max_nodes=max_nodes, auth_context=request.state.auth_context)
+    return TopologySubgraph.model_validate(payload)
+
+
+@router.post("/business-system-drafts", response_model=BusinessSystemDraftView, status_code=201)
+async def create_business_system_draft(body: BusinessSystemDraftCreate, request: Request, response: Response) -> BusinessSystemDraftView:
+    payload = await _client(request).create_business_system_draft(body.model_dump(mode="json"), auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDraftView, payload, response)
+
+
+@router.get("/business-system-drafts/{draft_id}", response_model=BusinessSystemDraftView)
+async def get_business_system_draft(draft_id: UUID, request: Request, response: Response) -> BusinessSystemDraftView:
+    payload = await _client(request).get_business_system_draft(draft_id, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDraftView, payload, response)
+
+
+@router.put("/business-system-drafts/{draft_id}", response_model=BusinessSystemDraftView)
+async def save_business_system_draft(draft_id: UUID, body: BusinessSystemDraftSave, request: Request, response: Response) -> BusinessSystemDraftView:
+    payload = await _client(request).save_business_system_draft(draft_id, body.model_dump(mode="json"), auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDraftView, payload, response)
+
+
+@router.post("/business-system-drafts/{draft_id}:commit", response_model=BusinessSystemResourceGraphDetail, status_code=201)
+async def commit_business_system_draft(draft_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
+    payload = await _client(request).commit_business_system_draft(draft_id, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
+
+
+@router.delete("/business-system-drafts/{draft_id}", status_code=204)
+async def abandon_business_system_draft(draft_id: UUID, request: Request, if_match: IfMatch) -> Response:
+    await _client(request).abandon_business_system_draft(draft_id, if_match=if_match, auth_context=request.state.auth_context)
+    return Response(status_code=204)
+
+
+async def _command_business_system(business_system_id: UUID, command: str, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
     payload = await _client(request).command_business_system(business_system_id, command, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
-    return _validated(BusinessSystemDetail, payload, response)
+    return _validated(BusinessSystemResourceGraphDetail, payload, response)
 
 
-@router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemDetail)
-async def enable_business_system(business_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+@router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemResourceGraphDetail)
+async def enable_business_system(business_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
     return await _command_business_system(business_system_id, "enable", request, response, if_match, idempotency_key)
 
 
-@router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemDetail)
-async def disable_business_system(business_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+@router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemResourceGraphDetail)
+async def disable_business_system(business_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemResourceGraphDetail:
     return await _command_business_system(business_system_id, "disable", request, response, if_match, idempotency_key)
 
 
@@ -1542,69 +1622,69 @@ async def retire_target_fact(
 
 
 @router.get(
-    "/components/{component_id}/protection-profile",
-    response_model=ComponentProtectionProfileView | None,
+    "/managed-resources/{resource_id}/protection-profile",
+    response_model=ResourceProtectionProfileView | None,
 )
 async def get_recovery_profile(
-    component_id: UUID, request: Request
-) -> ComponentProtectionProfileView | None:
+    resource_id: UUID, request: Request
+) -> ResourceProtectionProfileView | None:
     payload = await _client(request).get_recovery_profile(
-        component_id, auth_context=request.state.auth_context
+        resource_id, auth_context=request.state.auth_context
     )
     return (
-        ComponentProtectionProfileView.model_validate(payload)
+        ResourceProtectionProfileView.model_validate(payload)
         if payload is not None
         else None
     )
 
 
 @router.put(
-    "/components/{component_id}/protection-profile",
-    response_model=ComponentProtectionProfileView,
+    "/managed-resources/{resource_id}/protection-profile",
+    response_model=ResourceProtectionProfileView,
 )
 async def upsert_recovery_profile(
-    component_id: UUID,
-    body: ComponentProtectionProfileUpsert,
+    resource_id: UUID,
+    body: ResourceProtectionProfileUpsert,
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
-) -> ComponentProtectionProfileView:
+) -> ResourceProtectionProfileView:
     payload = await _client(request).upsert_recovery_profile(
-        component_id,
+        resource_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(ComponentProtectionProfileView, payload, response)
+    return _validated(ResourceProtectionProfileView, payload, response)
 
 
 @router.get(
-    "/components/{component_id}/recovery-drills",
+    "/managed-resources/{resource_id}/recovery-drills",
     response_model=RecoveryDrillPage,
 )
 async def list_recovery_drills(
-    component_id: UUID, request: Request
+    resource_id: UUID, request: Request
 ) -> RecoveryDrillPage:
     payload = await _client(request).list_recovery_drills(
-        component_id, auth_context=request.state.auth_context
+        resource_id, auth_context=request.state.auth_context
     )
     return RecoveryDrillPage.model_validate(payload)
 
 
 @router.post(
-    "/components/{component_id}/recovery-drills",
+    "/managed-resources/{resource_id}/recovery-drills",
     response_model=RecoveryDrillView,
     status_code=201,
 )
 async def create_recovery_drill(
-    component_id: UUID,
+    resource_id: UUID,
     body: RecoveryDrillCreate,
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
 ) -> RecoveryDrillView:
     payload = await _client(request).create_recovery_drill(
-        component_id,
+        resource_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
@@ -1613,11 +1693,11 @@ async def create_recovery_drill(
 
 
 @router.post(
-    "/components/{component_id}/recovery-drills/{drill_id}:review",
+    "/managed-resources/{resource_id}/recovery-drills/{drill_id}:review",
     response_model=RecoveryDrillView,
 )
 async def review_recovery_drill(
-    component_id: UUID,
+    resource_id: UUID,
     drill_id: UUID,
     body: RecoveryDrillReview,
     request: Request,
@@ -1626,7 +1706,7 @@ async def review_recovery_drill(
     idempotency_key: IdempotencyKey,
 ) -> RecoveryDrillView:
     payload = await _client(request).review_recovery_drill(
-        component_id,
+        resource_id,
         drill_id,
         body.model_dump(mode="json"),
         if_match=if_match,
