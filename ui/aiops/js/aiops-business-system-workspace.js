@@ -418,7 +418,8 @@
     relations = value.relations.map((item) => ({ draft_relation_id: uuid7(), relation_id: item.relation_id, row_version: item.row_version, relation_type_key: item.relation_type_key, display_name: item.display_name || "", responsibility_group_id: item.responsibility_group_id || "", attributes: item.attributes || {}, participants: item.participants.map((participant) => ({ draft_resource_id: draftBySystem.get(participant.system_resource_id) || "", participant_role: participant.participant_role, display_order: participant.display_order })) }));
     activeResourceId = resources[0]?.draft_resource_id || "";
     activeLayer = resources[0]?.architecture_layer_key || "DATA";
-    document.getElementById("workspace-title").textContent = `编辑 · ${value.display_name}`;
+    document.getElementById("workspace-code").textContent = value.system_code || "业务系统";
+    document.getElementById("workspace-title").textContent = value.display_name;
   }
 
   function updateFooter() {

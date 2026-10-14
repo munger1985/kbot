@@ -768,6 +768,31 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('business-system-workspace.html?id=', targets)
         self.assertIn('new URLSearchParams(location.search).get("id")', systems)
 
+    def test_business_system_workspace_uses_compact_header_and_flow_actions(self):
+        systems = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
+            encoding="utf-8"
+        )
+        workspace = (AIOPS_ROOT / "business-system-workspace.html").read_text(
+            encoding="utf-8"
+        )
+        forms = (AIOPS_ROOT / "css" / "aiops-forms.css").read_text(
+            encoding="utf-8"
+        )
+
+        actions = workspace.split(
+            'class="business-workspace-actions"', 1
+        )[1].split("</footer>", 1)[0]
+        self.assertLess(actions.index("返回业务系统"), actions.index("保存草稿"))
+        self.assertLess(actions.index("保存草稿"), actions.index("上一步"))
+        self.assertLess(actions.index("上一步"), actions.index("下一步"))
+        self.assertNotIn(".business-workspace-actions{position:fixed", forms)
+        self.assertIn('id="workspace-code" class="business-workspace-code"', workspace)
+        self.assertIn(
+            'getElementById("workspace-code").textContent = value.system_code',
+            systems,
+        )
+        self.assertNotIn("`编辑 · ${value.display_name}`", systems)
+
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
