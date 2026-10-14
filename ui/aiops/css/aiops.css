@@ -123,4 +123,4 @@
 /* 所有页面共用同一套卡片边界和立体层级；显式选中、告警和无边框状态仍可覆盖。 */
 :is(.ops-panel,[class$="-card"],[class*="-card "]):where(:not(.ops-monitoring-panel)){border-color:var(--card-border)}
 :is(.ops-panel,[class$="-card"],[class*="-card "]){box-shadow:var(--card-shadow);transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}
-:is(.ops-panel,[class$="-card"],[class*="-card "]):hover{box-shadow:var(--card-shadow-hover);transform:translateY(-2px)}
+:is([class$="-card"],[class*="-card "]):hover{box-shadow:var(--card-shadow-hover);transform:translateY(-2px)}

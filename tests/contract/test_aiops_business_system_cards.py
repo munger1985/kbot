@@ -39,6 +39,11 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("box-shadow:var(--card-shadow-hover)", GLOBAL_STYLES)
         self.assertIn("transform:translateY(-2px)", GLOBAL_STYLES)
         self.assertIn('[class$="-card"]', GLOBAL_STYLES)
+        hover_rule = next(
+            rule for rule in GLOBAL_STYLES.split("\n")
+            if "box-shadow:var(--card-shadow-hover)" in rule
+        )
+        self.assertNotIn(".ops-panel", hover_rule)
 
     def test_cards_use_importance_badges_without_tinting_the_card(self):
         self.assertIn('class="business-importance"', SCRIPT)
