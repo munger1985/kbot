@@ -803,6 +803,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="business-resource-drawer"', workspace)
         self.assertIn(".business-resource-card-grid", forms)
         self.assertIn("overflow-y:auto", forms)
+        self.assertIn('activeLayer === "DATA"', systems)
+        self.assertIn("catalogTypesByLayer[activeLayer].includes(item[0])", systems)
+        self.assertIn("功能未完成，敬请期待", systems)
         self.assertNotIn("架构层是当前系统中的展示位置，不会改变资源类型。", systems)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):

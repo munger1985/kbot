@@ -27,6 +27,13 @@
     ["MESSAGE_QUEUE", "消息队列", "中间件", false], ["LOAD_BALANCER", "负载均衡", "网络设施", false],
     ["NETWORK_DEVICE", "网络设备", "网络设施", false], ["STORAGE", "存储设备", "存储设施", false],
   ];
+  const catalogTypesByLayer = {
+    ACCESS: ["LOAD_BALANCER", "NETWORK_DEVICE"],
+    APPLICATION: ["APPLICATION_SERVICE"],
+    MIDDLEWARE: ["APPLICATION_SERVER", "MESSAGE_QUEUE"],
+    DATA: ["DATABASE", "DATA_WAREHOUSE", "CACHE", "STORAGE"],
+    INFRASTRUCTURE: ["PHYSICAL_SERVER", "VIRTUAL_MACHINE", "KUBERNETES_CLUSTER", "NETWORK_DEVICE", "STORAGE"],
+  };
   const versions = { ORACLE: ["19c", "26ai"], MYSQL: ["8.4"], POSTGRESQL: ["16", "17"] };
   const relationTypes = [
     ["ORACLE_RAC", "组成 Oracle RAC"], ["DATA_GUARD", "Data Guard 保护"],
@@ -132,7 +139,8 @@
   }
 
   function openResourceCatalog() {
-    catalogType = "DATABASE";
+    const layerCatalog = resourceCatalog.filter((item) => catalogTypesByLayer[activeLayer].includes(item[0]));
+    catalogType = layerCatalog.find((item) => item[3])?.[0] || layerCatalog[0]?.[0] || "";
     resourceDrawerMode = "CATALOG";
     resourceDrawerOpen = true;
     renderComposition();
@@ -162,9 +170,10 @@
 
   function catalogHtml() {
     const groupsByName = new Map();
-    resourceCatalog.forEach((item) => { if (!groupsByName.has(item[2])) groupsByName.set(item[2], []); groupsByName.get(item[2]).push(item); });
+    const layerCatalog = resourceCatalog.filter((item) => catalogTypesByLayer[activeLayer].includes(item[0]));
+    layerCatalog.forEach((item) => { if (!groupsByName.has(item[2])) groupsByName.set(item[2], []); groupsByName.get(item[2]).push(item); });
     const options = [...groupsByName.entries()].map(([name, items]) => `<optgroup label="${esc(name)}">${items.map((item) => `<option value="${esc(item[0])}" ${catalogType === item[0] ? "selected" : ""}>${esc(item[1])}${item[3] ? "" : "（后续开放）"}</option>`).join("")}</optgroup>`).join("");
-    const enabled = resourceCatalog.find((item) => item[0] === catalogType)?.[3];
+    const enabled = layerCatalog.find((item) => item[0] === catalogType)?.[3];
     return `<div class="business-resource-drawer-shell"><header><div><span>${esc(layerName(activeLayer))}</span><h2>添加资源</h2><p>选择要接入当前架构层的运维资源类型。</p></div><button id="close-resource-drawer" type="button" aria-label="关闭添加资源">关闭</button></header><div class="business-resource-drawer-body"><label class="business-resource-type-field"><span>资源类型</span><select id="catalog-type">${options}</select></label><article class="business-resource-type-summary"><span class="business-resource-icon">${catalogType === "DATABASE" ? "DB" : "R"}</span><div><strong>${esc(typeName(catalogType))}</strong><p>${enabled ? "支持新接入、复用已有数据库，并自动发现承载环境。" : "该资源类型将在后续版本开放。"}</p></div></article></div><footer><button id="cancel-resource-drawer" type="button">取消</button><button id="confirm-add-resource" class="primary" type="button">配置${esc(typeName(catalogType))}</button></footer></div>`;
   }
 
@@ -187,7 +196,8 @@
   function renderComposition() {
     const visible = resources.filter((item) => item.architecture_layer_key === activeLayer);
     const cards = visible.map((item) => `<button type="button" data-resource="${esc(item.draft_resource_id)}" class="business-resource-card"><header><span class="business-resource-icon">${item.resource_type_key === "DATABASE" ? "DB" : "R"}</span><em class="${item.saved ? "ready" : ""}">${item.saved ? "已就绪" : "待验证"}</em></header><div><small>${esc(typeName(item.resource_type_key))}</small><h3>${esc(item.display_name || "未命名数据库")}</h3><p>${item.database ? `${esc(item.database.db_type)} ${esc(item.database.version_code)} · ${item.database.db_role === "PRIMARY" ? "主库" : item.database.db_role === "STANDBY" ? "备库" : "角色待识别"}` : ""}</p></div><dl><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(item.location_name || "未填写")}</dd></div></dl><footer><span>${item.mode === "REUSE" ? "复用已有资源" : "新接入资源"}</span><strong>编辑 →</strong></footer></button>`).join("");
-    panel.innerHTML = `<section class="business-composition-layout"><aside class="business-layer-nav" role="tablist" aria-label="系统构成"><header><p class="business-eyebrow">STEP 2</p><h2>系统构成</h2></header>${layers.map((layer) => `<button type="button" role="tab" aria-selected="${activeLayer === layer[0]}" data-layer="${layer[0]}" class="${activeLayer === layer[0] ? "active" : ""}"><span><strong>${layer[1]}</strong><small>${layer[2]}</small></span><em>${resources.filter((item) => item.architecture_layer_key === layer[0]).length}</em></button>`).join("")}</aside><section class="business-resource-panel" role="tabpanel"><header><div><p class="business-eyebrow">${esc(activeLayer)}</p><h2>${esc(layerName(activeLayer))}</h2><p>已配置 ${visible.length} 个运维资源</p></div></header><div class="business-resource-card-grid">${cards}<button id="add-resource-card" class="business-resource-add-card" type="button" aria-label="＋ 添加资源"><span>＋</span><strong>添加资源</strong><small>接入当前架构层</small></button></div></section></section>`;
+    const content = activeLayer === "DATA" ? `<div class="business-resource-card-grid">${cards}<button id="add-resource-card" class="business-resource-add-card" type="button" aria-label="＋ 添加资源"><span>＋</span><strong>添加资源</strong><small>接入当前架构层</small></button></div>` : `<div class="business-layer-coming-soon"><span aria-hidden="true">◇</span><h3>功能未完成</h3><p>敬请期待</p></div>`;
+    panel.innerHTML = `<section class="business-composition-layout"><aside class="business-layer-nav" role="tablist" aria-label="系统构成"><header><p class="business-eyebrow">STEP 2</p><h2>系统构成</h2></header>${layers.map((layer) => `<button type="button" role="tab" aria-selected="${activeLayer === layer[0]}" data-layer="${layer[0]}" class="${activeLayer === layer[0] ? "active" : ""}"><span><strong>${layer[1]}</strong><small>${layer[2]}</small></span><em>${resources.filter((item) => item.architecture_layer_key === layer[0]).length}</em></button>`).join("")}</aside><section class="business-resource-panel" role="tabpanel"><header><div><p class="business-eyebrow">${esc(activeLayer)}</p><h2>${esc(layerName(activeLayer))}</h2><p>${activeLayer === "DATA" ? `已配置 ${visible.length} 个运维资源` : "功能未完成，敬请期待"}</p></div></header>${content}</section></section>`;
     renderResourceDrawer();
     bindComposition();
   }
@@ -206,7 +216,8 @@
   function bindComposition() {
     panel.querySelectorAll("[data-layer]").forEach((button) => button.onclick = () => { closeResourceDrawer(); activeLayer = button.dataset.layer; activeResourceId = ""; renderComposition(); });
     panel.querySelectorAll("[data-resource]").forEach((button) => button.onclick = () => openResourceEditor(button.dataset.resource));
-    document.getElementById("add-resource-card").onclick = openResourceCatalog;
+    const addResource = document.getElementById("add-resource-card");
+    if (addResource) addResource.onclick = openResourceCatalog;
     bindResourceDrawer();
   }
 
