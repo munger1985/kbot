@@ -1028,6 +1028,19 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                 for item in diagnostics.tools
             )
         )
+        monitoring_builder = SimpleNamespace(
+            build=AsyncMock(
+                return_value={
+                    "bindings": [],
+                    "initial_gaps": [],
+                    "observation_binding_ids": [],
+                    "log_binding_ids": [],
+                }
+            )
+        )
+        monitoring_profiles = load_monitoring_profile_catalog(
+            load_metric_catalog()
+        )
         service = TurnPlanningService(
             uow_factory=lambda: uow,
             investigation_reasoner=reasoner,
@@ -1038,6 +1051,8 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                 diagnostic_registry=diagnostics,
             ),
             agent_catalog=_AgentCatalog(),
+            monitoring_snapshot_builder=monitoring_builder,
+            monitoring_profile_catalog=monitoring_profiles,
         )
 
         result = await service.execute(
@@ -1079,6 +1094,14 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2_592_000, task_frame["requested_window_seconds"])
         self.assertEqual(2_592_000, task_frame["forecast_horizon_seconds"])
         self.assertEqual("COMBINED", task_frame["evidence_source_strategy"])
+        monitoring_call = monitoring_builder.build.await_args.kwargs
+        realtime_profile = monitoring_profiles.overview_for_database(
+            "ORACLE", "19c"
+        )
+        self.assertEqual(
+            realtime_profile.metric_codes,
+            monitoring_call["requested_metric_codes"],
+        )
 
     async def test_weekly_inspection_requires_server_trend_fields(self) -> None:
         uow = _PlanningUow()
@@ -2137,16 +2160,9 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("MONITORING_SIGNAL", linked.evidence_kind)
         monitoring_builder.build.assert_awaited_once()
         self.assertEqual(
-            (
-                "mysql.availability",
-                "runtime.cpu.utilization",
-                "runtime.memory.utilization",
-                "mysql.connection.utilization",
-                "mysql.transaction.throughput",
-                "mysql.sql.slow_query_rate",
-                "mysql.lock.row_wait_rate",
-                "mysql.innodb.buffer_pool_hit_percent",
-            ),
+            load_monitoring_profile_catalog(
+                load_metric_catalog()
+            ).overview_for_database("MYSQL", "8.4").metric_codes,
             monitoring_builder.build.await_args.kwargs[
                 "requested_metric_codes"
             ],

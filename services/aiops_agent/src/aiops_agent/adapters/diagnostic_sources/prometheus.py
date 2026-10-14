@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 
 import aiohttp
+from loguru import logger
 
 from aiops_agent.ports.diagnostic_source import (
     EventEvidenceResult,
@@ -243,6 +245,9 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         observations = []
         gaps = []
         source_locator_key = request.source_locator_key
+        locator_fingerprint = hashlib.sha256(
+            source_locator_key.encode("utf-8")
+        ).hexdigest()[:16]
         host_target_key = request.source_locator.get("host_target_key") or (
             "__unbound_host_target__"
         )
@@ -273,6 +278,11 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
             best_observation = None
             query_errors: list[DiagnosticSourceAdapterError] = []
             for query_index, query_template in enumerate(query_templates):
+                query_variant = (
+                    "primary"
+                    if query_index == 0
+                    else f"fallback:{query_index}"
+                )
                 query = query_template.replace(
                     "${external_target}",
                     _escape_prometheus_label(source_locator_key),
@@ -288,7 +298,36 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                     )
                 except DiagnosticSourceAdapterError as exc:
                     query_errors.append(exc)
+                    logger.warning(
+                        "Prometheus 指标查询失败 | trace_id={} | metric_code={} | "
+                        "query_variant={} | locator_fingerprint={} | "
+                        "window_start={} | window_end={} | step={} | error_code={}",
+                        request.trace_id,
+                        definition.metric_code,
+                        query_variant,
+                        locator_fingerprint,
+                        request.window_start.isoformat(),
+                        request.window_end.isoformat(),
+                        step,
+                        exc.code,
+                    )
                     continue
+                log_result = logger.debug if raw_series else logger.info
+                log_result(
+                    "Prometheus 指标查询完成 | trace_id={} | metric_code={} | "
+                    "query_variant={} | locator_fingerprint={} | "
+                    "window_start={} | window_end={} | step={} | "
+                    "series_count={} | sample_count={}",
+                    request.trace_id,
+                    definition.metric_code,
+                    query_variant,
+                    locator_fingerprint,
+                    request.window_start.isoformat(),
+                    request.window_end.isoformat(),
+                    step,
+                    len(raw_series),
+                    sum(len(points) for _, points in raw_series),
+                )
                 if not raw_series:
                     continue
                 fallback_used = query_index > 0
@@ -307,11 +346,7 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                         else ()
                     ),
                     provenance={
-                        "query_variant": (
-                            f"fallback:{query_index}"
-                            if fallback_used
-                            else "primary"
-                        ),
+                        "query_variant": query_variant,
                         "fallback_used": fallback_used,
                     },
                 )
@@ -346,7 +381,7 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                     request,
                     metric_code=definition.metric_code,
                     code="SOURCE_NO_DATA",
-                    detail="Prometheus 主查询和回退查询均未返回采样",
+                    detail=f"指标“{definition.name}”的 Prometheus 查询未返回任何采样",
                 )
             )
         return MetricsEvidenceResult(
@@ -389,5 +424,6 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                 (datetime.fromtimestamp(float(ts), tz=UTC), value)
                 for ts, value in item.get("values", [])
             ]
-            raw_series.append((item.get("metric", {}), points))
+            if points:
+                raw_series.append((item.get("metric", {}), points))
         return raw_series, response_hash

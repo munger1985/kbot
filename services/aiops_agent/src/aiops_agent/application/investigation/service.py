@@ -395,7 +395,8 @@ class TurnPlanningService:
                     or None
                 ),
                 align_with_realtime_profile=(
-                    alert_diagnosis
+                    bool(context.inspection)
+                    or alert_diagnosis
                     or investigation.task_frame.visualization_profile_id
                     in {"health.overview", "performance.current"}
                 ),
@@ -2145,7 +2146,8 @@ class TurnPlanningService:
                     or None
                 ),
                 align_with_realtime_profile=(
-                    alert_diagnosis
+                    bool(context.inspection)
+                    or alert_diagnosis
                     or investigation.task_frame.visualization_profile_id
                     in {"health.overview", "performance.current"}
                 ),

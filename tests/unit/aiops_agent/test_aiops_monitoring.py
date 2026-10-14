@@ -661,6 +661,55 @@ class PrometheusMetricQueryTest(unittest.IsolatedAsyncioTestCase):
             session.queries[0],
         )
 
+    async def test_no_data_gap_identifies_the_metric(self) -> None:
+        now = datetime.now(UTC).replace(microsecond=0)
+        definition = load_metric_catalog().select(
+            ("postgresql.replication.lag_bytes",), db_type="POSTGRESQL"
+        )[0]
+        session = _MetricQuerySession(
+            [
+                _HealthResponse(
+                    status=200,
+                    payload={"status": "success", "data": {"result": []}},
+                )
+            ]
+        )
+        adapter = PrometheusAdapter(
+            context=DiagnosticSourceContext(
+                source_id="source-1",
+                source_type="PROMETHEUS",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                config_version=1,
+                endpoint="http://prometheus.example.com",
+                declared_capabilities={CAPABILITY_METRIC_QUERY_RANGE: {}},
+            ),
+            session=session,  # type: ignore[arg-type]
+            request_timeout_seconds=10,
+            webhook_replay_seconds=300,
+        )
+
+        result = await adapter.query_metrics(
+            MetricsEvidenceRequest(
+                target_id="target-1",
+                binding_id="binding-1",
+                source_locator_key="postgres-dev-160",
+                metric_definitions=(definition,),
+                window_start=now - timedelta(days=30),
+                window_end=now,
+                requested_step_seconds=300,
+                max_response_bytes=4096,
+                trace_id="trace-inspection",
+            )
+        )
+
+        self.assertEqual((), result.observations)
+        self.assertEqual("SOURCE_NO_DATA", result.gaps[0].code)
+        self.assertEqual(
+            "postgresql.replication.lag_bytes", result.gaps[0].metric_code
+        )
+        self.assertIn("PostgreSQL 复制延迟", result.gaps[0].detail)
+
 
 class PrometheusHealthTest(unittest.IsolatedAsyncioTestCase):
     def _adapter(self, response: _HealthResponse):
