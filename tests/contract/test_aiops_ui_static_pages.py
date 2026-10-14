@@ -792,6 +792,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             systems,
         )
         self.assertNotIn("`编辑 · ${value.display_name}`", systems)
+        self.assertIn('.business-form-grid label{align-content:start}', forms)
+        self.assertIn('shell.toast("请填写业务系统名称并选择业务责任组。")', systems)
+        self.assertNotIn('message("请填写业务系统名称并选择业务责任组。"', systems)
+        self.assertNotIn("描述业务影响和整体责任，不在这里填写数据库部署形态。", systems)
+        self.assertNotIn("保存后按 SYS-xxxxxx 规则自动生成", systems)
+        self.assertNotIn("编码由租户规则生成，创建后不可修改。", systems)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
@@ -813,6 +819,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("L5 · 核心", targets)
         self.assertNotIn("可按需忽略", targets)
         self.assertNotIn("L2 较低", workspace)
+        self.assertNotIn("级别越高", workspace)
+        self.assertNotIn("级别越高", targets)
 
     def test_report_center_translates_backend_dictionary_values(self):
         script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(

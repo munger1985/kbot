@@ -126,9 +126,9 @@
 
   function renderBusiness() {
     panel.innerHTML = `<section class="business-step-surface">
-      <header><div><p class="business-eyebrow">STEP 1</p><h2>业务信息</h2><p>描述业务影响和整体责任，不在这里填写数据库部署形态。</p></div><aside><span>系统编码</span><strong>${esc(detail?.system_code || "保存后按 SYS-xxxxxx 规则自动生成")}</strong><small>编码由租户规则生成，创建后不可修改。</small></aside></header>
+      <header><div><p class="business-eyebrow">STEP 1</p><h2>业务信息</h2></div></header>
       <div class="business-form-section"><div><h3>基本信息</h3><p>名称面向业务人员和运维人员共同识别。</p></div><div class="business-form-grid"><label class="span-8"><span>业务系统名称</span><input name="display_name" value="${esc(system.display_name)}" placeholder="例如：MES 生产系统"></label><label class="span-4"><span>运行环境</span><select name="environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], system.environment)}</select></label></div></div>
-      <div class="business-form-section"><div><h3>责任与影响</h3><p>业务责任组处理整体影响，资源可在下一步指定技术责任组。</p></div><div class="business-form-grid"><label class="span-6"><span>业务责任组</span><select name="responsibility_group_id">${groupOptions(system.responsibility_group_id, "请选择")}</select></label><label class="span-6"><span>重要级</span><select name="importance_level">${selectOptions([["1", "L1 低"], ["2", "L2 一般"], ["3", "L3 重要"], ["4", "L4 关键"], ["5", "L5 核心"]], String(system.importance_level))}</select><small>级别越高，表示业务中断影响越大。</small></label></div></div>
+      <div class="business-form-section"><div><h3>责任与影响</h3><p>业务责任组处理整体影响，资源可在下一步指定技术责任组。</p></div><div class="business-form-grid"><label class="span-6"><span>业务责任组</span><select name="responsibility_group_id">${groupOptions(system.responsibility_group_id, "请选择")}</select></label><label class="span-6"><span>重要级</span><select name="importance_level">${selectOptions([["1", "L1 低"], ["2", "L2 一般"], ["3", "L3 重要"], ["4", "L4 关键"], ["5", "L5 核心"]], String(system.importance_level))}</select></label></div></div>
       <div class="business-form-section"><div><h3>运维说明</h3><p>记录服务范围、影响窗口或跨团队协作背景。</p></div><label class="business-description"><span>说明（可选）</span><textarea name="description" rows="5" maxlength="1000">${esc(system.description)}</textarea></label></div>
     </section>`;
     panel.querySelectorAll("[name]").forEach((input) => {
@@ -345,9 +345,9 @@
 
   function validateStep() {
     message("");
-    if (step === 0 && (!system.display_name.trim() || !system.responsibility_group_id)) { message("请填写业务系统名称并选择业务责任组。", "bad"); return false; }
-    if (step === 1 && (!resources.length || resources.some((item) => !item.display_name.trim() || !item.owner_group_id || !item.saved))) { message("至少接入一个资源，并完成所有数据库的连接验证。", "bad"); return false; }
-    if (step === 2 && relations.some((item) => item.participants.length < 2 || new Set(item.participants.map((participant) => participant.draft_resource_id)).size !== item.participants.length)) { message("每个关系至少需要两个不重复的参与资源。", "bad"); return false; }
+    if (step === 0 && (!system.display_name.trim() || !system.responsibility_group_id)) { shell.toast("请填写业务系统名称并选择业务责任组。"); return false; }
+    if (step === 1 && (!resources.length || resources.some((item) => !item.display_name.trim() || !item.owner_group_id || !item.saved))) { shell.toast("至少接入一个资源，并完成所有数据库的连接验证。"); return false; }
+    if (step === 2 && relations.some((item) => item.participants.length < 2 || new Set(item.participants.map((participant) => participant.draft_resource_id)).size !== item.participants.length)) { shell.toast("每个关系至少需要两个不重复的参与资源。"); return false; }
     return true;
   }
   function systemPayload() { return { display_name: system.display_name.trim(), environment: system.environment, importance_level: Number(system.importance_level), responsibility_group_id: system.responsibility_group_id, description: system.description.trim() || null }; }
