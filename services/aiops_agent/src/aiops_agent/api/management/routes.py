@@ -59,14 +59,14 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
-    DatabaseSystemProtectionProfileUpsert,
-    DatabaseSystemProtectionProfileView,
-    DatabaseSystemCommit,
-    DatabaseSystemCreate,
-    DatabaseSystemDetail,
-    DatabaseSystemPage,
-    DatabaseSystemPatch,
-    DatabaseSystemTopologyPut,
+    ComponentProtectionProfileUpsert,
+    ComponentProtectionProfileView,
+    BusinessSystemCommit,
+    BusinessSystemCreate,
+    BusinessSystemDetail,
+    BusinessSystemPage,
+    BusinessSystemPatch,
+    BusinessSystemTopologyPut,
     RecoveryDrillCreate,
     RecoveryDrillReview,
     RecoveryDrillView,
@@ -105,60 +105,60 @@ def _etag(response: Response, row_version: int) -> None:
     response.headers["ETag"] = format_etag(row_version)
 
 
-@router.post("/database-systems", response_model=DatabaseSystemDetail, status_code=201)
-async def create_database_system(body: DatabaseSystemCreate, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    result = await service.create_database_system(scope=scope, request=body, idempotency_key=idempotency_key)
+@router.post("/business-systems", response_model=BusinessSystemDetail, status_code=201)
+async def create_business_system(body: BusinessSystemCreate, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    result = await service.create_business_system(scope=scope, request=body, idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 
 
-@router.post("/database-systems:commit", response_model=DatabaseSystemDetail, status_code=201)
-async def commit_database_system(body: DatabaseSystemCommit, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    result = await service.commit_database_system(scope=scope, request=body, idempotency_key=idempotency_key)
+@router.post("/business-systems:commit", response_model=BusinessSystemDetail, status_code=201)
+async def commit_business_system(body: BusinessSystemCommit, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    result = await service.commit_business_system(scope=scope, request=body, idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 
 
-@router.get("/database-systems", response_model=DatabaseSystemPage)
-async def list_database_systems(service: Service, scope: Scope, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> DatabaseSystemPage:
-    return await service.list_database_systems(scope=scope, status=resource_status, limit=limit)
+@router.get("/business-systems", response_model=BusinessSystemPage)
+async def list_business_systems(service: Service, scope: Scope, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> BusinessSystemPage:
+    return await service.list_business_systems(scope=scope, status=resource_status, limit=limit)
 
 
-@router.get("/database-systems/{database_system_id}", response_model=DatabaseSystemDetail)
-async def get_database_system(database_system_id: UUID, response: Response, service: Service, scope: Scope) -> DatabaseSystemDetail:
-    result = await service.get_database_system(scope=scope, database_system_id=database_system_id)
+@router.get("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
+async def get_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope) -> BusinessSystemDetail:
+    result = await service.get_business_system(scope=scope, business_system_id=business_system_id)
     _etag(response, result.row_version)
     return result
 
 
-@router.patch("/database-systems/{database_system_id}", response_model=DatabaseSystemDetail)
-async def patch_database_system(database_system_id: UUID, body: DatabaseSystemPatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> DatabaseSystemDetail:
-    result = await service.patch_database_system(scope=scope, database_system_id=database_system_id, request=body, expected_version=parse_etag(if_match))
+@router.patch("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
+async def patch_business_system(business_system_id: UUID, body: BusinessSystemPatch, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemDetail:
+    result = await service.patch_business_system(scope=scope, business_system_id=business_system_id, request=body, expected_version=parse_etag(if_match))
     _etag(response, result.row_version)
     return result
 
 
-@router.put("/database-systems/{database_system_id}/topology", response_model=DatabaseSystemDetail)
-async def put_database_system_topology(database_system_id: UUID, body: DatabaseSystemTopologyPut, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> DatabaseSystemDetail:
-    result = await service.put_database_system_topology(scope=scope, database_system_id=database_system_id, request=body, expected_version=parse_etag(if_match))
+@router.put("/business-systems/{business_system_id}/topology", response_model=BusinessSystemDetail)
+async def put_business_system_topology(business_system_id: UUID, body: BusinessSystemTopologyPut, response: Response, service: Service, scope: Scope, if_match: IfMatch = None) -> BusinessSystemDetail:
+    result = await service.put_business_system_topology(scope=scope, business_system_id=business_system_id, request=body, expected_version=parse_etag(if_match))
     _etag(response, result.row_version)
     return result
 
 
-async def _command_database_system(database_system_id: UUID, command: str, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> DatabaseSystemDetail:
-    result = await service.command_database_system(scope=scope, database_system_id=database_system_id, command=command, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
+async def _command_business_system(business_system_id: UUID, command: str, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch) -> BusinessSystemDetail:
+    result = await service.command_business_system(scope=scope, business_system_id=business_system_id, command=command, expected_version=parse_etag(if_match), idempotency_key=idempotency_key)
     _etag(response, result.row_version)
     return result
 
 
-@router.post("/database-systems/{database_system_id}/enable", response_model=DatabaseSystemDetail)
-async def enable_database_system(database_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> DatabaseSystemDetail:
-    return await _command_database_system(database_system_id, "enable", response, service, scope, idempotency_key, if_match)
+@router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemDetail)
+async def enable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemDetail:
+    return await _command_business_system(business_system_id, "enable", response, service, scope, idempotency_key, if_match)
 
 
-@router.post("/database-systems/{database_system_id}/disable", response_model=DatabaseSystemDetail)
-async def disable_database_system(database_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> DatabaseSystemDetail:
-    return await _command_database_system(database_system_id, "disable", response, service, scope, idempotency_key, if_match)
+@router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemDetail)
+async def disable_business_system(business_system_id: UUID, response: Response, service: Service, scope: Scope, idempotency_key: IdempotencyKey, if_match: IfMatch = None) -> BusinessSystemDetail:
+    return await _command_business_system(business_system_id, "disable", response, service, scope, idempotency_key, if_match)
 
 
 @router.get(
@@ -451,30 +451,30 @@ async def retire_target_fact(
 
 
 @router.get(
-    "/database-systems/{database_system_id}/protection-profile",
-    response_model=DatabaseSystemProtectionProfileView | None,
+    "/components/{component_id}/protection-profile",
+    response_model=ComponentProtectionProfileView | None,
 )
 async def get_recovery_profile(
-    database_system_id: UUID, service: Service, scope: Scope
-) -> DatabaseSystemProtectionProfileView | None:
-    return await service.get_recovery_profile(scope=scope, database_system_id=database_system_id)
+    component_id: UUID, service: Service, scope: Scope
+) -> ComponentProtectionProfileView | None:
+    return await service.get_recovery_profile(scope=scope, component_id=component_id)
 
 
 @router.put(
-    "/database-systems/{database_system_id}/protection-profile",
-    response_model=DatabaseSystemProtectionProfileView,
+    "/components/{component_id}/protection-profile",
+    response_model=ComponentProtectionProfileView,
 )
 async def upsert_recovery_profile(
-    database_system_id: UUID,
-    body: DatabaseSystemProtectionProfileUpsert,
+    component_id: UUID,
+    body: ComponentProtectionProfileUpsert,
     response: Response,
     service: Service,
     scope: Scope,
     idempotency_key: IdempotencyKey,
-) -> DatabaseSystemProtectionProfileView:
+) -> ComponentProtectionProfileView:
     result = await service.upsert_recovery_profile(
         scope=scope,
-        database_system_id=database_system_id,
+        component_id=component_id,
         request=body,
         idempotency_key=idempotency_key,
     )
@@ -483,22 +483,22 @@ async def upsert_recovery_profile(
 
 
 @router.get(
-    "/database-systems/{database_system_id}/recovery-drills",
+    "/components/{component_id}/recovery-drills",
     response_model=RecoveryDrillPage,
 )
 async def list_recovery_drills(
-    database_system_id: UUID, service: Service, scope: Scope
+    component_id: UUID, service: Service, scope: Scope
 ) -> RecoveryDrillPage:
-    return await service.list_recovery_drills(scope=scope, database_system_id=database_system_id)
+    return await service.list_recovery_drills(scope=scope, component_id=component_id)
 
 
 @router.post(
-    "/database-systems/{database_system_id}/recovery-drills",
+    "/components/{component_id}/recovery-drills",
     response_model=RecoveryDrillView,
     status_code=201,
 )
 async def create_recovery_drill(
-    database_system_id: UUID,
+    component_id: UUID,
     body: RecoveryDrillCreate,
     response: Response,
     service: Service,
@@ -507,7 +507,7 @@ async def create_recovery_drill(
 ) -> RecoveryDrillView:
     result = await service.create_recovery_drill(
         scope=scope,
-        database_system_id=database_system_id,
+        component_id=component_id,
         request=body,
         idempotency_key=idempotency_key,
     )
@@ -516,11 +516,11 @@ async def create_recovery_drill(
 
 
 @router.post(
-    "/database-systems/{database_system_id}/recovery-drills/{drill_id}:review",
+    "/components/{component_id}/recovery-drills/{drill_id}:review",
     response_model=RecoveryDrillView,
 )
 async def review_recovery_drill(
-    database_system_id: UUID,
+    component_id: UUID,
     drill_id: UUID,
     body: RecoveryDrillReview,
     response: Response,
@@ -531,7 +531,7 @@ async def review_recovery_drill(
 ) -> RecoveryDrillView:
     result = await service.review_recovery_drill(
         scope=scope,
-        database_system_id=database_system_id,
+        component_id=component_id,
         drill_id=drill_id,
         request=body,
         expected_version=parse_etag(if_match),

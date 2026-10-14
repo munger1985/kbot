@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import RecoveryDrillEntity, RecoveryProfileEntity
@@ -20,55 +20,65 @@ class RecoveryRepository(AIOpsRepository):
     async def add_drill(self, entity: RecoveryDrillEntity) -> RecoveryDrillEntity:
         return await self._add(entity)
 
-    async def list_profile_versions(self, *, database_system_id: UUID, domain_id: int, lock: bool = False) -> list[RecoveryProfileEntity]:
+    async def component_has_history(self, *, component_id: UUID) -> bool:
+        self._check_active()
+        profile_count = (await self._session.execute(
+            select(func.count()).select_from(RecoveryProfileEntity).where(RecoveryProfileEntity.component_id == component_id)
+        )).scalar_one()
+        drill_count = (await self._session.execute(
+            select(func.count()).select_from(RecoveryDrillEntity).where(RecoveryDrillEntity.component_id == component_id)
+        )).scalar_one()
+        return bool(profile_count or drill_count)
+
+    async def list_profile_versions(self, *, component_id: UUID, domain_id: int, lock: bool = False) -> list[RecoveryProfileEntity]:
         self._check_active()
         statement: Select = select(RecoveryProfileEntity).where(
-            RecoveryProfileEntity.database_system_id == database_system_id,
+            RecoveryProfileEntity.component_id == component_id,
             RecoveryProfileEntity.domain_id == domain_id,
         ).order_by(RecoveryProfileEntity.version_no.desc(), RecoveryProfileEntity.created_at.desc())
         if lock:
             statement = statement.with_for_update()
         return list((await self._session.execute(statement)).scalars())
 
-    async def get_active_profile(self, *, database_system_id: UUID, domain_id: int) -> RecoveryProfileEntity | None:
+    async def get_active_profile(self, *, component_id: UUID, domain_id: int) -> RecoveryProfileEntity | None:
         self._check_active()
         return (await self._session.execute(
             select(RecoveryProfileEntity).where(
-                RecoveryProfileEntity.database_system_id == database_system_id,
+                RecoveryProfileEntity.component_id == component_id,
                 RecoveryProfileEntity.domain_id == domain_id,
                 RecoveryProfileEntity.status == "ACTIVE",
             ).order_by(RecoveryProfileEntity.version_no.desc()).limit(1)
         )).scalar_one_or_none()
 
-    async def get_drill_scoped(self, *, drill_id: UUID, database_system_id: UUID, domain_id: int, lock: bool = False) -> RecoveryDrillEntity | None:
+    async def get_drill_scoped(self, *, drill_id: UUID, component_id: UUID, domain_id: int, lock: bool = False) -> RecoveryDrillEntity | None:
         self._check_active()
         statement: Select = select(RecoveryDrillEntity).where(
             RecoveryDrillEntity.drill_id == drill_id,
-            RecoveryDrillEntity.database_system_id == database_system_id,
+            RecoveryDrillEntity.component_id == component_id,
             RecoveryDrillEntity.domain_id == domain_id,
         )
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
 
-    async def list_recent_drills(self, *, database_system_id: UUID, domain_id: int, limit: int = 50) -> list[RecoveryDrillEntity]:
+    async def list_recent_drills(self, *, component_id: UUID, domain_id: int, limit: int = 50) -> list[RecoveryDrillEntity]:
         self._check_active()
         return list((await self._session.execute(
             select(RecoveryDrillEntity).where(
-                RecoveryDrillEntity.database_system_id == database_system_id,
+                RecoveryDrillEntity.component_id == component_id,
                 RecoveryDrillEntity.domain_id == domain_id,
             ).order_by(RecoveryDrillEntity.simulated_failure_at.desc(), RecoveryDrillEntity.created_at.desc()).limit(limit)
         )).scalars())
 
-    async def latest_attempt(self, *, database_system_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
-        rows = await self.list_recent_drills(database_system_id=database_system_id, domain_id=domain_id, limit=1)
+    async def latest_attempt(self, *, component_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
+        rows = await self.list_recent_drills(component_id=component_id, domain_id=domain_id, limit=1)
         return rows[0] if rows else None
 
-    async def latest_verified_success(self, *, database_system_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
+    async def latest_verified_success(self, *, component_id: UUID, domain_id: int) -> RecoveryDrillEntity | None:
         self._check_active()
         return (await self._session.execute(
             select(RecoveryDrillEntity).where(
-                RecoveryDrillEntity.database_system_id == database_system_id,
+                RecoveryDrillEntity.component_id == component_id,
                 RecoveryDrillEntity.domain_id == domain_id,
                 RecoveryDrillEntity.status == "VERIFIED",
                 RecoveryDrillEntity.result == "PASS",

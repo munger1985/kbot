@@ -138,6 +138,7 @@ class MonitoringApplicationService:
         self, *, scope, source_id: UUID
     ) -> tuple[MonitoringInstanceSummary, ...]:
         async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
             source = await self._source(uow, scope.domain_id, source_id)
             bindings = await uow.targets.list_source_bindings_by_source(
                 diagnostic_source_id=source_id,
@@ -166,11 +167,19 @@ class MonitoringApplicationService:
                     and mapped_target_ids.issubset(alert_ingress_targets)
                 ),
             )
+            context_scope = {"domain_id": scope.domain_id}
+            if hasattr(scope, "tenant_id"):
+                context_scope["tenant_id"] = scope.tenant_id
+            contexts = await uow.business_systems.find_contexts_for_targets(
+                target_ids=mapped_target_ids,
+                **context_scope,
+            )
             instances = [
                 self._instance_summary(
                     target=target,
                     binding=binding,
                     source=source_summary,
+                    context=contexts.get(target.target_id),
                 )
                 for target, binding in mapped_targets
             ]
@@ -870,12 +879,17 @@ class MonitoringApplicationService:
         )
 
     @staticmethod
-    def _instance_summary(*, target, binding, source):
+    def _instance_summary(*, target, binding, source, context=None):
         degraded = binding.health_status not in {"READY", "HEALTHY", "UNKNOWN"}
+        system_id, system_name, component_id, component_name = context or (None, None, None, None)
         return MonitoringInstanceSummary(
             instance_id=target.target_id,
             display_name=target.display_name,
             db_type=target.db_type,
+            business_system_id=system_id,
+            business_system_name=system_name,
+            component_id=component_id,
+            component_name=component_name,
             status="PARTIAL" if degraded else "AVAILABLE",
             monitoring_readiness=source.monitoring_readiness,
             diagnostic_readiness=source.diagnostic_readiness,

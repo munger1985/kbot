@@ -12,7 +12,7 @@ from .knowledge import OperationsKnowledgeRepository
 from .runtime import OpsRunRepository
 from .target import PolicyRepository, TargetRepository
 from .recovery import RecoveryRepository
-from .database_system import DatabaseSystemRepository
+from .business_system import BusinessSystemRepository
 from .workload import WorkloadRepository
 from .work_item import WorkItemRepository
 
@@ -33,7 +33,7 @@ __all__ = [
     "PolicyRepository",
     "TargetRepository",
     "RecoveryRepository",
-    "DatabaseSystemRepository",
+    "BusinessSystemRepository",
     "WorkloadRepository",
     "WorkItemRepository",
 ]

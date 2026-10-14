@@ -42,7 +42,7 @@
   const wizardSteps = ["identity", "monitoring", "access"];
   const wizardButtons = [...document.querySelectorAll("[data-target-wizard-step]")];
   const wizardPanels = [...document.querySelectorAll("[data-target-wizard-panel]")];
-  const sourceDatabaseSystemId = new URLSearchParams(location.search).get("database_system_id");
+  const sourceBusinessSystemId = new URLSearchParams(location.search).get("business_system_id");
   const wizardPrevious = document.getElementById("target-wizard-previous");
   const wizardNext = document.getElementById("target-wizard-next");
   const testConnectionButton = document.getElementById("test-target-connection");
@@ -640,8 +640,8 @@
 
   function closeTargetEditor() {
     dialog.close();
-    if (sourceDatabaseSystemId) {
-      location.href = `database-systems.html?open=${encodeURIComponent(sourceDatabaseSystemId)}`;
+    if (sourceBusinessSystemId) {
+      location.href = `business-system-workspace.html?id=${encodeURIComponent(sourceBusinessSystemId)}`;
     }
   }
 

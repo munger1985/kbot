@@ -1097,8 +1097,8 @@
       if (page === "target-detail") {
         const editTargetAccess = document.getElementById("edit-target-access");
         if (editTargetAccess) {
-          const databaseSystemId = new URLSearchParams(location.search).get("database_system_id");
-          editTargetAccess.href = `targets.html?edit=${encodeURIComponent(id)}${databaseSystemId ? `&database_system_id=${encodeURIComponent(databaseSystemId)}` : ""}`;
+          const businessSystemId = new URLSearchParams(location.search).get("business_system_id");
+          editTargetAccess.href = `targets.html?edit=${encodeURIComponent(id)}${businessSystemId ? `&business_system_id=${encodeURIComponent(businessSystemId)}` : ""}`;
         }
         await initializeTargetSubscription(id, data);
         await initializeTargetMonitorMappings(id, data);

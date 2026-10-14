@@ -19,15 +19,15 @@ _ASSURANCE_RANK = {
 
 
 async def build_recovery_assurance_snapshot(
-    *, recovery_repository, target, database_system_repository=None, now: datetime | None = None
+    *, recovery_repository, target, business_system_repository=None, now: datetime | None = None
 ) -> dict:
     """保留最新尝试与合格成功；较早成功不能遮蔽最新失败。"""
     captured_at = now or datetime.now(UTC)
     scope = {"domain_id": int(target.domain_id)}
-    system = await database_system_repository.find_system_for_target(target_id=target.target_id, **scope) if database_system_repository is not None else None
-    database_system_id = system.database_system_id if system is not None else target.target_id
-    profile = await recovery_repository.get_active_profile(database_system_id=database_system_id, **scope)
-    drills = await recovery_repository.list_recent_drills(database_system_id=database_system_id, limit=100, **scope)
+    component = await business_system_repository.find_component_for_target(target_id=target.target_id, **scope) if business_system_repository is not None else None
+    component_id = component.component_id if component is not None else target.target_id
+    profile = await recovery_repository.get_active_profile(component_id=component_id, **scope)
+    drills = await recovery_repository.list_recent_drills(component_id=component_id, limit=100, **scope)
     latest_attempt = drills[0] if drills else None
     drill_required = bool(profile and profile.drill_required)
     required_rank = _ASSURANCE_RANK.get(
@@ -145,7 +145,7 @@ async def build_recovery_assurance_snapshot(
     return {
         "schema_version": "TARGET_RECOVERY_ASSURANCE.v1",
         "target_id": str(target.target_id),
-        "database_system_id": str(database_system_id),
+        "component_id": str(component_id),
         "db_type": str(target.db_type),
         "captured_at": captured_at.isoformat(),
         "assurance_status": assurance_status,

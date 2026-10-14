@@ -122,7 +122,7 @@ def _validate_oracle_container_expectation(
 
 class TargetConfigurationMixin:
     async def _create_target_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, request: TargetCreate, now: datetime) -> TargetEntity:
-        """在调用方事务内创建 Target，供数据库系统原子提交复用。"""
+        """在调用方事务内创建 Target，供业务系统原子提交复用。"""
         assert uow.targets is not None and uow.managed_credentials is not None and uow.work_items is not None
         if request.responsibility_group_id is not None:
             group = await uow.work_items.get_group(group_id=request.responsibility_group_id, tenant_id=scope.tenant_id, domain_id=scope.domain_id)
@@ -706,17 +706,17 @@ class TargetConfigurationMixin:
 
     async def delete_target(self, *, scope: ConfigurationScope, target_id: UUID, expected_version: int, idempotency_key: str) -> TargetDetail:
         async def handler(uow: AIOpsUnitOfWork, now: datetime) -> TargetDetail:
-            assert uow.targets is not None and uow.managed_credentials is not None and uow.database_systems is not None
+            assert uow.targets is not None and uow.managed_credentials is not None and uow.business_systems is not None
             target = await uow.targets.get_scoped(target_id=target_id, domain_id=scope.domain_id, lock=True)
             if target is None: raise resource_not_found("Target")
             self._check_version(target.row_version, expected_version)
             if target.status != "DISABLED": raise state_conflict("仅允许删除已停用的 Target")
-            assigned_system = await uow.database_systems.find_system_for_target(
+            assigned_system = await uow.business_systems.find_system_for_target(
                 target_id=target_id,
                 domain_id=scope.domain_id,
             )
             if assigned_system is not None:
-                raise state_conflict("Target 已属于数据库系统，请先从系统拓扑中移除该成员")
+                raise state_conflict("Target 已属于业务系统组件，请先从资源拓扑中移除该成员")
             if await uow.targets.has_active_runs(target_id=target_id):
                 raise state_conflict("Target 仍有运行中的任务，请先等待完成或取消运行")
             result = _target_detail(target)

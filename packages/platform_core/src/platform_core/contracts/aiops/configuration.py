@@ -260,7 +260,9 @@ class TargetSummary(AIOpsContract):
     target_id: UUIDv7
     display_name: str
     db_type: DatabaseType
+    version_code: str
     environment: str
+    db_role: str
     importance_level: int = Field(ge=1, le=5)
     responsibility_group_id: UUIDv7 | None = None
     status: TargetStatus
@@ -276,8 +278,6 @@ class TargetSummary(AIOpsContract):
 
 
 class TargetDetail(TargetSummary):
-    version_code: str | None = None
-    db_role: str
     oracle_container_scope: OracleContainerScope | None = None
     oracle_pdb_name: str | None = None
     observed_oracle_container_scope: OracleContainerScope | None = None
@@ -371,7 +371,7 @@ RecoveryMarker = Annotated[
 ]
 
 
-class DatabaseSystemProtectionProfileUpsert(AIOpsContract):
+class ComponentProtectionProfileUpsert(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     backup_policy_enabled: bool = True
     backup_frequency_hours: int = Field(default=24, ge=1, le=8760)
@@ -391,7 +391,7 @@ class DatabaseSystemProtectionProfileUpsert(AIOpsContract):
     source_note: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
-    def validate_source_types(self) -> "DatabaseSystemProtectionProfileUpsert":
+    def validate_source_types(self) -> "ComponentProtectionProfileUpsert":
         if (self.backup_policy_enabled or self.drill_required) and not self.required_backup_source_types:
             raise ValueError("启用备份策略或定期恢复演练时必须配置备份来源")
         if self.backup_policy_enabled and self.backup_success_max_age_hours < self.backup_frequency_hours:
@@ -403,9 +403,9 @@ class DatabaseSystemProtectionProfileUpsert(AIOpsContract):
         return self
 
 
-class DatabaseSystemProtectionProfileView(DatabaseSystemProtectionProfileUpsert):
+class ComponentProtectionProfileView(ComponentProtectionProfileUpsert):
     recovery_profile_id: UUIDv7
-    database_system_id: UUIDv7
+    component_id: UUIDv7
     version_no: int = Field(ge=1)
     status: Literal["ACTIVE", "RETIRED"]
     effective_at: UtcDatetime
@@ -493,7 +493,7 @@ class RecoveryDrillReview(AIOpsContract):
 
 class RecoveryDrillView(RecoveryDrillCreate):
     drill_id: UUIDv7
-    database_system_id: UUIDv7
+    component_id: UUIDv7
     recovery_profile_id: UUIDv7 | None = None
     recovery_profile_version: int | None = Field(default=None, ge=1)
     db_type: DatabaseType

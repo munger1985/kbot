@@ -742,6 +742,663 @@
         "title": "ArtifactRef",
         "type": "object"
       },
+      "BusinessSystemCommit": {
+        "additionalProperties": false,
+        "description": "将业务系统、组件、Target、监控映射与关系作为一个事务提交。",
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedComponentInput"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Components",
+            "type": "array"
+          },
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ComponentMemberCommit"
+            },
+            "maxItems": 10000,
+            "title": "Members",
+            "type": "array"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResourceRelationInput"
+            },
+            "maxItems": 20000,
+            "title": "Relations",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemSiteInput"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Sites",
+            "type": "array"
+          },
+          "system": {
+            "$ref": "#/components/schemas/BusinessSystemCreate"
+          }
+        },
+        "required": [
+          "system",
+          "components",
+          "sites"
+        ],
+        "title": "BusinessSystemCommit",
+        "type": "object"
+      },
+      "BusinessSystemCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "enum": [
+              "PROD",
+              "STG",
+              "DEV"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "importance_level": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
+          "responsibility_group_id": {
+            "format": "uuid",
+            "title": "Responsibility Group Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "system_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "System Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system_code",
+          "display_name",
+          "environment",
+          "responsibility_group_id"
+        ],
+        "title": "BusinessSystemCreate",
+        "type": "object"
+      },
+      "BusinessSystemDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "architecture_labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Architecture Labels",
+            "type": "array"
+          },
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "component_count": {
+            "minimum": 0.0,
+            "title": "Component Count",
+            "type": "integer"
+          },
+          "components": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManagedComponentView"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ComponentMemberView"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "protection_status": {
+            "enum": [
+              "UNCONFIGURED",
+              "PARTIAL",
+              "CONFIGURED"
+            ],
+            "title": "Protection Status",
+            "type": "string"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResourceRelationView"
+            },
+            "title": "Relations",
+            "type": "array"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sites": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemSiteView"
+            },
+            "title": "Sites",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "ENABLED",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "system_code": {
+            "title": "System Code",
+            "type": "string"
+          },
+          "target_count": {
+            "minimum": 0.0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "validation_issues": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TopologyValidationIssue"
+            },
+            "title": "Validation Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "system_code",
+          "display_name",
+          "environment",
+          "importance_level",
+          "status",
+          "protection_status",
+          "component_count",
+          "target_count",
+          "row_version",
+          "updated_at",
+          "created_at"
+        ],
+        "title": "BusinessSystemDetail",
+        "type": "object"
+      },
+      "BusinessSystemPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "BusinessSystemPage",
+        "type": "object"
+      },
+      "BusinessSystemPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "PROD",
+                  "STG",
+                  "DEV"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "importance_level": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance Level"
+          },
+          "responsibility_group_id": {
+            "format": "uuid",
+            "title": "Responsibility Group Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "system_code": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Code"
+          }
+        },
+        "required": [
+          "responsibility_group_id"
+        ],
+        "title": "BusinessSystemPatch",
+        "type": "object"
+      },
+      "BusinessSystemSiteInput": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "site_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Site Code",
+            "type": "string"
+          },
+          "site_role": {
+            "default": "UNKNOWN",
+            "enum": [
+              "PRIMARY",
+              "DR",
+              "ACTIVE",
+              "UNKNOWN"
+            ],
+            "title": "Site Role",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "site_code",
+          "display_name"
+        ],
+        "title": "BusinessSystemSiteInput",
+        "type": "object"
+      },
+      "BusinessSystemSiteView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "site_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Site Code",
+            "type": "string"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_role": {
+            "default": "UNKNOWN",
+            "enum": [
+              "PRIMARY",
+              "DR",
+              "ACTIVE",
+              "UNKNOWN"
+            ],
+            "title": "Site Role",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "site_code",
+          "display_name",
+          "site_id"
+        ],
+        "title": "BusinessSystemSiteView",
+        "type": "object"
+      },
+      "BusinessSystemSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "architecture_labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Architecture Labels",
+            "type": "array"
+          },
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "component_count": {
+            "minimum": 0.0,
+            "title": "Component Count",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "importance_level": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Importance Level",
+            "type": "integer"
+          },
+          "protection_status": {
+            "enum": [
+              "UNCONFIGURED",
+              "PARTIAL",
+              "CONFIGURED"
+            ],
+            "title": "Protection Status",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "ENABLED",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "system_code": {
+            "title": "System Code",
+            "type": "string"
+          },
+          "target_count": {
+            "minimum": 0.0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "system_code",
+          "display_name",
+          "environment",
+          "importance_level",
+          "status",
+          "protection_status",
+          "component_count",
+          "target_count",
+          "row_version",
+          "updated_at"
+        ],
+        "title": "BusinessSystemSummary",
+        "type": "object"
+      },
+      "BusinessSystemTopologyPut": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedComponentInput"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Components",
+            "type": "array"
+          },
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ComponentMemberCommit"
+            },
+            "maxItems": 10000,
+            "title": "Members",
+            "type": "array"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResourceRelationInput"
+            },
+            "maxItems": 20000,
+            "title": "Relations",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemSiteInput"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Sites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "components",
+          "sites"
+        ],
+        "title": "BusinessSystemTopologyPut",
+        "type": "object"
+      },
       "CancelHitlCommand": {
         "additionalProperties": false,
         "properties": {
@@ -886,6 +1543,661 @@
           "artifact"
         ],
         "title": "CompleteOpsTaskCommand",
+        "type": "object"
+      },
+      "ComponentMemberCommit": {
+        "additionalProperties": false,
+        "properties": {
+          "cluster_group_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Group Key"
+          },
+          "component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Component Key",
+            "type": "string"
+          },
+          "expected_role": {
+            "enum": [
+              "INSTANCE",
+              "PRIMARY",
+              "STANDBY",
+              "SOURCE",
+              "REPLICA",
+              "REPORTING"
+            ],
+            "title": "Expected Role",
+            "type": "string"
+          },
+          "member_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Member Key",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "NEW",
+              "REUSE"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "monitoring": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComponentMonitoringInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "site_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Site Code",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_patch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComponentTargetPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Row Version"
+          }
+        },
+        "required": [
+          "member_key",
+          "component_key",
+          "site_code",
+          "expected_role",
+          "mode"
+        ],
+        "title": "ComponentMemberCommit",
+        "type": "object"
+      },
+      "ComponentMemberView": {
+        "additionalProperties": false,
+        "properties": {
+          "cluster_group_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Group Key"
+          },
+          "component_id": {
+            "format": "uuid",
+            "title": "Component Id",
+            "type": "string"
+          },
+          "component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Component Key",
+            "type": "string"
+          },
+          "connectivity_status": {
+            "title": "Connectivity Status",
+            "type": "string"
+          },
+          "expected_role": {
+            "enum": [
+              "INSTANCE",
+              "PRIMARY",
+              "STANDBY",
+              "SOURCE",
+              "REPLICA",
+              "REPORTING"
+            ],
+            "title": "Expected Role",
+            "type": "string"
+          },
+          "member_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Member Key",
+            "type": "string"
+          },
+          "membership_id": {
+            "format": "uuid",
+            "title": "Membership Id",
+            "type": "string"
+          },
+          "monitoring_ready": {
+            "title": "Monitoring Ready",
+            "type": "boolean"
+          },
+          "observed_role": {
+            "default": "UNKNOWN",
+            "enum": [
+              "UNKNOWN",
+              "PRIMARY",
+              "STANDBY",
+              "SOURCE",
+              "REPLICA",
+              "REPORTING"
+            ],
+            "title": "Observed Role",
+            "type": "string"
+          },
+          "site_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Site Code",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "target_db_type": {
+            "$ref": "#/components/schemas/DatabaseType"
+          },
+          "target_display_name": {
+            "title": "Target Display Name",
+            "type": "string"
+          },
+          "target_environment": {
+            "title": "Target Environment",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_row_version": {
+            "minimum": 1.0,
+            "title": "Target Row Version",
+            "type": "integer"
+          },
+          "target_version_code": {
+            "title": "Target Version Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_key",
+          "component_key",
+          "target_id",
+          "site_code",
+          "expected_role",
+          "membership_id",
+          "component_id",
+          "target_display_name",
+          "target_db_type",
+          "target_version_code",
+          "target_environment",
+          "target_row_version",
+          "connectivity_status",
+          "monitoring_ready"
+        ],
+        "title": "ComponentMemberView",
+        "type": "object"
+      },
+      "ComponentMonitoringInput": {
+        "additionalProperties": false,
+        "description": "Wizard 成员的监控映射；发现型来源只接受有时效的候选引用。",
+        "properties": {
+          "candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Ref"
+          },
+          "host_candidate_ref": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Candidate Ref"
+          },
+          "source_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceBindingCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "ComponentMonitoringInput",
+        "type": "object"
+      },
+      "ComponentProtectionProfileUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_frequency_hours": {
+            "default": 24,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Frequency Hours",
+            "type": "integer"
+          },
+          "backup_policy_enabled": {
+            "default": true,
+            "title": "Backup Policy Enabled",
+            "type": "boolean"
+          },
+          "backup_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Backup Retention Days",
+            "type": "integer"
+          },
+          "backup_success_max_age_hours": {
+            "default": 26,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Success Max Age Hours",
+            "type": "integer"
+          },
+          "drill_required": {
+            "title": "Drill Required",
+            "type": "boolean"
+          },
+          "required_assurance_level": {
+            "enum": [
+              "BACKUP_METADATA",
+              "RESTORE_VALIDATE",
+              "DATABASE_OPEN",
+              "APPLICATION_VALIDATED"
+            ],
+            "title": "Required Assurance Level",
+            "type": "string"
+          },
+          "required_backup_source_types": {
+            "items": {
+              "enum": [
+                "ORACLE_RMAN",
+                "POSTGRESQL_BASEBACKUP",
+                "POSTGRESQL_PGBACKREST",
+                "POSTGRESQL_BARMAN",
+                "POSTGRESQL_WALG",
+                "MYSQL_XTRABACKUP",
+                "MYSQL_ENTERPRISE_BACKUP",
+                "MYSQL_LOGICAL_DUMP",
+                "FILESYSTEM_SNAPSHOT",
+                "STORAGE_SNAPSHOT",
+                "CLOUD_MANAGED_BACKUP",
+                "THIRD_PARTY_BACKUP"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Required Backup Source Types",
+            "type": "array"
+          },
+          "required_drill_interval_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Required Drill Interval Days",
+            "type": "integer"
+          },
+          "rpo_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 0.0,
+            "title": "Rpo Seconds",
+            "type": "integer"
+          },
+          "rto_clock_basis": {
+            "const": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "default": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "title": "Rto Clock Basis",
+            "type": "string"
+          },
+          "rto_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Rto Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Note"
+          }
+        },
+        "required": [
+          "rpo_seconds",
+          "rto_seconds",
+          "drill_required",
+          "required_drill_interval_days",
+          "required_assurance_level",
+          "required_backup_source_types"
+        ],
+        "title": "ComponentProtectionProfileUpsert",
+        "type": "object"
+      },
+      "ComponentProtectionProfileView": {
+        "additionalProperties": false,
+        "properties": {
+          "backup_frequency_hours": {
+            "default": 24,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Frequency Hours",
+            "type": "integer"
+          },
+          "backup_policy_enabled": {
+            "default": true,
+            "title": "Backup Policy Enabled",
+            "type": "boolean"
+          },
+          "backup_retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Backup Retention Days",
+            "type": "integer"
+          },
+          "backup_success_max_age_hours": {
+            "default": 26,
+            "maximum": 8760.0,
+            "minimum": 1.0,
+            "title": "Backup Success Max Age Hours",
+            "type": "integer"
+          },
+          "component_id": {
+            "format": "uuid",
+            "title": "Component Id",
+            "type": "string"
+          },
+          "confirmed_by": {
+            "title": "Confirmed By",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "drill_required": {
+            "title": "Drill Required",
+            "type": "boolean"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "recovery_profile_id": {
+            "format": "uuid",
+            "title": "Recovery Profile Id",
+            "type": "string"
+          },
+          "required_assurance_level": {
+            "enum": [
+              "BACKUP_METADATA",
+              "RESTORE_VALIDATE",
+              "DATABASE_OPEN",
+              "APPLICATION_VALIDATED"
+            ],
+            "title": "Required Assurance Level",
+            "type": "string"
+          },
+          "required_backup_source_types": {
+            "items": {
+              "enum": [
+                "ORACLE_RMAN",
+                "POSTGRESQL_BASEBACKUP",
+                "POSTGRESQL_PGBACKREST",
+                "POSTGRESQL_BARMAN",
+                "POSTGRESQL_WALG",
+                "MYSQL_XTRABACKUP",
+                "MYSQL_ENTERPRISE_BACKUP",
+                "MYSQL_LOGICAL_DUMP",
+                "FILESYSTEM_SNAPSHOT",
+                "STORAGE_SNAPSHOT",
+                "CLOUD_MANAGED_BACKUP",
+                "THIRD_PARTY_BACKUP"
+              ],
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Required Backup Source Types",
+            "type": "array"
+          },
+          "required_drill_interval_days": {
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Required Drill Interval Days",
+            "type": "integer"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
+          "rpo_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 0.0,
+            "title": "Rpo Seconds",
+            "type": "integer"
+          },
+          "rto_clock_basis": {
+            "const": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "default": "SERVICE_UNAVAILABLE_TO_VALIDATED",
+            "title": "Rto Clock Basis",
+            "type": "string"
+          },
+          "rto_seconds": {
+            "maximum": 31536000.0,
+            "minimum": 60.0,
+            "title": "Rto Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Note"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "RETIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version_no": {
+            "minimum": 1.0,
+            "title": "Version No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rpo_seconds",
+          "rto_seconds",
+          "drill_required",
+          "required_drill_interval_days",
+          "required_assurance_level",
+          "required_backup_source_types",
+          "recovery_profile_id",
+          "component_id",
+          "version_no",
+          "status",
+          "effective_at",
+          "confirmed_by",
+          "row_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ComponentProtectionProfileView",
+        "type": "object"
+      },
+      "ComponentTargetPatch": {
+        "additionalProperties": false,
+        "description": "业务系统编辑中与拓扑一起原子修改的 Target 身份字段。",
+        "properties": {
+          "db_role": {
+            "default": "UNKNOWN",
+            "enum": [
+              "PRIMARY",
+              "STANDBY",
+              "UNKNOWN"
+            ],
+            "title": "Db Role",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "enum": [
+              "PROD",
+              "STG",
+              "DEV"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "version_code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Version Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "version_code",
+          "environment"
+        ],
+        "title": "ComponentTargetPatch",
         "type": "object"
       },
       "ConversationCreate": {
@@ -2417,1484 +3729,6 @@
           "configured"
         ],
         "title": "DatabaseCredentialStatus",
-        "type": "object"
-      },
-      "DatabaseSystemCommit": {
-        "additionalProperties": false,
-        "description": "将系统、成员 Target、监控映射和拓扑作为一个事务提交。",
-        "properties": {
-          "members": {
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemMemberCommit"
-            },
-            "maxItems": 128,
-            "minItems": 1,
-            "title": "Members",
-            "type": "array"
-          },
-          "relations": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemRelationInput"
-            },
-            "maxItems": 256,
-            "title": "Relations",
-            "type": "array"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "sites": {
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemSiteInput"
-            },
-            "maxItems": 32,
-            "minItems": 1,
-            "title": "Sites",
-            "type": "array"
-          },
-          "system": {
-            "$ref": "#/components/schemas/DatabaseSystemCreate"
-          }
-        },
-        "required": [
-          "system",
-          "sites",
-          "members"
-        ],
-        "title": "DatabaseSystemCommit",
-        "type": "object"
-      },
-      "DatabaseSystemCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "default": [],
-            "items": {
-              "enum": [
-                "RAC",
-                "DATA_GUARD",
-                "MYSQL_REPLICATION",
-                "POSTGRES_STREAMING"
-              ],
-              "type": "string"
-            },
-            "maxItems": 8,
-            "title": "Capabilities",
-            "type": "array"
-          },
-          "db_type": {
-            "$ref": "#/components/schemas/DatabaseType"
-          },
-          "deployment_category": {
-            "enum": [
-              "SINGLE_INSTANCE",
-              "RAC",
-              "REPLICATION",
-              "COMPOSITE"
-            ],
-            "title": "Deployment Category",
-            "type": "string"
-          },
-          "deployment_shape": {
-            "enum": [
-              "SINGLE_INSTANCE",
-              "HIGH_AVAILABILITY"
-            ],
-            "title": "Deployment Shape",
-            "type": "string"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "environment": {
-            "enum": [
-              "PROD",
-              "STG",
-              "DEV"
-            ],
-            "title": "Environment",
-            "type": "string"
-          },
-          "importance_level": {
-            "default": 3,
-            "maximum": 5.0,
-            "minimum": 1.0,
-            "title": "Importance Level",
-            "type": "integer"
-          },
-          "responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsibility Group Id"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "version_code": {
-            "enum": [
-              "19c",
-              "26ai",
-              "8.4",
-              "16"
-            ],
-            "title": "Version Code",
-            "type": "string"
-          }
-        },
-        "required": [
-          "display_name",
-          "db_type",
-          "version_code",
-          "deployment_shape",
-          "deployment_category",
-          "environment"
-        ],
-        "title": "DatabaseSystemCreate",
-        "type": "object"
-      },
-      "DatabaseSystemDetail": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "default": [],
-            "items": {
-              "enum": [
-                "RAC",
-                "DATA_GUARD",
-                "MYSQL_REPLICATION",
-                "POSTGRES_STREAMING"
-              ],
-              "type": "string"
-            },
-            "title": "Capabilities",
-            "type": "array"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "database_system_id": {
-            "format": "uuid",
-            "title": "Database System Id",
-            "type": "string"
-          },
-          "db_type": {
-            "$ref": "#/components/schemas/DatabaseType"
-          },
-          "deployment_category": {
-            "enum": [
-              "SINGLE_INSTANCE",
-              "RAC",
-              "REPLICATION",
-              "COMPOSITE"
-            ],
-            "title": "Deployment Category",
-            "type": "string"
-          },
-          "deployment_shape": {
-            "enum": [
-              "SINGLE_INSTANCE",
-              "HIGH_AVAILABILITY"
-            ],
-            "title": "Deployment Shape",
-            "type": "string"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "environment": {
-            "title": "Environment",
-            "type": "string"
-          },
-          "importance_level": {
-            "maximum": 5.0,
-            "minimum": 1.0,
-            "title": "Importance Level",
-            "type": "integer"
-          },
-          "member_count": {
-            "minimum": 0.0,
-            "title": "Member Count",
-            "type": "integer"
-          },
-          "members": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemMemberView"
-            },
-            "title": "Members",
-            "type": "array"
-          },
-          "protection_status": {
-            "enum": [
-              "UNCONFIGURED",
-              "CONFIGURED"
-            ],
-            "title": "Protection Status",
-            "type": "string"
-          },
-          "relations": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemRelationView"
-            },
-            "title": "Relations",
-            "type": "array"
-          },
-          "responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsibility Group Id"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "sites": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemSiteView"
-            },
-            "title": "Sites",
-            "type": "array"
-          },
-          "status": {
-            "enum": [
-              "DRAFT",
-              "ENABLED",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "validation_issues": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/TopologyValidationIssue"
-            },
-            "title": "Validation Issues",
-            "type": "array"
-          },
-          "version_code": {
-            "title": "Version Code",
-            "type": "string"
-          }
-        },
-        "required": [
-          "database_system_id",
-          "display_name",
-          "db_type",
-          "version_code",
-          "deployment_shape",
-          "deployment_category",
-          "environment",
-          "importance_level",
-          "status",
-          "protection_status",
-          "member_count",
-          "row_version",
-          "updated_at",
-          "created_at"
-        ],
-        "title": "DatabaseSystemDetail",
-        "type": "object"
-      },
-      "DatabaseSystemMemberCommit": {
-        "additionalProperties": false,
-        "description": "原子提交中的成员草稿，可新建 Target 或复用未归属 Target。",
-        "properties": {
-          "expected_role": {
-            "enum": [
-              "INSTANCE",
-              "PRIMARY",
-              "STANDBY",
-              "SOURCE",
-              "REPLICA",
-              "RAC_INSTANCE"
-            ],
-            "title": "Expected Role",
-            "type": "string"
-          },
-          "group_key": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group Key"
-          },
-          "member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Member Key",
-            "type": "string"
-          },
-          "member_type": {
-            "enum": [
-              "INSTANCE",
-              "RAC_INSTANCE"
-            ],
-            "title": "Member Type",
-            "type": "string"
-          },
-          "mode": {
-            "enum": [
-              "NEW",
-              "REUSE"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "monitoring": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DatabaseSystemMonitoringInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "site_code": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Site Code",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000,
-            "minimum": 0,
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "target": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TargetCreate"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "target_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Id"
-          }
-        },
-        "required": [
-          "member_key",
-          "site_code",
-          "member_type",
-          "expected_role",
-          "mode"
-        ],
-        "title": "DatabaseSystemMemberCommit",
-        "type": "object"
-      },
-      "DatabaseSystemMemberInput": {
-        "additionalProperties": false,
-        "properties": {
-          "expected_role": {
-            "enum": [
-              "INSTANCE",
-              "PRIMARY",
-              "STANDBY",
-              "SOURCE",
-              "REPLICA",
-              "RAC_INSTANCE"
-            ],
-            "title": "Expected Role",
-            "type": "string"
-          },
-          "group_key": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group Key"
-          },
-          "member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Member Key",
-            "type": "string"
-          },
-          "member_type": {
-            "enum": [
-              "INSTANCE",
-              "RAC_INSTANCE"
-            ],
-            "title": "Member Type",
-            "type": "string"
-          },
-          "site_code": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Site Code",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "member_key",
-          "target_id",
-          "site_code",
-          "member_type",
-          "expected_role"
-        ],
-        "title": "DatabaseSystemMemberInput",
-        "type": "object"
-      },
-      "DatabaseSystemMemberView": {
-        "additionalProperties": false,
-        "properties": {
-          "connectivity_status": {
-            "title": "Connectivity Status",
-            "type": "string"
-          },
-          "expected_role": {
-            "enum": [
-              "INSTANCE",
-              "PRIMARY",
-              "STANDBY",
-              "SOURCE",
-              "REPLICA",
-              "RAC_INSTANCE"
-            ],
-            "title": "Expected Role",
-            "type": "string"
-          },
-          "group_key": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group Key"
-          },
-          "member_id": {
-            "format": "uuid",
-            "title": "Member Id",
-            "type": "string"
-          },
-          "member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Member Key",
-            "type": "string"
-          },
-          "member_type": {
-            "enum": [
-              "INSTANCE",
-              "RAC_INSTANCE"
-            ],
-            "title": "Member Type",
-            "type": "string"
-          },
-          "monitoring_ready": {
-            "title": "Monitoring Ready",
-            "type": "boolean"
-          },
-          "observed_role": {
-            "default": "UNKNOWN",
-            "enum": [
-              "UNKNOWN",
-              "PRIMARY",
-              "STANDBY",
-              "SOURCE",
-              "REPLICA",
-              "RAC_INSTANCE"
-            ],
-            "title": "Observed Role",
-            "type": "string"
-          },
-          "site_code": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Site Code",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "target_display_name": {
-            "title": "Target Display Name",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "member_key",
-          "target_id",
-          "site_code",
-          "member_type",
-          "expected_role",
-          "member_id",
-          "target_display_name",
-          "connectivity_status",
-          "monitoring_ready"
-        ],
-        "title": "DatabaseSystemMemberView",
-        "type": "object"
-      },
-      "DatabaseSystemMonitoringInput": {
-        "additionalProperties": false,
-        "description": "Wizard 成员的监控映射；发现型来源只接受有时效的候选引用。",
-        "properties": {
-          "candidate_ref": {
-            "anyOf": [
-              {
-                "maxLength": 8192,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Candidate Ref"
-          },
-          "host_candidate_ref": {
-            "anyOf": [
-              {
-                "maxLength": 8192,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host Candidate Ref"
-          },
-          "source_binding": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceBindingCreate"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source_id": {
-            "format": "uuid",
-            "title": "Source Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_id"
-        ],
-        "title": "DatabaseSystemMonitoringInput",
-        "type": "object"
-      },
-      "DatabaseSystemPage": {
-        "additionalProperties": false,
-        "properties": {
-          "has_more": {
-            "default": false,
-            "title": "Has More",
-            "type": "boolean"
-          },
-          "items": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemSummary"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "title": "DatabaseSystemPage",
-        "type": "object"
-      },
-      "DatabaseSystemPatch": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "environment": {
-            "anyOf": [
-              {
-                "enum": [
-                  "PROD",
-                  "STG",
-                  "DEV"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment"
-          },
-          "importance_level": {
-            "anyOf": [
-              {
-                "maximum": 5.0,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Importance Level"
-          },
-          "responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsibility Group Id"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "title": "DatabaseSystemPatch",
-        "type": "object"
-      },
-      "DatabaseSystemProtectionProfileUpsert": {
-        "additionalProperties": false,
-        "properties": {
-          "backup_frequency_hours": {
-            "default": 24,
-            "maximum": 8760.0,
-            "minimum": 1.0,
-            "title": "Backup Frequency Hours",
-            "type": "integer"
-          },
-          "backup_policy_enabled": {
-            "default": true,
-            "title": "Backup Policy Enabled",
-            "type": "boolean"
-          },
-          "backup_retention_days": {
-            "default": 30,
-            "maximum": 3650.0,
-            "minimum": 1.0,
-            "title": "Backup Retention Days",
-            "type": "integer"
-          },
-          "backup_success_max_age_hours": {
-            "default": 26,
-            "maximum": 8760.0,
-            "minimum": 1.0,
-            "title": "Backup Success Max Age Hours",
-            "type": "integer"
-          },
-          "drill_required": {
-            "title": "Drill Required",
-            "type": "boolean"
-          },
-          "required_assurance_level": {
-            "enum": [
-              "BACKUP_METADATA",
-              "RESTORE_VALIDATE",
-              "DATABASE_OPEN",
-              "APPLICATION_VALIDATED"
-            ],
-            "title": "Required Assurance Level",
-            "type": "string"
-          },
-          "required_backup_source_types": {
-            "items": {
-              "enum": [
-                "ORACLE_RMAN",
-                "POSTGRESQL_BASEBACKUP",
-                "POSTGRESQL_PGBACKREST",
-                "POSTGRESQL_BARMAN",
-                "POSTGRESQL_WALG",
-                "MYSQL_XTRABACKUP",
-                "MYSQL_ENTERPRISE_BACKUP",
-                "MYSQL_LOGICAL_DUMP",
-                "FILESYSTEM_SNAPSHOT",
-                "STORAGE_SNAPSHOT",
-                "CLOUD_MANAGED_BACKUP",
-                "THIRD_PARTY_BACKUP"
-              ],
-              "type": "string"
-            },
-            "maxItems": 16,
-            "title": "Required Backup Source Types",
-            "type": "array"
-          },
-          "required_drill_interval_days": {
-            "maximum": 3650.0,
-            "minimum": 1.0,
-            "title": "Required Drill Interval Days",
-            "type": "integer"
-          },
-          "rpo_seconds": {
-            "maximum": 31536000.0,
-            "minimum": 0.0,
-            "title": "Rpo Seconds",
-            "type": "integer"
-          },
-          "rto_clock_basis": {
-            "const": "SERVICE_UNAVAILABLE_TO_VALIDATED",
-            "default": "SERVICE_UNAVAILABLE_TO_VALIDATED",
-            "title": "Rto Clock Basis",
-            "type": "string"
-          },
-          "rto_seconds": {
-            "maximum": 31536000.0,
-            "minimum": 60.0,
-            "title": "Rto Seconds",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_note": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Note"
-          }
-        },
-        "required": [
-          "rpo_seconds",
-          "rto_seconds",
-          "drill_required",
-          "required_drill_interval_days",
-          "required_assurance_level",
-          "required_backup_source_types"
-        ],
-        "title": "DatabaseSystemProtectionProfileUpsert",
-        "type": "object"
-      },
-      "DatabaseSystemProtectionProfileView": {
-        "additionalProperties": false,
-        "properties": {
-          "backup_frequency_hours": {
-            "default": 24,
-            "maximum": 8760.0,
-            "minimum": 1.0,
-            "title": "Backup Frequency Hours",
-            "type": "integer"
-          },
-          "backup_policy_enabled": {
-            "default": true,
-            "title": "Backup Policy Enabled",
-            "type": "boolean"
-          },
-          "backup_retention_days": {
-            "default": 30,
-            "maximum": 3650.0,
-            "minimum": 1.0,
-            "title": "Backup Retention Days",
-            "type": "integer"
-          },
-          "backup_success_max_age_hours": {
-            "default": 26,
-            "maximum": 8760.0,
-            "minimum": 1.0,
-            "title": "Backup Success Max Age Hours",
-            "type": "integer"
-          },
-          "confirmed_by": {
-            "title": "Confirmed By",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "database_system_id": {
-            "format": "uuid",
-            "title": "Database System Id",
-            "type": "string"
-          },
-          "drill_required": {
-            "title": "Drill Required",
-            "type": "boolean"
-          },
-          "effective_at": {
-            "format": "date-time",
-            "title": "Effective At",
-            "type": "string"
-          },
-          "recovery_profile_id": {
-            "format": "uuid",
-            "title": "Recovery Profile Id",
-            "type": "string"
-          },
-          "required_assurance_level": {
-            "enum": [
-              "BACKUP_METADATA",
-              "RESTORE_VALIDATE",
-              "DATABASE_OPEN",
-              "APPLICATION_VALIDATED"
-            ],
-            "title": "Required Assurance Level",
-            "type": "string"
-          },
-          "required_backup_source_types": {
-            "items": {
-              "enum": [
-                "ORACLE_RMAN",
-                "POSTGRESQL_BASEBACKUP",
-                "POSTGRESQL_PGBACKREST",
-                "POSTGRESQL_BARMAN",
-                "POSTGRESQL_WALG",
-                "MYSQL_XTRABACKUP",
-                "MYSQL_ENTERPRISE_BACKUP",
-                "MYSQL_LOGICAL_DUMP",
-                "FILESYSTEM_SNAPSHOT",
-                "STORAGE_SNAPSHOT",
-                "CLOUD_MANAGED_BACKUP",
-                "THIRD_PARTY_BACKUP"
-              ],
-              "type": "string"
-            },
-            "maxItems": 16,
-            "title": "Required Backup Source Types",
-            "type": "array"
-          },
-          "required_drill_interval_days": {
-            "maximum": 3650.0,
-            "minimum": 1.0,
-            "title": "Required Drill Interval Days",
-            "type": "integer"
-          },
-          "retired_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Retired At"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "rpo_seconds": {
-            "maximum": 31536000.0,
-            "minimum": 0.0,
-            "title": "Rpo Seconds",
-            "type": "integer"
-          },
-          "rto_clock_basis": {
-            "const": "SERVICE_UNAVAILABLE_TO_VALIDATED",
-            "default": "SERVICE_UNAVAILABLE_TO_VALIDATED",
-            "title": "Rto Clock Basis",
-            "type": "string"
-          },
-          "rto_seconds": {
-            "maximum": 31536000.0,
-            "minimum": 60.0,
-            "title": "Rto Seconds",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "source_note": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Note"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "RETIRED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "version_no": {
-            "minimum": 1.0,
-            "title": "Version No",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "rpo_seconds",
-          "rto_seconds",
-          "drill_required",
-          "required_drill_interval_days",
-          "required_assurance_level",
-          "required_backup_source_types",
-          "recovery_profile_id",
-          "database_system_id",
-          "version_no",
-          "status",
-          "effective_at",
-          "confirmed_by",
-          "row_version",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "DatabaseSystemProtectionProfileView",
-        "type": "object"
-      },
-      "DatabaseSystemRelationInput": {
-        "additionalProperties": false,
-        "properties": {
-          "relation_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Relation Key",
-            "type": "string"
-          },
-          "relation_type": {
-            "enum": [
-              "DATA_GUARD",
-              "MYSQL_REPLICATION",
-              "POSTGRES_STREAMING"
-            ],
-            "title": "Relation Type",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "source_member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Source Member Key",
-            "type": "string"
-          },
-          "target_member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Target Member Key",
-            "type": "string"
-          },
-          "transport_mode": {
-            "default": "UNKNOWN",
-            "enum": [
-              "SYNC",
-              "ASYNC",
-              "FAST_SYNC",
-              "UNKNOWN"
-            ],
-            "title": "Transport Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "relation_key",
-          "source_member_key",
-          "target_member_key",
-          "relation_type"
-        ],
-        "title": "DatabaseSystemRelationInput",
-        "type": "object"
-      },
-      "DatabaseSystemRelationView": {
-        "additionalProperties": false,
-        "properties": {
-          "relation_id": {
-            "format": "uuid",
-            "title": "Relation Id",
-            "type": "string"
-          },
-          "relation_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Relation Key",
-            "type": "string"
-          },
-          "relation_type": {
-            "enum": [
-              "DATA_GUARD",
-              "MYSQL_REPLICATION",
-              "POSTGRES_STREAMING"
-            ],
-            "title": "Relation Type",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Sort Order",
-            "type": "integer"
-          },
-          "source_member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Source Member Key",
-            "type": "string"
-          },
-          "target_member_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Target Member Key",
-            "type": "string"
-          },
-          "transport_mode": {
-            "default": "UNKNOWN",
-            "enum": [
-              "SYNC",
-              "ASYNC",
-              "FAST_SYNC",
-              "UNKNOWN"
-            ],
-            "title": "Transport Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "relation_key",
-          "source_member_key",
-          "target_member_key",
-          "relation_type",
-          "relation_id"
-        ],
-        "title": "DatabaseSystemRelationView",
-        "type": "object"
-      },
-      "DatabaseSystemSiteInput": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "expected_role": {
-            "default": "UNKNOWN",
-            "enum": [
-              "PRIMARY",
-              "STANDBY",
-              "ACTIVE",
-              "UNKNOWN"
-            ],
-            "title": "Expected Role",
-            "type": "string"
-          },
-          "site_code": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Site Code",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Sort Order",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "site_code",
-          "display_name"
-        ],
-        "title": "DatabaseSystemSiteInput",
-        "type": "object"
-      },
-      "DatabaseSystemSiteView": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "expected_role": {
-            "default": "UNKNOWN",
-            "enum": [
-              "PRIMARY",
-              "STANDBY",
-              "ACTIVE",
-              "UNKNOWN"
-            ],
-            "title": "Expected Role",
-            "type": "string"
-          },
-          "site_code": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-            "title": "Site Code",
-            "type": "string"
-          },
-          "site_id": {
-            "format": "uuid",
-            "title": "Site Id",
-            "type": "string"
-          },
-          "sort_order": {
-            "default": 0,
-            "maximum": 10000.0,
-            "minimum": 0.0,
-            "title": "Sort Order",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "site_code",
-          "display_name",
-          "site_id"
-        ],
-        "title": "DatabaseSystemSiteView",
-        "type": "object"
-      },
-      "DatabaseSystemSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "default": [],
-            "items": {
-              "enum": [
-                "RAC",
-                "DATA_GUARD",
-                "MYSQL_REPLICATION",
-                "POSTGRES_STREAMING"
-              ],
-              "type": "string"
-            },
-            "title": "Capabilities",
-            "type": "array"
-          },
-          "database_system_id": {
-            "format": "uuid",
-            "title": "Database System Id",
-            "type": "string"
-          },
-          "db_type": {
-            "$ref": "#/components/schemas/DatabaseType"
-          },
-          "deployment_category": {
-            "enum": [
-              "SINGLE_INSTANCE",
-              "RAC",
-              "REPLICATION",
-              "COMPOSITE"
-            ],
-            "title": "Deployment Category",
-            "type": "string"
-          },
-          "deployment_shape": {
-            "enum": [
-              "SINGLE_INSTANCE",
-              "HIGH_AVAILABILITY"
-            ],
-            "title": "Deployment Shape",
-            "type": "string"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "environment": {
-            "title": "Environment",
-            "type": "string"
-          },
-          "importance_level": {
-            "maximum": 5.0,
-            "minimum": 1.0,
-            "title": "Importance Level",
-            "type": "integer"
-          },
-          "member_count": {
-            "minimum": 0.0,
-            "title": "Member Count",
-            "type": "integer"
-          },
-          "protection_status": {
-            "enum": [
-              "UNCONFIGURED",
-              "CONFIGURED"
-            ],
-            "title": "Protection Status",
-            "type": "string"
-          },
-          "responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsibility Group Id"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "DRAFT",
-              "ENABLED",
-              "DISABLED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "version_code": {
-            "title": "Version Code",
-            "type": "string"
-          }
-        },
-        "required": [
-          "database_system_id",
-          "display_name",
-          "db_type",
-          "version_code",
-          "deployment_shape",
-          "deployment_category",
-          "environment",
-          "importance_level",
-          "status",
-          "protection_status",
-          "member_count",
-          "row_version",
-          "updated_at"
-        ],
-        "title": "DatabaseSystemSummary",
-        "type": "object"
-      },
-      "DatabaseSystemTopologyPut": {
-        "additionalProperties": false,
-        "properties": {
-          "members": {
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemMemberInput"
-            },
-            "maxItems": 128,
-            "minItems": 1,
-            "title": "Members",
-            "type": "array"
-          },
-          "relations": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemRelationInput"
-            },
-            "maxItems": 256,
-            "title": "Relations",
-            "type": "array"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "sites": {
-            "items": {
-              "$ref": "#/components/schemas/DatabaseSystemSiteInput"
-            },
-            "maxItems": 32,
-            "minItems": 1,
-            "title": "Sites",
-            "type": "array"
-          }
-        },
-        "required": [
-          "sites",
-          "members"
-        ],
-        "title": "DatabaseSystemTopologyPut",
         "type": "object"
       },
       "DatabaseType": {
@@ -6704,6 +6538,181 @@
         "title": "LeasedArtifact",
         "type": "object"
       },
+      "ManagedComponentInput": {
+        "additionalProperties": false,
+        "properties": {
+          "component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Component Key",
+            "type": "string"
+          },
+          "component_type": {
+            "enum": [
+              "DATABASE",
+              "APPLICATION",
+              "MIDDLEWARE",
+              "NETWORK"
+            ],
+            "title": "Component Type",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "format": "uuid",
+            "title": "Responsibility Group Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "component_key",
+          "display_name",
+          "component_type",
+          "responsibility_group_id"
+        ],
+        "title": "ManagedComponentInput",
+        "type": "object"
+      },
+      "ManagedComponentView": {
+        "additionalProperties": false,
+        "properties": {
+          "architecture_labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Architecture Labels",
+            "type": "array"
+          },
+          "component_id": {
+            "format": "uuid",
+            "title": "Component Id",
+            "type": "string"
+          },
+          "component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Component Key",
+            "type": "string"
+          },
+          "component_type": {
+            "enum": [
+              "DATABASE",
+              "APPLICATION",
+              "MIDDLEWARE",
+              "NETWORK"
+            ],
+            "title": "Component Type",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "engine_types": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DatabaseType"
+            },
+            "title": "Engine Types",
+            "type": "array"
+          },
+          "member_count": {
+            "minimum": 0.0,
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "protection_status": {
+            "default": "UNCONFIGURED",
+            "enum": [
+              "UNCONFIGURED",
+              "PARTIAL",
+              "CONFIGURED"
+            ],
+            "title": "Protection Status",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "format": "uuid",
+            "title": "Responsibility Group Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "versions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "component_key",
+          "display_name",
+          "component_type",
+          "responsibility_group_id",
+          "component_id",
+          "status",
+          "member_count"
+        ],
+        "title": "ManagedComponentView",
+        "type": "object"
+      },
       "ManualResultCommand": {
         "additionalProperties": false,
         "properties": {
@@ -6880,6 +6889,29 @@
       "MonitoringInstanceSummary": {
         "additionalProperties": false,
         "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "business_system_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Name"
+          },
           "capability_gaps": {
             "default": [],
             "items": {
@@ -6887,6 +6919,29 @@
             },
             "title": "Capability Gaps",
             "type": "array"
+          },
+          "component_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Id"
+          },
+          "component_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Name"
           },
           "db_type": {
             "enum": [
@@ -9423,6 +9478,11 @@
             "title": "Backup Source Type",
             "type": "string"
           },
+          "component_id": {
+            "format": "uuid",
+            "title": "Component Id",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -9430,11 +9490,6 @@
           },
           "created_by": {
             "title": "Created By",
-            "type": "string"
-          },
-          "database_system_id": {
-            "format": "uuid",
-            "title": "Database System Id",
             "type": "string"
           },
           "db_type": {
@@ -9670,7 +9725,7 @@
           "simulated_failure_at",
           "recovery_marker",
           "drill_id",
-          "database_system_id",
+          "component_id",
           "db_type",
           "status",
           "source_trust_level",
@@ -10243,6 +10298,210 @@
           "resource_id"
         ],
         "title": "ResourceRef",
+        "type": "object"
+      },
+      "ResourceRelationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "relation_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Relation Key",
+            "type": "string"
+          },
+          "relation_type": {
+            "enum": [
+              "DATA_GUARD",
+              "OGG",
+              "MYSQL_REPLICATION",
+              "POSTGRES_STREAMING",
+              "GENERIC_DEPENDENCY"
+            ],
+            "title": "Relation Type",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "source_component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Component Key",
+            "type": "string"
+          },
+          "source_member_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Member Key"
+          },
+          "target_component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Component Key",
+            "type": "string"
+          },
+          "target_member_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Member Key"
+          },
+          "transport_mode": {
+            "default": "UNKNOWN",
+            "enum": [
+              "SYNC",
+              "ASYNC",
+              "FAST_SYNC",
+              "UNKNOWN"
+            ],
+            "title": "Transport Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_key",
+          "source_component_key",
+          "target_component_key",
+          "relation_type"
+        ],
+        "title": "ResourceRelationInput",
+        "type": "object"
+      },
+      "ResourceRelationView": {
+        "additionalProperties": false,
+        "properties": {
+          "relation_id": {
+            "format": "uuid",
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "relation_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Relation Key",
+            "type": "string"
+          },
+          "relation_type": {
+            "enum": [
+              "DATA_GUARD",
+              "OGG",
+              "MYSQL_REPLICATION",
+              "POSTGRES_STREAMING",
+              "GENERIC_DEPENDENCY"
+            ],
+            "title": "Relation Type",
+            "type": "string"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "source_component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Component Key",
+            "type": "string"
+          },
+          "source_member_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Member Key"
+          },
+          "target_component_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Component Key",
+            "type": "string"
+          },
+          "target_member_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Member Key"
+          },
+          "transport_mode": {
+            "default": "UNKNOWN",
+            "enum": [
+              "SYNC",
+              "ASYNC",
+              "FAST_SYNC",
+              "UNKNOWN"
+            ],
+            "title": "Transport Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_key",
+          "source_component_key",
+          "target_component_key",
+          "relation_type",
+          "relation_id"
+        ],
+        "title": "ResourceRelationView",
         "type": "object"
       },
       "ResultStatus": {
@@ -12136,15 +12395,8 @@
             "type": "string"
           },
           "version_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version Code"
+            "title": "Version Code",
+            "type": "string"
           },
           "workload_consecutive_failures": {
             "minimum": 0.0,
@@ -12194,7 +12446,9 @@
           "target_id",
           "display_name",
           "db_type",
+          "version_code",
           "environment",
+          "db_role",
           "importance_level",
           "status",
           "connectivity_status",
@@ -12206,7 +12460,6 @@
           "execution_credential_configured",
           "row_version",
           "updated_at",
-          "db_role",
           "diagnostic_credential",
           "execution_credential",
           "capabilities",
@@ -12811,6 +13064,10 @@
             "title": "Controlled Change Enabled",
             "type": "boolean"
           },
+          "db_role": {
+            "title": "Db Role",
+            "type": "string"
+          },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
@@ -12889,13 +13146,19 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "version_code": {
+            "title": "Version Code",
+            "type": "string"
           }
         },
         "required": [
           "target_id",
           "display_name",
           "db_type",
+          "version_code",
           "environment",
+          "db_role",
           "importance_level",
           "status",
           "connectivity_status",
@@ -13199,6 +13462,17 @@
             "minLength": 1,
             "title": "Code",
             "type": "string"
+          },
+          "component_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component Key"
           },
           "member_key": {
             "anyOf": [
@@ -14424,9 +14698,9 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/internal/v1/aiops/config/database-systems": {
+    "/internal/v1/aiops/config/business-systems": {
       "get": {
-        "operationId": "list_database_systems_internal_v1_aiops_config_database_systems_get",
+        "operationId": "list_business_systems_internal_v1_aiops_config_business_systems_get",
         "parameters": [
           {
             "in": "query",
@@ -14462,7 +14736,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemPage"
+                  "$ref": "#/components/schemas/BusinessSystemPage"
                 }
               }
             },
@@ -14479,13 +14753,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Database Systems",
+        "summary": "List Business Systems",
         "tags": [
           "AIOps Config"
         ]
       },
       "post": {
-        "operationId": "create_database_system_internal_v1_aiops_config_database_systems_post",
+        "operationId": "create_business_system_internal_v1_aiops_config_business_systems_post",
         "parameters": [
           {
             "in": "header",
@@ -14501,7 +14775,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DatabaseSystemCreate"
+                "$ref": "#/components/schemas/BusinessSystemCreate"
               }
             }
           },
@@ -14512,7 +14786,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
                 }
               }
             },
@@ -14529,23 +14803,23 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Database System",
+        "summary": "Create Business System",
         "tags": [
           "AIOps Config"
         ]
       }
     },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}": {
+    "/internal/v1/aiops/config/business-systems/{business_system_id}": {
       "get": {
-        "operationId": "get_database_system_internal_v1_aiops_config_database_systems__database_system_id__get",
+        "operationId": "get_business_system_internal_v1_aiops_config_business_systems__business_system_id__get",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "business_system_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Business System Id",
               "type": "string"
             }
           }
@@ -14555,7 +14829,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
                 }
               }
             },
@@ -14572,21 +14846,21 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Database System",
+        "summary": "Get Business System",
         "tags": [
           "AIOps Config"
         ]
       },
       "patch": {
-        "operationId": "patch_database_system_internal_v1_aiops_config_database_systems__database_system_id__patch",
+        "operationId": "patch_business_system_internal_v1_aiops_config_business_systems__business_system_id__patch",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "business_system_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Business System Id",
               "type": "string"
             }
           },
@@ -14611,7 +14885,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DatabaseSystemPatch"
+                "$ref": "#/components/schemas/BusinessSystemPatch"
               }
             }
           },
@@ -14622,7 +14896,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
                 }
               }
             },
@@ -14639,23 +14913,23 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Patch Database System",
+        "summary": "Patch Business System",
         "tags": [
           "AIOps Config"
         ]
       }
     },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}/disable": {
+    "/internal/v1/aiops/config/business-systems/{business_system_id}/disable": {
       "post": {
-        "operationId": "disable_database_system_internal_v1_aiops_config_database_systems__database_system_id__disable_post",
+        "operationId": "disable_business_system_internal_v1_aiops_config_business_systems__business_system_id__disable_post",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "business_system_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Business System Id",
               "type": "string"
             }
           },
@@ -14690,7 +14964,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
                 }
               }
             },
@@ -14707,23 +14981,23 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Disable Database System",
+        "summary": "Disable Business System",
         "tags": [
           "AIOps Config"
         ]
       }
     },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}/enable": {
+    "/internal/v1/aiops/config/business-systems/{business_system_id}/enable": {
       "post": {
-        "operationId": "enable_database_system_internal_v1_aiops_config_database_systems__database_system_id__enable_post",
+        "operationId": "enable_business_system_internal_v1_aiops_config_business_systems__business_system_id__enable_post",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "business_system_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Business System Id",
               "type": "string"
             }
           },
@@ -14758,7 +15032,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
                 }
               }
             },
@@ -14775,23 +15049,144 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Enable Database System",
+        "summary": "Enable Business System",
         "tags": [
           "AIOps Config"
         ]
       }
     },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}/protection-profile": {
+    "/internal/v1/aiops/config/business-systems/{business_system_id}/topology": {
+      "put": {
+        "operationId": "put_business_system_topology_internal_v1_aiops_config_business_systems__business_system_id__topology_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "business_system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Business System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessSystemTopologyPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Business System Topology",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/business-systems:commit": {
+      "post": {
+        "operationId": "commit_business_system_internal_v1_aiops_config_business_systems_commit_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessSystemCommit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessSystemDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commit Business System",
+        "tags": [
+          "AIOps Config"
+        ]
+      }
+    },
+    "/internal/v1/aiops/config/components/{component_id}/protection-profile": {
       "get": {
-        "operationId": "get_recovery_profile_internal_v1_aiops_config_database_systems__database_system_id__protection_profile_get",
+        "operationId": "get_recovery_profile_internal_v1_aiops_config_components__component_id__protection_profile_get",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "component_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Component Id",
               "type": "string"
             }
           }
@@ -14803,13 +15198,13 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/DatabaseSystemProtectionProfileView"
+                      "$ref": "#/components/schemas/ComponentProtectionProfileView"
                     },
                     {
                       "type": "null"
                     }
                   ],
-                  "title": "Response Get Recovery Profile Internal V1 Aiops Config Database Systems  Database System Id  Protection Profile Get"
+                  "title": "Response Get Recovery Profile Internal V1 Aiops Config Components  Component Id  Protection Profile Get"
                 }
               }
             },
@@ -14832,15 +15227,15 @@
         ]
       },
       "put": {
-        "operationId": "upsert_recovery_profile_internal_v1_aiops_config_database_systems__database_system_id__protection_profile_put",
+        "operationId": "upsert_recovery_profile_internal_v1_aiops_config_components__component_id__protection_profile_put",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "component_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Component Id",
               "type": "string"
             }
           },
@@ -14858,7 +15253,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DatabaseSystemProtectionProfileUpsert"
+                "$ref": "#/components/schemas/ComponentProtectionProfileUpsert"
               }
             }
           },
@@ -14869,7 +15264,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemProtectionProfileView"
+                  "$ref": "#/components/schemas/ComponentProtectionProfileView"
                 }
               }
             },
@@ -14892,17 +15287,17 @@
         ]
       }
     },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}/recovery-drills": {
+    "/internal/v1/aiops/config/components/{component_id}/recovery-drills": {
       "get": {
-        "operationId": "list_recovery_drills_internal_v1_aiops_config_database_systems__database_system_id__recovery_drills_get",
+        "operationId": "list_recovery_drills_internal_v1_aiops_config_components__component_id__recovery_drills_get",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "component_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Component Id",
               "type": "string"
             }
           }
@@ -14935,15 +15330,15 @@
         ]
       },
       "post": {
-        "operationId": "create_recovery_drill_internal_v1_aiops_config_database_systems__database_system_id__recovery_drills_post",
+        "operationId": "create_recovery_drill_internal_v1_aiops_config_components__component_id__recovery_drills_post",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "component_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Component Id",
               "type": "string"
             }
           },
@@ -14995,17 +15390,17 @@
         ]
       }
     },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}/recovery-drills/{drill_id}:review": {
+    "/internal/v1/aiops/config/components/{component_id}/recovery-drills/{drill_id}:review": {
       "post": {
-        "operationId": "review_recovery_drill_internal_v1_aiops_config_database_systems__database_system_id__recovery_drills__drill_id__review_post",
+        "operationId": "review_recovery_drill_internal_v1_aiops_config_components__component_id__recovery_drills__drill_id__review_post",
         "parameters": [
           {
             "in": "path",
-            "name": "database_system_id",
+            "name": "component_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Database System Id",
+              "title": "Component Id",
               "type": "string"
             }
           },
@@ -15078,127 +15473,6 @@
           }
         },
         "summary": "Review Recovery Drill",
-        "tags": [
-          "AIOps Config"
-        ]
-      }
-    },
-    "/internal/v1/aiops/config/database-systems/{database_system_id}/topology": {
-      "put": {
-        "operationId": "put_database_system_topology_internal_v1_aiops_config_database_systems__database_system_id__topology_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "database_system_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Database System Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DatabaseSystemTopologyPut"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Put Database System Topology",
-        "tags": [
-          "AIOps Config"
-        ]
-      }
-    },
-    "/internal/v1/aiops/config/database-systems:commit": {
-      "post": {
-        "operationId": "commit_database_system_internal_v1_aiops_config_database_systems_commit_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DatabaseSystemCommit"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseSystemDetail"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Commit Database System",
         "tags": [
           "AIOps Config"
         ]

@@ -122,7 +122,9 @@ def _target_summary(entity: TargetEntity) -> TargetSummary:
         target_id=entity.target_id,
         display_name=entity.display_name,
         db_type=entity.db_type,
+        version_code=entity.version_code,
         environment=entity.environment,
+        db_role=entity.db_role,
         importance_level=int(entity.importance_level),
         responsibility_group_id=entity.responsibility_group_id,
         status=entity.status,
@@ -140,8 +142,6 @@ def _target_summary(entity: TargetEntity) -> TargetSummary:
 def _target_detail(entity: TargetEntity) -> TargetDetail:
     return TargetDetail(
         **_target_summary(entity).model_dump(),
-        version_code=entity.version_code,
-        db_role=entity.db_role,
         oracle_container_scope=entity.oracle_container_scope,
         oracle_pdb_name=entity.oracle_pdb_name,
         observed_oracle_container_scope=entity.observed_oracle_container_scope,

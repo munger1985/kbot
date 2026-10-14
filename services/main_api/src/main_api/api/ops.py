@@ -92,14 +92,14 @@ from platform_core.contracts.aiops import (
     TargetFactCreate,
     TargetFactPage,
     TargetFactView,
-    DatabaseSystemProtectionProfileUpsert,
-    DatabaseSystemProtectionProfileView,
-    DatabaseSystemCommit,
-    DatabaseSystemCreate,
-    DatabaseSystemDetail,
-    DatabaseSystemPage,
-    DatabaseSystemPatch,
-    DatabaseSystemTopologyPut,
+    ComponentProtectionProfileUpsert,
+    ComponentProtectionProfileView,
+    BusinessSystemCommit,
+    BusinessSystemCreate,
+    BusinessSystemDetail,
+    BusinessSystemPage,
+    BusinessSystemPatch,
+    BusinessSystemTopologyPut,
     RecoveryDrillCreate,
     RecoveryDrillReview,
     RecoveryDrillView,
@@ -1245,55 +1245,55 @@ async def stream_ops_run_events(
     )
 
 
-@router.post("/database-systems", response_model=DatabaseSystemDetail, status_code=201)
-async def create_database_system(body: DatabaseSystemCreate, request: Request, response: Response, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    payload = await _client(request).create_database_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
-    return _validated(DatabaseSystemDetail, payload, response)
+@router.post("/business-systems", response_model=BusinessSystemDetail, status_code=201)
+async def create_business_system(body: BusinessSystemCreate, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    payload = await _client(request).create_business_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDetail, payload, response)
 
 
-@router.post("/database-systems:commit", response_model=DatabaseSystemDetail, status_code=201)
-async def commit_database_system(body: DatabaseSystemCommit, request: Request, response: Response, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    payload = await _client(request).commit_database_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
-    return _validated(DatabaseSystemDetail, payload, response)
+@router.post("/business-systems:commit", response_model=BusinessSystemDetail, status_code=201)
+async def commit_business_system(body: BusinessSystemCommit, request: Request, response: Response, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    payload = await _client(request).commit_business_system(body.model_dump(mode="json"), idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDetail, payload, response)
 
 
-@router.get("/database-systems", response_model=DatabaseSystemPage)
-async def list_database_systems(request: Request, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> DatabaseSystemPage:
-    payload = await _client(request).list_database_systems(status=resource_status, limit=limit, auth_context=request.state.auth_context)
-    return DatabaseSystemPage.model_validate(payload)
+@router.get("/business-systems", response_model=BusinessSystemPage)
+async def list_business_systems(request: Request, resource_status: str | None = Query(default=None, alias="status"), limit: int = Query(default=50, ge=1, le=200)) -> BusinessSystemPage:
+    payload = await _client(request).list_business_systems(status=resource_status, limit=limit, auth_context=request.state.auth_context)
+    return BusinessSystemPage.model_validate(payload)
 
 
-@router.get("/database-systems/{database_system_id}", response_model=DatabaseSystemDetail)
-async def get_database_system(database_system_id: UUID, request: Request, response: Response) -> DatabaseSystemDetail:
-    payload = await _client(request).get_database_system(database_system_id, auth_context=request.state.auth_context)
-    return _validated(DatabaseSystemDetail, payload, response)
+@router.get("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
+async def get_business_system(business_system_id: UUID, request: Request, response: Response) -> BusinessSystemDetail:
+    payload = await _client(request).get_business_system(business_system_id, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDetail, payload, response)
 
 
-@router.patch("/database-systems/{database_system_id}", response_model=DatabaseSystemDetail)
-async def patch_database_system(database_system_id: UUID, body: DatabaseSystemPatch, request: Request, response: Response, if_match: IfMatch) -> DatabaseSystemDetail:
-    payload = await _client(request).patch_database_system(database_system_id, body.model_dump(mode="json", exclude_unset=True), if_match=if_match, auth_context=request.state.auth_context)
-    return _validated(DatabaseSystemDetail, payload, response)
+@router.patch("/business-systems/{business_system_id}", response_model=BusinessSystemDetail)
+async def patch_business_system(business_system_id: UUID, body: BusinessSystemPatch, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemDetail:
+    payload = await _client(request).patch_business_system(business_system_id, body.model_dump(mode="json", exclude_unset=True), if_match=if_match, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDetail, payload, response)
 
 
-@router.put("/database-systems/{database_system_id}/topology", response_model=DatabaseSystemDetail)
-async def put_database_system_topology(database_system_id: UUID, body: DatabaseSystemTopologyPut, request: Request, response: Response, if_match: IfMatch) -> DatabaseSystemDetail:
-    payload = await _client(request).put_database_system_topology(database_system_id, body.model_dump(mode="json"), if_match=if_match, auth_context=request.state.auth_context)
-    return _validated(DatabaseSystemDetail, payload, response)
+@router.put("/business-systems/{business_system_id}/topology", response_model=BusinessSystemDetail)
+async def put_business_system_topology(business_system_id: UUID, body: BusinessSystemTopologyPut, request: Request, response: Response, if_match: IfMatch) -> BusinessSystemDetail:
+    payload = await _client(request).put_business_system_topology(business_system_id, body.model_dump(mode="json"), if_match=if_match, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDetail, payload, response)
 
 
-async def _command_database_system(database_system_id: UUID, command: str, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    payload = await _client(request).command_database_system(database_system_id, command, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
-    return _validated(DatabaseSystemDetail, payload, response)
+async def _command_business_system(business_system_id: UUID, command: str, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    payload = await _client(request).command_business_system(business_system_id, command, if_match=if_match, idempotency_key=idempotency_key, auth_context=request.state.auth_context)
+    return _validated(BusinessSystemDetail, payload, response)
 
 
-@router.post("/database-systems/{database_system_id}/enable", response_model=DatabaseSystemDetail)
-async def enable_database_system(database_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    return await _command_database_system(database_system_id, "enable", request, response, if_match, idempotency_key)
+@router.post("/business-systems/{business_system_id}/enable", response_model=BusinessSystemDetail)
+async def enable_business_system(business_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    return await _command_business_system(business_system_id, "enable", request, response, if_match, idempotency_key)
 
 
-@router.post("/database-systems/{database_system_id}/disable", response_model=DatabaseSystemDetail)
-async def disable_database_system(database_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> DatabaseSystemDetail:
-    return await _command_database_system(database_system_id, "disable", request, response, if_match, idempotency_key)
+@router.post("/business-systems/{business_system_id}/disable", response_model=BusinessSystemDetail)
+async def disable_business_system(business_system_id: UUID, request: Request, response: Response, if_match: IfMatch, idempotency_key: IdempotencyKey) -> BusinessSystemDetail:
+    return await _command_business_system(business_system_id, "disable", request, response, if_match, idempotency_key)
 
 
 @router.post("/targets", response_model=TargetDetail, status_code=201)
@@ -1542,69 +1542,69 @@ async def retire_target_fact(
 
 
 @router.get(
-    "/database-systems/{database_system_id}/protection-profile",
-    response_model=DatabaseSystemProtectionProfileView | None,
+    "/components/{component_id}/protection-profile",
+    response_model=ComponentProtectionProfileView | None,
 )
 async def get_recovery_profile(
-    database_system_id: UUID, request: Request
-) -> DatabaseSystemProtectionProfileView | None:
+    component_id: UUID, request: Request
+) -> ComponentProtectionProfileView | None:
     payload = await _client(request).get_recovery_profile(
-        database_system_id, auth_context=request.state.auth_context
+        component_id, auth_context=request.state.auth_context
     )
     return (
-        DatabaseSystemProtectionProfileView.model_validate(payload)
+        ComponentProtectionProfileView.model_validate(payload)
         if payload is not None
         else None
     )
 
 
 @router.put(
-    "/database-systems/{database_system_id}/protection-profile",
-    response_model=DatabaseSystemProtectionProfileView,
+    "/components/{component_id}/protection-profile",
+    response_model=ComponentProtectionProfileView,
 )
 async def upsert_recovery_profile(
-    database_system_id: UUID,
-    body: DatabaseSystemProtectionProfileUpsert,
+    component_id: UUID,
+    body: ComponentProtectionProfileUpsert,
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
-) -> DatabaseSystemProtectionProfileView:
+) -> ComponentProtectionProfileView:
     payload = await _client(request).upsert_recovery_profile(
-        database_system_id,
+        component_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
-    return _validated(DatabaseSystemProtectionProfileView, payload, response)
+    return _validated(ComponentProtectionProfileView, payload, response)
 
 
 @router.get(
-    "/database-systems/{database_system_id}/recovery-drills",
+    "/components/{component_id}/recovery-drills",
     response_model=RecoveryDrillPage,
 )
 async def list_recovery_drills(
-    database_system_id: UUID, request: Request
+    component_id: UUID, request: Request
 ) -> RecoveryDrillPage:
     payload = await _client(request).list_recovery_drills(
-        database_system_id, auth_context=request.state.auth_context
+        component_id, auth_context=request.state.auth_context
     )
     return RecoveryDrillPage.model_validate(payload)
 
 
 @router.post(
-    "/database-systems/{database_system_id}/recovery-drills",
+    "/components/{component_id}/recovery-drills",
     response_model=RecoveryDrillView,
     status_code=201,
 )
 async def create_recovery_drill(
-    database_system_id: UUID,
+    component_id: UUID,
     body: RecoveryDrillCreate,
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
 ) -> RecoveryDrillView:
     payload = await _client(request).create_recovery_drill(
-        database_system_id,
+        component_id,
         body.model_dump(mode="json"),
         idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
@@ -1613,11 +1613,11 @@ async def create_recovery_drill(
 
 
 @router.post(
-    "/database-systems/{database_system_id}/recovery-drills/{drill_id}:review",
+    "/components/{component_id}/recovery-drills/{drill_id}:review",
     response_model=RecoveryDrillView,
 )
 async def review_recovery_drill(
-    database_system_id: UUID,
+    component_id: UUID,
     drill_id: UUID,
     body: RecoveryDrillReview,
     request: Request,
@@ -1626,7 +1626,7 @@ async def review_recovery_drill(
     idempotency_key: IdempotencyKey,
 ) -> RecoveryDrillView:
     payload = await _client(request).review_recovery_drill(
-        database_system_id,
+        component_id,
         drill_id,
         body.model_dump(mode="json"),
         if_match=if_match,

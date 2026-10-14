@@ -55,6 +55,10 @@ class MonitoringInstanceSummary(_Contract):
     instance_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
     db_type: Literal["ORACLE", "MYSQL", "POSTGRESQL"]
+    business_system_id: UUID | None = None
+    business_system_name: str | None = None
+    component_id: UUID | None = None
+    component_name: str | None = None
     status: Literal["AVAILABLE", "UNAVAILABLE", "PARTIAL"]
     monitoring_readiness: MonitoringReadiness
     diagnostic_readiness: DiagnosticReadiness

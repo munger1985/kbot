@@ -1,6 +1,6 @@
 # AIOps Agent Oracle Schema
 
-本目录当前拥有 AIOps 服务的61张表和10个只读视图，按以下顺序在空Schema
+本目录当前拥有 AIOps 服务的69张表和10个只读视图，按以下顺序在空Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -13,7 +13,7 @@
 8. `008_ops_conversations_reports.sql`：Turn、Skill调用、证据、回答块、对话和报告模板；
 9. `009_ops_workload.sql`：MySQL/PostgreSQL工作负载快照、指标和活动采样；
 10. `010_ops_knowledge.sql`：运维知识资产、版本、适用范围、来源、索引引用和审核记录；
-11. `011_ops_recovery.sql`：Target恢复目标、数据库类型化恢复坐标和人工恢复演练记录。
+11. `011_ops_recovery.sql`：数据库组件恢复目标、数据库类型化恢复坐标和人工恢复演练记录。
 12. `012_ops_work_items.sql`：DBA 工作项、发生记录、资源关联和审计活动。
 
 需要丢弃旧 AIOps 数据并重新部署时，停止 AIOps API、Worker、Scheduler，备份
@@ -27,18 +27,24 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部十二份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 37 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 44 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `operations-manuals`、`diagnosis-cases` 两个固定 KC Collection 位于共享平台/KC 表，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 45 / aiops-oracle-v35`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 44 / aiops-oracle-v34`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 45 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 44 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
+
+生产 Oracle 仍处于原始单 Target 模型（`AIOPS / 43 / aiops-oracle-v33`）时，执行
+`../operations/apply_aiops_schema_44.sql`。该单文件脚本直接创建业务系统、可管理
+组件和资源拓扑，为每个现有 Target 补齐一个业务系统、数据库组件、MAIN 站点与成员，
+并将恢复目标和演练从 Target 作用域迁移到数据库组件。它不依赖、也不经过已废弃的
+Database System 中间模型；执行前必须先备份并停止 AIOps 写入服务。
 
 升级失败但必须保留已配置的监控源和运维目标时，改用
 `../generated/aiops_agent/rebuild_aiops_preserve_sources_targets.sql`。该文件同样在
@@ -49,11 +55,11 @@ SQL Developer 中使用 Run Script（F5）执行，会保留下列配置数据�
 - `KBOT_OPS_TARGET_FACT`：人工确认或发现的目标事实；
 - `KBOT_OPS_DIAGNOSTIC_SOURCE`：监控源、Webhook 和能力配置；
 - `KBOT_OPS_TARGET_SOURCE_BINDING`：目标与监控源的定位和能力绑定；
-- `KBOT_OPS_DATABASE_SYSTEM*`：数据库系统、站点、成员和复制关系；
-- `KBOT_OPS_RECOVERY_PROFILE`：目标当前及历史恢复目标版本。
+- `KBOT_OPS_BUSINESS_SYSTEM`、`KBOT_OPS_MANAGED_COMPONENT` 及资源拓扑表；
+- `KBOT_OPS_RECOVERY_PROFILE`：数据库组件当前及历史恢复目标版本。
 
-恢复后，脚本会为仍未归属系统的历史 Target 各自补建一个单实例 Database System；
-已经属于 RAC、Data Guard 或复制拓扑的 Target 保持原归属，不会重复生成系统。
+恢复后，脚本会为仍未归属组件的历史 Target 各自补建一个业务系统和数据库组件；
+已经属于 RAC、Data Guard 或复制拓扑的 Target 保持原归属，不会重复生成组件。
 
 策略、Agent、巡检计划、运行、任务、报告、对话、证据、消息和审计等其他 AIOps 数据
 不会恢复。脚本在删除旧表前创建 `KBOT_KEEP_AIOPS_%` 临时备份表，按显式列名恢复并核对

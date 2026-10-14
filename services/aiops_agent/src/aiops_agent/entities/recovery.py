@@ -1,4 +1,4 @@
-"""数据库系统保护目标与恢复演练的 SQLAlchemy 映射。"""
+"""数据库组件保护目标与恢复演练的 SQLAlchemy 映射。"""
 
 from datetime import datetime
 from typing import Any
@@ -22,7 +22,7 @@ class RecoveryProfileEntity(BaseEntity):
     recovery_profile_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    database_system_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    component_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     version_no: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False)
     backup_policy_enabled: Mapped[int] = mapped_column(Numeric(1, 0), nullable=False)
@@ -74,7 +74,7 @@ class RecoveryDrillEntity(BaseEntity):
     drill_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True, default=uuid7
     )
-    database_system_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    component_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     execution_target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
     recovery_profile_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())

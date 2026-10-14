@@ -1,4 +1,4 @@
-"""数据库系统 Wizard 共享契约测试。"""
+"""业务系统 Wizard 共享契约测试。"""
 
 from __future__ import annotations
 
@@ -6,83 +6,63 @@ import unittest
 
 from pydantic import ValidationError
 
-from platform_core.contracts.aiops import (
-    DatabaseSystemCommit,
-    DatabaseSystemCreate,
-    DatabaseSystemTopologyPut,
-)
+from platform_core.contracts.aiops import BusinessSystemCommit, BusinessSystemTopologyPut
 from platform_core.identity import uuid7
 
 
-class DatabaseSystemContractTest(unittest.TestCase):
-    def test_engine_is_selected_before_compatible_architecture(self) -> None:
-        oracle = DatabaseSystemCreate(
-            display_name="ERP RAC + DG",
-            db_type="ORACLE",
-            version_code="19c",
-            deployment_shape="HIGH_AVAILABILITY",
-            deployment_category="COMPOSITE",
-            capabilities=("RAC", "DATA_GUARD"),
-            environment="PROD",
-        )
-        self.assertEqual(("RAC", "DATA_GUARD"), oracle.capabilities)
-        with self.assertRaises(ValidationError):
-            DatabaseSystemCreate(
-                display_name="错误组合",
-                db_type="POSTGRESQL",
-                version_code="16",
-                deployment_shape="HIGH_AVAILABILITY",
-                deployment_category="RAC",
-                capabilities=("RAC",),
-                environment="PROD",
-            )
+def _component(group_id):
+    return {"component_key": "DATABASE-1", "display_name": "ERP 数据库", "component_type": "DATABASE", "responsibility_group_id": group_id}
 
-    def test_topology_references_are_structured_and_closed(self) -> None:
-        primary = uuid7()
-        standby = uuid7()
-        topology = DatabaseSystemTopologyPut(
-            sites=(
-                {"site_code": "PRIMARY", "display_name": "主站点", "expected_role": "PRIMARY"},
-                {"site_code": "STANDBY", "display_name": "备站点", "expected_role": "STANDBY"},
-            ),
-            members=(
-                {"member_key": "PRIMARY-1", "target_id": primary, "site_code": "PRIMARY", "member_type": "INSTANCE", "expected_role": "PRIMARY"},
-                {"member_key": "STANDBY-1", "target_id": standby, "site_code": "STANDBY", "member_type": "INSTANCE", "expected_role": "STANDBY"},
-            ),
-            relations=(
-                {"relation_key": "STREAM-1", "source_member_key": "PRIMARY-1", "target_member_key": "STANDBY-1", "relation_type": "POSTGRES_STREAMING", "transport_mode": "ASYNC"},
-            ),
-        )
-        self.assertEqual("PRIMARY-1", topology.relations[0].source_member_key)
+
+class BusinessSystemContractTest(unittest.TestCase):
+    def test_topology_is_inferred_from_relations_and_cluster_groups(self) -> None:
+        topology = BusinessSystemTopologyPut.model_validate({
+            "components": [_component(uuid7())],
+            "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
+            "members": [
+                {"member_key": "RAC-1", "component_key": "DATABASE-1", "site_code": "MAIN", "cluster_group_key": "ERP-RAC", "expected_role": "PRIMARY", "mode": "REUSE", "target_id": uuid7()},
+                {"member_key": "RAC-2", "component_key": "DATABASE-1", "site_code": "MAIN", "cluster_group_key": "ERP-RAC", "expected_role": "STANDBY", "mode": "REUSE", "target_id": uuid7()},
+            ],
+            "relations": [{"relation_key": "DG-1", "source_component_key": "DATABASE-1", "target_component_key": "DATABASE-1", "source_member_key": "RAC-1", "target_member_key": "RAC-2", "relation_type": "DATA_GUARD", "transport_mode": "ASYNC"}],
+        })
+        self.assertEqual("ERP-RAC", topology.members[0].cluster_group_key)
+        self.assertFalse(hasattr(topology, "deployment_shape"))
 
     def test_target_cannot_be_reused_as_two_members(self) -> None:
         target_id = uuid7()
         with self.assertRaises(ValidationError):
-            DatabaseSystemTopologyPut(
-                sites=(
-                    {"site_code": "PRIMARY", "display_name": "主站点", "expected_role": "PRIMARY"},
-                    {"site_code": "STANDBY", "display_name": "备站点", "expected_role": "STANDBY"},
-                ),
-                members=(
-                    {"member_key": "PRIMARY-1", "target_id": target_id, "site_code": "PRIMARY", "member_type": "INSTANCE", "expected_role": "PRIMARY"},
-                    {"member_key": "STANDBY-1", "target_id": target_id, "site_code": "STANDBY", "member_type": "INSTANCE", "expected_role": "STANDBY"},
-                ),
-            )
+            BusinessSystemTopologyPut.model_validate({
+                "components": [_component(uuid7())], "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
+                "members": [
+                    {"member_key": "DB-1", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "INSTANCE", "mode": "REUSE", "target_id": target_id},
+                    {"member_key": "DB-2", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "INSTANCE", "mode": "REUSE", "target_id": target_id},
+                ],
+            })
 
-    def test_atomic_commit_supports_new_and_reused_members(self) -> None:
-        request = DatabaseSystemCommit.model_validate({
-            "system": {"display_name": "ERP DG", "db_type": "ORACLE", "version_code": "19c", "deployment_shape": "HIGH_AVAILABILITY", "deployment_category": "REPLICATION", "capabilities": ["DATA_GUARD"], "environment": "PROD"},
-            "sites": [{"site_code": "PRIMARY", "display_name": "主站点"}, {"site_code": "STANDBY", "display_name": "备站点"}],
-            "members": [
-                {"member_key": "PRIMARY-1", "site_code": "PRIMARY", "member_type": "INSTANCE", "expected_role": "PRIMARY", "mode": "NEW", "target": {"display_name": "ERP-PRI", "db_type": "ORACLE", "version_code": "19c", "environment": "PROD"}},
-                {"member_key": "STANDBY-1", "site_code": "STANDBY", "member_type": "INSTANCE", "expected_role": "STANDBY", "mode": "REUSE", "target_id": uuid7()},
-            ],
-            "relations": [{"relation_key": "DG-1", "source_member_key": "PRIMARY-1", "target_member_key": "STANDBY-1", "relation_type": "DATA_GUARD", "transport_mode": "ASYNC"}],
+    def test_relation_member_must_belong_to_declared_component(self) -> None:
+        group_id = uuid7()
+        with self.assertRaisesRegex(ValidationError, "成员必须属于对应"):
+            BusinessSystemTopologyPut.model_validate({
+                "components": [
+                    _component(group_id),
+                    {**_component(group_id), "component_key": "DATABASE-2"},
+                ],
+                "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
+                "members": [
+                    {"member_key": "DB-1", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "SOURCE", "mode": "REUSE", "target_id": uuid7()},
+                    {"member_key": "DB-2", "component_key": "DATABASE-2", "site_code": "MAIN", "expected_role": "REPLICA", "mode": "REUSE", "target_id": uuid7()},
+                ],
+                "relations": [{"relation_key": "OGG-1", "source_component_key": "DATABASE-2", "target_component_key": "DATABASE-1", "source_member_key": "DB-1", "target_member_key": "DB-2", "relation_type": "OGG"}],
+            })
+
+    def test_atomic_commit_can_update_reused_target_version(self) -> None:
+        group_id = uuid7()
+        request = BusinessSystemCommit.model_validate({
+            "system": {"system_code": "ERP-PROD", "display_name": "ERP 生产系统", "environment": "PROD", "responsibility_group_id": group_id},
+            "components": [_component(group_id)], "sites": [{"site_code": "MAIN", "display_name": "默认站点"}],
+            "members": [{"member_key": "DB-1", "component_key": "DATABASE-1", "site_code": "MAIN", "expected_role": "INSTANCE", "mode": "REUSE", "target_id": uuid7(), "target_patch": {"display_name": "ERP-DB", "version_code": "23ai", "environment": "PROD"}, "target_row_version": 1}],
         })
-        self.assertEqual("NEW", request.members[0].mode)
-        self.assertEqual("REUSE", request.members[1].mode)
-        with self.assertRaises(ValidationError):
-            DatabaseSystemCommit.model_validate({**request.model_dump(mode="json"), "members": [{**request.members[0].model_dump(mode="json"), "target_id": str(uuid7())}]})
+        self.assertEqual("23ai", request.members[0].target_patch.version_code)
 
 
 if __name__ == "__main__":
