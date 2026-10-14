@@ -495,7 +495,15 @@ class BusinessSystemConfigurationMixin:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
             rows = await uow.business_systems.list_scoped(status=status, limit=limit, **_scope_args(scope))
-            return BusinessSystemResourceGraphPage(items=tuple(_summary(await self._system_detail(uow=uow, scope=scope, system=row)) for row in rows))
+            items: list[BusinessSystemResourceGraphSummary] = []
+            for row in rows:
+                detail = await self._system_detail(
+                    uow=uow,
+                    scope=scope,
+                    system=row,
+                )
+                items.append(_summary(detail))
+            return BusinessSystemResourceGraphPage(items=tuple(items))
 
     async def get_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID) -> BusinessSystemResourceGraphDetail:
         async with self._uow_factory() as uow:

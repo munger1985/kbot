@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
 
+from aiops_agent.application.configuration import (
+    AIOpsConfigurationService,
+    ConfigurationScope,
+)
 from aiops_agent.application.configuration.business_system_service import _summary
 from platform_core.contracts.aiops import (
     BusinessSystemResourceGraphCommit,
@@ -82,6 +88,77 @@ class BusinessSystemResourceGraphContractTest(unittest.TestCase):
         patch = ManagedResourcePatch(database={"version_code": "26ai", "environment": "STG", "db_role": "STANDBY"})
         self.assertEqual("26ai", patch.database.version_code)
         self.assertEqual("STANDBY", patch.database.db_role)
+
+
+class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_list_business_systems_awaits_each_detail_projection(self) -> None:
+        now = datetime.now(UTC)
+
+        def detail(name: str) -> BusinessSystemResourceGraphDetail:
+            return BusinessSystemResourceGraphDetail(
+                business_system_id=uuid7(),
+                system_code=f"SYS-{name}",
+                display_name=name,
+                environment="PROD",
+                importance_level=3,
+                responsibility_group_id=uuid7(),
+                status="ENABLED",
+                protection_status="UNCONFIGURED",
+                resource_count=1,
+                resource_type_summary=(
+                    {
+                        "resource_type_key": "DATABASE",
+                        "display_name": "数据库",
+                        "count": 1,
+                    },
+                ),
+                row_version=1,
+                created_at=now,
+                updated_at=now,
+            )
+
+        rows = [SimpleNamespace(), SimpleNamespace(), SimpleNamespace()]
+        repository = SimpleNamespace(
+            list_scoped=AsyncMock(return_value=rows),
+        )
+        uow = SimpleNamespace(business_systems=repository)
+
+        class UowContext:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        service = object.__new__(AIOpsConfigurationService)
+        service._uow_factory = UowContext
+        service._system_detail = AsyncMock(
+            side_effect=(detail("MES"), detail("ERP"), detail("WMS")),
+        )
+        scope = ConfigurationScope(
+            domain_id=100,
+            principal_id="PORTAL:aiops",
+            actor_id="operator-1",
+            request_id="request-1",
+            trace_id="trace-1",
+        )
+
+        result = await service.list_business_systems(
+            scope=scope,
+            status=None,
+            limit=200,
+        )
+
+        self.assertEqual(
+            ("MES", "ERP", "WMS"),
+            tuple(item.display_name for item in result.items),
+        )
+        self.assertEqual(3, service._system_detail.await_count)
+        repository.list_scoped.assert_awaited_once_with(
+            status=None,
+            limit=200,
+            domain_id=scope.domain_id,
+        )
 
 
 if __name__ == "__main__":
