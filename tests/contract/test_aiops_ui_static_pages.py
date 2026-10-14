@@ -95,6 +95,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/reports?limit=1", script)
         self.assertIn("行动优先工作台", page)
         self.assertIn("工作项是唯一承载责任人、SLA、处理和验证的对象", page)
+        self.assertNotIn("ops-action-scope", page)
+        self.assertNotIn("管理员可在筛选中切换全部工作项或异常归属", page)
         self.assertIn("以下是系统观测，不代表已形成个人责任", page)
         self.assertIn("需关注目标", page)
         self.assertIn("最新正式报告", page)
