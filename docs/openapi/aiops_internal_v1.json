@@ -4096,6 +4096,7 @@
           "source_id",
           "display_name",
           "source_type",
+          "endpoint",
           "adapter_id",
           "adapter_version",
           "status",
@@ -4267,6 +4268,17 @@
             "title": "Display Name",
             "type": "string"
           },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -4304,6 +4316,7 @@
           "source_id",
           "display_name",
           "source_type",
+          "endpoint",
           "adapter_id",
           "adapter_version",
           "status",

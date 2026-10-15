@@ -26,6 +26,9 @@ from aiops_agent.application.configuration.schedule import next_cron_run
 from aiops_agent.application.configuration.policy_service import (
     PolicyConfigurationMixin,
 )
+from aiops_agent.application.configuration.projections import (
+    _diagnostic_source_summary,
+)
 from aiops_agent.application.configuration.inspection_service import (
     InspectionConfigurationMixin,
 )
@@ -630,6 +633,29 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DiagnosticSourceCreationTest(unittest.IsolatedAsyncioTestCase):
+    def test_list_projection_includes_configured_endpoint(self) -> None:
+        now = datetime.now(UTC)
+        summary = _diagnostic_source_summary(
+            SimpleNamespace(
+                diagnostic_source_id=uuid7(),
+                display_name="Dev Prometheus",
+                source_type="PROMETHEUS",
+                endpoint="http://127.0.0.1:9090",
+                adapter_id="prometheus",
+                adapter_version="1.0.0",
+                status="ENABLED",
+                connectivity_status="CONNECTED",
+                connectivity_check_request_id=None,
+                connectivity_check_requested_at=None,
+                last_connectivity_check_at=now,
+                row_version=1,
+                updated_at=now,
+            )
+        )
+
+        self.assertEqual("http://127.0.0.1:9090", summary.endpoint)
+        self.assertIn("endpoint", summary.model_dump())
+
     async def test_create_completes_connectivity_check_in_request(self) -> None:
         scope = ConfigurationScope(
             domain_id=100,

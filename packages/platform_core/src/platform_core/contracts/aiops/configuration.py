@@ -737,6 +737,7 @@ class DiagnosticSourceSummary(AIOpsContract):
     source_id: UUIDv7
     display_name: str
     source_type: str
+    endpoint: str | None
     adapter_id: str
     adapter_version: str
     status: SourceStatus
@@ -747,7 +748,6 @@ class DiagnosticSourceSummary(AIOpsContract):
 
 
 class DiagnosticSourceDetail(DiagnosticSourceSummary):
-    endpoint: str | None = None
     secret: SecretRefStatus
     webhook_secret: SecretRefStatus
     tls_profile: SecretRefStatus

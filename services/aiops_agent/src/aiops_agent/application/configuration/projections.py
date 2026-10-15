@@ -226,6 +226,7 @@ def _diagnostic_source_summary(entity: DiagnosticSourceEntity) -> DiagnosticSour
         source_id=entity.diagnostic_source_id,
         display_name=entity.display_name,
         source_type=entity.source_type,
+        endpoint=entity.endpoint,
         adapter_id=entity.adapter_id,
         adapter_version=entity.adapter_version,
         status=entity.status,
@@ -238,7 +239,6 @@ def _diagnostic_source_summary(entity: DiagnosticSourceEntity) -> DiagnosticSour
 def _diagnostic_source_detail(entity: DiagnosticSourceEntity) -> DiagnosticSourceDetail:
     return DiagnosticSourceDetail(
         **_diagnostic_source_summary(entity).model_dump(),
-        endpoint=entity.endpoint,
         secret=_managed_credential_status(entity.auth_credential_id),
         webhook_secret=_managed_credential_status(entity.webhook_credential_id),
         tls_profile=_secret_status(entity.tls_profile_ref),
