@@ -30,12 +30,12 @@ BEGIN
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 44
-       OR l_contract_version <> 'aiops-oracle-v44-resource-graph' THEN
+       OR l_schema_version <> 45
+       OR l_contract_version <> 'aiops-oracle-v45-shared-monitor-locator' THEN
         raise_application_error(
             -20100,
-            '仅支持 AIOPS/44/'
-            || 'aiops-oracle-v44-resource-graph，当前为 '
+            '仅支持 AIOPS/45/'
+            || 'aiops-oracle-v45-shared-monitor-locator，当前为 '
             || l_component || '/' || l_schema_version || '/' || l_contract_version
         );
     END IF;
@@ -743,8 +743,6 @@ CREATE TABLE KBOT_OPS_TARGET_SOURCE_BINDING (
     UPDATED_BY VARCHAR2(256 CHAR) NOT NULL,
     CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT UK_OPS_TSRC_LOCATOR
-        UNIQUE (DIAGNOSTIC_SOURCE_ID, SOURCE_LOCATOR_KEY),
     CONSTRAINT FK_OPS_TSRC_TARGET
         FOREIGN KEY (TARGET_ID) REFERENCES KBOT_OPS_TARGET (TARGET_ID),
     CONSTRAINT FK_OPS_TSRC_MONITOR
@@ -2280,8 +2278,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    44 AS SCHEMA_VERSION,
-    'aiops-oracle-v44-resource-graph' AS CONTRACT_VERSION
+    45 AS SCHEMA_VERSION,
+    'aiops-oracle-v45-shared-monitor-locator' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -4457,7 +4455,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 44 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 45 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -4470,8 +4468,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 44
-       OR l_contract_version <> 'aiops-oracle-v44-resource-graph' THEN
+       OR l_schema_version <> 45
+       OR l_contract_version <> 'aiops-oracle-v45-shared-monitor-locator' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -4481,7 +4479,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：73 张表、10 个视图，Schema Version '
-        || '44，合同 aiops-oracle-v44-resource-graph。'
+        || '45，合同 aiops-oracle-v45-shared-monitor-locator。'
     );
 END;
 /

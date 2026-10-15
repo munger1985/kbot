@@ -62,6 +62,7 @@ from platform_core.contracts.aiops import (
     ResourceProtectionProfileUpsert,
     ResourceProtectionProfileView,
     BusinessSystemDraftCreate,
+    BusinessSystemDraftPage,
     BusinessSystemDraftSave,
     BusinessSystemDraftView,
     BusinessSystemInfoPatch,
@@ -202,6 +203,11 @@ async def create_business_system_draft(body: BusinessSystemDraftCreate, response
     result = await service.create_business_system_draft(scope=scope, request=body)
     _etag(response, result.revision)
     return result
+
+
+@router.get("/business-system-drafts", response_model=BusinessSystemDraftPage)
+async def list_business_system_drafts(service: Service, scope: Scope, limit: int = Query(default=200, ge=1, le=500)) -> BusinessSystemDraftPage:
+    return await service.list_business_system_drafts(scope=scope, limit=limit)
 
 
 @router.get("/business-system-drafts/{draft_id}", response_model=BusinessSystemDraftView)

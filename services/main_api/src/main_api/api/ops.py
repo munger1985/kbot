@@ -95,6 +95,7 @@ from platform_core.contracts.aiops import (
     ResourceProtectionProfileUpsert,
     ResourceProtectionProfileView,
     BusinessSystemDraftCreate,
+    BusinessSystemDraftPage,
     BusinessSystemDraftSave,
     BusinessSystemDraftView,
     BusinessSystemInfoPatch,
@@ -1336,6 +1337,12 @@ async def get_business_system_topology(business_system_id: UUID, request: Reques
 async def create_business_system_draft(body: BusinessSystemDraftCreate, request: Request, response: Response) -> BusinessSystemDraftView:
     payload = await _client(request).create_business_system_draft(body.model_dump(mode="json"), auth_context=request.state.auth_context)
     return _validated(BusinessSystemDraftView, payload, response)
+
+
+@router.get("/business-system-drafts", response_model=BusinessSystemDraftPage)
+async def list_business_system_drafts(request: Request, limit: int = Query(default=200, ge=1, le=500)) -> BusinessSystemDraftPage:
+    payload = await _client(request).list_business_system_drafts(limit=limit, auth_context=request.state.auth_context)
+    return BusinessSystemDraftPage.model_validate(payload)
 
 
 @router.get("/business-system-drafts/{draft_id}", response_model=BusinessSystemDraftView)

@@ -1,6 +1,7 @@
 """业务系统资源图谱 Repository。"""
 
 from collections.abc import Callable
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -287,6 +288,20 @@ class BusinessSystemRepository(AIOpsRepository):
         if lock:
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_active_drafts(self, *, domain_id: int, now: datetime, limit: int) -> list[BusinessSystemDraftEntity]:
+        self._check_active()
+        statement = (
+            select(BusinessSystemDraftEntity)
+            .where(
+                BusinessSystemDraftEntity.domain_id == domain_id,
+                BusinessSystemDraftEntity.status == "ACTIVE",
+                BusinessSystemDraftEntity.expires_at > now,
+            )
+            .order_by(BusinessSystemDraftEntity.updated_at.desc(), BusinessSystemDraftEntity.draft_id.desc())
+            .limit(limit)
+        )
+        return list((await self._session.execute(statement)).scalars())
 
     async def list_draft_changes(self, draft_id: UUID) -> list[BusinessSystemDraftChangeEntity]:
         self._check_active()

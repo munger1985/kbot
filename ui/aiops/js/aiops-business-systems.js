@@ -56,25 +56,33 @@
 
   function card(item, groupsById) {
     const importanceLevel = Math.min(5, Math.max(1, Number(item.importance_level) || 1));
-    const labels = (item.architecture_labels || []).length
-      ? item.architecture_labels.map((label) => `<span>${shell.escape(architectureLabel(label))}</span>`).join("")
-      : "<span>待推导</span>";
+    const stepLabels = { BUSINESS_INFO: "业务信息", SYSTEM_COMPOSITION: "系统构成", TOPOLOGY_CONFIRMATION: "拓扑确认" };
+    const labels = item.draft_id
+      ? `<span>${shell.escape(stepLabels[item.current_step] || "业务信息")}</span>`
+      : (item.architecture_labels || []).length
+        ? item.architecture_labels.map((label) => `<span>${shell.escape(architectureLabel(label))}</span>`).join("")
+        : "<span>待推导</span>";
     const workspaceLabel = item.status === "DRAFT" ? "继续配置" : "进入系统";
     const lifecycleAction = item.status === "ENABLED"
       ? `<details class="business-system-more"><summary>更多⌄</summary><div><button type="button" data-offline-system="${shell.escape(item.business_system_id)}">下线业务系统</button></div></details>`
-      : item.status === "DRAFT"
+      : item.status === "DRAFT" && !item.draft_id
         ? `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">上线</button><details class="business-system-more"><summary>更多⌄</summary><div><button class="danger" type="button" data-delete-system="${shell.escape(item.business_system_id)}">删除草稿</button></div></details>`
+        : item.draft_id
+          ? `<details class="business-system-more"><summary>更多⌄</summary><div><button class="danger" type="button" data-delete-draft="${shell.escape(item.draft_id)}">删除草稿</button></div></details>`
         : `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">重新上线</button>`;
-    return `<article class="business-system-directory-card importance-level-${importanceLevel}">
-      <header><div><small>${shell.escape(item.system_code)}</small><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, statusLabel(item.status))}</header>
+    const workspaceHref = item.draft_id
+      ? `./business-system-workspace.html?id=${encodeURIComponent(item.draft_mode === "EDIT" && item.business_system_id ? item.business_system_id : "new")}&draft=${encodeURIComponent(item.draft_id)}`
+      : `./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}`;
+    return `<article class="business-system-directory-card importance-level-${importanceLevel} ${item.draft_id ? "unpublished-draft-card" : ""}">
+      <header><div><small>${shell.escape(item.system_code)}</small><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, item.draft_id ? "未发布草稿" : statusLabel(item.status))}</header>
       <div class="business-architecture-tags">${labels}</div>
       <dl>
         <div><dt>环境 / 重要级</dt><dd class="business-system-context"><span>${shell.escape(environmentLabel(item.environment))}</span><strong class="business-importance">${shell.escape(importanceLabel(importanceLevel))}</strong></dd></div>
         <div><dt>资源构成</dt><dd>${shell.escape(resourceScale(item))}</dd></div>
         <div><dt>业务责任组</dt><dd>${shell.escape(responsibilityGroupName(item.responsibility_group_id, groupsById))}</dd></div>
-        <div><dt>数据保护</dt><dd>${shell.escape(protectionLabel(item.protection_status))}</dd></div>
+        <div><dt>${item.draft_id ? "发布状态" : "数据保护"}</dt><dd>${item.draft_id ? "尚未写入生产资源表" : shell.escape(protectionLabel(item.protection_status))}</dd></div>
       </dl>
-      <footer class="business-system-card-actions"><span>更新于 ${shell.escape(shell.fmt(item.updated_at))}</span><div><a href="./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}">${workspaceLabel}</a>${lifecycleAction}</div></footer>
+      <footer class="business-system-card-actions"><span>更新于 ${shell.escape(shell.fmt(item.updated_at))}</span><div><a href="${workspaceHref}">${workspaceLabel}</a>${lifecycleAction}</div></footer>
     </article>`;
   }
 
@@ -88,11 +96,21 @@
   }
 
   async function load() {
-    const [page, groupPage] = await Promise.all([
+    const [page, draftPage, groupPage] = await Promise.all([
       request("/business-systems?limit=200"),
+      request("/business-system-drafts?limit=200"),
       request("/responsibility-groups"),
     ]);
-    state.items = page.items || [];
+    const drafts = (draftPage.items || []).map((item) => ({
+      business_system_id: item.business_system_id || `draft:${item.draft_id}`,
+      system_code: "未发布草稿", display_name: item.display_name,
+      environment: item.environment || "PROD", importance_level: item.importance_level || 3,
+      responsibility_group_id: item.responsibility_group_id || null,
+      status: "DRAFT", protection_status: "UNCONFIGURED", resource_count: item.resource_count || 0,
+      resource_type_summary: [], architecture_labels: [], row_version: item.revision, updated_at: item.updated_at,
+      draft_id: item.draft_id, draft_mode: item.mode, current_step: item.current_step,
+    }));
+    state.items = [...drafts, ...(page.items || [])];
     state.groupsById = new Map((groupPage.items || []).map((item) => [String(item.responsibility_group_id), item]));
     render();
   }
@@ -154,6 +172,17 @@
     finally { state.busyId = ""; }
   }
 
+  async function removeUnpublishedDraft(item) {
+    if (!await confirmAction("删除未发布草稿？", `“${item.display_name}”及其中尚未发布的资源配置将被删除，不会影响任何已上线资源。`, "删除草稿", true)) return;
+    state.busyId = item.draft_id;
+    try {
+      await request(`/business-system-drafts/${encodeURIComponent(item.draft_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${item.row_version}"` } });
+      shell.toast("未发布草稿已删除。");
+      await load();
+    } catch (error) { shell.toast(error.message); }
+    finally { state.busyId = ""; }
+  }
+
   document.getElementById("system-status-filter").onclick = (event) => {
     const button = event.target.closest("[data-status]");
     if (!button) return;
@@ -164,8 +193,10 @@
     const enableButton = event.target.closest("[data-enable-system]");
     const offlineButton = event.target.closest("[data-offline-system]");
     const deleteButton = event.target.closest("[data-delete-system]");
+    const deleteDraftButton = event.target.closest("[data-delete-draft]");
     if (enableButton) enable(itemById(enableButton.dataset.enableSystem));
     if (deleteButton) removeDraft(itemById(deleteButton.dataset.deleteSystem));
+    if (deleteDraftButton) removeUnpublishedDraft(state.items.find((item) => item.draft_id === deleteDraftButton.dataset.deleteDraft));
     if (offlineButton) {
       state.offlineItem = itemById(offlineButton.dataset.offlineSystem);
       document.getElementById("business-system-offline-title").textContent = `下线 ${state.offlineItem.display_name}`;

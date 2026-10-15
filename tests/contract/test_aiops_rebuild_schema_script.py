@@ -226,6 +226,16 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertNotIn("CREATE TABLE KBOT_OPS_DATABASE_SYSTEM", normalized)
         self.assertNotIn("CREATE UNIQUE INDEX", normalized)
         self.assertNotRegex(normalized, r"\bCHECK\s*\(")
+
+    def test_schema_45_upgrade_allows_shared_monitor_locator(self) -> None:
+        upgrade = (
+            ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_45.sql"
+        ).read_text(encoding="utf-8").upper()
+
+        self.assertIn("L_SCHEMA_VERSION <> 44", upgrade)
+        self.assertIn("DROP CONSTRAINT UK_OPS_TSRC_LOCATOR", upgrade)
+        self.assertIn("45 AS SCHEMA_VERSION", upgrade)
+        self.assertIn("AIOPS-ORACLE-V45-SHARED-MONITOR-LOCATOR", upgrade)
         self.assertNotRegex(upgrade, r"(?m)^@@")
 
     def test_canonical_schema_does_not_enumerate_business_values(

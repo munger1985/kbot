@@ -945,18 +945,18 @@ class DiagnosticSourceConfigurationMixin:
             has_more=has_more,
         )
 
-    async def _create_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime) -> TargetSourceBindingEntity:
+    async def _create_discovered_source_binding_in_uow(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, source_id: UUID, target_id: UUID, candidate_ref: str, host_candidate_ref: str | None, now: datetime, allow_locator_reuse: bool = False) -> TargetSourceBindingEntity:
         """重新验证发现候选并在调用方事务内创建映射。"""
         assert uow.diagnostic_sources is not None
         source = await uow.diagnostic_sources.get_scoped(diagnostic_source_id=source_id, domain_id=scope.domain_id, lock=True)
         if source is None: raise resource_not_found("Diagnostic Source")
         adapter = await self._instance_discovery_adapter(uow=uow, scope=scope, source=source)
-        value = self._instance_candidate_refs.decode(candidate_ref, tenant_id=scope.tenant_id, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
+        value = self._instance_candidate_refs.decode(candidate_ref, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
         locator_key = str(value.get("source_locator_key") or ""); locator = value.get("source_locator"); db_type = str(value.get("db_type") or "")
         if value.get("candidate_kind") != "DATABASE" or not locator_key or not isinstance(locator, dict) or db_type not in {"ORACLE", "MYSQL", "POSTGRESQL"}: raise validation_failed("实例候选引用内容无效")
         host_key = None
         if host_candidate_ref is not None:
-            host_value = self._instance_candidate_refs.decode(host_candidate_ref, tenant_id=scope.tenant_id, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
+            host_value = self._instance_candidate_refs.decode(host_candidate_ref, domain_id=scope.domain_id, source_id=source_id, actor_id=scope.actor_id, purpose="candidate", now=now)
             host_key = str(host_value.get("host_target_key") or "")
             if host_value.get("candidate_kind") != "HOST" or not host_key: raise validation_failed("主机候选引用内容无效")
         if source.source_type == "PROMETHEUS" and host_key is None: raise validation_failed("Prometheus 映射必须选择主机 Label")
@@ -970,7 +970,7 @@ class DiagnosticSourceConfigurationMixin:
         if host_key is not None and host_key not in {item.source_locator_key for item in verified.host_candidates}: raise state_conflict("主机候选已变化或不存在，请重新执行发现")
         source_locator = dict(current.source_locator)
         if host_key is not None: source_locator["host_target_key"] = host_key
-        return await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target_id, request=SourceBindingCreate(source_id=source_id, source_locator_key=locator_key, source_locator=source_locator), now=now, source=source, expected_db_type=db_type, discovery_verified=True)
+        return await self._create_source_binding_in_uow(uow=uow, scope=scope, target_id=target_id, request=SourceBindingCreate(source_id=source_id, source_locator_key=locator_key, source_locator=source_locator), now=now, source=source, expected_db_type=db_type, discovery_verified=True, allow_locator_reuse=allow_locator_reuse)
 
     async def map_source_instances(
         self,
@@ -1135,6 +1135,7 @@ class DiagnosticSourceConfigurationMixin:
         source=None,
         expected_db_type: str | None = None,
         discovery_verified: bool = False,
+        allow_locator_reuse: bool = False,
     ) -> TargetSourceBindingEntity:
         assert uow.targets is not None
         assert uow.diagnostic_sources is not None
@@ -1171,15 +1172,16 @@ class DiagnosticSourceConfigurationMixin:
             for binding in existing
         ):
             raise state_conflict("Target 与 Diagnostic Source 已存在映射")
-        locator_conflict = (
-            await uow.targets.get_source_binding_by_locator_any_status(
-                diagnostic_source_id=request.source_id,
-                source_locator_key=request.source_locator_key,
-                lock=True,
+        if not allow_locator_reuse:
+            locator_conflict = (
+                await uow.targets.get_source_binding_by_locator_any_status(
+                    diagnostic_source_id=request.source_id,
+                    source_locator_key=request.source_locator_key,
+                    lock=True,
+                )
             )
-        )
-        if locator_conflict is not None:
-            raise state_conflict("Diagnostic Source 外部定位键已被使用")
+            if locator_conflict is not None:
+                raise state_conflict("Diagnostic Source 外部定位键已被使用")
         self._validate_source_binding_locator(
             source=source,
             source_locator=request.source_locator,
@@ -1235,6 +1237,7 @@ class DiagnosticSourceConfigurationMixin:
         source=None,
         expected_db_type: str | None = None,
         discovery_verified: bool = False,
+        allow_locator_reuse: bool = False,
     ) -> TargetSourceBindingEntity:
         entity = await self._prepare_source_binding_in_uow(
             uow=uow,
@@ -1245,6 +1248,7 @@ class DiagnosticSourceConfigurationMixin:
             source=source,
             expected_db_type=expected_db_type,
             discovery_verified=discovery_verified,
+            allow_locator_reuse=allow_locator_reuse,
         )
         await self._persist_source_binding_in_uow(
             uow=uow,

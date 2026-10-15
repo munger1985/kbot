@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -15,12 +16,15 @@ from aiops_agent.application.configuration import (
 )
 from aiops_agent.application.configuration.business_system_service import _summary
 from platform_core.contracts.aiops import (
+    BusinessSystemDraftCreate,
+    BusinessSystemDraftSave,
     BusinessSystemLifecycleCommand,
     BusinessSystemResourceGraphCommit,
     BusinessSystemResourceGraphDetail,
     ManagedResourcePatch,
 )
 from platform_core.identity import uuid7
+from platform_core.managed_credentials import ManagedCredentialCipher
 
 
 def _resource(draft_id, resource_id, group_id, name):
@@ -39,6 +43,20 @@ def _resource(draft_id, resource_id, group_id, name):
 
 
 class BusinessSystemResourceGraphContractTest(unittest.TestCase):
+    def test_draft_contract_accepts_incomplete_workspace(self) -> None:
+        created = BusinessSystemDraftCreate(
+            current_step="SYSTEM_COMPOSITION",
+            payload={"system": {"display_name": ""}, "resources": []},
+        )
+        saved = BusinessSystemDraftSave(
+            revision=1,
+            current_step="TOPOLOGY_CONFIRMATION",
+            payload={},
+        )
+
+        self.assertEqual("", created.payload["system"]["display_name"])
+        self.assertEqual({}, saved.payload)
+
     def test_lifecycle_command_limits_reason_length(self) -> None:
         self.assertIsNone(BusinessSystemLifecycleCommand().reason)
         with self.assertRaises(ValidationError):
@@ -129,6 +147,76 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             actor_id="operator-1",
             request_id="request-1",
             trace_id="trace-1",
+        )
+
+    def test_draft_payload_is_encrypted_at_rest_and_round_trips(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._credential_cipher = ManagedCredentialCipher(key=b"d" * 32, key_version="v1")
+        scope = self.scope()
+        draft_id = uuid7()
+        payload = {"system": {"display_name": "ERP"}, "database": {"password": "secret-value"}}
+
+        sealed = service._seal_draft_payload(scope=scope, draft_id=draft_id, payload=payload)
+        entity = SimpleNamespace(
+            domain_id=scope.domain_id,
+            draft_id=draft_id,
+            system_payload_json=sealed,
+        )
+
+        self.assertNotIn("secret-value", json.dumps(sealed))
+        self.assertEqual(payload, service._open_draft_payload(entity))
+
+    async def test_list_returns_multiple_draft_summaries_without_payload(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._credential_cipher = ManagedCredentialCipher(key=b"d" * 32, key_version="v1")
+        scope = self.scope()
+        now = datetime.now(UTC)
+
+        def draft(name: str, resource_count: int):
+            draft_id = uuid7()
+            payload = {
+                "system": {"display_name": name, "environment": "PROD", "importance_level": 3},
+                "resources": [{} for _ in range(resource_count)],
+                "database": {"password": f"{name}-secret"},
+            }
+            return SimpleNamespace(
+                domain_id=scope.domain_id,
+                draft_id=draft_id,
+                mode="CREATE",
+                business_system_id=None,
+                current_step="SYSTEM_COMPOSITION",
+                revision=1,
+                status="ACTIVE",
+                updated_at=now,
+                system_payload_json=service._seal_draft_payload(
+                    scope=scope, draft_id=draft_id, payload=payload
+                ),
+            )
+
+        repository = SimpleNamespace(
+            list_active_drafts=AsyncMock(return_value=[draft("ERP 草稿", 2), draft("MES 草稿", 1)])
+        )
+        uow = SimpleNamespace(business_systems=repository)
+
+        class UowContext:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        service._uow_factory = UowContext
+        service._now = lambda: now
+
+        result = await service.list_business_system_drafts(scope=scope, limit=200)
+
+        self.assertEqual(("ERP 草稿", "MES 草稿"), tuple(item.display_name for item in result.items))
+        self.assertEqual((2, 1), tuple(item.resource_count for item in result.items))
+        self.assertTrue(all("payload" not in item.model_dump() for item in result.items))
+        repository.list_active_drafts.assert_awaited_once_with(
+            now=now,
+            limit=200,
+            domain_id=scope.domain_id,
         )
 
     async def test_disable_requires_reason_before_writing(self) -> None:

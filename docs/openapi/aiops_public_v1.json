@@ -435,6 +435,16 @@
             ],
             "title": "Business System Id"
           },
+          "current_step": {
+            "default": "BUSINESS_INFO",
+            "enum": [
+              "BUSINESS_INFO",
+              "SYSTEM_COMPOSITION",
+              "TOPOLOGY_CONFIRMATION"
+            ],
+            "title": "Current Step",
+            "type": "string"
+          },
           "mode": {
             "default": "CREATE",
             "enum": [
@@ -444,19 +454,46 @@
             "title": "Mode",
             "type": "string"
           },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "BusinessSystemDraftCreate",
+        "type": "object"
+      },
+      "BusinessSystemDraftPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemDraftSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
           "schema_version": {
             "default": "aiops.public.v1",
             "title": "Schema Version",
             "type": "string"
           },
-          "system": {
-            "$ref": "#/components/schemas/BusinessSystemInfoInput"
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
-          "system"
+          "total"
         ],
-        "title": "BusinessSystemDraftCreate",
+        "title": "BusinessSystemDraftPage",
         "type": "object"
       },
       "BusinessSystemDraftSave": {
@@ -471,23 +508,109 @@
             "title": "Current Step",
             "type": "string"
           },
-          "relations": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ResourceRelationCommit"
-            },
-            "maxItems": 20000,
-            "title": "Relations",
-            "type": "array"
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
           },
-          "resources": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/BusinessSystemResourceCommit-Input"
-            },
-            "maxItems": 10000,
-            "title": "Resources",
-            "type": "array"
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "current_step"
+        ],
+        "title": "BusinessSystemDraftSave",
+        "type": "object"
+      },
+      "BusinessSystemDraftSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "current_step": {
+            "enum": [
+              "BUSINESS_INFO",
+              "SYSTEM_COMPOSITION",
+              "TOPOLOGY_CONFIRMATION"
+            ],
+            "title": "Current Step",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "draft_id": {
+            "format": "uuid",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "importance_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance Level"
+          },
+          "mode": {
+            "enum": [
+              "CREATE",
+              "EDIT"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "resource_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Resource Count",
+            "type": "integer"
+          },
+          "responsibility_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsibility Group Id"
           },
           "revision": {
             "minimum": 1.0,
@@ -499,16 +622,32 @@
             "title": "Schema Version",
             "type": "string"
           },
-          "system": {
-            "$ref": "#/components/schemas/BusinessSystemInfoInput"
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "COMMITTED",
+              "ABANDONED",
+              "EXPIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
-          "revision",
+          "draft_id",
+          "mode",
           "current_step",
-          "system"
+          "revision",
+          "status",
+          "display_name",
+          "updated_at"
         ],
-        "title": "BusinessSystemDraftSave",
+        "title": "BusinessSystemDraftSummary",
         "type": "object"
       },
       "BusinessSystemDraftView": {
@@ -558,21 +697,10 @@
             "title": "Mode",
             "type": "string"
           },
-          "relations": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ResourceRelationCommit"
-            },
-            "title": "Relations",
-            "type": "array"
-          },
-          "resources": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/BusinessSystemResourceCommit-Output"
-            },
-            "title": "Resources",
-            "type": "array"
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
           },
           "revision": {
             "minimum": 1.0,
@@ -594,9 +722,6 @@
             "title": "Status",
             "type": "string"
           },
-          "system": {
-            "$ref": "#/components/schemas/BusinessSystemInfoInput"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -609,7 +734,6 @@
           "current_step",
           "revision",
           "status",
-          "system",
           "expires_at",
           "created_at",
           "updated_at"
@@ -751,133 +875,31 @@
         "title": "BusinessSystemInfoPatch",
         "type": "object"
       },
-      "BusinessSystemResourceCommit-Input": {
+      "BusinessSystemLifecycleCommand": {
         "additionalProperties": false,
-        "description": "Wizard 草稿中的资源；draft_resource_id 由客户端生成但不向用户展示。",
         "properties": {
-          "architecture_layer_key": {
-            "enum": [
-              "ACCESS",
-              "APPLICATION",
-              "MIDDLEWARE",
-              "DATA",
-              "INFRASTRUCTURE"
-            ],
-            "title": "Architecture Layer Key",
-            "type": "string"
-          },
-          "attributes": {
-            "additionalProperties": true,
-            "title": "Attributes",
-            "type": "object"
-          },
-          "database": {
+          "reason": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DatabaseResourceCommit-Input"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "display_name": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "display_order": {
-            "default": 0,
-            "maximum": 1000000.0,
-            "minimum": 0.0,
-            "title": "Display Order",
-            "type": "integer"
-          },
-          "draft_resource_id": {
-            "format": "uuid",
-            "title": "Draft Resource Id",
-            "type": "string"
-          },
-          "identity_kind": {
-            "default": "STABLE",
-            "enum": [
-              "STABLE",
-              "DISCOVERED",
-              "EPHEMERAL"
-            ],
-            "title": "Identity Kind",
-            "type": "string"
-          },
-          "location_name": {
-            "anyOf": [
-              {
-                "maxLength": 256,
+                "maxLength": 1000,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Location Name"
+            "title": "Reason"
           },
-          "mode": {
-            "enum": [
-              "NEW",
-              "REUSE"
-            ],
-            "title": "Mode",
+          "schema_version": {
+            "default": "aiops.public.v1",
+            "title": "Schema Version",
             "type": "string"
-          },
-          "owner_group_id": {
-            "format": "uuid",
-            "title": "Owner Group Id",
-            "type": "string"
-          },
-          "resource_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resource Id"
-          },
-          "resource_type_key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[A-Z][A-Z0-9_]*$",
-            "title": "Resource Type Key",
-            "type": "string"
-          },
-          "responsibility_group_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Responsibility Group Id"
           }
         },
-        "required": [
-          "draft_resource_id",
-          "mode",
-          "resource_type_key",
-          "display_name",
-          "owner_group_id",
-          "architecture_layer_key"
-        ],
-        "title": "BusinessSystemResourceCommit",
+        "title": "BusinessSystemLifecycleCommand",
         "type": "object"
       },
-      "BusinessSystemResourceCommit-Output": {
+      "BusinessSystemResourceCommit": {
         "additionalProperties": false,
         "description": "Wizard 草稿中的资源；draft_resource_id 由客户端生成但不向用户展示。",
         "properties": {
@@ -900,7 +922,7 @@
           "database": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DatabaseResourceCommit-Output"
+                "$ref": "#/components/schemas/DatabaseResourceCommit"
               },
               {
                 "type": "null"
@@ -948,10 +970,8 @@
             "title": "Location Name"
           },
           "mode": {
-            "enum": [
-              "NEW",
-              "REUSE"
-            ],
+            "const": "NEW",
+            "default": "NEW",
             "title": "Mode",
             "type": "string"
           },
@@ -959,18 +979,6 @@
             "format": "uuid",
             "title": "Owner Group Id",
             "type": "string"
-          },
-          "resource_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resource Id"
           },
           "resource_type_key": {
             "maxLength": 64,
@@ -994,7 +1002,6 @@
         },
         "required": [
           "draft_resource_id",
-          "mode",
           "resource_type_key",
           "display_name",
           "owner_group_id",
@@ -1018,7 +1025,7 @@
           },
           "resources": {
             "items": {
-              "$ref": "#/components/schemas/BusinessSystemResourceCommit-Input"
+              "$ref": "#/components/schemas/BusinessSystemResourceCommit"
             },
             "maxItems": 10000,
             "minItems": 1,
@@ -2201,48 +2208,19 @@
         "title": "DatabaseCredentialStatus",
         "type": "object"
       },
-      "DatabaseResourceCommit-Input": {
+      "DatabaseResourceCommit": {
         "additionalProperties": false,
         "properties": {
           "monitoring": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceMonitoringInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ResourceMonitoringInput"
           },
           "target": {
             "$ref": "#/components/schemas/TargetCreate"
           }
         },
         "required": [
-          "target"
-        ],
-        "title": "DatabaseResourceCommit",
-        "type": "object"
-      },
-      "DatabaseResourceCommit-Output": {
-        "additionalProperties": false,
-        "properties": {
-          "monitoring": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceMonitoringInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "target": {
-            "$ref": "#/components/schemas/TargetCreate"
-          }
-        },
-        "required": [
-          "target"
+          "target",
+          "monitoring"
         ],
         "title": "DatabaseResourceCommit",
         "type": "object"
@@ -2266,6 +2244,21 @@
             ],
             "title": "Db Role"
           },
+          "deployment_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "SINGLE_INSTANCE",
+                  "RAC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Type"
+          },
           "environment": {
             "anyOf": [
               {
@@ -2281,6 +2274,19 @@
               }
             ],
             "title": "Environment"
+          },
+          "rac_node_number": {
+            "anyOf": [
+              {
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rac Node Number"
           },
           "version_code": {
             "anyOf": [
@@ -2313,6 +2319,14 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "deployment_type": {
+            "enum": [
+              "SINGLE_INSTANCE",
+              "RAC"
+            ],
+            "title": "Deployment Type",
+            "type": "string"
+          },
           "environment": {
             "title": "Environment",
             "type": "string"
@@ -2320,6 +2334,19 @@
           "monitoring_ready": {
             "title": "Monitoring Ready",
             "type": "boolean"
+          },
+          "rac_node_number": {
+            "anyOf": [
+              {
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rac Node Number"
           },
           "version_code": {
             "title": "Version Code",
@@ -2330,6 +2357,7 @@
           "db_type",
           "version_code",
           "environment",
+          "deployment_type",
           "db_role",
           "connectivity_status",
           "monitoring_ready"
@@ -3280,10 +3308,10 @@
             "title": "Display Name",
             "type": "string"
           },
-          "locator_hint": {
-            "maxLength": 256,
+          "locator_key": {
+            "maxLength": 512,
             "minLength": 1,
-            "title": "Locator Hint",
+            "title": "Locator Key",
             "type": "string"
           },
           "schema_version": {
@@ -3295,7 +3323,7 @@
         "required": [
           "candidate_ref",
           "display_name",
-          "locator_hint"
+          "locator_key"
         ],
         "title": "HostDiscoveryCandidate",
         "type": "object"
@@ -4196,10 +4224,10 @@
             "title": "Display Name",
             "type": "string"
           },
-          "locator_hint": {
-            "maxLength": 256,
+          "locator_key": {
+            "maxLength": 512,
             "minLength": 1,
-            "title": "Locator Hint",
+            "title": "Locator Key",
             "type": "string"
           },
           "mapped_target_id": {
@@ -4231,7 +4259,7 @@
         "required": [
           "candidate_ref",
           "display_name",
-          "locator_hint",
+          "locator_key",
           "db_type",
           "mapping_status"
         ],
@@ -10239,6 +10267,15 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "deployment_type": {
+            "default": "SINGLE_INSTANCE",
+            "enum": [
+              "SINGLE_INSTANCE",
+              "RAC"
+            ],
+            "title": "Deployment Type",
+            "type": "string"
+          },
           "diagnostic_credential": {
             "anyOf": [
               {
@@ -10319,6 +10356,19 @@
               }
             ],
             "title": "Oracle Pdb Name"
+          },
+          "rac_node_number": {
+            "anyOf": [
+              {
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rac Node Number"
           },
           "readonly_connection_enabled": {
             "default": false,
@@ -10470,6 +10520,14 @@
           },
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
+          },
+          "deployment_type": {
+            "enum": [
+              "SINGLE_INSTANCE",
+              "RAC"
+            ],
+            "title": "Deployment Type",
+            "type": "string"
           },
           "diagnostic_credential": {
             "$ref": "#/components/schemas/DatabaseCredentialStatus"
@@ -10643,6 +10701,19 @@
             ],
             "title": "Oracle Pdb Name"
           },
+          "rac_node_number": {
+            "anyOf": [
+              {
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rac Node Number"
+          },
           "readonly_connection_enabled": {
             "title": "Readonly Connection Enabled",
             "type": "boolean"
@@ -10745,6 +10816,7 @@
           "db_type",
           "version_code",
           "environment",
+          "deployment_type",
           "db_role",
           "importance_level",
           "status",
@@ -11143,6 +11215,21 @@
             ],
             "title": "Db Role"
           },
+          "deployment_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "SINGLE_INSTANCE",
+                  "RAC"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Type"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -11223,6 +11310,19 @@
               }
             ],
             "title": "Oracle Pdb Name"
+          },
+          "rac_node_number": {
+            "anyOf": [
+              {
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rac Node Number"
           },
           "readonly_connection_enabled": {
             "anyOf": [
@@ -11313,6 +11413,14 @@
           "db_type": {
             "$ref": "#/components/schemas/DatabaseType"
           },
+          "deployment_type": {
+            "enum": [
+              "SINGLE_INSTANCE",
+              "RAC"
+            ],
+            "title": "Deployment Type",
+            "type": "string"
+          },
           "diagnostic_credential_configured": {
             "title": "Diagnostic Credential Configured",
             "type": "boolean"
@@ -11344,6 +11452,19 @@
             ],
             "title": "Observed Status",
             "type": "string"
+          },
+          "rac_node_number": {
+            "anyOf": [
+              {
+                "maximum": 1024.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rac Node Number"
           },
           "readonly_connection_enabled": {
             "title": "Readonly Connection Enabled",
@@ -11400,6 +11521,7 @@
           "db_type",
           "version_code",
           "environment",
+          "deployment_type",
           "db_role",
           "importance_level",
           "status",
@@ -13273,6 +13395,49 @@
   "openapi": "3.1.0",
   "paths": {
     "/api/v1/apps/aiops/business-system-drafts": {
+      "get": {
+        "operationId": "list_business_system_drafts_api_v1_apps_aiops_business_system_drafts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessSystemDraftPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Business System Drafts",
+        "tags": [
+          "AIOps"
+        ]
+      },
       "post": {
         "operationId": "create_business_system_draft_api_v1_apps_aiops_business_system_drafts_post",
         "requestBody": {
@@ -13637,6 +13802,56 @@
       }
     },
     "/api/v1/apps/aiops/business-systems/{business_system_id}": {
+      "delete": {
+        "operationId": "delete_business_system_draft_api_v1_apps_aiops_business_systems__business_system_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "business_system_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Business System Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Business System Draft",
+        "tags": [
+          "AIOps"
+        ]
+      },
       "get": {
         "operationId": "get_business_system_api_v1_apps_aiops_business_systems__business_system_id__get",
         "parameters": [
@@ -13786,6 +14001,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessSystemLifecycleCommand"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -13854,6 +14079,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessSystemLifecycleCommand"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -14111,7 +14346,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BusinessSystemResourceCommit-Input"
+                "$ref": "#/components/schemas/BusinessSystemResourceCommit"
               }
             }
           },

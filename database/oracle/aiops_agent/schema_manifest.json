@@ -1,13 +1,13 @@
 {
   "component": "aiops_agent",
-  "schema_version": 44,
-  "contract_version": "aiops-oracle-v44-resource-graph",
+  "schema_version": 45,
+  "contract_version": "aiops-oracle-v45-shared-monitor-locator",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
       "statements": 53,
-      "sha256": "10e54e102b671b8a056a5218e10870a5eff0ec3a33d7415d32215d721f66e1cc"
+      "sha256": "636456f78423dcc9080ba4a4f351e74b888d0f464caac6921ad26f7d7a3908df"
     },
     {
       "name": "002_ops_runtime.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "833916e1e966eb4d4dffd3fa8f9cf3c01cc0ed5bac1233a794c2ccea5c02cf16"
+      "sha256": "8139d9676ae6ccb10a3a9b66644d5fa85d37041a94a656bd3796001695219b80"
     },
     {
       "name": "007_ops_agents.sql",

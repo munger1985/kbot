@@ -32,7 +32,7 @@ from aiops_agent.ports.diagnostic_source import (
     InstanceDiscoveryRequest,
     InstanceDiscoveryResult,
 )
-from platform_core.contracts.aiops import InstanceMappingRequest, SourceBindingPatch
+from platform_core.contracts.aiops import InstanceMappingRequest, SourceBindingCreate, SourceBindingPatch
 from platform_core.identity import uuid7
 from platform_core.managed_credentials import ManagedCredentialCipher
 
@@ -279,6 +279,38 @@ def _candidate(locator_key, db_type, locator_value):
         db_type=db_type,
         display_name=locator_key,
     )
+
+
+def test_business_system_binding_can_reuse_a_monitor_locator():
+    target = SimpleNamespace(db_type="ORACLE")
+    service, scope, target_repository = _mapping_service(
+        decoded=[], verified=[], targets=[target]
+    )
+    target_repository.get_source_binding_by_locator_any_status.return_value = SimpleNamespace()
+
+    entity = asyncio.run(
+        service._prepare_source_binding_in_uow(
+            uow=SimpleNamespace(
+                targets=target_repository,
+                diagnostic_sources=AsyncMock(),
+            ),
+            scope=scope,
+            target_id=uuid7(),
+            request=SourceBindingCreate(
+                source_id=uuid7(),
+                source_locator_key="shared-rac-target",
+                source_locator={"target_key": "shared-rac-target"},
+            ),
+            now=datetime(2026, 10, 10, 8, 0, tzinfo=UTC),
+            source=SimpleNamespace(source_type="PROMETHEUS"),
+            expected_db_type="ORACLE",
+            discovery_verified=True,
+            allow_locator_reuse=True,
+        )
+    )
+
+    assert entity.source_locator_key == "shared-rac-target"
+    target_repository.get_source_binding_by_locator_any_status.assert_not_awaited()
 
 
 def test_batch_mapping_revalidates_changed_candidate_before_writes():

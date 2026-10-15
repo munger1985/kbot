@@ -8,7 +8,6 @@
   const panel = document.getElementById("workspace-panel");
   const systemId = new URLSearchParams(location.search).get("id") || "new";
   const creating = systemId === "new";
-  const draftKey = `kbot.aiops.business-system.${systemId}`;
 
   const steps = ["BUSINESS_INFO", "SYSTEM_COMPOSITION", "TOPOLOGY_CONFIRMATION"];
   const layers = [
@@ -58,6 +57,8 @@
   let loading = true;
   let saving = false;
   let dirty = false;
+  let draftId = new URLSearchParams(location.search).get("draft") || "";
+  let draftRevision = 0;
   let resourceDrawerOpen = false;
   let resourceDrawerMode = "CATALOG";
   let detail = null;
@@ -540,7 +541,10 @@
     try {
       const found = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [dbType], page_size: 100 }) });
       if (revision !== item.database.discovery_revision || sourceId !== item.database.source_id || dbType !== item.database.db_type) return;
-      const candidates = (found.items || []).filter((row) => row.mapping_status !== "MAPPED");
+      const candidates = (found.items || []).map((row) => ({
+        ...row,
+        display_name: `${row.display_name}${row.mapping_status === "MAPPED" ? "（已配置，可复用）" : ""}`,
+      }));
       const hostCandidates = found.host_items || [];
       racMembers(item).forEach((member) => {
         if (!member.database) return;
@@ -566,26 +570,39 @@
     const database = item.database;
     const source = sourceFor(item);
     if (usesDiscovery(item)) return { source_id: database.source_id, candidate_ref: database.candidate_ref, host_candidate_ref: database.host_candidate_ref || null };
-    return { source_id: database.source_id, source_binding: { source_id: database.source_id, source_locator_key: database.locator_key.trim(), source_locator: source.source_type === "LOKI" ? { labels: { target_key: database.locator_key.trim() } } : { target_key: database.locator_key.trim() } } };
+    return { source_id: database.source_id, source_binding: { source_id: database.source_id, source_locator_key: database.locator_key.trim(), source_locator: source?.source_type === "LOKI" ? { labels: { target_key: database.locator_key.trim() } } : { target_key: database.locator_key.trim() } } };
   }
 
   function resourceConfigurationError(item) {
     const members = isRacResource(item) ? racMembers(item) : [item];
     const database = item.database;
     const source = sourceFor(item);
-    if (!database || members.some((member) => !member.database || !member.display_name.trim() || !member.owner_group_id || !member.database.host.trim() || !member.database.database.trim()) || !database.username || !database.password || !source) return "请完整填写数据库名称、责任组、连接地址、凭据和监控映射。";
+    if (!database) return `${item.display_name || "未命名资源"}：缺少数据库配置。`;
+    for (const member of members) {
+      const label = isRacResource(item) ? `RAC 节点 ${member.database?.rac_node_number || "?"}` : (member.display_name || "未命名数据库");
+      if (!member.display_name.trim()) return `${label}：请填写数据库名称。`;
+      if (!member.owner_group_id) return `${label}：请选择技术责任组。`;
+      if (!member.database?.host.trim()) return `${label}：请填写 Host。`;
+      if (!member.database.database.trim()) return `${label}：请填写 ${database.db_type === "ORACLE" ? "Service Name" : "Database"}。`;
+    }
+    if (!database.username) return `${item.display_name || "数据库"}：请填写诊断用户名。`;
+    if (!database.password) return `${item.display_name || "数据库"}：请填写诊断密码。`;
+    if (!source) return `${item.display_name || "数据库"}：请选择监控源。`;
     if (isRacResource(item) && members.length < 2) return "Oracle RAC 至少需要两个节点。";
     if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) return "PDB 接入必须填写 PDB 名称。";
     if (members.some((member) => member.database?.deployment_type === "RAC" && (!member.database.rac_node_number || member.database.rac_node_number < 1))) return "每个 RAC 节点都必须填写有效的节点编号。";
-    if (members.some((member) => usesDiscovery(member) ? !member.database?.candidate_ref || (source.source_type === "PROMETHEUS" && !member.database?.host_candidate_ref) : !member.database?.locator_key.trim())) return "请完成数据库与监控源的定位映射。";
+    for (const member of members) {
+      const label = isRacResource(item) ? `RAC 节点 ${member.database?.rac_node_number || "?"}` : (member.display_name || "未命名数据库");
+      if (usesDiscovery(member) && !member.database?.candidate_ref) return `${label}：未配置数据库监控 Target。`;
+      if (usesDiscovery(member) && source.source_type === "PROMETHEUS" && !member.database?.host_candidate_ref) return `${label}：未配置主机监控 Target。`;
+      if (!usesDiscovery(member) && !member.database?.locator_key.trim()) return `${label}：未填写监控定位键。`;
+    }
     if (isRacResource(item)) {
       const uniqueFields = [
         ["节点编号", members.map((member) => member.database?.rac_node_number)],
         ["Host", members.map((member) => member.database?.host.trim())],
         ["Service Name", members.map((member) => member.database?.database.trim())],
-        ["数据库监控 Target", members.map((member) => member.database?.candidate_ref || member.database?.locator_key.trim())],
       ];
-      if (source.source_type === "PROMETHEUS") uniqueFields.push(["主机监控 Target", members.map((member) => member.database?.host_candidate_ref)]);
       const duplicate = uniqueFields.find((entry) => new Set(entry[1]).size !== entry[1].length);
       if (duplicate) return `RAC 各节点的${duplicate[0]}不能重复。`;
     }
@@ -683,15 +700,25 @@
     if (open) open.onclick = () => { const item = currentResource(); step = 1; activeLayer = item.architecture_layer_key; resourceDrawerMode = "EDITOR"; resourceDrawerOpen = true; render(); };
   }
 
-  function validateStep() {
-    if (step === 0 && (!system.display_name.trim() || !system.responsibility_group_id)) { shell.toast("请填写业务系统名称并选择业务责任组。"); return false; }
-    if (step === 1) {
-      if (!resources.length) { shell.toast("至少接入一个资源。"); return false; }
-      const incomplete = resources.find((item) => !item.system_resource_id && resourceConfigurationError(item));
-      if (incomplete) { shell.toast(resourceConfigurationError(incomplete) || "请完整填写新增数据库配置。"); return false; }
-    }
-    if (step === 2 && relations.some((item) => item.participants.length < 2 || new Set(item.participants.map((participant) => participant.draft_resource_id)).size !== item.participants.length)) { shell.toast("每个关系至少需要两个不重复的参与资源。"); return false; }
-    return true;
+  function publicationErrors() {
+    const errors = [];
+    if (!system.display_name.trim()) errors.push("业务信息：请填写业务系统名称。");
+    if (!system.responsibility_group_id) errors.push("业务信息：请选择业务责任组。");
+    if (!resources.length) errors.push("系统构成：至少接入一个资源。");
+    const visited = new Set();
+    resources.filter((item) => !item.system_resource_id).forEach((item) => {
+      const key = item.rac_group_id || item.draft_resource_id;
+      if (visited.has(key)) return;
+      visited.add(key);
+      const error = resourceConfigurationError(item);
+      if (error) errors.push(error);
+    });
+    relations.forEach((relation) => {
+      const name = relation.display_name || relationName(relation.relation_type_key);
+      if (relation.participants.length < 2) errors.push(`${name}：至少需要两个参与资源。`);
+      else if (new Set(relation.participants.map((item) => item.draft_resource_id)).size !== relation.participants.length) errors.push(`${name}：参与资源不能重复。`);
+    });
+    return [...new Set(errors)];
   }
   function systemPayload() { return { display_name: system.display_name.trim(), environment: system.environment, importance_level: Number(system.importance_level), responsibility_group_id: system.responsibility_group_id, description: system.description.trim() || null }; }
   function resourcePayload(item) {
@@ -700,8 +727,30 @@
   function relationPayload(item, systemIdByDraft = null) {
     return { relation_type_key: item.relation_type_key, display_name: item.display_name.trim() || null, responsibility_group_id: item.responsibility_group_id || null, origin: item.origin || (isInferredRelation(item) ? "DISCOVERY" : "MANUAL"), confirmation_status: "CONFIRMED", attributes: item.attributes || {}, participants: item.participants.map((participant) => systemIdByDraft ? { system_resource_id: systemIdByDraft.get(participant.draft_resource_id), participant_role: participant.participant_role, display_order: participant.display_order } : participant) };
   }
-  async function createSystem() {
-    return request("/business-systems", { method: "POST", headers: { "Idempotency-Key": uuid7() }, body: JSON.stringify({ system: systemPayload(), resources: resources.map(resourcePayload), relations: relations.map((item) => ({ draft_relation_id: item.draft_relation_id, ...relationPayload(item) })) }) });
+  function draftPayload() {
+    return {
+      system: { ...system },
+      resources: resources.map((item) => ({ ...item, database: item.database ? { ...item.database, discovering: false } : undefined })),
+      relations,
+      step: steps[step],
+      furthest,
+      publish: { system: systemPayload(), resources: resources.map(resourcePayload), relations: relations.map((item) => ({ draft_relation_id: item.draft_relation_id, ...relationPayload(item) })) },
+    };
+  }
+  async function persistDraft(showToast = true) {
+    const payload = draftPayload();
+    const saved = draftId
+      ? await request(`/business-system-drafts/${encodeURIComponent(draftId)}`, { method: "PUT", body: JSON.stringify({ revision: draftRevision, current_step: steps[step], payload }) })
+      : await request("/business-system-drafts", { method: "POST", body: JSON.stringify({ mode: creating ? "CREATE" : "EDIT", business_system_id: creating ? null : systemId, current_step: steps[step], payload }) });
+    draftId = saved.draft_id;
+    draftRevision = Number(saved.revision);
+    dirty = false;
+    const currentUrl = new URL(location.href);
+    currentUrl.searchParams.set("draft", draftId);
+    history.replaceState(null, "", currentUrl);
+    updateFooter();
+    if (showToast) shell.toast("草稿已保存到服务器，可稍后继续编辑。");
+    return saved;
   }
 
   async function updateSystem() {
@@ -733,20 +782,43 @@
   }
 
   async function commit() {
-    if (!validateStep()) return;
+    if (syncInferredDatabaseRelations()) mark();
+    const errors = publicationErrors();
+    if (errors.length) { shell.toast(errors.join("；")); return; }
     saving = true; updateFooter();
     try {
-      const saved = creating ? await createSystem() : await updateSystem();
-      dirty = false; sessionStorage.removeItem(draftKey); shell.toast(creating ? "业务系统与资源拓扑已创建。" : "业务系统与资源拓扑已更新。");
+      let saved;
+      if (creating) {
+        const draft = await persistDraft(false);
+        saved = await request(`/business-system-drafts/${encodeURIComponent(draft.draft_id)}:commit`, { method: "POST", headers: { "If-Match": `"rv-${draft.revision}"`, "Idempotency-Key": uuid7() }, body: JSON.stringify({}) });
+      } else {
+        saved = await updateSystem();
+        if (draftId) await request(`/business-system-drafts/${encodeURIComponent(draftId)}`, { method: "DELETE", headers: { "If-Match": `"rv-${draftRevision}"` } });
+      }
+      dirty = false; shell.toast(creating ? "业务系统资源已发布并上线。" : "业务系统资源已发布。");
       if (creating) location.replace(`./business-system-workspace.html?id=${encodeURIComponent(saved.business_system_id)}`);
       else { hydrate(saved); notifyValidationIssues(saved); render(); }
     } catch (error) { shell.toast(error.message); }
     finally { saving = false; updateFooter(); }
   }
-  function saveDraft() {
-    const safeResources = resources.map((item) => ({ ...item, database: item.database ? { ...item.database, username: "", password: "", candidates: [], host_candidates: [], discovering: false } : undefined, saved: Boolean(item.system_resource_id) }));
-    sessionStorage.setItem(draftKey, JSON.stringify({ system, resources: safeResources, relations, step, furthest }));
-    dirty = false; updateFooter(); shell.toast("草稿已保存在当前浏览器会话；数据库凭据不会保存。");
+  async function saveDraft() {
+    saving = true; updateFooter();
+    try { await persistDraft(); }
+    catch (error) { shell.toast(error.message); }
+    finally { saving = false; updateFooter(); }
+  }
+  function hydrateDraft(value) {
+    const payload = value.payload || {};
+    draftId = value.draft_id;
+    draftRevision = Number(value.revision);
+    system = { ...system, ...(payload.system || {}) };
+    resources = Array.isArray(payload.resources) ? payload.resources.map((item) => ({ ...item, database: item.database ? { ...item.database, discovering: false } : undefined })) : [];
+    relations = Array.isArray(payload.relations) ? payload.relations : [];
+    const loadedStep = steps.indexOf(payload.step || value.current_step);
+    step = loadedStep >= 0 ? loadedStep : 0;
+    furthest = Math.max(Number(payload.furthest || 0), step);
+    activeResourceId = resources[0]?.draft_resource_id || "";
+    activeLayer = resources[0]?.architecture_layer_key || "DATA";
   }
 
   function hydrate(value) {
@@ -775,12 +847,12 @@
   }
 
   function updateFooter() {
-    document.getElementById("step-copy").textContent = `${dirty ? "有未保存修改 · " : ""}第 ${step + 1} 步，共 3 步`;
+    document.getElementById("step-copy").textContent = `${dirty ? "有未保存修改 · " : draftId ? "草稿已保存到服务器 · " : "尚未保存草稿 · "}第 ${step + 1} 步，共 3 步`;
     document.getElementById("previous").hidden = step === 0;
     document.getElementById("next").hidden = step === 2;
     document.getElementById("commit").hidden = step !== 2;
     document.getElementById("commit").disabled = saving;
-    document.getElementById("commit").textContent = saving ? "正在提交…" : creating ? "确认并创建" : "保存业务系统";
+    document.getElementById("commit").textContent = saving ? "正在发布…" : "发布资源";
   }
   function render() {
     document.querySelectorAll("#wizard-steps [data-step]").forEach((button, index) => { button.classList.toggle("active", index === step); button.classList.toggle("done", index < step); button.disabled = index > furthest; });
@@ -800,22 +872,16 @@
       groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
       sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED");
       if (loadedDetail) { hydrate(loadedDetail); notifyValidationIssues(loadedDetail); }
-      const saved = sessionStorage.getItem(draftKey);
-      if (saved) {
-        const draft = JSON.parse(saved);
-        system = { ...system, ...draft.system }; resources = draft.resources || resources; relations = draft.relations || relations;
-        step = Number(draft.step || 0); furthest = Math.max(Number(draft.furthest || 0), step);
-        activeResourceId = resources[0]?.draft_resource_id || ""; activeLayer = resources[0]?.architecture_layer_key || "DATA";
-      }
+      if (draftId) hydrateDraft(await request(`/business-system-drafts/${encodeURIComponent(draftId)}`));
       dirty = false;
     } catch (error) { shell.toast(error.message); }
     finally { loading = false; render(); }
   }
 
   document.getElementById("previous").onclick = () => { if (step > 0) { step -= 1; render(); } };
-  document.getElementById("next").onclick = () => { if (validateStep() && step < 2) { if (step === 1 && syncInferredDatabaseRelations()) mark(); step += 1; furthest = Math.max(furthest, step); render(); } };
+  document.getElementById("next").onclick = () => { if (step < 2) { if (step === 1 && syncInferredDatabaseRelations()) mark(); step += 1; furthest = Math.max(furthest, step); render(); } };
   document.getElementById("commit").onclick = () => void commit();
-  document.getElementById("save-draft").onclick = saveDraft;
+  document.getElementById("save-draft").onclick = () => void saveDraft();
   document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (next <= furthest) { if (next === 2 && syncInferredDatabaseRelations()) mark(); step = next; render(); } });
   document.addEventListener("click", (event) => {
     const anchor = event.target.closest?.("a[href]");

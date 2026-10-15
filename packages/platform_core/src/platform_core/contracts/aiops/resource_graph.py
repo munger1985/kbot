@@ -217,7 +217,8 @@ class BusinessSystemDraftCreate(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     mode: DraftMode = "CREATE"
     business_system_id: UUIDv7 | None = None
-    system: BusinessSystemInfoInput
+    current_step: DraftStep = "BUSINESS_INFO"
+    payload: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_mode(self) -> "BusinessSystemDraftCreate":
@@ -230,9 +231,7 @@ class BusinessSystemDraftSave(AIOpsContract):
     schema_version: str = PUBLIC_SCHEMA_VERSION
     revision: int = Field(ge=1)
     current_step: DraftStep
-    system: BusinessSystemInfoInput
-    resources: tuple[BusinessSystemResourceCommit, ...] = Field(default=(), max_length=10_000)
-    relations: tuple[ResourceRelationCommit, ...] = Field(default=(), max_length=20_000)
+    payload: JsonObject = Field(default_factory=dict)
 
 
 class BusinessSystemDraftView(AIOpsContract):
@@ -243,12 +242,32 @@ class BusinessSystemDraftView(AIOpsContract):
     current_step: DraftStep
     revision: int = Field(ge=1)
     status: DraftStatus
-    system: BusinessSystemInfoInput
-    resources: tuple[BusinessSystemResourceCommit, ...] = ()
-    relations: tuple[ResourceRelationCommit, ...] = ()
+    payload: JsonObject = Field(default_factory=dict)
     expires_at: UtcDatetime
     created_at: UtcDatetime
     updated_at: UtcDatetime
+
+
+class BusinessSystemDraftSummary(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    draft_id: UUIDv7
+    mode: DraftMode
+    business_system_id: UUIDv7 | None = None
+    current_step: DraftStep
+    revision: int = Field(ge=1)
+    status: DraftStatus
+    display_name: str
+    environment: str | None = None
+    importance_level: int | None = None
+    responsibility_group_id: UUIDv7 | None = None
+    resource_count: int = Field(default=0, ge=0)
+    updated_at: UtcDatetime
+
+
+class BusinessSystemDraftPage(AIOpsContract):
+    schema_version: str = PUBLIC_SCHEMA_VERSION
+    items: tuple[BusinessSystemDraftSummary, ...] = ()
+    total: int = Field(ge=0)
 
 
 class ResourceDiscoveryRequest(AIOpsContract):

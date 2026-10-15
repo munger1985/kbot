@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import base64
 from collections import deque
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from aiops_agent.application.configuration.common import ConfigurationScope, add_configuration_event
 from aiops_agent.application.errors import resource_not_found, state_conflict, validation_failed
 from aiops_agent.entities import (
-    BusinessSystemDraftChangeEntity,
     BusinessSystemDraftEntity,
     BusinessSystemEntity,
     BusinessSystemResourceEntity,
@@ -23,9 +25,10 @@ from aiops_agent.entities import (
 from aiops_agent.persistence import AIOpsUnitOfWork
 from platform_core.contracts.aiops import (
     BusinessSystemDraftCreate,
+    BusinessSystemDraftPage,
     BusinessSystemDraftSave,
+    BusinessSystemDraftSummary,
     BusinessSystemDraftView,
-    BusinessSystemInfoInput,
     BusinessSystemInfoPatch,
     BusinessSystemLifecycleCommand,
     BusinessSystemResourcePatch,
@@ -51,6 +54,7 @@ from platform_core.contracts.aiops import (
     TopologySubgraph,
 )
 from platform_core.identity import uuid7
+from platform_core.managed_credentials import ManagedCredentialPayload
 from platform_core.contracts.aiops.configuration import (
     validate_database_deployment,
     validate_supported_database_version,
@@ -186,6 +190,81 @@ def _architecture_labels(resources: list[BusinessSystemResourceView], relations:
 
 
 class BusinessSystemConfigurationMixin:
+    _DRAFT_CREDENTIAL_NAMESPACE = "aiops-business-system-draft"
+
+    def _seal_draft_payload(self, *, scope: ConfigurationScope, draft_id: UUID, payload: dict) -> dict:
+        cipher_scope = dict(
+            domain_id=scope.domain_id,
+            namespace=self._DRAFT_CREDENTIAL_NAMESPACE,
+            credential_kind="workspace",
+            credential_id=draft_id,
+        )
+        if hasattr(scope, "tenant_id"):
+            cipher_scope["tenant_id"] = scope.tenant_id
+        encrypted = self._credential_cipher.encrypt(payload, **cipher_scope)
+        return {
+            "v": 1,
+            "key_version": encrypted.key_version,
+            "nonce": base64.b64encode(encrypted.nonce).decode("ascii"),
+            "ciphertext": base64.b64encode(encrypted.ciphertext).decode("ascii"),
+        }
+
+    def _open_draft_payload(self, entity: BusinessSystemDraftEntity) -> dict:
+        envelope = entity.system_payload_json
+        try:
+            cipher_scope = dict(
+                domain_id=entity.domain_id,
+                namespace=self._DRAFT_CREDENTIAL_NAMESPACE,
+                credential_kind="workspace",
+                credential_id=entity.draft_id,
+            )
+            if hasattr(entity, "tenant_id"):
+                cipher_scope["tenant_id"] = entity.tenant_id
+            return self._credential_cipher.decrypt(
+                ManagedCredentialPayload(
+                    ciphertext=base64.b64decode(envelope["ciphertext"]),
+                    nonce=base64.b64decode(envelope["nonce"]),
+                    key_version=str(envelope["key_version"]),
+                ),
+                **cipher_scope,
+            )
+        except Exception as exc:
+            raise state_conflict("草稿内容无法解密，请联系管理员检查受管凭据密钥") from exc
+
+    @staticmethod
+    def _publish_validation_message(payload: dict, error: ValidationError) -> str:
+        resources = payload.get("resources") if isinstance(payload.get("resources"), list) else []
+        messages: list[str] = []
+        for item in error.errors()[:10]:
+            location = tuple(item.get("loc", ()))
+            message = str(item.get("msg", "配置无效")).removeprefix("Value error, ")
+            prefix = "发布配置"
+            if len(location) >= 2 and location[0] == "resources" and isinstance(location[1], int):
+                index = location[1]
+                resource = resources[index] if index < len(resources) and isinstance(resources[index], dict) else {}
+                prefix = str(resource.get("display_name") or f"资源 {index + 1}")
+                path = ".".join(str(part) for part in location[2:])
+                if path.endswith("monitoring.source_id"):
+                    message = "未选择监控源"
+                elif path.endswith("monitoring.candidate_ref"):
+                    message = "未配置数据库监控 Target"
+                elif path.endswith("target.endpoint.host"):
+                    message = "未填写 Host"
+                elif path.endswith("target.endpoint.service"):
+                    message = "未填写 Service Name"
+                elif path.endswith("target.diagnostic_credential.username"):
+                    message = "未填写诊断用户名"
+                elif path.endswith("target.diagnostic_credential.password"):
+                    message = "未填写诊断密码"
+            elif location and location[0] == "system":
+                prefix = "业务信息"
+            elif len(location) >= 2 and location[0] == "relations":
+                prefix = f"关系 {int(location[1]) + 1}" if isinstance(location[1], int) else "资源关系"
+            text = f"{prefix}：{message}"
+            if text not in messages:
+                messages.append(text)
+        return "；".join(messages) or "草稿内容不满足发布要求"
+
     async def _validate_group(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, group_id: UUID | None, label: str) -> None:
         assert uow.work_items is not None
         if group_id is None:
@@ -325,7 +404,7 @@ class BusinessSystemConfigurationMixin:
                 importance_level=request.system.importance_level,
                 responsibility_group_id=request.system.responsibility_group_id,
                 description=request.system.description,
-                status="DRAFT",
+                status="ENABLED",
                 row_version=1,
                 created_by=scope.actor_id,
                 updated_by=scope.actor_id,
@@ -390,6 +469,7 @@ class BusinessSystemConfigurationMixin:
                                 candidate_ref=mapping.candidate_ref,
                                 host_candidate_ref=mapping.host_candidate_ref,
                                 now=now,
+                                allow_locator_reuse=True,
                             )
                         else:
                             assert mapping.source_binding is not None
@@ -562,6 +642,7 @@ class BusinessSystemConfigurationMixin:
                         await self._create_discovered_source_binding_in_uow(
                             uow=uow, scope=scope, source_id=mapping.source_id, target_id=target.target_id,
                             candidate_ref=mapping.candidate_ref, host_candidate_ref=mapping.host_candidate_ref, now=now,
+                            allow_locator_reuse=True,
                         )
                     else:
                         await self._create_source_binding_in_uow(
@@ -878,10 +959,6 @@ class BusinessSystemConfigurationMixin:
         )
 
     async def _draft_view(self, *, uow: AIOpsUnitOfWork, entity: BusinessSystemDraftEntity) -> BusinessSystemDraftView:
-        changes = await uow.business_systems.list_draft_changes(entity.draft_id)
-        snapshot = next((item.payload_json for item in reversed(changes) if item.change_type == "SNAPSHOT"), None)
-        resources = snapshot.get("resources", []) if snapshot else []
-        relations = snapshot.get("relations", []) if snapshot else []
         return BusinessSystemDraftView(
             draft_id=entity.draft_id,
             mode=entity.mode,
@@ -889,9 +966,7 @@ class BusinessSystemConfigurationMixin:
             current_step=entity.current_step,
             revision=int(entity.revision),
             status=entity.status,
-            system=BusinessSystemInfoInput.model_validate(entity.system_payload_json),
-            resources=tuple(resources),
-            relations=tuple(relations),
+            payload=self._open_draft_payload(entity),
             expires_at=entity.expires_at,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
@@ -900,7 +975,6 @@ class BusinessSystemConfigurationMixin:
     async def create_business_system_draft(self, *, scope: ConfigurationScope, request: BusinessSystemDraftCreate) -> BusinessSystemDraftView:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
-            await self._validate_group(uow=uow, scope=scope, group_id=request.system.responsibility_group_id, label="业务系统")
             base_row_version = None
             if request.business_system_id is not None:
                 system = await uow.business_systems.get_scoped(business_system_id=request.business_system_id, **_scope_args(scope))
@@ -908,11 +982,12 @@ class BusinessSystemConfigurationMixin:
                     raise resource_not_found("Business System")
                 base_row_version = int(system.row_version)
             now = self._now()
+            draft_id = uuid7()
             values = dict(
-                draft_id=uuid7(), domain_id=scope.domain_id, business_system_id=request.business_system_id,
-                mode=request.mode, current_step="BUSINESS_INFO", revision=1, status="ACTIVE",
-                base_row_version=base_row_version, system_payload_json=request.system.model_dump(mode="json"),
-                expires_at=now + timedelta(days=7), created_by=scope.actor_id, updated_by=scope.actor_id,
+                draft_id=draft_id, domain_id=scope.domain_id, business_system_id=request.business_system_id,
+                mode=request.mode, current_step=request.current_step, revision=1, status="ACTIVE",
+                base_row_version=base_row_version, system_payload_json=self._seal_draft_payload(scope=scope, draft_id=draft_id, payload=dict(request.payload)),
+                expires_at=now + timedelta(days=90), created_by=scope.actor_id, updated_by=scope.actor_id,
                 created_at=now, updated_at=now,
             )
             if hasattr(scope, "tenant_id"):
@@ -921,6 +996,39 @@ class BusinessSystemConfigurationMixin:
             await uow.business_systems.add_draft(entity)
             await uow.flush()
             return await self._draft_view(uow=uow, entity=entity)
+
+    async def list_business_system_drafts(self, *, scope: ConfigurationScope, limit: int) -> BusinessSystemDraftPage:
+        async with self._uow_factory() as uow:
+            assert uow.business_systems is not None
+            entities = await uow.business_systems.list_active_drafts(now=self._now(), limit=limit, **_scope_args(scope))
+            items: list[BusinessSystemDraftSummary] = []
+            for entity in entities:
+                payload = self._open_draft_payload(entity)
+                system = payload.get("system") if isinstance(payload.get("system"), dict) else {}
+                resources = payload.get("resources") if isinstance(payload.get("resources"), list) else []
+                try:
+                    importance_level = int(system["importance_level"]) if system.get("importance_level") is not None else None
+                except (TypeError, ValueError):
+                    importance_level = None
+                try:
+                    responsibility_group_id = UUID(str(system["responsibility_group_id"])) if system.get("responsibility_group_id") else None
+                except (TypeError, ValueError):
+                    responsibility_group_id = None
+                items.append(BusinessSystemDraftSummary(
+                    draft_id=entity.draft_id,
+                    mode=entity.mode,
+                    business_system_id=entity.business_system_id,
+                    current_step=entity.current_step,
+                    revision=int(entity.revision),
+                    status=entity.status,
+                    display_name=str(system.get("display_name") or "未命名业务系统草稿"),
+                    environment=str(system["environment"]) if system.get("environment") else None,
+                    importance_level=importance_level,
+                    responsibility_group_id=responsibility_group_id,
+                    resource_count=len(resources),
+                    updated_at=entity.updated_at,
+                ))
+            return BusinessSystemDraftPage(items=tuple(items), total=len(items))
 
     async def get_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID) -> BusinessSystemDraftView:
         async with self._uow_factory() as uow:
@@ -944,20 +1052,14 @@ class BusinessSystemConfigurationMixin:
                 raise state_conflict("草稿已提交、放弃或过期")
             if int(entity.revision) != request.revision:
                 raise state_conflict("草稿已被其他会话修改，请刷新后继续")
-            await self._validate_group(uow=uow, scope=scope, group_id=request.system.responsibility_group_id, label="业务系统")
             next_revision = int(entity.revision) + 1
             now = self._now()
-            await uow.business_systems.add_draft_change(BusinessSystemDraftChangeEntity(
-                draft_change_id=uuid7(), draft_id=draft_id, sequence_no=next_revision,
-                change_type="SNAPSHOT", payload_json=request.model_dump(mode="json", exclude={"schema_version", "revision", "current_step", "system"}),
-                created_by=scope.actor_id, created_at=now,
-            ))
-            entity.system_payload_json = request.system.model_dump(mode="json")
+            entity.system_payload_json = self._seal_draft_payload(scope=scope, draft_id=draft_id, payload=dict(request.payload))
             entity.current_step = request.current_step
             entity.revision = next_revision
             entity.updated_by = scope.actor_id
             entity.updated_at = now
-            entity.expires_at = now + timedelta(days=7)
+            entity.expires_at = now + timedelta(days=90)
             await uow.flush()
             return await self._draft_view(uow=uow, entity=entity)
 
@@ -981,7 +1083,13 @@ class BusinessSystemConfigurationMixin:
             raise state_conflict("草稿状态或版本已变化")
         if draft.mode != "CREATE":
             raise validation_failed("编辑既有业务系统请使用资源和关系的增量接口")
-        request = BusinessSystemResourceGraphCommit(system=draft.system, resources=draft.resources, relations=draft.relations)
+        publish_payload = draft.payload.get("publish")
+        if not isinstance(publish_payload, dict):
+            raise validation_failed("草稿缺少可发布资源快照，请重新保存草稿后发布")
+        try:
+            request = BusinessSystemResourceGraphCommit.model_validate(publish_payload)
+        except ValidationError as exc:
+            raise validation_failed(self._publish_validation_message(publish_payload, exc)) from exc
         result = await self.commit_business_system(scope=scope, request=request, idempotency_key=idempotency_key)
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None

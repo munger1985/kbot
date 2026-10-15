@@ -557,7 +557,6 @@ BEGIN
             'UK_OPS_TASK_KEY',
             'UK_OPS_TOOL_INV_ACTION',
             'UK_OPS_TOOL_INV_ORD',
-            'UK_OPS_TSRC_LOCATOR',
             'UK_OPS_TURN_CONVERSATION',
             'UK_OPS_TURN_EVIDENCE',
             'UK_OPS_TURN_IDEMP',
@@ -860,7 +859,6 @@ BEGIN
             'UK_OPS_TASK_KEY',
             'UK_OPS_TOOL_INV_ACTION',
             'UK_OPS_TOOL_INV_ORD',
-            'UK_OPS_TSRC_LOCATOR',
             'UK_OPS_TURN_CONVERSATION',
             'UK_OPS_TURN_EVIDENCE',
             'UK_OPS_TURN_IDEMP',
@@ -891,7 +889,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 284 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 283 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1140,7 +1138,6 @@ BEGIN
             'UK_OPS_TASK_KEY',
             'UK_OPS_TOOL_INV_ACTION',
             'UK_OPS_TOOL_INV_ORD',
-            'UK_OPS_TSRC_LOCATOR',
             'UK_OPS_TURN_CONVERSATION',
             'UK_OPS_TURN_EVIDENCE',
             'UK_OPS_TURN_IDEMP',
@@ -1409,7 +1406,6 @@ BEGIN
             'UK_OPS_TASK_KEY',
             'UK_OPS_TOOL_INV_ACTION',
             'UK_OPS_TOOL_INV_ORD',
-            'UK_OPS_TSRC_LOCATOR',
             'UK_OPS_TURN_CONVERSATION',
             'UK_OPS_TURN_EVIDENCE',
             'UK_OPS_TURN_IDEMP',
@@ -1427,7 +1423,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 250 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 249 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -3919,19 +3915,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 44
-           OR l_contract_version <> 'aiops-oracle-v44-resource-graph' THEN
+           OR l_schema_version <> 45
+           OR l_contract_version <> 'aiops-oracle-v45-shared-monitor-locator' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '44/aiops-oracle-v44-resource-graph'
+                || '45/aiops-oracle-v45-shared-monitor-locator'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/44/'
-                || 'aiops-oracle-v44-resource-graph'
+                '[通过] Schema 合同：AIOPS/45/'
+                || 'aiops-oracle-v45-shared-monitor-locator'
             );
         END IF;
     EXCEPTION
@@ -3959,7 +3955,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：73 张表、10 个视图、'
         || '1 个属性图、'
-        || '284 个命名索引、250 个命名约束、'
+        || '283 个命名索引、249 个命名约束、'
         || '1183 个表列；Schema 与当前规范一致。'
     );
 END;

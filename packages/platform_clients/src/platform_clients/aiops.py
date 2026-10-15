@@ -663,6 +663,9 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def create_business_system_draft(self, payload: dict[str, Any], *, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("POST", f"{self._CONFIG}/business-system-drafts", payload=payload, auth_context=auth_context)
 
+    async def list_business_system_drafts(self, *, limit: int, auth_context: AuthContext) -> dict[str, Any]:
+        return await self._json("GET", f"{self._CONFIG}/business-system-drafts?{urlencode({'limit': str(limit)})}", auth_context=auth_context)
+
     async def get_business_system_draft(self, draft_id: UUID, *, auth_context: AuthContext) -> dict[str, Any]:
         return await self._json("GET", f"{self._CONFIG}/business-system-drafts/{draft_id}", auth_context=auth_context)
 
