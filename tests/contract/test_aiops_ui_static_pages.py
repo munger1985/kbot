@@ -833,6 +833,27 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("deployment_type", systems)
         self.assertIn("rac_node_number", systems)
         self.assertIn("locator_key", systems)
+        single_connection = systems.split(
+            'if (item.mode === "NEW" && database && !rac)', 1
+        )[1].split('if (item.mode === "NEW" && database && rac)', 1)[0]
+        first_row = [
+            single_connection.index("数据库地址"),
+            single_connection.index("端口"),
+            single_connection.index("Service Name"),
+            single_connection.index("容器范围"),
+        ]
+        self.assertEqual(first_row, sorted(first_row))
+        self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-4"}', single_connection)
+        self.assertIn('${database.db_type === "ORACLE" ? "span-4" : "span-6"}', single_connection)
+        self.assertIn('aria-label="PDB 名称" placeholder="PDB 名称"', single_connection)
+        second_and_third_rows = [
+            single_connection.index("诊断用户名"),
+            single_connection.index("诊断密码"),
+            single_connection.index("监控源（必选）"),
+        ]
+        self.assertEqual(second_and_third_rows, sorted(second_and_third_rows))
+        self.assertIn('${discovery ? "span-4" : "span-6"}', single_connection)
+        self.assertGreaterEqual(single_connection.count('class="span-4"><span>'), 2)
         self.assertNotIn("discover-resources", systems)
         self.assertNotIn("event.target === drawer", systems)
         self.assertIn("function enforceDrawerClosePolicy()", shell)
