@@ -109,6 +109,54 @@
   }
   function sourceFor(item) { return sources.find((source) => source.source_id === item.database?.source_id); }
   function usesDiscovery(item) { return ["PROMETHEUS", "ZABBIX"].includes(sourceFor(item)?.source_type || ""); }
+  function isRacResource(item) { return item?.database?.deployment_type === "RAC" && Boolean(item.rac_group_id); }
+  function racMembers(item) {
+    if (!item) return [];
+    if (!item.rac_group_id) return [item];
+    return resources
+      .filter((row) => row.rac_group_id === item.rac_group_id)
+      .sort((left, right) => Number(left.database?.rac_node_number || 0) - Number(right.database?.rac_node_number || 0));
+  }
+  function managedRacRelation(item) {
+    return item?.rac_group_id ? relations.find((relation) => relation.draft_relation_id === item.rac_group_id && relation.relation_type_key === "ORACLE_RAC") : undefined;
+  }
+  function isManagedRacRelation(relation) {
+    return relation?.relation_type_key === "ORACLE_RAC"
+      && relation.participants.length >= 2
+      && relation.participants.every((participant) => resources.find((resource) => resource.draft_resource_id === participant.draft_resource_id)?.rac_group_id === relation.draft_relation_id);
+  }
+  function updateRacRelation(item) {
+    const relation = managedRacRelation(item);
+    if (!relation) return;
+    relation.display_name = item.rac_cluster_name?.trim() || "";
+    relation.participants = racMembers(item).map((member, index) => ({ draft_resource_id: member.draft_resource_id, participant_role: "MEMBER", display_order: index }));
+  }
+  function syncRacNames(item) {
+    const name = item.rac_cluster_name || "";
+    racMembers(item).forEach((member) => {
+      member.rac_cluster_name = name;
+      member.display_name = name.trim() ? `${name.trim()} · 节点 ${member.database?.rac_node_number}` : "";
+      member.saved = Boolean(member.system_resource_id);
+    });
+    updateRacRelation(item);
+    mark();
+  }
+  function syncRacResourceField(item, field) {
+    racMembers(item).forEach((member) => {
+      member[field] = item[field];
+      member.saved = Boolean(member.system_resource_id);
+    });
+    mark();
+  }
+  function syncRacDatabaseField(item, field) {
+    if (!item.database) return;
+    racMembers(item).forEach((member) => {
+      if (!member.database) return;
+      member.database[field] = item.database[field];
+      member.saved = Boolean(member.system_resource_id);
+    });
+    mark();
+  }
   function selectOptions(items, selected, labels = null) {
     return items.map((value) => {
       const key = Array.isArray(value) ? value[0] : value;
@@ -133,6 +181,56 @@
         host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0,
       },
     };
+  }
+
+  function newRacNode(source, nodeNumber) {
+    const database = source.database;
+    const item = {
+      draft_resource_id: uuid7(), rac_group_id: source.rac_group_id, rac_cluster_name: source.rac_cluster_name,
+      mode: "NEW", resource_type_key: "DATABASE", display_name: "",
+      owner_group_id: source.owner_group_id, architecture_layer_key: source.architecture_layer_key,
+      responsibility_group_id: "", location_name: source.location_name, display_order: resources.length, saved: false,
+      database: {
+        ...database, deployment_type: "RAC", rac_node_number: nodeNumber,
+        host: "", database: "", locator_key: "", candidate_ref: "", host_candidate_ref: "",
+        candidates: [...database.candidates], host_candidates: [...database.host_candidates], discovering: false,
+      },
+    };
+    item.display_name = item.rac_cluster_name?.trim() ? `${item.rac_cluster_name.trim()} · 节点 ${nodeNumber}` : "";
+    return item;
+  }
+
+  function ensureRacGroup(item) {
+    if (!item.database || item.mode !== "NEW") return;
+    item.rac_cluster_name ||= item.display_name;
+    item.database.db_type = "ORACLE";
+    item.database.deployment_type = "RAC";
+    item.database.rac_node_number ||= 1;
+    if (!item.rac_group_id) {
+      const relationId = uuid7();
+      item.rac_group_id = relationId;
+      relations.push({ draft_relation_id: relationId, relation_type_key: "ORACLE_RAC", display_name: item.rac_cluster_name || "", responsibility_group_id: "", participants: [], attributes: {} });
+    }
+    if (racMembers(item).length < 2) resources.push(newRacNode(item, 2));
+    syncRacNames(item);
+    updateRacRelation(item);
+  }
+
+  function addRacNode(item) {
+    ensureRacGroup(item);
+    const nextNumber = Math.max(...racMembers(item).map((member) => Number(member.database?.rac_node_number || 0))) + 1;
+    resources.push(newRacNode(item, nextNumber));
+    syncRacNames(item);
+    updateRacRelation(item);
+  }
+
+  function removeRacNode(item, node) {
+    const members = racMembers(item);
+    if (members.length <= 2) { shell.toast("Oracle RAC 至少需要两个节点。"); return; }
+    resources = resources.filter((row) => row !== node);
+    if (activeResourceId === node.draft_resource_id) activeResourceId = members.find((row) => row !== node)?.draft_resource_id || "";
+    updateRacRelation(item);
+    mark();
   }
 
   function closeResourceDrawer() {
@@ -185,12 +283,25 @@
     const database = item.database;
     const source = sourceFor(item);
     const editing = Boolean(item.system_resource_id);
-    const baseFields = `<div class="business-editor-grid"><label class="span-6"><span>数据库名称</span><input name="resource_name" value="${esc(item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-12"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>`;
-    const databaseFields = database ? `<div class="business-editor-grid business-database-grid"><label class="span-3"><span>数据库引擎</span><select name="db_type" ${editing ? "disabled" : ""}>${selectOptions([["ORACLE", "Oracle"], ["MYSQL", "MySQL"], ["POSTGRESQL", "PostgreSQL"]], database.db_type)}</select></label><label class="span-3"><span>数据库版本</span><select name="version_code">${selectOptions(versions[database.db_type], database.version_code)}</select></label><label class="span-3"><span>数据库环境</span><select name="db_environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], database.environment)}</select></label><label class="span-3"><span>部署形态</span><select name="deployment_type" ${database.db_type !== "ORACLE" ? "disabled" : ""}>${selectOptions([["SINGLE_INSTANCE", "单实例"], ["RAC", "RAC"]], database.deployment_type)}</select></label><label class="span-3"><span>数据库角色</span><select name="db_role">${selectOptions([["UNKNOWN", "待识别"], ["PRIMARY", "主库"], ["STANDBY", "备库"]], database.db_role)}</select></label>${database.deployment_type === "RAC" ? `<label class="span-3"><span>RAC 节点编号</span><input name="rac_node_number" value="${esc(database.rac_node_number || "")}" type="number" min="1" max="1024" required></label>` : ""}</div>` : "";
+    const rac = isRacResource(item);
+    const baseFields = `<div class="business-editor-grid"><label class="span-6"><span>${rac ? "RAC 名称" : "数据库名称"}</span><input name="${rac ? "rac_cluster_name" : "resource_name"}" value="${esc(rac ? item.rac_cluster_name : item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-12"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>`;
+    const databaseFields = database ? `<div class="business-editor-grid business-database-grid"><label class="span-3"><span>数据库引擎</span><select name="db_type" ${editing || rac ? "disabled" : ""}>${selectOptions([["ORACLE", "Oracle"], ["MYSQL", "MySQL"], ["POSTGRESQL", "PostgreSQL"]], database.db_type)}</select></label><label class="span-3"><span>数据库版本</span><select name="version_code">${selectOptions(versions[database.db_type], database.version_code)}</select></label><label class="span-3"><span>数据库环境</span><select name="db_environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], database.environment)}</select></label><label class="span-3"><span>部署形态</span><select name="deployment_type" ${database.db_type !== "ORACLE" || editing ? "disabled" : ""}>${selectOptions([["SINGLE_INSTANCE", "单实例"], ["RAC", "RAC（多节点）"]], database.deployment_type)}</select></label><label class="span-3"><span>数据库角色</span><select name="db_role">${selectOptions([["UNKNOWN", "待识别"], ["PRIMARY", "主库"], ["STANDBY", "备库"]], database.db_role)}</select></label></div>` : "";
     let connection = "";
-    if (item.mode === "NEW" && database) {
+    if (item.mode === "NEW" && database && !rac) {
       const discovery = usesDiscovery(item);
       connection = `<div class="business-editor-grid business-connection-grid"><label class="span-4"><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label class="span-2"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-6"><span>${database.db_type === "ORACLE" ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${database.db_type === "ORACLE" ? `<label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions([["NON_CDB", "非 CDB"], ["CDB", "CDB"], ["PDB", "PDB"]], database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-3"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}` : ""}<label class="span-6"><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-6"><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label class="span-6"><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `${database.discovering ? `<p class="span-12 business-inline-note">正在从监控源发现数据库和承载主机…</p>` : ""}<label class="span-6"><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label><label class="span-6"><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>`}${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；承载主机指标随数据库一次接入，无需重复登记服务器。</p>` : ""}</div>`;
+    }
+    if (item.mode === "NEW" && database && rac) {
+      const discovery = usesDiscovery(item);
+      const nodeCards = racMembers(item).map((node) => {
+        const nodeDatabase = node.database;
+        const nodeId = esc(node.draft_resource_id);
+        const monitoring = discovery
+          ? `<label class="span-6"><span>数据库监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label><label class="span-6"><span>主机监控 Target</span><select data-rac-node="${nodeId}" data-rac-field="host_candidate_ref" ${nodeDatabase.discovering ? "disabled" : ""}><option value="">请选择</option>${nodeDatabase.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === nodeDatabase.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>`
+          : `<label class="span-12"><span>监控定位键</span><input data-rac-node="${nodeId}" data-rac-field="locator_key" value="${esc(nodeDatabase.locator_key)}"></label>`;
+        return `<article class="business-rac-node-card"><header><div><strong>RAC 节点 ${esc(nodeDatabase.rac_node_number)}</strong><small>${esc(node.display_name || "待命名节点")}</small></div>${racMembers(item).length > 2 ? `<button type="button" class="business-danger" data-remove-rac-node="${nodeId}">移除节点</button>` : ""}</header><div class="business-editor-grid"><label class="span-2"><span>节点编号</span><input type="number" min="1" max="1024" required data-rac-node="${nodeId}" data-rac-field="rac_node_number" value="${esc(nodeDatabase.rac_node_number)}"></label><label class="span-4"><span>Host</span><input data-rac-node="${nodeId}" data-rac-field="host" value="${esc(nodeDatabase.host)}" placeholder="节点主机名或 IP"></label><label class="span-6"><span>Service Name</span><input data-rac-node="${nodeId}" data-rac-field="database" value="${esc(nodeDatabase.database)}"></label>${monitoring}</div></article>`;
+      }).join("");
+      connection = `<div class="business-editor-grid business-connection-grid business-rac-editor"><p class="span-12 business-rac-guidance">公共凭据与监控源只填写一次；每个节点分别配置 Host、Service Name、数据库监控 Target 和主机监控 Target。</p><label class="span-3"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions([["NON_CDB", "非 CDB"], ["CDB", "CDB"], ["PDB", "PDB"]], database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-6"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label class="span-6"><span>诊断用户名（所有节点共用）</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码（所有节点共用）</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-12"><span>监控源（所有节点共用）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${database.discovering ? `<p class="span-12 business-inline-note">正在从监控源发现数据库和承载主机…</p>` : ""}<section class="span-12 business-rac-node-list">${nodeCards}<button id="add-rac-node" type="button">＋ 增加 RAC 节点</button></section>${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；每个 RAC 节点分别绑定数据库与承载主机 Target。</p>` : ""}</div>`;
     }
     return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "接入资源并验证连接与监控映射"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${editing ? "修改将在保存业务系统时提交" : item.saved ? "连接与监控映射已验证" : "连接验证通过后才可进入下一步"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>验证数据库</button>` : ""}</footer></form>`;
   }
@@ -247,9 +358,26 @@
     const editor = document.getElementById("resource-editor");
     if (!editor) return;
     editor.querySelectorAll("[name]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => updateResourceField(item, input)));
+    editor.querySelectorAll("[data-rac-node][data-rac-field]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => {
+      const node = resources.find((row) => row.draft_resource_id === input.dataset.racNode);
+      if (!node?.database) return;
+      node.database[input.dataset.racField] = input.dataset.racField === "rac_node_number" ? Number(input.value) : input.value;
+      node.saved = false;
+      if (input.dataset.racField === "rac_node_number") syncRacNames(item);
+      else mark();
+    }));
+    const addNode = document.getElementById("add-rac-node");
+    if (addNode) addNode.onclick = () => { addRacNode(item); renderComposition(); };
+    editor.querySelectorAll("[data-remove-rac-node]").forEach((button) => button.onclick = () => {
+      const node = resources.find((row) => row.draft_resource_id === button.dataset.removeRacNode);
+      if (!node) return;
+      removeRacNode(item, node);
+      renderComposition();
+    });
     document.getElementById("remove-resource").onclick = () => {
-      resources = resources.filter((row) => row !== item);
-      relations = relations.filter((relation) => !relation.participants.some((participant) => participant.draft_resource_id === item.draft_resource_id));
+      const removed = new Set(racMembers(item).map((member) => member.draft_resource_id));
+      resources = resources.filter((row) => !removed.has(row.draft_resource_id));
+      relations = relations.filter((relation) => relation.draft_relation_id !== item.rac_group_id && !relation.participants.some((participant) => removed.has(participant.draft_resource_id)));
       activeResourceId = resources.find((row) => row.architecture_layer_key === activeLayer)?.draft_resource_id || resources[0]?.draft_resource_id || "";
       closeResourceDrawer(); mark(); renderComposition();
     };
@@ -258,9 +386,18 @@
 
   function updateResourceField(item, input) {
     const name = input.name;
+    if (name === "rac_cluster_name") {
+      item.rac_cluster_name = input.value;
+      syncRacNames(item);
+      return;
+    }
     if (["resource_name", "owner_group_id", "location_name"].includes(name)) {
       const key = { resource_name: "display_name" }[name] || name;
       item[key] = input.value;
+      if (isRacResource(item) && name !== "resource_name") {
+        syncRacResourceField(item, key);
+        return;
+      }
       if (name === "resource_name" && !item.system_resource_id) item.saved = false;
       mark();
       return;
@@ -280,16 +417,34 @@
       return;
     }
     if (name === "deployment_type") {
-      if (item.database.deployment_type === "SINGLE_INSTANCE") item.database.rac_node_number = null;
+      if (item.database.deployment_type === "RAC") ensureRacGroup(item);
+      else {
+        const groupId = item.rac_group_id;
+        const nameBefore = item.rac_cluster_name || item.display_name.replace(/\s*·\s*节点\s*\d+$/, "");
+        if (groupId) {
+          resources = resources.filter((row) => row === item || row.rac_group_id !== groupId);
+          relations = relations.filter((relation) => relation.draft_relation_id !== groupId);
+        }
+        item.rac_group_id = undefined;
+        item.rac_cluster_name = undefined;
+        item.display_name = nameBefore;
+        item.database.rac_node_number = null;
+      }
       item.saved = Boolean(item.system_resource_id); mark(); renderComposition(); return;
     }
     if (name === "source_id") {
-      item.database.discovery_revision += 1;
-      Object.assign(item.database, { locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [] });
-      item.saved = false; mark(); renderComposition();
+      racMembers(item).forEach((member) => {
+        if (!member.database) return;
+        member.database.source_id = item.database.source_id;
+        member.database.discovery_revision += 1;
+        Object.assign(member.database, { locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [] });
+        member.saved = Boolean(member.system_resource_id);
+      });
+      mark(); renderComposition();
       if (item.database.source_id && usesDiscovery(item)) void discover(item);
       return;
     }
+    if (isRacResource(item)) syncRacDatabaseField(item, key);
     if (name === "oracle_scope") { item.saved = false; mark(); renderComposition(); return; }
     item.saved = Boolean(item.system_resource_id);
     if (["host", "port", "database", "oracle_pdb_name", "username", "password", "locator_key", "candidate_ref", "host_candidate_ref"].includes(name)) item.saved = false;
@@ -301,15 +456,26 @@
     const sourceId = item.database.source_id;
     const dbType = item.database.db_type;
     const revision = ++item.database.discovery_revision;
-    item.database.discovering = true; renderComposition();
+    racMembers(item).forEach((member) => { if (member.database) member.database.discovering = true; });
+    renderComposition();
     try {
       const found = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [dbType], page_size: 100 }) });
       if (revision !== item.database.discovery_revision || sourceId !== item.database.source_id || dbType !== item.database.db_type) return;
-      item.database.candidates = (found.items || []).filter((row) => row.mapping_status !== "MAPPED");
-      item.database.host_candidates = found.host_items || [];
-      shell.toast(`发现 ${item.database.candidates.length} 个数据库候选、${item.database.host_candidates.length} 个主机候选。`);
+      const candidates = (found.items || []).filter((row) => row.mapping_status !== "MAPPED");
+      const hostCandidates = found.host_items || [];
+      racMembers(item).forEach((member) => {
+        if (!member.database) return;
+        member.database.candidates = [...candidates];
+        member.database.host_candidates = [...hostCandidates];
+      });
+      shell.toast(`发现 ${candidates.length} 个数据库候选、${hostCandidates.length} 个主机候选。`);
     } catch (error) { shell.toast(error.message); }
-    finally { if (revision === item.database.discovery_revision) { item.database.discovering = false; renderComposition(); } }
+    finally {
+      if (revision === item.database.discovery_revision) {
+        racMembers(item).forEach((member) => { if (member.database) member.database.discovering = false; });
+        renderComposition();
+      }
+    }
   }
 
   function targetPayload(item) {
@@ -325,18 +491,34 @@
   }
 
   async function validateResource(item) {
+    const members = isRacResource(item) ? racMembers(item) : [item];
     const database = item.database;
     const source = sourceFor(item);
-    if (!database || !item.display_name.trim() || !item.owner_group_id || !database.host.trim() || !database.database.trim() || !database.username || !database.password || !source) { shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。"); return; }
+    if (!database || members.some((member) => !member.database || !member.display_name.trim() || !member.owner_group_id || !member.database.host.trim() || !member.database.database.trim()) || !database.username || !database.password || !source) { shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。"); return; }
+    if (isRacResource(item) && members.length < 2) { shell.toast("Oracle RAC 至少需要两个节点。"); return; }
     if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) { shell.toast("PDB 接入必须填写 PDB 名称。"); return; }
-    if (database.deployment_type === "RAC" && (!database.rac_node_number || database.rac_node_number < 1)) { shell.toast("RAC 数据库必须填写有效的节点编号。"); return; }
-    if (usesDiscovery(item) ? !database.candidate_ref || (source.source_type === "PROMETHEUS" && !database.host_candidate_ref) : !database.locator_key.trim()) { shell.toast("请完成数据库与监控源的定位映射。"); return; }
+    if (members.some((member) => member.database?.deployment_type === "RAC" && (!member.database.rac_node_number || member.database.rac_node_number < 1))) { shell.toast("每个 RAC 节点都必须填写有效的节点编号。"); return; }
+    if (members.some((member) => usesDiscovery(member) ? !member.database?.candidate_ref || (source.source_type === "PROMETHEUS" && !member.database?.host_candidate_ref) : !member.database?.locator_key.trim())) { shell.toast("请完成数据库与监控源的定位映射。"); return; }
+    if (isRacResource(item)) {
+      const uniqueFields = [
+        ["节点编号", members.map((member) => member.database?.rac_node_number)],
+        ["Host", members.map((member) => member.database?.host.trim())],
+        ["Service Name", members.map((member) => member.database?.database.trim())],
+        ["数据库监控 Target", members.map((member) => member.database?.candidate_ref || member.database?.locator_key.trim())],
+      ];
+      if (source.source_type === "PROMETHEUS") uniqueFields.push(["主机监控 Target", members.map((member) => member.database?.host_candidate_ref)]);
+      const duplicate = uniqueFields.find((entry) => new Set(entry[1]).size !== entry[1].length);
+      if (duplicate) { shell.toast(`RAC 各节点的${duplicate[0]}不能重复。`); return; }
+    }
     saving = true; updateFooter();
     try {
-      const target = targetPayload(item);
-      const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, diagnostic_credential: target.diagnostic_credential }) });
-      if (!response.ok) throw new Error(response.error_code || "连接验证失败");
-      item.saved = true; mark(); shell.toast("数据库连接验证通过；正式提交前不会创建资源。");
+      for (const member of members) {
+        const target = targetPayload(member);
+        const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, diagnostic_credential: target.diagnostic_credential }) });
+        if (!response.ok) throw new Error(`${member.display_name}：${response.error_code || "连接验证失败"}`);
+      }
+      members.forEach((member) => { member.saved = true; });
+      mark(); shell.toast(isRacResource(item) ? `${members.length} 个 RAC 节点连接验证通过；正式提交前不会创建资源。` : "数据库连接验证通过；正式提交前不会创建资源。");
     } catch (error) { shell.toast(error.message); }
     finally { saving = false; renderComposition(); updateFooter(); }
   }
@@ -351,7 +533,8 @@
 
   function relationEditorHtml(relation) {
     const roles = roleOptions[relation.relation_type_key] || ["MEMBER"];
-    return `<header><div><p class="business-eyebrow">RELATION</p><h3>${esc(relation.display_name || relationName(relation.relation_type_key))}</h3></div><button id="remove-relation" class="business-danger" type="button">删除</button></header><label><span>关系类型</span><select name="relation_type">${selectOptions(relationTypes, relation.relation_type_key)}</select></label><label><span>关系名称（可选）</span><input name="relation_name" value="${esc(relation.display_name)}"></label><label><span>关系责任组</span><select name="relation_group">${groupOptions(relation.responsibility_group_id, "继承参与资源")}</select></label><div class="business-participant-list">${relation.participants.map((participant, index) => `<div><select data-participant-resource="${index}">${resources.map((item) => `<option value="${esc(item.draft_resource_id)}" ${item.draft_resource_id === participant.draft_resource_id ? "selected" : ""}>${esc(item.display_name || "未命名资源")}</option>`).join("")}</select><select data-participant-role="${index}">${selectOptions(roles, participant.participant_role, roleLabels)}</select><button type="button" data-remove-participant="${index}" aria-label="移除参与者">×</button></div>`).join("")}<button id="add-participant" type="button" ${relation.participants.length >= resources.length ? "disabled" : ""}>添加参与资源</button></div>`;
+    const managed = isManagedRacRelation(relation);
+    return `<header><div><p class="business-eyebrow">RELATION</p><h3>${esc(relation.display_name || relationName(relation.relation_type_key))}</h3></div>${managed ? "" : `<button id="remove-relation" class="business-danger" type="button">删除</button>`}</header><label><span>关系类型</span><select name="relation_type" ${managed ? "disabled" : ""}>${selectOptions(relationTypes, relation.relation_type_key)}</select></label><label><span>关系名称（可选）</span><input name="relation_name" value="${esc(relation.display_name)}" ${managed ? "disabled" : ""}></label><label><span>关系责任组</span><select name="relation_group">${groupOptions(relation.responsibility_group_id, "继承参与资源")}</select></label><div class="business-participant-list">${relation.participants.map((participant, index) => `<div><select data-participant-resource="${index}" ${managed ? "disabled" : ""}>${resources.map((item) => `<option value="${esc(item.draft_resource_id)}" ${item.draft_resource_id === participant.draft_resource_id ? "selected" : ""}>${esc(item.display_name || "未命名资源")}</option>`).join("")}</select><select data-participant-role="${index}" ${managed ? "disabled" : ""}>${selectOptions(roles, participant.participant_role, roleLabels)}</select>${managed ? "" : `<button type="button" data-remove-participant="${index}" aria-label="移除参与者">×</button>`}</div>`).join("")}${managed ? "" : `<button id="add-participant" type="button" ${relation.participants.length >= resources.length ? "disabled" : ""}>添加参与资源</button>`}</div>`;
   }
   function resourceSummaryHtml(item) {
     if (!item) return `<div class="business-topology-empty"><h3>选择节点或关系</h3><p>点击画布中的资源或关系，在这里查看和编辑属性。</p></div>`;
@@ -385,12 +568,14 @@
       panel.querySelectorAll("[data-participant-resource]").forEach((select) => select.onchange = () => { relation.participants[Number(select.dataset.participantResource)].draft_resource_id = select.value; mark(); });
       panel.querySelectorAll("[data-participant-role]").forEach((select) => select.onchange = () => { relation.participants[Number(select.dataset.participantRole)].participant_role = select.value; mark(); });
       panel.querySelectorAll("[data-remove-participant]").forEach((button) => button.onclick = () => { relation.participants.splice(Number(button.dataset.removeParticipant), 1); mark(); renderTopology(); });
-      document.getElementById("add-participant").onclick = () => {
+      const addParticipant = document.getElementById("add-participant");
+      if (addParticipant) addParticipant.onclick = () => {
         const candidate = resources.find((resource) => !relation.participants.some((participant) => participant.draft_resource_id === resource.draft_resource_id));
         if (!candidate) return;
         relation.participants.push({ draft_resource_id: candidate.draft_resource_id, participant_role: (roleOptions[relation.relation_type_key] || ["MEMBER"])[0], display_order: relation.participants.length }); mark(); renderTopology();
       };
-      document.getElementById("remove-relation").onclick = () => { relations = relations.filter((row) => row !== relation); activeRelationId = ""; mark(); renderTopology(); };
+      const removeRelation = document.getElementById("remove-relation");
+      if (removeRelation) removeRelation.onclick = () => { relations = relations.filter((row) => row !== relation); activeRelationId = ""; mark(); renderTopology(); };
     }
     const open = document.getElementById("open-resource");
     if (open) open.onclick = () => { const item = currentResource(); step = 1; activeLayer = item.architecture_layer_key; resourceDrawerMode = "EDITOR"; resourceDrawerOpen = true; render(); };
@@ -468,6 +653,15 @@
       return { draft_resource_id: draftId, mode: "EXISTING", resource_id: item.resource.resource_id, system_resource_id: item.system_resource_id, resource_row_version: item.resource.row_version, system_row_version: item.row_version, resource_type_key: item.resource.resource_type_key, display_name: item.resource.display_name, owner_group_id: item.resource.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || "", location_name: item.resource.location_name || "", display_order: item.display_order ?? index, saved: true, database: database ? { db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number ?? null, db_role: database.db_role, host: "", port: 0, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0 } : undefined };
     });
     relations = value.relations.map((item) => ({ draft_relation_id: uuid7(), relation_id: item.relation_id, row_version: item.row_version, relation_type_key: item.relation_type_key, display_name: item.display_name || "", responsibility_group_id: item.responsibility_group_id || "", attributes: item.attributes || {}, participants: item.participants.map((participant) => ({ draft_resource_id: draftBySystem.get(participant.system_resource_id) || "", participant_role: participant.participant_role, display_order: participant.display_order })) }));
+    relations.filter((item) => item.relation_type_key === "ORACLE_RAC").forEach((relation) => {
+      const memberIds = new Set(relation.participants.map((participant) => participant.draft_resource_id));
+      const members = resources.filter((item) => memberIds.has(item.draft_resource_id));
+      const clusterName = relation.display_name || members[0]?.display_name.replace(/\s*·\s*节点\s*\d+$/, "") || "";
+      members.forEach((member) => {
+        member.rac_group_id = relation.draft_relation_id;
+        member.rac_cluster_name = clusterName;
+      });
+    });
     activeResourceId = resources[0]?.draft_resource_id || "";
     activeLayer = resources[0]?.architecture_layer_key || "DATA";
     document.getElementById("workspace-code").textContent = value.system_code || "业务系统";

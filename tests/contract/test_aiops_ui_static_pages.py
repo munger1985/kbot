@@ -816,7 +816,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('shell.toast("至少有两个资源后才能建立关系。")', systems)
         self.assertNotIn('message("至少有两个资源后才能建立关系。"', systems)
         self.assertIn('shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。")', systems)
-        self.assertIn('shell.toast("数据库连接验证通过；正式提交前不会创建资源。")', systems)
+        self.assertIn('"数据库连接验证通过；正式提交前不会创建资源。"', systems)
         self.assertNotIn("function message(", systems)
         self.assertNotIn('id="workspace-result"', workspace)
         self.assertNotIn("business-validation-list", systems)
@@ -842,6 +842,46 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("responsibility_group_id: null", systems)
         self.assertIn(".business-resource-drawer{", forms)
         self.assertIn("width:min(760px,100vw)", forms)
+
+    def test_business_system_workspace_adds_oracle_rac_as_one_multi_node_group(self):
+        systems = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
+            encoding="utf-8"
+        )
+        forms = (AIOPS_ROOT / "css" / "aiops-forms.css").read_text(
+            encoding="utf-8"
+        )
+
+        for contract in (
+            "rac_group_id",
+            "rac_cluster_name",
+            "ensureRacGroup",
+            "newRacNode",
+            "addRacNode",
+            "removeRacNode",
+            "managedRacRelation",
+            "isManagedRacRelation",
+        ):
+            self.assertIn(contract, systems)
+        self.assertIn('relation_type_key: "ORACLE_RAC"', systems)
+        self.assertIn('participant_role: "MEMBER"', systems)
+        self.assertIn("if (racMembers(item).length < 2)", systems)
+        self.assertIn("Oracle RAC 至少需要两个节点。", systems)
+        self.assertIn("＋ 增加 RAC 节点", systems)
+        self.assertIn("诊断用户名（所有节点共用）", systems)
+        self.assertIn("诊断密码（所有节点共用）", systems)
+        self.assertIn("监控源（所有节点共用）", systems)
+        for label in ("Host", "Service Name", "数据库监控 Target", "主机监控 Target"):
+            self.assertIn(f"<span>{label}</span>", systems)
+
+        validation = systems.split("async function validateResource", 1)[1].split(
+            "function topologyBoardHtml", 1
+        )[0]
+        self.assertIn("for (const member of members)", validation)
+        self.assertIn('await request("/targets/test-connection"', validation)
+        self.assertIn("members.length < 2", validation)
+        self.assertIn("new Set(entry[1]).size !== entry[1].length", validation)
+        self.assertIn("members.forEach((member) => { member.saved = true; })", validation)
+        self.assertIn(".business-rac-node-card", forms)
 
     def test_aiops_importance_labels_increase_from_low_to_core(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
