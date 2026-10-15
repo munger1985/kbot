@@ -844,7 +844,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         ]
         self.assertEqual(first_row, sorted(first_row))
         self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-4"}', single_connection)
-        self.assertIn('${database.db_type === "ORACLE" ? "span-4" : "span-6"}', single_connection)
+        self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-2"}', single_connection)
+        self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-6"}', single_connection)
+        self.assertEqual(single_connection.count('${database.db_type === "ORACLE" ? "span-3"'), 3)
         self.assertIn('aria-label="PDB 名称" placeholder="PDB 名称"', single_connection)
         second_and_third_rows = [
             single_connection.index("诊断用户名"),
