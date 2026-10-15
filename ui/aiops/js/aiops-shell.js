@@ -11,6 +11,7 @@
     "data-protection": "aiops:target_manage",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
+    "operations-knowledge-chat": "aiops:use",
     "operations-knowledge": "aiops:knowledge_manage", agents: "aiops:agent_manage",
     "inspection-plans": "aiops:plan_manage",
     "inspection-plan-detail": "aiops:plan_manage",
@@ -20,11 +21,11 @@
   const sections = [
     ["业务工作区", [
       ["dashboard", "AIOps 工作台"], ["monitoring", "实时监控"], ["chat", "智能运维"], ["situations", "告警诊断"],
-      ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "报告中心"],
+      ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "报告中心"], ["operations-knowledge-chat", "知识问答"],
     ]],
     ["资源配置", [
       ["diagnostic-sources", "监控源"], ["business-systems", "业务系统"], ["data-protection", "数据保护"], ["responsibility-groups", "责任组"],
-      ["operations-knowledge", "运维知识库"], ["agents", "AIOps Agent"],
+      ["operations-knowledge", "知识资料"], ["agents", "AIOps Agent"],
       ["report-templates", "模板管理"],
       ["api-clients", "API 客户端"],
     ]],

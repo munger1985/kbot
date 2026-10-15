@@ -3,17 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AIOps 运维知识库</title>
+  <title>AIOps 知识资料</title>
   <link rel="stylesheet" href="./css/aiops.css">
   <link rel="stylesheet" href="./css/aiops-knowledge.css">
-  <link rel="stylesheet" href="./css/aiops-knowledge-answering.css">
 </head>
 <body data-page="operations-knowledge">
   <main class="ops-main">
     <header class="ops-head">
       <div>
-        <h1>运维知识库</h1>
-        <p>统一管理正式运维手册和经过审核的历史诊断案例。未发布内容不会进入智能运维检索。</p>
+        <h1>知识资料</h1>
+        <p>上传正式运维资料，跟踪解析状态，完成内容审核与发布，并验证发布知识的检索效果。</p>
       </div>
       <button id="open-upload" class="primary" type="button">上传运维手册</button>
     </header>
@@ -23,33 +22,6 @@
       <div class="ops-metric span-3"><span>已发布案例</span><strong data-metric="published_cases">—</strong><small>诊断参考与已验证处置</small></div>
       <div class="ops-metric span-3"><span>待审核</span><strong data-metric="review_required">—</strong><small>草稿、冲突和案例候选</small></div>
       <div class="ops-metric span-3"><span>处理异常</span><strong data-metric="abnormal">—</strong><small>提炼失败或索引异常</small></div>
-    </section>
-
-    <section class="ops-panel knowledge-answering" aria-labelledby="knowledge-answer-title">
-      <header class="ops-panel-head">
-        <div><h2 id="knowledge-answer-title">知识问答</h2><p>回答只使用当前用户有权访问的已发布运维知识，并保留可核验原文引用。</p></div>
-        <button id="knowledge-new-conversation" type="button">新建会话</button>
-      </header>
-      <div class="knowledge-answer-layout">
-        <aside class="knowledge-conversations" aria-label="知识问答会话">
-          <div id="knowledge-conversation-list"><p class="ops-empty">正在读取会话…</p></div>
-        </aside>
-        <div class="knowledge-chat">
-          <header class="knowledge-chat-head">
-            <div><h3 id="knowledge-chat-title">运维知识助手</h3><p id="knowledge-chat-meta">请选择或新建会话</p></div>
-          </header>
-          <div id="knowledge-chat-stream" class="knowledge-chat-stream" aria-live="polite"><p class="ops-empty">可以询问 Exadata 存储节点维护方法、状态查看命令或故障处理步骤。</p></div>
-          <form id="knowledge-chat-form" class="knowledge-chat-form">
-            <div class="knowledge-context-fields">
-              <select id="knowledge-context-db" aria-label="数据库类型"><option value="">全部数据库类型</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select>
-              <input id="knowledge-context-version" maxlength="32" placeholder="主版本（可选）" aria-label="数据库主版本">
-              <input id="knowledge-context-topology" maxlength="64" placeholder="拓扑（可选）" aria-label="数据库拓扑">
-            </div>
-            <textarea id="knowledge-chat-input" maxlength="32000" required placeholder="请输入运维知识问题"></textarea>
-            <div class="knowledge-chat-actions"><span id="knowledge-chat-status" class="knowledge-status"></span><button id="knowledge-chat-send" class="primary" type="submit">发送</button></div>
-          </form>
-        </div>
-      </div>
     </section>
 
     <section class="ops-panel knowledge-workspace">
@@ -113,16 +85,7 @@
     <footer id="detail-actions"></footer>
   </dialog>
 
-  <dialog id="citation-dialog" class="knowledge-dialog wide">
-    <header><div><h2 id="citation-title">原文引用</h2><p id="citation-subtitle"></p></div><button type="button" data-close>关闭</button></header>
-    <div id="citation-body" class="knowledge-dialog-body ops-result-markdown"></div>
-    <footer><button id="citation-download" type="button">下载原始文件</button><button type="button" data-close>关闭</button></footer>
-  </dialog>
-
   <script src="../runtime-config.js"></script>
-  <script src="../vendor/marked.umd.js"></script>
-  <script src="../vendor/purify.min.js"></script>
-  <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js"></script>
   <script src="./js/aiops-operations-knowledge.js"></script>

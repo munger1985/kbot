@@ -38,7 +38,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
         "business-systems", "business-system-workspace", "targets", "target-detail",
         "recovery-drills", "data-protection",
-        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -61,7 +61,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(17, len(scripts))
+        self.assertEqual(18, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -545,12 +545,32 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         script = (AIOPS_ROOT / "js" / "aiops-operations-knowledge.js").read_text(
             encoding="utf-8"
         )
+        chat_page = (AIOPS_ROOT / "operations-knowledge-chat.html").read_text(
+            encoding="utf-8"
+        )
+        chat_script = (
+            AIOPS_ROOT / "js" / "aiops-operations-knowledge-chat.js"
+        ).read_text(encoding="utf-8")
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(encoding="utf-8")
         self.assertIn('id="manual-form"', page)
         self.assertIn('id="search-form"', page)
         self.assertIn("/operations-knowledge", script)
         self.assertIn("/search-preview", script)
         self.assertIn("X-Expected-Asset-Row-Version", script)
         self.assertIn('data-review="publish"', script)
+        self.assertNotIn('id="knowledge-chat-form"', page)
+        self.assertNotIn("loadAnswerConversations", script)
+        self.assertIn('data-page="operations-knowledge-chat"', chat_page)
+        self.assertIn('class="ops-special-workspace ops-workspace', chat_page)
+        self.assertIn('class="ops-conversation"', chat_page)
+        self.assertIn('class="ops-messages"', chat_page)
+        self.assertIn('class="ops-composer"', chat_page)
+        self.assertIn('class="ops-message ${role}"', chat_script)
+        self.assertIn("/conversations?limit=200", chat_script)
+        self.assertIn('"operations-knowledge-chat": "aiops:use"', shell)
+        self.assertIn('"operations-knowledge": "aiops:knowledge_manage"', shell)
+        self.assertIn('["operations-knowledge-chat", "知识问答"]', shell)
+        self.assertIn('["operations-knowledge", "知识资料"]', shell)
         self.assertNotIn("Knowledge Core", page)
         self.assertNotIn("Collection", page)
         self.assertNotIn("Embedding", page)

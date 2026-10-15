@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AIOps 知识问答</title>
+  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/workspaces.css">
+  <link rel="stylesheet" href="./css/aiops-knowledge.css">
+  <link rel="stylesheet" href="./css/aiops-knowledge-answering.css">
+</head>
+<body data-page="operations-knowledge-chat">
+  <main class="ops-main ops-special-page ops-chat-main">
+    <header class="ops-head">
+      <div><h1>知识问答</h1><p>依据已发布运维资料回答问题，并保留可以回到原文核验的引用证据。</p></div>
+      <button id="knowledge-new-conversation" class="primary" type="button">新建问答会话</button>
+    </header>
+
+    <section id="knowledge-chat-workspace" class="ops-special-workspace ops-workspace is-rail-collapsed">
+      <aside class="ops-special-rail ops-workspace-list" aria-label="知识问答会话与上下文">
+        <button id="knowledge-chat-rail-toggle" class="ops-special-rail-toggle" type="button" aria-label="展开知识问答会话" aria-controls="knowledge-chat-rail-content" aria-expanded="false">☰</button>
+        <span class="ops-special-rail-collapsed-label">问答会话</span>
+        <div id="knowledge-chat-rail-content" class="ops-special-rail-content">
+          <div class="ops-workspace-list-head">
+            <h2>问答会话</h2>
+            <label for="knowledge-context-db">数据库类型</label>
+            <select id="knowledge-context-db" aria-label="数据库类型"><option value="">全部数据库类型</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select>
+            <label for="knowledge-context-version">数据库主版本</label>
+            <input id="knowledge-context-version" maxlength="32" placeholder="例如 19c">
+            <label for="knowledge-context-topology">数据库拓扑</label>
+            <input id="knowledge-context-topology" maxlength="64" placeholder="例如 RAC / Exadata">
+            <p class="ops-composer-hint">环境信息用于缩小已发布知识的适用范围。</p>
+          </div>
+          <div id="knowledge-conversation-list" class="ops-workspace-items"><p class="ops-empty">正在读取会话…</p></div>
+        </div>
+      </aside>
+      <article class="ops-conversation">
+        <header class="ops-conversation-head"><h2 id="knowledge-chat-title">运维知识助手</h2><p id="knowledge-chat-meta">新会话将在发送第一条问题时创建。</p></header>
+        <div id="knowledge-chat-stream" class="ops-messages" aria-live="polite"><p class="ops-empty">可以询问 Exadata 存储节点维护方法、状态查看命令或故障处理步骤。</p></div>
+        <form id="knowledge-chat-form" class="ops-composer">
+          <textarea id="knowledge-chat-input" name="message" maxlength="32000" required placeholder="输入运维问题，系统只依据已发布知识回答…"></textarea>
+          <div class="ops-composer-row"><span id="knowledge-chat-status" class="ops-composer-hint">可以补充数据库环境以缩小适用范围；结论请通过引用原文核验。</span><button id="knowledge-chat-send" class="primary" type="submit">发送</button></div>
+        </form>
+      </article>
+    </section>
+  </main>
+
+  <dialog id="citation-dialog" class="knowledge-dialog wide">
+    <header><div><h2 id="citation-title">原文引用</h2><p id="citation-subtitle"></p></div><button type="button" data-close>关闭</button></header>
+    <div id="citation-body" class="knowledge-dialog-body ops-result-markdown"></div>
+    <footer><button id="citation-download" type="button">下载原始文件</button><button type="button" data-close>关闭</button></footer>
+  </dialog>
+
+  <script src="../runtime-config.js"></script>
+  <script src="../vendor/marked.umd.js"></script>
+  <script src="../vendor/purify.min.js"></script>
+  <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
+  <script src="./js/aiops-auth.js"></script>
+  <script src="./js/aiops-shell.js"></script>
+  <script src="./js/aiops-operations-knowledge-chat.js"></script>
+</body>
+</html>
