@@ -843,19 +843,21 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             single_connection.index("容器范围"),
         ]
         self.assertEqual(first_row, sorted(first_row))
-        self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-4"}', single_connection)
-        self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-2"}', single_connection)
-        self.assertIn('${database.db_type === "ORACLE" ? "span-3" : "span-6"}', single_connection)
-        self.assertEqual(single_connection.count('${database.db_type === "ORACLE" ? "span-3"'), 3)
-        self.assertIn('aria-label="PDB 名称" placeholder="PDB 名称"', single_connection)
+        for group in ("连接端点", "数据库访问", "监控映射"):
+            self.assertIn(f"<p>{group}</p>", single_connection)
+        self.assertIn("business-connection-endpoint-row", single_connection)
+        self.assertIn("business-connection-access-row", single_connection)
+        self.assertIn("business-connection-monitoring-row", single_connection)
+        self.assertIn('database.oracle_scope === "PDB"', single_connection)
+        self.assertIn("<span>PDB 名称</span>", single_connection)
         second_and_third_rows = [
             single_connection.index("诊断用户名"),
             single_connection.index("诊断密码"),
             single_connection.index("监控源（必选）"),
         ]
         self.assertEqual(second_and_third_rows, sorted(second_and_third_rows))
-        self.assertIn('${discovery ? "span-4" : "span-6"}', single_connection)
-        self.assertGreaterEqual(single_connection.count('class="span-4"><span>'), 2)
+        self.assertIn(".business-connection-endpoint-row.oracle{grid-template-columns:repeat(4,minmax(0,1fr))}", forms)
+        self.assertIn(".business-connection-access-row.pdb,.business-connection-monitoring-row.discovery{grid-template-columns:repeat(3,minmax(0,1fr))}", forms)
         self.assertNotIn("discover-resources", systems)
         self.assertNotIn("event.target === drawer", systems)
         self.assertIn("function enforceDrawerClosePolicy()", shell)
