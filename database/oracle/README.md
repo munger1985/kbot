@@ -68,6 +68,11 @@ App 权限角色升级前后使用 `scripts/db/audit_app_authorization.py` 只�
 `operations/upgrade_app_authorization_roles.sql`。统一权限模型详见
 `docs/architecture/app-authorization-standard.md`。
 
+从 KBot 4.0 升级到 4.1 时，KM Asset 已从主产品分支退役。完成 Schema 备份并停止写入后，
+由 DBA 显式执行 `operations/upgrade_kbot_41_retire_km_asset.sql`。该脚本删除 KM 私有表、
+视图、授权边界和 App 自有账号，但保留共享 Domain、Knowledge Core、Data Query、
+Agent Runtime 历史及托管凭据；KM 4.0 环境不得执行该脚本。
+
 执行前运行：
 
 ```bash
