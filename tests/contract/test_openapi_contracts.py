@@ -1,4 +1,4 @@
-"""KBot 4.0 全服务 OpenAPI 契约测试。"""
+"""KBot 4.1 全服务 OpenAPI 契约测试。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class OpenApiContractsTest(unittest.TestCase):
         self.assertEqual([], check_openapi_contracts())
 
     def test_expected_service_contracts_are_frozen(self) -> None:
-        self.assertEqual(15, len(self.contracts))
+        self.assertEqual(14, len(self.contracts))
         self.assertEqual(
             {
                 "agent_runtime_internal_v1.json",
@@ -31,7 +31,6 @@ class OpenApiContractsTest(unittest.TestCase):
                 "knowledge_core_internal_v1.json",
                 "knowledge_retrieval_app_internal_v1.json",
                 "media_studio_app_internal_v1.json",
-                "km_asset_app_internal_v1.json",
                 "main_api_public_v1.json",
                 "model_embedding_v1.json",
                 "model_llm_v1.json",

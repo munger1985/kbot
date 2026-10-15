@@ -3199,57 +3199,6 @@
         ]
       }
     },
-    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/ingestions/km-assets": {
-      "post": {
-        "description": "接收一个完整 Asset Bundle；受理成功不代表解析已完成。",
-        "operationId": "ingest_km_asset_internal_v1_knowledge_domains__domain_id__collections__collection_id__ingestions_km_assets_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "domain_id",
-            "required": true,
-            "schema": {
-              "title": "Domain Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Ingest Km Asset",
-        "tags": [
-          "Knowledge Core"
-        ]
-      }
-    },
     "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/ingestions/user-files": {
       "post": {
         "description": "接收多个独立文件或一个显式组合的 Bundle。",

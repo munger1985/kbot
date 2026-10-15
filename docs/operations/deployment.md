@@ -471,7 +471,7 @@ python3 tests/acceptance/check_oracle_schema.py
 4. Data Query API、Worker；
 5. Agent Runtime API、Worker；
 6. AIOps API、DB Executor、Worker、Scheduler；
-7. KM Asset Slack Worker、Main API、Notification Worker。
+7. Main API、Notification Worker。
 
 各模块入口位于 `services/<service>/src/<package>/entrypoints/`。开发环境可执行：
 
@@ -480,8 +480,8 @@ bash start_kbot.sh
 bash stop_kbot.sh
 ```
 
-开发模式还会启动 `tools/dev_console/` 静态服务器，只发布开发日志页和
-`ui/km/` 正式页面；生产不得启用测试认证绕过或开发日志接口。
+开发模式还会启动 `tools/dev_console/` 静态服务器，发布开发日志页和 `ui/`
+正式页面；生产不得启用测试认证绕过或开发日志接口。
 
 ## 数据与日志
 

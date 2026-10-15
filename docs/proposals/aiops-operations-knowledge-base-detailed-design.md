@@ -137,6 +137,10 @@ Main API 不再直接把“上传成功”等价为“知识发布成功”。�
 AIOps Candidate Resolver 只返回 `PUBLISHED` 版本，因此未审核内容即使已经完成 KC 索引，
 也不能被 Agent 检索到。
 
+正式知识问答不在 AIOps 内复制 Conversation、SSE、Document Skill 或 Composer，而是接入
+[Knowledge Answering 基础能力](../architecture/knowledge-answering-capability.md)。AIOps 负责内部知识助手、
+服务端 Scope 和业务引用呈现；Agent Runtime 负责 Run 与 Grounded Answer；KC 负责精确 Revision 检索。
+
 ### 5.2 KC Collection 规划
 
 逻辑上向用户呈现一个运维知识库，物理上使用两个固定 Collection：
@@ -488,6 +492,15 @@ Agent 说明“相似在哪里、差异在哪里”。
 
 ## 10. Agent 工具与使用合同
 
+AIOps 具有两种知识使用入口：诊断状态机通过 `ops.knowledge.search@1.0.0` 获取知识证据；普通用户在
+“运维知识库”内通过正式知识问答 Conversation 提问。两者必须共享同一 Scope Provider、精确 Revision
+范围和 Citation DTO，不能形成两套检索语义。
+
+正式问答使用内部 Knowledge Assistant：`owner_app_id=aiops`、`agent_kind=KNOWLEDGE_RETRIEVAL`、
+`enabled_capabilities=[document]`。它不绑定 Target、不出现在用户 Agent 选择器中，不复用诊断 Agent 或
+用户 ID。浏览器只提交问题与业务上下文；Agent、Collection、Revision、安全级、模型和检索策略均由
+服务端签发并冻结到 Run。
+
 ### 10.1 新工具
 
 新增受控工具 `ops.knowledge.search@1.0.0`。它与 `artifact.search` 的职责不同：
@@ -730,6 +743,11 @@ POST   /api/v1/apps/aiops/operations-knowledge/versions/{version_id}:retire
 POST   /api/v1/apps/aiops/operations-knowledge/versions/{version_id}:retry
 GET    /api/v1/apps/aiops/operations-knowledge/reviews
 POST   /api/v1/apps/aiops/operations-knowledge/search-preview
+POST   /api/v1/apps/aiops/operations-knowledge/conversations
+GET    /api/v1/apps/aiops/operations-knowledge/conversations
+POST   /api/v1/apps/aiops/operations-knowledge/conversations/{conversation_id}/turns
+GET    /api/v1/apps/aiops/operations-knowledge/runs/{run_id}/events
+GET    /api/v1/apps/aiops/operations-knowledge/references/{citation_id}/content
 ```
 
 上传使用 multipart 流式转发、`Idempotency-Key` 和文件摘要，不把文件写入 Main API 本地目录。
@@ -774,8 +792,10 @@ POST /internal/v1/aiops/operations-knowledge/index-reconciliation:run
 4. **待审核**：手册冲突、案例草稿和报告更正影响；
 5. **索引状态**：只显示业务可理解的处理阶段和修复入口；
 6. **检索测试**：输入问题并选择模拟 Target，查看候选、命中原因和引用。
+7. **知识问答**：多轮提问、流式回答、会话历史、引用角标、原文预览、重试和明确的证据不足状态。
 
 Collection ID、Bundle ID、Embedding 模型和 KC 行版本放入管理员诊断详情，默认不显示。
+检索测试是治理诊断工具，不替代正式知识问答；正式页面不能选择 Agent、Collection、模型或检索策略。
 
 ### 14.2 手册上传与审核
 
@@ -818,6 +838,9 @@ Verification 事实限制。
 | `aiops:knowledge_manage` | 上传、更新、审核、发布、退役、重试和查看索引诊断 |
 
 如果后续需要把“上传”和“发布审核”分离，再新增独立权限；首版不预先制造未使用的角色。
+
+`aiops:use` 同时覆盖正式知识问答、会话读取和有权 Citation 预览；安全级由 Main API/AIOps 服务端计算，
+不接受浏览器字段。
 
 ### 15.2 隔离与授权
 
@@ -889,57 +912,34 @@ KC Revision `READY` 不是唯一条件。发布前必须同时确认：
 日志只记录资产、版本、任务、KC Revision、状态和稳定错误码，不记录文件正文、完整 SQL、
 日志原文、凭据或模型 Prompt。
 
-## 18. 迁移与切换
+## 18. 一次性原子改造与切换
 
-### 18.1 数据迁移
+本功能不采用分阶段上线。以下工作可以并行开发，但属于同一个发布单元，只有一次 Oracle Schema 与应用
+切换：
 
-1. 保留现有 `operations-manuals` Collection，不删除已解析内容；
-2. 初始化新的 `diagnosis-cases` 固定 Collection；
-3. 创建 AIOps Knowledge Registry 表和应用服务；
-4. 将现有内置 `database-operations-manual.md` 登记为第一个 `MANUAL` 资产版本；
-5. 如果无法可靠解析现有 Bundle 引用，则从规范源文件重新入库，不根据文件名猜测绑定；
-6. 对历史报告运行只读资格扫描，生成候选清单，不自动发布；
-7. 由审核者分批提炼和发布高价值案例。
+1. `kbot4.1` 与 `km4.0` 已从共同基线提交建立；终版标签后续只补在该共同基线上。
+2. KBot 4.1 已完成 KM 全量物理删除并由不存在性合同锁定；继续冻结 Scope、Execution Spec、Citation、
+   SSE、错误码和 App 扩展合同。
+3. 同步完成 Registry、手册/案例、正式问答、KC 精确 Revision、Runtime 通用 Skill、Main API、AIOps 页面、
+   Platform Client、OpenAPI、Oracle canonical DDL/manifest 和全部测试。
+4. 初始化 `operations-manuals`、`diagnosis-cases` 和内部 AIOps Knowledge Assistant。不能可靠确认的旧
+   Bundle 从规范源重新入库，不按文件名猜测绑定，不回填伪造身份。
+5. 删除旧 `knowledge-core` 页面/路由、旧 KC 响应解析、重复 Composer、兼容 DTO、双读写和失效测试；
+   KM 删除已在 4.1 前置提交完成，不在后续功能实现中重新引入。
+6. 对历史报告只生成待审核候选，不自动发布；这是新系统的运营数据，不是兼容链路。
+7. 全部门禁通过后同时切换前后端；失败时整体恢复上一发布物和数据库备份，不让新旧合同并行。
 
-### 18.2 产品切换
+### 18.1 KM 独立分支与 4.1 删除门禁
 
-- 新页面和新 API 完成后删除旧 `knowledge-core` 页面和 AIOps 专用旧路由；
-- 不保留双写、双读或长期兼容适配器；
-- KC 通用服务和通用 Knowledge Retrieval 产品路由不受影响；
-- AIOps 初始化脚本改为初始化两个固定 Collection 和内置手册资产；
-- 权限显示名称从“管理 AIOps Knowledge Core”改为“管理 AIOps 运维知识库”，权限代码保持
-  `aiops:knowledge_manage`，避免无业务价值的授权迁移。
+KM 由 `km4.0` 独立维护完整 4.0 技术栈，缺陷修复不得进入 `kbot4.1`；`km-v4.0` 只能补在共同基线。
+KBot 4.1 已物理删除 `services/km_asset_app/**`、Main API KM/Slack 入口、Runtime 专属实现、KC/Data Query
+特例、KM UI、Oracle DDL/bootstrap、客户端、合同、配置、测试、OpenAPI 和产品文档。
 
-## 19. 分阶段实施
+4.1 不运行 KM 功能回归；门禁改为验证 workspace、依赖图、服务拓扑、Main API/OpenAPI、Runtime Registry、
+KC/Data Query 类型、Oracle manifest、UI 制品和文档中不存在 KM。完整规则见
+[4.0/4.1 分线规则](../architecture/release-4.0-4.1-boundary.md)。
 
-### 阶段一：资产与手册
-
-- 新增 Registry 表、Repository、UoW 和应用服务；
-- 重做运维知识库页面；
-- 接入手册上传、Profile、Procedure Card、审核和版本发布；
-- 保留原文 Citation，并完成 KC 对账。
-
-### 阶段二：诊断案例
-
-- 增加报告资格扫描和案例提炼合同；
-- 增加审核页面、来源追溯和报告更正联动；
-- 初始化 `diagnosis-cases` Collection；
-- 完成脱敏和案例版本管理。
-
-### 阶段三：Agent 检索
-
-- 实现结构化候选发现和 `ops.knowledge.search`；
-- 接入 Planner、Evidence Index 和回答引用；
-- 增加手册/案例权威顺序、适用性和冲突处理；
-- 在实施文档生成中复用同一检索工具，但继续使用当前 Target 参数和受控命令合同。
-
-### 阶段四：历史数据与运营
-
-- 分批审核高价值历史报告；
-- 增加检索测试、命中反馈和过期知识治理；
-- 根据真实零结果、误召回和版本冲突数据调整确定性检索策略。
-
-## 20. 验收标准
+## 19. 验收标准
 
 1. 普通用户页面不再出现 KC、Collection、Bundle 或 Embedding 等内部概念。
 2. 手册上传后保留原始文件，并生成带原文定位的 Profile 和 Procedure Card。
@@ -958,4 +958,9 @@ KC Revision `READY` 不是唯一条件。发布前必须同时确认：
 15. 旧 AIOps `knowledge-core` 产品接口在切换后删除，不存在双读或双写路径。
 16. 同一手册上传新版本不会造成已发布版本检索空窗，并使用资产行版本阻止并发覆盖。
 17. 来源报告被更正后，旧案例在同一事务内进入 `REVIEW_REQUIRED`，不会继续参与新检索。
-18. KC 成员、Revision 或发布失败会落为可重试的 `FAILED`，不会无限停留在 `PROCESSING`。
+18. 普通用户可通过 Conversation/SSE 完成多轮知识问答，并预览所有实际使用的 Citation。
+19. 浏览器无法指定 Agent、Collection、Revision、安全级、模型或检索策略；零 Citation 时明确拒答。
+20. 超过 KC 单次范围上限时稳定分片，旧而相关的手册不会被时间预截断遗漏。
+21. KM 已从 KBot 4.1 的代码、依赖、路由、Schema、制品、配置、测试和文档中物理删除；KM 4.0 只在
+    `km4.0` 独立维护。
+22. KC 成员、Revision 或发布失败会落为可重试的 `FAILED`，不会无限停留在 `PROCESSING`。

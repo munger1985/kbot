@@ -155,11 +155,6 @@ async def _active_agent_ids(
             domain_id=domain_id,
             auth_context=context,
         )
-    elif app_id == "km_asset":
-        rows = await request.app.state.km_asset_client.list_agents(
-            domain_id=domain_id,
-            auth_context=context,
-        )
     elif app_id == "aiops":
         rows = await request.app.state.aiops_client.list_private_agents(
             auth_context=context,

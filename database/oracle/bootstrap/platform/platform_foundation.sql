@@ -45,15 +45,6 @@ USING (
     SELECT 'knowledge_retrieval', 'app_admin', 'App 管理员',
            'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
     UNION ALL
-    SELECT 'km_asset', 'app_user', 'App 用户',
-           'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL
-    UNION ALL
-    SELECT 'km_asset', 'app_manager', 'App 业务管理员',
-           'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
-    UNION ALL
-    SELECT 'km_asset', 'app_admin', 'App 管理员',
-           'Y', 'ALL_APP_DOMAINS', 'ACTIVE' FROM DUAL
-    UNION ALL
     SELECT 'media_studio', 'app_user', 'App 用户',
            'Y', 'SELECTABLE', 'ACTIVE' FROM DUAL
     UNION ALL

@@ -27,8 +27,8 @@ class ReleaseToolingTest(unittest.TestCase):
 
     def test_catalog_covers_every_topology_process(self) -> None:
         image_ids = {item["id"] for item in self.catalog["images"]}
-        self.assertEqual(9, len(image_ids))
-        self.assertEqual(25, len(self.topology["processes"]))
+        self.assertEqual(8, len(image_ids))
+        self.assertEqual(22, len(self.topology["processes"]))
         self.assertTrue(
             all(
                 process["service_config"] in image_ids
@@ -143,12 +143,10 @@ class ReleaseToolingTest(unittest.TestCase):
         self.assertIn("  aiops-api:\n", rendered)
         self.assertIn("  knowledge-core-api:\n", rendered)
         self.assertNotIn("  media-studio-app-api:\n", rendered)
-        self.assertNotIn("  km-asset-app-api:\n", rendered)
         self.assertNotIn("  knowledge-retrieval-app-api:\n", rendered)
         schema = release.render_schema_services(self.catalog, values)
         self.assertIn("aiops_agent = true", schema)
         self.assertIn("media_studio_app = false", schema)
-        self.assertIn("km_asset_app = false", schema)
 
     def test_rendered_secrets_are_private(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -370,7 +368,7 @@ alertmanager_retention = 24h
     def _values(oracle_secret: Path, master_secret: Path) -> dict[str, object]:
         return {
             "project_name": "kbot4-test",
-            "version": "4.0.0-test",
+            "version": "4.1.0-test",
             "registry": "registry.test/kbot",
             "ui_port": 8080,
             "public_base_url": "http://127.0.0.1:8080",
@@ -382,7 +380,6 @@ alertmanager_retention = 24h
             "enabled_apps": [
                 "knowledge_retrieval",
                 "media_studio",
-                "km_asset",
                 "aiops",
             ],
             "aiops_agent_execution_enabled": False,
@@ -400,7 +397,7 @@ alertmanager_retention = 24h
         return f"""[deployment]
 project_name = kbot4-test
 registry = registry.test/kbot
-image_version = 4.0.0-test
+image_version = 4.1.0-test
 ui_port = 8080
 public_base_url = http://127.0.0.1:8080
 embedding_dimension = 2048
@@ -408,7 +405,6 @@ embedding_dimension = 2048
 [apps]
 knowledge_retrieval = true
 media_studio = true
-km_asset = true
 aiops = true
 
 [database]

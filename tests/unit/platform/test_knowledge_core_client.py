@@ -70,7 +70,7 @@ class KnowledgeCoreClientTest(unittest.IsolatedAsyncioTestCase):
         session = _Session()
         client = KnowledgeCoreClient(
             base_url="http://knowledge-core.internal",
-            caller_service="km-asset-app",
+            caller_service="knowledge-retrieval-app",
             audience="knowledge-core",
             session=session,
         )
@@ -99,7 +99,7 @@ class KnowledgeCoreClientTest(unittest.IsolatedAsyncioTestCase):
         session = _Session()
         client = KnowledgeCoreClient(
             base_url="http://knowledge-core.internal",
-            caller_service="km-asset-app",
+            caller_service="knowledge-retrieval-app",
             audience="knowledge-core",
             session=session,
         )
@@ -134,7 +134,7 @@ class KnowledgeCoreClientTest(unittest.IsolatedAsyncioTestCase):
         session = _Session()
         client = KnowledgeCoreClient(
             base_url="http://knowledge-core.internal",
-            caller_service="km-asset-app",
+            caller_service="knowledge-retrieval-app",
             audience="knowledge-core",
             session=session,
         )

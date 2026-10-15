@@ -15,12 +15,10 @@ from .domains import router as domain_router
 from .integrations import router as integration_router
 from .knowledge import router as knowledge_router
 from .knowledge_retrieval_app import router as knowledge_retrieval_app_router
-from .km_asset_app import router as km_asset_app_router
 from .models import router as model_catalog_router
 from .notifications import router as notification_router
 from .ops import router as ops_router
 from .runs import router as run_router
-from .slack import router as slack_router
 
 __all__ = [
     "conversation_router",
@@ -38,10 +36,8 @@ __all__ = [
     "integration_router",
     "knowledge_router",
     "knowledge_retrieval_app_router",
-    "km_asset_app_router",
     "model_catalog_router",
     "notification_router",
     "ops_router",
     "run_router",
-    "slack_router",
 ]

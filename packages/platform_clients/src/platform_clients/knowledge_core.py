@@ -513,7 +513,7 @@ class KnowledgeCoreClient:
         idempotency_key: str,
         auth_context: AuthContext,
     ) -> KnowledgeCoreResponse:
-        if intake_kind not in {"km-assets", "user-files"}:
+        if intake_kind != "user-files":
             raise ValueError("不支持的 KC 入库类型")
         path = (
             f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"

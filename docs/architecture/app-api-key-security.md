@@ -57,7 +57,7 @@ Main API 对每次 App Key 请求执行以下检查，不缓存长期授权结�
 绑定服务账号仍拥有 Scope 映射的 App 权限、目标路由接受该 Scope、目标 Agent 在白名单中。
 Scope 不能授予服务账号原本没有的权限。
 
-当前开放范围是 Knowledge Retrieval、KM Asset 和 AIOps 的 Agent 读取、聊天、会话读取及
+当前开放范围是 Knowledge Retrieval 和 AIOps 的 Agent 读取、聊天、会话读取及
 Run/引用读取等运行时能力。成员、角色、Agent 配置、数据源、资产入库、平台管理和 API
 Client 管理不属于机器 Scope，默认拒绝。
 

@@ -59,7 +59,7 @@ class _Repository:
 
 class _Access:
     async def permissions_for(self, **kwargs):
-        return {"km_asset:use"}
+        return {"knowledge_retrieval:use"}
 
 
 class _Uow:
@@ -100,16 +100,16 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
             pepper="app-api-key-unit-test-pepper",
         )
         self.created = await self.service.create_client(
-            app_id="km_asset",
+            app_id="knowledge_retrieval",
             domain_id=100,
-            subject_user_id="km-service",
-            display_name="第三方 KM 集成",
-            scopes=("km:chat:write", "km:conversation:read"),
+            subject_user_id="knowledge-service",
+            display_name="第三方知识检索集成",
+            scopes=("knowledge:chat:write", "knowledge:conversation:read"),
             agent_ids=(AGENT_ID,),
             active_agent_ids=frozenset({AGENT_ID}),
             expires_at=datetime.now(timezone.utc) + timedelta(days=30),
             rate_limit_per_minute=60,
-            actor_id="kmadmin",
+            actor_id="knowledge-admin",
         )
 
     async def test_plaintext_is_returned_once_and_not_persisted(self):
@@ -121,29 +121,29 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
     async def test_authentication_builds_database_bound_context(self):
         context = await self.service.authenticate_request(
             authorization=f"Bearer {self.created['api_key']}",
-            path="/api/v1/apps/km-asset/conversations",
+            path="/api/v1/apps/knowledge-retrieval/conversations",
             headers={":method": "POST"},
         )
         self.assertEqual("APP_API_CLIENT", context.principal_kind)
-        self.assertEqual("km_asset", context.app_id)
+        self.assertEqual("knowledge_retrieval", context.app_id)
         self.assertEqual("100", context.domain_id)
-        self.assertEqual("km-service", context.asserted_user_id)
+        self.assertEqual("knowledge-service", context.asserted_user_id)
         self.assertEqual((AGENT_ID,), context.authorized_agent_ids)
 
     async def test_long_term_key_can_be_created_and_authenticated(self):
         now = datetime.now(timezone.utc)
         long_term_expiry = now.replace(year=now.year + 100)
         created = await self.service.create_client(
-            app_id="km_asset",
+            app_id="knowledge_retrieval",
             domain_id=100,
-            subject_user_id="km-service",
-            display_name="长期 KM 集成",
-            scopes=("km:chat:write",),
+            subject_user_id="knowledge-service",
+            display_name="长期知识检索集成",
+            scopes=("knowledge:chat:write",),
             agent_ids=(AGENT_ID,),
             active_agent_ids=frozenset({AGENT_ID}),
             expires_at=long_term_expiry,
             rate_limit_per_minute=60,
-            actor_id="kmadmin",
+            actor_id="knowledge-admin",
         )
 
         self.assertEqual(
@@ -151,7 +151,7 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
         )
         context = await self.service.authenticate_request(
             authorization=f"Bearer {created['api_key']}",
-            path="/api/v1/apps/km-asset/conversations",
+            path="/api/v1/apps/knowledge-retrieval/conversations",
             headers={":method": "POST"},
         )
         self.assertEqual("APP_API_CLIENT", context.principal_kind)
@@ -159,32 +159,32 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
     async def test_expiration_cannot_be_null(self):
         with self.assertRaises(AppApiKeyError) as rejected:
             await self.service.create_client(
-                app_id="km_asset",
+                app_id="knowledge_retrieval",
                 domain_id=100,
-                subject_user_id="km-service",
-                display_name="无到期时间的 KM 集成",
-                scopes=("km:chat:write",),
+                subject_user_id="knowledge-service",
+                display_name="无到期时间的知识检索集成",
+                scopes=("knowledge:chat:write",),
                 agent_ids=(AGENT_ID,),
                 active_agent_ids=frozenset({AGENT_ID}),
                 expires_at=None,
                 rate_limit_per_minute=60,
-                actor_id="kmadmin",
+                actor_id="knowledge-admin",
             )
         self.assertEqual("APP_API_KEY_EXPIRY_INVALID", rejected.exception.code)
 
     async def test_inactive_or_cross_domain_agent_is_rejected(self):
         with self.assertRaises(AppApiKeyError) as rejected:
             await self.service.create_client(
-                app_id="km_asset",
+                app_id="knowledge_retrieval",
                 domain_id=100,
-                subject_user_id="km-service",
+                subject_user_id="knowledge-service",
                 display_name="无效 Agent 集成",
-                scopes=("km:chat:write",),
+                scopes=("knowledge:chat:write",),
                 agent_ids=(AGENT_ID,),
                 active_agent_ids=frozenset(),
                 expires_at=datetime.now(timezone.utc) + timedelta(days=30),
                 rate_limit_per_minute=60,
-                actor_id="kmadmin",
+                actor_id="knowledge-admin",
             )
         self.assertEqual("APP_API_KEY_AGENT_INVALID", rejected.exception.code)
 
@@ -200,7 +200,7 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AppApiKeyError) as forged_identity:
             await self.service.authenticate_request(
                 authorization=f"Bearer {self.created['api_key']}",
-                path="/api/v1/apps/km-asset/conversations",
+                path="/api/v1/apps/knowledge-retrieval/conversations",
                 headers={"x-kbot-user-id": "ADMIN", ":method": "POST"},
             )
         self.assertEqual(
@@ -212,7 +212,7 @@ class AppApiKeyTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AppApiKeyError) as denied:
             await self.service.authenticate_request(
                 authorization=f"Bearer {self.created['api_key']}",
-                path="/api/v1/apps/km-asset/assets",
+                path="/api/v1/apps/knowledge-retrieval/assets",
                 headers={":method": "GET"},
             )
         self.assertEqual("APP_API_KEY_SCOPE_DENIED", denied.exception.code)

@@ -30,7 +30,6 @@ Git 历史保存，不再作为有效文档。
 - [AIOps 正式报告与导出设计](product/aiops-reporting.md)
 - [AIOps 产品路线图](product/aiops-roadmap.md)
 - [AIOps 功能介绍与 PPT 生成说明](product/aiops-ppt-brief.md)
-- [Slack 集成](product/slack-integration.md)
 
 这些文档面向产品演示和 PPT 编写；精确接口仍以 OpenAPI 快照为准。
 

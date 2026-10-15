@@ -52,7 +52,6 @@ mutation_enabled = false
 # knowledge_core = "http://knowledge-core.internal:18090"
 # knowledge_retrieval_app = "http://knowledge-retrieval-app.internal:18150"
 # media_studio_app = "http://media-studio-app.internal:18170"
-# km_asset_app = "http://km-asset-app.internal:18160"
 # agent_runtime = "http://agent-runtime.internal:18100"
 # aiops = "http://aiops.internal:18110"
 # aiops_db_executor = "http://aiops.internal:18111"
@@ -71,50 +70,3 @@ mutation_enabled = false
 # enabled = true
 # api_endpoint = "http://deepseek-ocr.internal:18097/v1/chat/completions"
 # ocr_model = "deepseek-ocr"
-
-# Slack Events API 集成。Signing Secret 与 Bot Token 只通过下方指定的环境变量注入。
-# [integrations.slack]
-# enabled = true
-# max_webhook_bytes = 1048576
-# requests_per_minute = 120
-# outbox_poll_interval_seconds = 1
-# lease_seconds = 60
-# max_delivery_attempts = 8
-
-# [[integrations.slack.workspaces]]
-# workspace_id = "T0123456789"
-# domain_id = 1001
-# agent_id = "019fcbe0-e46c-7d33-907b-9d1621a2998f"
-# signing_secret_env = "KBOT_SLACK_SIGNING_SECRET"
-# bot_token_env = "KBOT_SLACK_BOT_TOKEN"
-
-# [integrations.slack.external_callback]
-# enabled = true
-# url = "http://141.148.83.133:8080/ords/kbot_ui/km/g"
-# timeout_seconds = 10
-# authorization_env = "KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION"
-
-# 两项调试功能会落盘完整业务报文，只能临时开启。
-# [integrations.slack.debug]
-# callback_payload_log_enabled = false
-# slack_reply_dump_enabled = false
-# slack_reply_dump_dir = "/tmp/slackmess"
-
-# Slack 中 Asset问答助手的最终回复展示策略。max_references 限制单条消息中最多
-# 组装 10 个 DOCUMENT Asset Template；无 DOCUMENT 时原样展示 KBot 最终回答。
-# Asset 回复使用 km_portal_base_url 与 URL 编码后的 asset_id 拼接 KM Link。
-# [integrations.slack.reply]
-# assistant_name = "Asset问答助手" # 旧配置兼容字段，最终 Slack 回复不显示
-# max_references = 10
-# 以下三个字段仅为旧配置兼容保留；Slack 最终展示不输出内部提示或问数重组摘要。
-# show_warnings = true
-# show_query_result_summary = true
-# show_visualization_notice = true
-# km_portal_base_url = "https://apex.oraclecorp.com/pls/apex/f?p=2018:130:::::P130_SUB,P130_ASSET_ID:SP,"
-
-# Slack Worker 只通过 KM Portal 的公开 Main API 提交问题和读取结果。
-# API Key 本身不得写入 TOML，只配置保存它的环境变量名称。
-# [integrations.slack.main_api]
-# base_url = "http://127.0.0.1:18099"
-# api_key_env = "KBOT_SLACK_KM_API_KEY"
-# timeout_seconds = 300

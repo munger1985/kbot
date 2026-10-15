@@ -1,4 +1,4 @@
-"""独立于 FastAPI 和存储适配器的 KM Asset 入库契约。"""
+"""独立于 FastAPI 和存储适配器的通用 Bundle 入库契约。"""
 import hashlib
 import json
 from typing import Any
@@ -56,7 +56,7 @@ class DocumentFailureDeclaration(BaseModel):
     failure_message: str | None = Field(default=None, max_length=1000)
 
 
-class KmAssetIntakeManifest(BaseModel):
+class BundleIntakeManifest(BaseModel):
     """已校验的请求元数据；文件字节不进入该对象。"""
     bundle: BundleDeclaration
     documents: list[DocumentDeclaration] = Field(default_factory=list)

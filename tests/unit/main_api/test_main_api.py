@@ -14,8 +14,6 @@ from main_api.app import create_main_api_app
 from main_api.application import (
     AccessDeniedError,
     DomainValidationService,
-    UserAuthService,
-    UserTokenCodec,
 )
 from main_api.config import get_main_api_settings
 from platform_clients import (
@@ -639,15 +637,6 @@ class _FakeAccessControlService:
             "knowledge_retrieval:member_manage",
             "knowledge_retrieval:role_manage",
             "knowledge_retrieval:api_key_manage",
-            "km_asset:use",
-            "km_asset:source_manage",
-            "km_asset:knowledge_manage",
-            "km_asset:data_manage",
-            "km_asset:agent_manage",
-            "km_asset:operations_manage",
-            "km_asset:member_manage",
-            "km_asset:role_manage",
-            "km_asset:api_key_manage",
             "aiops:use",
             "aiops:agent_manage",
             "aiops:target_manage",
@@ -911,7 +900,6 @@ class MainApiTest(unittest.TestCase):
         self.knowledge_retrieval_app = (
             self.app.state.knowledge_retrieval_app_client
         )
-        self.app.state.km_asset_client = self.knowledge_retrieval_app
         self.data_query = _FakeDataQueryClient()
         self.app.state.data_query_client = self.data_query
         self.app.state.access_control_service = _FakeAccessControlService()
@@ -1009,75 +997,6 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, response.status_code, response.text)
         self.assertEqual("portal-user-1", response.json()["members"][0]["id"])
         self.assertEqual("manager", response.json()["roles"][0]["code"])
-
-    def test_km_model_catalog_is_available_inside_km_app_boundary(self) -> None:
-        class _ModelCatalogClient:
-            async def list_models(self):
-                return [{
-                    "model_id": "019f8eae-2c25-7d48-b044-350ec3f5a019",
-                    "served_model_name": "km-test-llm",
-                    "provider_model_name": "km-test-llm",
-                    "display_name": "KM 测试模型",
-                    "category": 1,
-                    "provider": "test",
-                    "status": "ACTIVE",
-                    "model_params": {},
-                }]
-
-        self.app.state.model_config_clients = (_ModelCatalogClient(),)
-        response = self.client.get(
-            "/api/v1/apps/km-asset/model-catalog",
-            headers=self._headers(),
-        )
-
-        self.assertEqual(200, response.status_code, response.text)
-        self.assertEqual("km-test-llm", response.json()[0]["served_model_name"])
-
-    def test_km_model_catalog_accepts_platform_user_token(self) -> None:
-        class _ModelCatalogClient:
-            async def list_models(self):
-                return [{
-                    "model_id": "019f8eae-2c25-7d48-b044-350ec3f5a019",
-                    "served_model_name": "km-user-token-llm",
-                    "provider_model_name": "km-user-token-llm",
-                    "display_name": "KM 用户模型",
-                    "category": 1,
-                    "provider": "test",
-                    "status": "ACTIVE",
-                    "model_params": {},
-                }]
-
-        codec = UserTokenCodec(
-            secret="km-user-token-test-secret-value-32-bytes",
-            issuer="main-api-test",
-            ttl_seconds=3600,
-        )
-        token, _expires_at = codec.issue(
-            user_id="portal-user-1",
-            entry_kind="BUSINESS",
-            app_id="km_asset",
-            domain_id=100,
-            must_change_password=False,
-            password_version=1,
-        )
-        self.app.state.user_auth_service = UserAuthService(
-            uow_factory=None,
-            codec=codec,
-        )
-        async def _accept_session(*, claims):
-            return None
-        self.app.state.user_auth_service.validate_session = _accept_session
-        self.app.state.model_config_clients = (_ModelCatalogClient(),)
-
-        response = self.client.get(
-            "/api/v1/apps/km-asset/model-catalog",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-        self.assertEqual(200, response.status_code, response.text)
-        self.assertEqual(
-            "km-user-token-llm", response.json()[0]["served_model_name"]
-        )
 
     def test_policy_binding_requires_subject(self) -> None:
         response = self.client.post(
@@ -1655,76 +1574,6 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(404, response.status_code)
         self.assertEqual("DOCUMENT_REFERENCE_NOT_FOUND", response.json()["code"])
-
-    def test_km_reference_opens_asset_before_its_attachments(self) -> None:
-        base = (
-            "/api/v1/apps/km-asset/runs/"
-            f"{self.agent_runtime.run_id}/references/C1"
-        )
-
-        response = self.client.get(f"{base}/preview", headers=self._headers())
-
-        self.assertEqual(200, response.status_code, response.text)
-        payload = response.json()
-        self.assertEqual("ASSET", payload["reference_type"])
-        self.assertEqual("员工移动套餐", payload["title"])
-        self.assertTrue(payload["asset_content_available"])
-        self.assertEqual("Mobile Services", payload["asset_fields"]["product"])
-        self.assertEqual("ASSET-1", payload["asset_fields"]["asset_id"])
-        self.assertEqual(
-            "owner@example.com", payload["asset_fields"]["author_email"]
-        )
-        self.assertEqual(
-            "员工移动服务方案。", payload["asset_fields"]["briefing"]
-        )
-        self.assertEqual(
-            "2026-08-20T12:30:00Z",
-            payload["asset_fields"]["last_update_time"],
-        )
-        self.assertEqual(1, len(payload["attachments"]))
-        attachment = payload["attachments"][0]
-        self.assertEqual("员工移动套餐.pdf", attachment["name"])
-        self.assertTrue(attachment["evidence_source"])
-        self.assertEqual(3, attachment["page_no"])
-        self.assertIn(
-            f"/files/{TEST_DOCUMENT_VERSION_ID}/content",
-            attachment["content_url"],
-        )
-
-        content = self.client.get(
-            attachment["content_url"],
-            headers={**self._headers(), "Range": "bytes=0-11"},
-        )
-        self.assertEqual(206, content.status_code)
-        self.assertEqual(TEST_DOCUMENT_VERSION_ID, self.kc.last_document_version_id)
-
-    def test_km_reference_never_exposes_manifest_as_attachment(self) -> None:
-        response = self.client.get(
-            (
-                "/api/v1/apps/km-asset/runs/"
-                f"{self.agent_runtime.run_id}/references/C1/files/"
-                f"{TEST_MANIFEST_VERSION_ID}/content"
-            ),
-            headers=self._headers(),
-        )
-
-        self.assertEqual(404, response.status_code, response.text)
-
-    def test_km_reference_without_attachments_still_opens_asset(self) -> None:
-        self.kc.only_manifest = True
-
-        response = self.client.get(
-            (
-                "/api/v1/apps/km-asset/runs/"
-                f"{self.agent_runtime.run_id}/references/C1/preview"
-            ),
-            headers=self._headers(),
-        )
-
-        self.assertEqual(200, response.status_code, response.text)
-        self.assertEqual("ASSET", response.json()["reference_type"])
-        self.assertTrue(response.json()["asset_content_available"])
-        self.assertEqual([], response.json()["attachments"])
 
     def test_regular_user_with_chat_permission_can_use_active_agent(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(

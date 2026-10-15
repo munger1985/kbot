@@ -88,7 +88,7 @@ class AgentDelegationReconcilerTest(
         aiops_target_id = uuid7()
         context = AuthContext(
             principal_kind=PrincipalKind.PORTAL,
-            client_id="km-portal",
+            client_id="knowledge-portal",
             request_id="request-1",
             trace_id="trace-1",
             api_key_id="portal-key",
@@ -173,7 +173,7 @@ class AgentDelegationReconcilerTest(
         aiops_target_id = uuid7()
         context = AuthContext(
             principal_kind=PrincipalKind.PORTAL,
-            client_id="km-portal",
+            client_id="knowledge-portal",
             request_id="request-expired-lease",
             trace_id="trace-expired-lease",
             api_key_id="portal-key",

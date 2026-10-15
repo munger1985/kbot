@@ -178,18 +178,6 @@ SERVICE_TABLES = {
         "KBOT_MEDIA_PROMPT_REVISION",
         "KBOT_MEDIA_ASSET",
     },
-    "km_asset_app": {
-        "KBOT_KM_SOURCE",
-        "KBOT_KM_ASSET",
-        "KBOT_KM_ASSET_REVISION",
-        "KBOT_KM_ATTACHMENT",
-        "KBOT_KM_JOB",
-        "KBOT_KM_AGENT",
-        "KBOT_KM_AGENT_VERSION",
-        "KBOT_KM_SLACK_INBOX",
-        "KBOT_KM_SLACK_THREAD",
-        "KBOT_KM_SLACK_DELIVERY",
-    },
 }
 SERVICE_VIEWS = {
     "platform_core": {"KBOT_V_PLATFORM_DOMAIN"},
@@ -216,10 +204,6 @@ SERVICE_VIEWS = {
     },
     "knowledge_retrieval_app": set(),
     "media_studio_app": set(),
-    "km_asset_app": {
-        "KBOT_V_KM_ASSET_CURRENT",
-        "KBOT_V_KM_ASSET_SEARCHABLE",
-    },
 }
 FORBIDDEN_TOKENS = (
     "KBOT_MD_",
@@ -575,7 +559,6 @@ def main() -> int:
         ("media_studio_app", "Media Studio App"),
         ("data_query", "Data Query"),
         ("aiops_agent", "AIOps"),
-        ("km_asset_app", "KM Asset App"),
     ):
         manifest_path = SCHEMA_ROOT / manifest_service / "schema_manifest.json"
         try:

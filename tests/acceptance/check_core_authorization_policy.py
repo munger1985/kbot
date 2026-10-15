@@ -326,7 +326,7 @@ def main() -> int:
             assert policy.api_route_scopes, f"App {app_id} 未登记机器公开路由"
 
     legacy_system_roles = re.findall(
-        r"INTO KBOT_APP_ROLE VALUES \('(?:knowledge_retrieval|km_asset|"
+        r"INTO KBOT_APP_ROLE VALUES \('(?:knowledge_retrieval|"
         r"media_studio|aiops)', '(user|operator|approver|contributor|reviewer)',",
         sql,
     )
@@ -395,7 +395,7 @@ def main() -> int:
     )
     for token in FORBIDDEN_HUMAN_AGENT_GRANT_TOKENS:
         assert token not in source, f"人类 Agent Grant 模型重新出现：{token}"
-    for table_name in ("KBOT_OPS_AGENT_GRANT", "KBOT_KM_AGENT_GRANT"):
+    for table_name in ("KBOT_OPS_AGENT_GRANT",):
         assert re.search(
             rf"CREATE\s+TABLE\s+{table_name}\b",
             oracle_sql,
@@ -490,7 +490,6 @@ def main() -> int:
 
     agent_route_files = {
         "knowledge_retrieval": main_api_api / "knowledge_retrieval_app.py",
-        "km_asset": main_api_api / "km_asset_app.py",
         "aiops": main_api_api / "aiops_app.py",
     }
     for app_id, path in agent_route_files.items():

@@ -38,7 +38,6 @@ from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.persistence import create_agent_runtime_uow
 from agent_runtime.application.notifications import AgentRunOutboxPublisher
 from agent_runtime.specialists import register_builtin_manifests
-from agent_runtime.specialists.km_asset import KmAssetRoutePlanner
 from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.database.oracle import create_database_runtime
 from platform_core.logger import LogConfig, LogManager
@@ -152,15 +151,7 @@ async def lifespan(app: FastAPIOffline):
         root_planner=RootAgentPlanner(
             model_client=model_client,
             prompt_resolver=prompt_resolver,
-            app_route_planners={
-                "km_asset": KmAssetRoutePlanner(
-                    model_client=model_client,
-                    prompt_resolver=prompt_resolver,
-                    timeout_seconds=(
-                        settings.asset_search_planning_timeout_seconds
-                    ),
-                ),
-            },
+            app_route_planners={},
         ),
         model_resolver=model_resolver,
         notification_publisher=AgentRunOutboxPublisher(),

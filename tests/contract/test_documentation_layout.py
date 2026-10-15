@@ -1,4 +1,4 @@
-"""KBot 4.0 当前文档结构与本地链接契约。"""
+"""KBot 4.1 当前文档结构与本地链接契约。"""
 
 from pathlib import Path
 import re
@@ -30,13 +30,16 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "aiops-cross-project-alignment.md",
                 "aiops-implementation-runbooks.md",
                 "app-api-key-security.md",
+                "app-authorization-standard.md",
                 "core-authorization-policy.md",
                 "data-query.md",
                 "knowledge-core.md",
+                "knowledge-answering-capability.md",
                 "model-serving.md",
                 "overview.md",
                 "platform-app-access-control.md",
                 "repository-layout.md",
+                "release-4.0-4.1-boundary.md",
                 "security-and-api.md",
             },
             {
@@ -51,7 +54,6 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "aiops-observability-manual-deployment.md",
                 "aiops-observability-production-deployment.md",
                 "deployment.md",
-                "km-asset-migration.md",
                 "oracle-linux-nginx-http-apex-ords.md",
                 "oracle-linux-nginx-https-gateway.md",
             },
@@ -65,14 +67,13 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "agent-chat.md",
                 "aiops-agent-chat-diagnosis.md",
                 "aiops-agent.md",
+                "aiops-business-system-resource-topology.md",
                 "aiops-conversation-starters.md",
                 "aiops-implementation-runbooks.md",
                 "aiops-ppt-brief.md",
                 "aiops-reporting.md",
                 "aiops-roadmap.md",
                 "knowledge-lifecycle.md",
-                "slack-complete-test-plan.md",
-                "slack-integration.md",
             },
             {
                 path.name

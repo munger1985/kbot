@@ -106,7 +106,6 @@ OPTIONAL_SERVICE_ORDER = (
     "knowledge_core",
     "knowledge_retrieval_app",
     "media_studio_app",
-    "km_asset_app",
     "agent_runtime",
     "data_query",
     "aiops_agent",

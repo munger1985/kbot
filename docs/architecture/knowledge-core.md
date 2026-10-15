@@ -6,6 +6,9 @@ Knowledge Core（KC）是封闭的知识生成与检索服务。Domain 是强隔
 Domain 可有多个 Collection；App 私有 Agent 通过 Execution Spec 关联多个平权
 Collection。Collection 之间可建立关系，但不会重复保存 Domain 身份。
 
+KC 与 Agent Runtime 共同构成 [Knowledge Answering 基础能力](knowledge-answering-capability.md)。KC 不拥有
+业务会话、发布态或回答，只接受服务端签发的 Agent 身份和精确范围，并返回可验证的 Citation Pack。
+
 核心聚合如下：
 
 ```text
@@ -25,34 +28,11 @@ UUIDv7，并以 Oracle `RAW(16)` 保存。
 ## 入库与审批
 
 普通用户可选择“每个文件独立 Bundle”或“多文件组成一个 Bundle”。`USER_UPLOAD`
-上传后停在待审批状态，批准后才创建解析任务；`KM_ASSET` 已代表 MetaDB 发布资产，
-可自动进入解析。文件先写入 staging，数据库事务成功后发布到正式对象目录；失败
+上传后停在待审批状态，批准后才创建解析任务。文件先写入 staging，数据库事务成功后发布到正式对象目录；失败
 会清理临时文件、空目录和未形成有效 Revision 的空 Bundle。
 
 Bundle、Revision、Document Version 均保留不可变事实。重解析创建新的 Parse
 View，成功激活后删除旧解析产物；失败时继续保留上一成功视图。
-
-### KM Asset 元数据的问文与问数边界
-
-KM Asset App 从 Asset MetaDB 读取完整业务元数据和全部附件，并通过 KBot 内部服务身份
-调用 KC 的 `km-assets` 入库接口。外部 Portal 不得直接调用 KC 内部接口。元数据保存在不可变
-`Bundle Revision.manifest_json.metadata` 中，并进入 Manifest 与 Discovery Profile，
-用于标题、主题、行业、解决方案等语义检索。
-
-`KBOT_V_KM_ASSET_CURRENT` 保留当前同步状态用于运维；所有用户搜索统一从
-`KBOT_V_KM_ASSET_SEARCHABLE` 读取。后者只投影 Asset 和当前 Revision 均为 `READY`、
-Bundle 与 Bundle Revision 完整且一致的记录。FAILED、处理中和映射不完整的 Asset
-不能参与问文、问数或混合搜索。
-
-Root 只生成一次 `AssetSearchPlan.v1`，完整表达多个硬条件、布尔关系、软偏好、排序和
-数量。精确元数据条件由确定性编译器转换为 `DataQueryPlan.v1`，Data Query 继续执行
-模型目录校验、Domain 强制范围和参数化 SQL，不接受自由 SQL，也不调用第二个 LLM
-重新规划。语义条件先从可搜索视图形成候选范围，再由 Knowledge Core 验证正文相关性。
-语义召回 Top-K 不作为总数；主题总数请求返回明确的能力说明和最多 5 个较新相关 Asset。
-
-所有成功回答都投影 Asset：精确清单逐项使用 `Qn`；文档回答使用同 Bundle 的 `Cn`；
-混合结果逐项同时使用资格集合 `Qn` 和正文 `Cn`。精确 COUNT/GROUP 在同一个可审计
-查询快照中返回聚合结果 `Q1` 和同条件下 3 至 5 个较新 Asset 样例 `Q2`。
 
 ## 自适应解析
 
@@ -79,6 +59,10 @@ Discovery Object 保存 Bundle/Document 检索画像。Oracle Text 为
 `RETRIEVAL_TEXT` 和 `PROFILE_TEXT` 建立 `CONTEXT` 索引并在提交时同步。
 
 ## 二阶段检索
+
+Discovery 请求必须使用显式 `bundle_revision_ids`，并同时校验 Domain、Agent—Collection Binding、
+Collection 与 Revision 归属。超过单次 1000 个 Revision 时，调用方按稳定 UUID 排序分片；KC 对各分片
+使用相同查询计划和评分语义，合并使用稳定 tie-break。业务 Registry 不得在分片前按创建或更新时间截断。
 
 第一阶段面向文件对象：
 

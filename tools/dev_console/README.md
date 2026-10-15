@@ -1,8 +1,8 @@
 # KBot 4.0 开发日志页面
 
 `tools/dev_console/` 只保留 development 环境的运行日志与 API 访问日志查看页面，
-不再提供 Knowledge Core、Agent、AIOps 或 Run 调试测试页面。正式 KM 页面位于
-`ui/km/`。
+不再提供 Knowledge Core、Agent、AIOps 或 Run 调试测试页面。正式业务页面位于
+`ui/`。
 
 启动静态服务器：
 

@@ -119,9 +119,6 @@ class AccessControlRepository:
         rows = await self._session.scalars(statement.distinct().order_by(AppDomainEntity.domain_id))
         return tuple(int(value) for value in rows)
 
-    async def list_active_km_domain_ids(self, user_id: str) -> tuple[int, ...]:
-        return await self.list_active_domain_ids(user_id, app_id="km_asset")
-
     async def list_active_app_ids(self, user_id: str) -> tuple[str, ...]:
         rows = await self._session.scalars(
             select(AppDomainEntity.app_id)

@@ -20,7 +20,7 @@ from knowledge_core.application.intake import (
     ReviewIntakeCommand,
 )
 from knowledge_core.application.multipart import IntakeInProgressError, MultipartIntakeCommand
-from knowledge_core.domain.intake import IntakeValidationError, KmAssetIntakeManifest
+from knowledge_core.domain.intake import BundleIntakeManifest, IntakeValidationError
 
 
 router = APIRouter(tags=["Knowledge Core"])
@@ -79,66 +79,6 @@ async def _copy_upload(upload: UploadFile, target: Path) -> None:
             stream.write(chunk)
 
 
-@router.post(
-    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}/collections/{{collection_id}}/ingestions/km-assets",
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def ingest_km_asset(domain_id: int, collection_id: UUID, request: Request):
-    """接收一个完整 Asset Bundle；受理成功不代表解析已完成。"""
-    require_domain_match(request, domain_id)
-    try:
-        form = await request.form()
-        bundle = json.loads(str(form["bundle"]))
-        documents = json.loads(str(form["documents"]))
-        failures = json.loads(str(form.get("document_failures", "[]")))
-        manifest = KmAssetIntakeManifest.model_validate({
-            "bundle": bundle, "documents": documents, "document_failures": failures,
-        })
-    except (KeyError, TypeError, json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=422, detail={"code": "INVALID_INTAKE_MANIFEST", "message": str(exc)}) from exc
-
-    with tempfile.TemporaryDirectory(prefix="kc_http_") as directory:
-        root = Path(directory)
-        files: dict[str, Path] = {}
-        try:
-            for declaration in manifest.documents:
-                if Path(declaration.part_name).name != declaration.part_name:
-                    raise IntakeValidationError("file part name must not contain path separators")
-                upload = form.get(declaration.part_name)
-                if not isinstance(upload, UploadFile):
-                    raise IntakeValidationError(f"file part is missing: {declaration.part_name}")
-                target = root / declaration.part_name
-                await _copy_upload(upload, target)
-                files[declaration.part_name] = target
-            orchestrator = request.app.state.kc_multipart_orchestrator
-            accepted = await orchestrator.accept(MultipartIntakeCommand(
-                domain_id=domain_id, collection_id=collection_id,
-                actor_id=get_actor_id(request),
-                idempotency_key=request.headers.get("Idempotency-Key", ""),
-                manifest=manifest, file_paths=files,
-            ))
-        except (IntakeValidationError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail={"code": "INVALID_INTAKE_REQUEST", "message": str(exc)}) from exc
-        except IntakeCollectionError as exc:
-            raise HTTPException(status_code=404, detail={"code": "COLLECTION_NOT_FOUND", "message": str(exc)}) from exc
-        except IntakeConflictError as exc:
-            raise HTTPException(status_code=409, detail={"code": str(exc), "message": "Intake conflicts with an immutable request or revision"}) from exc
-        except IntakeInProgressError as exc:
-            raise HTTPException(status_code=409, detail={"code": "INGESTION_IN_PROGRESS", "message": str(exc)}) from exc
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail={"code": "INGESTION_UNAVAILABLE", "message": type(exc).__name__}) from exc
-    return {
-        "bundle_id": accepted.bundle_id,
-        "bundle_revision_id": accepted.bundle_revision_id,
-        "source_revision": accepted.source_revision,
-        "acceptance_status": accepted.acceptance_status,
-        "status_url": (
-            f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}/bundles/{accepted.bundle_id}"
-        ),
-        "request_id": request.headers.get("X-Request-ID", str(uuid4())),
-    }
-
-
 class UserFileDeclaration(BaseModel):
     part_name: str = Field(min_length=1, max_length=128)
     client_file_id: str = Field(min_length=1, max_length=256)
@@ -179,7 +119,7 @@ def _user_manifest(bundle: UserBundleDeclaration, files: list[UserFileDeclaratio
             "byte_size": item.byte_size,
             "content_sha256": item.content_sha256,
         })
-    return KmAssetIntakeManifest.model_validate({
+    return BundleIntakeManifest.model_validate({
         "bundle": {
             "source_id": bundle.client_bundle_id,
             "source_revision": source_revision,

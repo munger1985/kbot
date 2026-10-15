@@ -1,12 +1,12 @@
-# KBot 4.0
+# KBot 4.1
 
-KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.0 采用单仓库、
+KBot 是面向知识检索与数据库运维分析的 Python/FastAPI 后端。4.1 采用单仓库、
 同一 Oracle/APEX Schema 下的独立服务架构，不兼容 3.x API、表模型或 Agent
 运行时。
 
 ## 当前结构
 
-- `services/`：七个可独立构建服务及其进程入口。
+- `services/`：可独立构建的业务服务及其进程入口。
 - `packages/`：`platform_core` 和 `platform_clients` 两个共享 Python 包。
 - `database/oracle/`：同一 Schema 下按服务所有权拆分的全量 DDL。
 - `configuration/`：唯一部署配置样例。
@@ -26,7 +26,7 @@ Portal 只通过 Main API 的 `/api/v1/apps/knowledge-retrieval/*` 与
 Portal 使用预配置 API Key 访问 Main API；Main API 校验 Domain 后，为内部调用签发
 短期 AuthContext JWT。`/internal/v1/*` 仅供服务间调用，不通过 Main API 暴露。
 
-Knowledge Core 来源于 3.5 已完成的实现，是 4.0 的正式基线，不存在平行的旧
+Knowledge Core 来源于 3.5 已完成的实现，是 4.1 的正式基线，不存在平行的旧
 知识库运行链路。
 
 ## 本地环境
@@ -59,8 +59,6 @@ Key和私钥只能由环境变量或Secret管理系统注入。
 
 ```bash
 python3 -m main_api.entrypoints.api
-python3 -m km_asset_app.entrypoints.api
-python3 -m km_asset_app.entrypoints.slack_worker
 python3 -m main_api.entrypoints.notification_worker
 python3 -m knowledge_retrieval_app.entrypoints.api
 python3 -m agent_runtime.entrypoints.api

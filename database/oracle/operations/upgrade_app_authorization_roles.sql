@@ -44,7 +44,7 @@ BEGIN
     SELECT COUNT(*) INTO l_count
       FROM KBOT_APP_ROLE role_row
      WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND role_row.ROLE_CODE IN ('app_user', 'app_manager', 'app_admin')
        AND role_row.IS_SYSTEM <> 'Y'
@@ -74,7 +74,6 @@ BEGIN
                               'knowledge_retrieval:use',
                               'knowledge_retrieval:knowledge_chat',
                               'knowledge_retrieval:x_search',
-                              'km_asset:use',
                               'media_studio:use',
                               'media_studio:image_generate',
                               'media_studio:media_read',
@@ -104,7 +103,6 @@ BEGIN
                               'knowledge_retrieval:use',
                               'knowledge_retrieval:knowledge_chat',
                               'knowledge_retrieval:x_search',
-                              'km_asset:use',
                               'media_studio:use',
                               'media_studio:image_generate',
                               'media_studio:media_read',
@@ -134,7 +132,7 @@ BEGIN
     SELECT COUNT(*) INTO l_count
       FROM KBOT_APP_ROLE role_row
      WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND role_row.ROLE_CODE NOT IN (
                'user', 'app_user', 'app_manager', 'app_admin'
@@ -225,12 +223,6 @@ BEGIN
                'App 业务管理员', 'ALL_APP_DOMAINS' FROM DUAL
         UNION ALL SELECT 'knowledge_retrieval', 'app_admin',
                'App 管理员', 'ALL_APP_DOMAINS' FROM DUAL
-        UNION ALL SELECT 'km_asset', 'app_user',
-               'App 用户', 'SELECTABLE' FROM DUAL
-        UNION ALL SELECT 'km_asset', 'app_manager',
-               'App 业务管理员', 'ALL_APP_DOMAINS' FROM DUAL
-        UNION ALL SELECT 'km_asset', 'app_admin',
-               'App 管理员', 'ALL_APP_DOMAINS' FROM DUAL
         UNION ALL SELECT 'media_studio', 'app_user',
                'App 用户', 'SELECTABLE' FROM DUAL
         UNION ALL SELECT 'media_studio', 'app_manager',
@@ -266,7 +258,7 @@ BEGIN
     SELECT COUNT(*) INTO l_stripped_role_count
       FROM KBOT_APP_ROLE role_row
      WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND role_row.ROLE_CODE NOT IN (
                'user', 'app_user', 'app_manager', 'app_admin'
@@ -288,7 +280,7 @@ BEGIN
             FROM KBOT_APP_MEMBER_ROLE binding
            WHERE binding.STATUS = 'ACTIVE'
              AND binding.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
              AND binding.ROLE_CODE NOT IN (
@@ -313,7 +305,7 @@ BEGIN
           FROM KBOT_APP_MEMBER_ROLE binding
          WHERE binding.STATUS = 'ACTIVE'
            AND binding.APP_ID IN (
-                   'knowledge_retrieval', 'km_asset',
+                   'knowledge_retrieval',
                    'media_studio', 'aiops'
                )
            AND binding.ROLE_CODE NOT IN (
@@ -351,7 +343,7 @@ BEGIN
       FROM KBOT_APP_MEMBER_ROLE binding
      WHERE binding.STATUS = 'ACTIVE'
        AND binding.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND binding.ROLE_CODE NOT IN (
                'user', 'app_user', 'app_manager', 'app_admin'
@@ -399,7 +391,7 @@ BEGIN
            SYSTIMESTAMP
       FROM KBOT_APP_ROLE role_row
      WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND role_row.ROLE_CODE NOT IN (
                'user', 'app_user', 'app_manager', 'app_admin'
@@ -417,7 +409,7 @@ BEGIN
 
     DELETE FROM KBOT_APP_ROLE_PERMISSION role_permission
      WHERE role_permission.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND role_permission.ROLE_CODE NOT IN (
                'user', 'app_user', 'app_manager', 'app_admin'
@@ -455,7 +447,7 @@ BEGIN
           FROM KBOT_APP_MEMBER_ROLE old_binding
          WHERE old_binding.ROLE_CODE = 'user'
            AND old_binding.APP_ID IN (
-                   'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+                   'knowledge_retrieval', 'media_studio', 'aiops'
                )
     ) source
        ON (target.APP_ID = source.APP_ID
@@ -514,41 +506,41 @@ BEGIN
        SET SCOPE_MODE = 'SELECTED_DOMAINS'
      WHERE ROLE_CODE = 'app_user'
        AND APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            );
 
     DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE
      WHERE ROLE_CODE = 'user'
        AND APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            );
     DELETE FROM KBOT_APP_MEMBER_ROLE
      WHERE ROLE_CODE = 'user'
        AND APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            );
     DELETE FROM KBOT_APP_ROLE_PERMISSION
      WHERE ROLE_CODE = 'user'
        AND APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            );
     DELETE FROM KBOT_APP_ROLE
      WHERE ROLE_CODE = 'user'
        AND APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            );
 
     UPDATE KBOT_APP_ROLE
        SET IS_SYSTEM = 'N', ROW_VERSION = ROW_VERSION + 1
      WHERE APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND ROLE_CODE NOT IN ('app_user', 'app_manager', 'app_admin')
        AND IS_SYSTEM <> 'N';
 
     DELETE FROM KBOT_APP_ROLE_PERMISSION
      WHERE APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND ROLE_CODE IN ('app_user', 'app_manager', 'app_admin');
 
@@ -556,14 +548,14 @@ BEGIN
     SELECT permission.APP_ID, 'app_admin', permission.PERMISSION_CODE
       FROM KBOT_PERMISSION permission
      WHERE permission.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            );
 
     INSERT INTO KBOT_APP_ROLE_PERMISSION (APP_ID, ROLE_CODE, PERMISSION_CODE)
     SELECT permission.APP_ID, 'app_manager', permission.PERMISSION_CODE
       FROM KBOT_PERMISSION permission
      WHERE permission.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND permission.PERMISSION_CODE NOT IN (
                permission.APP_ID || ':member_manage',
@@ -577,7 +569,6 @@ BEGIN
                'knowledge_retrieval:use',
                'knowledge_retrieval:knowledge_chat',
                'knowledge_retrieval:x_search',
-               'km_asset:use',
                'media_studio:use',
                'media_studio:image_generate',
                'media_studio:media_read',
@@ -589,19 +580,19 @@ BEGIN
     UPDATE KBOT_APP_MEMBER_ROLE
        SET SCOPE_MODE = 'ALL_APP_DOMAINS'
      WHERE APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND ROLE_CODE IN ('app_manager', 'app_admin');
     DELETE FROM KBOT_APP_MEMBER_ROLE_SCOPE
      WHERE APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND ROLE_CODE IN ('app_manager', 'app_admin');
 
     SELECT COUNT(*) INTO l_count
       FROM KBOT_APP_ROLE
      WHERE APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND IS_SYSTEM = 'Y'
        AND STATUS = 'ACTIVE';
@@ -612,7 +603,7 @@ BEGIN
     SELECT COUNT(*) INTO l_count
       FROM KBOT_APP_ROLE role_row
      WHERE role_row.APP_ID IN (
-               'knowledge_retrieval', 'km_asset', 'media_studio', 'aiops'
+               'knowledge_retrieval', 'media_studio', 'aiops'
            )
        AND role_row.IS_SYSTEM = 'Y'
        AND role_row.ROLE_CODE NOT IN ('app_user', 'app_manager', 'app_admin');

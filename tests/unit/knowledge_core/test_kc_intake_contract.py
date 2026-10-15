@@ -1,7 +1,7 @@
 """Contract tests shared by the KC endpoint and Portal bundle adapter."""
 import unittest
 
-from knowledge_core.domain.intake import IntakeValidationError, KmAssetIntakeManifest
+from knowledge_core.domain.intake import BundleIntakeManifest, IntakeValidationError
 
 
 def valid_payload():
@@ -21,12 +21,12 @@ def valid_payload():
 
 class IntakeContractTest(unittest.TestCase):
     def test_accepts_portal_shape_and_is_fingerprint_stable(self):
-        manifest = KmAssetIntakeManifest.model_validate(valid_payload())
+        manifest = BundleIntakeManifest.model_validate(valid_payload())
         manifest.validate_declarations({"attachment_0"})
-        self.assertEqual(manifest.fingerprint(), KmAssetIntakeManifest.model_validate(valid_payload()).fingerprint())
+        self.assertEqual(manifest.fingerprint(), BundleIntakeManifest.model_validate(valid_payload()).fingerprint())
 
     def test_rejects_missing_or_unexpected_file_part(self):
-        manifest = KmAssetIntakeManifest.model_validate(valid_payload())
+        manifest = BundleIntakeManifest.model_validate(valid_payload())
         with self.assertRaises(IntakeValidationError):
             manifest.validate_declarations({"wrong_part"})
 
@@ -35,7 +35,7 @@ class IntakeContractTest(unittest.TestCase):
         payload["document_failures"] = [{
             "external_document_id": "driveitem:d:i", "ordinal": 0, "failure_code": "SOURCE_DOWNLOAD_FAILED",
         }]
-        manifest = KmAssetIntakeManifest.model_validate(payload)
+        manifest = BundleIntakeManifest.model_validate(payload)
         with self.assertRaises(IntakeValidationError):
             manifest.validate_declarations({"attachment_0"})
 
@@ -49,7 +49,7 @@ class IntakeContractTest(unittest.TestCase):
             "failure_code": "SOURCE_DOWNLOAD_FAILED",
         }]
 
-        manifest = KmAssetIntakeManifest.model_validate(payload)
+        manifest = BundleIntakeManifest.model_validate(payload)
         manifest.validate_declarations(set())
 
         self.assertEqual(1, len(manifest.document_failures))
@@ -57,7 +57,7 @@ class IntakeContractTest(unittest.TestCase):
     def test_rejects_client_manifest(self):
         payload = valid_payload()
         payload["documents"][0]["external_document_id"] = "__manifest__"
-        manifest = KmAssetIntakeManifest.model_validate(payload)
+        manifest = BundleIntakeManifest.model_validate(payload)
         with self.assertRaises(IntakeValidationError):
             manifest.validate_declarations({"attachment_0"})
 

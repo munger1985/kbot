@@ -37,15 +37,6 @@ class PlatformResourceAccessRepository:
                       AND v.agent_version_id = :agent_version_id
                       AND a.current_version_id = v.agent_version_id
                       AND a.domain_id = :domain_id AND a.status = 'ACTIVE'
-                    UNION ALL
-                    SELECT a.domain_id
-                    FROM KBOT_KM_AGENT a
-                    JOIN KBOT_KM_AGENT_VERSION v ON v.agent_id = a.agent_id
-                    WHERE :consumer_app_id = 'km_asset'
-                      AND a.agent_id = :agent_id
-                      AND v.agent_version_id = :agent_version_id
-                      AND a.current_version_id = v.agent_version_id
-                      AND a.domain_id = :domain_id AND a.status = 'ACTIVE'
                 )
                 """
             ),
@@ -87,16 +78,6 @@ class PlatformResourceAccessRepository:
                       AND a.current_version_id = v.agent_version_id
                       AND a.domain_id = :domain_id
                       AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
-                    UNION ALL
-                    SELECT a.domain_id
-                    FROM KBOT_KM_AGENT a
-                    JOIN KBOT_KM_AGENT_VERSION v ON v.agent_id = a.agent_id
-                    WHERE :consumer_app_id = 'km_asset'
-                      AND a.agent_id = :agent_id
-                      AND v.agent_version_id = :agent_version_id
-                      AND a.current_version_id = v.agent_version_id
-                      AND a.domain_id = :domain_id
-                      AND a.status IN ('DRAFT', 'ACTIVE', 'DISABLED', 'ARCHIVED')
                 )
                 """
             ),
@@ -132,15 +113,6 @@ class PlatformResourceAccessRepository:
                     FROM KBOT_OPS_AGENT a
                     JOIN KBOT_OPS_AGENT_VERSION v ON v.agent_id = a.agent_id
                     WHERE :consumer_app_id = 'aiops'
-                      AND a.agent_id = :agent_id
-                      AND v.agent_version_id = :agent_version_id
-                      AND a.domain_id = :domain_id
-                      AND a.status IN ('DRAFT', 'ACTIVE')
-                    UNION ALL
-                    SELECT JSON_VALUE(v.config_json, '$.data_query_mode') AS data_query_mode
-                    FROM KBOT_KM_AGENT a
-                    JOIN KBOT_KM_AGENT_VERSION v ON v.agent_id = a.agent_id
-                    WHERE :consumer_app_id = 'km_asset'
                       AND a.agent_id = :agent_id
                       AND v.agent_version_id = :agent_version_id
                       AND a.domain_id = :domain_id

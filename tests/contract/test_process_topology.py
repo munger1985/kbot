@@ -1,4 +1,4 @@
-"""4.0 可部署进程拓扑测试。"""
+"""4.1 可部署进程拓扑测试。"""
 
 import unittest
 from pathlib import Path
@@ -24,9 +24,9 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertEqual([], check_process_topology())
         processes = load_processes()
 
-        self.assertEqual(24, len(processes))
+        self.assertEqual(22, len(processes))
         self.assertEqual(
-            6,
+            5,
             sum(item["kind"] == "worker" for item in processes),
         )
 
@@ -52,7 +52,7 @@ class ProcessTopologyTest(unittest.TestCase):
             root / "tools" / "dev_console" / "server.py"
         ).read_text(encoding="utf-8")
         self.assertIn('request_path.startswith("/ui/")', ui_server)
-        self.assertIn('"/ui/km/login.html"', ui_server)
+        self.assertIn('"/ui/knowledge_retrieval/login.html"', ui_server)
         self.assertIn('"/operations-logs.html"', ui_server)
         self.assertIn("class KBotUiServer(ThreadingHTTPServer)", ui_server)
         self.assertIn("daemon_threads = True", ui_server)
@@ -62,7 +62,6 @@ class ProcessTopologyTest(unittest.TestCase):
             "Model Serving",
             "Knowledge Core",
             "Knowledge Retrieval App",
-            "KM Asset App",
             "Agent Runtime",
             "AIOps Agent",
             "Main API",
@@ -74,10 +73,6 @@ class ProcessTopologyTest(unittest.TestCase):
             start,
         )
         self.assertIn('local log_file="${log_dir}/runtime.log"', start)
-        self.assertIn(
-            '"km_asset_app.entrypoints.worker"',
-            start,
-        )
         self.assertIn("无监听端口", start)
         self.assertNotIn("logs/startup", start)
         self.assertIn("get_ui_pid()", stop)

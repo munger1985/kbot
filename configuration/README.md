@@ -76,30 +76,6 @@ model_llm = "http://models.internal:18092"
 未覆盖的端点继续使用本机地址。MCP问数和DeepSeek OCR等可选集成示例见
 `kbot.toml.example`，未使用时不要填写。
 
-Slack 启用时，在 `integrations.slack.workspaces` 中绑定 Workspace、Domain 和
-Agent UUID，并通过 `KBOT_SLACK_SIGNING_SECRET`、`KBOT_SLACK_BOT_TOKEN`
-注入密钥。Slack Event Subscription 地址为
-`/api/v1/integrations/slack/events`。可选 `external_callback` 按 3.3 格式发送
-用户 ID、姓名、邮箱、问题与请求日期，并从
-`KBOT_SLACK_EXTERNAL_CALLBACK_AUTHORIZATION` 注入完整的 Authorization Header。
-该配置段仅由 KM Asset App 与其 Slack Worker 加载；Main API 只保留公开入口并
-保真转发原始正文和 Slack 验签 Header。
-
-Slack 配置分为两部分：`.env` 或生产 Secret 只保存 Signing Secret、Bot Token；
-`configuration/kbot.toml` 保存启用开关、Workspace 与 Domain/Agent 映射、Callback
-URL、调试开关和 `[integrations.slack.reply]` 展示策略。TOML 中的
-`signing_secret_env`、`bot_token_env` 仅填写环境变量名称，不能填写真实凭证。
-回复策略可设置助手名称、最多展示的引用数，以及是否显示警告、查询结果摘要和
-可视化提示；`km_portal_base_url` 保存 KM Portal 的非敏感基础地址。非 `READY`
-状态始终展示；Asset 回复使用该地址拼接经过 URL 编码的 `asset_id` 生成 KM Link，
-Portal 继续负责目标页面的访问控制。Slack 不会输出定位框、内部 UUID、查询结果
-明细或可视化原始数据。
-
-`callback_payload_log_enabled` 会把 Callback 完整报文写入
-`<log_dir>/km_asset_app/slack_callback_debug.log`；`slack_reply_dump_enabled` 会把
-发往 Slack 的完整 JSON Body 写入 `/tmp/slackmess`。两项均默认关闭，且不会记录
-Bot Token 或 Signing Secret，只能在确认数据访问范围后临时开启。
-
 ## Secret
 
 生产环境建议将以下变量放入权限为 `0600` 的 systemd EnvironmentFile，或通过

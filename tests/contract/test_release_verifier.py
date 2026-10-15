@@ -40,11 +40,9 @@ class ReleaseVerifierTest(unittest.TestCase):
             "docs/openapi/knowledge_core_internal_v1.json",
             manifest,
         )
-        self.assertIn("docs/openapi/km_asset_app_internal_v1.json", manifest)
         self.assertIn("docs/openapi/media_studio_app_internal_v1.json", manifest)
         self.assertIn("database/oracle/media_studio_app/schema_manifest.json", manifest)
         self.assertIn("database/oracle/knowledge_retrieval_app/schema_manifest.json", manifest)
-        self.assertIn("database/oracle/km_asset_app/schema_manifest.json", manifest)
         self.assertIn("resources/topology.toml", manifest)
         self.assertNotIn("var/release/sbom/python-direct.cdx.json", manifest)
         self.assertTrue(
@@ -56,7 +54,6 @@ class ReleaseVerifierTest(unittest.TestCase):
             "services/knowledge_core/src/knowledge_core",
             "services/knowledge_retrieval_app/src/knowledge_retrieval_app",
             "services/media_studio_app/src/media_studio_app",
-            "services/km_asset_app/src/km_asset_app",
             "services/agent_runtime/src/agent_runtime",
             "services/aiops_agent/src/aiops_agent",
             "services/data_query/src/data_query",

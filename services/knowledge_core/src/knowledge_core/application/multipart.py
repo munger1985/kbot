@@ -6,11 +6,11 @@ from uuid import UUID
 from loguru import logger
 
 from knowledge_core.application.intake import (
-    AbortIntakeCommand, AcceptKmAssetCommand, IntakeAcceptance,
+    AbortIntakeCommand, AcceptBundleCommand, IntakeAcceptance,
     KnowledgeCoreIntakeService, PreparePublishCommand,
     PublishedAttachment, PublishedManifest, ReserveIntakeCommand,
 )
-from knowledge_core.domain.intake import KmAssetIntakeManifest
+from knowledge_core.domain.intake import BundleIntakeManifest
 from knowledge_core.domain.manifest import render_bundle_manifest
 from knowledge_core.ports.object_store import KnowledgeObjectStore, StoredObject
 
@@ -25,10 +25,10 @@ class MultipartIntakeCommand:
     collection_id: UUID
     actor_id: str
     idempotency_key: str
-    manifest: KmAssetIntakeManifest
+    manifest: BundleIntakeManifest
     file_paths: dict[str, Path]
-    source_system: str = "metadb"
-    source_type: str = "KM_ASSET"
+    source_system: str = "kbot"
+    source_type: str = "USER_UPLOAD"
     generate_manifest: bool = True
     allowed_document_roles: tuple[str, ...] = ("ATTACHMENT",)
     approval_required: bool = False
@@ -108,7 +108,7 @@ class KnowledgeCoreMultipartOrchestrator:
                     document_id=preparation.document_ids["__manifest__"],
                 )
                 published.append(published_manifest)
-            return await self._intake.accept_published(AcceptKmAssetCommand(
+            return await self._intake.accept_published(AcceptBundleCommand(
                 command.domain_id, command.collection_id, command.actor_id, command.idempotency_key,
                 command.manifest,
                 {item.part_name: PublishedAttachment(item.external_document_id, published_by_part[item.part_name].uri, published_by_part[item.part_name].detected_mime_type) for item in command.manifest.documents},

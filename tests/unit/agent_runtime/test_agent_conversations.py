@@ -273,12 +273,12 @@ class ConversationExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
 
         execution_spec = AgentExecutionSpec(
             schema_version="1.0",
-            owner_app_id="km_asset",
+            owner_app_id="knowledge_retrieval",
             domain_id=20,
             consumer_agent_id=agent_id,
             consumer_agent_version_id=uuid7(),
             agent_kind="KNOWLEDGE_RETRIEVAL",
-            display_name="KM Agent",
+            display_name="知识检索 Agent",
             enabled_capabilities=("document", "data_query"),
             models={"composer_llm": uuid7()},
         )
@@ -366,12 +366,12 @@ class ConversationExecutionSpecTest(unittest.IsolatedAsyncioTestCase):
 
         execution_spec = AgentExecutionSpec(
             schema_version="1.0",
-            owner_app_id="km_asset",
+            owner_app_id="knowledge_retrieval",
             domain_id=20,
             consumer_agent_id=agent_id,
             consumer_agent_version_id=current_version_id,
             agent_kind="KNOWLEDGE_RETRIEVAL",
-            display_name="KM Agent",
+            display_name="知识检索 Agent",
             enabled_capabilities=("document", "data_query"),
             models={"composer_llm": uuid7()},
         )

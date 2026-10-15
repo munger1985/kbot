@@ -129,22 +129,10 @@ Content-Type: application/json
 | App | Token/权限中的 `app_id` | 公开 URL 段 |
 | --- | --- | --- |
 | 知识检索 | `knowledge_retrieval` | `knowledge-retrieval` |
-| KM Asset | `km_asset` | `km-asset` |
 | AIOps | `aiops` | `aiops` |
 
 不要用字符串替换临时推导。前端应维护一份只读常量映射，避免下划线 ID 和连字符 URL
 混用导致 `APP_CONTEXT_MISMATCH`。
-
-### 2.4 KM Asset 固定入口
-
-KM 独立页面可以使用：
-
-```http
-POST /api/v1/apps/km-asset/auth/login
-```
-
-该入口固定选择 `km_asset` 和 `km_portal` Domain，签发的仍是标准 BUSINESS Token，
-不是另一套 Token 协议。
 
 ## 3. Token 保存、选择与失效
 
@@ -231,7 +219,6 @@ JWT 未到期也不代表会话一定继续有效。每次认证请求都会检�
 | App | 权限快照接口 |
 | --- | --- |
 | 知识检索 | `GET /api/v1/apps/knowledge-retrieval/access` |
-| KM Asset | `GET /api/v1/apps/km-asset/access` |
 | AIOps | `GET /api/v1/apps/aiops/access` |
 
 统一响应：
@@ -331,19 +318,6 @@ async function ensureAccess(ctx: BusinessContext, force = false) {
 
 人类用户不再维护或读取 Agent Grant。机器 API Client 仍由 Scope 和创建时绑定的
 Agent 白名单共同限制。
-
-### 5.3 KM Asset
-
-KM 权限快照至少可能包含：
-
-- `km_asset:use`：使用 KM 页面、会话和只读能力；
-- `km_asset:source_manage`：管理来源；
-- `km_asset:data_manage`：管理问数模型；
-- `km_asset:agent_manage`：管理 KM Agent；
-- `km_asset:operations_manage`：管理同步与运行任务。
-
-KM `/access` 在缺少 `km_asset:use` 时直接返回 403。页面应以 App Shell 中的一次初始化
-结果控制导航和按钮，不能让每个子页面重复初始化身份。
 
 ## 6. 页面加载与路由守卫
 
@@ -547,7 +521,6 @@ Scope 和 Agent，且只能保存在第三方服务端；浏览器仍使用用�
 - 知识检索 App：`services/main_api/src/main_api/api/knowledge_retrieval_app.py`；
 - AIOps App 与统一授权入口：`services/main_api/src/main_api/api/aiops_app.py`、
   `services/main_api/src/main_api/application/app_access.py`；
-- KM Asset App：`services/main_api/src/main_api/api/km_asset_app.py`；
 - 认证中间件与错误格式：`packages/platform_core/src/platform_core/security/middleware.py`；
 - KBot 核心授权规则：`docs/architecture/core-authorization-policy.md`；
 - 平台与 App 授权数据模型：`docs/architecture/platform-app-access-control.md`。

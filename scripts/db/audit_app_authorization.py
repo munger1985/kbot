@@ -79,7 +79,7 @@ async def audit() -> dict[str, object]:
                     ON role_permission.APP_ID = role_row.APP_ID
                    AND role_permission.ROLE_CODE = role_row.ROLE_CODE
                  WHERE role_row.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
                  GROUP BY role_row.APP_ID, role_row.ROLE_CODE,
@@ -94,7 +94,7 @@ async def audit() -> dict[str, object]:
                        role_permission.PERMISSION_CODE
                   FROM KBOT_APP_ROLE_PERMISSION role_permission
                  WHERE role_permission.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
                  ORDER BY role_permission.APP_ID,
@@ -113,7 +113,7 @@ async def audit() -> dict[str, object]:
                    AND scope_row.USER_ID = binding.USER_ID
                    AND scope_row.ROLE_CODE = binding.ROLE_CODE
                  WHERE binding.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
                  GROUP BY binding.APP_ID, binding.ROLE_CODE,
@@ -147,7 +147,7 @@ async def audit() -> dict[str, object]:
                 SELECT 'CANONICAL_CUSTOM_ROLE_COLLISION', COUNT(*)
                   FROM KBOT_APP_ROLE role_row
                  WHERE role_row.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
                    AND role_row.ROLE_CODE IN (
@@ -158,7 +158,7 @@ async def audit() -> dict[str, object]:
                 SELECT 'CUSTOM_RESERVED_PERMISSION', COUNT(*)
                   FROM KBOT_APP_ROLE_PERMISSION role_permission
                  WHERE role_permission.APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
                    AND role_permission.ROLE_CODE NOT IN (
@@ -174,7 +174,7 @@ async def audit() -> dict[str, object]:
                   FROM KBOT_APP_DOMAIN
                  WHERE STATUS = 'ACTIVE'
                    AND APP_ID IN (
-                     'knowledge_retrieval', 'km_asset',
+                     'knowledge_retrieval',
                      'media_studio', 'aiops'
                  )
                  GROUP BY APP_ID

@@ -1,4 +1,4 @@
-"""运行 KBot 4.0 发布前确定性检查并生成机器可读证据。"""
+"""运行 KBot 4.1 发布前确定性检查并生成机器可读证据。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ ACTIVE_PACKAGES = (
     "services/knowledge_core/src/knowledge_core",
     "services/knowledge_retrieval_app/src/knowledge_retrieval_app",
     "services/media_studio_app/src/media_studio_app",
-    "services/km_asset_app/src/km_asset_app",
     "services/agent_runtime/src/agent_runtime",
     "services/aiops_agent/src/aiops_agent",
     "services/data_query/src/data_query",
@@ -68,7 +67,6 @@ def _tracked_inputs() -> list[Path]:
         "services/knowledge_core/pyproject.toml",
         "services/knowledge_retrieval_app/pyproject.toml",
         "services/media_studio_app/pyproject.toml",
-        "services/km_asset_app/pyproject.toml",
         "services/aiops_agent/pyproject.toml",
         "services/data_query/pyproject.toml",
         "services/model_serving/pyproject.toml",

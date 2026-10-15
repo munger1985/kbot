@@ -185,7 +185,6 @@
           "owner_app_id": {
             "enum": [
               "knowledge_retrieval",
-              "km_asset",
               "aiops"
             ],
             "title": "Owner App Id",

@@ -38,6 +38,14 @@
 
 ## 3. 当前差异与双向吸收决策
 
+知识问答新增共同基线：两边都由 Agent Runtime + Knowledge Core 提供共享基础能力，App 通过自己拥有的
+Agent、`KnowledgeScopeSnapshotV1`、`KnowledgeScopeProvider` 和 `ReferencePresenter` 接入；AIOps 使用
+内部 Knowledge Assistant，Knowledge Retrieval App 只是消费者。该能力必须一次性切换，不进入下文可
+分批交付的常规 AIOps 差异队列。KBot 4.0 与 KM 4.0 从同一终版提交分线；KM 只在 `km4.0` 维护，
+`kbot4.1` 同批物理删除 KM 代码、集成、Schema、测试和文档，不保留兼容层。正式设计见
+[Knowledge Answering 基础能力](knowledge-answering-capability.md)和
+[4.0/4.1 分线规则](release-4.0-4.1-boundary.md)。
+
 ### 3.1 必须双向合并的业务差异
 
 | 编号 | 当前差异 | 优势来源 | 统一目标 | 优先级 |

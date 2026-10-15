@@ -30,12 +30,6 @@ class MainApiIntegrationConfig(BaseModel):
     monitoring_requests_per_minute: int = Field(
         default=120, ge=1, le=10000
     )
-    slack_public_max_webhook_bytes: int = Field(
-        default=1024 * 1024, ge=1024, le=20 * 1024 * 1024
-    )
-    slack_public_requests_per_minute: int = Field(
-        default=120, ge=1, le=10000
-    )
 
 
 class DevelopmentLogsConfig(BaseModel):
@@ -85,12 +79,6 @@ class MainApiSettings(Settings):
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18170",
             audience="kbot-media-studio-app-api",
-        )
-    )
-    km_asset_app: ServiceDependencyConfig = Field(
-        default_factory=lambda: ServiceDependencyConfig(
-            base_url="http://127.0.0.1:18160",
-            audience="kbot-km-asset-app-api",
         )
     )
     agent_runtime: ServiceDependencyConfig = Field(

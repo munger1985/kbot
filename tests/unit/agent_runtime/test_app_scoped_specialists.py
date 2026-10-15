@@ -22,7 +22,7 @@ class _Skill:
 
 class AppScopedSkillTests(unittest.IsolatedAsyncioTestCase):
     def test_shared_implementations_have_no_km_business_logic(self):
-        """共享实现不得重新混入 KM Asset 合同或条件分支。"""
+        """共享实现不得重新混入已退役 KM 合同或条件分支。"""
         for implementation in (
             SemanticDataQueryExecutor,
             KnowledgeRetrievalSkill,
@@ -35,15 +35,15 @@ class AppScopedSkillTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_registered_owner_uses_dedicated_implementation(self):
         context = SimpleNamespace(config_snapshot={
-            "agent": {"owner_app_id": "km_asset"},
+            "agent": {"owner_app_id": "custom_app"},
         })
         skill = AppScopedSkill(
             default=_Skill("default"),
-            implementations={"km_asset": _Skill("km")},
+            implementations={"custom_app": _Skill("custom")},
         )
 
-        self.assertEqual("km_asset", owner_app_id(context))
-        self.assertEqual("km", await skill.execute(context))
+        self.assertEqual("custom_app", owner_app_id(context))
+        self.assertEqual("custom", await skill.execute(context))
 
     async def test_unknown_owner_uses_generic_implementation(self):
         context = SimpleNamespace(config_snapshot={
@@ -51,19 +51,19 @@ class AppScopedSkillTests(unittest.IsolatedAsyncioTestCase):
         })
         skill = AppScopedSkill(
             default=_Skill("default"),
-            implementations={"km_asset": _Skill("km")},
+            implementations={"custom_app": _Skill("custom")},
         )
 
         self.assertEqual("default", await skill.execute(context))
 
     async def test_owner_cannot_be_overridden_outside_agent_snapshot(self):
         context = SimpleNamespace(config_snapshot={
-            "owner_app_id": "km_asset",
+            "owner_app_id": "custom_app",
             "agent": {"owner_app_id": "knowledge_retrieval"},
         })
         skill = AppScopedSkill(
             default=_Skill("default"),
-            implementations={"km_asset": _Skill("km")},
+            implementations={"custom_app": _Skill("custom")},
         )
 
         self.assertEqual("knowledge_retrieval", owner_app_id(context))

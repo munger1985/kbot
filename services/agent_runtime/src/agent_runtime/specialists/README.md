@@ -9,5 +9,3 @@
 3. Root 专属路由器通过 `RootAgentPlanner.app_route_planners` 注册；执行 Skill 通过 `AppScopedSkill.implementations` 注册。
 4. 分派只信任冻结的 `config_snapshot.agent.owner_app_id`，不读取请求临时字段。
 5. 未注册专属实现的 App 必须稳定使用通用实现，不能通过目录扫描或动态导入代码。
-
-`km_asset/` 是首个完整示例：它拥有自己的 Asset Search Planner、语义问数执行器、Document Scope、KC 取证入口和结果组合入口。

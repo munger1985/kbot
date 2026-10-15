@@ -142,7 +142,7 @@ APEX 中以 Navigation Menu 实现；AIOps 与平台配置按授权方案隐藏�
 | 智能助手 | 30 | Agent 管理 | Agent 列表、创建、编辑、启停与知识库绑定入口 | 已有 Agent CRUD、Binding API |
 | 知识中心 | 40 | Collection 列表 | 首期展示基础配置；后续展示健康、文档规模和绑定 Agent 概览 | 已有 Collection 列表；运营聚合字段待补 API/View |
 | 知识中心 | 41 | Collection 详情 | 查看配置、启停、模型绑定、入库记录及处理状态 | 已有详情/状态/模型/Bundle API |
-| 知识中心 | 42 | 文件入库向导 | 上传普通文件或 KM Asset，选择目标集合，提交后跟踪 Bundle | 已有 user-files、km-assets、Bundle API |
+| 知识中心 | 42 | 文件入库向导 | 上传知识文件，选择目标集合，提交后跟踪 Bundle | 已有 user-files、Bundle API |
 | 知识中心 | 43 | 入库审批 | 对需要人工确认的 Revision 批准/驳回 | 已有 approvals/review API |
 | AIOps | 50 | 智能运维 | 选 Agent 发起持续对话，在同一时间线中查看流式结论、引用、补证和审批 | 已有 Conversation、Ops Run、SSE、HITL 与 Proposal API，需统一投影 |
 | AIOps | 51 | 告警诊断 | 查看告警自动诊断结果，并从该证据上下文继续人工对话 | 已有 Situation 与 Alert Run API，需建立 Conversation 来源关联 |
@@ -225,7 +225,7 @@ Collection 状态和模型接口未暴露 `row_version`/ETag 条件，页面保�
 **P42 文件入库向导**分三步：
 
 1. 选择 Collection，确认知识范围和允许的文件类型；
-2. 选择“普通文件”或“KM Asset”，上传/填写资产标识及补充说明；
+2. 选择知识文件并填写补充说明；
 3. 提交后进入 Bundle 状态页，显示接收、解析、索引、完成/失败状态。
 
 失败时只显示可行动的安全原因与 `request_id`；解析器内部日志、对象存储路径和模型目录不对业务用户暴露。**P43 入库审批**首期仅在指定 Collection 中处理 API 返回的待审 Revision，审批后刷新 Bundle/Member 状态；“我的全部入库审批”需要新增聚合 API 或安全视图后才能进入 P10 待办卡。

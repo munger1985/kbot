@@ -22,7 +22,6 @@ _INCLUDED_SERVICES = frozenset(
         "model_serving",
         "data_query",
         "aiops_agent",
-        "km_asset_app",
         "knowledge_retrieval_app",
         "media_studio_app",
     }

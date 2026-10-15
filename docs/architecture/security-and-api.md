@@ -16,8 +16,8 @@ App Member、Role Binding 和 Domain Scope 参与统一鉴权。知识检索用�
 Domain 数据隔离边界。
 
 平台用户还具有 `MAX_SECURITY_LEVEL` 数据可见上限，取值为 `0–3`。普通用户默认
-等级为 `1`，保留账号 `ADMIN` 为最高等级 `3`。知识检索 Run、普通会话、多模态会话
-和 KM Asset 会话都由 Main API 从用户主数据读取该值，按“用户上限、Agent 上限、
+等级为 `1`，保留账号 `ADMIN` 为最高等级 `3`。知识检索 Run、普通会话和多模态会话
+都由 Main API 从用户主数据读取该值，按“用户上限、Agent 上限、
 请求等级”三者最小值生成下游检索等级。浏览器参数只能缩小本次检索范围，不能提高
 账号权限；Agent Runtime 和 KC 只接收 Main API 计算后的受信等级。
 
@@ -42,9 +42,7 @@ Token。Exchange 不提供隐式管理员权限。`POST /api/v1/auth/refresh` �
 
 `GET /api/v1/auth/me` 返回当前入口、用户、App 和 Domain，
 `POST /api/v1/auth/switch-domain` 切换 Domain，`POST /api/v1/auth/password` 修改本人
-密码。KM 登录入口继续固定选择 `km_asset` App 和 `km_portal` Domain，但签发相同的
-业务 Token，不再维护
-第二套身份协议。业务服务不能信任外部直接提交的 actor、Domain 或内部身份头。
+密码。业务服务不能信任外部直接提交的 actor、Domain 或内部身份头。
 
 平台管理接口位于 `/api/v1/platform/*`。平台管理员在这里维护平台来源用户、平台角色、
 App 状态与 App-Domain 关系；为每个 App 创建唯一的受保护初始管理员并重置其密码；还可
@@ -84,11 +82,6 @@ App 管理员创建用户时不能设置超过自身的数据安全等级；平�
 详细规则见 [App API Key 安全设计](app-api-key-security.md)。模型公开接口使用独立
 Model API Key，不能复用 App Key。
 
-Slack Events API 是 Provider 自身验签的公开集成入口，不使用 App API Key。
-Main API 保真转发完整原始正文和验签 Header，由 KM Asset 校验 Slack 时间戳与
-HMAC，再按部署配置把 Workspace 绑定到可信 Domain、Agent 和安全等级。Slack
-报文中的 Domain 或 Agent 字段不作为
-身份依据。
 
 ## 内部认证
 

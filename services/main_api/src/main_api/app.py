@@ -33,13 +33,11 @@ from main_api.api import (
     integration_router,
     knowledge_router,
     knowledge_retrieval_app_router,
-    km_asset_app_router,
     memory_router,
     model_catalog_router,
     notification_router,
     ops_router,
     run_router,
-    slack_router,
 )
 from main_api.config import get_main_api_settings
 from main_api.application import (
@@ -54,7 +52,6 @@ from platform_clients import (
     AgentRuntimeClientError,
     KnowledgeCoreClientError,
     KnowledgeRetrievalAppClientError,
-    KmAssetClientError,
     DataQueryClientError,
 )
 from platform_core.middleware.log_middleware import log_requests
@@ -228,7 +225,6 @@ def create_main_api_app(
         if claims.must_change_password and request.url.path not in {
             "/api/v1/auth/me",
             "/api/v1/auth/password",
-            "/api/v1/apps/km-asset/auth/password",
             "/api/v1/apps/aiops/auth/password",
             "/api/v1/apps/knowledge-retrieval/auth/password",
             "/api/v1/apps/media-studio/auth/password",
@@ -258,7 +254,6 @@ def create_main_api_app(
         "/openapi.json",
         "/api/v1/auth/platform/login",
         "/api/v1/auth/apps",
-        "/api/v1/apps/km-asset/auth/login",
         "/api/v1/apps/aiops/auth/login",
         "/api/v1/apps/knowledge-retrieval/auth/login",
         "/api/v1/apps/media-studio/auth/login",
@@ -266,7 +261,6 @@ def create_main_api_app(
     public_prefixes = {
         "/api/v1/auth/apps/",
         "/api/v1/integrations/aiops/signals/",
-        "/api/v1/integrations/slack/",
         "/static-offline-docs/",
     }
     if development_logs_enabled:
@@ -305,7 +299,6 @@ def create_main_api_app(
     app.include_router(app_api_clients_router)
     app.include_router(access_management_router)
     app.include_router(knowledge_retrieval_app_router)
-    app.include_router(km_asset_app_router)
     app.include_router(aiops_app_router)
     app.include_router(media_studio_app_router)
     app.include_router(model_catalog_router)
@@ -318,7 +311,6 @@ def create_main_api_app(
     app.include_router(memory_router)
     app.include_router(ops_router)
     app.include_router(integration_router)
-    app.include_router(slack_router)
     if development_logs_enabled:
         log_config = settings.development_logs
         app.state.development_log_root = _repository_path(settings.log.dir)
@@ -435,13 +427,6 @@ def create_main_api_app(
             request=request, status_code=exc.status_code, code=exc.code,
             title="多媒体创作工作台请求失败", detail=str(exc),
         )
-
-    @app.exception_handler(KmAssetClientError)
-    async def km_asset_app_error_handler(request: Request, exc: KmAssetClientError):
-        _log_downstream_failure(request=request, service_name="km-asset-app", exc=exc)
-        if exc.status_code >= 500:
-            return _problem_response(request=request, status_code=503, code="KM_ASSET_APP_UNAVAILABLE", title="KM Asset 应用暂时不可用", detail="KM Asset 应用暂时无法完成请求")
-        return _problem_response(request=request, status_code=exc.status_code, code=exc.code, title="KM Asset 应用请求失败", detail=str(exc))
 
     @app.exception_handler(DataQueryClientError)
     async def data_query_error_handler(

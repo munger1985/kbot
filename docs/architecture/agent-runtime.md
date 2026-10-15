@@ -10,10 +10,18 @@ App 分别拥有自己的 Agent 与不可变版本；创建会话或运行前，
 Execution Spec 声明能力、指令、检索范围、问数绑定和功能模型。不同功能可使用
 不同成本和能力的模型；运行时使用冻结的模型身份和调用配置。
 
-Skill 是 Runtime 内的版本化执行单元。知识检索 Agent 链路包括上下文改写、
-知识检索、Data Query、Hybrid、回答组合和 Chart。问数 Skill 可按冻结配置调用
+Skill 是 Runtime 内的版本化执行单元。Document 与 Response Composer 是跨 App 的 Knowledge
+Answering 基础能力，不只属于 Knowledge Retrieval App；消费者必须通过 App-owned Agent、
+`AgentExecutionSpecV1`、`KnowledgeScopeSnapshotV1` 和 `AppScopedSkill` 扩展点使用。知识检索 Agent
+链路包括上下文改写、知识检索、Data Query、Hybrid、回答组合和 Chart。问数 Skill 可按冻结配置调用
 MCP 或 Semantic Data Query。AIOps Agent 使用独立的 AIOps Run、Worker 和状态机，
 不进入知识检索 Root Planner。
+
+Scope 由 App 服务端计算，冻结 owner App、Domain、Agent 版本、Collection、Bundle Revision、安全级、
+业务上下文和策略版本；浏览器与模型不能提交或扩大。4.1 运行时只注册当前产品 App，
+不保留已分线产品的 Planner、Document Scope、Composer 或兼容分派。详细合同与版本边界见
+[Knowledge Answering 基础能力](knowledge-answering-capability.md)和
+[4.0/4.1 分线规则](release-4.0-4.1-boundary.md)。
 
 ## 执行模型
 
@@ -22,7 +30,8 @@ Turn → Run → Plan → Task DAG → Skill/Delegation
                          └─ Artifact → Event → 最终 Artifact
 ```
 
-Run 固化 Agent、模型、检索范围、Domain、用户和策略快照。Task 通过 Lease、
+Run 固化 Agent、模型、完整知识范围、Domain、用户和策略快照，并记录 Scope Hash、Revision 数、分片数
+和最终命中。Task 通过 Lease、
 Heartbeat、重试次数和幂等键执行；Worker 崩溃后只接管未完成 Task。Skill 不共享
 可变全局 Context，而是读取声明的输入 Artifact 并产生一个版本化输出 Artifact。
 

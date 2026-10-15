@@ -82,7 +82,6 @@ import data_query
 import knowledge_core
 import knowledge_retrieval_app
 import media_studio_app
-import km_asset_app
 import main_api
 import model_serving
 import platform_clients
@@ -152,9 +151,6 @@ SERVICES=(
     "Knowledge Retrieval App:X Search Worker:knowledge_retrieval_app:knowledge_retrieval_app.entrypoints.worker"
     "Media Studio:API:media_studio_app:media_studio_app.entrypoints.api"
     "Media Studio:Worker:media_studio_app:media_studio_app.entrypoints.worker"
-    "KM Asset App:API:km_asset_app:km_asset_app.entrypoints.api"
-    "KM Asset App:Worker:km_asset_app:km_asset_app.entrypoints.worker"
-    "KM Asset App:Slack Worker:km_asset_app:km_asset_app.entrypoints.slack_worker"
     "Agent Runtime:API:agent_runtime:agent_runtime.entrypoints.api"
     "Agent Runtime:Worker:agent_runtime:agent_runtime.entrypoints.worker"
     "Data Query:API:data_query:data_query.entrypoints.api"
@@ -179,7 +175,6 @@ service_port() {
         knowledge_core.entrypoints.api) echo "18090" ;;
         knowledge_retrieval_app.entrypoints.api) echo "18150" ;;
         media_studio_app.entrypoints.api) echo "18170" ;;
-        km_asset_app.entrypoints.api) echo "18160" ;;
         agent_runtime.entrypoints.api) echo "18100" ;;
         data_query.entrypoints.api) echo "18140" ;;
         data_query.entrypoints.worker) echo "18141" ;;
@@ -194,8 +189,6 @@ service_port() {
 
 is_process_only_service() {
     [ "$1" = "knowledge_core.entrypoints.projection" ] \
-        || [ "$1" = "km_asset_app.entrypoints.worker" ] \
-        || [ "$1" = "km_asset_app.entrypoints.slack_worker" ] \
         || [ "$1" = "agent_runtime.entrypoints.worker" ] \
         || [ "$1" = "knowledge_retrieval_app.entrypoints.worker" ] \
         || [ "$1" = "media_studio_app.entrypoints.worker" ] \

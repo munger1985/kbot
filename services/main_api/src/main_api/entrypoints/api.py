@@ -32,7 +32,6 @@ from platform_clients import (
     KnowledgeCoreClient,
     KnowledgeRetrievalAppClient,
     MediaStudioClient,
-    KmAssetClient,
     DataQueryClient,
 )
 from platform_core.database.oracle import create_database_runtime
@@ -140,13 +139,6 @@ async def lifespan(app: FastAPI):
         caller_service=config.service_name,
         audience=settings.media_studio_app.audience,
         timeout_seconds=settings.media_studio_app.timeout_seconds,
-        session=client_session,
-    )
-    app.state.km_asset_client = KmAssetClient(
-        base_url=settings.km_asset_app.base_url,
-        caller_service=config.service_name,
-        audience=settings.km_asset_app.audience,
-        timeout_seconds=settings.km_asset_app.timeout_seconds,
         session=client_session,
     )
     app.state.agent_runtime_client = AgentRuntimeClient(

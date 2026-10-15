@@ -23,10 +23,9 @@ Schema 全量创建，不读取、转换、回填或保留任何 3.x KBot 表和
 4. `knowledge_core/`：Collection、入库聚合、Evidence、Discovery 和 Relation；
 5. `knowledge_retrieval_app/`：知识检索 Agent、版本和 X Search 运行；
 6. `media_studio_app/`：多媒体模型绑定、生成运行和媒体资产；
-7. `km_asset_app/`：KM 资产、Agent，以及 Slack Inbox、会话映射和 Outbox；
-8. `agent_runtime/`：Execution Spec 快照、Run、Task、Artifact、Event、会话和记忆；
-9. `data_query/`：数据源、语义模型、查询策略和查询运行；
-10. `aiops_agent/`：私有 Agent、目标、监控、会话、证据、HITL、执行、巡检和报告。
+7. `agent_runtime/`：Execution Spec 快照、Run、Task、Artifact、Event、会话和记忆；
+8. `data_query/`：数据源、语义模型、查询策略和查询运行；
+9. `aiops_agent/`：私有 Agent、目标、监控、会话、证据、HITL、执行、巡检和报告。
 
 `platform_core` 是每次初始化都必须创建的基础层，不需要配置。其余已实现服务在
 `configuration/oracle_schema_services.ini` 的 `[services]` 中使用 `true`/`false` 选择。

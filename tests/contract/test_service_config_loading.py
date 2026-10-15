@@ -9,7 +9,6 @@ from unittest.mock import patch
 from agent_runtime.config import AgentRuntimeSettings
 from aiops_agent.config import AIOpsSettings
 from knowledge_core.config import KnowledgeCoreSettings
-from km_asset_app.config import KmAssetAppSettings
 from main_api.config import MainApiSettings
 from platform_core.config import Settings, load_settings
 from platform_core.config.settings import _prepare_runtime_secrets
@@ -131,74 +130,6 @@ class ServiceConfigLoadingTest(unittest.TestCase):
             )
 
             self.assertEqual(settings.api.allowed_origins, ["*"])
-
-    def test_slack_integration_is_loaded_from_deployment_config(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = self._write_config(Path(directory))
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(
-                    "[integrations.slack]\n"
-                    "enabled=true\n"
-                    "max_webhook_bytes=2048\n"
-                    "requests_per_minute=42\n"
-                    "[[integrations.slack.workspaces]]\n"
-                    "workspace_id='T1'\n"
-                    "domain_id=1001\n"
-                    "agent_id='019fcbe0-e46c-7d33-907b-9d1621a2998f'\n"
-                    "[integrations.slack.external_callback]\n"
-                    "enabled=true\n"
-                    "url='https://callback.example.com/events'\n"
-                    "[integrations.slack.reply]\n"
-                    "assistant_name='Asset问答助手'\n"
-                    "max_references=4\n"
-                    "show_warnings=false\n"
-                    "km_portal_base_url="
-                    "'https://apex.example.com/f?p=2018:130'\n"
-                )
-
-            settings = load_settings(
-                KmAssetAppSettings,
-                service="km_asset_app",
-                config_file=path,
-            )
-
-            slack = settings.integrations.slack
-            self.assertTrue(slack.enabled)
-            self.assertEqual("T1", slack.workspaces[0].workspace_id)
-            self.assertTrue(slack.external_callback.enabled)
-            self.assertEqual(
-                "https://callback.example.com/events",
-                slack.external_callback.url,
-            )
-            self.assertEqual("Asset问答助手", slack.reply.assistant_name)
-            self.assertEqual(4, slack.reply.max_references)
-            self.assertFalse(slack.reply.show_warnings)
-            self.assertEqual(
-                "https://apex.example.com/f?p=2018:130",
-                slack.reply.km_portal_base_url,
-            )
-            self.assertEqual(
-                "http://127.0.0.1:18160",
-                settings.km_asset_api.base_url,
-            )
-            self.assertEqual(
-                "kbot-km-asset-app-api",
-                settings.km_asset_api.audience,
-            )
-            main_api = load_settings(
-                MainApiSettings,
-                service="main_api",
-                config_file=path,
-            )
-            self.assertEqual(
-                2048,
-                main_api.integrations.slack_public_max_webhook_bytes,
-            )
-            self.assertEqual(
-                42,
-                main_api.integrations.slack_public_requests_per_minute,
-            )
-            self.assertFalse(hasattr(main_api.integrations, "slack"))
 
     def test_database_password_is_read_only_from_environment(self):
         settings = Settings()

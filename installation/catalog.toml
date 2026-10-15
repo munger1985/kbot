@@ -23,11 +23,6 @@ name = "kbot-media-studio-app"
 packages = ["kbot-media-studio-app"]
 
 [[images]]
-id = "km_asset_app"
-name = "kbot-km-asset-app"
-packages = ["kbot-km-asset-app"]
-
-[[images]]
 id = "agent_runtime"
 name = "kbot-agent-runtime"
 packages = ["kbot-agent-runtime"]
@@ -54,7 +49,6 @@ packages = [
   "kbot-knowledge-core",
   "kbot-knowledge-retrieval-app",
   "kbot-media-studio-app",
-  "kbot-km-asset-app",
   "kbot-agent-runtime",
   "kbot-data-query",
   "kbot-aiops-agent",
@@ -81,16 +75,6 @@ service_configs = [
 label = "Media Studio"
 entry_path = "/ui/media_studio/login.html"
 service_configs = ["media_studio_app"]
-
-[app_packs.km_asset]
-label = "KM Asset"
-entry_path = "/ui/km/login.html"
-service_configs = [
-  "knowledge_core",
-  "km_asset_app",
-  "agent_runtime",
-  "data_query",
-]
 
 [app_packs.aiops]
 label = "AIOps"

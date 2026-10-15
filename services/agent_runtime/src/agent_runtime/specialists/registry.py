@@ -9,7 +9,6 @@ from agent_runtime.domain.skills import (
 )
 
 from .document import KnowledgeRetrievalSkill
-from .app_scoped import AppScopedSkill
 from .conversation import ContextRewriteSkill
 from .conversation_response import ConversationResponseSkill
 from .data_query import (
@@ -20,14 +19,6 @@ from .data_query import (
 from .visualization import ChartSkill
 from .hybrid import DataConstraintExtractSkill, DocumentScopeExtractSkill
 from .response_composer import ResponseComposerSkill
-from .km_asset import (
-    KmAssetConversationResponseSkill,
-    KmAssetDataQuerySkill,
-    KmAssetDocumentScopeExtractSkill,
-    KmAssetKnowledgeRetrievalSkill,
-    KmAssetResponseComposerSkill,
-    KmAssetSemanticDataQueryExecutor,
-)
 
 
 CONTEXT_REWRITE_MANIFEST = SkillManifest(
@@ -225,11 +216,6 @@ def register_builtin_skills(
         model_client=model_client,
         prompt_resolver=prompt_resolver,
     )
-    km_asset_semantic_executor = KmAssetSemanticDataQueryExecutor(
-        client=data_query_client,
-        model_client=model_client,
-        prompt_resolver=prompt_resolver,
-    )
     registry.register(
         CONTEXT_REWRITE_MANIFEST,
         ContextRewriteSkill(
@@ -239,66 +225,32 @@ def register_builtin_skills(
     )
     registry.register(
         KNOWLEDGE_RETRIEVAL_MANIFEST,
-        AppScopedSkill(
-            default=KnowledgeRetrievalSkill(
-                knowledge_core_client=knowledge_core_client,
-                model_client=model_client,
-                prompt_resolver=prompt_resolver,
-                service_name=service_name,
-            ),
-            implementations={
-                "km_asset": KmAssetKnowledgeRetrievalSkill(
-                    knowledge_core_client=knowledge_core_client,
-                    model_client=model_client,
-                    prompt_resolver=prompt_resolver,
-                    service_name=service_name,
-                ),
-            },
+        KnowledgeRetrievalSkill(
+            knowledge_core_client=knowledge_core_client,
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
+            service_name=service_name,
         ),
     )
     registry.register(
         RESPONSE_COMPOSER_MANIFEST,
-        AppScopedSkill(
-            default=ResponseComposerSkill(
-                model_client=model_client,
-                prompt_resolver=prompt_resolver,
-            ),
-            implementations={
-                "km_asset": KmAssetResponseComposerSkill(
-                    model_client=model_client,
-                    prompt_resolver=prompt_resolver,
-                ),
-            },
+        ResponseComposerSkill(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
         ),
     )
     registry.register(
         CONVERSATION_RESPONSE_MANIFEST,
-        AppScopedSkill(
-            default=ConversationResponseSkill(
-                model_client=model_client,
-                prompt_resolver=prompt_resolver,
-            ),
-            implementations={
-                "km_asset": KmAssetConversationResponseSkill(
-                    model_client=model_client,
-                    prompt_resolver=prompt_resolver,
-                ),
-            },
+        ConversationResponseSkill(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
         ),
     )
     registry.register(
         DATA_QUERY_MANIFEST,
-        AppScopedSkill(
-            default=DataQuerySkill(
-                mcp_executor=mcp_executor,
-                semantic_executor=semantic_executor,
-            ),
-            implementations={
-                "km_asset": KmAssetDataQuerySkill(
-                    mcp_executor=mcp_executor,
-                    semantic_executor=km_asset_semantic_executor,
-                ),
-            },
+        DataQuerySkill(
+            mcp_executor=mcp_executor,
+            semantic_executor=semantic_executor,
         ),
     )
     registry.register(
@@ -314,17 +266,9 @@ def register_builtin_skills(
     )
     registry.register(
         DOCUMENT_SCOPE_EXTRACT_MANIFEST,
-        AppScopedSkill(
-            default=DocumentScopeExtractSkill(
-                model_client=model_client,
-                prompt_resolver=prompt_resolver,
-            ),
-            implementations={
-                "km_asset": KmAssetDocumentScopeExtractSkill(
-                    model_client=model_client,
-                    prompt_resolver=prompt_resolver,
-                ),
-            },
+        DocumentScopeExtractSkill(
+            model_client=model_client,
+            prompt_resolver=prompt_resolver,
         ),
     )
     return registry

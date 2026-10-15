@@ -102,7 +102,7 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
         session = _Session()
         repository = AccessControlRepository(session)
         await repository.permissions_for(
-            app_id="km_asset", domain_id=1, user_id="kbotui_dev"
+            app_id="knowledge_retrieval", domain_id=1, user_id="kbotui_dev"
         )
         sql = str(
             session.statements[0].compile(
@@ -387,7 +387,7 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
         session = _Session()
         repository = AccessControlRepository(session)
         await repository.list_roles(
-            app_id="km_asset", domain_id=1, user_id="kbotui_dev"
+            app_id="knowledge_retrieval", domain_id=1, user_id="kbotui_dev"
         )
         sql = str(
             session.statements[0].compile(

@@ -1,8 +1,7 @@
-"""Final database transaction for an accepted KM Asset intake.
+"""完成已接收 Bundle 入库的最终数据库事务。
 
-Object staging/publishing happens before this use case.  The caller supplies
-only verified immutable objects; this transaction creates no externally visible
-Revision until all KC facts and parse jobs can be committed together.
+对象暂存与发布在本用例前完成。调用方只提供已校验的不可变对象；所有 KC 事实与
+解析任务能够共同提交前，事务不会创建对外可见的 Revision。
 """
 from uuid import UUID
 from collections.abc import Callable
@@ -14,7 +13,7 @@ from knowledge_core.entities import (
     KcDocumentEntity, KcDocumentVersionEntity, KcIngestionJobEntity,
     KcIngestionReceiptEntity, KcParseViewEntity,
 )
-from knowledge_core.domain.intake import KmAssetIntakeManifest
+from knowledge_core.domain.intake import BundleIntakeManifest
 from knowledge_core.domain.manifest import render_bundle_manifest
 from knowledge_core.application.parse_policy import (
     build_parse_plan,
@@ -38,9 +37,9 @@ class ReserveIntakeCommand:
     collection_id: UUID
     actor_id: str
     idempotency_key: str
-    manifest: KmAssetIntakeManifest
-    source_system: str = "metadb"
-    source_type: str = "KM_ASSET"
+    manifest: BundleIntakeManifest
+    source_system: str = "kbot"
+    source_type: str = "USER_UPLOAD"
     allowed_document_roles: tuple[str, ...] = ("ATTACHMENT",)
 
 
@@ -59,10 +58,10 @@ class PreparePublishCommand:
     collection_id: UUID
     actor_id: str
     idempotency_key: str
-    manifest: KmAssetIntakeManifest
+    manifest: BundleIntakeManifest
     receipt_id: UUID
-    source_system: str = "metadb"
-    source_type: str = "KM_ASSET"
+    source_system: str = "kbot"
+    source_type: str = "USER_UPLOAD"
     allowed_document_roles: tuple[str, ...] = ("ATTACHMENT",)
     generate_manifest: bool = True
 
@@ -100,16 +99,16 @@ class PublishedManifest:
 
 
 @dataclass(frozen=True)
-class AcceptKmAssetCommand:
+class AcceptBundleCommand:
     domain_id: int
     collection_id: UUID
     actor_id: str
     idempotency_key: str
-    manifest: KmAssetIntakeManifest
+    manifest: BundleIntakeManifest
     attachments: dict[str, PublishedAttachment]
     published_manifest: PublishedManifest | None
-    source_system: str = "metadb"
-    source_type: str = "KM_ASSET"
+    source_system: str = "kbot"
+    source_type: str = "USER_UPLOAD"
     generate_manifest: bool = True
     allowed_document_roles: tuple[str, ...] = ("ATTACHMENT",)
     approval_required: bool = False
@@ -363,7 +362,7 @@ class KnowledgeCoreIntakeService:
             await uow.session.flush()
             await uow.commit()
 
-    async def accept_published(self, command: AcceptKmAssetCommand) -> IntakeAcceptance:
+    async def accept_published(self, command: AcceptBundleCommand) -> IntakeAcceptance:
         fingerprint = command.manifest.fingerprint()
         command.manifest.validate_declarations(
             set(command.attachments), allowed_roles=set(command.allowed_document_roles),

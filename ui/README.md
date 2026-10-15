@@ -1,38 +1,21 @@
-# KM Asset 页面接入说明
+# KBot UI 页面说明
 
-`ui/km/` 提供 KM Asset 的正式无框架 JavaScript 页面：工作台、MetaDB、数据来源、Asset、同步任务、Agent 和智能问答。KM 文档固定使用初始化脚本创建的 `km_portal/assets` Collection。
+`ui/knowledge_retrieval/`、`ui/aiops/` 与 `ui/media_studio/` 分别提供知识检索、
+AIOps 和多媒体创作的正式页面。浏览器只调用 Main API 的 `/api/v1` 公开 BFF，
+不得直接访问内部服务、保存 App API Key 或伪造可信身份 Header。
 
-`ui/aiops/` 提供 AIOps 的 23 个正式页面，覆盖诊断工作区、故障情境、运行与报告，以及目标、诊断源、Knowledge Core、Agent、策略、巡检和主动分享配置。页面仅调用 Main API 的 `/api/v1/apps/aiops` 公共 BFF，不直接访问内部服务。
+页面使用仓库内锁定的 Marked GFM 与 DOMPurify 渲染流式 Markdown，第三方浏览器
+构建产物位于 `ui/vendor/`，运行时不从 CDN 下载代码。
 
-智能问答使用本地锁定的 Marked GFM 和 DOMPurify 渲染流式 Markdown。第三方浏览器构建产物位于 `ui/vendor/`，页面不从 CDN 下载运行时代码。
+## 开发服务器
 
-数据来源的后台自动同步开关按来源持久化，默认关闭。项目启动只会启动 Worker 进程，
-不会自动轮询 MetaDB；管理员在数据来源页面开启后才会按配置间隔创建自动任务。
-“立即同步”属于人工任务，始终可用。
+development 环境执行 `start_kbot.sh` 后，开发服务器同时发布：
 
-## 后端开发服务器访问
+- 运行日志：`http://<python-host>:8080/operations-logs.html`
+- 知识检索：`http://<python-host>:8080/ui/knowledge_retrieval/login.html`
+- AIOps：`http://<python-host>:8080/ui/aiops/login.html`
+- 多媒体创作：`http://<python-host>:8080/ui/media_studio/login.html`
 
-development 环境执行 `start_kbot.sh` 后，Python UI 服务会同时发布日志页和 KM 页面：
-
-- 日志页：`http://<python-host>:8080/operations-logs.html`
-- KM 登录页：`http://<python-host>:8080/ui/km/login.html`
-
-KM 页面的 Main API 地址只从 `configuration/kbot.toml` 的 `[ui].main_api_base_url` 读取，由 Python UI 服务注入 `/ui/runtime-config.js`。登录页不显示也不允许修改该地址；未配置时 UI 服务拒绝启动。使用初始化脚本设置的用户名和固定密码登录后，Main API 签发仅可用于 KM 页面的短期 Token，其余页面请求统一携带该 Token。`configuration/kbot.toml` 的 `api_allowed_origins` 需要允许该 8080 Origin。
-
-## APEX 接入
-
-这些页面只调用公开 BFF 路由 `/api/v1/apps/km-asset/*`，不会调用 `/internal/v1`，也不会在浏览器保存 App API Key 或伪造可信用户 Header。KM 登录 Token 保存在 `sessionStorage`，关闭标签页会话后需要重新登录。Token 中的 Domain 和用户由 Main API 签名保护。第三方 Key 只能由管理员在“API 客户端”页生成，明文仅显示一次。
-
-首次启用 KM Asset 时从仓库根目录执行 `python scripts/db/initialize_km.py`。该入口读取
-`database/oracle/bootstrap/km_asset/initial_admin.sql`，创建固定 Domain
-`km_portal`、固定 Collection `assets` 和用户 `kmadmin`，并授予当前规范的 KM Asset
-管理权限。执行前至少需要各配置一个启用的 LLM 与文本 Embedding 模型。
-
-页面会优先复用 APEX 已加载的 `window.KBotApi.request`。如果宿主使用其他请求封装，可在页面脚本执行前配置：
-
-```javascript
-KBotKmApi.configure({
-  request: (path, options) => portalRequest(path, options),
-  blob: (path, options) => portalBlobRequest(path, options)
-});
-```
+浏览器使用的 Main API 地址只从 `configuration/kbot.toml` 的
+`[ui].main_api_base_url` 读取，由开发服务器注入 `/ui/runtime-config.js`。
+`api_allowed_origins` 必须允许实际的 UI Origin。

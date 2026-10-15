@@ -309,7 +309,7 @@ class UserAuthService:
             password_version=claims.password_version,
         )
 
-    async def login_for_domain_name(self, *, user_id: str, password: str, domain_name: str, app_id: str = "km_asset") -> dict[str, object]:
+    async def login_for_domain_name(self, *, user_id: str, password: str, domain_name: str, app_id: str) -> dict[str, object]:
         async with self._uow_factory() as uow:
             domain = await uow.domains.get_by_name(name=domain_name)
             domain_id = int(domain.domain_id) if domain and domain.status == "ACTIVE" else None

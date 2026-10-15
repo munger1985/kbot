@@ -1,4 +1,4 @@
-"""同时发布开发日志页面与仓库 ui/ KM 正式页面。"""
+"""同时发布开发日志页面与仓库正式 UI。"""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _load_main_api_base_url() -> str:
 
 
 class KBotUiHandler(SimpleHTTPRequestHandler):
-    """发布日志页，并把 /ui/ 映射到正式 KM UI 目录。"""
+    """发布日志页，并把 /ui/ 映射到正式 UI 目录。"""
 
     main_api_base_url = ""
 
@@ -71,9 +71,9 @@ class KBotUiHandler(SimpleHTTPRequestHandler):
 
     def _redirect_ui_root(self) -> bool:
         path = urlsplit(self.path).path
-        if path in {"/ui", "/ui/", "/km", "/km/"}:
+        if path in {"/ui", "/ui/"}:
             self.send_response(302)
-            self.send_header("Location", "/ui/km/login.html")
+            self.send_header("Location", "/ui/knowledge_retrieval/login.html")
             self.end_headers()
             return True
         return False

@@ -198,7 +198,7 @@ class DataQueryDomainCompilerCredentialTest(unittest.TestCase):
                 name="assets",
                 display_name="Asset",
                 physical_schema="app",
-                physical_object="KBOT_V_KM_ASSET_CURRENT",
+                physical_object="KBOT_V_TEST_ASSET_CURRENT",
             ),),
             dimensions=(DimensionDefinition(
                 name="asset_date",

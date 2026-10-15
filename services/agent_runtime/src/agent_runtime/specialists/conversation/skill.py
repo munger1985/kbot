@@ -34,14 +34,7 @@ class ContextRewriteSkill:
         )
         memory_context = dict(conversation.get("context") or {})
         route = dict(context.config_snapshot.get("route") or {})
-        if (
-            str(route.get("classifier_version") or "").startswith((
-                "llm-km-asset-v1:",
-                "asset-search-plan-v1:",
-                "km-portal-help-v1:",
-            ))
-            and route.get("context_required") is False
-        ):
+        if route.get("context_required") is False:
             output = ContextRewriteOutput(
                 raw_input=context.original_input,
                 standalone_query=context.original_input,
@@ -50,7 +43,7 @@ class ContextRewriteSkill:
             return self._result(
                 context,
                 output,
-                prompt_ref={"source": "KM_ROUTER_SELF_CONTAINED"},
+                prompt_ref={"source": "ROUTE_SELF_CONTAINED"},
             )
         if not (
             memory_context.get("summary")

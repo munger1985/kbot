@@ -31,7 +31,6 @@ KNOWLEDGE_ROUTE_PERMISSIONS = {
     "reprocess_revision": "knowledge_retrieval:knowledge_manage",
     "list_pending_approvals": "knowledge_retrieval:review",
     "review_user_intake": "knowledge_retrieval:review",
-    "ingest_km_asset": "knowledge_retrieval:knowledge_manage",
     "ingest_user_files": "knowledge_retrieval:upload",
 }
 
@@ -368,24 +367,6 @@ async def _ingest(
     return JSONResponse(
         status_code=upstream.status_code,
         content=payload,
-    )
-
-
-@router.post(
-    "/collections/{collection_id}/ingestions/km-assets",
-    status_code=status.HTTP_202_ACCEPTED,
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {"multipart/form-data": {"schema": {"type": "object"}}},
-        }
-    },
-)
-async def ingest_km_asset(collection_id: UUID, request: Request):
-    return await _ingest(
-        request=request,
-        collection_id=collection_id,
-        intake_kind="km-assets",
     )
 
 

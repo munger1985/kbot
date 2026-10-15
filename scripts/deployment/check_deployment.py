@@ -14,7 +14,6 @@ from media_studio_app.config import MediaStudioAppSettings
 from data_query.config import DataQuerySettings
 from knowledge_core.config import KnowledgeCoreSettings
 from knowledge_retrieval_app.config import KnowledgeRetrievalAppSettings
-from km_asset_app.config import KmAssetAppSettings
 from main_api.config import MainApiSettings
 from model_serving.config import ModelServingSettings
 from platform_core.config import load_settings
@@ -31,7 +30,6 @@ SERVICE_MODELS = {
     "knowledge_core": KnowledgeCoreSettings,
     "knowledge_retrieval_app": KnowledgeRetrievalAppSettings,
     "media_studio_app": MediaStudioAppSettings,
-    "km_asset_app": KmAssetAppSettings,
     "main_api": MainApiSettings,
     "model_serving": ModelServingSettings,
 }

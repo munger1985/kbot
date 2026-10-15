@@ -41,7 +41,6 @@ WORKSPACE_PACKAGES = (
         "knowledge_retrieval_app",
     ),
     WorkspacePackage("services/media_studio_app", "kbot-media-studio-app", "media_studio_app"),
-    WorkspacePackage("services/km_asset_app", "kbot-km-asset-app", "km_asset_app"),
     WorkspacePackage("services/agent_runtime", "kbot-agent-runtime", "agent_runtime"),
     WorkspacePackage(
         "services/aiops_agent",

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from knowledge_core.application.intake import IntakeAcceptance, IntakeReservation, PublishPreparation
 from knowledge_core.application.multipart import KnowledgeCoreMultipartOrchestrator, MultipartIntakeCommand
-from knowledge_core.domain.intake import KmAssetIntakeManifest
+from knowledge_core.domain.intake import BundleIntakeManifest
 from knowledge_core.ports.object_store import StoredObject
 from platform_core.identity import uuid7
 
@@ -66,7 +66,7 @@ class MultipartOrchestratorTest(unittest.TestCase):
             source.write_bytes(payload)
             intake, store = FakeIntake(), FakeStore()
             result = asyncio.run(KnowledgeCoreMultipartOrchestrator(intake_service=intake, object_store=store).accept(
-                MultipartIntakeCommand(1, "assets", "svc:portal", "key", KmAssetIntakeManifest.model_validate(data), {"attachment_0": source})
+                MultipartIntakeCommand(1, "assets", "svc:portal", "key", BundleIntakeManifest.model_validate(data), {"attachment_0": source})
             ))
         self.assertEqual(REVISION_ID, result.bundle_revision_id)
         self.assertEqual(["reserve", "prepare", "accept"], intake.calls)
@@ -112,7 +112,7 @@ class MultipartOrchestratorTest(unittest.TestCase):
                             "assets",
                             "svc:portal",
                             "key-failed",
-                            KmAssetIntakeManifest.model_validate(data),
+                            BundleIntakeManifest.model_validate(data),
                             {"attachment_0": source},
                         )
                     )

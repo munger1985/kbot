@@ -21,7 +21,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
                 "db/apply_oracle_schema.py",
                 "db/initialize_product_app.py",
                 "db/initialize_aiops.py",
-                "db/initialize_km.py",
+                "db/audit_app_authorization.py",
                 "db/sync_prompt_catalog.py",
                 "deployment/aiops_observability/oracle_alert_collector/collector.py",
                 "deployment/aiops_observability/oracle_alert_collector/healthcheck.py",
@@ -35,6 +35,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
                 "deployment/models/download_qwen_model.py",
                 "deployment/workspace_fingerprint.py",
                 "release/verify_release.py",
+                "testing/check_aiops_cross_project_alignment.py",
             },
             entries,
         )
@@ -71,7 +72,11 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
         active_files = [
             path
             for path in [
-                *oracle_root.rglob("*"),
+                *(
+                    path
+                    for path in oracle_root.rglob("*")
+                    if oracle_root / "operations" not in path.parents
+                ),
                 *(SCRIPTS_ROOT / "db").rglob("*"),
             ]
             if path.is_file() and path.suffix in {".py", ".sql"}

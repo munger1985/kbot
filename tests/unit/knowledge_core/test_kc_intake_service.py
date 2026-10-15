@@ -5,19 +5,19 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from knowledge_core.application.intake import (
-    AbortIntakeCommand, AcceptKmAssetCommand, IntakeConflictError,
+    AbortIntakeCommand, AcceptBundleCommand, IntakeConflictError,
     KnowledgeCoreIntakeService, PublishedAttachment, PublishedManifest,
     ReserveIntakeCommand, ReviewIntakeCommand,
     PreparePublishCommand,
 )
-from knowledge_core.domain.intake import KmAssetIntakeManifest
+from knowledge_core.domain.intake import BundleIntakeManifest
 from knowledge_core.domain.manifest import render_bundle_manifest
 from platform_core.identity import uuid7
 from platform_core.notifications import EVENT_TYPES
 
 
 def manifest():
-    return KmAssetIntakeManifest.model_validate({
+    return BundleIntakeManifest.model_validate({
         "bundle": {"source_id": "A-1", "source_revision": "r1", "title": "Asset", "security_level": 2},
         "documents": [{"part_name": "attachment_0", "external_document_id": "doc-1", "declared_mime_type": "text/plain", "ordinal": 0, "byte_size": 3, "content_sha256": "a" * 64}],
     })
@@ -89,7 +89,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     def _command(self):
         intake_manifest = manifest()
         rendered = render_bundle_manifest(intake_manifest.bundle)
-        return AcceptKmAssetCommand(1, "assets", "svc:portal", "k1", intake_manifest, {
+        return AcceptBundleCommand(1, "assets", "svc:portal", "k1", intake_manifest, {
             "attachment_0": PublishedAttachment("doc-1", "memory://doc-1", "text/plain"),
         }, PublishedManifest("memory://manifest", len(rendered.content), rendered.content_sha256))
 

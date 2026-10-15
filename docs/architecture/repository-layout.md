@@ -27,9 +27,8 @@ bash scripts/deployment/install_workspace.sh
 不注入源码路径；服务间调用仍只能经过稳定契约和客户端，不允许直接导入其他服务的
 Entity、Repository 或应用服务。
 
-`database/oracle/` 保持集中，是因为 4.0 使用同一 Schema 并需要统一初始化；
-目录内部仍按表所有者拆分，包括 KM Asset 的 Slack Inbox/Outbox。将来拆库时可直接
-把对应服务的 DDL 目录随服务迁走。
+`database/oracle/` 保持集中，是因为 4.1 使用同一 Schema 并需要统一初始化；
+目录内部仍按表所有者拆分。将来拆库时可直接把对应服务的 DDL 目录随服务迁走。
 
 Oracle 资产按生命周期继续拆分：服务目录中的 `NNN_*.sql` 与 Manifest 是空 Schema
 规范定义，`bootstrap/` 是建库后的确定性初始数据，`operations/` 是 DBA 显式执行的

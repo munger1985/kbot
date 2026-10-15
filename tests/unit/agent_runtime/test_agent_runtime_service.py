@@ -481,7 +481,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_runtime_preserves_app_owned_capabilities(self):
         app_spec = self.execution_spec.model_copy(
             update={
-                "owner_app_id": "km_asset",
+                "owner_app_id": "knowledge_retrieval",
                 "enabled_capabilities": (
                     "conversation", "document", "data_query"
                 ),

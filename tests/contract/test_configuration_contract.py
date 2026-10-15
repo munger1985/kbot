@@ -1,4 +1,4 @@
-"""4.0 配置契约校验测试。"""
+"""4.1 配置契约校验测试。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,6 @@ class ConfigurationContractTest(unittest.TestCase):
                 "knowledge_core",
                 "knowledge_retrieval_app",
                 "media_studio_app",
-                "km_asset_app",
                 "main_api",
                 "model_serving",
             },
