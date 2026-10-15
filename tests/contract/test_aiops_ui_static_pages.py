@@ -815,8 +815,17 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn("复用已有数据库", systems)
         self.assertIn('shell.toast("至少有两个资源后才能建立关系。")', systems)
         self.assertNotIn('message("至少有两个资源后才能建立关系。"', systems)
-        self.assertIn('shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。")', systems)
-        self.assertIn('"数据库连接验证通过；正式提交前不会创建资源。"', systems)
+        self.assertIn('return "请完整填写数据库名称、责任组、连接地址、凭据和监控映射。"', systems)
+        self.assertIn("if (configurationError) { shell.toast(configurationError); return; }", systems)
+        self.assertIn('"数据库连接测试通过；正式提交前不会创建资源。"', systems)
+        self.assertIn("连接测试为可选项，不影响保存", systems)
+        step_validation = systems.split("function validateStep()", 1)[1].split(
+            "function systemPayload", 1
+        )[0]
+        self.assertIn('shell.toast("至少接入一个资源。")', step_validation)
+        self.assertIn("resourceConfigurationError(item)", step_validation)
+        self.assertNotIn("!item.saved", step_validation)
+        self.assertNotIn("完成所有数据库的连接验证", systems)
         self.assertNotIn("function message(", systems)
         self.assertNotIn('id="workspace-result"', workspace)
         self.assertNotIn("business-validation-list", systems)
@@ -898,13 +907,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         for label in ("Host", "Service Name", "数据库监控 Target", "主机监控 Target"):
             self.assertIn(f"<span>{label}</span>", systems)
 
+        configuration_validation = systems.split("function resourceConfigurationError", 1)[1].split(
+            "async function validateResource", 1
+        )[0]
         validation = systems.split("async function validateResource", 1)[1].split(
             "function topologyBoardHtml", 1
         )[0]
         self.assertIn("for (const member of members)", validation)
         self.assertIn('await request("/targets/test-connection"', validation)
-        self.assertIn("members.length < 2", validation)
-        self.assertIn("new Set(entry[1]).size !== entry[1].length", validation)
+        self.assertIn("members.length < 2", configuration_validation)
+        self.assertIn("new Set(entry[1]).size !== entry[1].length", configuration_validation)
         self.assertIn("members.forEach((member) => { member.saved = true; })", validation)
         self.assertIn(".business-rac-node-card", forms)
 

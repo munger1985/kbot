@@ -308,12 +308,12 @@
       }).join("");
       connection = `<div class="business-editor-grid business-connection-grid business-rac-editor"><p class="span-12 business-rac-guidance">公共凭据与监控源只填写一次；每个节点分别配置 Host、Service Name、数据库监控 Target 和主机监控 Target。</p><label class="span-3"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions([["NON_CDB", "非 CDB"], ["CDB", "CDB"], ["PDB", "PDB"]], database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-6"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label class="span-6"><span>诊断用户名（所有节点共用）</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码（所有节点共用）</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-12"><span>监控源（所有节点共用）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${database.discovering ? `<p class="span-12 business-inline-note">正在从监控源发现数据库和承载主机…</p>` : ""}<section class="span-12 business-rac-node-list">${nodeCards}<button id="add-rac-node" type="button">＋ 增加 RAC 节点</button></section>${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；每个 RAC 节点分别绑定数据库与承载主机 Target。</p>` : ""}</div>`;
     }
-    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "接入资源并验证连接与监控映射"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${editing ? "修改将在保存业务系统时提交" : item.saved ? "连接与监控映射已验证" : "连接验证通过后才可进入下一步"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>验证数据库</button>` : ""}</footer></form>`;
+    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${editing ? "修改将在保存业务系统时提交" : item.saved ? "数据库连接已测试" : "连接测试为可选项，不影响保存"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>测试连接</button>` : ""}</footer></form>`;
   }
 
   function renderComposition() {
     const visible = resources.filter((item) => item.architecture_layer_key === activeLayer);
-    const cards = visible.map((item) => `<button type="button" data-resource="${esc(item.draft_resource_id)}" class="business-resource-card"><header><span class="business-resource-icon">${item.resource_type_key === "DATABASE" ? "DB" : "R"}</span><em class="${item.saved ? "ready" : ""}">${item.saved ? "已就绪" : "待验证"}</em></header><div><small>${esc(typeName(item.resource_type_key))}</small><h3>${esc(item.display_name || "未命名数据库")}</h3><p>${item.database ? `${esc(item.database.db_type)} ${esc(item.database.version_code)} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${esc(item.database.rac_node_number)}` : "单实例"} · ${item.database.db_role === "PRIMARY" ? "主库" : item.database.db_role === "STANDBY" ? "备库" : "角色待识别"}` : ""}</p></div><dl><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(item.location_name || "未填写")}</dd></div></dl><footer><span>${item.system_resource_id ? "已接入资源" : "新接入资源"}</span><strong>编辑 →</strong></footer></button>`).join("");
+    const cards = visible.map((item) => `<button type="button" data-resource="${esc(item.draft_resource_id)}" class="business-resource-card"><header><span class="business-resource-icon">${item.resource_type_key === "DATABASE" ? "DB" : "R"}</span><em class="${item.saved ? "ready" : ""}">${item.saved ? "连接已测试" : "连接未测试"}</em></header><div><small>${esc(typeName(item.resource_type_key))}</small><h3>${esc(item.display_name || "未命名数据库")}</h3><p>${item.database ? `${esc(item.database.db_type)} ${esc(item.database.version_code)} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${esc(item.database.rac_node_number)}` : "单实例"} · ${item.database.db_role === "PRIMARY" ? "主库" : item.database.db_role === "STANDBY" ? "备库" : "角色待识别"}` : ""}</p></div><dl><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(item.location_name || "未填写")}</dd></div></dl><footer><span>${item.system_resource_id ? "已接入资源" : "新接入资源"}</span><strong>编辑 →</strong></footer></button>`).join("");
     const content = activeLayer === "DATA" ? `<div class="business-resource-card-grid">${cards}<button id="add-resource-card" class="business-resource-add-card" type="button" aria-label="＋ 添加资源"><span>＋</span><strong>添加资源</strong><small>接入当前架构层</small></button></div>` : `<div class="business-layer-coming-soon"><span aria-hidden="true">◇</span><h3>功能未完成</h3><p>敬请期待</p></div>`;
     panel.innerHTML = `<section class="business-composition-layout"><aside class="business-layer-nav" role="tablist" aria-label="系统构成"><header><p class="business-eyebrow">STEP 2</p><h2>系统构成</h2></header>${layers.map((layer) => `<button type="button" role="tab" aria-selected="${activeLayer === layer[0]}" data-layer="${layer[0]}" class="${activeLayer === layer[0] ? "active" : ""}"><span><strong>${layer[1]}</strong><small>${layer[2]}</small></span><em>${resources.filter((item) => item.architecture_layer_key === layer[0]).length}</em></button>`).join("")}</aside><section class="business-resource-panel" role="tabpanel"><header><div><p class="business-eyebrow">${esc(activeLayer)}</p><h2>${esc(layerName(activeLayer))}</h2><p>${activeLayer === "DATA" ? `已配置 ${visible.length} 个运维资源` : "功能未完成，敬请期待"}</p></div></header>${content}</section></section>`;
     renderResourceDrawer();
@@ -495,15 +495,15 @@
     return { source_id: database.source_id, source_binding: { source_id: database.source_id, source_locator_key: database.locator_key.trim(), source_locator: source.source_type === "LOKI" ? { labels: { target_key: database.locator_key.trim() } } : { target_key: database.locator_key.trim() } } };
   }
 
-  async function validateResource(item) {
+  function resourceConfigurationError(item) {
     const members = isRacResource(item) ? racMembers(item) : [item];
     const database = item.database;
     const source = sourceFor(item);
-    if (!database || members.some((member) => !member.database || !member.display_name.trim() || !member.owner_group_id || !member.database.host.trim() || !member.database.database.trim()) || !database.username || !database.password || !source) { shell.toast("请完整填写数据库名称、责任组、连接地址、凭据和监控映射。"); return; }
-    if (isRacResource(item) && members.length < 2) { shell.toast("Oracle RAC 至少需要两个节点。"); return; }
-    if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) { shell.toast("PDB 接入必须填写 PDB 名称。"); return; }
-    if (members.some((member) => member.database?.deployment_type === "RAC" && (!member.database.rac_node_number || member.database.rac_node_number < 1))) { shell.toast("每个 RAC 节点都必须填写有效的节点编号。"); return; }
-    if (members.some((member) => usesDiscovery(member) ? !member.database?.candidate_ref || (source.source_type === "PROMETHEUS" && !member.database?.host_candidate_ref) : !member.database?.locator_key.trim())) { shell.toast("请完成数据库与监控源的定位映射。"); return; }
+    if (!database || members.some((member) => !member.database || !member.display_name.trim() || !member.owner_group_id || !member.database.host.trim() || !member.database.database.trim()) || !database.username || !database.password || !source) return "请完整填写数据库名称、责任组、连接地址、凭据和监控映射。";
+    if (isRacResource(item) && members.length < 2) return "Oracle RAC 至少需要两个节点。";
+    if (database.db_type === "ORACLE" && database.oracle_scope === "PDB" && !database.oracle_pdb_name.trim()) return "PDB 接入必须填写 PDB 名称。";
+    if (members.some((member) => member.database?.deployment_type === "RAC" && (!member.database.rac_node_number || member.database.rac_node_number < 1))) return "每个 RAC 节点都必须填写有效的节点编号。";
+    if (members.some((member) => usesDiscovery(member) ? !member.database?.candidate_ref || (source.source_type === "PROMETHEUS" && !member.database?.host_candidate_ref) : !member.database?.locator_key.trim())) return "请完成数据库与监控源的定位映射。";
     if (isRacResource(item)) {
       const uniqueFields = [
         ["节点编号", members.map((member) => member.database?.rac_node_number)],
@@ -513,17 +513,24 @@
       ];
       if (source.source_type === "PROMETHEUS") uniqueFields.push(["主机监控 Target", members.map((member) => member.database?.host_candidate_ref)]);
       const duplicate = uniqueFields.find((entry) => new Set(entry[1]).size !== entry[1].length);
-      if (duplicate) { shell.toast(`RAC 各节点的${duplicate[0]}不能重复。`); return; }
+      if (duplicate) return `RAC 各节点的${duplicate[0]}不能重复。`;
     }
+    return null;
+  }
+
+  async function validateResource(item) {
+    const configurationError = resourceConfigurationError(item);
+    if (configurationError) { shell.toast(configurationError); return; }
+    const members = isRacResource(item) ? racMembers(item) : [item];
     saving = true; updateFooter();
     try {
       for (const member of members) {
         const target = targetPayload(member);
         const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, diagnostic_credential: target.diagnostic_credential }) });
-        if (!response.ok) throw new Error(`${member.display_name}：${response.error_code || "连接验证失败"}`);
+        if (!response.ok) throw new Error(`${member.display_name}：${response.error_code || "连接测试失败"}`);
       }
       members.forEach((member) => { member.saved = true; });
-      mark(); shell.toast(isRacResource(item) ? `${members.length} 个 RAC 节点连接验证通过；正式提交前不会创建资源。` : "数据库连接验证通过；正式提交前不会创建资源。");
+      mark(); shell.toast(isRacResource(item) ? `${members.length} 个 RAC 节点连接测试通过；正式提交前不会创建资源。` : "数据库连接测试通过；正式提交前不会创建资源。");
     } catch (error) { shell.toast(error.message); }
     finally { saving = false; renderComposition(); updateFooter(); }
   }
@@ -531,7 +538,7 @@
   function topologyBoardHtml() {
     const visibleLayers = layers.map((layer) => [layer, resources.filter((item) => item.architecture_layer_key === layer[0])]).filter((entry) => entry[1].length);
     const resourceName = (draftId) => resources.find((item) => item.draft_resource_id === draftId)?.display_name || "未选择资源";
-    const lanes = visibleLayers.length ? visibleLayers.map(([layer, items]) => `<section class="business-topology-lane"><header><strong>${esc(layer[1])}</strong><span>${items.length}</span></header><div>${items.map((item) => `<button type="button" data-topology-resource="${esc(item.draft_resource_id)}" class="${activeResourceId === item.draft_resource_id ? "active" : ""} ${item.saved ? "" : "pending"}"><span class="business-node-kind">${item.resource_type_key === "DATABASE" ? "DB" : "RES"}</span><span><strong>${esc(item.display_name || "未命名资源")}</strong><small>${esc(item.database ? `${item.database.db_type} ${item.database.version_code} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${item.database.rac_node_number}` : "单实例"} · ${item.database.db_role}` : item.resource_type_key)}</small></span></button>`).join("")}</div></section>`).join("") : `<div class="business-topology-empty"><h3>拓扑将在接入资源后自动生成</h3><p>先返回“系统构成”添加数据库或其他运维资源。</p></div>`;
+    const lanes = visibleLayers.length ? visibleLayers.map(([layer, items]) => `<section class="business-topology-lane"><header><strong>${esc(layer[1])}</strong><span>${items.length}</span></header><div>${items.map((item) => `<button type="button" data-topology-resource="${esc(item.draft_resource_id)}" class="${activeResourceId === item.draft_resource_id ? "active" : ""}"><span class="business-node-kind">${item.resource_type_key === "DATABASE" ? "DB" : "RES"}</span><span><strong>${esc(item.display_name || "未命名资源")}</strong><small>${esc(item.database ? `${item.database.db_type} ${item.database.version_code} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${item.database.rac_node_number}` : "单实例"} · ${item.database.db_role}` : item.resource_type_key)}</small></span></button>`).join("")}</div></section>`).join("") : `<div class="business-topology-empty"><h3>拓扑将在接入资源后自动生成</h3><p>先返回“系统构成”添加数据库或其他运维资源。</p></div>`;
     const rail = relations.length ? `<section class="business-relation-rail"><header><strong>资源关系</strong><span>关系是拓扑事实，不创建隐藏分组</span></header><div>${relations.map((relation) => `<button type="button" data-topology-relation="${esc(relation.draft_relation_id)}" class="${activeRelationId === relation.draft_relation_id ? "active" : ""}"><strong>${esc(relation.display_name || relationName(relation.relation_type_key))}</strong><span>${relation.participants.map((participant) => `<em>${esc(resourceName(participant.draft_resource_id))} <small>${esc(roleLabels[participant.participant_role] || participant.participant_role)}</small></em>`).join("")}</span></button>`).join("")}</div></section>` : "";
     return `<section class="business-topology-board"><header><span>BUSINESS SYSTEM</span><strong>${esc(system.display_name || "未命名业务系统")}</strong><small>${resources.length} 个资源 · ${relations.length} 个关系</small></header><div class="business-topology-lanes">${lanes}</div>${rail}</section>`;
   }
@@ -588,7 +595,11 @@
 
   function validateStep() {
     if (step === 0 && (!system.display_name.trim() || !system.responsibility_group_id)) { shell.toast("请填写业务系统名称并选择业务责任组。"); return false; }
-    if (step === 1 && (!resources.length || resources.some((item) => !item.display_name.trim() || !item.owner_group_id || !item.saved))) { shell.toast("至少接入一个资源，并完成所有数据库的连接验证。"); return false; }
+    if (step === 1) {
+      if (!resources.length) { shell.toast("至少接入一个资源。"); return false; }
+      const incomplete = resources.find((item) => !item.system_resource_id && resourceConfigurationError(item));
+      if (incomplete) { shell.toast(resourceConfigurationError(incomplete) || "请完整填写新增数据库配置。"); return false; }
+    }
     if (step === 2 && relations.some((item) => item.participants.length < 2 || new Set(item.participants.map((participant) => participant.draft_resource_id)).size !== item.participants.length)) { shell.toast("每个关系至少需要两个不重复的参与资源。"); return false; }
     return true;
   }
