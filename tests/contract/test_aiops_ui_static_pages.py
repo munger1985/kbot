@@ -920,6 +920,35 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("members.forEach((member) => { member.saved = true; })", validation)
         self.assertIn(".business-rac-node-card", forms)
 
+    def test_business_system_workspace_infers_database_relations_and_draws_topology(self):
+        systems = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
+            encoding="utf-8"
+        )
+        forms = (AIOPS_ROOT / "css" / "aiops-forms.css").read_text(
+            encoding="utf-8"
+        )
+
+        for contract in (
+            "syncInferredDatabaseRelations",
+            "DATABASE_ROLE:${dbType}",
+            "DATA_GUARD",
+            "MYSQL_REPLICATION",
+            "POSTGRES_STREAMING",
+            "primaries.length !== 1 || !standbys.length",
+            "auto_inferred",
+            "isManagedRelation",
+            "TOPOLOGY PREVIEW",
+            "business-relation-flow",
+            "business-relation-connector",
+            "自动推导",
+            "不会自动猜测",
+        ):
+            self.assertIn(contract, systems)
+        self.assertIn('origin: "DISCOVERY"', systems)
+        self.assertIn('inference_rule: "RAC_DEPLOYMENT"', systems)
+        self.assertIn(".business-relation-flow", forms)
+        self.assertIn(".business-standalone-map", forms)
+
     def test_aiops_importance_labels_increase_from_low_to_core(self):
         workspace = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
             encoding="utf-8"

@@ -125,6 +125,76 @@
       && relation.participants.length >= 2
       && relation.participants.every((participant) => resources.find((resource) => resource.draft_resource_id === participant.draft_resource_id)?.rac_group_id === relation.draft_relation_id);
   }
+  function isInferredRelation(relation) {
+    return relation?.attributes?.auto_inferred === true;
+  }
+  function isManagedRelation(relation) {
+    return isManagedRacRelation(relation) || isInferredRelation(relation);
+  }
+  function syncInferredDatabaseRelations() {
+    const definitions = {
+      ORACLE: { relationType: "DATA_GUARD", primaryRole: "PRIMARY", standbyRole: "STANDBY", label: "Data Guard" },
+      MYSQL: { relationType: "MYSQL_REPLICATION", primaryRole: "SOURCE", standbyRole: "REPLICA", label: "MySQL 主从复制" },
+      POSTGRESQL: { relationType: "POSTGRES_STREAMING", primaryRole: "PRIMARY", standbyRole: "STANDBY", label: "PostgreSQL 流复制" },
+    };
+    const desired = new Map();
+    Object.entries(definitions).forEach(([dbType, definition]) => {
+      const seen = new Set();
+      const units = [];
+      resources.forEach((resource) => {
+        if (resource.database?.db_type !== dbType) return;
+        const key = resource.rac_group_id || resource.draft_resource_id;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const members = resource.rac_group_id ? racMembers(resource) : [resource];
+        units.push({ members, role: members[0]?.database?.db_role, name: resource.rac_cluster_name || resource.display_name || dbType });
+      });
+      const primaries = units.filter((unit) => unit.role === "PRIMARY");
+      const standbys = units.filter((unit) => unit.role === "STANDBY");
+      if (primaries.length !== 1 || !standbys.length) return;
+      const participants = [
+        ...primaries[0].members.map((member) => ({ draft_resource_id: member.draft_resource_id, participant_role: definition.primaryRole, display_order: 0 })),
+        ...standbys.flatMap((unit) => unit.members).map((member, index) => ({ draft_resource_id: member.draft_resource_id, participant_role: definition.standbyRole, display_order: index + 1 })),
+      ];
+      const inferenceKey = `DATABASE_ROLE:${dbType}`;
+      desired.set(inferenceKey, {
+        draft_relation_id: "", origin: "DISCOVERY", relation_type_key: definition.relationType,
+        display_name: `${definition.label} · ${primaries[0].name} → ${standbys.map((unit) => unit.name).join("、")}`,
+        responsibility_group_id: "", participants,
+        attributes: { auto_inferred: true, inference_rule: "DATABASE_ROLE", inference_key: inferenceKey, database_type: dbType },
+      });
+    });
+
+    let changed = false;
+    const retained = [];
+    relations.forEach((relation) => {
+      const inferenceKey = typeof relation.attributes?.inference_key === "string" ? relation.attributes.inference_key : "";
+      if (!isInferredRelation(relation) || relation.attributes?.inference_rule !== "DATABASE_ROLE") {
+        retained.push(relation);
+        return;
+      }
+      const next = desired.get(inferenceKey);
+      if (!next) { changed = true; return; }
+      desired.delete(inferenceKey);
+      if (relation.display_name !== next.display_name || relation.relation_type_key !== next.relation_type_key || JSON.stringify(relation.participants) !== JSON.stringify(next.participants)) {
+        Object.assign(relation, { origin: "DISCOVERY", relation_type_key: next.relation_type_key, display_name: next.display_name, participants: next.participants, attributes: next.attributes });
+        changed = true;
+      }
+      retained.push(relation);
+    });
+    desired.forEach((relation) => {
+      const participantIds = new Set(relation.participants.map((participant) => participant.draft_resource_id));
+      const equivalent = retained.some((item) => item.relation_type_key === relation.relation_type_key
+        && item.participants.length === relation.participants.length
+        && item.participants.every((participant) => participantIds.has(participant.draft_resource_id)));
+      if (equivalent) return;
+      relation.draft_relation_id = uuid7();
+      retained.push(relation);
+      changed = true;
+    });
+    if (changed) relations = retained;
+    return changed;
+  }
   function updateRacRelation(item) {
     const relation = managedRacRelation(item);
     if (!relation) return;
@@ -209,7 +279,7 @@
     if (!item.rac_group_id) {
       const relationId = uuid7();
       item.rac_group_id = relationId;
-      relations.push({ draft_relation_id: relationId, relation_type_key: "ORACLE_RAC", display_name: item.rac_cluster_name || "", responsibility_group_id: "", participants: [], attributes: {} });
+      relations.push({ draft_relation_id: relationId, origin: "DISCOVERY", relation_type_key: "ORACLE_RAC", display_name: item.rac_cluster_name || "", responsibility_group_id: "", participants: [], attributes: { auto_inferred: true, inference_rule: "RAC_DEPLOYMENT" } });
     }
     if (racMembers(item).length < 2) resources.push(newRacNode(item, 2));
     syncRacNames(item);
@@ -383,6 +453,7 @@
       const removed = new Set(racMembers(item).map((member) => member.draft_resource_id));
       resources = resources.filter((row) => !removed.has(row.draft_resource_id));
       relations = relations.filter((relation) => relation.draft_relation_id !== item.rac_group_id && !relation.participants.some((participant) => removed.has(participant.draft_resource_id)));
+      syncInferredDatabaseRelations();
       activeResourceId = resources.find((row) => row.architecture_layer_key === activeLayer)?.draft_resource_id || resources[0]?.draft_resource_id || "";
       closeResourceDrawer(); mark(); renderComposition();
     };
@@ -417,6 +488,7 @@
         item.database.deployment_type = "SINGLE_INSTANCE";
         item.database.rac_node_number = null;
       }
+      syncInferredDatabaseRelations();
       item.saved = false; mark(); renderComposition();
       if (item.database.source_id && usesDiscovery(item)) void discover(item);
       return;
@@ -435,6 +507,7 @@
         item.display_name = nameBefore;
         item.database.rac_node_number = null;
       }
+      syncInferredDatabaseRelations();
       item.saved = Boolean(item.system_resource_id); mark(); renderComposition(); return;
     }
     if (name === "source_id") {
@@ -450,6 +523,7 @@
       return;
     }
     if (isRacResource(item)) syncRacDatabaseField(item, key);
+    if (name === "db_role") syncInferredDatabaseRelations();
     if (name === "oracle_scope") { item.saved = false; mark(); renderComposition(); return; }
     item.saved = Boolean(item.system_resource_id);
     if (["host", "port", "database", "oracle_pdb_name", "username", "password", "locator_key", "candidate_ref", "host_candidate_ref"].includes(name)) item.saved = false;
@@ -536,17 +610,33 @@
   }
 
   function topologyBoardHtml() {
-    const visibleLayers = layers.map((layer) => [layer, resources.filter((item) => item.architecture_layer_key === layer[0])]).filter((entry) => entry[1].length);
-    const resourceName = (draftId) => resources.find((item) => item.draft_resource_id === draftId)?.display_name || "未选择资源";
-    const lanes = visibleLayers.length ? visibleLayers.map(([layer, items]) => `<section class="business-topology-lane"><header><strong>${esc(layer[1])}</strong><span>${items.length}</span></header><div>${items.map((item) => `<button type="button" data-topology-resource="${esc(item.draft_resource_id)}" class="${activeResourceId === item.draft_resource_id ? "active" : ""}"><span class="business-node-kind">${item.resource_type_key === "DATABASE" ? "DB" : "RES"}</span><span><strong>${esc(item.display_name || "未命名资源")}</strong><small>${esc(item.database ? `${item.database.db_type} ${item.database.version_code} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${item.database.rac_node_number}` : "单实例"} · ${item.database.db_role}` : item.resource_type_key)}</small></span></button>`).join("")}</div></section>`).join("") : `<div class="business-topology-empty"><h3>拓扑将在接入资源后自动生成</h3><p>先返回“系统构成”添加数据库或其他运维资源。</p></div>`;
-    const rail = relations.length ? `<section class="business-relation-rail"><header><strong>资源关系</strong><span>关系是拓扑事实，不创建隐藏分组</span></header><div>${relations.map((relation) => `<button type="button" data-topology-relation="${esc(relation.draft_relation_id)}" class="${activeRelationId === relation.draft_relation_id ? "active" : ""}"><strong>${esc(relation.display_name || relationName(relation.relation_type_key))}</strong><span>${relation.participants.map((participant) => `<em>${esc(resourceName(participant.draft_resource_id))} <small>${esc(roleLabels[participant.participant_role] || participant.participant_role)}</small></em>`).join("")}</span></button>`).join("")}</div></section>` : "";
-    return `<section class="business-topology-board"><header><span>BUSINESS SYSTEM</span><strong>${esc(system.display_name || "未命名业务系统")}</strong><small>${resources.length} 个资源 · ${relations.length} 个关系</small></header><div class="business-topology-lanes">${lanes}</div>${rail}</section>`;
+    const resourceById = new Map(resources.map((item) => [item.draft_resource_id, item]));
+    const connectedIds = new Set(relations.flatMap((relation) => relation.participants.map((participant) => participant.draft_resource_id)));
+    const standalone = resources.filter((item) => !connectedIds.has(item.draft_resource_id));
+    const summary = (item) => item?.database ? `${item.database.db_type} ${item.database.version_code} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${item.database.rac_node_number || "-"}` : "单实例"}` : item?.resource_type_key || "资源";
+    const node = (participant) => {
+      const item = resourceById.get(participant.draft_resource_id);
+      return `<button type="button" data-topology-resource="${esc(participant.draft_resource_id)}" class="business-topology-node ${activeResourceId === participant.draft_resource_id ? "active" : ""} ${item && !item.saved ? "pending" : ""}"><span class="business-node-kind">${item?.resource_type_key === "DATABASE" ? "DB" : "RES"}</span><span><small>${esc(roleLabels[participant.participant_role] || participant.participant_role)}</small><strong>${esc(item?.display_name || "未选择资源")}</strong><em>${esc(summary(item))}</em></span></button>`;
+    };
+    const relationMaps = relations.map((relation) => {
+      const participants = [...relation.participants].sort((left, right) => Number(left.display_order || 0) - Number(right.display_order || 0));
+      const sourceRoles = new Set(["PRIMARY", "SOURCE", "WORKLOAD", "CONSUMER", "BALANCER"]);
+      let sourceParticipants = relation.relation_type_key === "ORACLE_RAC" ? participants.slice(0, 1) : participants.filter((participant) => sourceRoles.has(participant.participant_role));
+      if (!sourceParticipants.length) sourceParticipants = participants.slice(0, 1);
+      const sourceIds = new Set(sourceParticipants.map((participant) => participant.draft_resource_id));
+      const targetParticipants = participants.filter((participant) => !sourceIds.has(participant.draft_resource_id));
+      const inferred = relation.relation_type_key === "ORACLE_RAC" || relation.origin === "DISCOVERY" || isInferredRelation(relation);
+      return `<article class="business-relation-map ${activeRelationId === relation.draft_relation_id ? "active" : ""}"><header><button type="button" data-topology-relation="${esc(relation.draft_relation_id)}"><span>${esc(relationName(relation.relation_type_key))}</span><strong>${esc(relation.display_name || relationName(relation.relation_type_key))}</strong></button><em class="${inferred ? "inferred" : ""}">${inferred ? "自动推导" : "手工关系"}</em></header><div class="business-relation-flow"><div class="business-relation-endpoints">${sourceParticipants.map((participant) => node(participant)).join("")}</div><button type="button" data-topology-relation="${esc(relation.draft_relation_id)}" class="business-relation-connector ${relation.relation_type_key === "ORACLE_RAC" ? "bidirectional" : ""}"><span>${relation.relation_type_key === "ORACLE_RAC" ? "⇄" : "→"}</span><small>${esc(relationName(relation.relation_type_key))}</small></button><div class="business-relation-endpoints">${targetParticipants.map((participant) => node(participant)).join("")}</div></div></article>`;
+    }).join("");
+    const standaloneMap = standalone.length ? `<section class="business-standalone-map"><header><div><strong>暂未建立关系</strong><span>单实例或尚不能唯一判断拓扑的资源</span></div><em>${standalone.length}</em></header><div>${standalone.map((item) => node({ draft_resource_id: item.draft_resource_id, participant_role: item.database?.db_role === "PRIMARY" ? "PRIMARY" : item.database?.db_role === "STANDBY" ? "STANDBY" : "独立资源" })).join("")}</div></section>` : "";
+    const content = resources.length ? `<div class="business-topology-content">${relationMaps ? `<section class="business-relation-maps">${relationMaps}</section>` : ""}${standaloneMap}<p class="business-topology-hint">自动关系来自 Step 2 的部署形态和数据库角色；存在多个主库或缺少备库 / 从库时不会自动猜测。</p></div>` : `<div class="business-topology-empty"><h3>拓扑将在接入资源后自动生成</h3><p>先返回“系统构成”添加数据库或其他运维资源。</p></div>`;
+    return `<section class="business-topology-board"><header><div><span>TOPOLOGY PREVIEW</span><strong>${esc(system.display_name || "未命名业务系统")}</strong></div><small>${resources.length} 个资源 · ${relations.length} 个关系</small></header>${content}</section>`;
   }
 
   function relationEditorHtml(relation) {
     const roles = roleOptions[relation.relation_type_key] || ["MEMBER"];
-    const managed = isManagedRacRelation(relation);
-    return `<header><div><p class="business-eyebrow">RELATION</p><h3>${esc(relation.display_name || relationName(relation.relation_type_key))}</h3></div>${managed ? "" : `<button id="remove-relation" class="business-danger" type="button">删除</button>`}</header><label><span>关系类型</span><select name="relation_type" ${managed ? "disabled" : ""}>${selectOptions(relationTypes, relation.relation_type_key)}</select></label><label><span>关系名称（可选）</span><input name="relation_name" value="${esc(relation.display_name)}" ${managed ? "disabled" : ""}></label><label><span>关系责任组</span><select name="relation_group">${groupOptions(relation.responsibility_group_id, "继承参与资源")}</select></label><div class="business-participant-list">${relation.participants.map((participant, index) => `<div><select data-participant-resource="${index}" ${managed ? "disabled" : ""}>${resources.map((item) => `<option value="${esc(item.draft_resource_id)}" ${item.draft_resource_id === participant.draft_resource_id ? "selected" : ""}>${esc(item.display_name || "未命名资源")}</option>`).join("")}</select><select data-participant-role="${index}" ${managed ? "disabled" : ""}>${selectOptions(roles, participant.participant_role, roleLabels)}</select>${managed ? "" : `<button type="button" data-remove-participant="${index}" aria-label="移除参与者">×</button>`}</div>`).join("")}${managed ? "" : `<button id="add-participant" type="button" ${relation.participants.length >= resources.length ? "disabled" : ""}>添加参与资源</button>`}</div>`;
+    const managed = isManagedRelation(relation);
+    return `<header><div><p class="business-eyebrow">RELATION</p><h3>${esc(relation.display_name || relationName(relation.relation_type_key))}</h3></div>${managed ? "" : `<button id="remove-relation" class="business-danger" type="button">删除</button>`}</header>${managed ? `<p class="business-inferred-relation-note">自动推导关系。请返回“系统构成”修改部署形态或数据库角色。</p>` : ""}<label><span>关系类型</span><select name="relation_type" ${managed ? "disabled" : ""}>${selectOptions(relationTypes, relation.relation_type_key)}</select></label><label><span>关系名称（可选）</span><input name="relation_name" value="${esc(relation.display_name)}" ${managed ? "disabled" : ""}></label><label><span>关系责任组</span><select name="relation_group" ${managed ? "disabled" : ""}>${groupOptions(relation.responsibility_group_id, "继承参与资源")}</select></label><div class="business-participant-list">${relation.participants.map((participant, index) => `<div><select data-participant-resource="${index}" ${managed ? "disabled" : ""}>${resources.map((item) => `<option value="${esc(item.draft_resource_id)}" ${item.draft_resource_id === participant.draft_resource_id ? "selected" : ""}>${esc(item.display_name || "未命名资源")}</option>`).join("")}</select><select data-participant-role="${index}" ${managed ? "disabled" : ""}>${selectOptions(roles, participant.participant_role, roleLabels)}</select>${managed ? "" : `<button type="button" data-remove-participant="${index}" aria-label="移除参与者">×</button>`}</div>`).join("")}${managed ? "" : `<button id="add-participant" type="button" ${relation.participants.length >= resources.length ? "disabled" : ""}>添加参与资源</button>`}</div>`;
   }
   function resourceSummaryHtml(item) {
     if (!item) return `<div class="business-topology-empty"><h3>选择节点或关系</h3><p>点击画布中的资源或关系，在这里查看和编辑属性。</p></div>`;
@@ -555,7 +645,7 @@
 
   function renderTopology() {
     const relation = currentRelation();
-    panel.innerHTML = `<section class="business-topology-step"><header><div><p class="business-eyebrow">STEP 3</p><h2>拓扑确认</h2><p>系统根据资源和关系推导单实例、RAC、Data Guard 或复制架构。</p></div><button id="add-relation" class="primary" type="button">＋ 添加关系</button></header><div class="business-topology-layout">${topologyBoardHtml()}<aside class="business-topology-property">${relation ? relationEditorHtml(relation) : resourceSummaryHtml(currentResource())}</aside></div></section>`;
+    panel.innerHTML = `<section class="business-topology-step"><header><div><p class="business-eyebrow">STEP 3</p><h2>拓扑确认</h2><p>部署形态与数据库角色能够唯一判断时，系统自动生成关系并绘制拓扑；其余关系可手工补充。</p></div><button id="add-relation" class="primary" type="button">＋ 补充关系</button></header><div class="business-topology-layout">${topologyBoardHtml()}<aside class="business-topology-property">${relation ? relationEditorHtml(relation) : resourceSummaryHtml(currentResource())}</aside></div></section>`;
     bindTopology();
   }
   function defaultParticipants(type) {
@@ -566,7 +656,7 @@
   function bindTopology() {
     document.getElementById("add-relation").onclick = () => {
       if (resources.length < 2) { shell.toast("至少有两个资源后才能建立关系。"); return; }
-      const relation = { draft_relation_id: uuid7(), relation_type_key: "ORACLE_RAC", display_name: "", responsibility_group_id: "", participants: defaultParticipants("ORACLE_RAC"), attributes: {} };
+      const relation = { draft_relation_id: uuid7(), origin: "MANUAL", relation_type_key: "DEPENDS_ON", display_name: "", responsibility_group_id: "", participants: defaultParticipants("DEPENDS_ON"), attributes: {} };
       relations.push(relation); activeRelationId = relation.draft_relation_id; activeResourceId = ""; mark(); renderTopology();
     };
     panel.querySelectorAll("[data-topology-resource]").forEach((button) => button.onclick = () => { activeResourceId = button.dataset.topologyResource; activeRelationId = ""; renderTopology(); });
@@ -608,7 +698,7 @@
     return { draft_resource_id: item.draft_resource_id, mode: "NEW", resource_type_key: item.resource_type_key, display_name: item.display_name.trim(), identity_kind: "STABLE", owner_group_id: item.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, location_name: item.location_name.trim() || null, display_order: item.display_order, attributes: {}, database: { target: targetPayload(item), monitoring: monitoringPayload(item) } };
   }
   function relationPayload(item, systemIdByDraft = null) {
-    return { relation_type_key: item.relation_type_key, display_name: item.display_name.trim() || null, responsibility_group_id: item.responsibility_group_id || null, origin: "MANUAL", confirmation_status: "CONFIRMED", attributes: item.attributes || {}, participants: item.participants.map((participant) => systemIdByDraft ? { system_resource_id: systemIdByDraft.get(participant.draft_resource_id), participant_role: participant.participant_role, display_order: participant.display_order } : participant) };
+    return { relation_type_key: item.relation_type_key, display_name: item.display_name.trim() || null, responsibility_group_id: item.responsibility_group_id || null, origin: item.origin || (isInferredRelation(item) ? "DISCOVERY" : "MANUAL"), confirmation_status: "CONFIRMED", attributes: item.attributes || {}, participants: item.participants.map((participant) => systemIdByDraft ? { system_resource_id: systemIdByDraft.get(participant.draft_resource_id), participant_role: participant.participant_role, display_order: participant.display_order } : participant) };
   }
   async function createSystem() {
     return request("/business-systems", { method: "POST", headers: { "Idempotency-Key": uuid7() }, body: JSON.stringify({ system: systemPayload(), resources: resources.map(resourcePayload), relations: relations.map((item) => ({ draft_relation_id: item.draft_relation_id, ...relationPayload(item) })) }) });
@@ -668,7 +758,7 @@
       const database = item.resource.database;
       return { draft_resource_id: draftId, mode: "EXISTING", resource_id: item.resource.resource_id, system_resource_id: item.system_resource_id, resource_row_version: item.resource.row_version, system_row_version: item.row_version, resource_type_key: item.resource.resource_type_key, display_name: item.resource.display_name, owner_group_id: item.resource.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || "", location_name: item.resource.location_name || "", display_order: item.display_order ?? index, saved: true, database: database ? { db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number ?? null, db_role: database.db_role, host: "", port: 0, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0 } : undefined };
     });
-    relations = value.relations.map((item) => ({ draft_relation_id: uuid7(), relation_id: item.relation_id, row_version: item.row_version, relation_type_key: item.relation_type_key, display_name: item.display_name || "", responsibility_group_id: item.responsibility_group_id || "", attributes: item.attributes || {}, participants: item.participants.map((participant) => ({ draft_resource_id: draftBySystem.get(participant.system_resource_id) || "", participant_role: participant.participant_role, display_order: participant.display_order })) }));
+    relations = value.relations.map((item) => ({ draft_relation_id: uuid7(), relation_id: item.relation_id, row_version: item.row_version, origin: item.origin || "MANUAL", relation_type_key: item.relation_type_key, display_name: item.display_name || "", responsibility_group_id: item.responsibility_group_id || "", attributes: item.attributes || {}, participants: item.participants.map((participant) => ({ draft_resource_id: draftBySystem.get(participant.system_resource_id) || "", participant_role: participant.participant_role, display_order: participant.display_order })) }));
     relations.filter((item) => item.relation_type_key === "ORACLE_RAC").forEach((relation) => {
       const memberIds = new Set(relation.participants.map((participant) => participant.draft_resource_id));
       const members = resources.filter((item) => memberIds.has(item.draft_resource_id));
@@ -723,10 +813,10 @@
   }
 
   document.getElementById("previous").onclick = () => { if (step > 0) { step -= 1; render(); } };
-  document.getElementById("next").onclick = () => { if (validateStep() && step < 2) { step += 1; furthest = Math.max(furthest, step); render(); } };
+  document.getElementById("next").onclick = () => { if (validateStep() && step < 2) { if (step === 1 && syncInferredDatabaseRelations()) mark(); step += 1; furthest = Math.max(furthest, step); render(); } };
   document.getElementById("commit").onclick = () => void commit();
   document.getElementById("save-draft").onclick = saveDraft;
-  document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (next <= furthest) { step = next; render(); } });
+  document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (next <= furthest) { if (next === 2 && syncInferredDatabaseRelations()) mark(); step = next; render(); } });
   document.addEventListener("click", (event) => {
     const anchor = event.target.closest?.("a[href]");
     if (!dirty || !anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
