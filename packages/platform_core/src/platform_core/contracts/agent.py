@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .knowledge import KnowledgeScopeSnapshotV1
+
 
 class AgentExecutionSpec(BaseModel):
     """业务 App 签发给 Agent Runtime 的不可变执行规格。"""
@@ -26,6 +28,7 @@ class AgentExecutionSpec(BaseModel):
     instruction: str | None = Field(default=None, max_length=32000)
     resource_context: dict[str, Any] = Field(default_factory=dict)
     runtime_policy: dict[str, Any] = Field(default_factory=dict)
+    knowledge_scope: KnowledgeScopeSnapshotV1 | None = None
 
     @model_validator(mode="after")
     def validate_agent_boundary(self) -> "AgentExecutionSpec":
@@ -34,14 +37,26 @@ class AgentExecutionSpec(BaseModel):
         if len(capabilities) != len(self.enabled_capabilities):
             raise ValueError("enabled_capabilities 不能包含重复能力")
         if self.agent_kind == "KNOWLEDGE_RETRIEVAL":
-            if self.owner_app_id != "knowledge_retrieval":
-                raise ValueError("知识类 Agent 必须由知识应用拥有")
             if not capabilities.issubset(
                 {"conversation", "document", "data_query"}
             ):
                 raise ValueError("知识检索 Agent 不能启用 AIOps 能力")
+            if "document" in capabilities:
+                if self.knowledge_scope is None:
+                    raise ValueError("文档能力必须冻结 knowledge_scope")
+                if (
+                    self.knowledge_scope.owner_app_id != self.owner_app_id
+                    or self.knowledge_scope.domain_id != self.domain_id
+                    or self.knowledge_scope.consumer_agent_id
+                    != self.consumer_agent_id
+                    or self.knowledge_scope.consumer_agent_version_id
+                    != self.consumer_agent_version_id
+                ):
+                    raise ValueError("Execution Spec 与 knowledge_scope 身份不一致")
         elif self.owner_app_id != "aiops" or capabilities != {"aiops"}:
             raise ValueError("AIOps Agent 必须由 aiops 拥有且只能启用 aiops")
+        elif self.knowledge_scope is not None:
+            raise ValueError("AIOps 诊断 Agent 不能携带知识问答范围")
         return self
 
 
@@ -53,8 +68,6 @@ class CreateAgentRunRequest(BaseModel):
     agent_id: UUID
     execution_spec: AgentExecutionSpec
     input: str = Field(min_length=1, max_length=32000)
-    collection_ids: tuple[UUID, ...] = ()
-    security_level: int = Field(default=3, ge=0, le=3)
     client_metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -109,6 +122,8 @@ class AgentRunSummary(BaseModel):
 
     run_id: UUID
     agent_id: UUID
+    owner_app_id: str
+    scope_hash: str | None = None
     status: str
     row_version: int = Field(ge=1)
     event_cursor: int = Field(ge=0)

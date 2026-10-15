@@ -190,6 +190,7 @@ class ResponseComposerSkill:
         answer_text, used_labels = validated
         references = tuple(
             ReferenceCard(
+                citation_id=allowed[label].citation_id,
                 citation_label=label,
                 collection_id=allowed[label].collection_id,
                 bundle_id=allowed[label].bundle_id,
@@ -201,6 +202,8 @@ class ResponseComposerSkill:
                 locator_schema_version=(
                     allowed[label].locator_schema_version
                 ),
+                evidence_ids=allowed[label].evidence_ids,
+                quote=allowed[label].excerpt,
             )
             for label in used_labels
         )
@@ -403,6 +406,7 @@ class ResponseComposerSkill:
             )
         references = tuple(
             ReferenceCard(
+                citation_id=allowed[label].citation_id,
                 citation_label=label,
                 collection_id=allowed[label].collection_id,
                 bundle_id=allowed[label].bundle_id,
@@ -414,6 +418,8 @@ class ResponseComposerSkill:
                 locator_schema_version=(
                     allowed[label].locator_schema_version
                 ),
+                evidence_ids=allowed[label].evidence_ids,
+                quote=allowed[label].excerpt,
             )
             for label in used_labels
         )
@@ -464,6 +470,7 @@ class ResponseComposerSkill:
     def _reference_card(item: Any) -> ReferenceCard:
         """把已验证 Citation 投影为公开引用卡片。"""
         return ReferenceCard(
+            citation_id=item.citation_id,
             citation_label=item.citation_label,
             collection_id=item.collection_id,
             bundle_id=item.bundle_id,
@@ -473,6 +480,8 @@ class ResponseComposerSkill:
             title=item.title,
             locator=item.locator,
             locator_schema_version=item.locator_schema_version,
+            evidence_ids=item.evidence_ids,
+            quote=item.excerpt,
         )
 
     @staticmethod

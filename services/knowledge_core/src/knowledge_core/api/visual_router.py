@@ -19,6 +19,7 @@ class VisualSearchRequest(BaseModel):
     domain_id: int = Field(gt=0)
     agent_id: UUID
     collection_ids: list[UUID] = Field(min_length=1, max_length=32)
+    bundle_revision_ids: list[UUID] = Field(min_length=1, max_length=1000)
     images_base64: list[str] = Field(min_length=1, max_length=8)
     per_image_limit: int = Field(default=10, ge=1, le=50)
     result_limit: int = Field(default=20, ge=1, le=100)
@@ -48,8 +49,15 @@ async def search_visual(
         )
         if set(scoped) != set(payload.collection_ids):
             raise ValueError("一个或多个 Collection 不可用")
+        scoped_revisions = (
+            await request.app.state.kc_scope_service.validate_revision_scope(
+                collection_ids=scoped,
+                bundle_revision_ids=payload.bundle_revision_ids,
+            )
+        )
         outcome = await request.app.state.kc_visual_service.search(
             collection_ids=list(scoped),
+            bundle_revision_ids=list(scoped_revisions),
             images_base64=payload.images_base64,
             per_image_limit=payload.per_image_limit,
             result_limit=payload.result_limit,

@@ -22,23 +22,33 @@ from agent_runtime.specialists.response_composer.contracts import (
     ReferenceCard,
 )
 from agent_runtime.specialists.root import RouteType, RootAgentPlanner
+from platform_core.contracts import KnowledgeScopeSnapshotV1
 from platform_core.identity import uuid7
 from platform_core.prompts import ResolvedPrompt
 
 
+_COLLECTION_ID = uuid7()
+_REVISION_ID = uuid7()
+_AGENT_ID = uuid7()
+_AGENT_VERSION_ID = uuid7()
+
+
 class _KnowledgeCoreClient:
     def __init__(self):
-        self.collection_id = uuid7()
+        self.collection_id = _COLLECTION_ID
         self.bundle_id = uuid7()
-        self.revision_id = uuid7()
+        self.revision_id = _REVISION_ID
         self.document_id = uuid7()
         self.document_version_id = uuid7()
         self.parse_view_id = uuid7()
         self.evidence_id = uuid7()
         self.last_discovery_query = ""
         self.last_discovery_request = {}
+        self.last_visual_request = {}
+        self.visual_requests = []
         self.last_evidence_request = {}
         self.visual_configured = False
+        self.visual_result_revision_id = None
 
     async def list_agent_bindings(self, **kwargs):
         return {
@@ -71,8 +81,19 @@ class _KnowledgeCoreClient:
         }
 
     async def search_visual(self, **kwargs):
+        self.last_visual_request = kwargs
+        self.visual_requests.append(kwargs)
         return {
-            "results": [],
+            "results": (
+                [{
+                    "bundle_revision_id": str(
+                        self.visual_result_revision_id
+                    ),
+                    "score": 1.0,
+                    "visual_asset_id": str(uuid7()),
+                }]
+                if self.visual_result_revision_id else []
+            ),
             "searched_collection_ids": (
                 [str(self.collection_id)]
                 if self.visual_configured
@@ -102,6 +123,7 @@ class _KnowledgeCoreClient:
             "citations": [
                 {
                     "citation_label": "C1",
+                    "citation_id": str(self.evidence_id),
                     "collection_id": str(self.collection_id),
                     "bundle_id": str(self.bundle_id),
                     "bundle_revision_id": str(self.revision_id),
@@ -369,6 +391,23 @@ def _context(
     language=None,
 ):
     run_id = uuid7()
+    scope_payload = {
+        "schema_version": "1.0",
+        "owner_app_id": "knowledge_retrieval",
+        "domain_id": 10,
+        "consumer_agent_id": str(_AGENT_ID),
+        "consumer_agent_version_id": str(_AGENT_VERSION_ID),
+        "collection_ids": [str(_COLLECTION_ID)],
+        "bundle_revision_ids": [str(_REVISION_ID)],
+        "security_level": 2,
+        "business_context": {},
+        "business_resource_refs": [],
+        "policy_version": "test.v1",
+        "issued_at": datetime.now(timezone.utc).isoformat(),
+    }
+    scope_payload["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(
+        scope_payload
+    )
     config_snapshot = {
         "agent": {
             "models": {
@@ -389,15 +428,16 @@ def _context(
             "config": {},
         },
         "retrieval": {
-            "collection_ids": [],
+            "collection_ids": [str(_COLLECTION_ID)],
             "security_level": 2,
+            "knowledge_scope": scope_payload,
         },
     }
     if language is not None:
         config_snapshot["language"] = language
     return ExecutionContext(
         domain_id=10,
-        agent_id=uuid7(),
+        agent_id=_AGENT_ID,
         run_id=run_id,
         task_id=uuid7(),
         task_key="knowledge_retrieval",
@@ -936,8 +976,67 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
         ]["image_processing"]
         self.assertEqual(processing["visual_search"], "EXECUTED")
         self.assertEqual(processing["vlm_text_search"], "EXECUTED")
+        self.assertEqual(
+            client.last_visual_request["bundle_revision_ids"],
+            (_REVISION_ID,),
+        )
         self.assertIn("数据库性能监控面板", client.last_discovery_query)
         self.assertEqual(result.artifact.payload["warnings"], [])
+
+    async def test_document_skill_rejects_out_of_scope_candidate(self):
+        client = _KnowledgeCoreClient()
+        client.revision_id = uuid7()
+        with self.assertRaisesRegex(
+            RuntimeError, "KNOWLEDGE_SCOPE_CLOSURE_BROKEN"
+        ):
+            await KnowledgeRetrievalSkill(
+                knowledge_core_client=client,
+                service_name="agent-worker",
+            ).execute(_context())
+
+    async def test_document_skill_chunks_visual_revision_scope(self):
+        client = _KnowledgeCoreClient()
+        revision_ids = tuple(uuid7() for _ in range(1001))
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        )
+        await skill._visual_hits(
+            _context(),
+            (_COLLECTION_ID,),
+            revision_ids,
+            {"max_bundles": 10},
+            [b"image"],
+            {"visual_search": "NOT_REQUESTED"},
+            [],
+        )
+        self.assertEqual(
+            [1000, 1],
+            [
+                len(call["bundle_revision_ids"])
+                for call in client.visual_requests
+            ],
+        )
+
+    async def test_document_skill_rejects_visual_scope_violation(self):
+        client = _KnowledgeCoreClient()
+        client.visual_result_revision_id = uuid7()
+        skill = KnowledgeRetrievalSkill(
+            knowledge_core_client=client,
+            service_name="agent-worker",
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "KNOWLEDGE_SCOPE_CLOSURE_BROKEN"
+        ):
+            await skill._visual_hits(
+                _context(),
+                (_COLLECTION_ID,),
+                (_REVISION_ID,),
+                {"max_bundles": 10},
+                [b"image"],
+                {"visual_search": "NOT_REQUESTED"},
+                [],
+            )
 
     async def test_document_skill_skips_unconfigured_image_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1282,6 +1381,7 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
     def test_grounded_answer_rejects_duplicate_bundle_attachments(self):
         bundle_id = uuid7()
         common = {
+            "citation_id": uuid7(),
             "collection_id": uuid7(),
             "bundle_id": bundle_id,
             "bundle_revision_id": uuid7(),
@@ -1289,6 +1389,8 @@ class AgentRuntimeSkillTest(unittest.IsolatedAsyncioTestCase):
             "document_version_id": uuid7(),
             "title": "AI Asset",
             "locator_schema_version": "document/v1",
+            "evidence_ids": (uuid7(),),
+            "quote": "原文证据",
         }
         with self.assertRaisesRegex(
             ValidationError, "同一个 Bundle 只能生成一个附件引用"

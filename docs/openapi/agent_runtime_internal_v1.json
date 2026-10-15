@@ -174,6 +174,16 @@
             ],
             "title": "Instruction"
           },
+          "knowledge_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeScopeSnapshotV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "models": {
             "additionalProperties": {
               "format": "uuid",
@@ -353,6 +363,10 @@
             "title": "Event Cursor",
             "type": "integer"
           },
+          "owner_app_id": {
+            "title": "Owner App Id",
+            "type": "string"
+          },
           "result": {
             "anyOf": [
               {
@@ -373,6 +387,17 @@
             "title": "Run Id",
             "type": "string"
           },
+          "scope_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Hash"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -381,6 +406,7 @@
         "required": [
           "run_id",
           "agent_id",
+          "owner_app_id",
           "status",
           "row_version",
           "event_cursor",
@@ -882,6 +908,10 @@
             "title": "Last Turn Sequence",
             "type": "integer"
           },
+          "owner_app_id": {
+            "title": "Owner App Id",
+            "type": "string"
+          },
           "purge_after": {
             "anyOf": [
               {
@@ -903,6 +933,17 @@
             "title": "Row Version",
             "type": "integer"
           },
+          "scope_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Hash"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -922,6 +963,7 @@
         "required": [
           "conversation_id",
           "agent_id",
+          "owner_app_id",
           "status",
           "row_version",
           "last_turn_sequence",
@@ -946,15 +988,6 @@
             "title": "Client Metadata",
             "type": "object"
           },
-          "collection_ids": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Collection Ids",
-            "type": "array"
-          },
           "execution_spec": {
             "$ref": "#/components/schemas/AgentExecutionSpec"
           },
@@ -963,13 +996,6 @@
             "minLength": 1,
             "title": "Input",
             "type": "string"
-          },
-          "security_level": {
-            "default": 3,
-            "maximum": 3.0,
-            "minimum": 0.0,
-            "title": "Security Level",
-            "type": "integer"
           }
         },
         "required": [
@@ -1026,15 +1052,6 @@
             "title": "Client Metadata",
             "type": "object"
           },
-          "collection_ids": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Collection Ids",
-            "type": "array"
-          },
           "execution_spec": {
             "$ref": "#/components/schemas/AgentExecutionSpec"
           },
@@ -1057,13 +1074,6 @@
             "minLength": 1,
             "title": "Input",
             "type": "string"
-          },
-          "security_level": {
-            "default": 3,
-            "maximum": 3.0,
-            "minimum": 0.0,
-            "title": "Security Level",
-            "type": "integer"
           }
         },
         "required": [
@@ -1215,6 +1225,132 @@
           "plan"
         ],
         "title": "InstallPlanRequest",
+        "type": "object"
+      },
+      "KnowledgeBusinessResourceRef": {
+        "additionalProperties": false,
+        "description": "业务 App 拥有的知识资源定位，不替代 KC Revision 身份。",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "KnowledgeBusinessResourceRef",
+        "type": "object"
+      },
+      "KnowledgeScopeSnapshotV1": {
+        "additionalProperties": false,
+        "description": "由业务 App 服务端签发并冻结到单次 Run 的不可变知识范围。",
+        "properties": {
+          "bundle_revision_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Bundle Revision Ids",
+            "type": "array"
+          },
+          "business_context": {
+            "additionalProperties": true,
+            "title": "Business Context",
+            "type": "object"
+          },
+          "business_resource_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeBusinessResourceRef"
+            },
+            "title": "Business Resource Refs",
+            "type": "array"
+          },
+          "collection_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "consumer_agent_id": {
+            "format": "uuid",
+            "title": "Consumer Agent Id",
+            "type": "string"
+          },
+          "consumer_agent_version_id": {
+            "format": "uuid",
+            "title": "Consumer Agent Version Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "minimum": 1.0,
+            "title": "Domain Id",
+            "type": "integer"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "title": "Issued At",
+            "type": "string"
+          },
+          "owner_app_id": {
+            "enum": [
+              "knowledge_retrieval",
+              "aiops"
+            ],
+            "title": "Owner App Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Scope Hash",
+            "type": "string"
+          },
+          "security_level": {
+            "maximum": 999.0,
+            "minimum": 0.0,
+            "title": "Security Level",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner_app_id",
+          "domain_id",
+          "consumer_agent_id",
+          "consumer_agent_version_id",
+          "collection_ids",
+          "bundle_revision_ids",
+          "security_level",
+          "policy_version",
+          "issued_at",
+          "scope_hash"
+        ],
+        "title": "KnowledgeScopeSnapshotV1",
         "type": "object"
       },
       "MemoryItemView": {

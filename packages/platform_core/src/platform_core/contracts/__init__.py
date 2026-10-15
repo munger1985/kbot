@@ -41,6 +41,10 @@ from .generative import (
 from .knowledge import (
     KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT,
     KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT,
+    KnowledgeAnswerV1,
+    KnowledgeBusinessResourceRef,
+    KnowledgeReferenceV1,
+    KnowledgeScopeSnapshotV1,
 )
 from .model import (
     EmbeddingDataItem,
@@ -121,5 +125,9 @@ __all__ = [
     "INTERNAL_API_V1",
     "KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT",
     "KNOWLEDGE_EVIDENCE_CANDIDATE_LIMIT",
+    "KnowledgeAnswerV1",
+    "KnowledgeBusinessResourceRef",
+    "KnowledgeReferenceV1",
+    "KnowledgeScopeSnapshotV1",
     "data_query",
 ]

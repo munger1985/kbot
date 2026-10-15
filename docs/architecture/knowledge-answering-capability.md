@@ -105,6 +105,10 @@ Collection 与 Revision 归属。KBot4 当前单次范围上限为 1000，超过
 4. 保存分片数量、耗时、降级和命中，再执行 Evidence 覆盖诊断；
 5. 禁止 Registry 先按创建时间或更新时间截断，否则旧而相关的正式手册会丢失。
 
+视觉检索使用相同的 Revision Scope 和 1000 条稳定分片规则；每片结果先校验引用闭包，再按视觉分数和稳定
+ID 合并。KC 返回任何不属于对应请求分片的候选时，Runtime 必须以
+`KNOWLEDGE_SCOPE_CLOSURE_BROKEN` 失败，禁止静默过滤。
+
 全文或向量单通道失败可以降级；所有通道失败才失败。有候选但无正文证据时返回知识缺口，不用业务摘要
 冒充 Citation。
 
@@ -230,5 +234,7 @@ KM 只在分线前的 4.0 终版执行全量功能回归。4.1 不再运行 KM �
 
 验收完成的定义是：AIOps 与 Knowledge Retrieval 只通过统一基础链路获得可追溯回答；KM 已从 KBot 4.1
 物理删除并在 `km4.0` 独立维护；未来 App 无需依赖 Knowledge Retrieval App；系统不存在旧路由、双路径
-或未受 Scope 约束的检索。当前只完成 branch 与 KM 删除，不代表终版 tag、Knowledge Answering Schema、
-部署或在线验收已经完成。
+或未受 Scope 约束的检索。截至 2026-10-15，4.1 代码、共享合同、KC、Runtime、Knowledge Retrieval、
+AIOps、Main API、静态页面和 OpenAPI 已完成一次性切换；本地 `unit + contract` 门禁以
+`1779 passed, 3 skipped` 通过。终版 tag、正式 Schema 应用、部署、重启和在线验收仍是独立发布动作，
+不能由本地测试结果替代。

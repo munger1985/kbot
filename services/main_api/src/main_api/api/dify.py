@@ -79,10 +79,22 @@ async def retrieve_for_dify(
     ]
     if not collection_ids:
         return {"records": []}
+    scope = await client.resolve_knowledge_scope(
+        domain_id=domain_id,
+        agent_id=agent_id,
+        collection_ids=collection_ids,
+        auth_context=context,
+    )
+    revision_ids = [
+        UUID(str(value)) for value in scope.get("bundle_revision_ids") or []
+    ]
+    if not revision_ids:
+        return {"records": []}
     limit = payload.retrieval_setting.top_k
     discovery = await client.discover(
         query=payload.query,
         collection_ids=collection_ids,
+        bundle_revision_ids=revision_ids,
         domain_id=domain_id,
         agent_id=str(agent_id),
         auth_context=context,

@@ -86,6 +86,25 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def resolve_knowledge_scope(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        collection_ids: Sequence[UUID],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/knowledge/discovery/scope:resolve",
+            payload={
+                "domain_id": domain_id,
+                "agent_id": str(agent_id),
+                "collection_ids": [str(value) for value in collection_ids],
+            },
+            auth_context=auth_context,
+        )
+
     async def is_ready(self) -> bool:
         """查询 KC 就绪端点，不携带内部或门户凭据。"""
         owns_session = self._session is None
@@ -699,7 +718,7 @@ class KnowledgeCoreClient:
         *,
         query: str,
         collection_ids: Sequence[UUID],
-        bundle_revision_ids: Sequence[UUID] = (),
+        bundle_revision_ids: Sequence[UUID],
         domain_id: int,
         agent_id: str,
         auth_context: AuthContext,
@@ -780,11 +799,30 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def get_citation_content(
+        self,
+        *,
+        citation_id: UUID,
+        agent_id: UUID,
+        max_security_level: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            (
+                f"{INTERNAL_API_V1}/knowledge/citations/{citation_id}/content"
+                f"?agent_id={agent_id}"
+                f"&max_security_level={max_security_level}"
+            ),
+            auth_context=auth_context,
+        )
+
     async def search_visual(
         self,
         *,
         images_base64: Sequence[str],
         collection_ids: Sequence[UUID],
+        bundle_revision_ids: Sequence[UUID],
         domain_id: int,
         agent_id: UUID,
         auth_context: AuthContext,
@@ -799,6 +837,9 @@ class KnowledgeCoreClient:
                 "agent_id": str(agent_id),
                 "collection_ids": [
                     str(value) for value in collection_ids
+                ],
+                "bundle_revision_ids": [
+                    str(value) for value in bundle_revision_ids
                 ],
                 "images_base64": list(images_base64),
                 "per_image_limit": per_image_limit,

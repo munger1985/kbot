@@ -304,6 +304,16 @@ def create_aiops_api(
         app.state.operations_knowledge_service = OperationsKnowledgeService(
             uow_factory=runtime.uow_factory,
             knowledge_core=knowledge_core_client,
+            knowledge_assistant_id=resolved.runtime.knowledge_assistant_id,
+            knowledge_assistant_version_id=(
+                resolved.runtime.knowledge_assistant_version_id
+            ),
+            knowledge_assistant_models=(
+                resolved.runtime.knowledge_assistant_models
+            ),
+            knowledge_assistant_instruction=(
+                resolved.runtime.knowledge_assistant_instruction
+            ),
         )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         app.state.managed_credential_service = managed_credential_service

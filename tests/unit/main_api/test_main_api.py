@@ -120,6 +120,22 @@ class _FakeKnowledgeCoreClient:
             "collection_id": str(collection_id),
         }
 
+    async def resolve_knowledge_scope(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        collection_ids,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        self.last_context = auth_context
+        self.last_domain_id = domain_id
+        self.last_agent_id = agent_id
+        return {
+            "collection_ids": [str(value) for value in collection_ids],
+            "bundle_revision_ids": [str(TEST_BUNDLE_REVISION_ID)],
+        }
+
     async def ingest_multipart(
         self,
         *,
@@ -1214,7 +1230,10 @@ class MainApiTest(unittest.TestCase):
             "/api/v1/apps/knowledge-retrieval/knowledge/collections", paths
         )
         self.assertIn("/api/v1/apps/knowledge-retrieval/agents", paths)
-        self.assertIn("/api/v1/apps/knowledge-retrieval/runs", paths)
+        self.assertIn(
+            "/api/v1/apps/knowledge-retrieval/conversations", paths
+        )
+        self.assertNotIn("/api/v1/apps/knowledge-retrieval/runs", paths)
         self.assertNotIn(
             "/api/v1/apps/knowledge-retrieval/agent-grants", paths
         )
@@ -1434,30 +1453,41 @@ class MainApiTest(unittest.TestCase):
             bindings.json()["bindings"][0]["collection_id"],
         )
         self.assertEqual(self.agent_runtime.agent_id, self.kc.last_agent_id)
-        run = self.client.post(
-            "/api/v1/apps/knowledge-retrieval/runs",
-            headers={
-                **self._headers(),
-                "Idempotency-Key": "run-1",
-            },
+        conversation = self.client.post(
+            "/api/v1/apps/knowledge-retrieval/conversations",
+            headers=self._headers(),
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
-                "input": "总结文档",
             },
         )
-        self.assertEqual(202, run.status_code)
-        self.assertEqual("RUNNING", run.json()["status"])
+        self.assertEqual(201, conversation.status_code)
+        turn = self.client.post(
+            (
+                "/api/v1/apps/knowledge-retrieval/conversations/"
+                f"{conversation.json()['conversation_id']}/turns"
+            ),
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "turn-1",
+            },
+            json={
+                "input": "总结文档",
+                "expected_conversation_version": 1,
+            },
+        )
+        self.assertEqual(202, turn.status_code)
+        self.assertEqual("RUNNING", turn.json()["run_status"])
         self.assertEqual(
-            1, self.agent_runtime.last_run_payload["security_level"]
+            1,
+            self.agent_runtime.last_turn_payload["execution_spec"]
+            ["knowledge_scope"]["security_level"],
         )
         self.assertEqual(
             "portal-user-1",
             self.agent_runtime.last_context.asserted_user_id,
         )
 
-    def test_run_rejects_caller_supplied_security_level(self) -> None:
-        self.app.state.access_control_service.max_security_level = 1
-
+    def test_legacy_run_route_is_removed(self) -> None:
         response = self.client.post(
             "/api/v1/apps/knowledge-retrieval/runs",
             headers={**self._headers(), "Idempotency-Key": "run-level"},
@@ -1468,7 +1498,7 @@ class MainApiTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(422, response.status_code, response.text)
+        self.assertEqual(404, response.status_code, response.text)
 
     def test_conversation_rejects_caller_supplied_security_level(self) -> None:
         self.app.state.access_control_service.max_security_level = 3
@@ -1503,27 +1533,37 @@ class MainApiTest(unittest.TestCase):
 
         self.assertEqual(202, response.status_code, response.text)
         self.assertEqual(
-            3, self.agent_runtime.last_turn_payload["security_level"]
+            3,
+            self.agent_runtime.last_turn_payload["execution_spec"]
+            ["knowledge_scope"]["security_level"],
         )
 
-    def test_run_security_level_ignores_agent_resource_configuration(self) -> None:
+    def test_turn_security_level_ignores_agent_resource_configuration(self) -> None:
         self.app.state.access_control_service.max_security_level = 3
         self.knowledge_retrieval_app.resource_context = {
             "max_security_level": 2
         }
 
         response = self.client.post(
-            "/api/v1/apps/knowledge-retrieval/runs",
-            headers={**self._headers(), "Idempotency-Key": "agent-level"},
+            (
+                "/api/v1/apps/knowledge-retrieval/conversations/"
+                f"{self.agent_runtime.conversation_id}/turns"
+            ),
+            headers={
+                **self._headers(),
+                "Idempotency-Key": "agent-level",
+            },
             json={
-                "agent_id": str(self.agent_runtime.agent_id),
                 "input": "读取受限文档",
+                "expected_conversation_version": 1,
             },
         )
 
         self.assertEqual(202, response.status_code, response.text)
         self.assertEqual(
-            3, self.agent_runtime.last_run_payload["security_level"]
+            3,
+            self.agent_runtime.last_turn_payload["execution_spec"]
+            ["knowledge_scope"]["security_level"],
         )
 
     def test_sse_uses_cursor_and_stops_on_terminal_event(self) -> None:
@@ -1631,7 +1671,7 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(200, agent.status_code, agent.text)
         self.assertEqual(201, conversation.status_code, conversation.text)
         self.assertEqual(202, turn.status_code, turn.text)
-        self.assertEqual(202, response.status_code)
+        self.assertEqual(404, response.status_code)
 
     def test_regular_user_cannot_read_inactive_agent(self) -> None:
         self.app.state.access_control_service.permissions = frozenset(

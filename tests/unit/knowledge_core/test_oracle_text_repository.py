@@ -39,6 +39,7 @@ class OracleTextRepositoryTest(unittest.IsolatedAsyncioTestCase):
         discovery_session = _Session()
         await DiscoveryRepository(discovery_session).search_text(
             collection_id=uuid7(),
+            bundle_revision_ids=(uuid7(),),
             query="员工套餐",
         )
         evidence_session = _Session()
@@ -65,6 +66,7 @@ class OracleTextRepositoryTest(unittest.IsolatedAsyncioTestCase):
         discovery_session = _Session()
         await DiscoveryRepository(discovery_session).search_vector(
             collection_id=uuid7(),
+            bundle_revision_ids=(uuid7(),),
             vector=[0.1, 0.2],
         )
         evidence_session = _Session()
@@ -91,10 +93,12 @@ class OracleTextRepositoryTest(unittest.IsolatedAsyncioTestCase):
         discovery_session = _Session()
         discovery = DiscoveryRepository(discovery_session)
         await discovery.search_text(
-            collection_id=uuid7(), query="员工套餐", max_security_level=2
+            collection_id=uuid7(), bundle_revision_ids=(uuid7(),),
+            query="员工套餐", max_security_level=2
         )
         await discovery.search_vector(
-            collection_id=uuid7(), vector=[0.1, 0.2], max_security_level=2
+            collection_id=uuid7(), bundle_revision_ids=(uuid7(),),
+            vector=[0.1, 0.2], max_security_level=2
         )
         evidence_session = _Session()
         evidence = EvidenceRepository(evidence_session)

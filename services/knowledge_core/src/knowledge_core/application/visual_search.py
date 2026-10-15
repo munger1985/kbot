@@ -79,6 +79,7 @@ class KnowledgeCoreVisualService:
         self,
         *,
         collection_ids: list[UUID],
+        bundle_revision_ids: list[UUID],
         images_base64: list[str],
         per_image_limit: int,
         result_limit: int,
@@ -108,6 +109,7 @@ class KnowledgeCoreVisualService:
                 for image_index, vector in enumerate(vectors):
                     rows = await uow.visual_assets.search(
                         collection_id=collection_id,
+                        bundle_revision_ids=bundle_revision_ids,
                         model_id=model.model_id,
                         query_vector=[float(value) for value in vector],
                         limit=per_image_limit,

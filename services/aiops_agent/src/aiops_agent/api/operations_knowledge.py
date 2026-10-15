@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.contracts.knowledge import (
+    KnowledgeExecutionSpecRequest,
     KnowledgeReviewCommand,
     KnowledgeSearchRequest,
     ManualUploadMetadata,
@@ -24,6 +25,14 @@ router = APIRouter(
 
 def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
     require_service_scope(request, "aiops.manage")
+    if context.domain_id is None or int(context.domain_id) < 1:
+        from fastapi import HTTPException
+        raise HTTPException(403, {"code": "AIOPS_DOMAIN_CONTEXT_REQUIRED"})
+    return int(context.domain_id), context.asserted_user_id or context.client_id
+
+
+def _use_scope(request: Request, context: AuthContext) -> tuple[int, str]:
+    require_service_scope(request, "aiops.run")
     if context.domain_id is None or int(context.domain_id) < 1:
         from fastapi import HTTPException
         raise HTTPException(403, {"code": "AIOPS_DOMAIN_CONTEXT_REQUIRED"})
@@ -245,4 +254,19 @@ async def search(
     domain_id, actor = _scope(request, context)
     return await request.app.state.operations_knowledge_service.search(
         domain_id=domain_id, agent_id=actor, request=payload, context=context
+    )
+
+
+@router.post("/knowledge-answering:execution-spec")
+async def knowledge_answering_execution_spec(
+    payload: KnowledgeExecutionSpecRequest,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.knowledge_execution_spec(
+        domain_id=domain_id,
+        max_security_level=payload.max_security_level,
+        business_context=payload.business_context,
+        context=context,
     )

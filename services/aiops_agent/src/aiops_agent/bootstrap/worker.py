@@ -193,6 +193,16 @@ def create_aiops_worker_probe(
         operations_knowledge_service = OperationsKnowledgeService(
             uow_factory=runtime.uow_factory,
             knowledge_core=knowledge_core_client,
+            knowledge_assistant_id=resolved.runtime.knowledge_assistant_id,
+            knowledge_assistant_version_id=(
+                resolved.runtime.knowledge_assistant_version_id
+            ),
+            knowledge_assistant_models=(
+                resolved.runtime.knowledge_assistant_models
+            ),
+            knowledge_assistant_instruction=(
+                resolved.runtime.knowledge_assistant_instruction
+            ),
         )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(

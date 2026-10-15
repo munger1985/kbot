@@ -83,6 +83,7 @@ class _DocumentReference(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     reference_type: Literal["DOCUMENT"]
+    citation_id: UUID | None = None
     citation_label: str
     collection_id: UUID
     bundle_id: UUID
@@ -92,6 +93,8 @@ class _DocumentReference(BaseModel):
     title: str
     locator: dict[str, Any] = Field(default_factory=dict)
     locator_schema_version: str
+    evidence_ids: tuple[UUID, ...] = ()
+    quote: str = ""
 
 
 def _client(request: Request) -> AgentRuntimeClient:

@@ -101,6 +101,7 @@ class DiscoveryDiagnosticsTest(unittest.IsolatedAsyncioTestCase):
         )
         candidates, diagnostics = await service.discover_with_diagnostics(
             collection_ids=[COLLECTION_ID],
+            bundle_revision_ids=[REVISION_ID],
             query="数据库性能",
             query_vectors={COLLECTION_ID: [0.1, 0.2]},
         )
@@ -112,6 +113,19 @@ class DiscoveryDiagnosticsTest(unittest.IsolatedAsyncioTestCase):
             diagnostics["collections"][0]["text_error"],
         )
         self.assertTrue(diagnostics["warnings"])
+
+    async def test_empty_revision_scope_is_rejected(self):
+        service = KnowledgeCoreDiscoveryService(
+            search_port=_DiscoveryPort()
+        )
+        with self.assertRaisesRegex(
+            ValueError, "bundle_revision_ids are required"
+        ):
+            await service.discover_with_diagnostics(
+                collection_ids=[COLLECTION_ID],
+                bundle_revision_ids=[],
+                query="数据库性能",
+            )
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ class _Contract(BaseModel):
 
 
 class Citation(_Contract):
+    citation_id: UUID
     citation_label: str
     collection_id: UUID
     bundle_id: UUID

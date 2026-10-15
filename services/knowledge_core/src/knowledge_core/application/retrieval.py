@@ -46,20 +46,20 @@ class DiscoverySearchPort(Protocol):
         self,
         *,
         collection_id: UUID,
+        bundle_revision_ids: Sequence[UUID],
         query: str,
         limit: int,
         max_security_level: int,
-        bundle_revision_ids: Sequence[UUID] = (),
     ) -> Sequence[DiscoveryHit]: ...
 
     async def search_vector(
         self,
         *,
         collection_id: UUID,
+        bundle_revision_ids: Sequence[UUID],
         vector: Sequence[float],
         limit: int,
         max_security_level: int,
-        bundle_revision_ids: Sequence[UUID] = (),
     ) -> Sequence[DiscoveryHit]: ...
 
 
@@ -123,8 +123,8 @@ class KnowledgeCoreDiscoveryService:
         self._query_embedding_provider = query_embedding_provider
 
     async def discover(
-        self, *, collection_ids: Sequence[UUID], query: str,
-        bundle_revision_ids: Sequence[UUID] = (),
+        self, *, collection_ids: Sequence[UUID],
+        bundle_revision_ids: Sequence[UUID], query: str,
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         per_channel_limit: int = 20, per_collection_limit: int = 20,
         max_security_level: int = 3,
@@ -141,14 +141,15 @@ class KnowledgeCoreDiscoveryService:
         return candidates
 
     async def discover_with_diagnostics(
-        self, *, collection_ids: Sequence[UUID], query: str,
-        bundle_revision_ids: Sequence[UUID] = (),
+        self, *, collection_ids: Sequence[UUID],
+        bundle_revision_ids: Sequence[UUID], query: str,
         query_vectors: dict[UUID, Sequence[float]] | None = None,
         per_channel_limit: int = 20, per_collection_limit: int = 20,
         max_security_level: int = 3,
     ) -> tuple[list[BundleCandidate], dict[str, Any]]:
-        if not query.strip():
-            raise ValueError("query is required")
+        if not query.strip() or not bundle_revision_ids:
+            raise ValueError("query and bundle_revision_ids are required")
+        revision_scope = tuple(sorted(set(bundle_revision_ids)))
         warnings: list[str] = []
         if self._query_embedding_provider is not None:
             try:
@@ -180,7 +181,7 @@ class KnowledgeCoreDiscoveryService:
                     query=query,
                     limit=per_channel_limit,
                     max_security_level=max_security_level,
-                    bundle_revision_ids=bundle_revision_ids,
+                    bundle_revision_ids=revision_scope,
                 ))
                 successful_channels += 1
             except Exception as exc:
@@ -207,7 +208,7 @@ class KnowledgeCoreDiscoveryService:
                         vector=query_vectors[collection_id],
                         limit=per_channel_limit,
                         max_security_level=max_security_level,
-                        bundle_revision_ids=bundle_revision_ids,
+                        bundle_revision_ids=revision_scope,
                     ))
                     successful_channels += 1
                 except Exception as exc:
@@ -255,6 +256,6 @@ class KnowledgeCoreDiscoveryService:
             "bundle_candidates": len(candidates),
             "per_channel_limit": per_channel_limit,
             "per_collection_limit": per_collection_limit,
-            "revision_scope_count": len(bundle_revision_ids),
+            "revision_scope_count": len(revision_scope),
             "warnings": warnings,
         }

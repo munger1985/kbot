@@ -26,6 +26,8 @@ class CreateConversationRequest(_Contract):
 class ConversationView(_Contract):
     conversation_id: UUID
     agent_id: UUID
+    owner_app_id: str
+    scope_hash: str | None = None
     title: str | None = None
     status: str
     row_version: int = Field(ge=1)
@@ -52,8 +54,6 @@ class CreateConversationTurnRequest(_Contract):
     input: str = Field(min_length=1, max_length=32000)
     expected_conversation_version: int = Field(ge=1)
     execution_spec: AgentExecutionSpec
-    collection_ids: tuple[UUID, ...] = ()
-    security_level: int = Field(default=3, ge=0, le=3)
     client_metadata: dict[str, Any] = Field(default_factory=dict)
     images: tuple["ConversationQueryImage", ...] = Field(
         default=(), max_length=8

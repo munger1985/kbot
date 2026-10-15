@@ -4,7 +4,7 @@ from time import monotonic
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -19,6 +19,63 @@ router = APIRouter(
     prefix=f"{INTERNAL_API_V1}/knowledge/retrieval",
     tags=["Knowledge Core Evidence"],
 )
+citation_router = APIRouter(
+    prefix=f"{INTERNAL_API_V1}/knowledge/citations",
+    tags=["Knowledge Core Citations"],
+)
+
+
+@citation_router.get("/{citation_id}/content")
+async def get_citation_content(
+    citation_id: UUID,
+    agent_id: UUID,
+    request: Request,
+    max_security_level: int = Query(default=3, ge=0, le=999),
+):
+    hit = await request.app.state.kc_evidence_service.get_citation_content(
+        citation_id=citation_id,
+        max_security_level=max_security_level,
+    )
+    if hit is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CITATION_NOT_FOUND_OR_DENIED",
+                "message": "引用不存在或当前身份不可读取",
+            },
+        )
+    context = request.state.auth_context
+    try:
+        domain_id = int(context.domain_id or "0")
+        collections = await request.app.state.kc_scope_service.resolve_agent_collections(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_ids=[hit.collection_id],
+        )
+        await request.app.state.kc_scope_service.validate_revision_scope(
+            collection_ids=collections,
+            bundle_revision_ids=[hit.bundle_revision_id],
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CITATION_NOT_FOUND_OR_DENIED",
+                "message": "引用不存在或当前身份不可读取",
+            },
+        ) from exc
+    return {
+        "citation_id": str(hit.evidence_id),
+        "collection_id": str(hit.collection_id),
+        "bundle_id": str(hit.bundle_id),
+        "bundle_revision_id": str(hit.bundle_revision_id),
+        "document_id": str(hit.document_id),
+        "document_version_id": str(hit.document_version_id),
+        "content_text": hit.content_text,
+        "locator": hit.locator,
+        "locator_schema_version": hit.locator_schema_version,
+        "heading_path": list(hit.heading_path),
+    }
 
 
 class EvidenceCandidateRequest(BaseModel):
@@ -57,6 +114,12 @@ async def search_evidence(payload: EvidenceSearchRequest, request: Request):
         )
         if set(scoped_collection_ids) != set(requested_collections):
             raise ValueError("one or more candidate Collections are disabled")
+        await request.app.state.kc_scope_service.validate_revision_scope(
+            collection_ids=scoped_collection_ids,
+            bundle_revision_ids=[
+                item.bundle_revision_id for item in payload.candidates
+            ],
+        )
         citations, diagnostics = (
             await request.app.state.kc_evidence_service
             .retrieve_with_diagnostics(

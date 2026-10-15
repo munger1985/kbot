@@ -164,6 +164,12 @@ class AgentRuntimeService:
                 "Agent Runtime 聊天运行只接受知识检索 Agent；"
                 "AIOps Agent 必须使用 AIOps Run 接口",
             )
+        knowledge_scope = execution_spec.knowledge_scope
+        if knowledge_scope is None:
+            raise AgentRuntimeConflict(
+                "KNOWLEDGE_SCOPE_REQUIRED",
+                "知识问答 Run 缺少服务端签发的知识范围",
+            )
         language = detect_unicode_language(
             command.original_input,
             fallback_texts=conversation_fallback_texts(
@@ -223,6 +229,7 @@ class AgentRuntimeService:
                 "runtime_policy": dict(
                     execution_spec.runtime_policy
                 ),
+                "knowledge_scope_hash": knowledge_scope.scope_hash,
             }
 
         if self._model_resolver is None:
@@ -303,6 +310,16 @@ class AgentRuntimeService:
                                     for item in command.collection_ids
                                 ],
                                 "security_level": command.security_level,
+                                "knowledge_scope": knowledge_scope.model_dump(
+                                    mode="json"
+                                ),
+                                "scope_revision_count": len(
+                                    knowledge_scope.bundle_revision_ids
+                                ),
+                                "scope_chunk_count": (
+                                    len(knowledge_scope.bundle_revision_ids)
+                                    + 999
+                                ) // 1000,
                             },
                             "client_metadata": command.client_metadata,
                             "route": route_snapshot,
@@ -1417,6 +1434,17 @@ class AgentRuntimeService:
             return AgentRunSummary(
                 run_id=run.run_id,
                 agent_id=run.agent_id,
+                owner_app_id=str(
+                    (run.config_snapshot_json or {})
+                    .get("agent", {})
+                    .get("owner_app_id", "")
+                ),
+                scope_hash=(
+                    (run.config_snapshot_json or {})
+                    .get("retrieval", {})
+                    .get("knowledge_scope", {})
+                    .get("scope_hash")
+                ),
                 status=run.status,
                 row_version=int(run.row_version),
                 event_cursor=cursor,

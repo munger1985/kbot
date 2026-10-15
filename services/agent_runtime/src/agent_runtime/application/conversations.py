@@ -1061,9 +1061,18 @@ class ConversationService:
 
     @staticmethod
     def _conversation_view(row) -> ConversationView:
+        execution_spec = dict(row.execution_spec_json or {})
+        knowledge_scope = execution_spec.get("knowledge_scope")
         return ConversationView(
             conversation_id=row.conversation_id,
             agent_id=row.agent_id,
+            owner_app_id=str(execution_spec.get("owner_app_id") or ""),
+            scope_hash=(
+                str(knowledge_scope.get("scope_hash"))
+                if isinstance(knowledge_scope, dict)
+                and knowledge_scope.get("scope_hash")
+                else None
+            ),
             title=row.title,
             status=row.status,
             row_version=int(row.row_version),

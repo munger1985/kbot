@@ -173,7 +173,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         domain_id: int,
         asset_kind: str | None,
         status: str | None,
-        limit: int,
+        limit: int | None,
     ) -> list[OperationsKnowledgeAssetEntity]:
         self._check_active()
         statement = select(OperationsKnowledgeAssetEntity).where(
@@ -313,14 +313,13 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             statement = statement.where(
                 OperationsKnowledgeAssetEntity.asset_kind.in_(tuple(source_kinds))
             )
-        candidate_rows = list((await self._session.execute(
-            statement.order_by(
-                OperationsKnowledgeAssetEntity.updated_at.desc(),
-                OperationsKnowledgeAssetEntity.asset_id,
-            ).limit(limit * 4)
-        )).all())
+        statement = statement.order_by(
+            OperationsKnowledgeAssetEntity.asset_id,
+            OperationsKnowledgeVersionEntity.asset_version_id,
+        )
+        candidate_rows = list((await self._session.execute(statement)).all())
         if not scope_filters:
-            return candidate_rows[:limit]
+            return candidate_rows[:limit] if limit is not None else candidate_rows
         result = []
         for row in candidate_rows:
             version = row[1]
@@ -350,7 +349,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                     break
             if applicable:
                 result.append(row)
-            if len(result) >= limit:
+            if limit is not None and len(result) >= limit:
                 break
         return result
 

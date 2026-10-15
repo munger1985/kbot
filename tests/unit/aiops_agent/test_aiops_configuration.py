@@ -935,6 +935,8 @@ class TargetCreationTest(unittest.IsolatedAsyncioTestCase):
             version_code="19c",
             environment="DEV",
             db_role="UNKNOWN",
+            deployment_type="SINGLE_INSTANCE",
+            rac_node_number=None,
             oracle_container_scope="PDB",
             oracle_pdb_name="PDB01",
             observed_oracle_container_scope=None,

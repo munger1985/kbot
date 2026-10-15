@@ -3,11 +3,185 @@
 
   const api = "/api/v1/apps/aiops/operations-knowledge";
   const shell = globalThis.KBotAIOpsShell;
+  const markdown = globalThis.KBotMarkdown;
   let activeKind = "";
   let activeStatus = "";
+  const answerState = {
+    conversations: [],
+    active: null,
+    sending: false,
+  };
 
   const splitValues = (value) => String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
   const scope = (kind, value) => value ? [{ kind, value }] : [];
+
+  function answerContext() {
+    return {
+      database_type: document.getElementById("knowledge-context-db").value || null,
+      database_major_version: document.getElementById("knowledge-context-version").value.trim() || null,
+      topology: document.getElementById("knowledge-context-topology").value.trim() || null,
+      problem_class: null,
+      component: null,
+    };
+  }
+
+  function answerText(item) {
+    const content = item?.content;
+    if (typeof content === "string") return content;
+    return String(content?.answer || content?.text || content?.input || "");
+  }
+
+  function answerMessage(role, text, runId = "") {
+    const body = role === "assistant"
+      ? markdown.render(String(text || ""))
+      : `<p>${shell.escape(text)}</p>`;
+    return `<article class="knowledge-message ${role}"${runId ? ` data-run-id="${shell.escape(runId)}"` : ""}><div class="knowledge-message-meta">${role === "user" ? "你" : "运维知识助手"}</div><div class="knowledge-message-content ops-result-markdown">${body}</div><div class="knowledge-reference-list"></div></article>`;
+  }
+
+  function referenceButtons(runId, references) {
+    return (references || []).filter((item) => item.reference_type === "DOCUMENT").map((item) => `<button type="button" class="knowledge-reference" data-citation-run="${shell.escape(runId)}" data-citation-label="${shell.escape(item.citation_label)}">${shell.escape(item.citation_label)} · ${shell.escape(item.title || "原文引用")}</button>`).join("");
+  }
+
+  function renderAnswerConversations() {
+    const host = document.getElementById("knowledge-conversation-list");
+    host.innerHTML = answerState.conversations.length
+      ? answerState.conversations.map((item) => `<button type="button" class="knowledge-conversation" data-knowledge-conversation="${shell.escape(item.conversation_id)}" aria-current="${String(answerState.active?.conversation_id) === String(item.conversation_id)}"><strong>${shell.escape(item.title || "未命名会话")}</strong><small>${shell.escape(shell.fmt(item.last_active_at))}</small></button>`).join("")
+      : '<p class="ops-empty">还没有知识问答会话。</p>';
+  }
+
+  async function loadAnswerConversations(selectId = "") {
+    answerState.conversations = await KBotAIOpsAuth.request(`${api}/conversations?limit=50`);
+    renderAnswerConversations();
+    const selected = answerState.conversations.find((item) => String(item.conversation_id) === String(selectId));
+    if (selected) await selectAnswerConversation(selected.conversation_id);
+  }
+
+  async function createAnswerConversation() {
+    const created = await KBotAIOpsAuth.request(`${api}/conversations`, {
+      method: "POST",
+      body: JSON.stringify({
+        title: null,
+        retention_policy: "DEFAULT",
+        business_context: answerContext(),
+      }),
+    });
+    await loadAnswerConversations(created.conversation_id);
+    return answerState.active;
+  }
+
+  async function selectAnswerConversation(conversationId) {
+    answerState.active = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(conversationId)}`);
+    document.getElementById("knowledge-chat-title").textContent = answerState.active.title || "运维知识助手";
+    document.getElementById("knowledge-chat-meta").textContent = `会话版本 ${answerState.active.row_version} · 范围 ${String(answerState.active.scope_hash || "").slice(0, 18) || "待签发"}`;
+    renderAnswerConversations();
+    await loadAnswerTurns();
+  }
+
+  async function loadAnswerTurns() {
+    if (!answerState.active) return;
+    const page = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(answerState.active.conversation_id)}/turns?after=0&limit=200`);
+    const turns = page.turns || [];
+    const host = document.getElementById("knowledge-chat-stream");
+    if (!turns.length) {
+      host.innerHTML = '<p class="ops-empty">这是一个新会话，请输入运维知识问题。</p>';
+      return;
+    }
+    host.innerHTML = turns.map((turn) => {
+      const user = answerText(turn.user_item);
+      const assistant = answerText(turn.assistant_item);
+      const waiting = turn.status !== "COMPLETED" ? `处理状态：${turn.status}` : "";
+      const refs = turn.assistant_item?.content?.references || [];
+      return `${user ? answerMessage("user", user) : ""}${assistant || waiting ? answerMessage("assistant", assistant || waiting, turn.run_id) : ""}${turn.run_id && refs.length ? `<div class="knowledge-reference-list history-references">${referenceButtons(turn.run_id, refs)}</div>` : ""}`;
+    }).join("");
+    host.scrollTop = host.scrollHeight;
+  }
+
+  function applyAnswerEvent(pending, item) {
+    const data = item.data && typeof item.data === "object" ? item.data : {};
+    const payload = data.payload && typeof data.payload === "object" ? data.payload : {};
+    const eventType = item.event || data.event_type || "message";
+    if (eventType === "answer.delta") {
+      pending.answer += String(payload.delta || "");
+      pending.content.innerHTML = markdown.render(pending.answer);
+    }
+    if (eventType === "answer.completed" && Array.isArray(payload.references)) {
+      pending.references.innerHTML = referenceButtons(pending.runId, payload.references);
+    }
+    document.getElementById("knowledge-chat-status").textContent = payload.public_summary || payload.summary || eventType;
+  }
+
+  async function sendAnswer(event) {
+    event.preventDefault();
+    if (answerState.sending) return;
+    const input = document.getElementById("knowledge-chat-input").value.trim();
+    if (!input) return;
+    if (!answerState.active && !(await createAnswerConversation())) return;
+    answerState.sending = true;
+    const button = document.getElementById("knowledge-chat-send");
+    button.disabled = true;
+    const host = document.getElementById("knowledge-chat-stream");
+    if (host.querySelector(".ops-empty")) host.innerHTML = "";
+    host.insertAdjacentHTML("beforeend", answerMessage("user", input));
+    const pendingNode = document.createElement("article");
+    pendingNode.className = "knowledge-message assistant";
+    pendingNode.innerHTML = '<div class="knowledge-message-meta">运维知识助手</div><div class="knowledge-message-content ops-result-markdown">正在检索已发布原文…</div><div class="knowledge-reference-list"></div>';
+    host.append(pendingNode);
+    document.getElementById("knowledge-chat-input").value = "";
+    const pending = {
+      answer: "",
+      runId: "",
+      content: pendingNode.querySelector(".knowledge-message-content"),
+      references: pendingNode.querySelector(".knowledge-reference-list"),
+    };
+    try {
+      const receipt = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(answerState.active.conversation_id)}/turns`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({
+          input,
+          expected_conversation_version: answerState.active.row_version,
+          business_context: answerContext(),
+          client_metadata: { source: "aiops-operations-knowledge" },
+        }),
+      });
+      pending.runId = receipt.run_id || "";
+      if (receipt.run_id) {
+        await KBotAIOpsAuth.stream(`${api}/runs/${encodeURIComponent(receipt.run_id)}/events`, (item) => applyAnswerEvent(pending, item), {
+          headers: receipt.event_cursor ? { "Last-Event-ID": String(receipt.event_cursor) } : {},
+        });
+        const run = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(receipt.run_id)}`);
+        if (run.status !== "COMPLETED") throw new Error(run.error_message || `知识问答执行状态为 ${run.status}`);
+        const result = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(receipt.run_id)}/result`);
+        const payload = result.payload || {};
+        if (!pending.answer) pending.content.innerHTML = markdown.render(payload.answer || "没有形成可展示答案。");
+        pending.references.innerHTML = referenceButtons(receipt.run_id, payload.references || []);
+        if (payload.status === "NO_EVIDENCE" || payload.status === "INSUFFICIENT_EVIDENCE") {
+          pending.content.insertAdjacentHTML("beforeend", '<p class="knowledge-warning">已明确停止生成：当前发布资料不足以支持答案。</p>');
+        }
+      }
+      answerState.active = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(answerState.active.conversation_id)}`);
+      await loadAnswerConversations();
+    } catch (error) {
+      pendingNode.classList.add("failed");
+      pending.content.textContent = error.message || "知识问答失败";
+      shell.toast(error.message || "知识问答失败");
+    } finally {
+      answerState.sending = false;
+      button.disabled = false;
+      document.getElementById("knowledge-chat-status").textContent = "";
+    }
+  }
+
+  async function openCitation(runId, label) {
+    const preview = await KBotAIOpsAuth.request(`${api}/runs/${encodeURIComponent(runId)}/references/${encodeURIComponent(label)}/preview`);
+    document.getElementById("citation-title").textContent = `${preview.citation_label} · ${preview.title}`;
+    document.getElementById("citation-subtitle").textContent = [preview.preview_type, preview.page_no ? `第 ${preview.page_no} 页` : ""].filter(Boolean).join(" · ");
+    document.getElementById("citation-body").innerHTML = markdown.render(`> ${preview.quote || ""}\n\n${preview.content_text || "没有可展示的原文文本，可下载原始文件核验。"}`);
+    const button = document.getElementById("citation-download");
+    button.disabled = !preview.download_available;
+    button.onclick = () => KBotAIOpsAuth.download(preview.content_url, `${preview.title || label}`, "*/*").catch((error) => shell.toast(error.message));
+    document.getElementById("citation-dialog").showModal();
+  }
 
   function renderOverview(data) {
     document.querySelectorAll("[data-metric]").forEach((node) => {
@@ -271,6 +445,16 @@
       shell.toast(error.message);
     }));
     document.getElementById("search-form").addEventListener("submit", (event) => search(event).catch((error) => shell.toast(error.message)));
+    document.getElementById("knowledge-new-conversation").onclick = () => createAnswerConversation().catch((error) => shell.toast(error.message));
+    document.getElementById("knowledge-chat-form").addEventListener("submit", (event) => sendAnswer(event).catch((error) => shell.toast(error.message)));
+    document.getElementById("knowledge-conversation-list").onclick = (event) => {
+      const button = event.target.closest("[data-knowledge-conversation]");
+      if (button) selectAnswerConversation(button.dataset.knowledgeConversation).catch((error) => shell.toast(error.message));
+    };
+    document.getElementById("knowledge-chat-stream").onclick = (event) => {
+      const button = event.target.closest("[data-citation-run]");
+      if (button) openCitation(button.dataset.citationRun, button.dataset.citationLabel).catch((error) => shell.toast(error.message));
+    };
     document.getElementById("knowledge-assets").onclick = (event) => {
       const button = event.target.closest("[data-asset-id]");
       if (button) openAsset(button.dataset.assetId).catch((error) => shell.toast(error.message));
@@ -285,6 +469,6 @@
         await loadAssets();
       };
     });
-    try { await refresh(); } catch (error) { shell.toast(error.message); }
+    try { await Promise.all([refresh(), loadAnswerConversations()]); } catch (error) { shell.toast(error.message); }
   });
 })();

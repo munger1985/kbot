@@ -84,6 +84,60 @@ class BundleRevisionRepository:
     async def list_by_bundle(self, *, bundle_id: UUID) -> list[KcBundleRevisionEntity]:
         statement: Select = select(KcBundleRevisionEntity).where(KcBundleRevisionEntity.bundle_id == bundle_id).order_by(KcBundleRevisionEntity.revision_no.desc())
         return list((await self.session.execute(statement)).scalars())
+
+    async def resolve_current_scope(
+        self,
+        *,
+        collection_ids: list[UUID],
+        bundle_revision_ids: list[UUID],
+    ) -> list[UUID]:
+        """返回同时属于 Collection 且仍为当前可检索版本的 Revision。"""
+        if not collection_ids or not bundle_revision_ids:
+            return []
+        statement = (
+            select(KcBundleRevisionEntity.bundle_revision_id)
+            .join(
+                KcBundleEntity,
+                KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id,
+            )
+            .where(
+                KcBundleRevisionEntity.collection_id.in_(collection_ids),
+                KcBundleRevisionEntity.bundle_revision_id.in_(
+                    bundle_revision_ids
+                ),
+                KcBundleEntity.collection_id
+                == KcBundleRevisionEntity.collection_id,
+                KcBundleEntity.current_revision_id
+                == KcBundleRevisionEntity.bundle_revision_id,
+                KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
+            )
+            .order_by(KcBundleRevisionEntity.bundle_revision_id)
+        )
+        return list((await self.session.execute(statement)).scalars())
+
+    async def list_current_scope(
+        self, *, collection_ids: list[UUID]
+    ) -> list[UUID]:
+        """列出指定 Collection 当前可检索的精确 Revision 集合。"""
+        if not collection_ids:
+            return []
+        statement = (
+            select(KcBundleRevisionEntity.bundle_revision_id)
+            .join(
+                KcBundleEntity,
+                KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id,
+            )
+            .where(
+                KcBundleRevisionEntity.collection_id.in_(collection_ids),
+                KcBundleEntity.collection_id
+                == KcBundleRevisionEntity.collection_id,
+                KcBundleEntity.current_revision_id
+                == KcBundleRevisionEntity.bundle_revision_id,
+                KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
+            )
+        )
+        rows = list((await self.session.execute(statement)).scalars())
+        return sorted(set(rows), key=lambda item: item.bytes)
     async def list_by_approval(
         self, *, collection_id: UUID, approval_status: str,
     ) -> list[KcBundleRevisionEntity]:
@@ -662,6 +716,77 @@ class EvidenceRepository:
             .order_by(KcEvidenceEntity.evidence_type)
         )
         return list((await self.session.execute(statement)).scalars())
+
+    async def get_citation_content(
+        self, *, citation_id: UUID, max_security_level: int
+    ) -> EvidenceHit | None:
+        """按 Evidence 身份读取仍处于当前可检索 Revision 的原文。"""
+        statement = (
+            select(
+                KcEvidenceEntity,
+                KcBundleRevisionEntity.bundle_id,
+                KcBundleRevisionEntity.title,
+                KcBundleRevisionDocumentEntity.declared_name,
+                KcBundleRevisionDocumentEntity.external_document_id,
+                KcBundleRevisionDocumentEntity.document_role,
+            )
+            .join(
+                KcCollectionEntity,
+                KcCollectionEntity.collection_id
+                == KcEvidenceEntity.collection_id,
+            )
+            .join(
+                KcBundleRevisionEntity,
+                KcBundleRevisionEntity.bundle_revision_id
+                == KcEvidenceEntity.bundle_revision_id,
+            )
+            .join(
+                KcBundleEntity,
+                KcBundleEntity.bundle_id == KcBundleRevisionEntity.bundle_id,
+            )
+            .join(
+                KcDocumentVersionEntity,
+                KcDocumentVersionEntity.document_version_id
+                == KcEvidenceEntity.document_version_id,
+            )
+            .outerjoin(
+                KcBundleRevisionDocumentEntity,
+                KcBundleRevisionDocumentEntity.bundle_revision_document_id
+                == KcEvidenceEntity.bundle_revision_document_id,
+            )
+            .where(
+                KcEvidenceEntity.evidence_id == citation_id,
+                KcEvidenceEntity.status == "ACTIVE",
+                KcCollectionEntity.status == "ACTIVE",
+                KcBundleEntity.current_revision_id
+                == KcEvidenceEntity.bundle_revision_id,
+                KcBundleRevisionEntity.status.in_(("READY", "PARTIAL")),
+                KcDocumentVersionEntity.security_level <= max_security_level,
+                KcBundleRevisionEntity.security_level <= max_security_level,
+            )
+        )
+        row = (await self.session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        (
+            entity,
+            bundle_id,
+            bundle_title,
+            document_name,
+            external_document_id,
+            document_role,
+        ) = row
+        return self._to_hit(
+            entity,
+            bundle_id,
+            1,
+            "CITATION_CONTENT",
+            1.0,
+            bundle_title,
+            document_name,
+            external_document_id,
+            document_role,
+        )
 
     async def count_active_for_version(self, *, document_version_id: UUID) -> int:
         statement = select(func.count()).select_from(KcEvidenceEntity).where(

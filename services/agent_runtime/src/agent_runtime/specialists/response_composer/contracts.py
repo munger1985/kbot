@@ -16,6 +16,7 @@ class _Contract(BaseModel):
 
 class ReferenceCard(_Contract):
     reference_type: Literal["DOCUMENT"] = "DOCUMENT"
+    citation_id: UUID
     citation_label: str
     collection_id: UUID
     bundle_id: UUID
@@ -25,6 +26,8 @@ class ReferenceCard(_Contract):
     title: str
     locator: dict[str, Any] = Field(default_factory=dict)
     locator_schema_version: str
+    evidence_ids: tuple[UUID, ...]
+    quote: str
 
 
 class AIOpsReferenceCard(_Contract):

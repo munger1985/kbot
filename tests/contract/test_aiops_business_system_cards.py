@@ -24,7 +24,7 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn('POSTGRES_STREAMING: "PostgreSQL 流复制"', SCRIPT)
         self.assertNotIn("个组件 ·", SCRIPT)
         self.assertNotIn("已覆盖", SCRIPT)
-        self.assertIn("<dt>数据保护</dt>", SCRIPT)
+        self.assertIn('"数据保护"', SCRIPT)
         self.assertNotIn("<dt>恢复目标</dt>", SCRIPT)
 
     def test_cards_resolve_responsibility_groups_and_reuse_global_tokens(self):

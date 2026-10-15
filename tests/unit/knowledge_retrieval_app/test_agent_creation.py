@@ -8,7 +8,6 @@ from knowledge_retrieval_app.application import (
     CreateAgentCommand,
     KnowledgeRetrievalAgentService,
 )
-from platform_core.contracts import AgentExecutionSpec
 from platform_core.identity import uuid7
 
 
@@ -172,12 +171,14 @@ class AgentCreationTest(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertIn("x_search", created["enabled_capabilities"])
-        spec = AgentExecutionSpec.model_validate(await service.execution_spec(
+        profile = await service.execution_spec(
             domain_id=41, agent_id=repository.agent.agent_id
-        ))
-        self.assertEqual("knowledge_retrieval", spec.owner_app_id)
-        self.assertNotIn("x_search", spec.enabled_capabilities)
-        self.assertEqual(model_id, UUID(str(spec.models["x_search_llm"])))
+        )
+        self.assertEqual("knowledge_retrieval", profile["owner_app_id"])
+        self.assertNotIn("x_search", profile["enabled_capabilities"])
+        self.assertEqual(
+            model_id, UUID(str(profile["models"]["x_search_llm"]))
+        )
 
 
 if __name__ == "__main__":

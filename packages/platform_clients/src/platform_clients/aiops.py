@@ -546,6 +546,26 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             payload=payload, auth_context=auth_context,
         )
 
+    async def get_operations_knowledge_execution_spec(
+        self,
+        *,
+        max_security_level: int,
+        business_context: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/aiops/operations-knowledge/"
+                "knowledge-answering:execution-spec"
+            ),
+            payload={
+                "max_security_level": max_security_level,
+                "business_context": business_context,
+            },
+            auth_context=auth_context,
+        )
+
     async def list_notification_subscriptions(
         self, *, auth_context: AuthContext
     ) -> dict[str, Any]:

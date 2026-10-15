@@ -569,120 +569,6 @@
         "title": "ActivitySamplerPolicy",
         "type": "object"
       },
-      "AgentArtifact": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_id": {
-            "format": "uuid",
-            "title": "Artifact Id",
-            "type": "string"
-          },
-          "artifact_type": {
-            "title": "Artifact Type",
-            "type": "string"
-          },
-          "content_hash": {
-            "title": "Content Hash",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "items": {},
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payload"
-          },
-          "producer": {
-            "title": "Producer",
-            "type": "string"
-          },
-          "producer_version": {
-            "title": "Producer Version",
-            "type": "string"
-          },
-          "provenance": {
-            "additionalProperties": true,
-            "title": "Provenance",
-            "type": "object"
-          },
-          "schema_version": {
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "security_level": {
-            "title": "Security Level",
-            "type": "integer"
-          },
-          "storage_uri": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Uri"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "artifact_type",
-          "schema_version",
-          "producer",
-          "producer_version",
-          "content_hash",
-          "provenance",
-          "security_level",
-          "created_at"
-        ],
-        "title": "AgentArtifact",
-        "type": "object"
-      },
-      "AgentArtifactRef": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_id": {
-            "format": "uuid",
-            "title": "Artifact Id",
-            "type": "string"
-          },
-          "artifact_type": {
-            "title": "Artifact Type",
-            "type": "string"
-          },
-          "content_hash": {
-            "title": "Content Hash",
-            "type": "string"
-          },
-          "schema_version": {
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "artifact_type",
-          "schema_version",
-          "content_hash"
-        ],
-        "title": "AgentArtifactRef",
-        "type": "object"
-      },
       "AgentBindingCreate": {
         "additionalProperties": false,
         "properties": {
@@ -956,125 +842,6 @@
           "updated_at"
         ],
         "title": "AgentBindingView",
-        "type": "object"
-      },
-      "AgentRunReceipt": {
-        "additionalProperties": false,
-        "properties": {
-          "event_cursor": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Event Cursor",
-            "type": "integer"
-          },
-          "events_url": {
-            "title": "Events Url",
-            "type": "string"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "status",
-          "events_url"
-        ],
-        "title": "AgentRunReceipt",
-        "type": "object"
-      },
-      "AgentRunSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "error_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Code"
-          },
-          "error_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Message"
-          },
-          "event_cursor": {
-            "minimum": 0.0,
-            "title": "Event Cursor",
-            "type": "integer"
-          },
-          "result": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentArtifactRef"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "agent_id",
-          "status",
-          "row_version",
-          "event_cursor",
-          "created_at"
-        ],
-        "title": "AgentRunSummary",
         "type": "object"
       },
       "AnswerBlockType": {
@@ -1872,45 +1639,6 @@
           "content_hash"
         ],
         "title": "ArtifactRef",
-        "type": "object"
-      },
-      "Body_create_turn_with_images_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_multipart_post": {
-        "properties": {
-          "client_metadata_json": {
-            "default": "{}",
-            "title": "Client Metadata Json",
-            "type": "string"
-          },
-          "collection_ids_json": {
-            "default": "[]",
-            "title": "Collection Ids Json",
-            "type": "string"
-          },
-          "expected_conversation_version": {
-            "minimum": 1.0,
-            "title": "Expected Conversation Version",
-            "type": "integer"
-          },
-          "images": {
-            "items": {
-              "format": "binary",
-              "type": "string"
-            },
-            "title": "Images",
-            "type": "array"
-          },
-          "input": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Input",
-            "type": "string"
-          }
-        },
-        "required": [
-          "input",
-          "expected_conversation_version"
-        ],
-        "title": "Body_create_turn_with_images_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_multipart_post",
         "type": "object"
       },
       "BusinessSystemDraftCreate": {
@@ -2954,21 +2682,6 @@
         "title": "BusinessSystemResourceView",
         "type": "object"
       },
-      "CancelRunRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "expected_row_version"
-        ],
-        "title": "CancelRunRequest",
-        "type": "object"
-      },
       "CollectionBindingRequest": {
         "properties": {
           "note": {
@@ -3072,73 +2785,6 @@
         "title": "CollectionStatusRequest",
         "type": "object"
       },
-      "ConversationItemView": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Artifact Id"
-          },
-          "content": {
-            "additionalProperties": true,
-            "title": "Content",
-            "type": "object"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "item_id": {
-            "format": "uuid",
-            "title": "Item Id",
-            "type": "string"
-          },
-          "item_sequence": {
-            "minimum": 1.0,
-            "title": "Item Sequence",
-            "type": "integer"
-          },
-          "item_type": {
-            "title": "Item Type",
-            "type": "string"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          }
-        },
-        "required": [
-          "item_id",
-          "item_sequence",
-          "item_type",
-          "role",
-          "content",
-          "created_at"
-        ],
-        "title": "ConversationItemView",
-        "type": "object"
-      },
       "ConversationMessageView": {
         "additionalProperties": false,
         "properties": {
@@ -3203,35 +2849,6 @@
           "created_at"
         ],
         "title": "ConversationMessageView",
-        "type": "object"
-      },
-      "ConversationQueryImage": {
-        "additionalProperties": false,
-        "properties": {
-          "content_base64": {
-            "maxLength": 25165824,
-            "minLength": 1,
-            "title": "Content Base64",
-            "type": "string"
-          },
-          "file_name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "File Name",
-            "type": "string"
-          },
-          "mime_type": {
-            "pattern": "^image/(png|jpeg|webp)$",
-            "title": "Mime Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file_name",
-          "mime_type",
-          "content_base64"
-        ],
-        "title": "ConversationQueryImage",
         "type": "object"
       },
       "ConversationSourceType": {
@@ -3615,208 +3232,6 @@
         "title": "ConversationSummary",
         "type": "object"
       },
-      "ConversationTurnPage": {
-        "additionalProperties": false,
-        "properties": {
-          "conversation_id": {
-            "format": "uuid",
-            "title": "Conversation Id",
-            "type": "string"
-          },
-          "next_sequence": {
-            "minimum": 0.0,
-            "title": "Next Sequence",
-            "type": "integer"
-          },
-          "turns": {
-            "items": {
-              "$ref": "#/components/schemas/ConversationTurnView"
-            },
-            "title": "Turns",
-            "type": "array"
-          }
-        },
-        "required": [
-          "conversation_id",
-          "turns",
-          "next_sequence"
-        ],
-        "title": "ConversationTurnPage",
-        "type": "object"
-      },
-      "ConversationTurnReceipt": {
-        "additionalProperties": false,
-        "properties": {
-          "conversation_id": {
-            "format": "uuid",
-            "title": "Conversation Id",
-            "type": "string"
-          },
-          "event_cursor": {
-            "default": 0,
-            "minimum": 0.0,
-            "title": "Event Cursor",
-            "type": "integer"
-          },
-          "events_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Events Url"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          },
-          "run_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Status"
-          },
-          "turn_id": {
-            "format": "uuid",
-            "title": "Turn Id",
-            "type": "string"
-          },
-          "turn_sequence": {
-            "minimum": 1.0,
-            "title": "Turn Sequence",
-            "type": "integer"
-          },
-          "turn_status": {
-            "title": "Turn Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "conversation_id",
-          "turn_id",
-          "turn_sequence",
-          "turn_status"
-        ],
-        "title": "ConversationTurnReceipt",
-        "type": "object"
-      },
-      "ConversationTurnView": {
-        "additionalProperties": false,
-        "properties": {
-          "assistant_item": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConversationItemView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          },
-          "conversation_id": {
-            "format": "uuid",
-            "title": "Conversation Id",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "memory_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Memory Status"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "trace_summary": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/PublicTraceEvent"
-            },
-            "title": "Trace Summary",
-            "type": "array"
-          },
-          "turn_id": {
-            "format": "uuid",
-            "title": "Turn Id",
-            "type": "string"
-          },
-          "turn_sequence": {
-            "minimum": 1.0,
-            "title": "Turn Sequence",
-            "type": "integer"
-          },
-          "user_item": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConversationItemView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "conversation_id",
-          "turn_id",
-          "turn_sequence",
-          "status",
-          "created_at"
-        ],
-        "title": "ConversationTurnView",
-        "type": "object"
-      },
       "ConversationUploadReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -3863,84 +3278,6 @@
           "expires_at"
         ],
         "title": "ConversationUploadReceipt",
-        "type": "object"
-      },
-      "ConversationView": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "conversation_id": {
-            "format": "uuid",
-            "title": "Conversation Id",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "last_active_at": {
-            "format": "date-time",
-            "title": "Last Active At",
-            "type": "string"
-          },
-          "last_turn_sequence": {
-            "minimum": 0.0,
-            "title": "Last Turn Sequence",
-            "type": "integer"
-          },
-          "purge_after": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Purge After"
-          },
-          "retention_policy": {
-            "title": "Retention Policy",
-            "type": "string"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          }
-        },
-        "required": [
-          "conversation_id",
-          "agent_id",
-          "status",
-          "row_version",
-          "last_turn_sequence",
-          "last_active_at",
-          "created_at",
-          "retention_policy"
-        ],
-        "title": "ConversationView",
         "type": "object"
       },
       "CredentialPayload": {
@@ -6050,108 +5387,6 @@
         "title": "DimensionValueMember",
         "type": "object"
       },
-      "DocumentReferencePreview": {
-        "additionalProperties": false,
-        "properties": {
-          "bbox": {
-            "anyOf": [
-              {
-                "maxItems": 4,
-                "minItems": 4,
-                "prefixItems": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  }
-                ],
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bbox"
-          },
-          "citation_label": {
-            "title": "Citation Label",
-            "type": "string"
-          },
-          "content_url": {
-            "title": "Content Url",
-            "type": "string"
-          },
-          "download_available": {
-            "default": true,
-            "title": "Download Available",
-            "type": "boolean"
-          },
-          "mime_type": {
-            "title": "Mime Type",
-            "type": "string"
-          },
-          "page_end": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Page End"
-          },
-          "page_no": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Page No"
-          },
-          "preview_type": {
-            "enum": [
-              "PDF",
-              "IMAGE",
-              "TEXT",
-              "DOWNLOAD"
-            ],
-            "title": "Preview Type",
-            "type": "string"
-          },
-          "reference_type": {
-            "const": "DOCUMENT",
-            "default": "DOCUMENT",
-            "title": "Reference Type",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "citation_label",
-          "title",
-          "mime_type",
-          "preview_type",
-          "content_url"
-        ],
-        "title": "DocumentReferencePreview",
-        "type": "object"
-      },
       "DomainCreateRequest": {
         "properties": {
           "description": {
@@ -8001,85 +7236,6 @@
         "title": "IntakeReviewRequest",
         "type": "object"
       },
-      "KnowledgeConversationCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "retention_policy": {
-            "default": "DEFAULT",
-            "pattern": "^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
-            "title": "Retention Policy",
-            "type": "string"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "maxLength": 512,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          }
-        },
-        "required": [
-          "agent_id"
-        ],
-        "title": "KnowledgeConversationCreateRequest",
-        "type": "object"
-      },
-      "KnowledgeConversationTurnRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "client_metadata": {
-            "additionalProperties": true,
-            "title": "Client Metadata",
-            "type": "object"
-          },
-          "collection_ids": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Collection Ids",
-            "type": "array"
-          },
-          "expected_conversation_version": {
-            "minimum": 1.0,
-            "title": "Expected Conversation Version",
-            "type": "integer"
-          },
-          "images": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/ConversationQueryImage"
-            },
-            "maxItems": 8,
-            "title": "Images",
-            "type": "array"
-          },
-          "input": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Input",
-            "type": "string"
-          }
-        },
-        "required": [
-          "input",
-          "expected_conversation_version"
-        ],
-        "title": "KnowledgeConversationTurnRequest",
-        "type": "object"
-      },
       "KnowledgeRetrievalAgentCreatePayload": {
         "additionalProperties": false,
         "properties": {
@@ -9064,42 +8220,6 @@
           "ai_model_id"
         ],
         "title": "KnowledgeRetrievalSemanticModelValidationPayload",
-        "type": "object"
-      },
-      "KnowledgeRunCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "client_metadata": {
-            "additionalProperties": true,
-            "title": "Client Metadata",
-            "type": "object"
-          },
-          "collection_ids": {
-            "default": [],
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Collection Ids",
-            "type": "array"
-          },
-          "input": {
-            "maxLength": 32000,
-            "minLength": 1,
-            "title": "Input",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id",
-          "input"
-        ],
-        "title": "KnowledgeRunCreateRequest",
         "type": "object"
       },
       "LeadershipBriefing": {
@@ -10926,6 +10046,102 @@
         "title": "OperationWatchUpdate",
         "type": "object"
       },
+      "OperationsKnowledgeContextPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Component"
+          },
+          "database_major_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Major Version"
+          },
+          "database_type": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Type"
+          },
+          "problem_class": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Class"
+          },
+          "topology": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topology"
+          }
+        },
+        "title": "OperationsKnowledgeContextPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeConversationCreatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "business_context": {
+            "$ref": "#/components/schemas/OperationsKnowledgeContextPayload"
+          },
+          "retention_policy": {
+            "default": "DEFAULT",
+            "pattern": "^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
+            "title": "Retention Policy",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "OperationsKnowledgeConversationCreatePayload",
+        "type": "object"
+      },
       "OperationsKnowledgeReviewPayload": {
         "additionalProperties": false,
         "properties": {
@@ -11083,6 +10299,36 @@
           "query"
         ],
         "title": "OperationsKnowledgeSearchPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeTurnPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "business_context": {
+            "$ref": "#/components/schemas/OperationsKnowledgeContextPayload"
+          },
+          "client_metadata": {
+            "additionalProperties": true,
+            "title": "Client Metadata",
+            "type": "object"
+          },
+          "expected_conversation_version": {
+            "minimum": 1.0,
+            "title": "Expected Conversation Version",
+            "type": "integer"
+          },
+          "input": {
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Input",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input",
+          "expected_conversation_version"
+        ],
+        "title": "OperationsKnowledgeTurnPayload",
         "type": "object"
       },
       "OpsDashboard": {
@@ -12537,85 +11783,6 @@
           "row_version"
         ],
         "title": "ProposalView",
-        "type": "object"
-      },
-      "PublicTraceEvent": {
-        "additionalProperties": false,
-        "properties": {
-          "occurred_at": {
-            "format": "date-time",
-            "title": "Occurred At",
-            "type": "string"
-          },
-          "resource_refs": {
-            "default": [],
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Resource Refs",
-            "type": "array"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "default": "AgentTraceEvent.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "sequence_no": {
-            "minimum": 1.0,
-            "title": "Sequence No",
-            "type": "integer"
-          },
-          "stage": {
-            "title": "Stage",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "summary": {
-            "title": "Summary",
-            "type": "string"
-          },
-          "task_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "turn_id": {
-            "format": "uuid",
-            "title": "Turn Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "turn_id",
-          "sequence_no",
-          "stage",
-          "title",
-          "summary",
-          "status",
-          "occurred_at"
-        ],
-        "title": "PublicTraceEvent",
         "type": "object"
       },
       "PublishSemanticModelRequest": {
@@ -26018,6 +25185,342 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/operations-knowledge/conversations": {
+      "get": {
+        "operationId": "list_operations_knowledge_conversations_api_v1_apps_aiops_operations_knowledge_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Conversations",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "post": {
+        "operationId": "create_operations_knowledge_conversation_api_v1_apps_aiops_operations_knowledge_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeConversationCreatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Operations Knowledge Conversation",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/conversations/{conversation_id}": {
+      "delete": {
+        "operationId": "delete_operations_knowledge_conversation_api_v1_apps_aiops_operations_knowledge_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_row_version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Row Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Operations Knowledge Conversation",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "get": {
+        "operationId": "get_operations_knowledge_conversation_api_v1_apps_aiops_operations_knowledge_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Conversation",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "patch": {
+        "operationId": "update_operations_knowledge_conversation_api_v1_apps_aiops_operations_knowledge_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Operations Knowledge Conversation",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/conversations/{conversation_id}/turns": {
+      "get": {
+        "operationId": "list_operations_knowledge_turns_api_v1_apps_aiops_operations_knowledge_conversations__conversation_id__turns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Turns",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "post": {
+        "operationId": "create_operations_knowledge_turn_api_v1_apps_aiops_operations_knowledge_conversations__conversation_id__turns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTurnPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Operations Knowledge Turn",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/operations-knowledge/manuals": {
       "post": {
         "description": "把原始手册有界转发到 AIOps，由业务服务登记资产并驱动 KC。",
@@ -26136,6 +25639,261 @@
           }
         },
         "summary": "List Operations Knowledge Reviews",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/runs/{run_id}": {
+      "get": {
+        "operationId": "get_operations_knowledge_run_api_v1_apps_aiops_operations_knowledge_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Run",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/runs/{run_id}/events": {
+      "get": {
+        "operationId": "stream_operations_knowledge_run_events_api_v1_apps_aiops_operations_knowledge_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Operations Knowledge Run Events",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/runs/{run_id}/references/{citation_label}/content": {
+      "get": {
+        "operationId": "stream_operations_knowledge_reference_content_api_v1_apps_aiops_operations_knowledge_runs__run_id__references__citation_label__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "citation_label",
+            "required": true,
+            "schema": {
+              "title": "Citation Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Range"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Operations Knowledge Reference Content",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/runs/{run_id}/references/{citation_label}/preview": {
+      "get": {
+        "operationId": "preview_operations_knowledge_reference_api_v1_apps_aiops_operations_knowledge_runs__run_id__references__citation_label__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "citation_label",
+            "required": true,
+            "schema": {
+              "title": "Citation Label",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Operations Knowledge Reference",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/runs/{run_id}/result": {
+      "get": {
+        "operationId": "get_operations_knowledge_run_result_api_v1_apps_aiops_operations_knowledge_runs__run_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Run Result",
         "tags": [
           "AIOps App"
         ]
@@ -31690,7 +31448,7 @@
     },
     "/api/v1/apps/knowledge-retrieval/conversations": {
       "get": {
-        "operationId": "list_conversations_api_v1_apps_knowledge_retrieval_conversations_get",
+        "operationId": "list_knowledge_conversations_api_v1_apps_knowledge_retrieval_conversations_get",
         "parameters": [
           {
             "in": "query",
@@ -31709,13 +31467,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ConversationView"
-                  },
-                  "title": "Response List Conversations Api V1 Apps Knowledge Retrieval Conversations Get",
-                  "type": "array"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -31731,18 +31483,18 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Conversations",
+        "summary": "List Knowledge Conversations",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       },
       "post": {
-        "operationId": "create_conversation_api_v1_apps_knowledge_retrieval_conversations_post",
+        "operationId": "create_knowledge_conversation_api_v1_apps_knowledge_retrieval_conversations_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KnowledgeConversationCreateRequest"
+                "$ref": "#/components/schemas/KnowledgeRetrievalConversationCreatePayload"
               }
             }
           },
@@ -31752,9 +31504,7 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationView"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -31770,15 +31520,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Conversation",
+        "summary": "Create Knowledge Conversation",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/conversations/{conversation_id}": {
       "delete": {
-        "operationId": "delete_conversation_api_v1_apps_knowledge_retrieval_conversations__conversation_id__delete",
+        "operationId": "delete_knowledge_conversation_api_v1_apps_knowledge_retrieval_conversations__conversation_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -31816,13 +31566,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete Conversation",
+        "summary": "Delete Knowledge Conversation",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       },
       "get": {
-        "operationId": "get_conversation_api_v1_apps_knowledge_retrieval_conversations__conversation_id__get",
+        "operationId": "get_knowledge_conversation_api_v1_apps_knowledge_retrieval_conversations__conversation_id__get",
         "parameters": [
           {
             "in": "path",
@@ -31839,9 +31589,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationView"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -31857,13 +31605,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Conversation",
+        "summary": "Get Knowledge Conversation",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       },
       "patch": {
-        "operationId": "update_conversation_api_v1_apps_knowledge_retrieval_conversations__conversation_id__patch",
+        "operationId": "update_knowledge_conversation_api_v1_apps_knowledge_retrieval_conversations__conversation_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -31890,9 +31638,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationView"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -31908,15 +31654,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Conversation",
+        "summary": "Update Knowledge Conversation",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/conversations/{conversation_id}/turns": {
       "get": {
-        "operationId": "list_turns_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_get",
+        "operationId": "list_knowledge_conversation_turns_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_get",
         "parameters": [
           {
             "in": "path",
@@ -31944,8 +31690,8 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 200,
+              "default": 200,
+              "maximum": 500,
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
@@ -31956,9 +31702,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationTurnPage"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -31974,13 +31718,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Turns",
+        "summary": "List Knowledge Conversation Turns",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       },
       "post": {
-        "operationId": "create_turn_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_post",
+        "operationId": "create_knowledge_conversation_turn_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_post",
         "parameters": [
           {
             "in": "path",
@@ -32006,7 +31750,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/KnowledgeConversationTurnRequest"
+                "$ref": "#/components/schemas/KnowledgeRetrievalConversationTurnPayload"
               }
             }
           },
@@ -32016,9 +31760,7 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationTurnReceipt"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -32034,77 +31776,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Turn",
+        "summary": "Create Knowledge Conversation Turn",
         "tags": [
-          "Knowledge Retrieval Conversations"
-        ]
-      }
-    },
-    "/api/v1/apps/knowledge-retrieval/conversations/{conversation_id}/turns/multipart": {
-      "post": {
-        "operationId": "create_turn_with_images_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_multipart_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_create_turn_with_images_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns_multipart_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationTurnReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Turn With Images",
-        "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/conversations/{conversation_id}/turns/{turn_id}/trace": {
       "get": {
-        "operationId": "list_turn_trace_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns__turn_id__trace_get",
+        "operationId": "list_knowledge_retrieval_turn_trace_api_v1_apps_knowledge_retrieval_conversations__conversation_id__turns__turn_id__trace_get",
         "parameters": [
           {
             "in": "path",
@@ -32154,13 +31834,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PublicTraceEvent"
-                  },
-                  "title": "Response List Turn Trace Api V1 Apps Knowledge Retrieval Conversations  Conversation Id  Turns  Turn Id  Trace Get",
-                  "type": "array"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -32176,9 +31850,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Turn Trace",
+        "summary": "List Knowledge Retrieval Turn Trace",
         "tags": [
-          "Knowledge Retrieval Conversations"
+          "Knowledge Retrieval App"
         ]
       }
     },
@@ -36782,61 +36456,9 @@
         ]
       }
     },
-    "/api/v1/apps/knowledge-retrieval/runs": {
-      "post": {
-        "operationId": "create_run_api_v1_apps_knowledge_retrieval_runs_post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeRunCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRunReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Run",
-        "tags": [
-          "Knowledge Retrieval Runs"
-        ]
-      }
-    },
     "/api/v1/apps/knowledge-retrieval/runs/{run_id}": {
       "get": {
-        "operationId": "get_run_api_v1_apps_knowledge_retrieval_runs__run_id__get",
+        "operationId": "get_knowledge_retrieval_agent_run_api_v1_apps_knowledge_retrieval_runs__run_id__get",
         "parameters": [
           {
             "in": "path",
@@ -36853,9 +36475,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRunSummary"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -36871,77 +36491,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Run",
+        "summary": "Get Knowledge Retrieval Agent Run",
         "tags": [
-          "Knowledge Retrieval Runs"
-        ]
-      }
-    },
-    "/api/v1/apps/knowledge-retrieval/runs/{run_id}/cancel": {
-      "post": {
-        "operationId": "cancel_run_api_v1_apps_knowledge_retrieval_runs__run_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Run Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CancelRunRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRunReceipt"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Run",
-        "tags": [
-          "Knowledge Retrieval Runs"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/runs/{run_id}/events": {
       "get": {
-        "operationId": "stream_run_events_api_v1_apps_knowledge_retrieval_runs__run_id__events_get",
+        "operationId": "stream_knowledge_retrieval_agent_run_events_api_v1_apps_knowledge_retrieval_runs__run_id__events_get",
         "parameters": [
           {
             "in": "path",
@@ -36990,15 +36548,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Stream Run Events",
+        "summary": "Stream Knowledge Retrieval Agent Run Events",
         "tags": [
-          "Knowledge Retrieval Runs"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/content": {
       "get": {
-        "operationId": "stream_document_reference_content_api_v1_apps_knowledge_retrieval_runs__run_id__references__citation_label__content_get",
+        "operationId": "stream_knowledge_retrieval_reference_content_api_v1_apps_knowledge_retrieval_runs__run_id__references__citation_label__content_get",
         "parameters": [
           {
             "in": "path",
@@ -37056,15 +36614,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Stream Document Reference Content",
+        "summary": "Stream Knowledge Retrieval Reference Content",
         "tags": [
-          "Knowledge Retrieval Runs"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/runs/{run_id}/references/{citation_label}/preview": {
       "get": {
-        "operationId": "get_document_reference_preview_api_v1_apps_knowledge_retrieval_runs__run_id__references__citation_label__preview_get",
+        "operationId": "get_knowledge_retrieval_reference_preview_api_v1_apps_knowledge_retrieval_runs__run_id__references__citation_label__preview_get",
         "parameters": [
           {
             "in": "path",
@@ -37090,9 +36648,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentReferencePreview"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -37108,15 +36664,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Document Reference Preview",
+        "summary": "Get Knowledge Retrieval Reference Preview",
         "tags": [
-          "Knowledge Retrieval Runs"
+          "Knowledge Retrieval App"
         ]
       }
     },
     "/api/v1/apps/knowledge-retrieval/runs/{run_id}/result": {
       "get": {
-        "operationId": "get_run_result_api_v1_apps_knowledge_retrieval_runs__run_id__result_get",
+        "operationId": "get_knowledge_retrieval_agent_run_result_api_v1_apps_knowledge_retrieval_runs__run_id__result_get",
         "parameters": [
           {
             "in": "path",
@@ -37133,9 +36689,7 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentArtifact"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
@@ -37151,9 +36705,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Run Result",
+        "summary": "Get Knowledge Retrieval Agent Run Result",
         "tags": [
-          "Knowledge Retrieval Runs"
+          "Knowledge Retrieval App"
         ]
       }
     },

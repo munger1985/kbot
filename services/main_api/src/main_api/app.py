@@ -24,7 +24,6 @@ from main_api.api import (
     media_studio_app_router,
     app_api_clients_router,
     auth_router,
-    conversation_router,
     data_query_router,
     development_agent_runs_router,
     development_logs_router,
@@ -37,7 +36,6 @@ from main_api.api import (
     model_catalog_router,
     notification_router,
     ops_router,
-    run_router,
 )
 from main_api.config import get_main_api_settings
 from main_api.application import (
@@ -304,8 +302,6 @@ def create_main_api_app(
     app.include_router(model_catalog_router)
     app.include_router(notification_router)
     app.include_router(domain_router)
-    app.include_router(run_router)
-    app.include_router(conversation_router)
     app.include_router(data_query_router)
     app.include_router(dify_router)
     app.include_router(memory_router)

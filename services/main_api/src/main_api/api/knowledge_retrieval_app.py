@@ -1,7 +1,7 @@
 """知识检索 App 的公开 BFF 路由。"""
 
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -28,6 +28,8 @@ from platform_clients import (
     KnowledgeCoreClient,
 )
 from platform_core.contracts import (
+    AgentExecutionSpec,
+    KnowledgeScopeSnapshotV1,
     PUBLIC_API_V1,
     UpdateConversationRequest,
     is_grok_provider_model_name,
@@ -559,7 +561,33 @@ async def _knowledge_execution_spec(
         note="智能工作台 Agent 会话检索授权",
         auth_context=request.state.auth_context,
     )
-    return spec
+    resolved_scope = await _knowledge(request).resolve_knowledge_scope(
+        domain_id=domain_id,
+        agent_id=agent_id,
+        collection_ids=(collection_id,),
+        auth_context=request.state.auth_context,
+    )
+    security_level = await _effective_security_level(request)
+    scope_payload = {
+        "schema_version": "1.0",
+        "owner_app_id": "knowledge_retrieval",
+        "domain_id": domain_id,
+        "consumer_agent_id": str(agent_id),
+        "consumer_agent_version_id": str(spec["consumer_agent_version_id"]),
+        "collection_ids": list(resolved_scope["collection_ids"]),
+        "bundle_revision_ids": list(resolved_scope["bundle_revision_ids"]),
+        "security_level": security_level,
+        "business_context": {},
+        "business_resource_refs": [],
+        "policy_version": "knowledge-retrieval-scope.v1",
+        "issued_at": datetime.now(UTC).isoformat(),
+    }
+    scope_payload["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(
+        scope_payload
+    )
+    spec = dict(spec)
+    spec["knowledge_scope"] = scope_payload
+    return AgentExecutionSpec.model_validate(spec).model_dump(mode="json")
 
 
 async def _knowledge_conversation(
@@ -1504,13 +1532,8 @@ async def create_knowledge_conversation_turn(
     spec = await _knowledge_execution_spec(
         request, domain_id=domain_id, agent_id=agent_id
     )
-    resource_context = spec.get("resource_context") or {}
-    collection_ids = list(resource_context.get("collection_ids") or [])
-    security_level = await _effective_security_level(request)
     body = payload.model_dump(mode="json")
     body["execution_spec"] = spec
-    body["collection_ids"] = collection_ids
-    body["security_level"] = security_level
     return await _runtime(request).create_conversation_turn(
         conversation_id=conversation_id,
         payload=body,

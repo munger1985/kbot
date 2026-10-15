@@ -164,6 +164,15 @@ async def create_run(
 ) -> AgentRunReceipt:
     domain_id, actor_id, request_id, trace_id = _identity(request)
     auth_context = request.state.auth_context
+    scope = payload.execution_spec.knowledge_scope
+    if scope is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KNOWLEDGE_SCOPE_REQUIRED",
+                "message": "知识问答 Run 必须携带服务端签发的知识范围",
+            },
+        )
     try:
         return await _service(request).create_run(
             CreateRunCommand(
@@ -175,8 +184,8 @@ async def create_run(
                 trace_id=trace_id,
                 idempotency_key=idempotency_key,
                 original_input=payload.input,
-                collection_ids=payload.collection_ids,
-                security_level=payload.security_level,
+                collection_ids=scope.collection_ids,
+                security_level=scope.security_level,
                 client_metadata=payload.client_metadata,
                 policy_snapshot={
                     "auth_context": auth_context.model_dump(mode="json")

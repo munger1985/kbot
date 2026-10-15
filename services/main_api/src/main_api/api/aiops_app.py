@@ -18,7 +18,11 @@ from main_api.application import (
 )
 from platform_core.authorization import can_read_agent, filter_readable_agents
 from platform_clients.aiops import AIOpsManagementClient
-from platform_core.contracts import PUBLIC_API_V1, PrincipalKind
+from platform_core.contracts import (
+    PUBLIC_API_V1,
+    PrincipalKind,
+    UpdateConversationRequest,
+)
 from platform_core.contracts.aiops import (
     ConversationUploadReceipt,
     ConversationStarterSelection,
@@ -35,6 +39,16 @@ from platform_core.contracts.aiops import (
     WorkloadDiffRequest,
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
+from main_api.api.runs import (
+    _DocumentReference,
+    _document_locator,
+    _effective_security_level,
+    _event_stream,
+    _parse_cursor,
+    _preview_type,
+    _reference_not_found,
+)
+from platform_clients import AgentRuntimeClient, KnowledgeCoreClient
 
 
 router = APIRouter(
@@ -112,6 +126,34 @@ class OperationsKnowledgeSearchPayload(_Payload):
     )
     max_results: int = Field(default=8, ge=1, le=20)
     max_security_level: int = Field(default=3, ge=1, le=5)
+
+
+class OperationsKnowledgeContextPayload(_Payload):
+    database_type: str | None = Field(default=None, max_length=32)
+    database_major_version: str | None = Field(default=None, max_length=32)
+    topology: str | None = Field(default=None, max_length=64)
+    problem_class: str | None = Field(default=None, max_length=128)
+    component: str | None = Field(default=None, max_length=128)
+
+
+class OperationsKnowledgeConversationCreatePayload(_Payload):
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    retention_policy: str = Field(
+        default="DEFAULT",
+        pattern=r"^(DEFAULT|KEEP_FOREVER|DAYS_30|DAYS_90|DAYS_365)$",
+    )
+    business_context: OperationsKnowledgeContextPayload = Field(
+        default_factory=OperationsKnowledgeContextPayload
+    )
+
+
+class OperationsKnowledgeTurnPayload(_Payload):
+    input: str = Field(min_length=1, max_length=32000)
+    expected_conversation_version: int = Field(ge=1)
+    business_context: OperationsKnowledgeContextPayload = Field(
+        default_factory=OperationsKnowledgeContextPayload
+    )
+    client_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AIOpsControlledDynamicParameterRule(_Payload):
@@ -255,12 +297,92 @@ def _client(request: Request) -> AIOpsManagementClient:
     return cast(AIOpsManagementClient, request.app.state.aiops_client)
 
 
+def _runtime(request: Request) -> AgentRuntimeClient:
+    return cast(AgentRuntimeClient, request.app.state.agent_runtime_client)
+
+
+def _knowledge(request: Request) -> KnowledgeCoreClient:
+    return cast(KnowledgeCoreClient, request.app.state.knowledge_core_client)
+
+
 async def _require(request: Request, permission: str):
     return await authorize_app_request(
         request,
         app_id="aiops",
         permission=permission,
     )
+
+
+async def _operations_knowledge_spec(
+    request: Request, *, business_context: OperationsKnowledgeContextPayload
+) -> dict[str, Any]:
+    security_level = await _effective_security_level(request)
+    return await _client(request).get_operations_knowledge_execution_spec(
+        max_security_level=security_level,
+        business_context=business_context.model_dump(exclude_none=True),
+        auth_context=request.state.auth_context,
+    )
+
+
+async def _operations_knowledge_conversation(
+    request: Request, *, conversation_id: UUID
+) -> dict[str, Any]:
+    conversation = await _runtime(request).get_conversation(
+        conversation_id=conversation_id,
+        auth_context=request.state.auth_context,
+    )
+    if conversation.get("owner_app_id") != "aiops":
+        raise HTTPException(
+            404,
+            {"code": "AIOPS_KNOWLEDGE_CONVERSATION_NOT_FOUND"},
+        )
+    return conversation
+
+
+async def _operations_knowledge_run(
+    request: Request, *, run_id: UUID
+) -> dict[str, Any]:
+    run = await _runtime(request).get_run(
+        run_id=run_id,
+        auth_context=request.state.auth_context,
+    )
+    if run.get("owner_app_id") != "aiops":
+        raise HTTPException(404, {"code": "AIOPS_KNOWLEDGE_RUN_NOT_FOUND"})
+    return run
+
+
+async def _operations_knowledge_reference(
+    request: Request, *, run_id: UUID, citation_label: str
+) -> tuple[_DocumentReference, dict[str, Any]]:
+    run = await _operations_knowledge_run(request, run_id=run_id)
+    artifact = await _runtime(request).get_result(
+        run_id=run_id,
+        auth_context=request.state.auth_context,
+    )
+    payload = artifact.get("payload")
+    references = payload.get("references") if isinstance(payload, dict) else None
+    raw = next(
+        (
+            item
+            for item in references or []
+            if isinstance(item, dict)
+            and item.get("reference_type") == "DOCUMENT"
+            and item.get("citation_label") == citation_label
+        ),
+        None,
+    )
+    if raw is None:
+        raise _reference_not_found()
+    try:
+        return _DocumentReference.model_validate(raw), run
+    except ValueError as exc:
+        raise HTTPException(
+            409,
+            {
+                "code": "AIOPS_KNOWLEDGE_REFERENCE_INVALID",
+                "message": "知识回答引用结构无效",
+            },
+        ) from exc
 
 
 _AIOPS_AGENT_USE_FIELDS = (
@@ -489,6 +611,305 @@ async def preview_operations_knowledge_search(payload: OperationsKnowledgeSearch
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).search_operations_knowledge(
         payload.model_dump(mode="json"), auth_context=request.state.auth_context
+    )
+
+
+@router.post(
+    "/operations-knowledge/conversations",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_operations_knowledge_conversation(
+    payload: OperationsKnowledgeConversationCreatePayload,
+    request: Request,
+):
+    await _require(request, "aiops:use")
+    spec = await _operations_knowledge_spec(
+        request, business_context=payload.business_context
+    )
+    return await _runtime(request).create_conversation(
+        payload={
+            "agent_id": spec["consumer_agent_id"],
+            "execution_spec": spec,
+            "title": payload.title,
+            "retention_policy": payload.retention_policy,
+        },
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/operations-knowledge/conversations")
+async def list_operations_knowledge_conversations(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    await _require(request, "aiops:use")
+    rows = await _runtime(request).list_conversations(
+        limit=200,
+        auth_context=request.state.auth_context,
+    )
+    return [
+        item for item in rows if item.get("owner_app_id") == "aiops"
+    ][:limit]
+
+
+@router.get("/operations-knowledge/conversations/{conversation_id}")
+async def get_operations_knowledge_conversation(
+    conversation_id: UUID, request: Request
+):
+    await _require(request, "aiops:use")
+    return await _operations_knowledge_conversation(
+        request, conversation_id=conversation_id
+    )
+
+
+@router.patch("/operations-knowledge/conversations/{conversation_id}")
+async def update_operations_knowledge_conversation(
+    conversation_id: UUID,
+    payload: UpdateConversationRequest,
+    request: Request,
+):
+    await _require(request, "aiops:use")
+    await _operations_knowledge_conversation(
+        request, conversation_id=conversation_id
+    )
+    return await _runtime(request).update_conversation(
+        conversation_id=conversation_id,
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.delete(
+    "/operations-knowledge/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_operations_knowledge_conversation(
+    conversation_id: UUID,
+    request: Request,
+    expected_row_version: int = Query(ge=1),
+):
+    await _require(request, "aiops:use")
+    await _operations_knowledge_conversation(
+        request, conversation_id=conversation_id
+    )
+    await _runtime(request).delete_conversation(
+        conversation_id=conversation_id,
+        expected_row_version=expected_row_version,
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/operations-knowledge/conversations/{conversation_id}/turns",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_operations_knowledge_turn(
+    conversation_id: UUID,
+    payload: OperationsKnowledgeTurnPayload,
+    request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+):
+    await _require(request, "aiops:use")
+    conversation = await _operations_knowledge_conversation(
+        request, conversation_id=conversation_id
+    )
+    spec = await _operations_knowledge_spec(
+        request, business_context=payload.business_context
+    )
+    if str(conversation["agent_id"]) != str(spec["consumer_agent_id"]):
+        raise HTTPException(
+            409,
+            {
+                "code": "AIOPS_KNOWLEDGE_AGENT_CHANGED",
+                "message": "运维知识助手身份已变化，请新建会话",
+            },
+        )
+    return await _runtime(request).create_conversation_turn(
+        conversation_id=conversation_id,
+        payload={
+            "input": payload.input,
+            "expected_conversation_version": (
+                payload.expected_conversation_version
+            ),
+            "execution_spec": spec,
+            "client_metadata": payload.client_metadata,
+            "images": [],
+        },
+        idempotency_key=idempotency_key,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get(
+    "/operations-knowledge/conversations/{conversation_id}/turns"
+)
+async def list_operations_knowledge_turns(
+    conversation_id: UUID,
+    request: Request,
+    after: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    await _require(request, "aiops:use")
+    await _operations_knowledge_conversation(
+        request, conversation_id=conversation_id
+    )
+    return await _runtime(request).list_conversation_turns(
+        conversation_id=conversation_id,
+        after=after,
+        limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/operations-knowledge/runs/{run_id}")
+async def get_operations_knowledge_run(run_id: UUID, request: Request):
+    await _require(request, "aiops:use")
+    return await _operations_knowledge_run(request, run_id=run_id)
+
+
+@router.get("/operations-knowledge/runs/{run_id}/result")
+async def get_operations_knowledge_run_result(run_id: UUID, request: Request):
+    await _require(request, "aiops:use")
+    await _operations_knowledge_run(request, run_id=run_id)
+    return await _runtime(request).get_result(
+        run_id=run_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/operations-knowledge/runs/{run_id}/events")
+async def stream_operations_knowledge_run_events(
+    run_id: UUID,
+    request: Request,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+):
+    await _require(request, "aiops:use")
+    cursor = _parse_cursor(last_event_id)
+    summary = await _operations_knowledge_run(request, run_id=run_id)
+    if cursor > int(summary["event_cursor"]):
+        raise HTTPException(
+            400,
+            {
+                "code": "AGENT_EVENT_CURSOR_INVALID",
+                "message": "Last-Event-ID 超过当前 Run 事件游标",
+            },
+        )
+    return StreamingResponse(
+        _event_stream(run_id=run_id, request=request, cursor=cursor),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get(
+    "/operations-knowledge/runs/{run_id}/references/"
+    "{citation_label}/preview"
+)
+async def preview_operations_knowledge_reference(
+    run_id: UUID,
+    citation_label: str,
+    request: Request,
+):
+    await _require(request, "aiops:use")
+    reference, run = await _operations_knowledge_reference(
+        request, run_id=run_id, citation_label=citation_label
+    )
+    if reference.citation_id is None:
+        raise _reference_not_found()
+    security_level = await _effective_security_level(request)
+    citation = await _knowledge(request).get_citation_content(
+        citation_id=reference.citation_id,
+        agent_id=UUID(str(run["agent_id"])),
+        max_security_level=security_level,
+        auth_context=request.state.auth_context,
+    )
+    preview = await _knowledge(request).get_bundle_revision_preview(
+        domain_id=int(request.state.auth_context.domain_id or "0"),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        auth_context=request.state.auth_context,
+    )
+    source_file = next(
+        (
+            item
+            for item in preview.get("files", [])
+            if str(item.get("document_version_id"))
+            == str(reference.document_version_id)
+        ),
+        None,
+    )
+    mime_type = str(
+        (source_file or {}).get("detected_mime_type")
+        or (source_file or {}).get("declared_mime_type")
+        or "application/octet-stream"
+    ).split(";", 1)[0].strip().lower()
+    page_no, page_end, bbox = _document_locator(reference)
+    return {
+        "reference_type": "DOCUMENT",
+        "citation_id": str(reference.citation_id),
+        "citation_label": reference.citation_label,
+        "title": reference.title,
+        "quote": reference.quote,
+        "content_text": citation.get("content_text"),
+        "locator": citation.get("locator") or reference.locator,
+        "mime_type": mime_type,
+        "preview_type": _preview_type(mime_type),
+        "page_no": page_no,
+        "page_end": page_end,
+        "bbox": bbox,
+        "content_url": (
+            f"{PUBLIC_API_V1}/apps/aiops/operations-knowledge/runs/"
+            f"{run_id}/references/{reference.citation_label}/content"
+        ),
+        "download_available": source_file is not None,
+    }
+
+
+@router.get(
+    "/operations-knowledge/runs/{run_id}/references/"
+    "{citation_label}/content"
+)
+async def stream_operations_knowledge_reference_content(
+    run_id: UUID,
+    citation_label: str,
+    request: Request,
+    range_header: str | None = Header(default=None, alias="Range"),
+):
+    await _require(request, "aiops:use")
+    reference, _ = await _operations_knowledge_reference(
+        request, run_id=run_id, citation_label=citation_label
+    )
+    upstream = await _knowledge(request).stream_source_file(
+        domain_id=int(request.state.auth_context.domain_id or "0"),
+        collection_id=reference.collection_id,
+        bundle_id=reference.bundle_id,
+        bundle_revision_id=reference.bundle_revision_id,
+        document_version_id=reference.document_version_id,
+        range_header=range_header,
+        auth_context=request.state.auth_context,
+    )
+    forwarded_headers = {
+        name: upstream.headers[name]
+        for name in (
+            "accept-ranges",
+            "cache-control",
+            "content-disposition",
+            "content-length",
+            "content-range",
+            "content-security-policy",
+            "x-content-type-options",
+        )
+        if name in upstream.headers
+    }
+    return StreamingResponse(
+        upstream.body,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get(
+            "content-type", "application/octet-stream"
+        ),
+        headers=forwarded_headers,
     )
 
 

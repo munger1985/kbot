@@ -26,7 +26,11 @@ from aiops_agent.entities import (
     OperationsKnowledgeSourceEntity,
     OperationsKnowledgeVersionEntity,
 )
-from platform_core.contracts import AuthContext
+from platform_core.contracts import (
+    AgentExecutionSpec,
+    AuthContext,
+    KnowledgeScopeSnapshotV1,
+)
 from platform_core.identity import uuid7
 from platform_core.security import create_service_auth_context
 from platform_clients.knowledge_core import KnowledgeCoreClient, KnowledgeCoreClientError
@@ -178,9 +182,17 @@ class OperationsKnowledgeService:
         *,
         uow_factory: Callable,
         knowledge_core: KnowledgeCoreClient,
+        knowledge_assistant_id: UUID,
+        knowledge_assistant_version_id: UUID,
+        knowledge_assistant_models: dict[str, UUID],
+        knowledge_assistant_instruction: str,
     ) -> None:
         self._uow_factory = uow_factory
         self._kc = knowledge_core
+        self._knowledge_assistant_id = knowledge_assistant_id
+        self._knowledge_assistant_version_id = knowledge_assistant_version_id
+        self._knowledge_assistant_models = dict(knowledge_assistant_models)
+        self._knowledge_assistant_instruction = knowledge_assistant_instruction
 
     @staticmethod
     def _actor(context: AuthContext) -> str:
@@ -1437,7 +1449,7 @@ class OperationsKnowledgeService:
                 retryable=True,
             ) from exc
         by_revision = {str(row[2].bundle_revision_id): row for row in candidates}
-        evidence_items = evidence.get("evidence") or evidence.get("items") or []
+        evidence_items = evidence.get("citations") or []
         results = []
         for item in evidence_items:
             revision_id = str(item.get("bundle_revision_id") or "")
@@ -1479,6 +1491,117 @@ class OperationsKnowledgeService:
             "results": results,
             "warnings": [] if results else ["有适用候选，但 KC 正文没有形成可引用命中"],
         }
+
+    async def knowledge_execution_spec(
+        self,
+        *,
+        domain_id: int,
+        max_security_level: int,
+        business_context: dict[str, Any],
+        context: AuthContext,
+    ) -> dict[str, Any]:
+        """签发 AIOps 内部知识助手的 Execution Spec 与精确发布范围。"""
+        if "composer_llm" not in self._knowledge_assistant_models:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_ASSISTANT_MODEL_REQUIRED",
+                message="运维知识助手尚未配置 composer_llm",
+                status_code=503,
+                retryable=False,
+            )
+        mappings = {
+            "database_type": "DATABASE_TYPE",
+            "database_major_version": "DATABASE_VERSION",
+            "topology": "TOPOLOGY",
+            "problem_class": "PROBLEM_CLASS",
+            "component": "COMPONENT",
+        }
+        filters = {
+            scope_kind: (_normalize(str(business_context[key])),)
+            for key, scope_kind in mappings.items()
+            if business_context.get(key) is not None
+            and str(business_context[key]).strip()
+        }
+        async with self._uow_factory() as uow:
+            candidates = await uow.operations_knowledge.list_published_candidates(
+                domain_id=domain_id,
+                target_id=None,
+                source_kinds=("MANUAL", "DIAGNOSIS_CASE"),
+                max_security_level=max_security_level,
+                scope_filters=filters,
+                limit=None,
+            )
+        if not candidates:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_SCOPE_EMPTY",
+                message="当前 Domain 没有可用于问答的已发布运维知识",
+                status_code=422,
+                retryable=False,
+            )
+        collection_ids = tuple(sorted(
+            {row[2].collection_id for row in candidates},
+            key=lambda item: item.bytes,
+        ))
+        revision_ids = tuple(sorted(
+            {row[2].bundle_revision_id for row in candidates},
+            key=lambda item: item.bytes,
+        ))
+        for collection_id in collection_ids:
+            await self._kc.bind_collection(
+                domain_id=domain_id,
+                agent_id=self._knowledge_assistant_id,
+                collection_id=collection_id,
+                note="AIOps 内部运维知识助手检索授权",
+                auth_context=context,
+            )
+        scope_payload = {
+            "schema_version": "1.0",
+            "owner_app_id": "aiops",
+            "domain_id": domain_id,
+            "consumer_agent_id": str(self._knowledge_assistant_id),
+            "consumer_agent_version_id": str(
+                self._knowledge_assistant_version_id
+            ),
+            "collection_ids": [str(item) for item in collection_ids],
+            "bundle_revision_ids": [str(item) for item in revision_ids],
+            "security_level": max_security_level,
+            "business_context": dict(business_context),
+            "business_resource_refs": [
+                {
+                    "kind": "OPERATIONS_KNOWLEDGE_VERSION",
+                    "id": str(row[1].asset_version_id),
+                }
+                for row in candidates
+            ],
+            "policy_version": "aiops-knowledge-scope.v1",
+            "issued_at": _now().isoformat(),
+        }
+        scope_payload["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(
+            scope_payload
+        )
+        scope = KnowledgeScopeSnapshotV1.model_validate(scope_payload)
+        spec = AgentExecutionSpec(
+            schema_version="1.0",
+            owner_app_id="aiops",
+            domain_id=domain_id,
+            consumer_agent_id=self._knowledge_assistant_id,
+            consumer_agent_version_id=self._knowledge_assistant_version_id,
+            agent_kind="KNOWLEDGE_RETRIEVAL",
+            display_name="AIOps 运维知识助手",
+            enabled_capabilities=("document",),
+            models=self._knowledge_assistant_models,
+            instruction=self._knowledge_assistant_instruction,
+            resource_context={
+                "resource_mode": "managed_resources",
+                "default_route": "DOCUMENT",
+                "collection_ids": [str(item) for item in collection_ids],
+            },
+            runtime_policy={
+                "routing": "document_only",
+                "allow_general_conversation": False,
+            },
+            knowledge_scope=scope,
+        )
+        return spec.model_dump(mode="json")
 
     async def list_reviews(self, *, domain_id: int, limit: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:

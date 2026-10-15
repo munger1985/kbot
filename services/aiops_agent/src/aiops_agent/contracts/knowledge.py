@@ -95,3 +95,11 @@ class KnowledgeReviewCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class KnowledgeExecutionSpecRequest(BaseModel):
+    """仅供受信 BFF 请求 AIOps 服务端签发知识范围。"""
+
+    model_config = ConfigDict(extra="forbid")
+    max_security_level: int = Field(ge=0, le=999)
+    business_context: dict[str, Any] = Field(default_factory=dict)

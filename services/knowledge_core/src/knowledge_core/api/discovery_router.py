@@ -26,7 +26,7 @@ class DiscoverySearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=8000)
     collection_ids: list[UUID] = Field(min_length=1, max_length=128)
     bundle_revision_ids: list[UUID] = Field(
-        default_factory=list,
+        min_length=1,
         max_length=KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT,
     )
     query_vectors: dict[UUID, list[float]] | None = None
@@ -38,6 +38,41 @@ class DiscoverySearchRequest(BaseModel):
     task_id: UUID | None = None
 
 
+class ResolveKnowledgeScopeRequest(BaseModel):
+    domain_id: int = Field(gt=0)
+    agent_id: UUID
+    collection_ids: list[UUID] = Field(min_length=1, max_length=128)
+
+
+@router.post("/scope:resolve")
+async def resolve_knowledge_scope(
+    payload: ResolveKnowledgeScopeRequest, request: Request
+):
+    """为业务 App 签发 Scope 前解析 Agent 当前精确 KC Revision 范围。"""
+    require_domain_match(request, payload.domain_id)
+    try:
+        collection_ids, revision_ids = (
+            await request.app.state.kc_scope_service
+            .resolve_current_revision_scope(
+                domain_id=payload.domain_id,
+                agent_id=payload.agent_id,
+                collection_ids=payload.collection_ids,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KNOWLEDGE_SCOPE_UNAVAILABLE",
+                "message": str(exc),
+            },
+        ) from exc
+    return {
+        "collection_ids": [str(value) for value in collection_ids],
+        "bundle_revision_ids": [str(value) for value in revision_ids],
+    }
+
+
 @router.post("/search")
 async def search_discovery(payload: DiscoverySearchRequest, request: Request):
     require_domain_match(request, payload.domain_id)
@@ -47,11 +82,15 @@ async def search_discovery(payload: DiscoverySearchRequest, request: Request):
             domain_id=payload.domain_id, agent_id=payload.agent_id,
             collection_ids=payload.collection_ids,
         )
+        scoped_revision_ids = await request.app.state.kc_scope_service.validate_revision_scope(
+            collection_ids=scoped_collection_ids,
+            bundle_revision_ids=payload.bundle_revision_ids,
+        )
         candidates, diagnostics = (
             await request.app.state.kc_discovery_service
             .discover_with_diagnostics(
                 collection_ids=scoped_collection_ids,
-                bundle_revision_ids=payload.bundle_revision_ids,
+                bundle_revision_ids=scoped_revision_ids,
                 query=payload.query,
                 query_vectors=payload.query_vectors,
                 per_channel_limit=payload.per_channel_limit,

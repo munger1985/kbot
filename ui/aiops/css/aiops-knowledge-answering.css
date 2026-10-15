@@ -1,0 +1,143 @@
+.knowledge-answering {
+  margin-bottom: 16px;
+}
+
+.knowledge-answer-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 520px;
+}
+
+.knowledge-conversations {
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  background: #f7f8fb;
+}
+
+.knowledge-conversation {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  background: #fff;
+}
+
+.knowledge-conversation[aria-current="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.knowledge-conversation strong,
+.knowledge-conversation small {
+  display: block;
+}
+
+.knowledge-conversation small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.knowledge-chat {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+}
+
+.knowledge-chat-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.knowledge-chat-head h3,
+.knowledge-chat-head p {
+  margin: 0;
+}
+
+.knowledge-chat-head p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.knowledge-chat-stream {
+  padding: 18px;
+  overflow: auto;
+  max-height: 560px;
+  background: #fbfcfe;
+}
+
+.knowledge-message {
+  max-width: 88%;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.knowledge-message.user {
+  margin-left: auto;
+  background: #edf1fa;
+}
+
+.knowledge-message.failed {
+  border-color: #b33;
+}
+
+.knowledge-message-meta {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.knowledge-reference-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.knowledge-reference {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.knowledge-chat-form {
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.knowledge-chat-form textarea {
+  width: 100%;
+  min-height: 86px;
+}
+
+.knowledge-context-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.knowledge-chat-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+@media (max-width: 760px) {
+  .knowledge-answer-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-conversations {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .knowledge-context-fields {
+    grid-template-columns: 1fr;
+  }
+}

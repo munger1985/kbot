@@ -41,3 +41,53 @@ class KnowledgeCoreScopeService:
                 if collection.status == "ACTIVE":
                     active.append(collection_id)
             return tuple(active)
+
+    async def validate_revision_scope(
+        self,
+        *,
+        collection_ids: Sequence[UUID],
+        bundle_revision_ids: Sequence[UUID],
+    ) -> tuple[UUID, ...]:
+        """Revision 必须精确属于已授权 Collection 且仍是当前可检索版本。"""
+        requested = tuple(
+            sorted(set(bundle_revision_ids), key=lambda item: item.bytes)
+        )
+        if not requested:
+            raise KnowledgeScopeError("bundle_revision_ids are required")
+        async with self._uow_factory() as uow:
+            if uow.revisions is None:
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            resolved = await uow.revisions.resolve_current_scope(
+                collection_ids=list(collection_ids),
+                bundle_revision_ids=list(requested),
+            )
+        if set(resolved) != set(requested):
+            raise KnowledgeScopeError(
+                "one or more Bundle Revisions are outside the exact scope"
+            )
+        return requested
+
+    async def resolve_current_revision_scope(
+        self,
+        *,
+        domain_id: int,
+        agent_id: UUID,
+        collection_ids: Sequence[UUID],
+    ) -> tuple[tuple[UUID, ...], tuple[UUID, ...]]:
+        """按 Agent 授权解析当前可检索的不可变 Revision 快照。"""
+        scoped_collections = await self.resolve_agent_collections(
+            domain_id=domain_id,
+            agent_id=agent_id,
+            collection_ids=collection_ids,
+        )
+        if not scoped_collections:
+            raise KnowledgeScopeError("no active Collection is available")
+        async with self._uow_factory() as uow:
+            if uow.revisions is None:
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            revision_ids = await uow.revisions.list_current_scope(
+                collection_ids=list(scoped_collections)
+            )
+        if not revision_ids:
+            raise KnowledgeScopeError("no current Bundle Revision is available")
+        return scoped_collections, tuple(revision_ids)

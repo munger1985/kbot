@@ -151,6 +151,7 @@ class VisualAssetRepository:
         self,
         *,
         collection_id: UUID,
+        bundle_revision_ids: list[UUID],
         model_id: UUID,
         query_vector: list[float],
         limit: int,
@@ -175,6 +176,9 @@ class VisualAssetRepository:
             )
             .where(
                 KcVisualAssetEntity.collection_id == collection_id,
+                KcVisualAssetEntity.bundle_revision_id.in_(
+                    bundle_revision_ids
+                ),
                 KcVisualAssetEntity.status == "ACTIVE",
                 KcVisualAssetEntity.visual_embedding_model_id == model_id,
                 KcVisualAssetEntity.visual_embedding.is_not(None),

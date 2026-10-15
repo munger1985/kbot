@@ -78,6 +78,7 @@ class EvidenceGroup:
 
 @dataclass
 class CitationGroup:
+    citation_id: UUID
     citation_label: str
     collection_id: UUID
     bundle_id: UUID
@@ -94,6 +95,9 @@ class EvidenceSearchPort(Protocol):
     async def search_text(self, *, scope: EvidenceScope, query: str, limit: int, max_security_level: int) -> Sequence[EvidenceHit]: ...
     async def search_vector(self, *, scope: EvidenceScope, vector: Sequence[float], limit: int, max_security_level: int) -> Sequence[EvidenceHit]: ...
     async def expand_context(self, *, anchors: Sequence[EvidenceHit], limit: int) -> Sequence[EvidenceHit]: ...
+    async def get_citation_content(
+        self, *, citation_id: UUID, max_security_level: int
+    ) -> EvidenceHit | None: ...
 
 
 def assemble_groups(
@@ -147,6 +151,7 @@ def build_citation_pack(groups: Sequence[EvidenceGroup]) -> list[CitationGroup]:
         if not primary:
             continue
         citations.append(CitationGroup(
+            citation_id=primary[0],
             citation_label=f"C{index}", collection_id=group.collection_id,
             bundle_id=group.bundle_id, bundle_revision_id=group.bundle_revision_id,
             document_version_id=group.document_version_id, parse_view_id=group.parse_view_id,
@@ -181,6 +186,14 @@ class KnowledgeCoreEvidenceRetrievalService:
         self._max_scope_concurrency = max(1, max_scope_concurrency)
         self._scope_semaphore = asyncio.Semaphore(
             self._max_scope_concurrency
+        )
+
+    async def get_citation_content(
+        self, *, citation_id: UUID, max_security_level: int
+    ) -> EvidenceHit | None:
+        return await self._search_port.get_citation_content(
+            citation_id=citation_id,
+            max_security_level=max_security_level,
         )
 
     async def retrieve(

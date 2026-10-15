@@ -27,7 +27,10 @@ from agent_runtime.domain.skills import SkillRegistry
 from agent_runtime.specialists import register_builtin_manifests
 from agent_runtime.specialists.root import RootAgentPlanner
 from platform_core.identity import uuid7
-from platform_core.contracts import AgentExecutionSpec
+from platform_core.contracts import (
+    AgentExecutionSpec,
+    KnowledgeScopeSnapshotV1,
+)
 
 
 class _ModelResolver:
@@ -365,12 +368,32 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             model_resolver=self.model_resolver,
             notification_publisher=_NoopNotificationPublisher(),
         )
+        self.collection_id = uuid7()
+        self.bundle_revision_id = uuid7()
+        agent_version_id = uuid7()
+        scope_payload = {
+            "schema_version": "1.0",
+            "owner_app_id": "knowledge_retrieval",
+            "domain_id": 20,
+            "consumer_agent_id": str(self.agent_id),
+            "consumer_agent_version_id": str(agent_version_id),
+            "collection_ids": [str(self.collection_id)],
+            "bundle_revision_ids": [str(self.bundle_revision_id)],
+            "security_level": 2,
+            "business_context": {},
+            "business_resource_refs": [],
+            "policy_version": "test.v1",
+            "issued_at": datetime.now(timezone.utc).isoformat(),
+        }
+        scope_payload["scope_hash"] = (
+            KnowledgeScopeSnapshotV1.calculate_hash(scope_payload)
+        )
         self.execution_spec = AgentExecutionSpec(
             schema_version="1.0",
             owner_app_id="knowledge_retrieval",
             domain_id=20,
             consumer_agent_id=self.agent_id,
-            consumer_agent_version_id=uuid7(),
+            consumer_agent_version_id=agent_version_id,
             agent_kind="KNOWLEDGE_RETRIEVAL",
             display_name="文档助手",
             enabled_capabilities=("document",),
@@ -384,6 +407,7 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             },
             instruction="仅基于可验证证据回答。",
             resource_context={"answer_language": "zh-CN"},
+            knowledge_scope=scope_payload,
         )
         self.create_command = CreateRunCommand(
             domain_id=20,
@@ -394,6 +418,8 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-1",
             idempotency_key="create-1",
             original_input="总结上传文档",
+            collection_ids=(self.collection_id,),
+            security_level=2,
         )
 
     async def test_create_run_atomically_installs_document_plan(self):
@@ -476,7 +502,10 @@ class AgentRuntimeServiceTest(unittest.IsolatedAsyncioTestCase):
             ],
             "memory-model",
         )
-        self.assertEqual(snapshot["retrieval"]["collection_ids"], [])
+        self.assertEqual(
+            snapshot["retrieval"]["collection_ids"],
+            [str(self.collection_id)],
+        )
 
     async def test_runtime_preserves_app_owned_capabilities(self):
         app_spec = self.execution_spec.model_copy(

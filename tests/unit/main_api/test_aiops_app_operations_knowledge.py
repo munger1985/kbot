@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
 
 from main_api.api.aiops_app import (
+    OperationsKnowledgeConversationCreatePayload,
+    create_operations_knowledge_conversation,
     operations_knowledge_overview,
     upload_operations_manual,
     upload_operations_manual_version,
@@ -31,6 +33,12 @@ class _AIOpsClient:
         self.uploaded = kwargs
         return {"version": {"version_no": 2}, "replayed": False}
 
+    async def get_operations_knowledge_execution_spec(self, **kwargs):
+        return {
+            "consumer_agent_id": str(uuid7()),
+            "owner_app_id": "aiops",
+        }
+
 
 def _context():
     return AuthContext(
@@ -53,11 +61,43 @@ def _request(client, *, body: bytes = b"", headers=None):
         headers=headers or {},
         stream=stream,
         state=SimpleNamespace(auth_context=_context()),
-        app=SimpleNamespace(state=SimpleNamespace(aiops_client=client)),
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                aiops_client=client,
+                agent_runtime_client=AsyncMock(),
+            )
+        ),
     )
 
 
 class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
+    async def test_create_conversation_only_uses_server_signed_spec(self):
+        client = _AIOpsClient()
+        request = _request(client)
+        request.app.state.agent_runtime_client.create_conversation.return_value = {
+            "owner_app_id": "aiops"
+        }
+        with (
+            patch(
+                "main_api.api.aiops_app._require",
+                AsyncMock(return_value=(42, "aiopsadmin", object())),
+            ),
+            patch(
+                "main_api.api.aiops_app._effective_security_level",
+                AsyncMock(return_value=2),
+            ),
+        ):
+            await create_operations_knowledge_conversation(
+                OperationsKnowledgeConversationCreatePayload(), request
+            )
+        payload = (
+            request.app.state.agent_runtime_client.create_conversation
+            .await_args.kwargs["payload"]
+        )
+        self.assertEqual(payload["execution_spec"]["owner_app_id"], "aiops")
+        self.assertNotIn("collection_ids", payload)
+        self.assertNotIn("security_level", payload)
+
     async def test_overview_uses_aiops_registry_client(self):
         client = _AIOpsClient()
         with patch(

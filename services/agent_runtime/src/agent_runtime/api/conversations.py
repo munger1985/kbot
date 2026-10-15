@@ -198,6 +198,15 @@ async def create_turn(
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> ConversationTurnReceipt:
     domain_id, actor_id, request_id, trace_id = _identity(request)
+    scope = payload.execution_spec.knowledge_scope
+    if scope is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "KNOWLEDGE_SCOPE_REQUIRED",
+                "message": "知识问答 Turn 必须携带服务端签发的知识范围",
+            },
+        )
     try:
         return await _service(request).create_turn(
             conversation_id=conversation_id,
@@ -212,8 +221,8 @@ async def create_turn(
                 payload.expected_conversation_version
             ),
             execution_spec=payload.execution_spec,
-            collection_ids=payload.collection_ids,
-            security_level=payload.security_level,
+            collection_ids=scope.collection_ids,
+            security_level=scope.security_level,
             client_metadata=payload.client_metadata,
             query_images=payload.images,
             budget=request.app.state.agent_runtime_budget,

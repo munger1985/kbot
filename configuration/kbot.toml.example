@@ -26,6 +26,8 @@ username = "kbot"
 [aiops]
 agent_execution_enabled = false
 mutation_enabled = false
+# 内部运维知识助手只需要回答模型；ID 必须来自 Model Serving 目录。
+# knowledge_assistant_models = { composer_llm = "00000000-0000-0000-0000-000000000000" }
 
 # 只有向 KBot 以外的系统开放模型 API 时才增加。
 # [[model_api_keys]]

@@ -25,7 +25,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20261011-1", page)
+        self.assertIn("aiops-agents.js?v=20261012-1", page)
 
     def test_agent_does_not_maintain_monitor_mappings(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")

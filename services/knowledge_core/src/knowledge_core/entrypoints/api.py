@@ -37,7 +37,10 @@ from knowledge_core.api.model_reference_router import (
 from knowledge_core.api.index_task_router import router as index_task_router
 from knowledge_core.api.profile_task_router import router as profile_task_router
 from knowledge_core.api.discovery_router import router as discovery_router
-from knowledge_core.api.evidence_router import router as evidence_router
+from knowledge_core.api.evidence_router import (
+    citation_router,
+    router as evidence_router,
+)
 from knowledge_core.api.visual_router import router as visual_router
 from knowledge_core.api.parse_task_router import router as parse_task_router
 from knowledge_core.api.status_router import catalog_router, router as status_router
@@ -201,10 +204,10 @@ async def lifespan(app: FastAPI):
             self,
             *,
             collection_id: UUID,
+            bundle_revision_ids,
             query: str,
             limit: int,
             max_security_level: int,
-            bundle_revision_ids=(),
         ):
             async with kc_uow_factory() as uow:
                 return await uow.discovery.search_text(
@@ -219,10 +222,10 @@ async def lifespan(app: FastAPI):
             self,
             *,
             collection_id: UUID,
+            bundle_revision_ids,
             vector: list[float],
             limit: int,
             max_security_level: int,
-            bundle_revision_ids=(),
         ):
             async with kc_uow_factory() as uow:
                 return await uow.discovery.search_vector(
@@ -327,6 +330,7 @@ app.include_router(index_task_router)
 app.include_router(profile_task_router)
 app.include_router(discovery_router)
 app.include_router(evidence_router)
+app.include_router(citation_router)
 app.include_router(visual_router)
 app.include_router(parse_task_router)
 app.include_router(status_router)

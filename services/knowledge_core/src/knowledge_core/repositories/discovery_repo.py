@@ -100,10 +100,10 @@ class DiscoveryRepository:
         self,
         *,
         collection_id: UUID,
+        bundle_revision_ids: Sequence[UUID],
         query: str,
         limit: int = 20,
         max_security_level: int = 3,
-        bundle_revision_ids: Sequence[UUID] = (),
     ) -> list[DiscoveryHit]:
         """Oracle Text candidate search scoped to current published revisions."""
         oracle_query = build_oracle_text_query(query)
@@ -118,6 +118,9 @@ class DiscoveryRepository:
             .join(KcBundleRevisionEntity, KcBundleRevisionEntity.bundle_revision_id == KcDiscoveryObjectEntity.bundle_revision_id)
             .where(
                 KcDiscoveryObjectEntity.collection_id == collection_id,
+                KcDiscoveryObjectEntity.bundle_revision_id.in_(
+                    tuple(bundle_revision_ids)
+                ),
                 KcCollectionEntity.status == "ACTIVE",
                 KcDiscoveryObjectEntity.discovery_status == "ACTIVE",
                 KcDiscoveryObjectEntity.object_type.in_(("BUNDLE", "DOCUMENT")),
@@ -134,12 +137,6 @@ class DiscoveryRepository:
             .order_by(text_score.desc(), KcDiscoveryObjectEntity.discovery_object_id)
             .limit(limit)
         ).params(discovery_query=oracle_query)
-        if bundle_revision_ids:
-            statement = statement.where(
-                KcDiscoveryObjectEntity.bundle_revision_id.in_(
-                    tuple(bundle_revision_ids)
-                )
-            )
         rows = (await self.session.execute(statement)).all()
         if rows:
             return [self._to_hit(entity, rank, "TEXT", float(score or 0)) for rank, (entity, score) in enumerate(rows, 1)]
@@ -158,7 +155,7 @@ class DiscoveryRepository:
         oracle_query: str,
         limit: int,
         max_security_level: int,
-        bundle_revision_ids: Sequence[UUID] = (),
+        bundle_revision_ids: Sequence[UUID],
     ) -> list[DiscoveryHit]:
         """Profile 未命中时，以 Evidence 全文索引桥接到所属 Bundle。"""
         oracle_text_label = literal_column("1")
@@ -199,6 +196,9 @@ class DiscoveryRepository:
             )
             .where(
                 KcEvidenceEntity.collection_id == collection_id,
+                KcEvidenceEntity.bundle_revision_id.in_(
+                    tuple(bundle_revision_ids)
+                ),
                 KcCollectionEntity.status == "ACTIVE",
                 KcEvidenceEntity.status == "ACTIVE",
                 KcEvidenceEntity.embedding_input_hash.is_not(None),
@@ -219,12 +219,6 @@ class DiscoveryRepository:
             .order_by(text_score.desc(), KcEvidenceEntity.evidence_id)
             .limit(limit)
         ).params(evidence_discovery_query=oracle_query)
-        if bundle_revision_ids:
-            statement = statement.where(
-                KcEvidenceEntity.bundle_revision_id.in_(
-                    tuple(bundle_revision_ids)
-                )
-            )
         rows = (await self.session.execute(statement)).all()
         hits: list[DiscoveryHit] = []
         seen_documents: set[UUID] = set()
@@ -265,10 +259,10 @@ class DiscoveryRepository:
         self,
         *,
         collection_id: UUID,
+        bundle_revision_ids: Sequence[UUID],
         vector: list[float],
         limit: int = 20,
         max_security_level: int = 3,
-        bundle_revision_ids: Sequence[UUID] = (),
     ) -> list[DiscoveryHit]:
         """Oracle VECTOR distance search; query vectors are model-grouped upstream."""
         distance = KcDiscoveryObjectEntity.embedding.op(
@@ -282,6 +276,9 @@ class DiscoveryRepository:
             .join(KcBundleRevisionEntity, KcBundleRevisionEntity.bundle_revision_id == KcDiscoveryObjectEntity.bundle_revision_id)
             .where(
                 KcDiscoveryObjectEntity.collection_id == collection_id,
+                KcDiscoveryObjectEntity.bundle_revision_id.in_(
+                    tuple(bundle_revision_ids)
+                ),
                 KcCollectionEntity.status == "ACTIVE",
                 KcDiscoveryObjectEntity.discovery_status == "ACTIVE",
                 KcBundleEntity.current_revision_id == KcDiscoveryObjectEntity.bundle_revision_id,
@@ -292,12 +289,6 @@ class DiscoveryRepository:
             .order_by(distance, KcDiscoveryObjectEntity.discovery_object_id)
             .limit(limit)
         ).params(query_vector=vector)
-        if bundle_revision_ids:
-            statement = statement.where(
-                KcDiscoveryObjectEntity.bundle_revision_id.in_(
-                    tuple(bundle_revision_ids)
-                )
-            )
         rows = (await self.session.execute(statement)).all()
         return [
             self._to_hit(

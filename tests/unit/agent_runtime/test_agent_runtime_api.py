@@ -1,5 +1,6 @@
 """Agent Runtime 内部 API 的身份派生与错误映射测试。"""
 
+from datetime import datetime, timezone
 import unittest
 from unittest.mock import AsyncMock
 
@@ -11,6 +12,7 @@ from agent_runtime.application import AgentRuntimeConflict
 from platform_core.contracts import (
     AgentRunReceipt,
     AuthContext,
+    KnowledgeScopeSnapshotV1,
     PrincipalKind,
 )
 from platform_core.identity import uuid7
@@ -52,16 +54,33 @@ class AgentRuntimeApiTest(unittest.TestCase):
 
     @staticmethod
     def _execution_spec(agent_id):
+        agent_version_id = uuid7()
+        scope = {
+            "schema_version": "1.0",
+            "owner_app_id": "knowledge_retrieval",
+            "domain_id": 20,
+            "consumer_agent_id": str(agent_id),
+            "consumer_agent_version_id": str(agent_version_id),
+            "collection_ids": [str(uuid7())],
+            "bundle_revision_ids": [str(uuid7())],
+            "security_level": 2,
+            "business_context": {},
+            "business_resource_refs": [],
+            "policy_version": "test.v1",
+            "issued_at": datetime.now(timezone.utc).isoformat(),
+        }
+        scope["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(scope)
         return {
             "schema_version": "1.0",
             "owner_app_id": "knowledge_retrieval",
             "domain_id": 20,
             "consumer_agent_id": str(agent_id),
-            "consumer_agent_version_id": str(uuid7()),
+            "consumer_agent_version_id": str(agent_version_id),
             "agent_kind": "KNOWLEDGE_RETRIEVAL",
             "display_name": "文档助手",
             "enabled_capabilities": ["document"],
             "models": {"composer_llm": str(uuid7())},
+            "knowledge_scope": scope,
         }
 
     def test_create_derives_scope_and_actor_from_auth_context(self):
@@ -73,8 +92,6 @@ class AgentRuntimeApiTest(unittest.TestCase):
                 "agent_id": str(agent_id),
                 "execution_spec": self._execution_spec(agent_id),
                 "input": "查询文档",
-                "collection_ids": [],
-                "security_level": 2,
                 "client_metadata": {"channel": "portal"},
             },
         )

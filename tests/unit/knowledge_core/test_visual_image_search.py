@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ from platform_core.contracts import (
     AgentExecutionSpec,
     ConversationQueryImage,
     CreateConversationTurnRequest,
+    KnowledgeScopeSnapshotV1,
 )
 
 
@@ -79,6 +81,31 @@ class VisualImageSearchTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_turn_accepts_multiple_images(self):
         encoded = base64.b64encode(b"small-image").decode("ascii")
+        agent_id = UUID("01900000-0000-7000-8000-000000000001")
+        agent_version_id = UUID(
+            "01900000-0000-7000-8000-000000000002"
+        )
+        scope_payload = {
+            "schema_version": "1.0",
+            "owner_app_id": "knowledge_retrieval",
+            "domain_id": 20,
+            "consumer_agent_id": str(agent_id),
+            "consumer_agent_version_id": str(agent_version_id),
+            "collection_ids": [
+                "01900000-0000-7000-8000-000000000004"
+            ],
+            "bundle_revision_ids": [
+                "01900000-0000-7000-8000-000000000005"
+            ],
+            "security_level": 2,
+            "business_context": {},
+            "business_resource_refs": [],
+            "policy_version": "test.v1",
+            "issued_at": datetime.now(timezone.utc).isoformat(),
+        }
+        scope_payload["scope_hash"] = (
+            KnowledgeScopeSnapshotV1.calculate_hash(scope_payload)
+        )
         request = CreateConversationTurnRequest(
             input="查找相似图片",
             expected_conversation_version=1,
@@ -86,12 +113,8 @@ class VisualImageSearchTest(unittest.IsolatedAsyncioTestCase):
                 schema_version="1.0",
                 owner_app_id="knowledge_retrieval",
                 domain_id=20,
-                consumer_agent_id=UUID(
-                    "01900000-0000-7000-8000-000000000001"
-                ),
-                consumer_agent_version_id=UUID(
-                    "01900000-0000-7000-8000-000000000002"
-                ),
+                consumer_agent_id=agent_id,
+                consumer_agent_version_id=agent_version_id,
                 agent_kind="KNOWLEDGE_RETRIEVAL",
                 display_name="文档助手",
                 enabled_capabilities=("document",),
@@ -100,6 +123,9 @@ class VisualImageSearchTest(unittest.IsolatedAsyncioTestCase):
                         "01900000-0000-7000-8000-000000000003"
                     )
                 },
+                knowledge_scope=KnowledgeScopeSnapshotV1.model_validate(
+                    scope_payload
+                ),
             ),
             images=(
                 ConversationQueryImage(

@@ -11,7 +11,12 @@ from uuid import UUID
 
 from loguru import logger
 from PIL import Image
-from platform_core.contracts import AuthContext, PrincipalKind
+from platform_core.contracts import (
+    AuthContext,
+    KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT,
+    KnowledgeScopeSnapshotV1,
+    PrincipalKind,
+)
 
 from agent_runtime.domain.model_bindings import agent_model_name
 from agent_runtime.runtime import ExecutionContext, SkillArtifact, SkillResult
@@ -42,7 +47,8 @@ class KnowledgeRetrievalSkill:
 
     async def execute(self, context: ExecutionContext) -> SkillResult:
         query = self._standalone_query(context)
-        collection_ids = await self._resolve_collection_ids(context)
+        knowledge_scope = self._knowledge_scope(context)
+        collection_ids = knowledge_scope.collection_ids
         if not collection_ids:
             return self._empty_result(
                 context,
@@ -72,6 +78,7 @@ class KnowledgeRetrievalSkill:
         visual_outcome = await self._visual_hits(
             context,
             collection_ids,
+            knowledge_scope.bundle_revision_ids,
             retrieval_config,
             image_payloads,
             image_processing,
@@ -88,17 +95,13 @@ class KnowledgeRetrievalSkill:
             warnings=warnings,
         )
         if scoped_candidates is None:
-            discovery = await self._client.discover(
+            discovery = await self._discover_exact_scope(
+                context=context,
                 query=retrieval_query,
                 collection_ids=collection_ids,
-                domain_id=context.domain_id,
-                agent_id=str(context.agent_id),
-                auth_context=self._auth_context(context),
-                max_security_level=self._security_level(context),
+                bundle_revision_ids=knowledge_scope.bundle_revision_ids,
                 per_collection_limit=retrieval_config["max_bundles"],
                 coverage_mode=coverage_mode,
-                run_id=context.run_id,
-                task_id=context.task_id,
             )
             warnings.extend(discovery.get("warnings") or [])
             discovery_diagnostics = dict(
@@ -115,6 +118,9 @@ class KnowledgeRetrievalSkill:
                 "strategy": "QUERY_RESULT_BUNDLE_SCOPE",
                 "target_count": len(candidates),
             }
+        self._assert_scope_closure(
+            candidates, knowledge_scope.bundle_revision_ids
+        )
         if not candidates:
             return self._empty_result(
                 context,
@@ -164,6 +170,10 @@ class KnowledgeRetrievalSkill:
                     "collection_ids": [
                         str(value) for value in collection_ids
                     ],
+                    "scope_hash": knowledge_scope.scope_hash,
+                    "revision_scope_count": len(
+                        knowledge_scope.bundle_revision_ids
+                    ),
                     "max_bundles": retrieval_config["max_bundles"],
                     "max_citations": retrieval_config["max_citations"],
                     "coverage_mode": coverage_mode,
@@ -214,6 +224,92 @@ class KnowledgeRetrievalSkill:
                 security_level=self._security_level(context),
             )
         )
+
+    async def _discover_exact_scope(
+        self,
+        *,
+        context: ExecutionContext,
+        query: str,
+        collection_ids: tuple[UUID, ...],
+        bundle_revision_ids: tuple[UUID, ...],
+        per_collection_limit: int,
+        coverage_mode: str,
+    ) -> dict[str, Any]:
+        """按稳定 Revision 分片检索，并在 Runtime 统一合并候选。"""
+        ordered = tuple(sorted(bundle_revision_ids, key=lambda item: item.bytes))
+        chunks = tuple(
+            ordered[offset:offset + KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT]
+            for offset in range(
+                0, len(ordered), KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT
+            )
+        )
+        responses = await asyncio.gather(*(
+            self._client.discover(
+                query=query,
+                collection_ids=collection_ids,
+                bundle_revision_ids=chunk,
+                domain_id=context.domain_id,
+                agent_id=str(context.agent_id),
+                auth_context=self._auth_context(context),
+                max_security_level=self._security_level(context),
+                per_collection_limit=per_collection_limit,
+                coverage_mode=coverage_mode,
+                run_id=context.run_id,
+                task_id=context.task_id,
+            )
+            for chunk in chunks
+        ))
+        by_revision: dict[str, dict[str, Any]] = {}
+        warnings: list[str] = []
+        diagnostics: list[dict[str, Any]] = []
+        for chunk_index, response in enumerate(responses, 1):
+            chunk_scope = {
+                str(value) for value in chunks[chunk_index - 1]
+            }
+            warnings.extend(str(item) for item in response.get("warnings") or [])
+            diagnostics.append({
+                "chunk_index": chunk_index,
+                "revision_count": len(chunks[chunk_index - 1]),
+                **dict(response.get("diagnostics") or {}),
+            })
+            for candidate in response.get("candidates") or []:
+                revision_id = str(candidate.get("bundle_revision_id") or "")
+                if revision_id not in chunk_scope:
+                    raise RuntimeError("KNOWLEDGE_SCOPE_CLOSURE_BROKEN")
+                current = by_revision.get(revision_id)
+                if current is None or self._candidate_sort_key(candidate) < self._candidate_sort_key(current):
+                    by_revision[revision_id] = candidate
+        candidates = sorted(by_revision.values(), key=self._candidate_sort_key)
+        return {
+            "candidates": candidates[:per_collection_limit],
+            "warnings": list(dict.fromkeys(warnings)),
+            "diagnostics": {
+                "strategy": "EXACT_REVISION_SCOPE",
+                "scope_revision_count": len(ordered),
+                "scope_chunk_count": len(chunks),
+                "chunks": diagnostics,
+            },
+        }
+
+    @staticmethod
+    def _candidate_sort_key(item: dict[str, Any]) -> tuple[float, str, str]:
+        return (
+            -float(item.get("rrf_score") or 0),
+            str(item.get("collection_id") or ""),
+            str(item.get("bundle_revision_id") or ""),
+        )
+
+    @staticmethod
+    def _assert_scope_closure(
+        candidates: list[dict[str, Any]],
+        bundle_revision_ids: tuple[UUID, ...],
+    ) -> None:
+        allowed = {str(value) for value in bundle_revision_ids}
+        if any(
+            str(item.get("bundle_revision_id") or "") not in allowed
+            for item in candidates
+        ):
+            raise RuntimeError("KNOWLEDGE_SCOPE_CLOSURE_BROKEN")
 
     async def _retrieve_evidence(
         self,
@@ -360,6 +456,7 @@ class KnowledgeRetrievalSkill:
         self,
         context: ExecutionContext,
         collection_ids: tuple[UUID, ...],
+        bundle_revision_ids: tuple[UUID, ...],
         retrieval_config: dict[str, int | bool],
         image_payloads: list[bytes],
         image_processing: dict[str, Any],
@@ -367,25 +464,65 @@ class KnowledgeRetrievalSkill:
     ) -> dict[str, Any]:
         if not image_payloads:
             return {"results": []}
-        try:
-            response = await self._client.search_visual(
-                images_base64=[
-                    base64.b64encode(payload).decode("ascii")
-                    for payload in image_payloads
-                ],
-                collection_ids=collection_ids,
-                domain_id=context.domain_id,
-                agent_id=context.agent_id,
-                auth_context=self._auth_context(context),
-                per_image_limit=retrieval_config["max_bundles"],
-                result_limit=retrieval_config["max_bundles"],
+        ordered = tuple(
+            sorted(bundle_revision_ids, key=lambda item: item.bytes)
+        )
+        chunks = tuple(
+            ordered[
+                offset:offset + KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT
+            ]
+            for offset in range(
+                0,
+                len(ordered),
+                KNOWLEDGE_DISCOVERY_REVISION_SCOPE_LIMIT,
             )
+        )
+        encoded_images = [
+            base64.b64encode(payload).decode("ascii")
+            for payload in image_payloads
+        ]
+        try:
+            responses = await asyncio.gather(*(
+                self._client.search_visual(
+                    images_base64=encoded_images,
+                    collection_ids=collection_ids,
+                    bundle_revision_ids=chunk,
+                    domain_id=context.domain_id,
+                    agent_id=context.agent_id,
+                    auth_context=self._auth_context(context),
+                    per_image_limit=retrieval_config["max_bundles"],
+                    result_limit=retrieval_config["max_bundles"],
+                )
+                for chunk in chunks
+            ))
         except Exception:
             image_processing["visual_search"] = "FAILED"
             warnings.append("图片相似检索暂时不可用，已继续其他检索路径")
             return {"results": []}
-        searched = list(response.get("searched_collection_ids") or [])
-        skipped = list(response.get("skipped_collection_ids") or [])
+        results: list[dict[str, Any]] = []
+        searched_set: set[str] = set()
+        skipped_set: set[str] = set()
+        for chunk, response in zip(chunks, responses, strict=True):
+            chunk_results = list(response.get("results") or [])
+            self._assert_scope_closure(chunk_results, chunk)
+            results.extend(chunk_results)
+            searched_set.update(
+                str(value)
+                for value in response.get("searched_collection_ids") or []
+            )
+            skipped_set.update(
+                str(value)
+                for value in response.get("skipped_collection_ids") or []
+            )
+        results.sort(
+            key=lambda item: (
+                -float(item.get("score") or 0),
+                str(item.get("bundle_revision_id") or ""),
+                str(item.get("visual_asset_id") or ""),
+            )
+        )
+        searched = sorted(searched_set)
+        skipped = sorted(skipped_set - searched_set)
         if searched and skipped:
             image_processing["visual_search"] = "PARTIAL"
             warnings.append(
@@ -397,7 +534,11 @@ class KnowledgeRetrievalSkill:
             image_processing["visual_search"] = "SKIPPED_NOT_CONFIGURED"
         image_processing["visual_searched_collection_ids"] = searched
         image_processing["visual_skipped_collection_ids"] = skipped
-        return response
+        return {
+            "results": results[:retrieval_config["max_bundles"]],
+            "searched_collection_ids": searched,
+            "skipped_collection_ids": skipped,
+        }
 
     async def _load_query_images(
         self, context: ExecutionContext
@@ -538,25 +679,21 @@ class KnowledgeRetrievalSkill:
                 break
         return output
 
-    async def _resolve_collection_ids(
-        self, context: ExecutionContext
-    ) -> tuple[UUID, ...]:
-        configured = (
-            context.config_snapshot.get("retrieval", {})
-            .get("collection_ids", [])
+    @staticmethod
+    def _knowledge_scope(context: ExecutionContext) -> KnowledgeScopeSnapshotV1:
+        """只读取 Run 已冻结的 Scope，禁止从绑定或页面动态扩展范围。"""
+        raw = context.config_snapshot.get("retrieval", {}).get(
+            "knowledge_scope"
         )
-        if configured:
-            return tuple(UUID(str(value)) for value in configured)
-        response = await self._client.list_agent_bindings(
-            domain_id=context.domain_id,
-            agent_id=context.agent_id,
-            auth_context=self._auth_context(context),
-        )
-        return tuple(
-            UUID(str(item["collection_id"]))
-            for item in response.get("bindings", [])
-            if item.get("status") == "ACTIVE"
-        )
+        try:
+            scope = KnowledgeScopeSnapshotV1.model_validate(raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("KNOWLEDGE_SCOPE_INVALID") from exc
+        if scope.domain_id != context.domain_id:
+            raise RuntimeError("KNOWLEDGE_SCOPE_DOMAIN_MISMATCH")
+        if scope.consumer_agent_id != context.agent_id:
+            raise RuntimeError("KNOWLEDGE_SCOPE_AGENT_MISMATCH")
+        return scope
 
     @staticmethod
     def _scope_keywords(payload: dict[str, Any]) -> tuple[str, ...]:
@@ -632,11 +769,9 @@ class KnowledgeRetrievalSkill:
 
     @staticmethod
     def _security_level(context: ExecutionContext) -> int:
-        value = int(
-            context.config_snapshot.get("retrieval", {})
-            .get("security_level", 0)
-        )
-        return max(0, min(value, 3))
+        return KnowledgeRetrievalSkill._knowledge_scope(
+            context
+        ).security_level
 
     @staticmethod
     def _retrieval_config(
@@ -737,6 +872,7 @@ class KnowledgeRetrievalSkill:
             )
             result.append(
                 Citation(
+                    citation_id=UUID(str(first_group["citation_id"])),
                     citation_label=f"C{len(result) + 1}",
                     collection_id=UUID(str(first_group["collection_id"])),
                     bundle_id=bundle_id,

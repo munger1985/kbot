@@ -40,6 +40,13 @@ class CreateRunCommand(_FrozenCommand):
             raise ValueError("Execution Spec 与 Agent ID 不一致")
         if self.execution_spec.domain_id != self.domain_id:
             raise ValueError("Execution Spec 与 Domain 不一致")
+        scope = self.execution_spec.knowledge_scope
+        if scope is None:
+            raise ValueError("Execution Spec 缺少 knowledge_scope")
+        if self.collection_ids != scope.collection_ids:
+            raise ValueError("Run Collection 必须完全来自 knowledge_scope")
+        if self.security_level != scope.security_level:
+            raise ValueError("Run 安全级必须完全来自 knowledge_scope")
         if (self.conversation_id is None) != (self.turn_id is None):
             raise ValueError(
                 "conversation_id 与 turn_id 必须同时提供或同时为空"
