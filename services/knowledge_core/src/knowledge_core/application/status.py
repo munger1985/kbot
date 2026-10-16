@@ -572,6 +572,16 @@ class KnowledgeCoreStatusService:
     def _current_stage(status: str, jobs: list) -> str:
         active = [item for item in jobs
                   if item.job_status in {"PENDING", "RUNNING", "RETRY_WAIT"}]
+        if status in {"READY", "PARTIAL"} and any(
+            item.job_type == "VISUAL_ENRICH"
+            or bool(
+                (getattr(item, "payload_json", None) or {}).get(
+                    "visual_enrichment"
+                )
+            )
+            for item in active
+        ):
+            return "VISUAL_ENHANCING"
         if any(item.job_type == "PROFILE" for item in active):
             return "PROFILING"
         if any(item.job_type == "INDEX" for item in active):

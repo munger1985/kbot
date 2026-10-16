@@ -242,7 +242,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("HYBRID", uow.parse_views.added[0].view_kind)
         self.assertEqual(
-            "kc-adaptive-visual-pipeline",
+            "kc-object-visual-pipeline",
             uow.parse_views.added[0].parser_name,
         )
 

@@ -14,7 +14,7 @@ def wakeup_channel_for_job(job_type: str) -> str:
     """将持久化任务类型映射为粗粒度 Worker 唤醒通道。"""
     return (
         PARSE_WAKEUP_CHANNEL
-        if job_type == "PARSE"
+        if job_type in {"PARSE", "VISUAL_ENRICH"}
         else PROJECTION_WAKEUP_CHANNEL
     )
 

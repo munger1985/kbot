@@ -5,6 +5,7 @@ import sys
 import signal
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -26,6 +27,7 @@ from knowledge_core.adapters.oracle_job_wakeup import (
 )
 from knowledge_core.ports.job_wakeup import PARSE_WAKEUP_CHANNEL
 from knowledge_core.workers.parser.visual_enricher import KcVisualEnricher
+from knowledge_core.workers.parser.visual_cache import LocalVisualResultCache
 from knowledge_core.workers.parser.deepseek_ocr import (
     DeepSeekOcrClient,
     KcDeepSeekOcrEnricher,
@@ -85,7 +87,11 @@ parse_worker = KcParserWorker(
         client_factory=lambda: AIModelClient(
             caller_service=SERVICE_NAME,
             vlm_config=settings.vlm,
-        )
+        ),
+        cache=LocalVisualResultCache(
+            Path(settings.storage.local_object_storage_path)
+            / "visual-cache"
+        ),
     ),
     model_config_client=AIModelConfigClient(
         base_url=settings.vlm.base_url,

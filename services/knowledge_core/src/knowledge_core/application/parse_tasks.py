@@ -31,9 +31,11 @@ from knowledge_core.ports.parser_artifact_store import ParserArtifactStore
 @dataclass(frozen=True)
 class ClaimedParseTask:
     job_id: UUID
+    job_type: str
     lease_owner: str
     lease_until: datetime
     input_fingerprint: str
+    source_fingerprint: str
     document_version_id: UUID
     parse_view_id: UUID
     detected_mime_type: str
@@ -96,6 +98,7 @@ class KnowledgeCoreParseTaskService:
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             candidates = await uow.jobs.claim_candidates(now=now, limit=claim.max_tasks)
             tasks: list[ClaimedParseTask] = []
+            deferred = False
             for job in candidates:
                 if job.document_version_id is None or job.parse_view_id is None:
                     continue
@@ -103,16 +106,44 @@ class KnowledgeCoreParseTaskService:
                 view = await uow.parse_views.get_by_id(parse_view_id=job.parse_view_id)
                 if version is None or view is None or version.storage_state != "AVAILABLE":
                     continue
+                if job.job_type == "VISUAL_ENRICH":
+                    if (
+                        job.bundle_revision_id is None
+                        or uow.revisions is None
+                        or uow.bundles is None
+                    ):
+                        continue
+                    revision = await uow.revisions.get_by_id(
+                        bundle_revision_id=job.bundle_revision_id
+                    )
+                    bundle = (
+                        await uow.bundles.get_by_id(bundle_id=revision.bundle_id)
+                        if revision is not None
+                        else None
+                    )
+                    if (
+                        revision is None
+                        or bundle is None
+                        or revision.status not in {"READY", "PARTIAL"}
+                        or bundle.current_revision_id
+                        != revision.bundle_revision_id
+                        or view.view_status != "ACTIVE"
+                    ):
+                        job.available_at = now + timedelta(seconds=10)
+                        deferred = True
+                        continue
                 lease_until = claim_job(job, claim, now)
                 tasks.append(ClaimedParseTask(
-                    job_id=job.ingestion_job_id, lease_owner=claim.worker_id, lease_until=lease_until,
+                    job_id=job.ingestion_job_id, job_type=job.job_type,
+                    lease_owner=claim.worker_id, lease_until=lease_until,
                     input_fingerprint=job.input_fingerprint, document_version_id=version.document_version_id,
+                    source_fingerprint=version.content_hash,
                     parse_view_id=job.parse_view_id,
                     detected_mime_type=version.detected_mime_type,
                     view_kind=view.view_kind, parse_config_fingerprint=view.parse_config_fingerprint,
                     policy_snapshot=view.parse_config_json or {},
                 ))
-            if tasks:
+            if tasks or deferred:
                 if uow.session is None:
                     raise RuntimeError("Knowledge Core Unit of Work session is not initialized")
                 await uow.session.flush()
@@ -240,8 +271,9 @@ class KnowledgeCoreParseTaskService:
                     created_by=worker_id, updated_by=worker_id,
                 ))
                 inserted += 1
-            view.view_status = "PARSING"
-            member.member_status = "PARSING"
+            if job.job_type == "PARSE":
+                view.view_status = "PARSING"
+                member.member_status = "PARSING"
             await uow.session.flush()
             await uow.commit()
             return inserted
@@ -424,8 +456,8 @@ class KnowledgeCoreParseTaskService:
                 idempotency_key=index_key,
                 input_fingerprint=index_fingerprint,
             )
+            parse_payload = dict(job.payload_json or {})
             if index_job is None:
-                parse_payload = dict(job.payload_json or {})
                 index_job = await uow.jobs.add(KcIngestionJobEntity(
                     collection_id=job.collection_id,
                     bundle_revision_id=job.bundle_revision_id,
@@ -445,11 +477,52 @@ class KnowledgeCoreParseTaskService:
                     job_status="PENDING", priority=job.priority,
                     max_attempts=job.max_attempts, created_by=worker_id, updated_by=worker_id,
                 ))
+            visual_job = None
+            if str((view.parse_config_json or {}).get("parse_strategy", "AUTO")).upper() == "VISUAL":
+                visual_fingerprint = sha256(
+                    f"{view.parse_view_id}:{normalized_output_fingerprint}:visual/v1".encode("utf-8")
+                ).hexdigest()
+                visual_key = (
+                    f"VISUAL_ENRICH:{view.parse_view_id}:"
+                    f"{normalized_output_fingerprint}"
+                )
+                visual_job = await uow.jobs.get_by_idempotency_key(
+                    collection_id=job.collection_id,
+                    idempotency_key=visual_key,
+                    input_fingerprint=visual_fingerprint,
+                )
+                if visual_job is None:
+                    visual_job = await uow.jobs.add(KcIngestionJobEntity(
+                        collection_id=job.collection_id,
+                        bundle_revision_id=job.bundle_revision_id,
+                        document_version_id=job.document_version_id,
+                        parse_view_id=view.parse_view_id,
+                        job_type="VISUAL_ENRICH",
+                        idempotency_key=visual_key,
+                        input_fingerprint=visual_fingerprint,
+                        payload_json={
+                            "parse_output_fingerprint": normalized_output_fingerprint,
+                            "notification_operation_id": parse_payload.get(
+                                "notification_operation_id"
+                            ),
+                            "notification_actor_id": parse_payload.get(
+                                "notification_actor_id"
+                            ),
+                        },
+                        job_status="PENDING",
+                        priority=job.priority,
+                        max_attempts=job.max_attempts,
+                        created_by=worker_id,
+                        updated_by=worker_id,
+                    ))
             job.job_status, job.completed_at, job.result_json = "SUCCEEDED", now, {
                 "evidence_count": count,
                 "output_fingerprint": normalized_output_fingerprint,
                 "artifact_manifest": artifact_manifest,
                 "index_job_id": index_job.ingestion_job_id,
+                "visual_enrich_job_id": (
+                    visual_job.ingestion_job_id if visual_job else None
+                ),
             }
             job.lease_owner = job.lease_until = None
             await uow.session.flush()
@@ -462,6 +535,88 @@ class KnowledgeCoreParseTaskService:
                 # Database correctness is already committed; orphan cleanup can be retried by storage maintenance.
                 pass
         return count
+
+    async def complete_visual(
+        self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
+    ) -> int:
+        """Publish staged visual supplements without disturbing baseline availability."""
+        now = datetime.now(timezone.utc)
+        async with self._uow_factory() as uow:
+            if not all((uow.jobs, uow.evidence, uow.parse_views)) or uow.session is None:
+                raise RuntimeError("Knowledge Core Unit of Work is not initialized")
+            job = await uow.jobs.get_by_id(
+                ingestion_job_id=job_id, lock=True
+            )
+            if job is None or job.job_type != "VISUAL_ENRICH":
+                raise ParseLeaseError("JOB_LEASE_INVALID")
+            verify_lease(
+                job,
+                worker_id=worker_id,
+                input_fingerprint=input_fingerprint,
+                now=now,
+            )
+            if job.parse_view_id is None:
+                raise ParseLeaseError("JOB_STALE")
+            view = await uow.parse_views.get_by_id(
+                parse_view_id=job.parse_view_id, lock=True
+            )
+            if view is None or view.view_status != "ACTIVE":
+                raise ParseLeaseError("JOB_STALE")
+            evidence_keys = await uow.evidence.list_staged_keys(
+                parse_view_id=view.parse_view_id
+            )
+            if not evidence_keys:
+                raise ValueError("visual completion requires staged evidence")
+            await uow.evidence.activate_staged(parse_view_id=view.parse_view_id)
+            if uow.visual_assets is not None:
+                await uow.visual_assets.activate_staged(
+                    parse_view_id=view.parse_view_id
+                )
+            visual_fingerprint = sha256(
+                "\n".join(evidence_keys).encode("utf-8")
+            ).hexdigest()
+            index_key = f"INDEX_VISUAL:{view.parse_view_id}:{visual_fingerprint}"
+            index_job = await uow.jobs.get_by_idempotency_key(
+                collection_id=job.collection_id,
+                idempotency_key=index_key,
+                input_fingerprint=visual_fingerprint,
+            )
+            if index_job is None:
+                source_payload = dict(job.payload_json or {})
+                index_job = await uow.jobs.add(KcIngestionJobEntity(
+                    collection_id=job.collection_id,
+                    bundle_revision_id=job.bundle_revision_id,
+                    document_version_id=job.document_version_id,
+                    parse_view_id=view.parse_view_id,
+                    job_type="INDEX",
+                    idempotency_key=index_key,
+                    input_fingerprint=visual_fingerprint,
+                    payload_json={
+                        "visual_enrichment": True,
+                        "profile_generation": visual_fingerprint,
+                        "notification_operation_id": source_payload.get(
+                            "notification_operation_id"
+                        ),
+                        "notification_actor_id": source_payload.get(
+                            "notification_actor_id"
+                        ),
+                    },
+                    job_status="PENDING",
+                    priority=job.priority,
+                    max_attempts=job.max_attempts,
+                    created_by=worker_id,
+                    updated_by=worker_id,
+                ))
+            job.job_status = "SUCCEEDED"
+            job.completed_at = now
+            job.result_json = {
+                "visual_evidence_count": len(evidence_keys),
+                "index_job_id": index_job.ingestion_job_id,
+            }
+            job.lease_owner = job.lease_until = None
+            await uow.session.flush()
+            await uow.commit()
+            return len(evidence_keys)
 
     async def fail(
         self, *, job_id: UUID, worker_id: str, input_fingerprint: str,
@@ -486,6 +641,17 @@ class KnowledgeCoreParseTaskService:
             retryable = failure_class == "TRANSIENT" and job.attempt_count < job.max_attempts
             job.failure_class, job.failure_code, job.failure_message = failure_class, failure_code, failure_message
             job.lease_owner = job.lease_until = None
+            if job.job_type == "VISUAL_ENRICH":
+                if retryable:
+                    job.job_status = "RETRY_WAIT"
+                    job.available_at = now + timedelta(
+                        seconds=min(300, 2 ** job.attempt_count * 5)
+                    )
+                else:
+                    job.job_status, job.completed_at = "FAILED", now
+                await uow.session.flush()
+                await uow.commit()
+                return job.job_status
             if retryable:
                 job.job_status = "RETRY_WAIT"
                 job.available_at = now + timedelta(seconds=min(300, 2 ** job.attempt_count * 5))

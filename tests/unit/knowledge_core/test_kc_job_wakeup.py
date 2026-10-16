@@ -66,6 +66,10 @@ class KcJobWakeupTest(unittest.IsolatedAsyncioTestCase):
             PARSE_WAKEUP_CHANNEL,
             wakeup_channel_for_job("PARSE"),
         )
+        self.assertEqual(
+            PARSE_WAKEUP_CHANNEL,
+            wakeup_channel_for_job("VISUAL_ENRICH"),
+        )
         for job_type in ("INDEX", "PROFILE", "COLLECTION_PURGE"):
             self.assertEqual(
                 PROJECTION_WAKEUP_CHANNEL,

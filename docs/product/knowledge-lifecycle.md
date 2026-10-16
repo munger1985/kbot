@@ -117,19 +117,18 @@ Worker 崩溃后可以重新领取；过期 Worker 不能用旧租约覆盖新�
 | Visual Embedding | Collection 绑定的可选模型 | 不生成图像向量 |
 
 启用 DeepSeek OCR 后关闭 Docling 内置 OCR，但继续使用 Docling 的布局转换和
-页面渲染。DeepSeek OCR 不进入 Model Serving。VLM 与 Visual Embedding 相互
+局部图片提取。DeepSeek OCR 不进入 Model Serving。VLM 与 Visual Embedding 相互
 独立，缺少任意一项都不会阻断文本解析。
 
-### `TEXT / AUTO / VISUAL / HYBRID`
+### `TEXT / AUTO / VISUAL`
 
-- `TEXT`：仅使用文本、布局和 OCR；
-- `AUTO`：按页面文字覆盖、平均置信度和乱码比例挑选低质量页进行 VLM 重建；
-- `VISUAL`：对可渲染页面使用 VLM 重建，适合扫描件或已知视觉路径更优的 PDF；
-- `HYBRID`：文本结构为主，使用视觉结果做页面级结构校正和图表语义补充。
+- `TEXT`：只提取原生文本和结构，关闭 OCR 及所有图片生成；
+- `AUTO`：开启区域 OCR，只生成实际图片对象，并仅对有信息的图片对象调用 VLM；
+- `VISUAL`：第一阶段发布结构化文本，第二阶段由持久化任务异步生成全部页面图像并逐页调用 VLM。
 
-健康页保留 Docling 的精确文本、表格和 bbox；低质量页允许 VLM Markdown
-替换其低质量 Atom，同时优先保留精确 OCR 文字和数字。单页 VLM 失败时回退
-Docling，不让局部增强破坏整份文档。
+AUTO 永不生成普通页面全图，也不按页面文字量、乱码率或缺失置信度触发整页
+VLM；扫描页只有在被识别为整页图片对象时才按图片处理。VISUAL 的基础结果在
+视觉任务执行期间始终可检索，页面结果使用内容寻址缓存并支持失败重试。
 
 ## 为什么需要 Atom IR、Structure IR 和 Evidence
 

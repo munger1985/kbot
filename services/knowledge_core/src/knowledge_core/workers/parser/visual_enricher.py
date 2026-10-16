@@ -9,13 +9,14 @@ from docling_core.types.doc.document import DescriptionAnnotation
 from loguru import logger
 
 from platform_clients import AIModelClient
+from knowledge_core.workers.parser.visual_cache import LocalVisualResultCache
 
 
 @dataclass(frozen=True)
 class PageQualityAssessment:
     page_no: int
     text_characters: int
-    mean_confidence: float
+    mean_confidence: float | None
     gibberish_ratio: float
     image_available: bool
     requires_visual: bool
@@ -60,8 +61,9 @@ FULL_PAGE_MARKDOWN_PROMPT = """你是文档视觉解析器。请把整张页面�
 
 
 class KcVisualEnricher:
-    def __init__(self, client_factory=AIModelClient):
+    def __init__(self, client_factory=AIModelClient, cache=None):
         self._client_factory = client_factory
+        self._cache = cache
 
     async def enrich(
         self,
@@ -77,7 +79,7 @@ class KcVisualEnricher:
         max_concurrency: int = 2,
     ) -> VisualEnrichmentResult:
         normalized_strategy = strategy.strip().upper()
-        if normalized_strategy not in {"TEXT", "AUTO", "VISUAL", "HYBRID"}:
+        if normalized_strategy not in {"TEXT", "AUTO", "VISUAL"}:
             raise ValueError(f"不支持的解析策略：{strategy}")
         assessments = self._assess_pages(
             document,
@@ -86,7 +88,7 @@ class KcVisualEnricher:
             max_gibberish_ratio=max_gibberish_ratio,
         )
         if not served_model_name:
-            if normalized_strategy in {"VISUAL", "HYBRID"}:
+            if normalized_strategy == "VISUAL":
                 raise ValueError(
                     f"{normalized_strategy} 解析策略必须配置 VLM 模型"
                 )
@@ -112,6 +114,8 @@ class KcVisualEnricher:
         client = self._client_factory()
         full_page_prompt = full_page_prompt.strip() or FULL_PAGE_MARKDOWN_PROMPT
         semaphore = asyncio.Semaphore(max_concurrency)
+        picture_memo: dict[str, str] = {}
+        picture_locks: dict[str, asyncio.Lock] = {}
 
         async def enrich_picture(picture) -> bool:
             existing = [
@@ -122,12 +126,38 @@ class KcVisualEnricher:
                 )
             ]
             image = getattr(getattr(picture, "image", None), "pil_image", None)
-            if existing or image is None:
+            if existing or image is None or not self._is_informative_picture(image):
                 return False
-            async with semaphore:
-                description = await client.get_vlm_answer(
-                    served_model_name, image, prompt=prompt,
-                )
+            options: dict[str, Any] = {}
+            try:
+                image_key = LocalVisualResultCache.image_sha256(image)
+            except Exception:
+                image_key = str(id(image))
+            lock = picture_locks.setdefault(image_key, asyncio.Lock())
+            async with lock:
+                description = picture_memo.get(image_key)
+                if description is None:
+                    description = await self._cached_result(
+                        image=image,
+                        kind="picture",
+                        model=served_model_name,
+                        prompt=prompt,
+                        options=options,
+                    )
+                if description is None:
+                    async with semaphore:
+                        description = await client.get_vlm_answer(
+                            served_model_name, image, prompt=prompt,
+                        )
+                    await self._cache_result(
+                        image=image,
+                        kind="picture",
+                        model=served_model_name,
+                        prompt=prompt,
+                        options=options,
+                        result=description,
+                    )
+                picture_memo[image_key] = description
             if not description.strip():
                 return False
             picture.annotations.append(DescriptionAnnotation(
@@ -136,12 +166,16 @@ class KcVisualEnricher:
             ))
             return True
 
-        picture_results = await asyncio.gather(
-            *(
-                enrich_picture(picture)
-                for picture in getattr(document, "pictures", ())
-            ),
-            return_exceptions=True,
+        picture_results = (
+            await asyncio.gather(
+                *(
+                    enrich_picture(picture)
+                    for picture in getattr(document, "pictures", ())
+                ),
+                return_exceptions=True,
+            )
+            if normalized_strategy == "AUTO"
+            else []
         )
         for failure in (
             result for result in picture_results
@@ -152,18 +186,15 @@ class KcVisualEnricher:
         assessment_by_page = {
             assessment.page_no: assessment for assessment in assessments
         }
-        if normalized_strategy in {"VISUAL", "HYBRID"}:
+        if normalized_strategy == "VISUAL":
             selected = [
                 assessment
                 for assessment in assessments
                 if assessment.image_available
             ]
         else:
-            selected = [
-                assessment
-                for assessment in assessments
-                if assessment.image_available and assessment.requires_visual
-            ]
+            # AUTO is strictly object-level: never render or submit a full page.
+            selected = []
 
         async def analyze_page(
             assessment: PageQualityAssessment,
@@ -174,13 +205,30 @@ class KcVisualEnricher:
                 if int(getattr(page, "page_no", key))
                 == assessment.page_no
             )
-            async with semaphore:
-                markdown = await client.get_vlm_answer(
-                    served_model_name,
-                    page.image.pil_image,
+            image = page.image.pil_image
+            options = {"temperature": 0.1, "max_tokens": 4096}
+            markdown = await self._cached_result(
+                image=image,
+                kind="page",
+                model=served_model_name,
+                prompt=full_page_prompt,
+                options=options,
+            )
+            if markdown is None:
+                async with semaphore:
+                    markdown = await client.get_vlm_answer(
+                        served_model_name,
+                        image,
+                        prompt=full_page_prompt,
+                        **options,
+                    )
+                await self._cache_result(
+                    image=image,
+                    kind="page",
+                    model=served_model_name,
                     prompt=full_page_prompt,
-                    temperature=0.1,
-                    max_tokens=4096,
+                    options=options,
+                    result=markdown,
                 )
             if not markdown.strip():
                 raise ValueError(
@@ -191,10 +239,7 @@ class KcVisualEnricher:
                 markdown=markdown.strip(),
                 served_model_name=served_model_name,
                 confidence=0.82,
-                replace_docling=(
-                    normalized_strategy == "VISUAL"
-                    or assessment.requires_visual
-                ),
+                replace_docling=False,
                 selection_reasons=assessment.reasons,
             )
 
@@ -229,6 +274,45 @@ class KcVisualEnricher:
             failed_page_numbers=tuple(failed_pages),
         )
 
+    async def _cached_result(
+        self, *, image, kind: str, model: str, prompt: str,
+        options: dict[str, Any],
+    ) -> str | None:
+        if self._cache is None:
+            return None
+        try:
+            return await self._cache.get(
+                image=image, kind=kind, model=model, prompt=prompt,
+                options=options,
+            )
+        except Exception as exc:
+            logger.warning("KC 视觉缓存读取失败，继续调用模型：{}", exc)
+            return None
+
+    async def _cache_result(
+        self, *, image, kind: str, model: str, prompt: str,
+        options: dict[str, Any], result: str,
+    ) -> None:
+        if self._cache is not None and result.strip():
+            try:
+                await self._cache.put(
+                    image=image, kind=kind, model=model, prompt=prompt,
+                    options=options, result=result,
+                )
+            except Exception as exc:
+                logger.warning("KC 视觉缓存写入失败，保留模型结果：{}", exc)
+
+    @staticmethod
+    def _is_informative_picture(image) -> bool:
+        """Skip obvious icons and separator/header graphics before VLM."""
+        size = getattr(image, "size", None)
+        if not size or len(size) != 2:
+            return True
+        width, height = (int(size[0]), int(size[1]))
+        if width < 48 or height < 48 or width * height < 16_384:
+            return False
+        return max(width / height, height / width) <= 12
+
     @classmethod
     def _assess_pages(
         cls,
@@ -260,13 +344,16 @@ class KcVisualEnricher:
             mean_confidence = (
                 sum(confidences) / len(confidences)
                 if confidences
-                else 0.0
+                else None
             )
             gibberish_ratio = cls._gibberish_ratio(text)
             reasons: list[str] = []
             if len(text) < min_text_characters:
                 reasons.append("LOW_TEXT_COVERAGE")
-            if mean_confidence < min_mean_confidence:
+            if (
+                mean_confidence is not None
+                and mean_confidence < min_mean_confidence
+            ):
                 reasons.append("LOW_EXTRACTION_CONFIDENCE")
             if gibberish_ratio > max_gibberish_ratio:
                 reasons.append("EXCESSIVE_GIBBERISH")
@@ -275,7 +362,11 @@ class KcVisualEnricher:
                 PageQualityAssessment(
                     page_no=page_number,
                     text_characters=len(text),
-                    mean_confidence=round(mean_confidence, 5),
+                    mean_confidence=(
+                        round(mean_confidence, 5)
+                        if mean_confidence is not None
+                        else None
+                    ),
                     gibberish_ratio=round(gibberish_ratio, 5),
                     image_available=image is not None,
                     requires_visual=bool(reasons),

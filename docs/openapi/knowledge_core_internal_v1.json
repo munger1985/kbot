@@ -242,6 +242,28 @@
         "title": "CompleteRequest",
         "type": "object"
       },
+      "CompleteVisualRequest": {
+        "properties": {
+          "input_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "worker_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "worker_id",
+          "input_fingerprint"
+        ],
+        "title": "CompleteVisualRequest",
+        "type": "object"
+      },
       "CreateCollectionRequest": {
         "properties": {
           "collection_id": {
@@ -3973,6 +3995,57 @@
           }
         },
         "summary": "Complete Parse",
+        "tags": [
+          "Knowledge Core Parser"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/parse-tasks/{job_id}/complete-visual": {
+      "post": {
+        "operationId": "complete_visual_internal_v1_knowledge_parse_tasks__job_id__complete_visual_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteVisualRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Visual",
         "tags": [
           "Knowledge Core Parser"
         ]

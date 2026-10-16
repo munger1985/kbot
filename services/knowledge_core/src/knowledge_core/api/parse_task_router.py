@@ -98,6 +98,11 @@ class CompleteRequest(BaseModel):
     quality_report: dict[str, Any]
 
 
+class CompleteVisualRequest(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=256)
+    input_fingerprint: str = Field(min_length=64, max_length=64)
+
+
 class FailRequest(BaseModel):
     worker_id: str
     input_fingerprint: str
@@ -117,9 +122,11 @@ async def claim_parse_tasks(payload: ParseClaimRequest, request: Request):
         raise HTTPException(status_code=422, detail={"code": "INVALID_CLAIM", "message": str(exc)}) from exc
     return {"tasks": [{
         "job_id": task.job_id,
+        "job_type": task.job_type,
         "lease_owner": task.lease_owner,
         "lease_until": task.lease_until.isoformat(),
         "input_fingerprint": task.input_fingerprint,
+        "source_fingerprint": task.source_fingerprint,
         "document_version_id": task.document_version_id,
         "parse_view_id": task.parse_view_id,
         "source_read_url": (
@@ -236,6 +243,34 @@ async def complete_parse(job_id: UUID, payload: CompleteRequest, request: Reques
     return {
         "job_id": job_id,
         "status": "PARSED",
+        "evidence_count": count,
+        "index_status": "PENDING",
+    }
+
+
+@router.post("/{job_id}/complete-visual")
+async def complete_visual(
+    job_id: UUID, payload: CompleteVisualRequest, request: Request,
+):
+    try:
+        count = await request.app.state.kc_parse_task_service.complete_visual(
+            job_id=job_id,
+            worker_id=payload.worker_id,
+            input_fingerprint=payload.input_fingerprint,
+        )
+    except ParseLeaseError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": str(exc), "message": "Visual task is stale"},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_VISUAL_RESULT", "message": str(exc)},
+        ) from exc
+    return {
+        "job_id": job_id,
+        "status": "VISUAL_ENRICHED",
         "evidence_count": count,
         "index_status": "PENDING",
     }

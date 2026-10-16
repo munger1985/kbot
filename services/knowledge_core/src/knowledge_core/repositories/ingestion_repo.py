@@ -476,7 +476,7 @@ class IngestionJobRepository:
 
     async def claim_candidates(self, *, now: datetime, limit: int) -> list[KcIngestionJobEntity]:
         return await self._claim_by_types(
-            job_types=("PARSE",),
+            job_types=("PARSE", "VISUAL_ENRICH"),
             now=now,
             limit=limit,
         )
@@ -563,7 +563,9 @@ class ParseViewRepository:
     ) -> list[KcIngestionJobEntity]:
         statement = select(KcIngestionJobEntity).where(
             KcIngestionJobEntity.document_version_id == document_version_id,
-            KcIngestionJobEntity.job_type.in_(("PARSE", "INDEX", "PROFILE")),
+            KcIngestionJobEntity.job_type.in_((
+                "PARSE", "VISUAL_ENRICH", "INDEX", "PROFILE",
+            )),
         ).order_by(
             KcIngestionJobEntity.created_at.desc(),
             KcIngestionJobEntity.ingestion_job_id.desc(),

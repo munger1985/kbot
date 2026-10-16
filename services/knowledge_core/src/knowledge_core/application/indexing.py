@@ -480,8 +480,19 @@ class KnowledgeCoreEvidenceIndexService:
                 # Discovery/Profile is the final publication gate.  Do not
                 # switch Bundle.current_revision_id merely because Evidence
                 # vectors are ready.
+                source_payload = dict(job.payload_json or {})
+                profile_generation = str(
+                    source_payload.get("profile_generation") or ""
+                )
                 profile_fingerprint = sha256(
-                    f"{revision.bundle_revision_id}:{revision.snapshot_fingerprint}".encode("utf-8")
+                    (
+                        f"{revision.bundle_revision_id}:"
+                        f"{revision.snapshot_fingerprint}"
+                        + (
+                            f":{profile_generation}"
+                            if profile_generation else ""
+                        )
+                    ).encode("utf-8")
                 ).hexdigest()
                 profile_key = f"PROFILE:{revision.bundle_revision_id}:{profile_fingerprint}"
                 existing_profile = await uow.jobs.get_by_idempotency_key(
@@ -490,7 +501,6 @@ class KnowledgeCoreEvidenceIndexService:
                     input_fingerprint=profile_fingerprint,
                 )
                 if existing_profile is None:
-                    source_payload = dict(job.payload_json or {})
                     await uow.jobs.add(KcIngestionJobEntity(
                         collection_id=revision.collection_id,
                         bundle_revision_id=revision.bundle_revision_id,
@@ -498,6 +508,10 @@ class KnowledgeCoreEvidenceIndexService:
                         input_fingerprint=profile_fingerprint,
                         payload_json={
                             "profile_schema_version": "profile/v1",
+                            "reindex_generation": profile_generation or None,
+                            "visual_enrichment": bool(
+                                source_payload.get("visual_enrichment")
+                            ),
                             "notification_operation_id": source_payload.get(
                                 "notification_operation_id"
                             ),

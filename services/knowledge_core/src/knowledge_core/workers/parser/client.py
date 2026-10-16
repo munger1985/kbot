@@ -33,9 +33,11 @@ class KcParserProtocolError(RuntimeError):
 @dataclass(frozen=True)
 class ParseTask:
     job_id: UUID
+    job_type: str
     lease_owner: str
     lease_until: str
     input_fingerprint: str
+    source_fingerprint: str
     document_version_id: UUID
     parse_view_id: UUID
     source_read_url: str
@@ -152,6 +154,17 @@ class KcParseClient:
                 "output_fingerprint": output_fingerprint,
                 "quality_score": quality_score,
                 "quality_report": quality_report,
+            },
+        )
+        return int(payload["evidence_count"])
+
+    async def complete_visual(self, task: ParseTask) -> int:
+        payload = await self._request(
+            "POST",
+            f"{INTERNAL_API_V1}/knowledge/parse-tasks/{task.job_id}/complete-visual",
+            json={
+                "worker_id": task.lease_owner,
+                "input_fingerprint": task.input_fingerprint,
             },
         )
         return int(payload["evidence_count"])

@@ -124,15 +124,6 @@ async def lifespan(app: FastAPI):
             "full_page_visual_prompt": (
                 settings.parse_policy.full_page_visual_prompt
             ),
-            "visual_min_text_characters": (
-                settings.parse_policy.visual_min_text_characters
-            ),
-            "visual_min_mean_confidence": (
-                settings.parse_policy.visual_min_mean_confidence
-            ),
-            "visual_max_gibberish_ratio": (
-                settings.parse_policy.visual_max_gibberish_ratio
-            ),
             "visual_max_concurrency": (
                 settings.parse_policy.visual_max_concurrency
             ),

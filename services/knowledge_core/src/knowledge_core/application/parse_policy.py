@@ -58,10 +58,10 @@ def build_parse_plan(*, collection, version, overrides: dict[str, Any]) -> Parse
     } if collection_models.get("parser_vlm") else {}
     if overrides.get("ocr_model"):
         policy["ocr_model"] = overrides["ocr_model"]
-    if policy.get("ocr_model"):
+    strategy = str(policy.get("parse_strategy", "AUTO")).upper()
+    if policy.get("ocr_model") and strategy != "TEXT":
         policy["do_ocr"] = False
         policy["ocr_provider"] = "DEEPSEEK_OCR"
-    strategy = str(policy.get("parse_strategy", "AUTO")).upper()
     supports_page_visual = version.detected_mime_type in {
         "application/pdf",
         "image/png",
@@ -71,12 +71,22 @@ def build_parse_plan(*, collection, version, overrides: dict[str, Any]) -> Parse
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }
     if (
+        strategy == "VISUAL"
+        and supports_page_visual
+        and not policy.get("models", {}).get("parser_vlm")
+    ):
+        raise ValueError("VISUAL 解析策略必须配置 VLM 模型")
+    if (
         supports_page_visual
         and policy.get("models", {}).get("parser_vlm")
         and strategy != "TEXT"
     ):
         view_kind = "VISUAL" if strategy == "VISUAL" else "HYBRID"
-        parser_name = "kc-adaptive-visual-pipeline"
+        parser_name = (
+            "kc-progressive-visual-pipeline"
+            if strategy == "VISUAL"
+            else "kc-object-visual-pipeline"
+        )
     elif policy.get("ocr_model"):
         view_kind = "TEXT"
         parser_name = "kc-deepseek-ocr-pipeline"

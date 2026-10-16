@@ -17,6 +17,9 @@ from knowledge_core.parsing import canonical_json_hash
 from knowledge_core.parsing.converter import KcDoclingConverter
 from knowledge_core.parsing.pipeline import KcParsingPipeline
 from knowledge_core.workers.job_wait import AdaptiveJobWait
+from knowledge_core.workers.parser.visual_evidence import (
+    build_visual_page_evidence,
+)
 from .client import KcParseClient, KcParserProtocolError, ParseTask
 
 
@@ -98,15 +101,29 @@ class KcParserWorker:
         try:
             with tempfile.TemporaryDirectory(prefix=f"kbot-kc-parse-{task.job_id}-") as directory:
                 source_path = await self._materialize_source(task, Path(directory))
+                if task.job_type == "VISUAL_ENRICH":
+                    await self._process_visual_enrichment(task, source_path)
+                    return
                 policy = task.policy_snapshot
+                strategy = str(policy.get("parse_strategy", "AUTO")).upper()
                 document = await self._converter.convert(
                     source_path=source_path,
                     do_ocr=bool(policy.get("do_ocr", True)),
                     ocr_engine=str(policy.get("ocr_engine", "tesseract")),
                     image_scale=float(policy.get("image_scale", 2.0)),
+                    generate_page_images=False,
+                    generate_picture_images=strategy != "TEXT",
+                    generate_table_images=False,
+                    detect_table_structure=bool(
+                        policy.get("detect_table_structure", True)
+                    ),
                 )
                 ocr_enrichment = None
-                if self._deepseek_ocr_enricher is not None:
+                if (
+                    self._deepseek_ocr_enricher is not None
+                    and strategy != "TEXT"
+                    and policy.get("ocr_model")
+                ):
                     ocr_enrichment = (
                         await self._deepseek_ocr_enricher.enrich(
                             document,
@@ -114,7 +131,7 @@ class KcParserWorker:
                         )
                     )
                 visual_enrichment = None
-                if self._visual_enricher is not None:
+                if self._visual_enricher is not None and strategy == "AUTO":
                     vlm_model_name = await self._resolve_vlm_model(policy)
                     visual_enrichment = await self._visual_enricher.enrich(
                         document,
@@ -124,15 +141,6 @@ class KcParserWorker:
                             policy.get("full_page_visual_prompt", "")
                         ),
                         strategy=str(policy.get("parse_strategy", "AUTO")),
-                        min_text_characters=int(
-                            policy.get("visual_min_text_characters", 80)
-                        ),
-                        min_mean_confidence=float(
-                            policy.get("visual_min_mean_confidence", 0.65)
-                        ),
-                        max_gibberish_ratio=float(
-                            policy.get("visual_max_gibberish_ratio", 0.08)
-                        ),
                         max_concurrency=int(
                             policy.get("visual_max_concurrency", 2)
                         ),
@@ -167,9 +175,15 @@ class KcParserWorker:
                     await self._client.submit_evidence(
                         task, evidence_dicts[offset:offset + self._evidence_batch_size],
                     )
-                if policy.get("models", {}).get("visual_embedding"):
+                if (
+                    policy.get("models", {}).get("visual_embedding")
+                    and policy.get("extract_picture_images", strategy != "TEXT")
+                ):
                     visual_assets = self._visual_assets(
-                        document, visual_enrichment
+                        document,
+                        visual_enrichment,
+                        include_pages=False,
+                        include_pictures=True,
                     )
                     for offset in range(
                         0, len(visual_assets), self._evidence_batch_size
@@ -200,6 +214,68 @@ class KcParserWorker:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await heartbeat
+
+    async def _process_visual_enrichment(
+        self, task: ParseTask, source_path: Path,
+    ) -> None:
+        if self._visual_enricher is None:
+            raise RuntimeError("KC Parser 未配置视觉增强器")
+        policy = task.policy_snapshot
+        if str(policy.get("parse_strategy", "AUTO")).upper() != "VISUAL":
+            raise ValueError("VISUAL_ENRICH 任务只能处理 VISUAL 策略")
+        document = await self._converter.convert(
+            source_path=source_path,
+            do_ocr=False,
+            ocr_engine=str(policy.get("ocr_engine", "tesseract")),
+            image_scale=float(policy.get("image_scale", 2.0)),
+            generate_page_images=True,
+            generate_picture_images=False,
+            generate_table_images=False,
+            detect_table_structure=False,
+        )
+        model_name = await self._resolve_vlm_model(policy)
+        enrichment = await self._visual_enricher.enrich(
+            document,
+            served_model_name=model_name,
+            prompt=str(policy.get("visual_description_prompt", "")),
+            full_page_prompt=str(policy.get("full_page_visual_prompt", "")),
+            strategy="VISUAL",
+            max_concurrency=int(policy.get("visual_max_concurrency", 2)),
+        )
+        if enrichment.failed_page_numbers:
+            raise RuntimeError(
+                "整页视觉增强未完成："
+                + ", ".join(map(str, enrichment.failed_page_numbers))
+            )
+        evidence = build_visual_page_evidence(
+            parse_view_id=task.parse_view_id,
+            enrichment=enrichment,
+        )
+        if not evidence:
+            raise RuntimeError("整页视觉增强未生成 Evidence")
+        for offset in range(0, len(evidence), self._evidence_batch_size):
+            await self._client.submit_evidence(
+                task, evidence[offset : offset + self._evidence_batch_size]
+            )
+        visual_assets = self._visual_assets(
+            document,
+            enrichment,
+            include_pages=True,
+            include_pictures=False,
+        )
+        for offset in range(
+            0, len(visual_assets), self._evidence_batch_size
+        ):
+            await self._client.submit_visual_assets(
+                task,
+                visual_assets[offset : offset + self._evidence_batch_size],
+            )
+        await self._client.complete_visual(task)
+        logger.info(
+            "KC 视觉增强任务 {} 已完成，共生成 {} 条 Evidence",
+            task.job_id,
+            len(evidence),
+        )
 
     async def _resolve_vlm_model(self, policy: dict) -> str | None:
         """从 Collection 冻结的模型 ID 解析 VLM 调用名称。"""
@@ -236,7 +312,7 @@ class KcParserWorker:
             if not source.is_file():
                 raise FileNotFoundError(task.source_read_url)
             await asyncio.to_thread(shutil.copyfile, source, target)
-        if hashlib.sha256(target.read_bytes()).hexdigest() != task.input_fingerprint:
+        if hashlib.sha256(target.read_bytes()).hexdigest() != task.source_fingerprint:
             raise ValueError("source content hash does not match claimed Document Version")
         return target
 
@@ -252,7 +328,10 @@ class KcParserWorker:
             logger.exception("KC 解析任务 {} 上报失败状态失败", task.job_id)
 
     @staticmethod
-    def _visual_assets(document, enrichment) -> list[dict]:
+    def _visual_assets(
+        document, enrichment, *, include_pages: bool = True,
+        include_pictures: bool = True,
+    ) -> list[dict]:
         """导出整页和 Figure 原图；视觉向量由后续 INDEX 阶段生成。"""
         page_descriptions = {
             int(item.page_no): item.markdown
@@ -270,6 +349,8 @@ class KcParserWorker:
             )
 
         for page_key, page in sorted(document.pages.items()):
+            if not include_pages:
+                break
             image = getattr(getattr(page, "image", None), "pil_image", None)
             if image is None:
                 continue
@@ -289,6 +370,8 @@ class KcParserWorker:
                 }
             )
         for picture in getattr(document, "pictures", ()):
+            if not include_pictures:
+                break
             image = getattr(getattr(picture, "image", None), "pil_image", None)
             source_ref = str(getattr(picture, "self_ref", "") or "")
             provenance = list(getattr(picture, "prov", ()) or ())

@@ -297,7 +297,7 @@ class ParserPipelineTest(unittest.TestCase):
             "DEFERRED_TO_INDEX",
         )
 
-    def test_hybrid_visual_result_corrects_matching_heading(self):
+    def test_object_visual_result_corrects_matching_heading(self):
         document = FakeDocument([
             item(
                 source_ref="#/texts/0",
@@ -311,7 +311,7 @@ class ParserPipelineTest(unittest.TestCase):
             ),
         ])
         enrichment = VisualEnrichmentResult(
-            strategy="HYBRID",
+            strategy="AUTO",
             picture_description_count=0,
             page_assessments=(),
             page_results=(

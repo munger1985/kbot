@@ -64,7 +64,7 @@ class JobWakeupConfig(BaseModel):
 
 class ParsePolicyConfig(BaseModel):
     ocr_model: str | None = None
-    parse_strategy: Literal["TEXT", "AUTO", "VISUAL", "HYBRID"] = "AUTO"
+    parse_strategy: Literal["TEXT", "AUTO", "VISUAL"] = "AUTO"
     visual_description_prompt: str = (
         "请客观描述图片中的可见事实、文字、对象及其关系；"
         "不要推测图片之外的信息。"
@@ -74,9 +74,6 @@ class ParsePolicyConfig(BaseModel):
         "单位和符号；准确还原标题层级、表格、列表、公式及图表关系；"
         "不要编造内容，不要输出代码块或额外解释。"
     )
-    visual_min_text_characters: int = Field(default=80, ge=0, le=10000)
-    visual_min_mean_confidence: float = Field(default=0.65, ge=0, le=1)
-    visual_max_gibberish_ratio: float = Field(default=0.08, ge=0, le=1)
     visual_max_concurrency: int = Field(default=2, ge=1, le=16)
 
 

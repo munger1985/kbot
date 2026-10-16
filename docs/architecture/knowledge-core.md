@@ -38,10 +38,10 @@ View，成功激活后删除旧解析产物；失败时继续保留上一成功�
 
 Docling 是底层转换引擎，其后由 KC 自有流水线完成：
 
-1. 页面探测和文本覆盖率评估；
-2. `TEXT/AUTO/VISUAL/HYBRID` 路径选择；
-3. 可选 Docling OCR 或独立 DeepSeek OCR；
-4. 可选 VLM 页面理解和结构校正；
+1. Docling 文本、结构和图片对象提取；
+2. `TEXT/AUTO/VISUAL` 路径选择；
+3. 可选位图区域 OCR 或独立 DeepSeek OCR；
+4. AUTO 图片对象理解，或 VISUAL 异步整页增强；
 5. Atom IR、Structure IR 与标题层级修复；
 6. 表格、子表、短块合并和上下文补全；
 7. 质量评分与 Evidence 规划；
@@ -54,6 +54,7 @@ VLM 和视觉 Embedding 均为可选能力。缺少 VLM 时跳过视觉转文字
 ## Projection 与索引
 
 `PARSE → INDEX → PROFILE → INDEX(DISCOVERY)` 由持久化 Ingestion Job 驱动。
+VISUAL 在基础版本发布后追加 `VISUAL_ENRICH → INDEX`；增强失败不会回滚基础版本。
 Evidence 保存正文、检索文本、层级、页码、坐标、来源跨度、质量、向量及模型快照。
 Discovery Object 保存 Bundle/Document 检索画像。Oracle Text 为
 `RETRIEVAL_TEXT` 和 `PROFILE_TEXT` 建立 `CONTEXT` 索引并在提交时同步。

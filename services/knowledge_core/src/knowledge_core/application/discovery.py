@@ -234,6 +234,9 @@ class KnowledgeCoreProfileService:
                         "target": "DISCOVERY",
                         "profile_schema_version": PROFILE_SCHEMA_VERSION,
                         "reindex_generation": reindex_generation or None,
+                        "visual_enrichment": bool(
+                            source_payload.get("visual_enrichment")
+                        ),
                         "notification_operation_id": source_payload.get(
                             "notification_operation_id"
                         ),

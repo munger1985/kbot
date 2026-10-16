@@ -36,6 +36,7 @@
       INDEXING: "索引中",
       PROFILE_PENDING: "等待画像",
       PROFILING: "生成画像",
+      VISUAL_ENHANCING: "可用 · 视觉增强中",
       DISCOVERY_INDEXING: "建立 Discovery",
       READY: "已完成",
       PARTIAL: "部分完成",
