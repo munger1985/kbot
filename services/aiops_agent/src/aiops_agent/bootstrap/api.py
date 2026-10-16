@@ -314,6 +314,9 @@ def create_aiops_api(
             knowledge_assistant_instruction=(
                 resolved.runtime.knowledge_assistant_instruction
             ),
+            model_catalog=model_client,
+            structured_model=diagnosis_model_client,
+            prompt_registry=diagnosis_prompts,
         )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         app.state.managed_credential_service = managed_credential_service

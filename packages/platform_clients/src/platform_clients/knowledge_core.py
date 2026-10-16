@@ -394,6 +394,21 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def extract_review_text(
+        self, *, domain_id: int, collection_id: UUID, bundle_id: UUID,
+        bundle_revision_id: UUID, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/bundles/{bundle_id}"
+                f"/revisions/{bundle_revision_id}:extract-review-text"
+            ),
+            payload={},
+            auth_context=auth_context,
+        )
+
     async def stream_source_file(
         self,
         *,

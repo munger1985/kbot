@@ -14,6 +14,8 @@ from aiops_agent.contracts.knowledge import (
     KnowledgeExecutionSpecRequest,
     KnowledgeReviewCommand,
     KnowledgeSearchRequest,
+    KnowledgeTagStatusCommand,
+    KnowledgeTagWrite,
     ManualUploadMetadata,
 )
 from platform_core.contracts import AuthContext
@@ -52,6 +54,53 @@ async def overview(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.overview(
         domain_id=domain_id
+    )
+
+
+@router.get("/tags")
+async def list_tags(request: Request, include_disabled: bool = True,
+                    context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _scope(request, context)
+    return {"items": await request.app.state.operations_knowledge_service.list_tags(
+        domain_id=domain_id, include_disabled=include_disabled
+    )}
+
+
+@router.post("/tags", status_code=201)
+async def create_tag(payload: KnowledgeTagWrite, request: Request,
+                     context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.create_tag(
+        domain_id=domain_id, actor_id=actor, command=payload
+    )
+
+
+@router.put("/tags/{tag_id}")
+async def update_tag(tag_id: UUID, payload: KnowledgeTagWrite, request: Request,
+                     context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.update_tag(
+        domain_id=domain_id, tag_id=tag_id, actor_id=actor, command=payload
+    )
+
+
+@router.post("/tags/{tag_id}:enable")
+async def enable_tag(tag_id: UUID, payload: KnowledgeTagStatusCommand, request: Request,
+                     context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.set_tag_status(
+        domain_id=domain_id, tag_id=tag_id, actor_id=actor,
+        expected_row_version=payload.expected_row_version, status="ACTIVE"
+    )
+
+
+@router.post("/tags/{tag_id}:disable")
+async def disable_tag(tag_id: UUID, payload: KnowledgeTagStatusCommand, request: Request,
+                      context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, actor = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.set_tag_status(
+        domain_id=domain_id, tag_id=tag_id, actor_id=actor,
+        expected_row_version=payload.expected_row_version, status="DISABLED"
     )
 
 
@@ -304,6 +353,20 @@ async def publish_version(asset_version_id: UUID, payload: KnowledgeReviewComman
                           request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
     return await _review(decision="PUBLISH", asset_version_id=asset_version_id,
                          payload=payload, request=request, context=context)
+
+
+@router.post("/versions/{asset_version_id}:approve")
+async def approve_version(asset_version_id: UUID, payload: KnowledgeReviewCommand,
+                          request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.approve_manual(
+        domain_id=domain_id,
+        asset_version_id=asset_version_id,
+        expected_row_version=payload.expected_row_version,
+        tag_ids=payload.tag_ids,
+        comment=payload.comment,
+        context=context,
+    )
 
 
 @router.post("/versions/{asset_version_id}:reject")

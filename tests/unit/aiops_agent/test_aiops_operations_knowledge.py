@@ -39,6 +39,13 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
                 "collection_id": str(uuid7()),
             })
 
+    def test_upload_metadata_rejects_user_selected_scopes(self):
+        with self.assertRaises(ValidationError):
+            ManualUploadMetadata.model_validate({
+                "display_name": "Oracle 手册",
+                "scopes": [{"kind": "DATABASE_TYPE", "value": "ORACLE"}],
+            })
+
     def test_bundle_source_hash_preserves_member_order_and_semantics(self):
         documents = [
             {"ordinal": 0, "file_name": "manual.md", "content_sha256": "a" * 64, "role": "CONTENT", "required_flag": True},
@@ -82,7 +89,7 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
         )
         self.assertEqual(1, len(profile.procedures[0].steps))
 
-    def test_manual_profile_marks_declared_database_conflict_for_review(self):
+    def test_manual_profile_does_not_infer_tags_from_keywords(self):
         profile = OperationsKnowledgeService._manual_profile(
             asset=SimpleNamespace(
                 asset_id=uuid7(), display_name="数据库运维手册"
@@ -98,9 +105,8 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
                 "locator": {"page": 1},
             }]},
         )
-        self.assertEqual(1, len(profile.warnings))
-        self.assertIn("用户=ORACLE", profile.warnings[0])
-        self.assertIn("原文=POSTGRESQL", profile.warnings[0])
+        self.assertEqual((), profile.warnings)
+        self.assertEqual(("ORACLE",), profile.scope["database_type"])
 
     def test_manual_profile_preserves_multiline_fenced_command(self):
         command = "ALTER SYSTEM SET LOG_ARCHIVE_CONFIG=\n  'DG_CONFIG=(DB1,DB2)'\n  SCOPE=BOTH;"
@@ -199,6 +205,164 @@ class OperationsKnowledgeUploadTest(unittest.IsolatedAsyncioTestCase):
         forwarded = service.ingest_manual.await_args.kwargs
         self.assertEqual("Data Guard 运维手册", forwarded["metadata"].display_name)
         self.assertEqual("dg-guide.pdf", forwarded["file_name"])
+
+
+class _KnowledgeUnitOfWork:
+    def __init__(self, repository):
+        self.operations_knowledge = repository
+        self.commits = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def commit(self):
+        self.commits += 1
+
+
+class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def service(repository, knowledge_core):
+        return OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={},
+            knowledge_assistant_instruction="",
+        )
+
+    async def test_approve_manual_freezes_selected_tags_and_starts_kc_parse(self):
+        asset_id, version_id, tag_id = uuid7(), uuid7(), uuid7()
+        version = SimpleNamespace(
+            asset_id=asset_id,
+            status="REVIEW_REQUIRED",
+            row_version=3,
+            tag_analysis_json={"status": "READY", "suggestions": []},
+        )
+        asset = SimpleNamespace(
+            current_version_id=None, status="REVIEW_REQUIRED", updated_by=None
+        )
+        index = SimpleNamespace(
+            index_status="PENDING_APPROVAL", error_code=None, error_summary=None
+        )
+        tag = SimpleNamespace(
+            tag_id=tag_id, category="VENDOR", display_name="Oracle"
+        )
+        repository = SimpleNamespace(
+            list_tags=AsyncMock(return_value=[tag]),
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=asset),
+            get_version_relations=AsyncMock(return_value={"indexes": [index]}),
+            replace_tag_scopes=AsyncMock(),
+            add_review=AsyncMock(),
+        )
+        knowledge_core = SimpleNamespace(review_user_intake=AsyncMock())
+        service = self.service(repository, knowledge_core)
+        detail = {
+            "asset": {"asset_kind": "MANUAL"},
+            "version": {"status": "REVIEW_REQUIRED", "row_version": 3},
+            "indexes": [{
+                "status": "PENDING_APPROVAL",
+                "collection_id": str(uuid7()),
+                "bundle_revision_id": str(uuid7()),
+            }],
+        }
+        service.get_version = AsyncMock(return_value=detail)
+
+        await service.approve_manual(
+            domain_id=42,
+            asset_version_id=version_id,
+            expected_row_version=3,
+            tag_ids=(str(tag_id),),
+            comment="证据已核对",
+            context=SimpleNamespace(asserted_user_id="reviewer", client_id="portal"),
+        )
+
+        knowledge_core.review_user_intake.assert_awaited_once()
+        repository.replace_tag_scopes.assert_awaited_once_with(
+            version=version, tags=[tag]
+        )
+        self.assertEqual("PROCESSING", version.status)
+        self.assertEqual("PROCESSING", index.index_status)
+        self.assertEqual([str(tag_id)], version.tag_analysis_json["approved_tag_ids"])
+
+    async def test_ready_manual_is_published_automatically(self):
+        asset_id, version_id = uuid7(), uuid7()
+        bundle_id, revision_id, collection_id = uuid7(), uuid7(), uuid7()
+        version = SimpleNamespace(
+            asset_id=asset_id,
+            asset_version_id=version_id,
+            status="PROCESSING",
+            profile_json={"schema_version": "OPS_MANUAL_PROFILE.v1", "warnings": []},
+            extraction_warnings_json=[],
+            published_at=None,
+        )
+        asset = SimpleNamespace(
+            asset_kind="MANUAL", current_version_id=None, status="PROCESSING"
+        )
+        index = SimpleNamespace(
+            bundle_revision_id=revision_id,
+            index_status="PROCESSING",
+            last_checked_at=None,
+            expected_row_version=None,
+            error_code=None,
+            error_summary=None,
+        )
+        repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=asset),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [index], "scopes": [], "sources": []
+            }),
+        )
+        knowledge_core = SimpleNamespace(
+            get_bundle_status=AsyncMock(return_value={
+                "current_revision_id": str(revision_id),
+                "availability_status": "READY",
+                "row_version": 9,
+            }),
+            get_revision_status=AsyncMock(return_value={
+                "status": "READY",
+                "source_revision": f"{version_id}:profile-v1",
+                "members": [{
+                    "document_role": "CONTENT",
+                    "document_version_id": str(uuid7()),
+                    "member_status": "READY",
+                }],
+            }),
+        )
+        service = self.service(repository, knowledge_core)
+        detail = {
+            "asset": {
+                "asset_id": str(asset_id), "asset_kind": "MANUAL",
+                "display_name": "Oracle 手册", "security_level": 1,
+            },
+            "version": {
+                "status": "PROCESSING", "profile": version.profile_json,
+                "source_hash": "a" * 64,
+            },
+            "indexes": [{
+                "collection_id": str(collection_id),
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+            }],
+        }
+        service.get_version = AsyncMock(side_effect=[detail, {"published": True}])
+
+        result = await service.reconcile_version(
+            domain_id=42,
+            asset_version_id=version_id,
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual({"published": True}, result)
+        self.assertEqual("PUBLISHED", version.status)
+        self.assertEqual("PUBLISHED", asset.status)
+        self.assertEqual(version_id, asset.current_version_id)
+        self.assertEqual("READY", index.index_status)
 
 if __name__ == "__main__":
     unittest.main()

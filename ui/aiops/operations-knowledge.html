@@ -4,18 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AIOps 运维知识</title>
-  <link rel="stylesheet" href="./css/aiops.css">
-  <link rel="stylesheet" href="./css/aiops-knowledge.css">
+  <link rel="stylesheet" href="./css/aiops.css?v=20261016_2">
+  <link rel="stylesheet" href="./css/aiops-knowledge.css?v=20261016_3">
 </head>
 <body data-page="operations-knowledge">
   <main class="ops-main knowledge-page">
-    <header class="ops-head"><div><h1>运维知识</h1><p>上传运维资料，集中跟踪解析状态，并完成知识版本审核与发布。</p></div></header>
+    <header class="ops-head"><div><h1>运维知识</h1><p>上传技术文档，由 AI 从受控词表识别标签，人工确认后进入 KC 正式解析并自动发布。</p></div></header>
     <section class="ops-panel knowledge-table-card">
       <header class="knowledge-list-header">
         <div class="knowledge-list-heading"><h2>资料列表</h2><p>查看已上传资料、解析结果与审核状态。</p></div>
         <div class="knowledge-list-tools">
           <label class="knowledge-search"><span aria-hidden="true">⌕</span><input id="knowledge-search" type="search" aria-label="搜索运维资料" placeholder="搜索资料名称或 ID"></label>
-          <label class="knowledge-status-filter"><span>状态</span><select id="knowledge-status"><option value="">全部状态</option><option value="PROCESSING">处理中</option><option value="DRAFT">待审核</option><option value="REVIEW_REQUIRED">需复核</option><option value="PUBLISHED">已发布</option><option value="FAILED">失败</option><option value="REJECTED">已拒绝</option><option value="RETIRED">已退役</option></select></label>
+          <label class="knowledge-status-filter"><span>状态</span><select id="knowledge-status"><option value="">全部状态</option><option value="TAGGING">标签识别中</option><option value="REVIEW_REQUIRED">待审批</option><option value="PROCESSING">解析中</option><option value="PUBLISHED">已发布</option><option value="TAGGING_FAILED">标签识别失败</option><option value="FAILED">解析失败</option><option value="REJECTED">已拒绝</option><option value="RETIRED">已退役</option></select></label>
           <span id="knowledge-count" class="knowledge-count">0 项</span>
           <button id="refresh-knowledge" type="button">刷新</button><button id="open-upload" class="primary" type="button">上传资料</button>
         </div>
@@ -30,21 +30,21 @@
       <div class="knowledge-drawer-body">
         <section id="upload-mode-section" class="knowledge-form-section"><header><b>01</b><div><strong>选择组织方式</strong><small>组织方式决定本次文件如何形成运维知识对象。</small></div></header><fieldset class="knowledge-mode-picker"><legend>资料组织方式</legend><label class="selected"><input name="grouping-mode" type="radio" value="EACH_FILE" checked><span><strong>单个文件</strong><small>一个文件形成一项运维资料，适合独立手册或说明文档。</small></span></label><label><input name="grouping-mode" type="radio" value="SINGLE_BUNDLE"><span><strong>Bundle</strong><small>多个文件共同形成一项资料，可区分正文与补充材料。</small></span></label></fieldset></section>
         <section class="knowledge-form-section"><header><b id="file-step">02</b><div><strong>添加原始文件</strong><small id="file-step-help">原文会保留，可在详情中下载核验。</small></div></header><div id="upload-drop-zone" class="knowledge-drop-zone"><input id="manual-file" type="file" hidden><strong>拖放文件到这里</strong><p id="drop-help">每次上传一个文件，重新选择会替换当前文件。</p><button id="choose-files" type="button">选择文件</button></div><section id="upload-ledger" class="knowledge-file-ledger" aria-label="待上传文件" hidden><header><div><strong>待上传文件</strong><span id="upload-total"></span></div><button id="clear-files" type="button">清空</button></header><div id="upload-files"></div></section></section>
-        <section class="knowledge-form-section"><header><b id="metadata-step">03</b><div><strong>资料信息</strong><small>用于列表识别、适用范围和访问控制。</small></div></header><div class="knowledge-form-grid"><label class="span-12"><span id="manual-name-label">资料名称</span><input id="manual-name" maxlength="256" required placeholder="例如：Oracle Data Guard 运维手册"></label><label><span>数据库类型（可选）</span><select id="manual-db"><option value="">通用</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select></label><label><span>安全级</span><select id="manual-security"><option value="1">L1</option><option value="2">L2</option><option value="3">L3</option><option value="4">L4</option><option value="5">L5</option></select></label></div></section>
+        <section class="knowledge-form-section"><header><b id="metadata-step">03</b><div><strong>资料信息</strong><small>上传时无需选择分类；AI 会从配置的受控词表中识别，审批前可调整。</small></div></header><div class="knowledge-form-grid"><label class="span-12"><span id="manual-name-label">资料名称</span><input id="manual-name" maxlength="256" required placeholder="例如：Oracle Data Guard 运维手册"></label><label><span>安全级</span><select id="manual-security"><option value="1">L1</option><option value="2">L2</option><option value="3">L3</option><option value="4">L4</option><option value="5">L5</option></select></label></div></section>
         <p id="manual-result" class="knowledge-status" role="status"></p>
       </div>
-      <footer><button type="button" data-close>取消</button><button id="submit-upload" class="primary" type="submit">上传并解析</button></footer>
+      <footer><button type="button" data-close>取消</button><button id="submit-upload" class="primary" type="submit">上传并识别标签</button></footer>
     </form>
   </dialog>
 
   <dialog id="detail-drawer" class="knowledge-drawer knowledge-detail-drawer" aria-labelledby="detail-title">
     <div class="knowledge-drawer-shell">
       <header class="knowledge-drawer-header"><div><span id="detail-eyebrow">运维知识</span><h2 id="detail-title">知识详情</h2><p id="detail-subtitle"></p></div><div class="knowledge-detail-head-actions"><span id="detail-status"></span><button type="button" data-close aria-label="关闭详情抽屉">关闭</button></div></header>
-      <nav id="detail-tabs" class="knowledge-detail-tabs" aria-label="知识详情页签"><button class="active" data-tab="overview" type="button">概览</button><button data-tab="files" type="button">文件与解析</button><button data-tab="history" type="button">处理记录</button></nav>
+      <nav id="detail-tabs" class="knowledge-detail-tabs" aria-label="知识详情页签"><button class="active" data-tab="overview" type="button">概览与标签</button><button data-tab="files" type="button">文件与解析</button><button data-tab="history" type="button">处理记录</button></nav>
       <div id="detail-body" class="knowledge-drawer-body"></div><footer id="detail-actions"></footer>
     </div>
   </dialog>
 
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261016_1"></script><script src="./js/aiops-operations-knowledge.js?v=20261016_2"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261016_2"></script><script src="./js/aiops-operations-knowledge.js?v=20261016_3"></script>
 </body>
 </html>

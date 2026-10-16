@@ -19,7 +19,44 @@ class ManualUploadMetadata(BaseModel):
     published_date: str | None = Field(default=None, max_length=64)
     notes: str | None = Field(default=None, max_length=2000)
     security_level: int = Field(default=1, ge=1, le=5)
-    scopes: tuple[KnowledgeScopeInput, ...] = Field(default=(), max_length=64)
+
+
+KnowledgeTagCategory = Literal["RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"]
+
+
+class KnowledgeTagWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    category: KnowledgeTagCategory
+    display_name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1000)
+    sort_order: int = Field(default=0, ge=0, le=1_000_000)
+    expected_row_version: int | None = Field(default=None, ge=1)
+
+
+class KnowledgeTagStatusCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_row_version: int = Field(ge=1)
+
+
+class KnowledgeTagEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    document_version_id: str
+    file_name: str
+    quote: str = Field(min_length=1, max_length=1000)
+    locator: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeTagSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tag_id: str
+    confidence: float = Field(ge=0, le=1)
+    evidence: tuple[KnowledgeTagEvidence, ...] = Field(default=(), max_length=8)
+
+
+class KnowledgeTagAnalysisOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["OPS_KNOWLEDGE_TAG_ANALYSIS.v1"] = "OPS_KNOWLEDGE_TAG_ANALYSIS.v1"
+    suggestions: tuple[KnowledgeTagSuggestion, ...] = Field(default=(), max_length=64)
 
 
 class ManualProcedureStep(BaseModel):
@@ -84,6 +121,7 @@ class KnowledgeSearchRequest(BaseModel):
     database_type: str | None = Field(default=None, max_length=32)
     database_major_version: str | None = Field(default=None, max_length=32)
     topology: str | None = Field(default=None, max_length=64)
+    tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
     source_kinds: tuple[Literal["MANUAL", "DIAGNOSIS_CASE"], ...] = (
         "MANUAL", "DIAGNOSIS_CASE"
     )
@@ -95,6 +133,7 @@ class KnowledgeReviewCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
+    tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
 
 
 class KnowledgeExecutionSpecRequest(BaseModel):

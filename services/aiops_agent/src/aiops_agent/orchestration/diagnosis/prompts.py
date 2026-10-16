@@ -24,6 +24,7 @@ PROMPT_KEYS = {
     "diagnosis_answer_compose": "aiops_agent.diagnosis_answer_compose",
     "diagnosis_answer_stream": "aiops_agent.diagnosis_answer_stream",
     "image_evidence_extract": "aiops_agent.image_evidence_extract",
+    "knowledge_tag_classify": "aiops_agent.knowledge_tag_classify",
 }
 
 DIAGNOSIS_PROMPT_IDS = (

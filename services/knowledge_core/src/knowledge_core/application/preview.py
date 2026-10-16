@@ -1,7 +1,9 @@
 """按 Domain 校验 Bundle Revision 与源文件预览范围。"""
 
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID
 
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
@@ -46,11 +48,34 @@ class SourceFilePreview:
     byte_size: int
 
 
+@dataclass(frozen=True, slots=True)
+class ReviewTextExcerpt:
+    document_version_id: UUID
+    file_name: str
+    content: str
+    locator: dict
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewTextProjection:
+    bundle_revision_id: UUID
+    excerpts: list[ReviewTextExcerpt]
+    warnings: list[str]
+
+
 class KnowledgeCorePreviewService:
     """仅通过 Repository 读取不可变入库事实，不向 Router 暴露对象 URI。"""
 
-    def __init__(self, *, uow_factory: Callable[[], KnowledgeCoreUnitOfWork]):
+    def __init__(
+        self, *, uow_factory: Callable[[], KnowledgeCoreUnitOfWork],
+        object_store=None, converter=None,
+        max_chars_per_file: int = 24_000, max_total_chars: int = 96_000,
+    ):
         self._uow_factory = uow_factory
+        self._object_store = object_store
+        self._converter = converter
+        self._max_chars_per_file = max_chars_per_file
+        self._max_total_chars = max_total_chars
 
     async def get_bundle_revision(
         self,
@@ -179,6 +204,74 @@ class KnowledgeCorePreviewService:
                 ),
                 byte_size=int(version.byte_size),
             )
+
+    async def extract_review_text(
+        self, *, domain_id: int, collection_id: UUID, bundle_id: UUID,
+        bundle_revision_id: UUID,
+    ) -> ReviewTextProjection:
+        """对待审批源文件生成有界文本，不创建 Parse View 或检索索引。"""
+        if self._object_store is None or self._converter is None:
+            raise RuntimeError("审批预分析组件未初始化")
+        async with self._uow_factory() as uow:
+            self._require_repositories(uow)
+            bundle, revision = await self._scoped_revision(
+                uow, domain_id=domain_id, collection_id=collection_id,
+                bundle_id=bundle_id, bundle_revision_id=bundle_revision_id,
+            )
+            if revision.approval_status != "PENDING":
+                raise ValueError("只有待审批 Revision 可以生成审批预分析文本")
+            members = await uow.members.list_by_revision(bundle_revision_id=bundle_revision_id)
+            sources: list[tuple[UUID, str, str]] = []
+            for member in sorted(members, key=lambda item: int(item.ordinal)):
+                if member.document_role == "MANIFEST" or member.document_version_id is None:
+                    continue
+                version = await uow.versions.get_by_id(document_version_id=member.document_version_id)
+                if (
+                    version is None
+                    or version.collection_id != collection_id
+                    or version.bundle_id != bundle.bundle_id
+                    or version.storage_state != "AVAILABLE"
+                ):
+                    continue
+                sources.append((
+                    version.document_version_id,
+                    member.declared_name or member.external_document_id or "document",
+                    version.storage_uri,
+                ))
+        excerpts: list[ReviewTextExcerpt] = []
+        warnings: list[str] = []
+        remaining = self._max_total_chars
+        with tempfile.TemporaryDirectory(prefix="kbot-kc-review-") as directory:
+            root = Path(directory)
+            for ordinal, (document_version_id, file_name, storage_uri) in enumerate(sources, start=1):
+                if remaining <= 0:
+                    warnings.append("审批预分析文本达到总量上限，后续文件未继续抽取")
+                    break
+                source_path = root / f"{ordinal:03d}{Path(file_name).suffix or '.bin'}"
+                try:
+                    with source_path.open("wb") as writer:
+                        async for chunk in self._object_store.stream(storage_uri):
+                            writer.write(chunk)
+                    document = await self._converter.convert(
+                        source_path=source_path, do_ocr=True, ocr_engine="tesseract",
+                        generate_page_images=False, generate_picture_images=False,
+                        generate_table_images=False,
+                    )
+                    content = document.export_to_markdown().strip()
+                    if not content:
+                        warnings.append(f"{file_name} 未抽取到可用于标签识别的文字")
+                        continue
+                    bounded = content[:min(self._max_chars_per_file, remaining)]
+                    remaining -= len(bounded)
+                    excerpts.append(ReviewTextExcerpt(
+                        document_version_id=document_version_id,
+                        file_name=file_name,
+                        content=bounded,
+                        locator={"ordinal": ordinal - 1, "projection": "DOCLING_MARKDOWN", "truncated": len(bounded) < len(content)},
+                    ))
+                except Exception as exc:
+                    warnings.append(f"{file_name} 审批预分析失败：{type(exc).__name__}")
+        return ReviewTextProjection(bundle_revision_id=bundle_revision_id, excerpts=excerpts, warnings=warnings)
 
     @staticmethod
     def _require_repositories(uow: KnowledgeCoreUnitOfWork) -> None:

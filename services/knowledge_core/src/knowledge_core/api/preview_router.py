@@ -86,6 +86,33 @@ async def preview_bundle_revision(
     return asdict(preview)
 
 
+@router.post(
+    "/collections/{collection_id}/bundles/{bundle_id}"
+    "/revisions/{bundle_revision_id}:extract-review-text"
+)
+async def extract_review_text(
+    domain_id: int, collection_id: UUID, bundle_id: UUID,
+    bundle_revision_id: UUID, request: Request,
+):
+    require_domain_match(request, domain_id)
+    try:
+        projection = await request.app.state.kc_preview_service.extract_review_text(
+            domain_id=domain_id, collection_id=collection_id,
+            bundle_id=bundle_id, bundle_revision_id=bundle_revision_id,
+        )
+    except KnowledgePreviewNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "KNOWLEDGE_PREVIEW_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "KNOWLEDGE_REVIEW_TEXT_UNAVAILABLE", "message": str(exc)},
+        ) from exc
+    return asdict(projection)
+
+
 @router.get(
     "/collections/{collection_id}/bundles/{bundle_id}"
     "/revisions/{bundle_revision_id}/documents/{document_version_id}/content"

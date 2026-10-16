@@ -454,6 +454,41 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def list_operations_knowledge_tags(
+        self, *, include_disabled: bool, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/tags?include_disabled={str(include_disabled).lower()}",
+            auth_context=auth_context,
+        )
+
+    async def create_operations_knowledge_tag(
+        self, payload: dict[str, Any], *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/operations-knowledge/tags",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def update_operations_knowledge_tag(
+        self, tag_id: UUID, payload: dict[str, Any], *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT", f"{INTERNAL_API_V1}/aiops/operations-knowledge/tags/{tag_id}",
+            payload=payload, auth_context=auth_context,
+        )
+
+    async def set_operations_knowledge_tag_status(
+        self, tag_id: UUID, *, action: str, expected_row_version: int,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/operations-knowledge/tags/{tag_id}:{action}",
+            payload={"expected_row_version": expected_row_version},
+            auth_context=auth_context,
+        )
+
     async def list_operations_knowledge_assets(
         self, *, asset_kind: str | None, status: str | None, limit: int,
         auth_context: AuthContext,
@@ -554,12 +589,17 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def review_operations_knowledge_version(
         self, asset_version_id: UUID, *, decision: str,
         expected_row_version: int, comment: str | None,
+        tag_ids: tuple[str, ...] = (),
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "POST",
             f"{INTERNAL_API_V1}/aiops/operations-knowledge/versions/{asset_version_id}:{decision.lower()}",
-            payload={"expected_row_version": expected_row_version, "comment": comment},
+            payload={
+                "expected_row_version": expected_row_version,
+                "comment": comment,
+                "tag_ids": list(tag_ids),
+            },
             auth_context=auth_context,
         )
 

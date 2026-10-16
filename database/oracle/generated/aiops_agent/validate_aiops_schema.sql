@@ -84,6 +84,7 @@ BEGIN
             'KBOT_OPS_ACTIVITY_SAMPLE',
             'KBOT_OPS_KNOWLEDGE_ASSET',
             'KBOT_OPS_KNOWLEDGE_VERSION',
+            'KBOT_OPS_KNOWLEDGE_TAG',
             'KBOT_OPS_KNOWLEDGE_SCOPE',
             'KBOT_OPS_KNOWLEDGE_SOURCE',
             'KBOT_OPS_KNOWLEDGE_INDEX',
@@ -174,6 +175,7 @@ BEGIN
             'KBOT_OPS_ACTIVITY_SAMPLE',
             'KBOT_OPS_KNOWLEDGE_ASSET',
             'KBOT_OPS_KNOWLEDGE_VERSION',
+            'KBOT_OPS_KNOWLEDGE_TAG',
             'KBOT_OPS_KNOWLEDGE_SCOPE',
             'KBOT_OPS_KNOWLEDGE_SOURCE',
             'KBOT_OPS_KNOWLEDGE_INDEX',
@@ -197,7 +199,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 73 项。');
+        dbms_output.put_line('[通过] AIOps 表: 74 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -381,6 +383,7 @@ BEGIN
             'IX_OPS_KNOW_SOURCE_REPORT',
             'IX_OPS_KNOW_SOURCE_RUN',
             'IX_OPS_KNOW_SOURCE_VER',
+            'IX_OPS_KNOW_TAG_CATALOG',
             'IX_OPS_KNOW_VER_ASSET',
             'IX_OPS_KNOW_VER_STATUS',
             'IX_OPS_NOTIFY_SUB_ROUTE',
@@ -683,6 +686,7 @@ BEGIN
             'IX_OPS_KNOW_SOURCE_REPORT',
             'IX_OPS_KNOW_SOURCE_RUN',
             'IX_OPS_KNOW_SOURCE_VER',
+            'IX_OPS_KNOW_TAG_CATALOG',
             'IX_OPS_KNOW_VER_ASSET',
             'IX_OPS_KNOW_VER_STATUS',
             'IX_OPS_NOTIFY_SUB_ROUTE',
@@ -889,7 +893,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 283 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 284 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -974,11 +978,13 @@ BEGIN
             'FK_OPS_KNOW_ASSET_DOMAIN',
             'FK_OPS_KNOW_INDEX_VER',
             'FK_OPS_KNOW_REVIEW_VER',
+            'FK_OPS_KNOW_SCOPE_TAG',
             'FK_OPS_KNOW_SCOPE_VER',
             'FK_OPS_KNOW_SOURCE_ART',
             'FK_OPS_KNOW_SOURCE_REPORT',
             'FK_OPS_KNOW_SOURCE_RUN',
             'FK_OPS_KNOW_SOURCE_VER',
+            'FK_OPS_KNOW_TAG_DOMAIN',
             'FK_OPS_KNOW_VER_ASSET',
             'FK_OPS_NOTIFY_SUB_DOMAIN',
             'FK_OPS_NOTIFY_SUB_TARGET',
@@ -1242,11 +1248,13 @@ BEGIN
             'FK_OPS_KNOW_ASSET_DOMAIN',
             'FK_OPS_KNOW_INDEX_VER',
             'FK_OPS_KNOW_REVIEW_VER',
+            'FK_OPS_KNOW_SCOPE_TAG',
             'FK_OPS_KNOW_SCOPE_VER',
             'FK_OPS_KNOW_SOURCE_ART',
             'FK_OPS_KNOW_SOURCE_REPORT',
             'FK_OPS_KNOW_SOURCE_RUN',
             'FK_OPS_KNOW_SOURCE_VER',
+            'FK_OPS_KNOW_TAG_DOMAIN',
             'FK_OPS_KNOW_VER_ASSET',
             'FK_OPS_NOTIFY_SUB_DOMAIN',
             'FK_OPS_NOTIFY_SUB_TARGET',
@@ -1423,7 +1431,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 249 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 251 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1916,6 +1924,7 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_SCOPE|SCOPE_VALUE',
             'KBOT_OPS_KNOWLEDGE_SCOPE|SOURCE_KIND',
             'KBOT_OPS_KNOWLEDGE_SCOPE|SOURCE_LOCATOR_JSON',
+            'KBOT_OPS_KNOWLEDGE_SCOPE|TAG_ID',
             'KBOT_OPS_KNOWLEDGE_SOURCE|ASSET_VERSION_ID',
             'KBOT_OPS_KNOWLEDGE_SOURCE|CONTENT_HASH',
             'KBOT_OPS_KNOWLEDGE_SOURCE|CREATED_AT',
@@ -1926,6 +1935,19 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_SOURCE|SOURCE_LOCATOR_JSON',
             'KBOT_OPS_KNOWLEDGE_SOURCE|SOURCE_REPORT_ID',
             'KBOT_OPS_KNOWLEDGE_SOURCE|SOURCE_RUN_ID',
+            'KBOT_OPS_KNOWLEDGE_TAG|CATEGORY',
+            'KBOT_OPS_KNOWLEDGE_TAG|CREATED_AT',
+            'KBOT_OPS_KNOWLEDGE_TAG|CREATED_BY',
+            'KBOT_OPS_KNOWLEDGE_TAG|DESCRIPTION',
+            'KBOT_OPS_KNOWLEDGE_TAG|DISPLAY_NAME',
+            'KBOT_OPS_KNOWLEDGE_TAG|DOMAIN_ID',
+            'KBOT_OPS_KNOWLEDGE_TAG|NORMALIZED_NAME',
+            'KBOT_OPS_KNOWLEDGE_TAG|ROW_VERSION',
+            'KBOT_OPS_KNOWLEDGE_TAG|SORT_ORDER',
+            'KBOT_OPS_KNOWLEDGE_TAG|STATUS',
+            'KBOT_OPS_KNOWLEDGE_TAG|TAG_ID',
+            'KBOT_OPS_KNOWLEDGE_TAG|UPDATED_AT',
+            'KBOT_OPS_KNOWLEDGE_TAG|UPDATED_BY',
             'KBOT_OPS_KNOWLEDGE_VERSION|ASSET_ID',
             'KBOT_OPS_KNOWLEDGE_VERSION|ASSET_VERSION_ID',
             'KBOT_OPS_KNOWLEDGE_VERSION|CREATED_AT',
@@ -1938,6 +1960,7 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_VERSION|ROW_VERSION',
             'KBOT_OPS_KNOWLEDGE_VERSION|SOURCE_HASH',
             'KBOT_OPS_KNOWLEDGE_VERSION|STATUS',
+            'KBOT_OPS_KNOWLEDGE_VERSION|TAG_ANALYSIS_JSON',
             'KBOT_OPS_KNOWLEDGE_VERSION|VERSION_NO',
             'KBOT_OPS_MANAGED_RESOURCE|ATTRIBUTES_JSON',
             'KBOT_OPS_MANAGED_RESOURCE|CREATED_AT',
@@ -3116,6 +3139,7 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_SCOPE|SCOPE_VALUE',
             'KBOT_OPS_KNOWLEDGE_SCOPE|SOURCE_KIND',
             'KBOT_OPS_KNOWLEDGE_SCOPE|SOURCE_LOCATOR_JSON',
+            'KBOT_OPS_KNOWLEDGE_SCOPE|TAG_ID',
             'KBOT_OPS_KNOWLEDGE_SOURCE|ASSET_VERSION_ID',
             'KBOT_OPS_KNOWLEDGE_SOURCE|CONTENT_HASH',
             'KBOT_OPS_KNOWLEDGE_SOURCE|CREATED_AT',
@@ -3126,6 +3150,19 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_SOURCE|SOURCE_LOCATOR_JSON',
             'KBOT_OPS_KNOWLEDGE_SOURCE|SOURCE_REPORT_ID',
             'KBOT_OPS_KNOWLEDGE_SOURCE|SOURCE_RUN_ID',
+            'KBOT_OPS_KNOWLEDGE_TAG|CATEGORY',
+            'KBOT_OPS_KNOWLEDGE_TAG|CREATED_AT',
+            'KBOT_OPS_KNOWLEDGE_TAG|CREATED_BY',
+            'KBOT_OPS_KNOWLEDGE_TAG|DESCRIPTION',
+            'KBOT_OPS_KNOWLEDGE_TAG|DISPLAY_NAME',
+            'KBOT_OPS_KNOWLEDGE_TAG|DOMAIN_ID',
+            'KBOT_OPS_KNOWLEDGE_TAG|NORMALIZED_NAME',
+            'KBOT_OPS_KNOWLEDGE_TAG|ROW_VERSION',
+            'KBOT_OPS_KNOWLEDGE_TAG|SORT_ORDER',
+            'KBOT_OPS_KNOWLEDGE_TAG|STATUS',
+            'KBOT_OPS_KNOWLEDGE_TAG|TAG_ID',
+            'KBOT_OPS_KNOWLEDGE_TAG|UPDATED_AT',
+            'KBOT_OPS_KNOWLEDGE_TAG|UPDATED_BY',
             'KBOT_OPS_KNOWLEDGE_VERSION|ASSET_ID',
             'KBOT_OPS_KNOWLEDGE_VERSION|ASSET_VERSION_ID',
             'KBOT_OPS_KNOWLEDGE_VERSION|CREATED_AT',
@@ -3138,6 +3175,7 @@ BEGIN
             'KBOT_OPS_KNOWLEDGE_VERSION|ROW_VERSION',
             'KBOT_OPS_KNOWLEDGE_VERSION|SOURCE_HASH',
             'KBOT_OPS_KNOWLEDGE_VERSION|STATUS',
+            'KBOT_OPS_KNOWLEDGE_VERSION|TAG_ANALYSIS_JSON',
             'KBOT_OPS_KNOWLEDGE_VERSION|VERSION_NO',
             'KBOT_OPS_MANAGED_RESOURCE|ATTRIBUTES_JSON',
             'KBOT_OPS_MANAGED_RESOURCE|CREATED_AT',
@@ -3823,7 +3861,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1183 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1198 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3915,19 +3953,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 45
-           OR l_contract_version <> 'aiops-oracle-v45-shared-monitor-locator' THEN
+           OR l_schema_version <> 46
+           OR l_contract_version <> 'aiops-oracle-v46-knowledge-tags' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '45/aiops-oracle-v45-shared-monitor-locator'
+                || '46/aiops-oracle-v46-knowledge-tags'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/45/'
-                || 'aiops-oracle-v45-shared-monitor-locator'
+                '[通过] Schema 合同：AIOPS/46/'
+                || 'aiops-oracle-v46-knowledge-tags'
             );
         END IF;
     EXCEPTION
@@ -3953,10 +3991,10 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：73 张表、10 个视图、'
+        '验证通过：74 张表、10 个视图、'
         || '1 个属性图、'
-        || '283 个命名索引、249 个命名约束、'
-        || '1183 个表列；Schema 与当前规范一致。'
+        || '284 个命名索引、251 个命名约束、'
+        || '1198 个表列；Schema 与当前规范一致。'
     );
 END;
 /

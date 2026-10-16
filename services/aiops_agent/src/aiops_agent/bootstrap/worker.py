@@ -203,6 +203,9 @@ def create_aiops_worker_probe(
             knowledge_assistant_instruction=(
                 resolved.runtime.knowledge_assistant_instruction
             ),
+            model_catalog=model_client,
+            structured_model=diagnosis_model_client,
+            prompt_registry=diagnosis_prompts,
         )
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(

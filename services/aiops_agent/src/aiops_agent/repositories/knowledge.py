@@ -3,7 +3,7 @@
 from collections.abc import Callable, Sequence
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
@@ -12,6 +12,7 @@ from aiops_agent.entities import (
     OperationsKnowledgeReviewEntity,
     OperationsKnowledgeScopeEntity,
     OperationsKnowledgeSourceEntity,
+    OperationsKnowledgeTagEntity,
     OperationsKnowledgeVersionEntity,
     ReportEntity,
 )
@@ -55,6 +56,76 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         self._session.add(version)
         await self._session.flush()
         self._session.add_all([*scopes, *sources, *indexes])
+        await self._session.flush()
+
+    async def list_tags(
+        self, *, domain_id: int, status: str | None = None,
+    ) -> list[OperationsKnowledgeTagEntity]:
+        self._check_active()
+        statement = select(OperationsKnowledgeTagEntity).where(
+            OperationsKnowledgeTagEntity.domain_id == domain_id
+        )
+        if status is not None:
+            statement = statement.where(OperationsKnowledgeTagEntity.status == status)
+        statement = statement.order_by(
+            OperationsKnowledgeTagEntity.category,
+            OperationsKnowledgeTagEntity.sort_order,
+            OperationsKnowledgeTagEntity.display_name,
+            OperationsKnowledgeTagEntity.tag_id,
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def get_tag(
+        self, *, domain_id: int, tag_id: UUID, for_update: bool = False,
+    ) -> OperationsKnowledgeTagEntity | None:
+        self._check_active()
+        statement = select(OperationsKnowledgeTagEntity).where(
+            OperationsKnowledgeTagEntity.domain_id == domain_id,
+            OperationsKnowledgeTagEntity.tag_id == tag_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def find_tag_name(
+        self, *, domain_id: int, category: str, normalized_name: str,
+        exclude_tag_id: UUID | None = None,
+    ) -> OperationsKnowledgeTagEntity | None:
+        self._check_active()
+        statement = select(OperationsKnowledgeTagEntity).where(
+            OperationsKnowledgeTagEntity.domain_id == domain_id,
+            OperationsKnowledgeTagEntity.category == category,
+            OperationsKnowledgeTagEntity.normalized_name == normalized_name,
+        )
+        if exclude_tag_id is not None:
+            statement = statement.where(OperationsKnowledgeTagEntity.tag_id != exclude_tag_id)
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def add_tag(self, tag: OperationsKnowledgeTagEntity) -> None:
+        await self._add(tag)
+
+    async def replace_tag_scopes(
+        self, *, version: OperationsKnowledgeVersionEntity,
+        tags: Sequence[OperationsKnowledgeTagEntity],
+    ) -> None:
+        """用审批结果整体替换手册标签，保留其他业务范围。"""
+        self._check_active()
+        await self._session.execute(delete(OperationsKnowledgeScopeEntity).where(
+            OperationsKnowledgeScopeEntity.asset_version_id == version.asset_version_id,
+            OperationsKnowledgeScopeEntity.tag_id.is_not(None),
+        ))
+        self._session.add_all([
+            OperationsKnowledgeScopeEntity(
+                asset_version_id=version.asset_version_id,
+                tag_id=tag.tag_id,
+                scope_kind=tag.category,
+                scope_value=tag.display_name,
+                normalized_value=str(tag.tag_id).upper(),
+                source_kind="APPROVED_TAG",
+                source_locator_json={"tag_id": str(tag.tag_id)},
+            )
+            for tag in tags
+        ])
         await self._session.flush()
 
     async def find_by_source_hash(
@@ -327,14 +398,18 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 select(
                     OperationsKnowledgeScopeEntity.scope_kind,
                     OperationsKnowledgeScopeEntity.normalized_value,
+                    OperationsKnowledgeScopeEntity.tag_id,
                 ).where(
                     OperationsKnowledgeScopeEntity.asset_version_id
                     == version.asset_version_id
                 )
             )).all())
             by_kind: dict[str, set[str]] = {}
-            for kind, value in scopes:
+            tag_ids: set[str] = set()
+            for kind, value, tag_id in scopes:
                 by_kind.setdefault(str(kind), set()).add(str(value))
+                if tag_id is not None:
+                    tag_ids.add(str(tag_id).upper())
             applicable = True
             target_scopes = by_kind.get("TARGET_ID", set())
             if target_scopes and (
@@ -342,6 +417,12 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             ):
                 applicable = False
             for kind, requested in scope_filters.items():
+                if kind == "TAG_ID":
+                    wanted_ids = {str(value).strip().upper() for value in requested if str(value).strip()}
+                    if wanted_ids and not wanted_ids.issubset(tag_ids):
+                        applicable = False
+                        break
+                    continue
                 known = by_kind.get(kind, set())
                 wanted = {str(value).strip().upper() for value in requested if str(value).strip()}
                 if known and wanted and known.isdisjoint(wanted):
@@ -421,8 +502,14 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 == OperationsKnowledgeVersionEntity.asset_version_id,
             )
             .where(
-                OperationsKnowledgeVersionEntity.status == "PROCESSING",
-                OperationsKnowledgeIndexEntity.index_status == "PROCESSING",
+                (
+                    (OperationsKnowledgeVersionEntity.status == "TAGGING")
+                    & (OperationsKnowledgeIndexEntity.index_status == "PENDING_APPROVAL")
+                )
+                | (
+                    (OperationsKnowledgeVersionEntity.status == "PROCESSING")
+                    & (OperationsKnowledgeIndexEntity.index_status == "PROCESSING")
+                ),
             )
             .order_by(
                 OperationsKnowledgeIndexEntity.updated_at,

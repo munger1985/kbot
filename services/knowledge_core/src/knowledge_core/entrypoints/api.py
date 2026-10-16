@@ -59,6 +59,7 @@ from knowledge_core.application.evidence_retrieval import KnowledgeCoreEvidenceR
 from knowledge_core.application.query_embeddings import CollectionQueryEmbeddingProvider
 from knowledge_core.application.status import KnowledgeCoreStatusService
 from knowledge_core.application.preview import KnowledgeCorePreviewService
+from knowledge_core.parsing.converter import KcDoclingConverter
 from knowledge_core.application.model_references import (
     KnowledgeCoreModelReferenceService,
 )
@@ -257,6 +258,10 @@ async def lifespan(app: FastAPI):
     )
     app.state.kc_preview_service = KnowledgeCorePreviewService(
         uow_factory=kc_uow_factory,
+        object_store=app.state.kc_object_store,
+        converter=KcDoclingConverter(
+            artifacts_path=settings.parser.local_artifacts_path
+        ),
     )
     app.state.kc_model_reference_service = (
         KnowledgeCoreModelReferenceService(uow_factory=kc_uow_factory)

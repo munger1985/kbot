@@ -12,7 +12,7 @@
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
     "operations-knowledge-chat": "aiops:use",
-    "operations-knowledge": "aiops:knowledge_manage", agents: "aiops:agent_manage",
+    "operations-knowledge": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
     "inspection-plans": "aiops:plan_manage",
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
@@ -32,7 +32,7 @@
       ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["data-protection", "数据保护"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
-      ["responsibility-groups", "责任组"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
+      ["responsibility-groups", "责任组"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
     ]],
   ];
   const iconPaths = {

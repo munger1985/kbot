@@ -24,6 +24,7 @@ from .knowledge import (
     OperationsKnowledgeReviewEntity,
     OperationsKnowledgeScopeEntity,
     OperationsKnowledgeSourceEntity,
+    OperationsKnowledgeTagEntity,
     OperationsKnowledgeVersionEntity,
 )
 from .monitoring import (
@@ -119,6 +120,7 @@ __all__ = [
     "OperationsKnowledgeReviewEntity",
     "OperationsKnowledgeScopeEntity",
     "OperationsKnowledgeSourceEntity",
+    "OperationsKnowledgeTagEntity",
     "OperationsKnowledgeVersionEntity",
     "PolicyEntity",
     "ReportEntity",

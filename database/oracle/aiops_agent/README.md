@@ -1,6 +1,6 @@
 # AIOps Agent Oracle Schema
 
-本目录当前拥有 AIOps 服务的69张表和10个只读视图，按以下顺序在空Schema
+本目录当前拥有 AIOps 服务的 74 张表和 10 个只读视图，按以下顺序在空 Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -12,7 +12,7 @@
 7. `007_ops_agents.sql`：私有 Agent、版本和资源绑定；
 8. `008_ops_conversations_reports.sql`：Turn、Skill调用、证据、回答块、对话和报告模板；
 9. `009_ops_workload.sql`：MySQL/PostgreSQL工作负载快照、指标和活动采样；
-10. `010_ops_knowledge.sql`：运维知识资产、版本、适用范围、来源、索引引用和审核记录；
+10. `010_ops_knowledge.sql`：运维知识资产、版本、受控标签、适用范围、来源、索引引用和审核记录；
 11. `011_ops_recovery.sql`：数据库组件恢复目标、数据库类型化恢复坐标和人工恢复演练记录。
 12. `012_ops_work_items.sql`：DBA 工作项、发生记录、资源关联和审计活动。
 
@@ -27,24 +27,21 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部十二份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 44 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 46 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `operations-manuals`、`diagnosis-cases` 两个固定 KC Collection 位于共享平台/KC 表，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 44 / aiops-oracle-v44-resource-graph`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 46 / aiops-oracle-v46-knowledge-tags`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 44 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 46 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
 
-生产 Oracle 仍处于原始单 Target 模型（`AIOPS / 43 / aiops-oracle-v33`）时，执行
-`../operations/apply_aiops_schema_44.sql`。该单文件脚本直接创建业务系统、可管理
-组件和资源拓扑，为每个现有 Target 补齐一个业务系统、数据库组件、MAIN 站点与成员，
-并将恢复目标和演练从 Target 作用域迁移到数据库组件。它不依赖、也不经过已废弃的
-Database System 中间模型；执行前必须先备份并停止 AIOps 写入服务。
+从 Schema 45 升级时执行 `../operations/apply_aiops_schema_46.sql`。该脚本创建受控标签表，
+为知识版本增加标签分析结果，并把知识范围关联到稳定标签 ID；执行前必须先备份并停止 AIOps 写入服务。
 
 升级失败但必须保留已配置的监控源和运维目标时，改用
 `../generated/aiops_agent/rebuild_aiops_preserve_sources_targets.sql`。该文件同样在

@@ -109,6 +109,19 @@ class AIOpsPasswordChangePayload(_Payload):
 class OperationsKnowledgeReviewPayload(_Payload):
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
+    tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
+
+
+class OperationsKnowledgeTagPayload(_Payload):
+    category: Literal["RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"]
+    display_name: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=1000)
+    sort_order: int = Field(default=0, ge=0, le=1_000_000)
+    expected_row_version: int | None = Field(default=None, ge=1)
+
+
+class OperationsKnowledgeTagStatusPayload(_Payload):
+    expected_row_version: int = Field(ge=1)
 
 
 class OperationsKnowledgeSearchPayload(_Payload):
@@ -121,6 +134,7 @@ class OperationsKnowledgeSearchPayload(_Payload):
     database_type: str | None = Field(default=None, max_length=32)
     database_major_version: str | None = Field(default=None, max_length=32)
     topology: str | None = Field(default=None, max_length=64)
+    tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
     source_kinds: tuple[Literal["MANUAL", "DIAGNOSIS_CASE"], ...] = (
         "MANUAL", "DIAGNOSIS_CASE"
     )
@@ -438,6 +452,48 @@ async def operations_knowledge_overview(request: Request):
     )
 
 
+@router.get("/operations-knowledge/tags")
+async def list_operations_knowledge_tags(request: Request, include_disabled: bool = True):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).list_operations_knowledge_tags(
+        include_disabled=include_disabled, auth_context=request.state.auth_context
+    )
+
+
+@router.post("/operations-knowledge/tags", status_code=201)
+async def create_operations_knowledge_tag(payload: OperationsKnowledgeTagPayload, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).create_operations_knowledge_tag(
+        payload.model_dump(mode="json"), auth_context=request.state.auth_context
+    )
+
+
+@router.put("/operations-knowledge/tags/{tag_id}")
+async def update_operations_knowledge_tag(tag_id: UUID, payload: OperationsKnowledgeTagPayload, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).update_operations_knowledge_tag(
+        tag_id, payload.model_dump(mode="json"), auth_context=request.state.auth_context
+    )
+
+
+@router.post("/operations-knowledge/tags/{tag_id}:enable")
+async def enable_operations_knowledge_tag(tag_id: UUID, payload: OperationsKnowledgeTagStatusPayload, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).set_operations_knowledge_tag_status(
+        tag_id, action="enable", expected_row_version=payload.expected_row_version,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/operations-knowledge/tags/{tag_id}:disable")
+async def disable_operations_knowledge_tag(tag_id: UUID, payload: OperationsKnowledgeTagStatusPayload, request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).set_operations_knowledge_tag_status(
+        tag_id, action="disable", expected_row_version=payload.expected_row_version,
+        auth_context=request.state.auth_context,
+    )
+
+
 @router.get("/operations-knowledge/assets")
 async def list_operations_knowledge_assets(
     request: Request,
@@ -574,6 +630,7 @@ async def _review_operations_knowledge(
         asset_version_id, decision=decision,
         expected_row_version=payload.expected_row_version,
         comment=payload.comment,
+        tag_ids=payload.tag_ids,
         auth_context=request.state.auth_context,
     )
 
@@ -581,6 +638,11 @@ async def _review_operations_knowledge(
 @router.post("/operations-knowledge/versions/{asset_version_id}:publish")
 async def publish_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
     return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="publish", payload=payload, request=request)
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:approve")
+async def approve_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+    return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="approve", payload=payload, request=request)
 
 
 @router.post("/operations-knowledge/versions/{asset_version_id}:reject")

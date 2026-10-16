@@ -64,6 +64,7 @@ class OperationsKnowledgeVersionEntity(BaseEntity):
     extraction_warnings_json: Mapped[list[Any]] = mapped_column(
         OracleNativeJSON, nullable=False, default=list
     )
+    tag_analysis_json: Mapped[dict[str, Any] | None] = mapped_column(OracleNativeJSON)
     published_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
     retired_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -86,6 +87,7 @@ class OperationsKnowledgeScopeEntity(BaseEntity):
 
     scope_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     asset_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    tag_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     scope_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     scope_value: Mapped[str] = mapped_column(String(512), nullable=False)
     normalized_value: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -94,6 +96,30 @@ class OperationsKnowledgeScopeEntity(BaseEntity):
     created_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class OperationsKnowledgeTagEntity(BaseEntity):
+    """由 AIOps 控制台维护、供模型有限选择的知识标签。"""
+
+    __tablename__ = "KBOT_OPS_KNOWLEDGE_TAG"
+    __table_args__ = (
+        Index("IX_OPS_KNOW_TAG_CATALOG", "domain_id", "category", "status", "sort_order"),
+    )
+
+    tag_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=0)
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UniversalTimestamp(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": row_version}
 
 
 class OperationsKnowledgeSourceEntity(BaseEntity):
