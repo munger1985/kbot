@@ -33,6 +33,11 @@ SOURCE_SCRIPTS = (
     / "database"
     / "oracle"
     / "operations"
+    / "converge_kbot_41_shared_views.sql",
+    ROOT
+    / "database"
+    / "oracle"
+    / "operations"
     / "upgrade_kbot_41_retire_km_asset.sql",
 )
 
@@ -109,6 +114,7 @@ class KBot41OnlineSchemaUpgradeTest(unittest.TestCase):
         self.assertIn("L_SCHEMA_VERSION <> 43", sql.upper())
         self.assertIn("L_SCHEMA_VERSION <> 44", sql.upper())
         self.assertIn("KBOT_KM_AGENT_GRANT", sql.upper())
+        self.assertIn("CREATE OR REPLACE VIEW KBOT_V_PLATFORM_DOMAIN", sql.upper())
 
 
 if __name__ == "__main__":

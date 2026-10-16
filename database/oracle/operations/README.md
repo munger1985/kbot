@@ -111,6 +111,8 @@ Schema 44 / `aiops-oracle-v44-resource-graph`。脚本跳过已否定且未部�
 若 42→43 已经成功提交、后续阶段因前置数据检查停止，必须改用
 `../generated/kbot_41/apply_kbot_41_from_aiops_schema_43.sql` 从 Schema 43 续跑；该产物只包含
 43→44、44→45 和 KM Asset 退役，不会重复执行已经完成的 42→43 DDL。
+两个追平产物也会重建 KBot 4.1 的共享 `KBOT_V_PLATFORM_DOMAIN` 视图，清除遗留
+`APP_ID` 投影；该阶段只替换视图，不修改 Domain 业务行。
 
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为

@@ -12,6 +12,7 @@ SOURCE_SCRIPTS_FROM_42 = (
     OPERATIONS_DIR / "apply_aiops_schema_43.sql",
     OPERATIONS_DIR / "apply_aiops_schema_44.sql",
     OPERATIONS_DIR / "apply_aiops_schema_45.sql",
+    OPERATIONS_DIR / "converge_kbot_41_shared_views.sql",
     OPERATIONS_DIR / "upgrade_kbot_41_retire_km_asset.sql",
 )
 SOURCE_SCRIPTS_FROM_43 = SOURCE_SCRIPTS_FROM_42[1:]
