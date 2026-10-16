@@ -90,10 +90,23 @@ Schema 43 / `aiops-oracle-v33`。脚本为会话报告模板增加 Domain 默认
 API、Worker、Scheduler 和 DB Executor，并完成 Schema 备份。
 
 `apply_aiops_schema_44.sql` 用于将 AIOps Schema 43 / `aiops-oracle-v33` 直接升级到
-Schema 44 / `aiops-oracle-v34`。脚本跳过已否定且未部署的 Database System 中间模型，
-直接建立业务系统、数据库组件、站点、成员和资源关系，为每个既有 Target 无损补齐一套
-业务系统资源拓扑，并把数据保护与恢复演练迁移到数据库组件。执行前必须确保所有 Target
-已有责任组，停止 AIOps 写入服务并完成 Schema 备份；脚本拒绝覆盖任何中间版或目标表。
+Schema 44 / `aiops-oracle-v44-resource-graph`。脚本跳过已否定且未部署的 Database System
+中间模型，直接建立业务系统、可管理资源、数据库/计算资源及资源关系，为每个既有 Target
+无损补齐一套业务系统资源图谱，并把数据保护与恢复演练迁移到数据库资源。执行前必须确保
+所有 Target 已有责任组，停止 AIOps 写入服务并完成 Schema 备份；脚本拒绝覆盖任何中间版
+或目标表。
+
+`apply_aiops_schema_45.sql` 用于将 AIOps Schema 44 /
+`aiops-oracle-v44-resource-graph` 升级到 Schema 45 /
+`aiops-oracle-v45-shared-monitor-locator`。脚本移除监控 Locator 的全局唯一约束，允许 RAC
+节点等多个 Target 复用同一监控对象；不删除 Target、监控源或绑定业务行。
+
+`../generated/kbot_41/apply_kbot_41_from_aiops_schema_42.sql` 是 SQL Developer 可直接
+执行的单文件追平产物，严格从 AIOps Schema 42 / `aiops-oracle-v32` 依次升级到 Schema 45 /
+`aiops-oracle-v45-shared-monitor-locator`，随后执行 KBot 4.1 的 KM Asset 退役。该脚本由
+`tools/db/render_kbot_41_online_upgrade.py` 从 43、44、45 三段 AIOps 增量脚本和 KM 退役
+脚本生成，不使用 `@`/`@@`。它会物理删除 KM 私有表和授权数据；执行前必须停止全部相关
+写入服务、完成并验证 Data Pump 备份，继续运行 KM 4.0 的环境不得执行。
 
 `apply_knowledge_retrieval_and_media_studio.sql` 用于既有 Schema 补齐知识检索与多媒体创作
 工作台表结构：把 `KBOT_KR_AGENT_VERSION` 从 `ENABLED_CAPABILITIES_JSON` 收敛为
