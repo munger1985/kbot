@@ -9,6 +9,7 @@
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
     "inspection-plans": { path: "/inspection-plans", cols: [["display_name", "计划"], ["agent_name", "DBA Agent"], ["schedule_type", "调度周期", "schedule"], ["status", "状态", "badge"], ["_latest_fire", "最近执行", "latest-inspection"], ["next_run_at", "下次执行", "date"], ["_actions", "操作", "inspection-actions"]] },
     reports: { path: "/reports", render: "report-list", detail: "report-detail.html?id=" },
+    runs: { path: "/runs?limit=100", cols: [["workflow_kind", "工作流", "workflow"], ["trigger_type", "触发方式", "trigger"], ["status", "状态", "run-status"], ["created_at", "创建时间", "date"], ["completed_at", "完成时间", "date"], ["ops_run_id", "运行 ID", "id"]], detail: "run-detail.html?id=" },
   };
   const resourceId = (item) => item.ops_run_id || item.report_id || item.target_id || item.source_id || item.plan_id;
   function cell(item, [key, , type]) {
@@ -80,6 +81,16 @@
     if (type === "schedule") {
       return shell.escape({ DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期" }[value] || value || "—");
     }
+    if (type === "workflow") {
+      return shell.escape({ CHAT_TURN: "智能诊断", ALERT_DIAGNOSIS: "告警诊断", INSPECTION: "日常巡检", CHANGE: "受控变更", VERIFICATION: "结果验证" }[value] || value || "—");
+    }
+    if (type === "trigger") {
+      return shell.escape({ CHAT: "对话发起", API: "接口触发", ROOT: "根任务", ALERT: "监控告警", SCHEDULE: "巡检计划" }[value] || value || "—");
+    }
+    if (type === "run-status") {
+      const labels = { CREATED: "已创建", QUEUED: "等待执行", RUNNING: "运行中", WAITING_INPUT: "等待补充信息", WAITING_APPROVAL: "等待审批", COMPLETED: "已完成", PARTIAL: "部分完成", FAILED: "失败", CANCELLED: "已取消", EXPIRED: "已过期" };
+      return shell.badge(value, labels[value] || value || "未知");
+    }
     if (type === "importance") {
       const labels = { 1: "低", 2: "一般", 3: "重要", 4: "关键", 5: "核心" };
       return `<strong>L${shell.escape(value)}</strong><small>${shell.escape(labels[value] || "未知")}</small>`;
@@ -121,10 +132,7 @@
   }
   function reportRow(item, detail) {
     const publishedAt = item.published_at || item.created_at;
-    const period = item.period_start && item.period_end
-      ? `${shell.fmt(item.period_start)} 至 ${shell.fmt(item.period_end)}`
-      : "未标注报告周期";
-    return `<a class="ops-report-row" href="${detail}${encodeURIComponent(item.report_id)}"><div class="ops-report-primary"><div class="ops-report-kicker"><span>${shell.escape(reportTypeLabel(item.report_type))}</span><span>报告 v${shell.escape(item.report_version)}</span><span>${shell.escape(item.template_ref || "系统模板")} · 模板 v${shell.escape(item.template_version || "1")}</span></div><strong>${shell.escape(item.title || "正式报告")}</strong><p>${shell.escape(reportDisplayText(item.summary || "报告未提供摘要"))}</p></div><div class="ops-report-meta"><small>实际发布</small><time>${shell.escape(shell.fmt(publishedAt))}</time></div><div class="ops-report-meta ops-report-period"><small>覆盖周期</small><time>${shell.escape(period)}</time></div><div class="ops-report-state">${reportStatusBadge(item.status)}<span>查看报告</span></div></a>`;
+    return `<a class="ops-report-row" href="${detail}${encodeURIComponent(item.report_id)}"><div class="ops-report-primary"><div class="ops-report-kicker"><span>${shell.escape(reportTypeLabel(item.report_type))}</span><span>报告 v${shell.escape(item.report_version)}</span><span>${shell.escape(item.template_ref || "系统模板")} · 模板 v${shell.escape(item.template_version || "1")}</span></div><strong>${shell.escape(item.title || "正式报告")}</strong><p>${shell.escape(reportDisplayText(item.summary || "报告未提供摘要"))}</p></div><div class="ops-report-meta"><small>报告生成时间</small><time>${shell.escape(shell.fmt(publishedAt))}</time></div><div class="ops-report-state">${reportStatusBadge(item.status)}<span>查看报告</span></div></a>`;
   }
   async function renderReportList(cfg) {
     const list = document.getElementById("ops-report-list");
@@ -700,13 +708,27 @@
     return `<div class="ops-panel-head target-overview-head"><div><p>${shell.escape(target.db_type)}${target.version_code ? ` · ${shell.escape(target.version_code)}` : ""}</p><h2>${shell.escape(target.display_name)}</h2><small>${shell.escape(environment)} · ${shell.escape(role)} · L${shell.escape(target.importance_level)} ${shell.escape(importance)}</small></div><div class="ops-actions">${shell.badge(target.status)}${shell.badge(target.connectivity_check_pending ? "CHECKING" : target.connectivity_status)}${shell.badge(target.observed_status)}</div></div><div class="ops-panel-body target-overview-grid"><section><h3>数据库范围</h3><dl class="ops-detail">${row("数据库类型", target.db_type)}${row("已验证版本", target.version_code)}${row("环境", environment)}${row("数据库角色", role)}${target.db_type === "ORACLE" ? row("Oracle 范围", oracleScope || "尚未确认") : ""}${row("重要程度", `L${target.importance_level} · ${importance}`)}</dl></section><section><h3>连接状态</h3><dl class="ops-detail">${row("诊断模式", target.readonly_connection_enabled ? "数据库只读直连" : "仅监控数据")}${row("Endpoint", endpoint)}${row("TLS", target.endpoint ? (target.endpoint.tls_enabled ? "已启用" : "未启用") : "不适用")}${row("最近检查", shell.fmt(target.last_connectivity_check_at))}${row("最近成功", shell.fmt(target.last_connectivity_success_at))}${row("最近错误", target.last_error_code || "无")}</dl></section><section><h3>凭据与变更</h3><dl class="ops-detail">${row("诊断凭据", credential(target.diagnostic_credential))}${row("受控变更", target.controlled_change_enabled ? "允许人工审批后执行" : "未启用")}${row("执行凭据", target.controlled_change_enabled ? credential(target.execution_credential) : "不适用")}</dl></section><section><h3>观测与采集</h3><dl class="ops-detail">${row("观测状态", target.observed_status)}${row("最近观测", shell.fmt(target.last_observed_at))}${row("负载快照", target.workload_last_collected_at ? `最近采集 ${shell.fmt(target.workload_last_collected_at)}` : "尚无采集记录")}${row("快照连续失败", target.workload_consecutive_failures)}${row("活动采样", target.activity_sampler_status)}${row("最近采样", shell.fmt(target.activity_last_sampled_at))}${row("采样连续失败", target.activity_consecutive_failures)}</dl></section><section><h3>管理信息</h3><dl class="ops-detail">${row("Target ID", target.target_id)}${row("创建时间", shell.fmt(target.created_at))}${row("创建人", target.created_by)}${row("最后更新", shell.fmt(target.updated_at))}${row("更新人", target.updated_by)}</dl></section></div>`;
   }
 
-  function reportPresentationHtml(data, report, versions) {
+  function reportMetadataHtml(data, report, target) {
+    const scope = data?.report?.scope || {};
+    const rawCoverage = scope.evidence_coverage_percent;
+    const hasCoverage = typeof rawCoverage === "number" && Number.isFinite(rawCoverage);
+    const coverage = hasCoverage
+      ? `${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项证据` : ""}`
+      : "历史报告未记录覆盖率";
+    const profile = scope.monitoring_profile?.display_name
+      ? `${scope.monitoring_profile.display_name}${scope.monitoring_profile.version ? ` · ${scope.monitoring_profile.version}` : ""}`
+      : "";
+    const item = (label, value, className = "") => `<div class="${className}"><dt>${shell.escape(label)}</dt><dd>${value}</dd></div>`;
+    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("报告状态", reportStatusBadge(report.status))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("采集与证据覆盖", `<strong>${shell.escape(coverage)}</strong><small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
+  }
+
+  function reportPresentationHtml(data, report, versions, target) {
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
     const sourceLink = report.source_conversation_id
       ? `<a href="./chat.html?conversation=${encodeURIComponent(report.source_conversation_id)}">查看来源会话</a>` : "";
-    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(report.template_ref || data.template?.template_ref || "系统模板")} · 模板 v${shell.escape(report.template_version || data.template?.version || "1")} · 报告 v${shell.escape(report.report_version)} · ${shell.escape(data.status_display || reportDisplayText(data.status || "UNKNOWN"))}</p>${sourceLink}</div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.display_name || reportDisplayText(section.kind || "章节"))}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(report.template_ref || data.template?.template_ref || "系统模板")} · 模板 v${shell.escape(report.template_version || data.template?.version || "1")} · 报告 v${shell.escape(report.report_version)} · ${shell.escape(data.status_display || reportDisplayText(data.status || "UNKNOWN"))}</p>${sourceLink}</div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}${reportMetadataHtml(data, report, target)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.display_name || reportDisplayText(section.kind || "章节"))}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
   }
 
   function beginReportEdit(panel, data, report, versions) {
@@ -747,12 +769,13 @@
   async function renderReportDetail(id) {
     const panel = document.getElementById("ops-detail");
     const encodedId = encodeURIComponent(id);
-    const [data, report, versions] = await Promise.all([
+    const report = await KBotAIOpsAuth.request(appApi + `/reports/${encodedId}`);
+    const [data, versions, target] = await Promise.all([
       KBotAIOpsAuth.request(appApi + `/reports/${encodedId}/presentation`),
-      KBotAIOpsAuth.request(appApi + `/reports/${encodedId}`),
       KBotAIOpsAuth.request(appApi + `/reports/${encodedId}/versions`),
+      KBotAIOpsAuth.request(appApi + `/targets/${encodeURIComponent(report.target_id)}`).catch(() => null),
     ]);
-    panel.innerHTML = reportPresentationHtml(data, report, versions);
+    panel.innerHTML = reportPresentationHtml(data, report, versions, target);
     panel.querySelector("[data-download-report]").onclick = () => KBotAIOpsAuth.download(
       appApi + `/reports/${encodedId}/pdf`,
       `aiops-report-${id}.pdf`,

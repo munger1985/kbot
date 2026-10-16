@@ -106,7 +106,12 @@
     const emptyFindings = "本期未发现达到规则阈值的异常。";
     const emptyGaps = "未发现数据缺口，全部检查已形成可验证观测。";
     const summary = payload.summary || "本期巡检已完成。";
-    const heading = markdown.render(`## ${payload.title || "巡检报告"}\n\n${summary}`);
+    const scope = payload.scope || {};
+    const coverage = scope.evidence_coverage_percent;
+    const coverageLine = typeof coverage === "number" && Number.isFinite(coverage)
+      ? `\n\n**证据覆盖率：${coverage}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)} 个计划检查）**`
+      : "";
+    const heading = markdown.render(`## ${payload.title || "巡检报告"}\n\n${summary}${coverageLine}`);
     const findingCards = findingCardsHtml({
       findings,
       empty_reasons: findings.length ? [] : [emptyFindings],
@@ -131,6 +136,55 @@
       return inspectionReportHtml(result);
     }
     return markdown.render(inspectionMarkdown(result));
+  }
+
+  function inspectionReportQualityText(run) {
+    const coverage = run?.evidence_coverage_percent;
+    if (coverage !== null && coverage !== undefined && coverage !== "" && Number.isFinite(Number(coverage))) {
+      return `证据覆盖 ${Number(run.evidence_coverage_percent)}%`;
+    }
+    return ({
+      READY: "证据完整",
+      PARTIAL: "证据有缺口",
+      FAILED: "报告生成失败",
+      GENERATING: "报告生成中",
+    })[run?.report_status] || "";
+  }
+
+  function diagnosisQuality(result, runStatus = "") {
+    const payload = result?.payload || {};
+    const schemaVersion = result?.final_artifact?.schema_version;
+    if (!result?.final_artifact) {
+      const status = ["CREATED", "QUEUED", "RUNNING", "WAITING_INPUT", "WAITING_APPROVAL"].includes(runStatus)
+        ? "结论生成中"
+        : ["FAILED", "CANCELLED", "EXPIRED"].includes(runStatus) ? "诊断未完成" : "证据有缺口";
+      const coverage = ["CREATED", "QUEUED", "RUNNING", "WAITING_INPUT", "WAITING_APPROVAL"].includes(runStatus)
+        ? "覆盖率待生成"
+        : "历史报告未记录覆盖率";
+      return { status, coverage };
+    }
+    if (schemaVersion === "REPORT_CONTENT.v1") {
+      const scope = payload.scope || {};
+      const rawPercent = scope.evidence_coverage_percent;
+      const hasCoverage = typeof rawPercent === "number" && Number.isFinite(rawPercent);
+      const coverage = hasCoverage
+        ? `证据覆盖 ${rawPercent}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)}）`
+        : "历史报告未记录覆盖率";
+      return { status: payload.status === "READY" ? "证据充分" : "证据有缺口", coverage };
+    }
+    const covered = new Set(values(payload.evidence).map((item, index) => String(item.step_id || item.tool_id || item.evidence_ref || `evidence-${index}`)));
+    const total = new Set(covered);
+    values(payload.evidence_gaps).forEach((item, index) => total.add(String(item.step_id || item.code || `gap-${index}`)));
+    const percent = total.size ? Math.round(covered.size * 10000 / total.size) / 100 : null;
+    return {
+      status: payload.sufficiency_status === "ANSWERABLE" && !values(payload.evidence_gaps).length ? "证据充分" : "证据有缺口",
+      coverage: percent === null ? "历史报告未记录覆盖率" : `证据覆盖 ${percent}%（${covered.size}/${total.size}）`,
+    };
+  }
+
+  function diagnosisStatusHtml(run, result) {
+    const quality = diagnosisQuality(result, run?.status);
+    return `<div class="ops-context-banner"><strong>Agent 诊断</strong> ${shell.badge(run?.status || "PENDING", `执行${run?.status || "待开始"}`)} ${shell.badge(quality.status)} ${shell.badge(quality.coverage)}</div>`;
   }
 
   function conversationAnswerMarkdown(result) {
@@ -1227,10 +1281,10 @@
       : "请先选择 Target 和 Agent";
     document.getElementById("conversation-context").textContent = agentSelected
       ? "可以选择历史会话，或在下方发起一次新诊断。"
-      : "选择 Target 和 Agent 后，才会显示对应的会话历史。";
+      : "选择 Target 和 Agent 后可开始新的诊断，也可以从左侧打开历史会话。";
     document.getElementById("message-list").innerHTML = agentSelected
       ? starterHomeHtml()
-      : '<div class="ops-empty">请选择 Target 和 Agent 以查看历史并开始诊断。</div>';
+      : '<div class="ops-empty">请选择 Target 和 Agent 开始新诊断，或从左侧打开历史会话。</div>';
     if (agentSelected) bindStarterButtons(document.getElementById("message-list"));
   }
 
@@ -1454,7 +1508,7 @@
 
   function renderConversationList(rows) {
     const list = document.getElementById("conversation-list");
-    list.innerHTML = rows.length ? rows.map((item) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(item.source_type)} · ${esc(shell.fmt(item.updated_at))}</small></button><button class="ops-workspace-delete" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="删除会话 ${esc(item.title || "未命名会话")}" title="删除会话">删除</button></div>`).join("") : '<div class="ops-empty">当前 Agent 还没有诊断会话</div>';
+    list.innerHTML = rows.length ? rows.map((item) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(item.source_type)} · ${esc(shell.fmt(item.updated_at))}</small></button><button class="ops-workspace-delete" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="删除会话 ${esc(item.title || "未命名会话")}" title="删除会话">删除</button></div>`).join("") : '<div class="ops-empty">还没有诊断会话</div>';
     list.querySelectorAll(".ops-workspace-item").forEach((button) => {
       button.onclick = () => loadConversation(button.dataset.id).catch((error) => shell.toast(error.message));
     });
@@ -1463,26 +1517,28 @@
     });
   }
 
+  function mergePinnedConversation(rows, pinned) {
+    if (!pinned || rows.some((item) => String(item.conversation_id) === String(pinned.conversation_id))) return rows;
+    return [pinned, ...rows];
+  }
+
   async function loadConversationList(preferredId) {
     const select = document.getElementById("agent-select");
     const requestedId = preferredId || new URLSearchParams(location.search).get("conversation");
-    if (!select.value && requestedId) await loadConversation(requestedId);
+    if (requestedId && String(state.conversation?.conversation_id) !== String(requestedId)) {
+      await loadConversation(requestedId);
+    }
     const selectedAgent = select.value;
     const selectedTarget = document.getElementById("target-select").value;
-    const list = document.getElementById("conversation-list");
+    const rows = await KBotAIOpsAuth.request(`${api}/conversations?limit=50`);
+    renderConversationList(mergePinnedConversation(rows, state.conversation));
     if (!selectedAgent || !selectedTarget) {
-      list.innerHTML = '<div class="ops-empty">请先选择 Target 和 Agent 查看会话历史</div>';
       setComposerAvailability(false);
       resetConversationView();
       return;
     }
     setComposerAvailability(true);
     await loadConversationStarters();
-    const rows = await KBotAIOpsAuth.request(`${api}/conversations?agent_id=${encodeURIComponent(selectedAgent)}&target_id=${encodeURIComponent(selectedTarget)}`);
-    renderConversationList(rows);
-    if (requestedId && String(state.conversation?.conversation_id) !== String(requestedId)) {
-      await loadConversation(requestedId);
-    }
   }
 
   function typingUnits(value) {
@@ -1847,7 +1903,7 @@
         diagnosis = '<div class="ops-empty">告警已接收，正在等待 Agent 自动诊断任务启动。</div>';
       }
       const report = hasFinalResult ? reportAction({ runId: run.ops_run_id, sourceKind: "ALERT" }) : "";
-      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status, situationStatusText(detail.status))} · 累计 ${esc(detail.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${monitoringSourceSummary(detail)}${situationAlertContent(detail)}${diagnosis}${report}${continueForm(source, detail.title)}`;
+      panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.severity)} ${shell.badge(detail.status, situationStatusText(detail.status))} · 累计 ${esc(detail.event_count)} 次观测 · 最近观测 ${esc(shell.fmt(detail.last_observed_at))}</div>${diagnosisStatusHtml(run, result)}${monitoringSourceSummary(detail)}${situationAlertContent(detail)}${diagnosis}${report}${continueForm(source, detail.title)}`;
       await bindContinue(source);
       bindReportActions(panel);
       const runActive = !run || !terminalRunStatuses.has(run.status);
@@ -1874,7 +1930,7 @@
     const runs = detail.runs || [];
     const targetNames = new Map(state.caseTargets.map((target) => [String(target.target_id), target.display_name]));
     const runSelector = runs.length > 1
-      ? `<div class="inspection-run-selector">${runs.map((run, index) => `<button type="button" data-inspection-run="${esc(run.run_id)}" aria-pressed="${index === 0}"><strong>${esc(targetNames.get(String(run.target_id)) || shell.short(run.target_id))}</strong>${shell.badge(run.status)}</button>`).join("")}</div>`
+      ? `<div class="inspection-run-selector">${runs.map((run, index) => `<button type="button" data-inspection-run="${esc(run.run_id)}" aria-pressed="${index === 0}"><strong>${esc(targetNames.get(String(run.target_id)) || shell.short(run.target_id))}</strong><span>${shell.badge(run.status)}${inspectionReportQualityText(run) ? shell.badge(inspectionReportQualityText(run)) : ""}</span></button>`).join("")}</div>`
       : "";
     panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${esc(detail.completed_count)}/${esc(detail.target_count)} 个目标完成 · ${esc(detail.failed_count)} 个失败</div>${runSelector}<div id="inspection-run-report"><div class="ops-empty">正在读取巡检报告…</div></div>`;
     const reportPanel = document.getElementById("inspection-run-report");
@@ -1894,7 +1950,7 @@
       const reportActionHtml = result?.final_artifact?.schema_version === "REPORT_CONTENT.v1"
         ? ""
         : reportAction({ runId: run.ops_run_id, sourceKind: "INSPECTION", periodKind: "DAILY" });
-      reportPanel.innerHTML = `<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}`;
+      reportPanel.innerHTML = `${diagnosisStatusHtml(run, result)}<div class="ops-result-markdown">${inspectionAnswerHtml(result)}${evidenceDetails(result)}</div>${reportActionHtml}${continueForm(source, "本次日常巡检")}`;
       await bindContinue(source);
       bindReportActions(reportPanel);
       bindReportArtifactActions(reportPanel);

@@ -271,23 +271,16 @@ class AIOpsInspectionScheduler:
             }
             if any(item.status not in turn_terminal for item in turns):
                 return False
-            completed = sum(
-                item.status in {"COMPLETED", "PARTIAL", "WAITING_USER"}
-                for item in turns
-            )
-            fully_completed = sum(
-                item.status == "COMPLETED" for item in turns
-            )
-            partial = sum(
-                item.status in {"PARTIAL", "WAITING_USER"}
-                for item in turns
-            )
+            # Fire 只描述执行完成度；Turn 的证据充分性由报告质量字段表达，
+            # 不能因为报告存在数据缺口而把已经成功结束的执行标成 PARTIAL。
+            completed = sum(item.status == "COMPLETED" for item in runs)
             failed = sum(
-                item.status in {"FAILED", "CANCELLED"} for item in turns
+                item.status in {"FAILED", "CANCELLED", "EXPIRED"}
+                for item in runs
             )
-            if fully_completed == len(turns):
+            if completed == len(turns):
                 status = "COMPLETED"
-            elif completed or partial:
+            elif completed or failed < len(turns):
                 status = "PARTIAL"
             else:
                 status = "FAILED"

@@ -35,7 +35,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn(".ops-main>.ops-head.agent-page-head>div:first-child{padding-left:0;border-left:0}", stylesheet)
 
     pages = {
-        "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "run-detail", "report-detail", "reports", "inspections",
+        "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections",
         "business-systems", "business-system-workspace", "targets", "target-detail",
         "recovery-drills", "data-protection",
         "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat",
@@ -80,15 +80,15 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["dashboard", "AIOps 工作台"]', shell)
+        self.assertIn('["dashboard", "AIOps 工作台", "overview"]', shell)
         self.assertNotIn('["work-items", "工作项中心"]', shell)
         self.assertLess(
-            shell.index('["diagnostic-sources", "监控源"]'),
             shell.index('["business-systems", "业务系统"]'),
+            shell.index('["diagnostic-sources", "监控源"]'),
         )
         self.assertNotIn('["targets", "成员 Target"]', shell)
         self.assertNotIn('["fleet", "库群总览"]', shell)
-        self.assertIn('href="./dashboard.html"', shell)
+        self.assertIn('href="./${id}.html"', shell)
         self.assertIn("location.replace('./dashboard.html')", (
             AIOPS_ROOT / "login.html"
         ).read_text(encoding="utf-8"))
@@ -268,7 +268,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["dashboard", "AIOps 工作台"]', shell)
+        self.assertIn('["dashboard", "AIOps 工作台", "overview"]', shell)
         self.assertNotIn('["work-items", "工作项中心"]', shell)
         self.assertFalse((AIOPS_ROOT / "work-items.html").exists())
         self.assertIn("处理队列", page)
@@ -378,9 +378,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('"user_id": str(row["user_id"])', candidates)
         self.assertNotIn('"roles"', candidates)
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(encoding="utf-8")
-        business_workspace, resource_configuration = shell.split('["资源配置"', 1)
-        self.assertNotIn('["responsibility-groups", "责任组"]', business_workspace)
-        self.assertIn('["responsibility-groups", "责任组"]', resource_configuration)
+        business_groups, configuration_governance = shell.split('["configuration-governance", "配置与治理"', 1)
+        self.assertNotIn('["responsibility-groups", "责任组"]', business_groups)
+        self.assertIn('["responsibility-groups", "责任组"]', configuration_governance)
         self.assertNotIn("responsibility_group_id", agents)
         self.assertNotIn("responsibility_group_id", agent_script)
         self.assertIn('name="responsibility_group_id"', targets)
@@ -407,6 +407,24 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('workspace.classList.toggle("is-rail-collapsed", collapsed)', workspace)
         self.assertIn(".ops-special-workspace.is-rail-collapsed", stylesheet)
         self.assertIn("grid-template-columns:238px minmax(0,1fr)", stylesheet)
+
+    def test_chat_lists_all_user_sessions_and_pins_deep_link(self):
+        workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("function mergePinnedConversation", workspace)
+        self.assertIn("`${api}/conversations?limit=50`", workspace)
+        self.assertNotIn(
+            "`${api}/conversations?agent_id=${encodeURIComponent(selectedAgent)}&target_id=${encodeURIComponent(selectedTarget)}`",
+            workspace,
+        )
+        self.assertIn(
+            "renderConversationList(mergePinnedConversation(rows, state.conversation))",
+            workspace,
+        )
+        self.assertIn("还没有诊断会话", workspace)
+        self.assertIn("也可以从左侧打开历史会话", workspace)
+        self.assertNotIn("才会显示对应的会话历史", workspace)
 
     def test_chat_selects_attachment_before_submitting_it(self):
         chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
@@ -449,7 +467,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261014_1",
+            "chat": "20261016_1",
             "situations": "20261011_1",
             "inspections": "20261012_1",
         }
@@ -458,7 +476,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("workspaces.css?v=20261008_2", page)
-            self.assertIn("aiops-shell.js?v=20261014_2", page)
+            self.assertIn("aiops-shell.js?v=20261016_1", page)
             self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -570,7 +588,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('"operations-knowledge-chat": "aiops:use"', shell)
         self.assertIn('"operations-knowledge": "aiops:knowledge_manage"', shell)
         self.assertIn('["operations-knowledge-chat", "知识问答"]', shell)
-        self.assertIn('["operations-knowledge", "知识资料"]', shell)
+        self.assertIn('["operations-knowledge", "运维知识"]', shell)
         self.assertNotIn("Knowledge Core", page)
         self.assertNotIn("Collection", page)
         self.assertNotIn("Embedding", page)
@@ -1389,6 +1407,30 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('agents: "aiops:agent_manage"', shell)
         self.assertIn('"api-clients": "aiops:api_key_manage"', shell)
         self.assertIn("shellMarkup(access)", shell)
+        navigation = shell.split("const pinnedPages", 1)[1].split("const iconPaths", 1)[0]
+        expected = [
+            '["dashboard", "AIOps 工作台", "overview"]',
+            '["monitoring-diagnosis", "监控与诊断", "data"',
+            '["operations-assurance", "运维保障", "audit"',
+            '["resource-management", "资源管理", "models"',
+            '["configuration-governance", "配置与治理", "settings"',
+            '["monitoring", "实时监控"]', '["situations", "告警诊断"]',
+            '["chat", "智能诊断"]', '["inspections", "日常巡检"]',
+            '["recovery-drills", "恢复演练"]', '["reports", "运维报告"]',
+            '["operations-knowledge-chat", "知识问答"]',
+            '["operations-knowledge", "运维知识"]',
+            '["business-systems", "业务系统"]', '["diagnostic-sources", "监控源"]',
+            '["data-protection", "数据保护"]', '["responsibility-groups", "责任组"]',
+            '["agents", "Agent 管理"]', '["report-templates", "模板中心"]',
+            '["runs", "运行记录"]',
+        ]
+        for item in expected:
+            self.assertIn(item, navigation)
+        self.assertNotIn('["api-clients", "API 客户端"]', navigation)
+        self.assertIn("bindNavigationGroups", shell)
+        stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
+        self.assertIn(".ops-nav-group.is-open", stylesheet)
+        self.assertIn(".ops-nav-footer-mark", stylesheet)
 
     def test_business_workspace_includes_report_center(self):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
@@ -1406,21 +1448,21 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         plans = (AIOPS_ROOT / "inspection-plans.html").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["chat", "智能运维"]', shell)
+        self.assertIn('["chat", "智能诊断"]', shell)
         self.assertIn('["situations", "告警诊断"]', shell)
         self.assertIn('["inspections", "日常巡检"]', shell)
         self.assertNotIn('["inspection-plans", "巡检计划"]', shell)
-        self.assertNotIn('["runs", "诊断运行"]', shell)
-        self.assertIn('["reports", "报告中心"]', shell)
-        self.assertIn('["report-templates", "模板管理"]', shell)
+        self.assertIn('["runs", "运行记录"]', shell)
+        self.assertIn('["reports", "运维报告"]', shell)
+        self.assertIn('["report-templates", "模板中心"]', shell)
         self.assertIn('aria-label="日常巡检视图"', inspections)
         self.assertIn('data-plan-manage hidden', inspections)
         self.assertIn('aria-current="page" href="./inspection-plans.html"', plans)
         self.assertIn("plan_display_name", workspace)
         self.assertIn("detail.runs || []", workspace)
         self.assertIn("inspection-run-selector", workspace)
-        business_workspace = shell.split('["资源配置"', 1)[0]
-        self.assertNotIn('["report-templates", "模板管理"]', business_workspace)
+        business_groups = shell.split('["configuration-governance", "配置与治理"', 1)[0]
+        self.assertNotIn('["report-templates", "模板中心"]', business_groups)
         self.assertIn("source_run_id", workspace)
         self.assertIn("source_situation_id", workspace)
         self.assertIn("正在等待 Agent 自动诊断任务启动", workspace)
@@ -1495,6 +1537,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             workspace,
         )
         self.assertIn('schemaVersion === "REPORT_CONTENT.v1"', workspace)
+        self.assertIn("inspectionReportQualityText", workspace)
+        self.assertIn("function diagnosisQuality(result, runStatus", workspace)
+        self.assertIn("function diagnosisStatusHtml(run, result)", workspace)
+        self.assertIn("evidence_coverage_percent", workspace)
+        self.assertIn("sufficiency_status === \"ANSWERABLE\"", workspace)
+        self.assertIn("证据有缺口", workspace)
+        self.assertIn("证据覆盖", workspace)
+        self.assertIn("历史报告未记录覆盖率", workspace)
+        self.assertIn("证据覆盖率：${coverage}%", workspace)
+        self.assertIn('typeof coverage === "number" && Number.isFinite(coverage)', workspace)
+        self.assertIn('typeof rawPercent === "number" && Number.isFinite(rawPercent)', workspace)
+        self.assertIn("个目标完成", workspace)
         self.assertIn('block.block_type === "FINDING_CARDS"', workspace)
         self.assertIn("conversationAnswerHtml(result)", workspace)
         self.assertIn("bindReportArtifactActions(panel)", workspace)
@@ -1581,8 +1635,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("resumeActiveTurns(conversation.conversation_id, turns)", workspace)
         self.assertIn("activeTurnFollowers.has(followerKey)", workspace)
         self.assertNotIn("followTurn(receipt.conversation_id, receipt.turn_id, progress)\n        .then", workspace)
-        self.assertIn("请先选择 Target 和 Agent 查看会话历史", workspace)
-        self.assertIn("?agent_id=${encodeURIComponent(selectedAgent)}", workspace)
+        self.assertIn("也可以从左侧打开历史会话", workspace)
+        self.assertIn("`${api}/conversations?limit=50`", workspace)
         self.assertIn("archiveConversation", workspace)
         self.assertIn('method: "DELETE"', workspace)
         self.assertIn('class="ops-workspace-delete"', workspace)
@@ -1591,7 +1645,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("关联的诊断、证据和变更审计记录仍会保留", workspace)
         self.assertIn("upload", workspace.lower())
         for obsolete in (
-            "fleet.html", "runs.html",
+            "fleet.html",
             "changes.html", "notifications.html",
         ):
             self.assertFalse((AIOPS_ROOT / obsolete).exists())
@@ -1603,7 +1657,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )
         self.assertIn("查看已生成的正式报告", page)
         self.assertIn("ops-report-list", page)
-        self.assertIn("实际发布时间", page)
+        self.assertIn("按报告生成时间排序", page)
+        self.assertIn("报告生成时间", script)
+        self.assertNotIn("ops-report-period", script)
         self.assertIn('reports: { path: "/reports"', script)
         self.assertIn("data-report-version", script)
         self.assertIn("data-download-report", script)
@@ -1611,6 +1667,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('method: "PATCH"', script)
         self.assertIn('"If-Match": `"rv-${report.report_version}"`', script)
         self.assertIn("不会覆盖旧版", script)
+        self.assertIn("function reportMetadataHtml", script)
+        self.assertIn("历史报告未记录覆盖率", script)
+        self.assertIn("evidence_coverage_percent", script)
+        self.assertIn('typeof rawCoverage === "number" && Number.isFinite(rawCoverage)', script)
+        self.assertIn("monitoring_profile", script)
+        self.assertIn("target?.display_name", script)
+        self.assertIn("/targets/${encodeURIComponent(report.target_id)}", script)
+        css = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
+        self.assertIn(".ops-report-metadata", css)
+        self.assertIn("grid-template-columns:repeat(4,minmax(0,1fr))", css)
 
     def test_report_template_configuration_is_not_a_business_entry(self):
         page = (AIOPS_ROOT / "report-templates.html").read_text(

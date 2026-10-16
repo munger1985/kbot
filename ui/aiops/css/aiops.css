@@ -5,14 +5,17 @@
 /* 报告中心以发布时间为主线，避免长摘要挤占表格列宽。 */
 .ops-report-count{margin:0 0 4px;color:var(--muted);font-size:12px;white-space:nowrap}
 .ops-report-list{overflow:hidden;background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow)}
-.ops-report-row{display:grid;grid-template-columns:minmax(280px,1.75fr) minmax(128px,.72fr) minmax(180px,.95fr) auto;gap:24px;align-items:center;padding:20px 22px;color:var(--ink);border-bottom:1px solid var(--line);text-decoration:none;transition:background .16s ease,box-shadow .16s ease}
+.ops-report-row{display:grid;grid-template-columns:minmax(280px,1.75fr) minmax(150px,.72fr) auto;gap:24px;align-items:center;padding:20px 22px;color:var(--ink);border-bottom:1px solid var(--line);text-decoration:none;transition:background .16s ease,box-shadow .16s ease}
 .ops-report-row:last-child{border-bottom:0}.ops-report-row:hover{background:#f7f8fb;box-shadow:inset 3px 0 0 var(--accent)}
 .ops-report-primary{min-width:0}.ops-report-kicker{display:flex;gap:8px;margin-bottom:5px;color:var(--muted);font-size:11px;font-weight:650;letter-spacing:.04em}.ops-report-kicker span+span{padding-left:8px;border-left:1px solid var(--line)}
 .ops-report-primary strong{display:block;overflow:hidden;font:650 18px/1.35 Georgia,"Songti SC",serif;text-overflow:ellipsis;white-space:nowrap}.ops-report-primary p{display:-webkit-box;overflow:hidden;margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.55;-webkit-box-orient:vertical;-webkit-line-clamp:2}
-.ops-report-meta{display:grid;gap:3px;min-width:0}.ops-report-meta small{color:var(--muted);font-size:11px}.ops-report-meta time{font-size:12px;font-variant-numeric:tabular-nums;line-height:1.4;overflow-wrap:anywhere}.ops-report-period time{color:#4d586d}
+.ops-report-meta{display:grid;gap:3px;min-width:0}.ops-report-meta small{color:var(--muted);font-size:11px}.ops-report-meta time{font-size:12px;font-variant-numeric:tabular-nums;line-height:1.4;overflow-wrap:anywhere}
 .ops-report-state{display:grid;justify-items:end;gap:8px;min-width:74px}.ops-report-state>span:last-child{color:var(--accent);font-size:12px;white-space:nowrap}
-@media(max-width:900px){.ops-report-row{grid-template-columns:minmax(0,1fr) minmax(145px,.7fr) auto;gap:16px}.ops-report-period{display:none}}
+.ops-report-metadata{margin:0 0 16px;background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow)}.ops-report-metadata dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0}.ops-report-metadata dl>div{display:grid;align-content:center;gap:4px;min-height:76px;padding:13px 15px;border-left:1px solid var(--line)}.ops-report-metadata dl>div:nth-child(4n+1){border-left:0}.ops-report-metadata dl>div:nth-child(n+5){border-top:1px solid var(--line)}.ops-report-metadata dt{color:var(--muted);font-size:11px;font-weight:650}.ops-report-metadata dd{min-width:0;margin:0;overflow-wrap:anywhere;font-size:12px}.ops-report-metadata dd>strong,.ops-report-metadata dd>small{display:block}.ops-report-metadata dd>small{margin-top:3px;color:var(--muted);line-height:1.45}.ops-report-metadata code{font-size:11px}
+@media(max-width:900px){.ops-report-row{grid-template-columns:minmax(0,1fr) minmax(145px,.7fr) auto;gap:16px}}
+@media(max-width:900px){.ops-report-metadata dl{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-report-metadata dl>div:nth-child(odd){border-left:0}.ops-report-metadata dl>div:nth-child(even){border-left:1px solid var(--line)}.ops-report-metadata dl>div:nth-child(n+3){border-top:1px solid var(--line)}}
 @media(max-width:600px){.ops-report-count{white-space:normal}.ops-report-list{margin:0 -2px}.ops-report-row{grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:17px 15px}.ops-report-meta{grid-column:1;grid-row:2}.ops-report-meta time{font-size:11px}.ops-report-state{grid-column:2;grid-row:1 / span 2}.ops-report-primary strong{white-space:normal}.ops-report-primary p{-webkit-line-clamp:2}}
+@media(max-width:600px){.ops-report-metadata dl{grid-template-columns:1fr}.ops-report-metadata dl>div,.ops-report-metadata dl>div:nth-child(even){border-left:0}.ops-report-metadata dl>div+div{border-top:1px solid var(--line)}}
 /* DBA Dashboard：异常优先、紧凑表格和明确的数据新鲜度。 */
 .ops-dashboard-main{max-width:1900px}.ops-dashboard-head{align-items:flex-start}.ops-dashboard-freshness{display:block;margin-top:8px;color:var(--muted);font-variant-numeric:tabular-nums}.ops-dashboard-refresh{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.ops-dashboard-refresh select{min-height:36px;padding:6px 28px 6px 9px;border:1px solid #b8c0cf;background:#fff;color:var(--ink)}
 .ops-dashboard-filters{display:grid;grid-template-columns:minmax(210px,1.5fr) repeat(4,minmax(130px,.8fr)) auto auto;gap:10px;align-items:end;margin:0 0 16px;padding:12px 14px;background:var(--paper);border:1px solid var(--line)}.ops-dashboard-filters>p{grid-column:1/-1;margin:0;color:var(--muted);font-size:11px}.ops-dashboard-filters label{display:grid;gap:4px;color:var(--muted);font-size:11px;font-weight:650}.ops-dashboard-filters input,.ops-dashboard-filters select{min-height:36px;padding:7px 9px;border:1px solid #b8c0cf;background:#fff;color:var(--ink)}.ops-dashboard-filters .ops-dashboard-check{display:flex;align-items:center;gap:7px;min-height:36px;white-space:nowrap}.ops-dashboard-check input{min-height:auto}
@@ -124,3 +127,40 @@
 :is(.ops-panel,[class$="-card"],[class*="-card "]):where(:not(.ops-monitoring-panel)){border-color:var(--card-border)}
 :is(.ops-panel,[class$="-card"],[class*="-card "]){box-shadow:var(--card-shadow);transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}
 :is([class$="-card"],[class*="-card "]):hover{box-shadow:var(--card-shadow-hover);transform:translateY(-2px)}
+
+/* 测试页导航与 Ammolite AIOps App 共用同一套分组、层级和交互语言。 */
+.ops-sidebar{display:flex;width:264px;padding:16px 10px 12px;flex-direction:column;overflow:hidden;border-right:1px solid var(--line);background:#fff;color:var(--ink)}
+.ops-sidebar-navigation{display:grid;min-height:0;align-content:start;flex:1;overflow-y:auto;padding:0 3px 18px;scrollbar-gutter:stable}
+.ops-nav-pinned{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.ops-nav-items{display:grid;gap:2px}
+.ops-nav-item{position:relative;display:flex;min-height:36px;align-items:center;gap:11px;margin:0;padding:0 10px;border-radius:7px;color:#4e5d55;font-size:13px;font-weight:500;text-decoration:none;transition:background .15s,color .15s,box-shadow .15s}
+.ops-nav-pinned .ops-nav-item{min-height:43px;border-radius:9px}
+.ops-nav-item:hover{color:var(--ink);background:#eef1ed}
+.ops-nav-item[aria-current=page]{color:#344879;background:#e9edf8;box-shadow:inset 0 0 0 1px rgb(70 95 158 / 8%);font-weight:700}
+.ops-nav-item[aria-current=page]::before{position:absolute;left:-7px;width:3px;height:18px;border-radius:3px;background:var(--accent);content:""}
+.ops-nav-pinned .ops-nav-item[aria-current=page]::before{left:-3px;height:22px;border-radius:0 3px 3px 0}
+.ops-nav-item-icon{display:grid;width:28px;height:28px;flex:0 0 28px;place-items:center;border-radius:7px;color:#718078}
+.ops-nav-item-icon svg,.ops-nav-group-icon svg,.ops-nav-group-chevron svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ops-nav-item-icon svg{width:17px;height:17px}
+.ops-nav-group{overflow:hidden;margin-bottom:5px;border:1px solid var(--line);border-radius:9px;background:#f8f9f8;transition:border-color .16s ease,background-color .16s ease,box-shadow .16s ease}
+.ops-nav-group.is-open{border-color:#bbc4dc;background:#fafbfe;box-shadow:0 5px 14px rgb(19 35 46 / 6%)}
+.ops-nav-group-toggle{display:grid;width:100%;min-height:44px;grid-template-columns:28px minmax(0,1fr) auto 20px;align-items:center;gap:8px;padding:7px 8px;border:0;border-radius:8px;color:#849088;background:transparent;font:inherit;font-size:14px;cursor:pointer;text-align:left}
+.ops-nav-group-toggle:hover{border-color:transparent;color:var(--ink);background:#f5f7f6}
+.ops-nav-group-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ops-nav-group.is-open .ops-nav-group-toggle{border-radius:8px 8px 0 0;color:var(--ink)}
+.ops-nav-group-icon{display:grid;width:28px;height:28px;place-items:center;border-radius:7px;color:var(--muted);background:#fff}
+.ops-nav-group.is-open .ops-nav-group-icon{color:#344879;background:#e9edf8}
+.ops-nav-group-icon svg{width:15px;height:15px}
+.ops-nav-group-toggle>strong{overflow:hidden;font-size:14px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.ops-nav-group-count{display:grid;min-width:22px;height:22px;place-items:center;padding:0 6px;border:1px solid var(--line);border-radius:999px;color:#849088;background:#fff;font:650 12px ui-monospace,monospace}
+.ops-nav-group.is-open .ops-nav-group-count{border-color:#c8cee0;color:#344879;background:#e9edf8}
+.ops-nav-group-chevron{display:grid;width:20px;height:20px;place-items:center;border-radius:5px;transition:transform .16s ease}
+.ops-nav-group-chevron svg{width:14px;height:14px}
+.ops-nav-group.is-open .ops-nav-group-chevron{color:#344879;transform:rotate(90deg)}
+.ops-nav-group>.ops-nav-items{padding:2px 8px 8px 44px}
+.ops-nav-footer{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:center;gap:9px;margin:auto 2px 0;padding:10px;border:1px solid var(--line);border-radius:9px;background:#f8f9fa}
+.ops-nav-footer-mark{display:grid;width:30px;height:30px;place-items:center;border-radius:7px;color:#344879;background:#e9edf8;font-weight:800}
+.ops-nav-footer>span:last-child{display:grid;min-width:0;gap:1px}.ops-nav-footer strong{color:var(--ink);font-size:13px;line-height:1.35}.ops-nav-footer small{color:#849088;font-size:12px;line-height:1.35}
+.ops-topbar{left:264px}.ops-main{margin-left:264px}
+@media(max-width:1000px){.ops-sidebar{position:static;width:auto;max-height:none;padding:12px 16px}.ops-sidebar-navigation{overflow:visible;padding-bottom:10px}.ops-nav-footer{display:none}.ops-topbar{left:auto}.ops-main{margin-left:0}.ops-nav-group>.ops-nav-items{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:44px}}
+@media(max-width:600px){.ops-nav-group>.ops-nav-items{grid-template-columns:1fr}.ops-nav-group-toggle>strong{font-size:13px}}

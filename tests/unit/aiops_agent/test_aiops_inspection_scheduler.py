@@ -462,7 +462,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         inspections.advance_claimed_plan.assert_awaited_once()
         uow.commit.assert_awaited_once()
 
-    def test_running_fire_aggregates_agent_turn_terminals(self) -> None:
+    def test_running_fire_uses_run_execution_status_not_report_quality(self) -> None:
         now = datetime(2026, 7, 24, 2, 0, tzinfo=UTC)
         fire = SimpleNamespace(
             inspection_fire_id=uuid7(),
@@ -475,7 +475,10 @@ class InspectionSchedulerTest(unittest.TestCase):
             completed_at=None,
             updated_at=now,
         )
-        runs = [SimpleNamespace(status="COMPLETED")]
+        runs = [
+            SimpleNamespace(status="COMPLETED"),
+            SimpleNamespace(status="COMPLETED"),
+        ]
         turns = [
             SimpleNamespace(status="COMPLETED"),
             SimpleNamespace(status="PARTIAL"),
@@ -510,11 +513,11 @@ class InspectionSchedulerTest(unittest.TestCase):
         )
         worked = asyncio.run(scheduler.run_once())
         self.assertTrue(worked)
-        self.assertEqual(fire.status, "PARTIAL")
+        self.assertEqual(fire.status, "COMPLETED")
         self.assertEqual(fire.completed_count, 2)
         self.assertEqual(fire.failed_count, 0)
         self.assertEqual(fire.target_count, 2)
-        self.assertEqual(fire.run_count, 1)
+        self.assertEqual(fire.run_count, 2)
 
     def test_agent_request_reuses_standard_turn_entry(self) -> None:
         runtime = AsyncMock()

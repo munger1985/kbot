@@ -236,7 +236,7 @@ Run 完成时的诊断路由与工作项写入位于同一 AIOps Unit of Work。
 ### 9.5 触发时机与幂等
 
 - 以单个 Target Run 完成为路由时机，在该 Run 的 Unit of Work 内写入决策和工作项。无需等待同一 Inspection Fire 下所有 Target 完成，避免一个失败 Target 阻塞其他数据库的紧急事项。
-- Inspection Fire 收敛为 `COMPLETED / PARTIAL / FAILED` 时只汇总覆盖率和状态，不再次路由工作项。周期汇总报告也只链接已有 Occurrence，不重复消费原 Run Finding。
+- Inspection Fire 的 `COMPLETED / PARTIAL / FAILED` 只表示 Target Run 的执行完成度：全部成功为 `COMPLETED`，成功与失败并存为 `PARTIAL`，全部失败为 `FAILED`；Turn 或报告存在证据缺口不能把已成功执行的 Fire 降为 `PARTIAL`。报告质量通过 `READY / PARTIAL` 与结构化证据覆盖率单独表达。Fire 收敛时不再次路由工作项，周期汇总报告也只链接已有 Occurrence，不重复消费原 Run Finding。
 - Run 重试以 `ops_run_id + finding_id/check_id + decision_version` 幂等；同一 Fire、同一 Target、同一检查项不得增加重复 Occurrence。
 - `PARTIAL` Run 可路由已确认异常与数据缺口，但所有未完整执行检查项必须为 `UNKNOWN`，不得生成健康或恢复决策。
 

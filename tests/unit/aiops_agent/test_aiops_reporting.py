@@ -351,6 +351,9 @@ class InspectionReportPublishingTest(unittest.TestCase):
             payload["facts"][1]["summary"],
         )
         self.assertIn("2/2", payload["summary"])
+        self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
+        self.assertEqual(2, payload["scope"]["evidence_covered_count"])
+        self.assertEqual(2, payload["scope"]["evidence_total_count"])
         self.assertEqual([], payload["recommendations"])
         report = uow.inspections.publish_report.await_args.args[0]
         self.assertEqual("system:inspection.daily", report.template_id)
@@ -706,6 +709,14 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertTrue(
             all(item["kind"] != "inspection_trend" for item in daily_facts)
         )
+        monitoring_fact = next(
+            item
+            for item in daily_facts
+            if item["kind"] == "inspection_monitoring_metric"
+        )
+        self.assertEqual("db.storage.used_bytes", monitoring_fact["metric_code"])
+        self.assertIn("最新值 120.0", monitoring_fact["summary"])
+        self.assertEqual("artifact:test#trend", monitoring_fact["evidence_ref"])
 
     def test_inspection_capacity_recommendation_uses_forecast(self) -> None:
         columns = tuple(
@@ -926,6 +937,18 @@ class InspectionReportPublishingTest(unittest.TestCase):
 
         artifact = uow.runs.add_artifact.await_args.args[0]
         self.assertEqual("PARTIAL", artifact.payload_json["status"])
+        self.assertEqual(
+            50.0,
+            artifact.payload_json["scope"]["evidence_coverage_percent"],
+        )
+        self.assertEqual(
+            1,
+            artifact.payload_json["scope"]["evidence_covered_count"],
+        )
+        self.assertEqual(
+            2,
+            artifact.payload_json["scope"]["evidence_total_count"],
+        )
         self.assertEqual(
             "INSPECTION_FIXED_TOOL_UNAVAILABLE",
             artifact.payload_json["gaps"][0]["code"],

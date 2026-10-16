@@ -3129,9 +3129,40 @@ class AIOpsRuntimeService:
                     "sufficiency_status": str(source.sufficiency_status),
                 },
             )
+        inspection_checks = tuple(
+            item for item in facts
+            if str(item.get("kind") or "") == "inspection_check"
+        )
+        evidence_covered_count = sum(
+            bool(item.get("evidence_refs"))
+            for item in inspection_checks
+        )
+        uncovered_check_ids = {
+            str(item.get("tool_id") or "")
+            for item in inspection_checks
+            if not item.get("evidence_refs")
+        }
+        extra_gap_keys = {
+            (
+                str(item.get("source_id") or ""),
+                str(item.get("step_id") or ""),
+                str(item.get("code") or ""),
+            )
+            for item in gaps
+            if str(item.get("step_id") or "") not in uncovered_check_ids
+        }
+        evidence_total_count = len(inspection_checks) + len(extra_gap_keys)
+        evidence_coverage_percent = round(
+            evidence_covered_count * 100 / evidence_total_count,
+            2,
+        ) if evidence_total_count else 0.0
         status = (
             "READY"
-            if source.status == "COMPLETED" and not gaps
+            if (
+                source.status == "COMPLETED"
+                and evidence_coverage_percent == 100
+                and not gaps
+            )
             else "PARTIAL"
         )
         summary = coverage_summary
@@ -3145,6 +3176,9 @@ class AIOpsRuntimeService:
             uow=uow,
             run=run,
             plan=plan,
+        )
+        monitoring_profile = dict(
+            dict(plan.get("monitoring") or {}).get("monitoring_profile") or {}
         )
         content = ReportContent(
             report_key=report_key,
@@ -3163,6 +3197,14 @@ class AIOpsRuntimeService:
                 "schedule_type": schedule_type,
                 "timezone": inspection["timezone"],
                 "inspection_coverage": coverage_summary,
+                "evidence_coverage_percent": evidence_coverage_percent,
+                "evidence_covered_count": evidence_covered_count,
+                "evidence_total_count": evidence_total_count,
+                **(
+                    {"monitoring_profile": monitoring_profile}
+                    if monitoring_profile
+                    else {}
+                ),
             },
             facts=facts,
             gaps=gaps,
@@ -3346,6 +3388,57 @@ class AIOpsRuntimeService:
         if title and not detail.startswith(title):
             return f"{title}：{detail}"
         return detail
+
+    @staticmethod
+    def _inspection_monitoring_facts(source: AIOpsTurnResult) -> tuple[dict[str, Any], ...]:
+        """把实时监控 Profile 的确定性指标行写入正式报告。"""
+        facts: list[dict[str, Any]] = []
+        for evidence in source.evidence:
+            if evidence.tool_id != "metric.query_range":
+                continue
+            indexes = {
+                str(column.get("name") or ""): index
+                for index, column in enumerate(evidence.columns)
+            }
+            if not {"metric_code", "latest"} <= set(indexes):
+                continue
+            for row in evidence.rows:
+                metric_code = str(row[indexes["metric_code"]] or "")
+                if not metric_code:
+                    continue
+                dimensions = (
+                    str(row[indexes["dimensions"]] or "-")
+                    if "dimensions" in indexes
+                    else "-"
+                )
+                latest = row[indexes["latest"]]
+                unit = str(row[indexes["unit"]] or "") if "unit" in indexes else ""
+                average = row[indexes["average"]] if "average" in indexes else None
+                maximum = row[indexes["maximum"]] if "maximum" in indexes else None
+                sample_count = row[indexes["sample_count"]] if "sample_count" in indexes else None
+                details = [f"最新值 {latest}{unit}"]
+                if average is not None:
+                    details.append(f"平均值 {average}{unit}")
+                if maximum is not None:
+                    details.append(f"最大值 {maximum}{unit}")
+                if sample_count is not None:
+                    details.append(f"{sample_count} 个样本")
+                facts.append({
+                    "kind": "inspection_monitoring_metric",
+                    "title": metric_code,
+                    "summary": f"{metric_code}[{dimensions}]：" + "，".join(details) + "。",
+                    "check_status": "OBSERVED",
+                    "tool_id": "metric.query_range",
+                    "metric_code": metric_code,
+                    "dimensions": dimensions,
+                    "latest": latest,
+                    "average": average,
+                    "maximum": maximum,
+                    "unit": unit,
+                    "sample_count": sample_count,
+                    "evidence_ref": evidence.evidence_ref,
+                })
+        return tuple(facts)
 
     @staticmethod
     def _inspection_report_projection(
@@ -3601,6 +3694,8 @@ class AIOpsRuntimeService:
                     }
                 )
 
+        facts.extend(AIOpsRuntimeService._inspection_monitoring_facts(source))
+
         if not steps:
             facts.append(
                 {
@@ -3618,14 +3713,16 @@ class AIOpsRuntimeService:
                     "retryable": False,
                 }
             )
-        coverage_summary = (
-            f"本期按模板取得 {covered_count}/{len(steps)} 个取证步骤的观测"
-            + (
-                "，所有模板检查均已形成完整证据。"
-                if steps and covered_count == len(steps) and not gaps
-                else f"；仍有 {len(gaps)} 条证据缺口，报告为部分完成。"
+        coverage_summary = f"本期按模板取得 {covered_count}/{len(steps)} 个取证步骤的观测"
+        if steps and covered_count == len(steps) and not gaps:
+            coverage_summary += "，所有模板检查均已形成完整证据。"
+        elif covered_count == len(steps):
+            coverage_summary += f"；模板检查均有观测，另记录 {len(gaps)} 条报告证据缺口。"
+        else:
+            coverage_summary += (
+                f"；{len(steps) - covered_count} 个步骤未形成可追溯观测，"
+                f"共记录 {len(gaps)} 条报告证据缺口。"
             )
-        )
         return tuple(facts), tuple(gaps), coverage_summary
 
     @staticmethod
@@ -6462,20 +6559,58 @@ class AIOpsRuntimeService:
             runs = await uow.inspections.list_runs_for_fire(
                 inspection_fire_id=inspection_fire_id
             )
-            summary = self._fire_summary(fire)
-            return InspectionFireView(
-                **summary.model_dump(),
-                runs=tuple(
+            assert uow.runs is not None
+            run_summaries = []
+            for item in runs:
+                final_artifact = (
+                    await uow.runs.get_artifact(
+                        artifact_id=item.final_artifact_id
+                    )
+                    if item.final_artifact_id is not None
+                    else None
+                )
+                report_status = None
+                evidence_coverage_percent = None
+                evidence_covered_count = None
+                evidence_total_count = None
+                if final_artifact is not None:
+                    artifact_payload = dict(final_artifact.payload_json or {})
+                    artifact_status = str(artifact_payload.get("status") or "")
+                    report_status = {
+                        "COMPLETED": "READY",
+                        "READY": "READY",
+                        "PARTIAL": "PARTIAL",
+                        "FAILED": "FAILED",
+                        "GENERATING": "GENERATING",
+                    }.get(artifact_status)
+                    artifact_scope = dict(artifact_payload.get("scope") or {})
+                    evidence_coverage_percent = artifact_scope.get(
+                        "evidence_coverage_percent"
+                    )
+                    evidence_covered_count = artifact_scope.get(
+                        "evidence_covered_count"
+                    )
+                    evidence_total_count = artifact_scope.get(
+                        "evidence_total_count"
+                    )
+                run_summaries.append(
                     InspectionRunSummary(
                         run_id=item.ops_run_id,
                         target_id=item.target_id,
                         status=item.status,
+                        report_status=report_status,
+                        evidence_coverage_percent=evidence_coverage_percent,
+                        evidence_covered_count=evidence_covered_count,
+                        evidence_total_count=evidence_total_count,
                         error_code=item.error_code,
                         error_message=item.error_message,
                         completed_at=item.completed_at,
                     )
-                    for item in runs
-                ),
+                )
+            summary = self._fire_summary(fire)
+            return InspectionFireView(
+                **summary.model_dump(),
+                runs=tuple(run_summaries),
                 created_at=fire.created_at,
             )
 

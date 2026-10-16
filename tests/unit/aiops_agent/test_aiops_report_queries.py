@@ -249,6 +249,7 @@ class InspectionFireQueryTest(unittest.TestCase):
         )
         run_ids = (uuid7(), uuid7())
         target_ids = (uuid7(), uuid7())
+        artifact_ids = (uuid7(), uuid7())
         inspections = SimpleNamespace(
             get_fire_scoped=AsyncMock(return_value=fire),
             list_runs_for_fire=AsyncMock(
@@ -257,6 +258,7 @@ class InspectionFireQueryTest(unittest.TestCase):
                         ops_run_id=run_id,
                         target_id=target_id,
                         status="COMPLETED" if index == 0 else "FAILED",
+                        final_artifact_id=artifact_ids[index],
                         error_code=None if index == 0 else "INSPECTION_FAILED",
                         error_message=None if index == 0 else "巡检失败",
                         completed_at=now + timedelta(minutes=index + 1),
@@ -267,9 +269,31 @@ class InspectionFireQueryTest(unittest.TestCase):
                 ]
             ),
         )
+        runs = SimpleNamespace(
+            get_artifact=AsyncMock(
+                side_effect=[
+                    SimpleNamespace(payload_json={
+                        "status": "READY",
+                        "scope": {
+                            "evidence_coverage_percent": 100.0,
+                            "evidence_covered_count": 2,
+                            "evidence_total_count": 2,
+                        },
+                    }),
+                    SimpleNamespace(payload_json={
+                        "status": "PARTIAL",
+                        "scope": {
+                            "evidence_coverage_percent": 50.0,
+                            "evidence_covered_count": 1,
+                            "evidence_total_count": 2,
+                        },
+                    }),
+                ]
+            )
+        )
         service = AIOpsRuntimeService(
             uow_factory=lambda: _context(
-                SimpleNamespace(inspections=inspections)
+                SimpleNamespace(inspections=inspections, runs=runs)
             ),
             blueprint_registry=Mock(),
             handler_registry=Mock(),
@@ -284,6 +308,14 @@ class InspectionFireQueryTest(unittest.TestCase):
         self.assertEqual(result.plan_display_name, "生产数据库每日巡检")
         self.assertEqual(tuple(item.run_id for item in result.runs), run_ids)
         self.assertEqual(tuple(item.target_id for item in result.runs), target_ids)
+        self.assertEqual(
+            tuple(item.report_status for item in result.runs),
+            ("READY", "PARTIAL"),
+        )
+        self.assertEqual(
+            tuple(item.evidence_coverage_percent for item in result.runs),
+            (100.0, 50.0),
+        )
         scoped = inspections.get_fire_scoped.await_args.kwargs
         self.assertEqual(scoped["domain_id"], 200)
 

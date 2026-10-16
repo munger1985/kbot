@@ -149,6 +149,12 @@ class InspectionRunSummary(AIOpsContract):
     run_id: UUIDv7
     target_id: UUIDv7
     status: OpsRunStatus
+    report_status: ReportStatus | None = None
+    evidence_coverage_percent: float | None = Field(
+        default=None, ge=0, le=100
+    )
+    evidence_covered_count: int | None = Field(default=None, ge=0)
+    evidence_total_count: int | None = Field(default=None, ge=0)
     error_code: str | None = None
     error_message: str | None = None
     completed_at: UtcDatetime | None = None
