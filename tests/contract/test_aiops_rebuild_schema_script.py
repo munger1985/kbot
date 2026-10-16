@@ -222,6 +222,8 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("SET RESOURCE_ID = TARGET_ID", normalized)
         self.assertIn("EXECUTION_TARGET_ID = TARGET_ID", normalized)
         self.assertIn("CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH", normalized)
+        self.assertIn("LABEL MANAGED_RESOURCE", normalized)
+        self.assertNotRegex(normalized, r"\bLABEL\s+RESOURCE\b")
         self.assertNotIn("CREATE TABLE KBOT_OPS_MANAGED_COMPONENT", normalized)
         self.assertNotIn("CREATE TABLE KBOT_OPS_DATABASE_SYSTEM", normalized)
         self.assertNotIn("CREATE UNIQUE INDEX", normalized)
