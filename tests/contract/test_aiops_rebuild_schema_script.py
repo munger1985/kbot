@@ -141,6 +141,8 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertEqual(expected, sections)
         self.assertEqual(render_rebuild_sql(), self.sql)
         self.assertNotRegex(self.sql, r"(?m)^@@")
+        self.assertIn("graph_name", self.sql)
+        self.assertNotIn("property_graph_name", self.sql)
         self.assertEqual(
             len(self.manifest["tables"]),
             len(re.findall(r"(?im)^\s*CREATE\s+TABLE\s+", self.sql)),

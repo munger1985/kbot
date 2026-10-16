@@ -454,14 +454,14 @@ PROMPT === 正在删除旧 AIOps 视图和表 ===
 DECLARE
 BEGIN
     FOR graph_row IN (
-        SELECT property_graph_name
+        SELECT graph_name
           FROM user_property_graphs
-         WHERE property_graph_name = 'KBOT_OPS_RESOURCE_GRAPH'
+         WHERE graph_name = 'KBOT_OPS_RESOURCE_GRAPH'
     ) LOOP
         EXECUTE IMMEDIATE
             'DROP PROPERTY GRAPH '
-            || dbms_assert.enquote_name(graph_row.property_graph_name, FALSE);
-        dbms_output.put_line('已删除属性图 ' || graph_row.property_graph_name);
+            || dbms_assert.enquote_name(graph_row.graph_name, FALSE);
+        dbms_output.put_line('已删除属性图 ' || graph_row.graph_name);
     END LOOP;
 
     FOR view_row IN (
@@ -4412,7 +4412,7 @@ BEGIN
     SELECT COUNT(*)
       INTO l_property_graph_count
       FROM user_property_graphs
-     WHERE property_graph_name LIKE 'KBOT\_OPS\_%' ESCAPE '\';
+     WHERE graph_name LIKE 'KBOT\_OPS\_%' ESCAPE '\';
 
     SELECT COUNT(*)
       INTO l_missing_property_graph_count
@@ -4422,7 +4422,7 @@ BEGIN
      WHERE NOT EXISTS (
             SELECT 1
               FROM user_property_graphs actual
-             WHERE actual.property_graph_name = expected.column_value
+             WHERE actual.graph_name = expected.column_value
      );
 
     SELECT component, schema_version, contract_version

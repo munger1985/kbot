@@ -260,18 +260,18 @@ BEGIN
             'KBOT_OPS_RESOURCE_GRAPH'
           ))
         MINUS
-        SELECT property_graph_name AS object_name
+        SELECT graph_name AS object_name
           FROM user_property_graphs
-         WHERE property_graph_name LIKE 'KBOT\_OPS\_%' ESCAPE '\'
+         WHERE graph_name LIKE 'KBOT\_OPS\_%' ESCAPE '\'
     ) LOOP
         l_issue_count := l_issue_count + 1;
         dbms_output.put_line('[缺失] AIOps 属性图: ' || missing_row.object_name);
     END LOOP;
 
     FOR extra_row IN (
-        SELECT property_graph_name AS object_name
+        SELECT graph_name AS object_name
           FROM user_property_graphs
-         WHERE property_graph_name LIKE 'KBOT\_OPS\_%' ESCAPE '\'
+         WHERE graph_name LIKE 'KBOT\_OPS\_%' ESCAPE '\'
         MINUS
         SELECT column_value AS object_name
           FROM TABLE(sys.odcivarchar2list(

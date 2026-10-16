@@ -136,9 +136,9 @@ def render_validation_sql() -> str:
             label="AIOps 属性图",
             expected_names=list(manifest["property_graphs"]),
             actual_query=(
-                "        SELECT property_graph_name AS object_name\n"
+                "        SELECT graph_name AS object_name\n"
                 "          FROM user_property_graphs\n"
-                "         WHERE property_graph_name LIKE "
+                "         WHERE graph_name LIKE "
                 "'KBOT\\_OPS\\_%' ESCAPE '\\'"
             ),
             error_code="AIOPS_SCHEMA_PROPERTY_GRAPHS",
