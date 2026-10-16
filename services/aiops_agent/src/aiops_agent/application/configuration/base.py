@@ -99,6 +99,10 @@ TargetConnectionTester = Callable[
 ]
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class ConfigurationServiceBase:
     def __init__(
         self,
@@ -113,6 +117,7 @@ class ConfigurationServiceBase:
         target_connection_tester: TargetConnectionTester,
         diagnostic_source_catalog: DiagnosticSourceAdapterCatalogPort | None = None,
         diagnostic_source_registry: DiagnosticSourceAdapterRegistryPort | None = None,
+        now: Callable[[], datetime] | None = None,
     ):
         self._uow_factory = uow_factory
         self._cursor_codec = cursor_codec
@@ -128,6 +133,7 @@ class ConfigurationServiceBase:
         self._target_connection_tester = target_connection_tester
         self._diagnostic_source_catalog = diagnostic_source_catalog
         self._diagnostic_source_registry = diagnostic_source_registry
+        self._now = now or _utc_now
 
     async def _validate_secret_refs(self, *references: str | None) -> None:
         for reference in references:

@@ -149,6 +149,25 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-1",
         )
 
+    def test_constructed_service_has_an_injectable_utc_clock(self) -> None:
+        fixed_now = datetime(2026, 10, 16, 9, 10, tzinfo=UTC)
+        service = AIOpsConfigurationService(
+            uow_factory=lambda: None,
+            cursor_codec=object(),
+            secret_store=object(),
+            agent_catalog=object(),
+            management=object(),
+            credential_cipher=ManagedCredentialCipher(
+                key=b"d" * 32,
+                key_version="v1",
+            ),
+            managed_credential_service=object(),
+            target_connection_tester=AsyncMock(),
+            now=lambda: fixed_now,
+        )
+
+        self.assertEqual(fixed_now, service._now())
+
     def test_draft_payload_is_encrypted_at_rest_and_round_trips(self) -> None:
         service = object.__new__(AIOpsConfigurationService)
         service._credential_cipher = ManagedCredentialCipher(key=b"d" * 32, key_version="v1")
