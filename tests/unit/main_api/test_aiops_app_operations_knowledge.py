@@ -11,7 +11,7 @@ from main_api.api.aiops_app import (
     OperationsKnowledgeConversationCreatePayload,
     create_operations_knowledge_conversation,
     operations_knowledge_overview,
-    upload_operations_manual,
+    upload_operations_knowledge,
     upload_operations_manual_version,
 )
 from platform_core.identity import uuid7
@@ -25,13 +25,13 @@ class _AIOpsClient:
     async def get_operations_knowledge_overview(self, **kwargs):
         return {"published_manuals": 2, "published_cases": 1}
 
-    async def upload_operations_manual(self, **kwargs):
-        self.uploaded = kwargs
-        return {"asset": {"status": "PROCESSING"}, "replayed": False}
-
     async def upload_operations_manual_version(self, **kwargs):
         self.uploaded = kwargs
         return {"version": {"version_no": 2}, "replayed": False}
+
+    async def upload_operations_knowledge(self, **kwargs):
+        self.uploaded = kwargs
+        return {"grouping_mode": "SINGLE_BUNDLE", "items": []}
 
     async def get_operations_knowledge_execution_spec(self, **kwargs):
         return {
@@ -107,32 +107,6 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
             result = await operations_knowledge_overview(_request(client))
         self.assertEqual(2, result["published_manuals"])
 
-    async def test_manual_upload_forwards_business_metadata_not_kc_contract(self):
-        client = _AIOpsClient()
-        content = b"# Oracle Data Guard"
-        digest = hashlib.sha256(content).hexdigest()
-        metadata = {
-            "display_name": "Data Guard 手册",
-            "security_level": 1,
-            "scopes": [{"kind": "DATABASE_TYPE", "value": "ORACLE"}],
-        }
-        request = _request(client, body=content, headers={
-            "Content-Type": "text/markdown",
-            "Idempotency-Key": f"aiops-manual:{digest}",
-            "X-File-Name": quote("data-guard.md", safe=""),
-            "X-Content-SHA256": digest,
-            "X-Upload-Metadata": quote(json.dumps(metadata, ensure_ascii=False), safe=""),
-        })
-        with patch(
-            "main_api.api.aiops_app._require",
-            AsyncMock(return_value=(42, "aiopsadmin", object())),
-        ):
-            result = await upload_operations_manual(request)
-        self.assertEqual("PROCESSING", result["asset"]["status"])
-        self.assertEqual(metadata, client.uploaded["metadata"])
-        self.assertEqual(digest, client.uploaded["content_sha256"])
-        self.assertNotIn("collection_id", client.uploaded)
-
     async def test_manual_new_version_forwards_asset_optimistic_version(self):
         client = _AIOpsClient()
         asset_id = uuid7()
@@ -155,6 +129,33 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, result["version"]["version_no"])
         self.assertEqual(asset_id, client.uploaded["asset_id"])
         self.assertEqual(3, client.uploaded["expected_asset_row_version"])
+
+    async def test_multipart_upload_streams_request_with_idempotency_key(self):
+        client = _AIOpsClient()
+        request = _request(
+            client,
+            body=b"multipart-body",
+            headers={
+                "Content-Type": "multipart/form-data; boundary=test",
+                "Idempotency-Key": "aiops-upload-test",
+            },
+        )
+        with patch(
+            "main_api.api.aiops_app._require",
+            AsyncMock(return_value=(42, "aiopsadmin", object())),
+        ):
+            result = await upload_operations_knowledge(
+                request,
+                idempotency_key="aiops-upload-test",
+            )
+
+        self.assertEqual("SINGLE_BUNDLE", result["grouping_mode"])
+        self.assertEqual("multipart/form-data; boundary=test", client.uploaded["content_type"])
+        self.assertEqual("aiops-upload-test", client.uploaded["idempotency_key"])
+        self.assertEqual(
+            b"multipart-body",
+            b"".join([chunk async for chunk in client.uploaded["body"]]),
+        )
 
 
 if __name__ == "__main__":

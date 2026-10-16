@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -281,6 +282,43 @@ class _BaseAIOpsClient:
                 retryable=True,
             ) from exc
 
+    async def _multipart_upload(
+        self,
+        path: str,
+        *,
+        auth_context: AuthContext,
+        content_type: str,
+        body: AsyncIterable[bytes],
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": content_type,
+            "Idempotency-Key": idempotency_key,
+            **self._auth.headers(auth_context),
+        }
+        session = await self._get_session()
+        try:
+            async with session.post(
+                f"{self._base_url}{path}",
+                headers=headers,
+                data=body,
+                timeout=self._timeout,
+            ) as response:
+                payload = await self._response_payload(response)
+                if response.status >= 400:
+                    self._raise_error(response.status, payload)
+                return payload
+        except AIOpsClientError:
+            raise
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise AIOpsClientError(
+                status_code=503,
+                code="OPS_UPSTREAM_UNAVAILABLE",
+                message="AIOps 上传服务暂时不可用",
+                retryable=True,
+            ) from exc
+
     @staticmethod
     async def _response_payload(response: aiohttp.ClientResponse) -> Any:
         if response.status == 204:
@@ -457,24 +495,20 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             accept="*/*",
         )
 
-    async def upload_operations_manual(
-        self, *, file_name: str, media_type: str, body, metadata: dict[str, Any],
-        content_sha256: str, idempotency_key: str, auth_context: AuthContext,
+    async def upload_operations_knowledge(
+        self,
+        *,
+        content_type: str,
+        body: AsyncIterable[bytes],
+        idempotency_key: str,
+        auth_context: AuthContext,
     ) -> dict[str, Any]:
-        return await self._upload(
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/manuals:ingest",
+        return await self._multipart_upload(
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/uploads:ingest",
             auth_context=auth_context,
-            file_name=file_name,
-            media_type=media_type,
+            content_type=content_type,
             body=body,
             idempotency_key=idempotency_key,
-            extra_headers={
-                "X-Upload-Metadata": quote(
-                    json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
-                    safe="",
-                ),
-                "X-Content-SHA256": content_sha256,
-            },
         )
 
     async def upload_operations_manual_version(

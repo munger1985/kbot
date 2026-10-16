@@ -1,11 +1,13 @@
 """AIOps 运维知识库内部 API。"""
 
+import hashlib
 import json
 from urllib.parse import unquote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.contracts.knowledge import (
@@ -21,6 +23,9 @@ router = APIRouter(
     prefix="/internal/v1/aiops/operations-knowledge",
     tags=["AIOps Operations Knowledge"],
 )
+
+_MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+_MAX_UPLOAD_FILES = 20
 
 
 def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
@@ -111,24 +116,113 @@ async def stream_source(
     )
 
 
-@router.post("/manuals:ingest", status_code=202)
-async def ingest_manual(
+@router.post("/uploads:ingest", status_code=202)
+async def ingest_upload(
     request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _scope(request, context)
-    raw_metadata = unquote(request.headers.get("X-Upload-Metadata", ""))
-    metadata = ManualUploadMetadata.model_validate(json.loads(raw_metadata))
-    body = await request.body()
-    return await request.app.state.operations_knowledge_service.ingest_manual(
+    content_type = request.headers.get("Content-Type", "")
+    if not content_type.lower().startswith("multipart/form-data"):
+        raise HTTPException(
+            415,
+            {"code": "UNSUPPORTED_MEDIA_TYPE", "message": "资料上传只接受 multipart/form-data"},
+        )
+    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+    if not idempotency_key:
+        raise HTTPException(
+            428,
+            {"code": "IDEMPOTENCY_KEY_REQUIRED", "message": "缺少 Idempotency-Key Header"},
+        )
+    form = await request.form()
+    try:
+        grouping_mode = str(form.get("grouping_mode", "EACH_FILE")).upper()
+        if grouping_mode not in {"EACH_FILE", "SINGLE_BUNDLE"}:
+            raise ValueError("grouping_mode must be EACH_FILE or SINGLE_BUNDLE")
+        raw_declarations = json.loads(str(form.get("files", "[]")))
+        raw_metadata = json.loads(str(form.get("metadata", "{}")))
+        if not isinstance(raw_declarations, list) or not raw_declarations:
+            raise ValueError("files is required")
+        if len(raw_declarations) > _MAX_UPLOAD_FILES:
+            raise ValueError(f"每次最多上传 {_MAX_UPLOAD_FILES} 个文件")
+        metadata = ManualUploadMetadata.model_validate(raw_metadata)
+        bundle_title = metadata.display_name
+        if grouping_mode == "SINGLE_BUNDLE":
+            raw_bundle = json.loads(str(form.get("bundle", "{}")))
+            bundle_title = str(raw_bundle.get("title", "")).strip()
+            if not bundle_title or len(bundle_title) > 256:
+                raise ValueError("Bundle 名称不能为空且不能超过 256 个字符")
+        documents: list[dict] = []
+        total_bytes = 0
+        part_names: set[str] = set()
+        client_file_ids: set[str] = set()
+        for ordinal, declaration in enumerate(raw_declarations):
+            if not isinstance(declaration, dict):
+                raise ValueError("文件声明格式无效")
+            part_name = str(declaration.get("part_name", "")).strip()
+            if not part_name or part_name in part_names:
+                raise ValueError("文件 part_name 不能为空或重复")
+            part_names.add(part_name)
+            client_file_id = str(declaration.get("client_file_id", "")).strip()
+            if not client_file_id or client_file_id in client_file_ids:
+                raise ValueError("文件 client_file_id 不能为空或重复")
+            client_file_ids.add(client_file_id)
+            upload = form.get(part_name)
+            if not isinstance(upload, UploadFile):
+                raise ValueError(f"缺少文件分片 {part_name}")
+            body = await upload.read()
+            total_bytes += len(body)
+            if not body or total_bytes > _MAX_UPLOAD_BYTES:
+                raise ValueError("上传文件为空或总大小超过 64 MiB")
+            digest = hashlib.sha256(body).hexdigest()
+            declared_digest = str(declaration.get("content_sha256", "")).lower()
+            if len(declared_digest) != 64 or declared_digest != digest:
+                raise ValueError(f"文件 {upload.filename or part_name} 的摘要不一致")
+            declared_size = declaration.get("byte_size")
+            if not isinstance(declared_size, int) or declared_size != len(body):
+                raise ValueError(f"文件 {upload.filename or part_name} 的大小声明不一致")
+            role = str(declaration.get("role", "CONTENT")).upper()
+            if role not in {"CONTENT", "SUPPLEMENT"}:
+                raise ValueError("文件角色必须是 CONTENT 或 SUPPLEMENT")
+            display_name = str(
+                declaration.get("display_name") or upload.filename or part_name
+            ).strip()
+            if not display_name or len(display_name) > 256:
+                raise ValueError("文件显示名称不能为空且不能超过 256 个字符")
+            documents.append({
+                "client_file_id": client_file_id,
+                "file_name": str(upload.filename or display_name),
+                "display_name": display_name,
+                "media_type": str(
+                    upload.content_type
+                    or declaration.get("declared_mime_type")
+                    or "application/octet-stream"
+                ),
+                "body": body,
+                "content_sha256": digest,
+                "ordinal": ordinal,
+                "role": role,
+                "required_flag": bool(declaration.get("required_flag", False)),
+            })
+        if grouping_mode == "SINGLE_BUNDLE" and not any(
+            document["role"] == "CONTENT" for document in documents
+        ):
+            raise ValueError("Bundle 至少需要一个正文文件")
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_KNOWLEDGE_UPLOAD_INVALID", "message": str(exc)},
+        ) from exc
+    finally:
+        await form.close()
+    return await request.app.state.operations_knowledge_service.ingest_upload(
         domain_id=domain_id,
         context=context,
-        file_name=unquote(request.headers.get("X-File-Name", "manual.bin")),
-        media_type=request.headers.get("Content-Type", "application/octet-stream"),
-        body=body,
+        grouping_mode=grouping_mode,
+        bundle_title=bundle_title,
+        documents=documents,
         metadata=metadata,
-        idempotency_key=request.headers.get("Idempotency-Key", ""),
-        declared_sha256=request.headers.get("X-Content-SHA256"),
+        idempotency_key=idempotency_key,
     )
 
 

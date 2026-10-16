@@ -25568,26 +25568,6 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/operations-knowledge/manuals": {
-      "post": {
-        "description": "把原始手册有界转发到 AIOps，由业务服务登记资产并驱动 KC。",
-        "operationId": "upload_operations_manual_api_v1_apps_aiops_operations_knowledge_manuals_post",
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Upload Operations Manual",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
     "/api/v1/apps/aiops/operations-knowledge/overview": {
       "get": {
         "operationId": "operations_knowledge_overview_api_v1_apps_aiops_operations_knowledge_overview_get",
@@ -25980,6 +25960,47 @@
           }
         },
         "summary": "Preview Operations Knowledge Search",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/uploads": {
+      "post": {
+        "description": "把单文件或 Bundle multipart 原样转发到 AIOps 业务服务。",
+        "operationId": "upload_operations_knowledge_api_v1_apps_aiops_operations_knowledge_uploads_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Operations Knowledge",
         "tags": [
           "AIOps App"
         ]

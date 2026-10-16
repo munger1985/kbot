@@ -659,7 +659,10 @@ class KnowledgeCoreClient:
             part_name = f"document_{ordinal}"
             declarations.append({
                 "part_name": part_name,
-                "client_file_id": str(UUID(bytes=bytes.fromhex(digest[:32]))),
+                "client_file_id": str(
+                    document.get("client_file_id")
+                    or UUID(bytes=bytes.fromhex(digest[:32]))
+                ),
                 "display_name": str(document["file_name"]),
                 "declared_mime_type": str(document["media_type"]),
                 "byte_size": len(body),

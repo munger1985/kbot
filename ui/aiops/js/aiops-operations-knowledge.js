@@ -3,288 +3,233 @@
 
   const api = "/api/v1/apps/aiops/operations-knowledge";
   const shell = globalThis.KBotAIOpsShell;
-  let activeKind = "";
-  let activeStatus = "";
+  const state = {
+    assets: [],
+    detail: null,
+    detailTab: "overview",
+    groupingMode: "EACH_FILE",
+    entries: [],
+    uploadAsset: null,
+  };
 
-  const splitValues = (value) => String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
-  const scope = (kind, value) => value ? [{ kind, value }] : [];
+  const escape = (value) => shell.escape(value == null ? "" : value);
+  const newId = () => KBotAIOpsAuth.uuid();
+  const kindLabel = (value) => value === "MANUAL" ? "运维手册" : "诊断案例";
+  const statusLabel = (value) => ({ PROCESSING: "处理中", DRAFT: "待审核", REVIEW_REQUIRED: "需复核", PUBLISHED: "已发布", RETIRED: "已退役", REJECTED: "已拒绝", FAILED: "失败" }[value] || value || "—");
+  const statusTone = (value) => ["FAILED", "REJECTED"].includes(value) ? "bad" : ["PROCESSING", "DRAFT", "REVIEW_REQUIRED"].includes(value) ? "warn" : ["PUBLISHED", "READY"].includes(value) ? "good" : "";
+  const badge = (value, label = statusLabel(value)) => `<span class="ops-badge ${statusTone(value)}">${escape(label)}</span>`;
+  const reviewLabel = (value) => ["DRAFT", "REVIEW_REQUIRED"].includes(value) ? (value === "DRAFT" ? "待审核" : "需复核") : ["PUBLISHED", "RETIRED"].includes(value) ? "已通过" : value === "REJECTED" ? "已拒绝" : "—";
+  const parseLabel = (value) => value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : "解析完成";
+  const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB` : `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`;
+  const totalBytes = () => state.entries.reduce((sum, item) => sum + item.file.size, 0);
+  const isBundle = () => !state.uploadAsset && state.groupingMode === "SINGLE_BUNDLE";
 
-  function renderOverview(data) {
-    document.querySelectorAll("[data-metric]").forEach((node) => {
-      const key = node.dataset.metric;
-      node.textContent = key === "abnormal"
-        ? Number(data.failed || 0) + Number(data.index_abnormal || 0)
-        : Number(data[key] || 0);
-    });
+  async function digest(file) {
+    const value = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    return Array.from(new Uint8Array(value), (item) => item.toString(16).padStart(2, "0")).join("");
   }
 
-  function assetCard(item) {
-    const kind = item.asset_kind === "MANUAL" ? "运维手册" : "诊断案例";
-    return `<article class="knowledge-card">
-      <header><div><h3>${shell.escape(item.display_name)}</h3><p>${kind}</p></div>${shell.badge(item.status)}</header>
-      <div class="knowledge-card-meta"><span>安全等级 ${shell.escape(item.security_level)}</span><span>更新于 ${shell.escape(shell.fmt(item.updated_at))}</span></div>
-      <footer><button type="button" data-open-version="${shell.escape(item.current_version_id || item.asset_id)}" data-asset-id="${shell.escape(item.asset_id)}">查看版本与审核</button></footer>
-    </article>`;
+  function assetRow(item) {
+    const action = ["DRAFT", "REVIEW_REQUIRED"].includes(item.status) ? "审核" : item.status === "PROCESSING" ? "查看进度" : item.status === "FAILED" ? "处理异常" : "查看";
+    return `<tr><td><button class="knowledge-primary-link" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small>${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status))}</td><td><time>${escape(shell.fmt(item.created_at))}</time>${item.updated_at !== item.created_at ? `<small>更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
+  }
+
+  function renderAssets() {
+    const keyword = document.getElementById("knowledge-search").value.trim().toLowerCase();
+    const items = keyword ? state.assets.filter((item) => [item.display_name, item.asset_id, kindLabel(item.asset_kind)].some((value) => String(value).toLowerCase().includes(keyword))) : state.assets;
+    document.getElementById("knowledge-count").textContent = `${items.length} 项`;
+    document.getElementById("knowledge-assets").innerHTML = items.length ? items.map(assetRow).join("") : '<tr><td colspan="5" class="ops-empty">当前条件下没有运维资料。</td></tr>';
   }
 
   async function loadAssets() {
     const query = new URLSearchParams({ limit: "200" });
-    if (activeKind) query.set("asset_kind", activeKind);
+    const status = document.getElementById("knowledge-status").value;
+    if (status) query.set("status", status);
     const result = await KBotAIOpsAuth.request(`${api}/assets?${query}`);
-    let items = result.items || [];
-    if (activeStatus) {
-      const statuses = new Set(activeStatus.split(","));
-      items = items.filter((item) => statuses.has(item.status));
-    }
-    document.getElementById("knowledge-assets").innerHTML = items.length
-      ? items.map(assetCard).join("")
-      : '<p class="ops-empty">当前筛选下没有知识资产。</p>';
+    state.assets = result.items || [];
+    renderAssets();
   }
 
-  function relationSection(title, body) {
-    return `<section class="knowledge-section"><h3>${shell.escape(title)}</h3>${body}</section>`;
+  function stageClass(stage, status) {
+    if (stage === "uploaded") return "is-complete";
+    if (stage === "parsed") return status === "PROCESSING" ? "is-current" : status === "FAILED" ? "is-error" : "is-complete";
+    if (stage === "reviewed") return ["DRAFT", "REVIEW_REQUIRED"].includes(status) ? "is-current" : status === "REJECTED" ? "is-error" : ["PUBLISHED", "RETIRED"].includes(status) ? "is-complete" : "";
+    return ["PUBLISHED", "RETIRED"].includes(status) ? "is-complete" : "";
   }
 
-  function textList(items, empty) {
-    return items?.length
-      ? `<ul>${items.map((item) => `<li>${shell.escape(typeof item === "string" ? item : item.summary || JSON.stringify(item))}</li>`).join("")}</ul>`
-      : `<p class="ops-empty">${shell.escape(empty)}</p>`;
+  function renderOverview(detail) {
+    const status = detail.version.status;
+    const scope = detail.scopes.map((item) => `${item.kind}=${item.value}`).join("；") || "通用";
+    return `<section class="knowledge-stage-track"><div class="${stageClass("uploaded", status)}"><span>1</span><strong>已上传</strong></div><div class="${stageClass("parsed", status)}"><span>2</span><strong>解析</strong></div><div class="${stageClass("reviewed", status)}"><span>3</span><strong>审核</strong></div><div class="${stageClass("published", status)}"><span>4</span><strong>发布</strong></div></section><section class="knowledge-form-section"><header><b>01</b><div><strong>资料概览</strong><small>当前资料及其最新知识版本。</small></div></header><dl class="knowledge-summary-grid"><div><dt>资料类型</dt><dd>${escape(kindLabel(detail.asset.asset_kind))}</dd></div><div><dt>安全级</dt><dd>L${escape(detail.asset.security_level)}</dd></div><div><dt>当前版本</dt><dd>v${escape(detail.version.version_no)}</dd></div><div><dt>适用范围</dt><dd>${escape(scope)}</dd></div><div><dt>提交时间</dt><dd>${escape(shell.fmt(detail.asset.created_at))}</dd></div><div><dt>最近更新</dt><dd>${escape(shell.fmt(detail.asset.updated_at))}</dd></div></dl></section>${detail.version.extraction_warnings?.length ? `<section class="knowledge-warning"><strong>解析提示</strong><ul>${detail.version.extraction_warnings.map((item) => `<li>${escape(item)}</li>`).join("")}</ul></section>` : ""}`;
   }
 
-  function renderManualProfile(profile) {
-    const scopeItems = Object.entries(profile.scope || {}).flatMap(([kind, values]) =>
-      (values || []).map((value) => `<span class="knowledge-scope">${shell.escape(kind)} · ${shell.escape(value)}</span>`));
-    const procedures = (profile.procedures || []).map((procedure) => `<article class="knowledge-procedure">
-      <h4>${shell.escape(procedure.title)}</h4>
-      ${textList(procedure.preconditions, "未提取到前置条件")}
-      ${(procedure.steps || []).map((step) => `<div class="knowledge-step"><strong>步骤 ${shell.escape(step.ordinal)}</strong><p>${shell.escape(step.description)}</p>${step.command_text ? `<pre class="ops-code"><code>${shell.escape(step.command_text)}</code></pre>` : ""}</div>`).join("") || '<p class="ops-empty">未提取到原文命令。</p>'}
-      ${textList(procedure.validations, "未提取到验证步骤")}
-      ${textList(procedure.rollback, "未提取到回退步骤")}
-    </article>`).join("");
-    return [
-      profile.warnings?.length ? `<div class="knowledge-warning"><strong>需要人工确认</strong>${textList(profile.warnings, "")}</div>` : "",
-      profile.missing_fields?.length ? `<p class="knowledge-status">缺失元数据：${shell.escape(profile.missing_fields.join("、"))}</p>` : "",
-      `<div class="knowledge-scope-list">${scopeItems.join("") || '<span class="ops-empty">未识别适用范围</span>'}</div>`,
-      procedures || '<p class="ops-empty">原文已索引，但没有识别出独立操作步骤。</p>',
-    ].join("");
+  function renderFiles(detail) {
+    const sources = detail.sources?.length ? detail.sources.map((source, index) => `<article class="knowledge-source-card"><span>${Number(source.locator?.ordinal ?? index) + 1}</span><div><strong>${escape(source.external_id || detail.asset.display_name)}</strong><small>${source.locator?.role === "SUPPLEMENT" ? "补充材料" : "正文内容"}${source.locator?.required_flag ? " · 必要成员" : ""}</small><code>${escape(source.content_hash)}</code></div></article>`).join("") : '<p class="ops-empty">尚未登记原始文件。</p>';
+    const indexes = detail.indexes?.length ? detail.indexes.map((item) => `<tr><td><code>${escape(item.index_ref_id)}</code></td><td>${badge(item.status, item.status)}</td><td>${escape(item.error_summary || "—")}</td></tr>`).join("") : '<tr><td colspan="3" class="ops-empty">尚未登记索引结果。</td></tr>';
+    return `<section class="knowledge-form-section"><header><b>01</b><div><strong>原始文件</strong><small>展示当前版本包含的文件及其 Bundle 角色。</small></div></header><div class="knowledge-source-list">${sources}</div><div class="knowledge-source-actions"><button type="button" data-download-source>下载正文文件</button></div><dl class="knowledge-technical-list"><dt>Bundle 摘要</dt><dd><code>${escape(detail.version.source_hash)}</code></dd></dl></section><section class="knowledge-form-section"><header><b>02</b><div><strong>索引状态</strong><small>用于判断当前版本是否已经形成可检索知识。</small></div></header><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>索引</th><th>状态</th><th>异常</th></tr></thead><tbody>${indexes}</tbody></table></div></section>${detail.version.profile ? `<section class="knowledge-form-section"><header><b>03</b><div><strong>提炼结果</strong><small>结构化结果仅辅助导航，运维结论仍应以原文为准。</small></div></header><pre class="knowledge-profile">${escape(JSON.stringify(detail.version.profile, null, 2))}</pre></section>` : ""}`;
   }
 
-  function renderCaseProfile(profile) {
-    const signature = profile.problem_signature || {};
-    const environment = profile.environment || {};
-    return [
-      `<dl class="ops-detail"><dt>案例等级</dt><dd>${shell.badge(profile.case_kind)}</dd><dt>问题分类</dt><dd>${shell.escape(signature.problem_class || "未分类")}</dd><dt>数据库环境</dt><dd>${shell.escape([environment.database_type, environment.database_version, environment.topology, environment.platform].filter(Boolean).join(" · ") || "未完整识别")}</dd></dl>`,
-      `<h4>根因</h4><p>${shell.escape(profile.root_cause?.summary || "未形成根因")}</p>`,
-      `<h4>处置动作</h4>${textList(profile.actions, "没有已执行动作，仅可作为诊断参考")}`,
-      `<h4>验证</h4><p>${shell.escape(profile.verification?.result || "NOT_VERIFIED")}</p>`,
-      `<h4>适用条件</h4>${textList(profile.applicability, "未补充额外适用条件")}`,
-      `<h4>禁用条件</h4>${textList(profile.contraindications, "未记录禁用条件")}`,
-    ].join("");
+  function renderHistory(detail) {
+    const rows = detail.reviews?.length ? detail.reviews.map((item) => `<li><div><strong>${escape(item.decision)}</strong><small>${escape(item.reviewer_id)}</small></div><time>${escape(shell.fmt(item.created_at))}</time></li>`).join("") : '<p class="ops-empty">当前版本还没有审核记录。</p>';
+    return `<section class="knowledge-form-section"><header><b>01</b><div><strong>处理记录</strong><small>保留当前版本的审核决策与责任人。</small></div></header><ol class="knowledge-timeline">${rows}</ol></section>`;
   }
 
-  function renderProfile(profile, assetKind) {
-    if (!profile) return '<p class="ops-empty">正文仍在解析和提炼中。</p>';
-    return assetKind === "MANUAL" ? renderManualProfile(profile) : renderCaseProfile(profile);
+  function renderDetailBody() {
+    if (!state.detail) return;
+    document.getElementById("detail-body").innerHTML = state.detailTab === "overview" ? renderOverview(state.detail) : state.detailTab === "files" ? renderFiles(state.detail) : renderHistory(state.detail);
+    document.querySelectorAll("#detail-tabs [data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === state.detailTab));
+  }
+
+  function renderDetailActions(detail) {
+    const actions = ['<button type="button" data-download-source>下载正文文件</button>'];
+    if (detail.asset.asset_kind === "MANUAL") actions.push('<button type="button" data-upload-version>上传新版本</button>');
+    if (detail.version.status === "PROCESSING") actions.push('<button type="button" data-review="reconcile">立即对账</button>');
+    if (["DRAFT", "REVIEW_REQUIRED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-review="reject">拒绝</button>', '<button class="primary" type="button" data-review="publish">审核通过并发布</button>');
+    if (detail.version.status === "PUBLISHED") actions.push('<button class="danger" type="button" data-review="retire">退役</button>');
+    if (detail.version.status === "FAILED") actions.push('<button class="primary" type="button" data-review="retry">重试解析</button>');
+    document.getElementById("detail-actions").innerHTML = actions.join("");
   }
 
   async function openAsset(assetId) {
-    const result = await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(assetId)}`);
-    const version = result.versions?.[0];
-    if (!version) throw new Error("该知识资产还没有版本");
-    const detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}`);
-    document.getElementById("detail-title").textContent = detail.asset.display_name;
-    document.getElementById("detail-subtitle").textContent = `${detail.asset.asset_kind === "MANUAL" ? "运维手册" : "诊断案例"} · 版本 ${detail.version.version_no}`;
-    const profile = detail.version.profile;
-    document.getElementById("detail-body").innerHTML = [
-      relationSection("状态", `<dl class="ops-detail"><dt>业务状态</dt><dd>${shell.badge(detail.version.status)}</dd><dt>索引状态</dt><dd>${detail.indexes.map((item) => shell.badge(item.status)).join(" ") || "—"}</dd><dt>来源摘要</dt><dd><code>${shell.escape(detail.version.source_hash)}</code></dd></dl>`),
-      relationSection("适用范围", detail.scopes.length ? `<div class="knowledge-scope-list">${detail.scopes.map((item) => `<span class="knowledge-scope">${shell.escape(item.kind)} · ${shell.escape(item.value)}</span>`).join("")}</div>` : '<p class="ops-empty">尚未固化适用范围。</p>'),
-      relationSection("提炼结果", renderProfile(profile, detail.asset.asset_kind)),
-      relationSection("审核记录", detail.reviews.length ? detail.reviews.map((item) => `<div class="knowledge-review"><strong>${shell.escape(item.decision)}</strong> · ${shell.escape(item.reviewer_id)}<p>${shell.escape(item.comment || "未填写说明")} · ${shell.escape(shell.fmt(item.created_at))}</p></div>`).join("") : '<p class="ops-empty">尚无审核记录。</p>'),
-    ].join("");
-    const actions = [];
-    actions.push('<button type="button" data-download-source>下载原始文件</button>');
-    if (["PROCESSING", "FAILED"].includes(detail.version.status)) actions.push(`<button type="button" data-review="retry">重新处理</button>`);
-    if (["DRAFT", "REVIEW_REQUIRED"].includes(detail.version.status)) {
-      actions.push(`<button type="button" data-review="reject">拒绝</button>`);
-      actions.push(`<button class="primary" type="button" data-review="publish">发布</button>`);
-    }
-    if (detail.version.status === "PUBLISHED") actions.push(`<button type="button" data-review="retire">退役</button>`);
-    if (detail.asset.asset_kind === "MANUAL") actions.unshift('<button type="button" data-upload-version>上传新版本</button>');
-    document.getElementById("detail-actions").innerHTML = actions.join("");
-    document.getElementById("detail-actions").dataset.versionId = detail.version.asset_version_id;
-    document.getElementById("detail-actions").dataset.rowVersion = detail.version.row_version;
-    document.getElementById("detail-actions").dataset.assetId = detail.asset.asset_id;
-    document.getElementById("detail-actions").dataset.assetRowVersion = detail.asset.row_version;
-    document.getElementById("detail-actions").dataset.assetName = detail.asset.display_name;
-    document.getElementById("detail-dialog").showModal();
+    const asset = await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(assetId)}`);
+    const version = asset.versions?.[0];
+    if (!version) throw new Error("该资料尚未形成知识版本");
+    state.detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}`);
+    state.detailTab = "overview";
+    document.getElementById("detail-eyebrow").textContent = `${kindLabel(state.detail.asset.asset_kind)} · v${state.detail.version.version_no}`;
+    document.getElementById("detail-title").textContent = state.detail.asset.display_name;
+    document.getElementById("detail-subtitle").textContent = state.detail.asset.asset_id;
+    document.getElementById("detail-status").innerHTML = badge(state.detail.version.status);
+    renderDetailBody();
+    renderDetailActions(state.detail);
+    document.getElementById("detail-drawer").showModal();
   }
 
-  async function review(event) {
-    const uploadVersion = event.target.closest("[data-upload-version]");
-    if (uploadVersion) {
-      const footer = event.currentTarget;
-      const form = document.getElementById("manual-form");
-      form.dataset.assetId = footer.dataset.assetId;
-      form.dataset.assetRowVersion = footer.dataset.assetRowVersion;
-      document.getElementById("manual-name").value = footer.dataset.assetName || "";
-      document.getElementById("upload-title").textContent = "上传手册新版本";
-      document.getElementById("upload-subtitle").textContent = "新版本完成解析和审核前，当前已发布版本仍会继续参与检索。";
-      document.getElementById("detail-dialog").close();
-      document.getElementById("upload-dialog").showModal();
-      return;
-    }
-    const download = event.target.closest("[data-download-source]");
-    if (download) {
-      const footer = event.currentTarget;
-      await KBotAIOpsAuth.download(
-        `${api}/versions/${encodeURIComponent(footer.dataset.versionId)}/source`,
-        `operations-knowledge-${footer.dataset.versionId}`,
-        "*/*",
-      );
-      return;
-    }
-    const button = event.target.closest("[data-review]");
-    if (!button) return;
-    const footer = event.currentTarget;
-    const decision = button.dataset.review;
-    button.disabled = true;
-    try {
-      const detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(footer.dataset.versionId)}:${decision}`, {
-        method: "POST",
-        body: JSON.stringify({ expected_row_version: Number(footer.dataset.rowVersion), comment: `通过运维知识库页面执行${decision}` }),
-      });
-      footer.dataset.rowVersion = detail.version.row_version;
-      shell.toast("知识版本状态已更新");
-      document.getElementById("detail-dialog").close();
-      await refresh();
-    } finally {
-      button.disabled = false;
-    }
+  function renderUploadLedger() {
+    const ledger = document.getElementById("upload-ledger");
+    ledger.hidden = !state.entries.length;
+    document.getElementById("upload-total").textContent = `${state.entries.length} 个 · ${formatBytes(totalBytes())}`;
+    document.getElementById("upload-files").innerHTML = state.entries.map((entry, index) => `<article class="knowledge-file-row" data-entry-id="${escape(entry.id)}"><span>${index + 1}</span><div><strong>${escape(entry.file.name)}</strong><small>${escape(entry.file.type || "未知类型")} · ${formatBytes(entry.file.size)}</small></div>${isBundle() ? `<div class="knowledge-file-settings"><label><span>文件角色</span><select data-role><option value="CONTENT" ${entry.role === "CONTENT" ? "selected" : ""}>正文内容</option><option value="SUPPLEMENT" ${entry.role === "SUPPLEMENT" ? "selected" : ""}>补充材料</option></select></label><label class="knowledge-required"><input data-required type="checkbox" ${entry.required ? "checked" : ""}><span>必要成员</span></label></div>` : '<span class="ops-badge">单个文件</span>'}<button type="button" data-remove-file>移除</button></article>`).join("");
+    document.getElementById("submit-upload").disabled = !state.entries.length || totalBytes() > 64 * 1024 * 1024 || state.entries.length > 20;
   }
 
-  async function uploadManual(event) {
+  function setGroupingMode(mode) {
+    state.groupingMode = mode;
+    if (mode === "EACH_FILE" && state.entries.length > 1) state.entries = state.entries.slice(0, 1);
+    document.querySelectorAll(".knowledge-mode-picker label").forEach((label) => label.classList.toggle("selected", label.querySelector("input").value === mode));
+    document.getElementById("manual-file").multiple = mode === "SINGLE_BUNDLE";
+    document.getElementById("manual-name-label").textContent = mode === "SINGLE_BUNDLE" ? "Bundle 名称" : "资料名称";
+    document.getElementById("manual-name").placeholder = mode === "SINGLE_BUNDLE" ? "例如：Oracle RAC 故障处置手册包" : "例如：Oracle Data Guard 运维手册";
+    document.getElementById("file-step-help").textContent = mode === "SINGLE_BUNDLE" ? "成员顺序、角色和必要性会一同写入 Bundle。" : "原文会保留，可在详情中下载核验。";
+    document.getElementById("drop-help").textContent = mode === "SINGLE_BUNDLE" ? "可多次选择并追加文件，最多 20 个、总计 64 MB。" : "每次上传一个文件，重新选择会替换当前文件。";
+    renderUploadLedger();
+  }
+
+  function addFiles(files) {
+    const selected = state.groupingMode === "EACH_FILE" ? files.slice(0, 1) : files;
+    if (state.groupingMode === "EACH_FILE") {
+      state.entries = selected.map((file) => ({ id: newId(), file, role: "CONTENT", required: false }));
+      if (selected[0] && !document.getElementById("manual-name").value.trim()) document.getElementById("manual-name").value = selected[0].name.replace(/\.[^.]+$/, "") || selected[0].name;
+    } else {
+      const known = new Set(state.entries.map(({ file }) => `${file.name}:${file.size}:${file.lastModified}`));
+      state.entries.push(...selected.filter((file) => !known.has(`${file.name}:${file.size}:${file.lastModified}`)).map((file) => ({ id: newId(), file, role: "CONTENT", required: false })));
+    }
+    document.getElementById("manual-result").textContent = state.entries.length > 20 || totalBytes() > 64 * 1024 * 1024 ? "请将文件数量控制在 20 个以内，总大小不超过 64 MB。" : "";
+    renderUploadLedger();
+  }
+
+  function resetUpload(asset = null) {
+    state.uploadAsset = asset;
+    state.entries = [];
+    document.getElementById("manual-form").reset();
+    document.getElementById("manual-result").textContent = "";
+    document.getElementById("manual-name").value = asset?.display_name || "";
+    document.getElementById("manual-security").value = String(asset?.security_level || 1);
+    document.getElementById("upload-mode-section").hidden = Boolean(asset);
+    document.getElementById("upload-title").textContent = asset ? "上传新版本" : "上传资料";
+    document.getElementById("upload-subtitle").textContent = asset ? "新版本完成解析和审核前，当前发布版本仍继续参与检索。" : "可上传单个文件，或将多个相互关联的文件组成同一个 Bundle。";
+    document.getElementById("file-step").textContent = asset ? "01" : "02";
+    document.getElementById("metadata-step").textContent = asset ? "02" : "03";
+    setGroupingMode("EACH_FILE");
+  }
+
+  async function submitUpload(event) {
     event.preventDefault();
-    const file = document.getElementById("manual-file").files[0];
-    if (!file) return;
-    const button = event.currentTarget.querySelector('button[type="submit"]');
-    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
-      .map((value) => value.toString(16).padStart(2, "0")).join("");
-    const scopes = [
-      ...scope("DATABASE_TYPE", document.getElementById("manual-db").value),
-      ...scope("DATABASE_VERSION", document.getElementById("manual-db-version").value),
-      ...splitValues(document.getElementById("manual-topology").value).flatMap((value) => scope("TOPOLOGY", value)),
-      ...splitValues(document.getElementById("manual-topics").value).flatMap((value) => scope("TOPIC", value)),
-    ];
-    const metadata = {
-      display_name: document.getElementById("manual-name").value.trim() || file.name,
-      publisher: document.getElementById("manual-publisher").value.trim() || null,
-      document_version: document.getElementById("manual-version").value.trim() || null,
-      notes: document.getElementById("manual-notes").value.trim() || null,
-      security_level: 1,
-      scopes,
-    };
+    if (!state.entries.length) return;
+    const name = document.getElementById("manual-name").value.trim();
+    if (!name) return;
+    const button = document.getElementById("submit-upload");
+    const metadata = { display_name: name, security_level: Number(document.getElementById("manual-security").value), scopes: document.getElementById("manual-db").value ? [{ kind: "DATABASE_TYPE", value: document.getElementById("manual-db").value }] : [] };
     button.disabled = true;
     document.getElementById("manual-result").textContent = "正在登记原文并进入解析队列…";
     try {
-      const assetId = event.currentTarget.dataset.assetId;
-      const endpoint = assetId
-        ? `${api}/assets/${encodeURIComponent(assetId)}/versions`
-        : `${api}/manuals`;
-      const headers = {
-        "Content-Type": file.type || "application/octet-stream",
-        "Idempotency-Key": `aiops-manual:${assetId || "new"}:${digest}`,
-        "X-File-Name": encodeURIComponent(file.name),
-        "X-Content-SHA256": digest,
-        "X-Upload-Metadata": encodeURIComponent(JSON.stringify(metadata)),
-      };
-      if (assetId) headers["X-Expected-Asset-Row-Version"] = event.currentTarget.dataset.assetRowVersion;
-      await KBotAIOpsAuth.request(endpoint, {
-        method: "POST",
-        headers,
-        body: file,
-      });
-      event.currentTarget.reset();
-      delete event.currentTarget.dataset.assetId;
-      delete event.currentTarget.dataset.assetRowVersion;
-      document.getElementById("upload-title").textContent = "上传运维手册";
-      document.getElementById("upload-subtitle").textContent = "用户填写值优先；与原文冲突时进入人工审核。";
-      document.getElementById("upload-dialog").close();
-      shell.toast("手册已受理，完成解析后需要人工发布");
-      await refresh();
+      if (state.uploadAsset) {
+        const file = state.entries[0].file;
+        const hash = await digest(file);
+        await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(state.uploadAsset.asset_id)}/versions`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "Idempotency-Key": newId(), "X-File-Name": encodeURIComponent(file.name), "X-Content-SHA256": hash, "X-Upload-Metadata": encodeURIComponent(JSON.stringify(metadata)), "X-Expected-Asset-Row-Version": String(state.uploadAsset.row_version) }, body: file });
+      } else {
+        const declarations = await Promise.all(state.entries.map(async (entry, ordinal) => ({ part_name: `file-${ordinal}`, client_file_id: entry.id, display_name: entry.file.name, declared_mime_type: entry.file.type || "application/octet-stream", byte_size: entry.file.size, content_sha256: await digest(entry.file), ordinal, role: isBundle() ? entry.role : "CONTENT", required_flag: isBundle() ? entry.required : false })));
+        const body = new FormData();
+        body.set("grouping_mode", state.groupingMode);
+        body.set("metadata", JSON.stringify(metadata));
+        body.set("files", JSON.stringify(declarations));
+        if (isBundle()) body.set("bundle", JSON.stringify({ client_bundle_id: newId(), title: name, security_level: metadata.security_level }));
+        declarations.forEach((item, index) => body.append(item.part_name, state.entries[index].file));
+        const receipt = await KBotAIOpsAuth.request(`${api}/uploads`, { method: "POST", headers: { "Idempotency-Key": newId() }, body });
+        const rejected = (receipt.items || []).filter((item) => item.status === "REJECTED");
+        if (rejected.length) throw new Error(rejected.map((item) => item.message).filter(Boolean).join("；") || "部分资料未被受理");
+      }
+      document.getElementById("upload-drawer").close();
+      shell.toast(isBundle() ? "Bundle 已受理，解析完成后进入审核队列" : "资料已受理，解析完成后进入审核队列");
+      await loadAssets();
     } finally {
       button.disabled = false;
     }
   }
 
-  async function search(event) {
-    event.preventDefault();
-    const node = document.getElementById("search-results");
-    node.innerHTML = '<p class="ops-empty">正在筛选候选并检索原文…</p>';
-    const result = await KBotAIOpsAuth.request(`${api}/search-preview`, {
-      method: "POST",
-      body: JSON.stringify({
-        query: document.getElementById("search-query").value.trim(),
-        purpose: "DIAGNOSE",
-        database_type: document.getElementById("search-db").value || null,
-        database_major_version: document.getElementById("search-version").value.trim() || null,
-        topology: document.getElementById("search-topology").value.trim() || null,
-        source_kinds: ["MANUAL", "DIAGNOSIS_CASE"], max_results: 8, max_security_level: 3,
-      }),
-    });
-    node.innerHTML = result.results?.length
-      ? result.results.map((item) => `<article class="knowledge-search-item"><h3>${shell.escape(item.title)} ${shell.badge(item.authority)}</h3><p>${shell.escape(item.asset_kind)} · ${shell.escape(item.applicability)} · ${item.citation_pack?.length || 0} 条原文引用</p></article>`).join("")
-      : `<p class="ops-empty">${shell.escape(result.warnings?.join("；") || "没有找到适用于当前条件的已发布知识。")}</p>`;
+  async function downloadSource() {
+    if (!state.detail) return;
+    await KBotAIOpsAuth.download(`${api}/versions/${encodeURIComponent(state.detail.version.asset_version_id)}/source`, state.detail.asset.display_name, "*/*");
   }
 
-  async function loadReviews() {
-    const result = await KBotAIOpsAuth.request(`${api}/reviews?limit=10`);
-    document.getElementById("knowledge-reviews").innerHTML = result.items?.length
-      ? result.items.map((item) => `<div class="knowledge-review"><strong>${shell.escape(item.decision)}</strong> · ${shell.escape(item.reviewer_id)}<p>${shell.escape(item.before_status)} → ${shell.escape(item.after_status)} · ${shell.escape(shell.fmt(item.created_at))}</p></div>`).join("")
-      : '<p class="ops-empty">还没有审核记录。</p>';
-  }
-
-  async function refresh() {
-    const [overview] = await Promise.all([
-      KBotAIOpsAuth.request(`${api}/overview`), loadAssets(), loadReviews(),
-    ]);
-    renderOverview(overview);
+  async function runDetailAction(action) {
+    if (!state.detail) return;
+    if (action === "download") return downloadSource();
+    if (action === "upload-version") {
+      document.getElementById("detail-drawer").close();
+      resetUpload(state.detail.asset);
+      document.getElementById("upload-drawer").showModal();
+      return;
+    }
+    const version = state.detail.version;
+    const options = action === "reconcile" ? { method: "POST" } : { method: "POST", body: JSON.stringify({ expected_row_version: Number(version.row_version), comment: null }) };
+    state.detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
+    shell.toast("知识版本状态已更新");
+    document.getElementById("detail-drawer").close();
+    await loadAssets();
   }
 
   shell.ready.then(async () => {
-    document.querySelectorAll("[data-close]").forEach((button) => {
-      button.onclick = () => button.closest("dialog").close();
-    });
-    document.getElementById("open-upload").onclick = () => {
-      const form = document.getElementById("manual-form");
-      form.reset();
-      delete form.dataset.assetId;
-      delete form.dataset.assetRowVersion;
-      document.getElementById("upload-title").textContent = "上传运维手册";
-      document.getElementById("upload-subtitle").textContent = "用户填写值优先；与原文冲突时进入人工审核。";
-      document.getElementById("upload-dialog").showModal();
-    };
-    document.getElementById("manual-file").onchange = (event) => {
-      if (!document.getElementById("manual-name").value) document.getElementById("manual-name").value = event.target.files[0]?.name || "";
-    };
-    document.getElementById("manual-form").addEventListener("submit", (event) => uploadManual(event).catch((error) => {
-      document.getElementById("manual-result").textContent = error.message;
-      shell.toast(error.message);
-    }));
-    document.getElementById("search-form").addEventListener("submit", (event) => search(event).catch((error) => shell.toast(error.message)));
-    document.getElementById("knowledge-assets").onclick = (event) => {
-      const button = event.target.closest("[data-asset-id]");
-      if (button) openAsset(button.dataset.assetId).catch((error) => shell.toast(error.message));
-    };
-    document.getElementById("detail-actions").onclick = (event) => review(event).catch((error) => shell.toast(error.message));
-    document.querySelectorAll(".knowledge-tabs button").forEach((button) => {
-      button.onclick = async () => {
-        document.querySelectorAll(".knowledge-tabs button").forEach((item) => item.classList.remove("active"));
-        button.classList.add("active");
-        activeKind = button.dataset.kind || "";
-        activeStatus = button.dataset.status || "";
-        await loadAssets();
-      };
-    });
-    try { await refresh(); } catch (error) { shell.toast(error.message); }
+    document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
+    document.getElementById("open-upload").onclick = () => { resetUpload(); document.getElementById("upload-drawer").showModal(); };
+    document.getElementById("refresh-knowledge").onclick = () => loadAssets().catch((error) => shell.toast(error.message));
+    document.getElementById("knowledge-search").oninput = renderAssets;
+    document.getElementById("knowledge-status").onchange = () => loadAssets().catch((error) => shell.toast(error.message));
+    document.getElementById("knowledge-assets").onclick = (event) => { const button = event.target.closest("[data-asset-id]"); if (button) openAsset(button.dataset.assetId).catch((error) => shell.toast(error.message)); };
+    document.querySelectorAll('[name="grouping-mode"]').forEach((input) => { input.onchange = () => setGroupingMode(input.value); });
+    document.getElementById("choose-files").onclick = () => document.getElementById("manual-file").click();
+    document.getElementById("manual-file").onchange = (event) => { addFiles(Array.from(event.target.files || [])); event.target.value = ""; };
+    const zone = document.getElementById("upload-drop-zone");
+    ["dragenter", "dragover"].forEach((name) => zone.addEventListener(name, (event) => { event.preventDefault(); zone.classList.add("dragging"); }));
+    ["dragleave", "drop"].forEach((name) => zone.addEventListener(name, (event) => { event.preventDefault(); zone.classList.remove("dragging"); }));
+    zone.addEventListener("drop", (event) => addFiles(Array.from(event.dataTransfer?.files || [])));
+    document.getElementById("clear-files").onclick = () => { state.entries = []; renderUploadLedger(); };
+    document.getElementById("upload-files").onchange = (event) => { const row = event.target.closest("[data-entry-id]"); const entry = state.entries.find((item) => item.id === row?.dataset.entryId); if (!entry) return; if (event.target.matches("[data-role]")) entry.role = event.target.value; if (event.target.matches("[data-required]")) entry.required = event.target.checked; };
+    document.getElementById("upload-files").onclick = (event) => { const button = event.target.closest("[data-remove-file]"); if (!button) return; const row = button.closest("[data-entry-id]"); state.entries = state.entries.filter((item) => item.id !== row.dataset.entryId); renderUploadLedger(); };
+    document.getElementById("manual-form").onsubmit = (event) => submitUpload(event).catch((error) => { document.getElementById("manual-result").textContent = error.message; shell.toast(error.message); });
+    document.getElementById("detail-tabs").onclick = (event) => { const button = event.target.closest("[data-tab]"); if (!button) return; state.detailTab = button.dataset.tab; renderDetailBody(); };
+    document.getElementById("detail-body").onclick = (event) => { if (event.target.closest("[data-download-source]")) runDetailAction("download").catch((error) => shell.toast(error.message)); };
+    document.getElementById("detail-actions").onclick = (event) => { const review = event.target.closest("[data-review]"); const upload = event.target.closest("[data-upload-version]"); const download = event.target.closest("[data-download-source]"); const action = review?.dataset.review || (upload ? "upload-version" : download ? "download" : ""); if (action) runDetailAction(action).catch((error) => shell.toast(error.message)); };
+    try { await loadAssets(); } catch (error) { shell.toast(error.message); }
   });
 })();

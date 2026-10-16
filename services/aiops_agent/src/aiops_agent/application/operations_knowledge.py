@@ -49,6 +49,26 @@ def _normalize(value: str) -> str:
     return " ".join(value.strip().upper().split())
 
 
+def _bundle_source_hash(documents: list[dict[str, Any]]) -> str:
+    members = [
+        {
+            "ordinal": int(document["ordinal"]),
+            "file_name": str(document["file_name"]),
+            "content_sha256": str(document["content_sha256"]),
+            "role": str(document["role"]),
+            "required_flag": bool(document["required_flag"]),
+        }
+        for document in documents
+    ]
+    value = json.dumps(
+        members,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(value).hexdigest()
+
+
 def _source_commands(text: str) -> list[str]:
     """只从原文代码块或明确命令行提取内容，不补写任何命令。"""
     commands: list[str] = []
@@ -342,6 +362,233 @@ class OperationsKnowledgeService:
             range_header=range_header,
             auth_context=context,
         )
+
+    async def ingest_upload(
+        self,
+        *,
+        domain_id: int,
+        context: AuthContext,
+        grouping_mode: str,
+        bundle_title: str,
+        documents: list[dict[str, Any]],
+        metadata: ManualUploadMetadata,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        if grouping_mode == "EACH_FILE":
+            for document in documents:
+                try:
+                    result = await self.ingest_manual(
+                        domain_id=domain_id,
+                        context=context,
+                        file_name=str(document["file_name"]),
+                        media_type=str(document["media_type"]),
+                        body=bytes(document["body"]),
+                        metadata=metadata.model_copy(update={
+                            "display_name": (
+                                metadata.display_name
+                                if len(documents) == 1
+                                else str(document["display_name"])
+                            ),
+                        }),
+                        idempotency_key=(
+                            f"{idempotency_key}:{document['client_file_id']}"
+                        ),
+                        declared_sha256=str(document["content_sha256"]),
+                    )
+                except AIOpsApplicationError as exc:
+                    items.append({
+                        "status": "REJECTED",
+                        "client_file_id": document["client_file_id"],
+                        "message": exc.message,
+                    })
+                    continue
+                items.append({
+                    "status": "ACCEPTED",
+                    "client_file_id": document["client_file_id"],
+                    "asset_id": result["asset"]["asset_id"],
+                    "asset_version_id": result["version"]["asset_version_id"],
+                    "replayed": bool(result.get("replayed")),
+                })
+        else:
+            try:
+                result = await self.ingest_manual_bundle(
+                    domain_id=domain_id,
+                    context=context,
+                    title=bundle_title,
+                    documents=documents,
+                    metadata=metadata.model_copy(update={"display_name": bundle_title}),
+                    idempotency_key=idempotency_key,
+                )
+            except AIOpsApplicationError as exc:
+                items = [{
+                    "status": "REJECTED",
+                    "client_file_id": document["client_file_id"],
+                    "message": exc.message,
+                } for document in documents]
+            else:
+                items = [{
+                    "status": "ACCEPTED",
+                    "client_file_id": document["client_file_id"],
+                    "asset_id": result["asset"]["asset_id"],
+                    "asset_version_id": result["version"]["asset_version_id"],
+                    "bundle_id": result.get("bundle_id"),
+                    "bundle_revision_id": result.get("bundle_revision_id"),
+                    "replayed": bool(result.get("replayed")),
+                } for document in documents]
+        return {
+            "grouping_mode": grouping_mode,
+            "items": items,
+            "request_id": context.request_id,
+        }
+
+    async def ingest_manual_bundle(
+        self,
+        *,
+        domain_id: int,
+        context: AuthContext,
+        title: str,
+        documents: list[dict[str, Any]],
+        metadata: ManualUploadMetadata,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        digest = _bundle_source_hash(documents)
+        async with self._uow_factory() as uow:
+            existing = await uow.operations_knowledge.find_by_source_hash(
+                domain_id=domain_id,
+                asset_kind="MANUAL",
+                source_hash=digest,
+            )
+            if existing is not None:
+                relations = await uow.operations_knowledge.get_version_relations(
+                    asset_version_id=existing[1].asset_version_id
+                )
+                existing_index = next(iter(relations["indexes"]), None)
+                return {
+                    "asset": _asset_view(existing[0]),
+                    "version": _version_view(existing[1]),
+                    "bundle_id": (
+                        str(existing_index.bundle_id) if existing_index else None
+                    ),
+                    "bundle_revision_id": (
+                        str(existing_index.bundle_revision_id)
+                        if existing_index else None
+                    ),
+                    "replayed": True,
+                }
+        actor = self._actor(context)
+        asset_id = uuid7()
+        version_id = uuid7()
+        collection = await self._collection(
+            domain_id=domain_id,
+            name=MANUAL_COLLECTION,
+            context=context,
+        )
+        response = await self._kc.ingest_user_bundle(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            client_bundle_id=str(version_id),
+            source_revision=str(version_id),
+            title=title,
+            security_level=metadata.security_level,
+            documents=documents,
+            idempotency_key=idempotency_key,
+            auth_context=context,
+        )
+        intake_items = list((response.payload or {}).get("items", []))
+        if not intake_items or any(
+            item.get("status") == "REJECTED" for item in intake_items
+        ):
+            rejected = next((
+                item for item in intake_items if item.get("status") == "REJECTED"
+            ), {})
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
+                message=str(rejected.get("message") or "KC 未受理该运维资料 Bundle"),
+                status_code=422,
+            )
+        bundle_ids = {str(item.get("bundle_id")) for item in intake_items}
+        revision_ids = {
+            str(item.get("bundle_revision_id")) for item in intake_items
+        }
+        if len(bundle_ids) != 1 or len(revision_ids) != 1 or "None" in bundle_ids | revision_ids:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
+                message="KC 返回的 Bundle 身份不一致",
+                status_code=502,
+            )
+        bundle_id = UUID(next(iter(bundle_ids)))
+        revision_id = UUID(next(iter(revision_ids)))
+        await self._kc.review_user_intake(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            bundle_revision_id=revision_id,
+            decision="APPROVE",
+            comment="AIOps 已受理原始资料 Bundle，仅批准 KC 解析索引，不代表业务发布",
+            auth_context=context,
+        )
+        asset = OperationsKnowledgeAssetEntity(
+            asset_id=asset_id,
+            domain_id=domain_id,
+            asset_kind="MANUAL",
+            display_name=title,
+            status="PROCESSING",
+            security_level=metadata.security_level,
+            created_by=actor,
+            updated_by=actor,
+        )
+        version = OperationsKnowledgeVersionEntity(
+            asset_version_id=version_id,
+            asset_id=asset_id,
+            version_no=1,
+            status="PROCESSING",
+            source_hash=digest,
+            extraction_warnings_json=[],
+            created_by=actor,
+        )
+        scopes = [OperationsKnowledgeScopeEntity(
+            asset_version_id=version_id,
+            scope_kind=item.kind.strip().upper(),
+            scope_value=item.value.strip(),
+            normalized_value=_normalize(item.value),
+            source_kind="USER_INPUT",
+            source_locator_json={"field": "upload_metadata"},
+        ) for item in metadata.scopes]
+        sources = [OperationsKnowledgeSourceEntity(
+            asset_version_id=version_id,
+            source_kind="MANUAL_FILE",
+            source_external_id=str(document["file_name"]),
+            content_hash=str(document["content_sha256"]),
+            source_locator_json={
+                "metadata": metadata.model_dump(mode="json"),
+                "ordinal": int(document["ordinal"]),
+                "role": str(document["role"]),
+                "required_flag": bool(document["required_flag"]),
+            },
+        ) for document in documents]
+        index = OperationsKnowledgeIndexEntity(
+            asset_version_id=version_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            bundle_id=bundle_id,
+            bundle_revision_id=revision_id,
+            index_status="PROCESSING",
+        )
+        async with self._uow_factory() as uow:
+            await uow.operations_knowledge.add_asset_version(
+                asset=asset,
+                version=version,
+                scopes=scopes,
+                sources=sources,
+                indexes=[index],
+            )
+            await uow.commit()
+        return {
+            "asset": _asset_view(asset),
+            "version": _version_view(version),
+            "bundle_id": str(bundle_id),
+            "bundle_revision_id": str(revision_id),
+            "replayed": False,
+        }
 
     async def ingest_manual(
         self,

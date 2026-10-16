@@ -2,10 +2,14 @@
 
 from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock
 
 from pydantic import ValidationError
 
-from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
+from aiops_agent.application.operations_knowledge import (
+    OperationsKnowledgeService,
+    _bundle_source_hash,
+)
 from aiops_agent.contracts.knowledge import ManualUploadMetadata
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
@@ -34,6 +38,15 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
                 "display_name": "Oracle 手册",
                 "collection_id": str(uuid7()),
             })
+
+    def test_bundle_source_hash_preserves_member_order_and_semantics(self):
+        documents = [
+            {"ordinal": 0, "file_name": "manual.md", "content_sha256": "a" * 64, "role": "CONTENT", "required_flag": True},
+            {"ordinal": 1, "file_name": "appendix.txt", "content_sha256": "b" * 64, "role": "SUPPLEMENT", "required_flag": False},
+        ]
+        digest = _bundle_source_hash(documents)
+        self.assertEqual(digest, _bundle_source_hash([dict(item) for item in documents]))
+        self.assertNotEqual(digest, _bundle_source_hash(list(reversed(documents))))
 
     def test_manual_profile_only_emits_commands_present_in_evidence(self):
         asset = SimpleNamespace(asset_id=uuid7(), display_name="归档配置手册")
@@ -142,6 +155,50 @@ class OperationsKnowledgeRepositoryTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual([[version], [scope]], session.flushes)
+
+
+class OperationsKnowledgeUploadTest(unittest.IsolatedAsyncioTestCase):
+    async def test_single_file_upload_preserves_business_display_name(self):
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: None,
+            knowledge_core=SimpleNamespace(),
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={},
+            knowledge_assistant_instruction="",
+        )
+        service.ingest_manual = AsyncMock(return_value={
+            "asset": {"asset_id": str(uuid7())},
+            "version": {"asset_version_id": str(uuid7())},
+            "replayed": False,
+        })
+        metadata = ManualUploadMetadata(display_name="Data Guard 运维手册")
+        document = {
+            "client_file_id": str(uuid7()),
+            "file_name": "dg-guide.pdf",
+            "display_name": "dg-guide.pdf",
+            "media_type": "application/pdf",
+            "body": b"pdf",
+            "content_sha256": "a" * 64,
+            "ordinal": 0,
+            "role": "CONTENT",
+            "required_flag": False,
+        }
+
+        receipt = await service.ingest_upload(
+            domain_id=42,
+            context=SimpleNamespace(request_id="single-upload-test"),
+            grouping_mode="EACH_FILE",
+            bundle_title=metadata.display_name,
+            documents=[document],
+            metadata=metadata,
+            idempotency_key="single-upload-test",
+        )
+
+        self.assertEqual("ACCEPTED", receipt["items"][0]["status"])
+        forwarded = service.ingest_manual.await_args.kwargs
+        self.assertEqual("Data Guard 运维手册", forwarded["metadata"].display_name)
+        self.assertEqual("dg-guide.pdf", forwarded["file_name"])
 
 if __name__ == "__main__":
     unittest.main()

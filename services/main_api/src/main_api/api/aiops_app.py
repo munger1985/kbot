@@ -481,28 +481,28 @@ async def download_operations_knowledge_source(asset_version_id: UUID, request: 
     )
 
 
-@router.post("/operations-knowledge/manuals", status_code=status.HTTP_202_ACCEPTED)
-async def upload_operations_manual(request: Request):
-    """把原始手册有界转发到 AIOps，由业务服务登记资产并驱动 KC。"""
+@router.post("/operations-knowledge/uploads", status_code=status.HTTP_202_ACCEPTED)
+async def upload_operations_knowledge(
+    request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+):
+    """把单文件或 Bundle multipart 原样转发到 AIOps 业务服务。"""
     await _require(request, "aiops:knowledge_manage")
-    required = {
-        "file_name": request.headers.get("X-File-Name", "").strip(),
-        "metadata": request.headers.get("X-Upload-Metadata", "").strip(),
-        "sha256": request.headers.get("X-Content-SHA256", "").strip(),
-        "idempotency": request.headers.get("Idempotency-Key", "").strip(),
-    }
-    if not all(required.values()):
+    content_type = request.headers.get("Content-Type", "")
+    if not content_type.lower().startswith("multipart/form-data"):
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            {"code": "UNSUPPORTED_MEDIA_TYPE", "message": "运维资料上传只接受 multipart/form-data"},
+        )
+    if not idempotency_key.strip():
         raise HTTPException(
             status.HTTP_428_PRECONDITION_REQUIRED,
-            {"code": "AIOPS_KNOWLEDGE_UPLOAD_HEADERS_REQUIRED", "message": "缺少运维手册上传头"},
+            {"code": "IDEMPOTENCY_KEY_REQUIRED", "message": "缺少 Idempotency-Key Header"},
         )
-    metadata = json.loads(unquote(required["metadata"]))
-    return await _client(request).upload_operations_manual(
-        file_name=unquote(required["file_name"]),
-        media_type=request.headers.get("Content-Type", "application/octet-stream"),
-        body=request.stream(), metadata=metadata,
-        content_sha256=required["sha256"],
-        idempotency_key=required["idempotency"],
+    return await _client(request).upload_operations_knowledge(
+        content_type=content_type,
+        body=request.stream(),
+        idempotency_key=idempotency_key,
         auth_context=request.state.auth_context,
     )
 
