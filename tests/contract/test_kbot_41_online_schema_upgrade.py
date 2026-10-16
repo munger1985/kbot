@@ -17,6 +17,14 @@ OUTPUT_PATH = (
     / "kbot_41"
     / "apply_kbot_41_from_aiops_schema_42.sql"
 )
+RESUME_OUTPUT_PATH = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "generated"
+    / "kbot_41"
+    / "apply_kbot_41_from_aiops_schema_43.sql"
+)
 SOURCE_SCRIPTS = (
     ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_43.sql",
     ROOT / "database" / "oracle" / "operations" / "apply_aiops_schema_44.sql",
@@ -84,6 +92,23 @@ class KBot41OnlineSchemaUpgradeTest(unittest.TestCase):
         self.assertIn("APP_ID = 'KM_ASSET'", self.upper)
         self.assertIn("DATA PUMP", self.upper)
         self.assertIn("继续运行 KM 4.0 的环境不得执行本脚本", self.sql)
+
+    def test_schema_43_resume_script_skips_completed_schema_43_stage(self) -> None:
+        sql = RESUME_OUTPUT_PATH.read_text(encoding="utf-8")
+        sections = re.findall(
+            r"^-- ===== 开始升级阶段：(.+\.sql) =====$",
+            sql,
+            re.MULTILINE,
+        )
+        self.assertEqual(
+            [item.relative_to(ROOT).as_posix() for item in SOURCE_SCRIPTS[1:]],
+            sections,
+        )
+        self.assertIn("唯一起点：AIOPS / 43 / aiops-oracle-v33", sql)
+        self.assertNotIn("L_SCHEMA_VERSION <> 42", sql.upper())
+        self.assertIn("L_SCHEMA_VERSION <> 43", sql.upper())
+        self.assertIn("L_SCHEMA_VERSION <> 44", sql.upper())
+        self.assertIn("KBOT_KM_AGENT_GRANT", sql.upper())
 
 
 if __name__ == "__main__":

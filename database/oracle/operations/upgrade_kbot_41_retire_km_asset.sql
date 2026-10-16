@@ -76,6 +76,7 @@ BEGIN
            'KBOT_KM_ATTACHMENT',
            'KBOT_KM_JOB',
            'KBOT_KM_AGENT',
+           'KBOT_KM_AGENT_GRANT',
            'KBOT_KM_AGENT_VERSION',
            'KBOT_KM_SLACK_INBOX',
            'KBOT_KM_SLACK_THREAD',
@@ -105,6 +106,7 @@ BEGIN
            'KBOT_KM_ATTACHMENT',
            'KBOT_KM_JOB',
            'KBOT_KM_AGENT',
+           'KBOT_KM_AGENT_GRANT',
            'KBOT_KM_AGENT_VERSION',
            'KBOT_KM_SLACK_INBOX',
            'KBOT_KM_SLACK_THREAD',
@@ -117,6 +119,7 @@ BEGIN
            'KBOT_KM_ATTACHMENT',
            'KBOT_KM_JOB',
            'KBOT_KM_AGENT',
+           'KBOT_KM_AGENT_GRANT',
            'KBOT_KM_AGENT_VERSION',
            'KBOT_KM_SLACK_INBOX',
            'KBOT_KM_SLACK_THREAD',
@@ -140,6 +143,7 @@ BEGIN
            'KBOT_KM_ATTACHMENT',
            'KBOT_KM_JOB',
            'KBOT_KM_AGENT',
+           'KBOT_KM_AGENT_GRANT',
            'KBOT_KM_AGENT_VERSION',
            'KBOT_KM_SLACK_INBOX',
            'KBOT_KM_SLACK_THREAD',
@@ -199,6 +203,7 @@ BEGIN
     drop_table_if_exists('KBOT_KM_SLACK_INBOX');
     drop_table_if_exists('KBOT_KM_JOB');
     drop_table_if_exists('KBOT_KM_ATTACHMENT');
+    drop_table_if_exists('KBOT_KM_AGENT_GRANT');
     drop_table_if_exists('KBOT_KM_AGENT_VERSION');
     drop_table_if_exists('KBOT_KM_AGENT');
     drop_table_if_exists('KBOT_KM_ASSET_REVISION');

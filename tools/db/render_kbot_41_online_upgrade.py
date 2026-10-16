@@ -8,13 +8,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OPERATIONS_DIR = ROOT / "database" / "oracle" / "operations"
-SOURCE_SCRIPTS = (
+SOURCE_SCRIPTS_FROM_42 = (
     OPERATIONS_DIR / "apply_aiops_schema_43.sql",
     OPERATIONS_DIR / "apply_aiops_schema_44.sql",
     OPERATIONS_DIR / "apply_aiops_schema_45.sql",
     OPERATIONS_DIR / "upgrade_kbot_41_retire_km_asset.sql",
 )
-OUTPUT_PATH = (
+SOURCE_SCRIPTS_FROM_43 = SOURCE_SCRIPTS_FROM_42[1:]
+OUTPUT_PATH_FROM_42 = (
     ROOT
     / "database"
     / "oracle"
@@ -22,11 +23,19 @@ OUTPUT_PATH = (
     / "kbot_41"
     / "apply_kbot_41_from_aiops_schema_42.sql"
 )
+OUTPUT_PATH_FROM_43 = (
+    ROOT
+    / "database"
+    / "oracle"
+    / "generated"
+    / "kbot_41"
+    / "apply_kbot_41_from_aiops_schema_43.sql"
+)
 
-HEADER = """-- KBot 线上 Schema 追平 KBot 4.1 的单文件升级脚本。
+HEADER_TEMPLATE = """-- KBot 线上 Schema 追平 KBot 4.1 的单文件升级脚本。
 -- 本文件由 tools/db/render_kbot_41_online_upgrade.py 生成，请勿手工修改。
 --
--- 唯一起点：AIOPS / 42 / aiops-oracle-v32。
+-- 唯一起点：AIOPS / {schema_version} / {contract_version}。
 -- 最终目标：AIOPS / 45 / aiops-oracle-v45-shared-monitor-locator，
 --           并从 KBot 4.1 主产品 Schema 退役 km_asset 私有对象和授权边界。
 --
@@ -43,9 +52,19 @@ HEADER = """-- KBot 线上 Schema 追平 KBot 4.1 的单文件升级脚本。
 """
 
 
-def render_upgrade_sql() -> str:
-    sections = [HEADER.rstrip()]
-    for source in SOURCE_SCRIPTS:
+def render_upgrade_sql(
+    *,
+    schema_version: int,
+    contract_version: str,
+    source_scripts: tuple[Path, ...],
+) -> str:
+    sections = [
+        HEADER_TEMPLATE.format(
+            schema_version=schema_version,
+            contract_version=contract_version,
+        ).rstrip()
+    ]
+    for source in source_scripts:
         relative_name = source.relative_to(ROOT).as_posix()
         sections.extend(
             (
@@ -66,15 +85,33 @@ def main() -> int:
         help="只校验已生成文件是否与当前源脚本一致",
     )
     args = parser.parse_args()
-    rendered = render_upgrade_sql()
-    if args.check:
-        if not OUTPUT_PATH.exists() or OUTPUT_PATH.read_text(
-            encoding="utf-8"
-        ) != rendered:
-            raise SystemExit(f"升级脚本需要重新生成：{OUTPUT_PATH}")
-        return 0
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(rendered, encoding="utf-8")
+    outputs = (
+        (
+            OUTPUT_PATH_FROM_42,
+            render_upgrade_sql(
+                schema_version=42,
+                contract_version="aiops-oracle-v32",
+                source_scripts=SOURCE_SCRIPTS_FROM_42,
+            ),
+        ),
+        (
+            OUTPUT_PATH_FROM_43,
+            render_upgrade_sql(
+                schema_version=43,
+                contract_version="aiops-oracle-v33",
+                source_scripts=SOURCE_SCRIPTS_FROM_43,
+            ),
+        ),
+    )
+    for output_path, rendered in outputs:
+        if args.check:
+            if not output_path.exists() or output_path.read_text(
+                encoding="utf-8"
+            ) != rendered:
+                raise SystemExit(f"升级脚本需要重新生成：{output_path}")
+            continue
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
     return 0
 
 
