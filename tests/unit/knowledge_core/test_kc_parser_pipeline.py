@@ -31,6 +31,17 @@ class LongTable:
         return "\n".join(rows)
 
 
+class OversizedRowTable(LongTable):
+    def export_to_markdown(self, document):
+        divider = f"| {'-' * 80} | {'-' * 80} |"
+        values = " ".join(f"value{index}" for index in range(30))
+        return (
+            "| Name | Details |\n"
+            f"{divider}\n"
+            f"| item | {values} |"
+        )
+
+
 class SpreadsheetTable(LongTable):
     parent = SimpleNamespace(cref="#/groups/0")
 
@@ -129,6 +140,42 @@ class ParserPipelineTest(unittest.TestCase):
         self.assertIn("char_start", paragraphs[0].source_spans[0])
         self.assertTrue(table_rows)
         self.assertTrue(all(value.parent_evidence_key for value in table_rows))
+
+    def test_oversized_table_row_is_split_within_evidence_limit(self):
+        title = item(
+            source_ref="#/texts/0", label="section_header", text="1 Events",
+        )
+        table = OversizedRowTable(title.prov)
+        max_tokens = 20
+        output = KcParsingPipeline(
+            parser_version="4.0-test",
+            evidence_policy=EvidencePolicy(
+                min_tokens=1, target_tokens=10, max_tokens=max_tokens,
+            ),
+        ).parse(
+            document_version_id=10,
+            parse_view_id=20,
+            document=FakeDocument([title, table]),
+        )
+
+        table_rows = [
+            value for value in output.evidences
+            if value.evidence_type == "TABLE_ROW"
+        ]
+        self.assertTrue(output.quality_report.passed)
+        self.assertGreater(len(table_rows), 1)
+        self.assertTrue(
+            all(value.token_count <= max_tokens for value in table_rows)
+        )
+        self.assertTrue(all(
+            "char_start" in value.source_spans[-1]
+            and "char_end" in value.source_spans[-1]
+            for value in table_rows
+        ))
+        self.assertFalse(any(
+            "--------------------" in value.content_text
+            for value in table_rows
+        ))
 
     def test_spreadsheet_creates_sheet_and_cell_range_evidence(self):
         base = item(source_ref="#/texts/0", label="text", text="Workbook")

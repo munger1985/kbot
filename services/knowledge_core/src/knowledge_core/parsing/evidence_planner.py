@@ -248,19 +248,66 @@ class EvidencePlanner:
         lines = [line for line in lines if line.group(0)]
         if len(lines) <= 2:
             return []
-        header = lines[:2]
+        # Markdown 的第二行只是列分隔符；重复写入每条行 Evidence 会让长表格
+        # 产生大量无语义的标点 token。列标题保留，分隔符由父 TABLE Evidence 承载。
+        header = lines[:1]
         data = lines[2:]
         result: list[_Fragment] = []
         current: list[Any] = []
         for line in data:
             candidate = "".join(value.group(0) for value in [*header, *current, line]).rstrip()
-            if current and self._token_count_text(candidate) > self._policy.max_tokens:
+            if self._token_count_text(candidate) <= self._policy.max_tokens:
+                current.append(line)
+                continue
+            if current:
                 result.append(self._table_fragment(atom, header, current))
                 current = []
-            current.append(line)
+            single_row = "".join(
+                value.group(0) for value in [*header, line]
+            ).rstrip()
+            if self._token_count_text(single_row) <= self._policy.max_tokens:
+                current.append(line)
+                continue
+            result.extend(self._split_table_row_fragment(atom, header, line))
         if current:
             result.append(self._table_fragment(atom, header, current))
         return result
+
+    def _split_table_row_fragment(
+        self, atom: Atom, header: list[Any], row: Any,
+    ) -> list[_Fragment]:
+        header_text = "".join(value.group(0) for value in header).rstrip()
+        header_tokens = self._token_count_text(header_text)
+        include_header = bool(header_text) and header_tokens < self._policy.max_tokens
+        token_budget = (
+            self._policy.max_tokens - header_tokens
+            if include_header
+            else self._policy.max_tokens
+        )
+        row_text = row.group(0)
+        matches = list(re.finditer(r"[\u4e00-\u9fff]|[A-Za-z0-9_]+|[^\s]", row_text))
+        if not matches:
+            return [self._table_fragment(atom, header, [row])]
+        fragments: list[_Fragment] = []
+        for offset in range(0, len(matches), token_budget):
+            token_group = matches[offset:offset + token_budget]
+            start, end = token_group[0].start(), token_group[-1].end()
+            content = row_text[start:end]
+            spans = []
+            if include_header:
+                content = f"{header_text}\n{content}"
+                spans.extend({
+                    "atom_id": atom.atom_id,
+                    "char_start": value.start(),
+                    "char_end": value.end(),
+                } for value in header)
+            spans.append({
+                "atom_id": atom.atom_id,
+                "char_start": row.start() + start,
+                "char_end": row.start() + end,
+            })
+            fragments.append(_Fragment([atom], content, spans))
+        return fragments
 
     def _spreadsheet_fragments(self, atom: Atom) -> list[_Fragment]:
         spreadsheet = atom.style["spreadsheet"]
