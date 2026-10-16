@@ -168,6 +168,20 @@ class AIOpsEntityContractTest(unittest.TestCase):
 
 
 class AIOpsUnitOfWorkTest(unittest.IsolatedAsyncioTestCase):
+    async def test_flush_requires_active_uow_and_flushes_session(self) -> None:
+        session = _FakeSession()
+        uow = AIOpsUnitOfWork(lambda: session)
+
+        with self.assertRaises(UnitOfWorkStateError):
+            await uow.flush()
+
+        async with uow:
+            await uow.flush()
+            self.assertEqual(1, session.flushes)
+
+        with self.assertRaises(UnitOfWorkStateError):
+            await uow.flush()
+
     async def test_explicit_commit_is_single_use_and_closes_repositories(
         self,
     ) -> None:

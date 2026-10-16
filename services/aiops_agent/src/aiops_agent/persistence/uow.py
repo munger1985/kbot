@@ -122,6 +122,12 @@ class AIOpsUnitOfWork:
         self._transaction = None
         self.state = UnitOfWorkState.COMMITTED
 
+    async def flush(self) -> None:
+        """刷新当前事务，使数据库生成值在提交前可用。"""
+        self._require_active()
+        assert self.session is not None
+        await self.session.flush()
+
     async def rollback(self) -> None:
         self._require_active()
         assert self.session is not None
