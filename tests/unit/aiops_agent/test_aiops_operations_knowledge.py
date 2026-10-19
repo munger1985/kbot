@@ -10,9 +10,11 @@ from aiops_agent.application.operations_knowledge import (
     OperationsKnowledgeService,
     _bundle_source_hash,
 )
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import ManualUploadMetadata
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
+from platform_clients.knowledge_core import KnowledgeCoreClientError
 
 
 class _OrderedFlushSession:
@@ -418,6 +420,59 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Oracle", locked.tag_analysis_json["suggestions"][0]["display_name"])
         knowledge_core.extract_review_text.assert_awaited_once()
         structured_model.generate_structured.assert_awaited_once()
+
+    async def test_tag_analysis_retries_when_knowledge_core_is_temporarily_unavailable(self):
+        asset_id, version_id = uuid7(), uuid7()
+        version = SimpleNamespace(asset_id=asset_id, status="TAGGING")
+        repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=SimpleNamespace(
+                asset_kind="MANUAL"
+            )),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [SimpleNamespace(
+                    collection_id=uuid7(),
+                    bundle_id=uuid7(),
+                    bundle_revision_id=uuid7(),
+                )]
+            }),
+            list_tags=AsyncMock(return_value=[SimpleNamespace(
+                tag_id=uuid7(),
+                category="VENDOR",
+                display_name="Oracle",
+                description=None,
+            )]),
+        )
+        knowledge_core = SimpleNamespace(extract_review_text=AsyncMock(
+            side_effect=KnowledgeCoreClientError(
+                status_code=503,
+                code="KNOWLEDGE_CORE_UNAVAILABLE",
+                message="Knowledge Core 暂时不可用",
+            )
+        ))
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={"composer_llm": uuid7()},
+            knowledge_assistant_instruction="",
+            model_catalog=SimpleNamespace(),
+            structured_model=SimpleNamespace(),
+            prompt_registry=SimpleNamespace(),
+        )
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.analyze_tags(
+                domain_id=42,
+                asset_version_id=version_id,
+                context=SimpleNamespace(),
+            )
+
+        self.assertEqual("AIOPS_KNOWLEDGE_KC_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(503, raised.exception.status_code)
+        self.assertTrue(raised.exception.retryable)
+        self.assertEqual("TAGGING", version.status)
 
     async def test_ready_manual_is_published_automatically(self):
         asset_id, version_id = uuid7(), uuid7()

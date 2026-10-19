@@ -501,7 +501,21 @@ class OperationsKnowledgeService:
                 "vocabulary_hash": hashlib.sha256(json.dumps(vocabulary, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
                 "model_receipt": result.receipt.model_dump(mode="json"),
             }
-        except (AIOpsModelError, KnowledgeCoreClientError, LookupError, RuntimeError, ValueError) as exc:
+        except KnowledgeCoreClientError as exc:
+            if exc.status_code in {408, 429} or exc.status_code >= 500:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
+                    message="运维知识标签识别服务暂时不可用",
+                    status_code=503,
+                    retryable=True,
+                ) from exc
+            return await self._mark_tagging_failed(
+                domain_id=domain_id,
+                asset_version_id=asset_version_id,
+                code=exc.code,
+                message=str(exc),
+            )
+        except (AIOpsModelError, LookupError, RuntimeError, ValueError) as exc:
             return await self._mark_tagging_failed(
                 domain_id=domain_id, asset_version_id=asset_version_id,
                 code=getattr(exc, "code", "TAG_ANALYSIS_FAILED"), message=str(exc),
