@@ -6,7 +6,8 @@ import json
 from typing import Any
 from urllib.parse import urlsplit
 
-from oci_genai_auth import HttpxOciAuth
+import httpx
+import requests
 
 
 def oci_sdk_service_endpoint(raw: Any) -> str:
@@ -39,15 +40,28 @@ def _oci_signer(config: dict[str, Any]):
     )
 
 
-class ModelConfigOciAuth(HttpxOciAuth):
-    """把模型目录中的 OCI 用户主体凭据接入官方 IAM HTTPX 认证器。"""
+class ModelConfigOciAuth(httpx.Auth):
+    """把 OCI SDK signer 接入 OpenAI SDK 使用的 HTTPX 请求。"""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self._config = dict(config)
-        super().__init__(signer=_oci_signer(self._config))
+        self._signer = _oci_signer(dict(config))
 
-    def _refresh_signer(self) -> None:
-        self.signer = _oci_signer(self._config)
+    def auth_flow(self, request: httpx.Request):
+        """对 OpenAI SDK 已序列化的请求正文签署 OCI IAM 请求头。"""
+        try:
+            content = request.content
+        except httpx.RequestNotRead:
+            content = request.read()
+        request.headers.pop("Authorization", None)
+        prepared = requests.Request(
+            method=request.method,
+            url=str(request.url),
+            headers=dict(request.headers),
+            data=content,
+        ).prepare()
+        self._signer.do_request_sign(prepared)
+        request.headers.update(prepared.headers)
+        yield request
 
 
 def validated_oci_config(raw: Any) -> dict[str, Any]:

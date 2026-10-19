@@ -20,7 +20,6 @@ easyocr==1.7.2
 python-jose==3.5.0
 jieba==0.42.1
 oci==2.166.0
-oci-genai-auth==1.1.1
 cohere==5.20.2
 imagehash==4.3.2
 bcrypt==5.0.0

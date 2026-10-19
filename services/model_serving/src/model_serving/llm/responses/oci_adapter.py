@@ -40,7 +40,7 @@ _IMAGE_MAGIC = (
 
 
 class OciGrokResponsesAdapter:
-    """通过 OpenAI SDK 调用 OCI 兼容接口，认证使用官方 IAM 适配器。"""
+    """通过 OpenAI SDK 调用 OCI 兼容接口，认证使用 OCI SDK signer。"""
 
     def __init__(self, *, timeout_seconds: int = 300):
         self._timeout_seconds = timeout_seconds

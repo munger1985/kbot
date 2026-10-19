@@ -70,7 +70,7 @@ class OciResponsesProjectTest(unittest.TestCase):
 
 
 class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
-    def test_client_uses_openai_sdk_base_and_official_iam_auth(self):
+    def test_client_uses_openai_sdk_base_and_oci_iam_auth(self):
         adapter = OciGrokResponsesAdapter(timeout_seconds=45)
         config = {"tenancy": "ocid1.tenancy.oc1..test"}
         auth = object()
