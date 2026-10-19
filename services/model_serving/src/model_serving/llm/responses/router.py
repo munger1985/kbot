@@ -1,7 +1,5 @@
 """LLM 进程的 Responses 内部路由。"""
 
-from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Request
 from model_serving.common.model_registry import ModelDefinitionNotFound, ModelRegistryConflict
 from model_serving.llm.responses.errors import GenerativeAdapterError
@@ -10,26 +8,14 @@ from platform_core.contracts import (
     INTERNAL_API_V1,
     ImageGenerationRequest,
     ImageGenerationResult,
-    ModelCapabilityVerifyRequest,
-    ModelCatalogItem,
     ResearchRequest,
     ResearchResult,
 )
-from platform_core.security import get_actor_id
-
-
 def _service(request: Request) -> ResponsesService:
     service = getattr(request.app.state, "responses_service", None)
     if service is None:
         raise HTTPException(503, {"code": "RESPONSES_NOT_READY", "message": "Responses 服务尚未初始化"})
     return service
-
-
-def _auth_context(request: Request):
-    context = getattr(request.state, "auth_context", None)
-    if context is None:
-        raise HTTPException(401, "缺少内部身份上下文")
-    return context
 
 
 def _raise(exc: Exception) -> None:
@@ -62,25 +48,6 @@ def create_responses_router() -> APIRouter:
     ) -> ImageGenerationResult:
         try:
             return await _service(request).generate_image(payload)
-        except Exception as exc:
-            _raise(exc)
-
-    @router.post(
-        f"{INTERNAL_API_V1}/models/{{model_id}}/capabilities/image-generation:verify",
-        response_model=ModelCatalogItem,
-    )
-    async def verify_image_generation(
-        model_id: UUID, payload: ModelCapabilityVerifyRequest, request: Request,
-    ):
-        try:
-            context = _auth_context(request)
-            return await _service(request).verify_image_generation(
-                model_id,
-                expected_row_version=payload.expected_row_version,
-                actor_id=get_actor_id(request),
-                trace_id=context.trace_id,
-                auth_context=context,
-            )
         except Exception as exc:
             _raise(exc)
 

@@ -1,6 +1,6 @@
 """多媒体创作工作台应用服务。"""
 
-from .bindings import ModelBindingService, UpsertBindingCommand, capabilities_from_bindings
+from .bindings import ModelBindingService, UpsertBindingCommand
 from .errors import MediaStudioApplicationError
 from .image_generation import CreateImageGenerationCommand, ImageGenerationService
 from .media import MediaAssetService, MediaStudioRunQueryService
@@ -15,5 +15,4 @@ __all__ = [
     "MediaStudioRunWorker",
     "ModelBindingService",
     "UpsertBindingCommand",
-    "capabilities_from_bindings",
 ]

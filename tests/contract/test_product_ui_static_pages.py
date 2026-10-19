@@ -131,8 +131,8 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn("OCI 仅填写无路径的服务 Origin", page)
         self.assertIn('provider !== "oci"', script)
         self.assertIn("parsed.pathname", script)
-        self.assertIn("capabilities/image-generation:verify", script)
-        self.assertIn("真实图片生成 Canary", script)
+        self.assertNotIn("capabilities/image-generation:verify", script)
+        self.assertNotIn("supports_image_generation", script)
 
 
 if __name__ == "__main__":

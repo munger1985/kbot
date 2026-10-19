@@ -102,7 +102,6 @@ def _model(*, status=1, category=1, model_params=None):
         created_by="tester",
         updated_by="tester",
         row_version=1,
-        supports_image_generation=0,
     )
 
 
@@ -284,44 +283,17 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
                 actor_id="operator",
             )
 
-    async def test_provider_configuration_change_revokes_capability_verification(self):
-        row = _model()
-        row.supports_image_generation = 1
-        repository = _Repository({row.model_id: row})
-        service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
-
-        result = await service.update(
-            row.model_id,
-            {"api_endpoint": "https://new.example.invalid/v1"},
-            expected_row_version=1,
-            actor_id="operator",
-        )
-
-        self.assertFalse(result["supports_image_generation"])
-
-    async def test_image_generation_gate_requires_active_verified_model(self):
+    async def test_connection_material_requires_active_model(self):
         row = _model()
         repository = _Repository({row.model_id: row})
         service = ModelRegistryService(uow_factory=lambda: _Uow(repository))
 
-        with self.assertRaisesRegex(ModelRegistryConflict, "尚未通过"):
-            await service.require_verified_capability(
-                row.model_id, capability="image_generation",
-            )
+        material = await service.get_connection_material(row.model_id)
+        self.assertEqual("provider-chat", material["provider_model_name"])
 
-        verified = await service.record_capability_verification(
-            row.model_id,
-            supports_image_generation=True,
-            expected_row_version=1,
-            actor_id="canary",
-        )
-        self.assertTrue(verified["supports_image_generation"])
-        self.assertEqual(
-            str(row.model_id),
-            (await service.require_verified_capability(
-                row.model_id, capability="image_generation",
-            ))["model_id"],
-        )
+        row.status = 0
+        with self.assertRaisesRegex(ModelRegistryConflict, "未启用"):
+            await service.get_connection_material(row.model_id)
 
     async def test_x_search_gate_uses_active_grok_identity(self):
         row = _model()

@@ -211,11 +211,6 @@
             ],
             "title": "Status",
             "type": "string"
-          },
-          "supports_image_generation": {
-            "default": false,
-            "title": "Supports Image Generation",
-            "type": "boolean"
           }
         },
         "required": [

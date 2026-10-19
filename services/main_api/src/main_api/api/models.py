@@ -28,7 +28,6 @@ class PublicModelCatalogItem(BaseModel):
     provider: str
     status: str
     model_params: dict[str, Any] = Field(default_factory=dict)
-    supports_image_generation: bool = False
 
 
 def _clients(request: Request) -> tuple[AIModelConfigClient, ...]:

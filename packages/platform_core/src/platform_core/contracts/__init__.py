@@ -49,8 +49,6 @@ from .knowledge import (
 from .model import (
     EmbeddingDataItem,
     ModelArchiveRequest,
-    ModelCapabilityVerifyRequest,
-    ModelCapabilityState,
     ModelCatalogItem,
     ModelCreateRequest,
     ModelDeleteRequest,
@@ -101,8 +99,6 @@ __all__ = [
     "UpdateConversationRequest",
     "EmbeddingDataItem",
     "ModelArchiveRequest",
-    "ModelCapabilityVerifyRequest",
-    "ModelCapabilityState",
     "ModelCatalogItem",
     "ModelCreateRequest",
     "ModelDeleteRequest",

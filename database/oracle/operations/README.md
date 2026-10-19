@@ -124,9 +124,7 @@ Run、事件、提示词版本和资产表。脚本会删除已退役的智能�
 `database/oracle/bootstrap/media_studio/initial_admin.sql`，以收敛权限目录并写入各 App
 初始管理员。
 
-`enable_model_serving_capabilities.sql` 用于为已有模型目录新增图片生成能力标志。
-X Search 属于 Grok 模型能力，不再写入模型表。脚本不会把任何模型标记为可用；新增列默认
-关闭，必须由受控 Canary 写入验收结果后，业务入口才可使用对应能力。
+X Search 属于 Grok 模型身份要求，不写入额外的模型能力或验收状态。
 
 ## 权限模型收敛
 

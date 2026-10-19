@@ -171,6 +171,6 @@ class ImageGenerationService:
         snapshot = safe_model_snapshot(catalog)
         if not is_role_ready("IMAGE_GENERATION", snapshot):
             raise MediaStudioApplicationError(
-                "MODEL_CAPABILITY_UNVERIFIED", "文生图模型未启用或尚未通过能力验收", status_code=422,
+                "MODEL_NOT_ACTIVE", "绑定的图片生成模型未启用", status_code=422,
             )
         return snapshot, model_id

@@ -23,12 +23,6 @@ def is_grok_provider_model_name(value: object) -> bool:
     return any(part == "grok" or part.startswith("grok-") for part in parts)
 
 
-class ModelCapabilityState(_ModelContract):
-    """模型在当前租户和当前上游配置中的实际验收状态。"""
-
-    supports_image_generation: bool = False
-
-
 class ModelProviderOption(_ModelContract):
     category: int = Field(ge=1, le=6)
     provider: str = Field(min_length=1, max_length=64)
@@ -77,13 +71,7 @@ class ModelDeleteRequest(_ModelContract):
     expected_row_version: int = Field(ge=1)
 
 
-class ModelCapabilityVerifyRequest(_ModelContract):
-    """对当前版本的模型连接执行真实能力验收。"""
-
-    expected_row_version: int = Field(ge=1)
-
-
-class ModelCatalogItem(ModelCapabilityState):
+class ModelCatalogItem(_ModelContract):
     model_id: UUID
     served_model_name: str
     display_name: str

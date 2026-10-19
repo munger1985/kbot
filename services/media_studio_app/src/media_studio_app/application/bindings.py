@@ -46,24 +46,10 @@ def binding_view(row: MediaStudioModelBindingEntity) -> dict[str, Any]:
         "served_model_name": snapshot.get("served_model_name"),
         "provider": snapshot.get("provider"),
         "status": snapshot.get("status"),
-        "supports_image_generation": bool(snapshot.get("supports_image_generation")),
         "ready": _ready(row.role, snapshot),
         "row_version": int(row.row_version),
         "updated_at": row.updated_at.isoformat() if getattr(row.updated_at, "isoformat", None) else row.updated_at,
     }
-
-
-def capabilities_from_bindings(bindings: list[dict[str, Any]]) -> dict[str, Any]:
-    by_role = {item["role"]: item for item in bindings}
-
-    def summarize(role: str, flag: str | None) -> dict[str, bool]:
-        item = by_role.get(role)
-        bound = item is not None
-        verified = bool(item.get(flag)) if item is not None and flag else bound and bool(item and item.get("ready"))
-        ready = bool(item and item.get("ready"))
-        return {"bound": bound, "verified": verified, "ready": ready}
-
-    return {"image_generation": summarize("IMAGE_GENERATION", "supports_image_generation")}
 
 
 class ModelBindingService:
@@ -91,9 +77,6 @@ class ModelBindingService:
                 "served_model_name": current.get("served_model_name"),
                 "provider": current.get("provider"),
                 "status": current.get("status"),
-                "supports_image_generation": bool(
-                    current.get("supports_image_generation")
-                ),
                 "ready": _ready(view["role"], current),
             })
         return refreshed
@@ -117,8 +100,8 @@ class ModelBindingService:
         snapshot = safe_model_snapshot(catalog)
         if not is_role_ready(command.role, snapshot):
             raise MediaStudioApplicationError(
-                "MODEL_CAPABILITY_UNVERIFIED",
-                "只能绑定已启用且对应能力已验收的模型",
+                "MODEL_NOT_ACTIVE",
+                "图片生成只能绑定已启用的 LLM 模型",
                 status_code=422,
             )
         now = datetime.now(timezone.utc)

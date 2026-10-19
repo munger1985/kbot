@@ -384,22 +384,6 @@
         "title": "ModelArchiveRequest",
         "type": "object"
       },
-      "ModelCapabilityVerifyRequest": {
-        "additionalProperties": false,
-        "description": "对当前版本的模型连接执行真实能力验收。",
-        "properties": {
-          "expected_row_version": {
-            "minimum": 1.0,
-            "title": "Expected Row Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "expected_row_version"
-        ],
-        "title": "ModelCapabilityVerifyRequest",
-        "type": "object"
-      },
       "ModelCatalogItem": {
         "additionalProperties": false,
         "properties": {
@@ -470,11 +454,6 @@
             ],
             "title": "Status",
             "type": "string"
-          },
-          "supports_image_generation": {
-            "default": false,
-            "title": "Supports Image Generation",
-            "type": "boolean"
           }
         },
         "required": [
@@ -1717,59 +1696,6 @@
         "summary": "Archive Model",
         "tags": [
           "Model Configuration"
-        ]
-      }
-    },
-    "/internal/v1/models/{model_id}/capabilities/image-generation:verify": {
-      "post": {
-        "operationId": "verify_image_generation_internal_v1_models__model_id__capabilities_image_generation_verify_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "model_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Model Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModelCapabilityVerifyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelCatalogItem"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Verify Image Generation",
-        "tags": [
-          "LLM Responses"
         ]
       }
     },

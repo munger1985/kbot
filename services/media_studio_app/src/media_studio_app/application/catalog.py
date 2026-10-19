@@ -14,13 +14,10 @@ SAFE_SNAPSHOT_FIELDS = (
     "served_model_name",
     "provider",
     "status",
-    "supports_image_generation",
     "category",
 )
 
-ROLE_CAPABILITY = {
-    "IMAGE_GENERATION": "supports_image_generation",
-}
+ROLE_MODEL_CATEGORY = {"IMAGE_GENERATION": 1}
 
 
 def safe_model_snapshot(row: dict[str, Any]) -> dict[str, Any]:
@@ -31,19 +28,20 @@ def safe_model_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         "served_model_name": row.get("served_model_name"),
         "provider": row.get("provider"),
         "status": row.get("status"),
-        "supports_image_generation": bool(row.get("supports_image_generation")),
         "category": int(row["category"]) if row.get("category") is not None else None,
     }
     return {key: snapshot[key] for key in SAFE_SNAPSHOT_FIELDS}
 
 
 def is_role_ready(role: str, snapshot: dict[str, Any]) -> bool:
-    if str(snapshot.get("status") or "").upper() != "ACTIVE":
-        return False
-    flag = ROLE_CAPABILITY.get(role)
-    if flag is None:
-        return True
-    return bool(snapshot.get(flag))
+    expected_category = ROLE_MODEL_CATEGORY.get(role)
+    return (
+        str(snapshot.get("status") or "").upper() == "ACTIVE"
+        and (
+            expected_category is None
+            or int(snapshot.get("category") or 0) == expected_category
+        )
+    )
 
 
 async def load_catalog_model(catalog_client, model_id: UUID) -> dict[str, Any]:

@@ -82,9 +82,6 @@ class ModelRegistryService:
             "api_endpoint": entity.api_endpoint,
             "status": _STATUS_FROM_DB[int(entity.status)],
             "model_params": public_model_params(entity.model_params),
-            "supports_image_generation": bool(
-                int(getattr(entity, "supports_image_generation", 0))
-            ),
             "description": entity.descs,
             "row_version": int(entity.row_version),
         }
@@ -180,9 +177,6 @@ class ModelRegistryService:
             for source, target in mutable.items():
                 if source in values:
                     setattr(row, target, values[source])
-            if {"api_endpoint", "api_key", "model_params"} & set(values):
-                # 上游连接或推理配置变化后，旧验收结论不再可信。
-                row.supports_image_generation = 0
             row.updated_by = actor_id
             try:
                 await uow.flush()
@@ -313,86 +307,8 @@ class ModelRegistryService:
             unavailable_services=tuple(unavailable),
         )
 
-    async def record_capability_verification(
-        self,
-        model_id: UUID,
-        *,
-        supports_image_generation: bool,
-        expected_row_version: int,
-        actor_id: str,
-        auth_context: AuthContext | None = None,
-    ) -> dict[str, Any]:
-        """记录由受控 Canary 得出的能力结果，不能由通用编辑接口写入。"""
-        async with self._uow_factory() as uow:
-            assert uow.models
-            row = await self._locked(uow.models, model_id)
-            self._assert_version(row, expected_row_version)
-            row.supports_image_generation = int(supports_image_generation)
-            row.updated_by = actor_id
-            await uow.flush()
-            await uow.commit()
-            result = self._safe(row)
-        await self._notify_changed(result, auth_context=auth_context)
-        return result
-
-    async def get_capability_verification_material(
-        self,
-        model_id: UUID,
-        *,
-        expected_row_version: int,
-        category: int,
-    ) -> dict[str, Any]:
-        """锁定 Canary 的配置版本，并只返回进程所属的已启用模型。"""
-        async with self._uow_factory() as uow:
-            assert uow.models
-            try:
-                row = await uow.models.get_by_id(model_id)
-            except DataNotFoundException as exc:
-                raise ModelDefinitionNotFound(model_id) from exc
-            if int(row.category) != category:
-                raise ModelDefinitionNotFound(model_id)
-            self._assert_version(row, expected_row_version)
-            if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
-                raise ModelRegistryConflict(
-                    "MODEL_NOT_ACTIVE", "模型未启用，不能执行能力验收",
-                )
-            return {
-                "provider": row.provider,
-                "api_endpoint": row.api_endpoint,
-                "api_key": row.api_key,
-                "provider_model_name": row.provider_model_name,
-                "served_model_name": row.served_model_name,
-                "model_params": dict(row.model_params or {}),
-                "row_version": int(row.row_version),
-            }
-
     async def get_connection_material(self, model_id: UUID) -> dict[str, Any]:
-        """返回调用上游所需的完整连接材料，不得经 HTTP 安全投影对外暴露。"""
-        async with self._uow_factory() as uow:
-            assert uow.models
-            try:
-                row = await uow.models.get_by_id(model_id)
-            except DataNotFoundException as exc:
-                raise ModelDefinitionNotFound(model_id) from exc
-            return {
-                "provider": row.provider,
-                "api_endpoint": row.api_endpoint,
-                "api_key": row.api_key,
-                "provider_model_name": row.provider_model_name,
-                "served_model_name": row.served_model_name,
-                "model_params": dict(row.model_params or {}),
-            }
-
-    async def require_verified_capability(
-        self, model_id: UUID, *, capability: str,
-    ) -> dict[str, Any]:
-        """仅向已启用且已验收能力的模型开放扩展入口。"""
-        capability_fields = {
-            "image_generation": "supports_image_generation",
-        }
-        field = capability_fields.get(capability)
-        if field is None:
-            raise ValueError(f"未知模型能力：{capability}")
+        """返回已启用模型的连接材料，不得经 HTTP 安全投影对外暴露。"""
         async with self._uow_factory() as uow:
             assert uow.models
             try:
@@ -401,14 +317,16 @@ class ModelRegistryService:
                 raise ModelDefinitionNotFound(model_id) from exc
             if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
                 raise ModelRegistryConflict(
-                    "MODEL_NOT_ACTIVE", "模型未启用，不能使用扩展能力",
+                    "MODEL_NOT_ACTIVE", "模型未启用，不能执行推理调用",
                 )
-            if not bool(int(getattr(row, field, 0))):
-                raise ModelRegistryConflict(
-                    "MODEL_CAPABILITY_UNVERIFIED",
-                    f"模型尚未通过 {capability} 能力验收",
-                )
-            return self._safe(row)
+            return {
+                "provider": row.provider,
+                "api_endpoint": row.api_endpoint,
+                "api_key": row.api_key,
+                "provider_model_name": row.provider_model_name,
+                "served_model_name": row.served_model_name,
+                "model_params": dict(row.model_params or {}),
+            }
 
     async def require_grok_model(self, model_id: UUID) -> dict[str, Any]:
         """X Search 是 Grok 原生能力，只允许已启用的 Grok 模型。"""

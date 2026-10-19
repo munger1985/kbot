@@ -20,7 +20,7 @@
 
   function roleLabel(role) { return role === "IMAGE_GENERATION" ? "图片生成" : role; }
 
-  function roleRequirement(role) { return role === "IMAGE_GENERATION" ? "图像生成、产物返回" : "媒体生成能力"; }
+  function roleRequirement(role) { return role === "IMAGE_GENERATION" ? "已启用的 LLM 模型" : "已启用模型"; }
 
   function kindLabel(kind) { return kind === "IMAGE_GENERATION" ? "图片生成" : kind === "IMAGE_EDIT" ? "图片编辑" : kind; }
 
@@ -46,7 +46,7 @@
     const roles = ["IMAGE_GENERATION"];
     node.innerHTML = roles.map((role) => {
       const row = currentBinding(role);
-      const status = row ? (row.ready ? badge("已就绪", "good") : badge("未验收", "warn")) : badge("未绑定", "warn");
+      const status = row ? (row.ready ? badge("已绑定", "good") : badge("模型未启用", "warn")) : badge("未绑定", "warn");
       return `<tr>
         <td>${escapeHtml(roleLabel(role))}</td>
         <td>${escapeHtml(row?.display_name || "等待模型目录")}</td>
@@ -65,7 +65,7 @@
     bindings = Array.isArray(bindingRows) ? bindingRows : KBotMediaApi.items(bindingRows);
     catalog = KBotMediaApi.items(catalogRows).filter((row) => KBotMediaApi.isActiveModel(row));
     renderBindings();
-    const image = catalog.filter((row) => row.supports_image_generation);
+    const image = catalog.filter((row) => Number(row.category) === 1);
     fillSelect(document.getElementById("image-model"), image, currentBinding("IMAGE_GENERATION")?.model_id);
   }
 

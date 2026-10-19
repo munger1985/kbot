@@ -29,7 +29,7 @@ class GenerativeResponsesClientError(RuntimeError):
 
 
 class GenerativeResponsesClient:
-    """只暴露研究与文生图调用，不把能力验收入口透传到 Main API。"""
+    """只暴露研究与文生图调用。"""
 
     def __init__(
         self,

@@ -237,7 +237,7 @@
     document.getElementById("image-form")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!ready()) {
-        toast("模型能力尚未验收，未创建图片生成任务。", "error");
+        toast("尚未绑定已启用的图片生成模型，未创建任务。", "error");
         return;
       }
       const payload = {

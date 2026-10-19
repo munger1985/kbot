@@ -11,8 +11,8 @@
     region.append(item); setTimeout(() => item.remove(), 4500);
   }
   function badge(value, tone = "") { return `<span class="media-badge ${escapeHtml(tone)}">${escapeHtml(value)}</span>`; }
-  function capability(access, key) { return access?.capabilities?.[key] || { bound: false, verified: false, ready: false }; }
-  function capabilityLabel(item) { return item.ready ? ["已就绪", "good"] : [item.bound ? "未验收" : "未绑定", "warn"]; }
+  function capability(access, key) { return access?.capabilities?.[key] || { bound: false, ready: false }; }
+  function capabilityLabel(item) { return item.ready ? ["已就绪", "good"] : [item.bound ? "模型未启用" : "未绑定", "warn"]; }
   function shellMarkup(session, current) {
     const navigation = sections.map(([title, pages]) => {
       const links = pages.map(([id, label, href]) => `<a href="${href}" data-permission="${PAGE_PERMISSIONS[id]}"${id === current ? ' aria-current=\"page\"' : ""}>${escapeHtml(label)}</a>`).join("");
