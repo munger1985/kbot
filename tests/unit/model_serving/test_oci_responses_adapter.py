@@ -22,6 +22,7 @@ from model_serving.llm.responses.oci_adapter import (
 
 
 HOST = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
+DATED_API_BASE = f"{HOST}/20231130/actions/v1"
 PROJECT = "ocid1.generativeaiproject.oc1..test"
 COMPARTMENT = "ocid1.compartment.oc1..test"
 
@@ -103,6 +104,46 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(f"{HOST}/openai/v1", sdk_factory.call_args.kwargs["base_url"])
         self.assertEqual(PROJECT, sdk_factory.call_args.kwargs["project"])
         self.assertEqual(0, sdk_factory.call_args.kwargs["max_retries"])
+
+    def test_client_uses_configured_api_base_and_bearer_key(self):
+        adapter = OciGrokResponsesAdapter(timeout_seconds=45)
+        http_client = object()
+        sdk_client = object()
+        material = _material() | {
+            "api_endpoint": DATED_API_BASE,
+            "api_key": "current-codex-key",
+        }
+
+        with (
+            patch(
+                "model_serving.llm.responses.oci_adapter.ModelConfigOciAuth",
+            ) as auth_factory,
+            patch(
+                "model_serving.llm.responses.oci_adapter.httpx.Client",
+                return_value=http_client,
+            ) as http_client_factory,
+            patch(
+                "model_serving.llm.responses.oci_adapter.openai.OpenAI",
+                return_value=sdk_client,
+            ) as sdk_factory,
+        ):
+            result = adapter._client(material)
+
+        self.assertIs(sdk_client, result)
+        auth_factory.assert_not_called()
+        self.assertIsNone(http_client_factory.call_args.kwargs["auth"])
+        self.assertEqual(DATED_API_BASE, sdk_factory.call_args.kwargs["base_url"])
+        self.assertEqual("current-codex-key", sdk_factory.call_args.kwargs["api_key"])
+        self.assertIsNone(sdk_factory.call_args.kwargs["project"])
+
+    async def test_api_key_mode_requires_complete_api_base_path(self):
+        adapter = OciGrokResponsesAdapter()
+        with self.assertRaises(GenerativeAdapterError) as raised:
+            await adapter.research(
+                _request(), _material() | {"api_key": "current-codex-key"},
+            )
+        self.assertEqual(503, raised.exception.status_code)
+        self.assertIn("Endpoint", raised.exception.message)
 
     async def test_missing_project_does_not_call_upstream(self):
         adapter = OciGrokResponsesAdapter()

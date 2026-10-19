@@ -110,7 +110,7 @@
           <div class="media-field full">
             <label for="model-api-endpoint">API Endpoint</label>
             <input id="model-api-endpoint" maxlength="1024" placeholder="例如 https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com">
-            <small class="model-field-help">OCI 仅填写无路径的服务 Origin，具体 API 路径由官方 SDK 生成；其他 Provider 按对应合同填写基地址。</small>
+            <small class="model-field-help">OCI API Key 模式填写 SDK 使用的完整 API Base URL；OCI IAM 模式填写无路径的服务 Origin。程序不会截断或补写路径。</small>
           </div>
           <div class="media-field full">
             <label for="model-api-key">API Key / Token</label>

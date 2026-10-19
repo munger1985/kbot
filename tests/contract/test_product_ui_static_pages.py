@@ -124,13 +124,14 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("/agents", blob)
         self.assertNotIn("/knowledge-cores", blob)
 
-    def test_media_model_form_requires_oci_service_origin(self):
+    def test_media_model_form_supports_oci_sdk_api_base(self):
         root = APP_CONFIGS["media_studio"]["root"]
         page = (root / "models.html").read_text(encoding="utf-8")
         script = (root / "js" / "media-models.js").read_text(encoding="utf-8")
-        self.assertIn("OCI 仅填写无路径的服务 Origin", page)
+        self.assertIn("OCI API Key 模式填写 SDK 使用的完整 API Base URL", page)
+        self.assertIn("程序不会截断或补写路径", page)
         self.assertIn('"api_oci_image"', script)
-        self.assertIn("parsed.pathname", script)
+        self.assertNotIn("parsed.pathname", script)
         self.assertIn('value="8">图像生成', page)
         api_script = (root / "js" / "media-api.js").read_text(encoding="utf-8")
         self.assertIn("IMAGE_GENERATION: 8", api_script)

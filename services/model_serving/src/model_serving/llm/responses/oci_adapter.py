@@ -17,6 +17,7 @@ from loguru import logger
 
 from model_serving.common.oci_auth import (
     ModelConfigOciAuth,
+    oci_openai_api_base,
     oci_sdk_service_endpoint,
     validated_oci_config,
 )
@@ -168,15 +169,22 @@ class OciGrokResponsesAdapter:
                 status_code=503,
             )
         params = material.get("model_params")
-        project = oci_generative_ai_project(params)
+        api_key = str(material.get("api_key") or "").strip()
 
         try:
-            origin = oci_sdk_service_endpoint(endpoint)
-            config = validated_oci_config(
-                (params or {}).get("oci_auth")
-                or (params or {}).get("config_file")
-            )
-            auth = ModelConfigOciAuth(config)
+            if api_key:
+                base_url = oci_openai_api_base(endpoint)
+                auth = None
+                project = None
+            else:
+                origin = oci_sdk_service_endpoint(endpoint)
+                config = validated_oci_config(
+                    (params or {}).get("oci_auth")
+                    or (params or {}).get("config_file")
+                )
+                base_url = f"{origin}/openai/v1"
+                auth = ModelConfigOciAuth(config)
+                project = oci_generative_ai_project(params)
         except ValueError as exc:
             raise GenerativeAdapterError(
                 "PROVIDER_UNAVAILABLE", "当前模型的 OCI Endpoint 或认证材料无效",
@@ -187,8 +195,8 @@ class OciGrokResponsesAdapter:
             timeout=httpx.Timeout(self._timeout_seconds),
         )
         return openai.OpenAI(
-            base_url=f"{origin}/openai/v1",
-            api_key="not-used",
+            base_url=base_url,
+            api_key=api_key or "not-used",
             project=project,
             http_client=http_client,
             max_retries=0,

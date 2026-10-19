@@ -394,8 +394,45 @@ class ProviderCatalogS4Test(unittest.TestCase):
         option = options[0]
         self.assertIn("model_params.project", option.required_fields)
         self.assertNotIn("model_params.config_file", option.required_fields)
+        self.assertIn("api_key", option.secret_fields)
         self.assertIn("model_params.config_file", option.secret_fields)
         self.assertIn("model_params.oci_auth", option.secret_fields)
+
+    def test_oci_image_accepts_api_key_with_configured_api_base(self):
+        with patch(
+            "model_serving.common.provider_catalog.validated_oci_config",
+        ) as validate:
+            validate_provider_config({
+                "category": ModelCategory.IMAGE_GENERATION.value,
+                "provider": "api_oci_image",
+                "api_endpoint": (
+                    "https://inference.generativeai.us-ashburn-1."
+                    "oci.oraclecloud.com/20231130/actions/v1"
+                ),
+                "api_key": "current-codex-key",
+                "model_params": {
+                    "compartment_id": "ocid1.compartment.oc1..test",
+                    "project": "ocid1.generativeaiproject.oc1..test",
+                },
+            })
+
+        validate.assert_not_called()
+
+    def test_oci_image_api_key_rejects_origin_without_api_base_path(self):
+        with self.assertRaisesRegex(ValueError, "API 基础路径"):
+            validate_provider_config({
+                "category": ModelCategory.IMAGE_GENERATION.value,
+                "provider": "api_oci_image",
+                "api_endpoint": (
+                    "https://inference.generativeai.us-ashburn-1."
+                    "oci.oraclecloud.com"
+                ),
+                "api_key": "current-codex-key",
+                "model_params": {
+                    "compartment_id": "ocid1.compartment.oc1..test",
+                    "project": "ocid1.generativeaiproject.oc1..test",
+                },
+            })
 
     def test_oci_accepts_manual_auth_parameters_without_config_file(self):
         auth = {

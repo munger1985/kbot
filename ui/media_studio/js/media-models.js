@@ -315,9 +315,8 @@
     catch (_) { throw new Error("OCI API Endpoint 必须是有效的 HTTP(S) 服务 Origin"); }
     if (!["http:", "https:"].includes(parsed.protocol)
       || parsed.username || parsed.password
-      || (parsed.pathname && parsed.pathname !== "/")
       || parsed.search || parsed.hash) {
-      throw new Error("OCI API Endpoint 只能填写服务 Origin，不能包含 API 路径、查询参数或片段");
+      throw new Error("OCI API Endpoint 必须是无用户信息、查询参数和片段的 HTTP(S) URL");
     }
   }
 
@@ -354,8 +353,8 @@
         const key = path.slice("model_params.".length);
         if (!modelParams[key]) throw new Error(`当前 Provider 要求填写模型参数：${key}`);
       }
-      if (usesOciAuth(option) && !ociAuth) {
-        throw new Error("请上传 OCI config 和私钥，或手工填写完整认证参数");
+      if (usesOciAuth(option) && !apiKey && !ociAuth) {
+        throw new Error("请填写 API Key / Token，或上传 OCI config 和私钥");
       }
       return {
         served_model_name: servedModelName,

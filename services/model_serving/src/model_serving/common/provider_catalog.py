@@ -6,7 +6,11 @@ from typing import Any
 from platform_core.contracts import ModelProviderOption
 from platform_core.dictionary import ModelCategory
 
-from model_serving.common.oci_auth import oci_sdk_service_endpoint, validated_oci_config
+from model_serving.common.oci_auth import (
+    oci_openai_api_base,
+    oci_sdk_service_endpoint,
+    validated_oci_config,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +116,9 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
             "model_params.project",
         ),
         _IMAGE_PARAMS,
-        secret_fields=("model_params.config_file", "model_params.oci_auth"),
+        secret_fields=(
+            "api_key", "model_params.config_file", "model_params.oci_auth",
+        ),
     ),
 }
 
@@ -157,7 +163,9 @@ def validate_provider_config(values: dict[str, Any]) -> None:
             missing.append(path)
     if missing:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
-    if provider in {"oci", "api_oci_image"}:
+    if provider == "api_oci_image" and values.get("api_key"):
+        oci_openai_api_base(values.get("api_endpoint"))
+    elif provider in {"oci", "api_oci_image"}:
         oci_sdk_service_endpoint(values.get("api_endpoint"))
         auth = params.get("oci_auth")
         if auth is None:

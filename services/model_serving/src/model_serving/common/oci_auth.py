@@ -27,6 +27,23 @@ def oci_sdk_service_endpoint(raw: Any) -> str:
     return f"{parsed.scheme.lower()}://{parsed.netloc}"
 
 
+def oci_openai_api_base(raw: Any) -> str:
+    """校验并原样返回 OpenAI SDK 使用的 OCI API Base URL。"""
+    endpoint = str(raw or "").strip().rstrip("/")
+    parsed = urlsplit(endpoint)
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("OCI OpenAI API Endpoint 必须是包含 API 基础路径的 HTTP(S) URL")
+    return endpoint
+
+
 def _oci_signer(config: dict[str, Any]):
     import oci
 
@@ -103,6 +120,7 @@ def public_model_params(raw: Any) -> dict[str, Any]:
 
 __all__ = [
     "ModelConfigOciAuth",
+    "oci_openai_api_base",
     "oci_sdk_service_endpoint",
     "public_model_params",
     "validated_oci_config",
