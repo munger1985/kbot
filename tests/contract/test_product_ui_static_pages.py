@@ -159,6 +159,8 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn('data-edit-binding="IMAGE_GENERATION"', page)
         self.assertIn("data-edit-binding", script)
         self.assertIn("openBindingEditor", script)
+        self.assertIn('await KBotMediaApi.json("/model-catalog", "GET")', script)
+        self.assertIn("正在读取最新图像模型目录", script)
         self.assertIn("expected_row_version", script)
         self.assertIn("catalog = KBotMediaApi.items(catalogRows)", script)
         self.assertIn('const disabled = active ? "" : " disabled"', script)

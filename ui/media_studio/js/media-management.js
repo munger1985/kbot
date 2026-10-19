@@ -43,19 +43,28 @@
     return bindings.find((row) => row.role === role);
   }
 
-  function openBindingEditor(role) {
+  async function openBindingEditor(role) {
     const current = currentBinding(role);
-    const models = catalog.filter(
-      (row) => Number(row.category) === KBotMediaApi.ModelCategory.IMAGE_GENERATION,
-    );
-    fillSelect(
-      document.getElementById("image-model"),
-      models,
-      current?.model_id,
-    );
+    const select = document.getElementById("image-model");
+    select.innerHTML = '<option value="">正在读取最新图像模型目录…</option>';
+    select.disabled = true;
     const title = document.getElementById("model-binding-dialog-title");
     if (title) title.textContent = current ? `编辑${roleLabel(role)}模型绑定` : "配置模型绑定";
     openDialog("model-binding-dialog");
+    try {
+      const catalogRows = await KBotMediaApi.json("/model-catalog", "GET");
+      catalog = KBotMediaApi.items(catalogRows);
+      const models = catalog.filter(
+        (row) => Number(row.category) === KBotMediaApi.ModelCategory.IMAGE_GENERATION,
+      );
+      fillSelect(select, models, current?.model_id);
+      if (!models.length) {
+        select.innerHTML = '<option value="">暂无图像生成模型</option>';
+      }
+    } catch (error) {
+      select.innerHTML = '<option value="">图像模型目录读取失败</option>';
+      toast(error.message || "无法读取最新图像模型目录", "error");
+    }
   }
 
   function renderBindings() {
@@ -229,7 +238,11 @@
     });
     document.addEventListener("click", (event) => {
       const button = event.target.closest("[data-edit-binding]");
-      if (button) openBindingEditor(button.dataset.editBinding);
+      if (button) {
+        openBindingEditor(button.dataset.editBinding).catch(
+          (error) => toast(error.message || "无法打开模型绑定配置", "error"),
+        );
+      }
     });
     document.querySelectorAll("[data-close-dialog]").forEach((button) => {
       button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));
