@@ -27,10 +27,7 @@
   const totalBytes = () => state.entries.reduce((sum, item) => sum + item.file.size, 0);
   const isBundle = () => !state.uploadAsset && state.groupingMode === "SINGLE_BUNDLE";
 
-  async function digest(file) {
-    const value = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-    return Array.from(new Uint8Array(value), (item) => item.toString(16).padStart(2, "0")).join("");
-  }
+  const digest = (file) => KBotSha256.file(file);
 
   function assetRow(item) {
     const action = item.status === "REVIEW_REQUIRED" ? "审批标签" : ["TAGGING", "PROCESSING"].includes(item.status) ? "查看进度" : ["FAILED", "TAGGING_FAILED"].includes(item.status) ? "处理异常" : item.status === "DRAFT" ? "审核" : "查看";
