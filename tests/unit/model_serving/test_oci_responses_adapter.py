@@ -68,20 +68,17 @@ class OciResponsesUrlTest(unittest.TestCase):
             build_oci_responses_url(f"{HOST}/v1"),
         )
 
-    def test_dated_actions_v1_endpoint_appends_responses(self):
+    def test_dated_actions_v1_endpoint_uses_openai_compatible_path(self):
         endpoint = f"{HOST}/20231130/actions/v1"
-        expected = f"{endpoint}/responses"
+        expected = f"{HOST}/openai/v1/responses"
         self.assertEqual(expected, build_oci_responses_url(endpoint))
         self.assertEqual(expected, build_oci_responses_url(endpoint + "/"))
-        self.assertEqual(expected, build_oci_responses_url(expected))
+        self.assertEqual(expected, build_oci_responses_url(f"{endpoint}/responses"))
 
     def test_dated_actions_v1_endpoint_has_images_generations_sibling(self):
         endpoint = f"{HOST}/20231130/actions/v1"
         self.assertEqual(
-            (
-                f"{endpoint}/images/generations",
-                f"{HOST}/openai/v1/images/generations",
-            ),
+            (f"{HOST}/openai/v1/images/generations",),
             build_oci_images_urls(endpoint),
         )
 
@@ -166,7 +163,7 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual("ok", result.answer)
 
-    async def test_posts_dated_actions_v1_responses_without_openai_rewrite(self):
+    async def test_posts_dated_actions_v1_with_openai_compatible_path(self):
         adapter = OciGrokResponsesAdapter()
         captured: dict = {}
         response = SimpleNamespace(
@@ -196,7 +193,7 @@ class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
                 _material(project=PROJECT) | {"api_endpoint": endpoint},
             )
 
-        self.assertEqual(f"{endpoint}/responses", captured["url"])
+        self.assertEqual(f"{HOST}/openai/v1/responses", captured["url"])
         self.assertEqual(PROJECT, captured["headers"]["OpenAI-Project"])
         self.assertEqual(COMPARTMENT, captured["headers"]["CompartmentId"])
 
@@ -236,12 +233,12 @@ class OciResponsesErrorLogTest(unittest.TestCase):
             with self.assertRaises(GenerativeAdapterError):
                 OciGrokResponsesAdapter._parse_http(
                     response,
-                    url=f"{HOST}/20231130/actions/v1/responses",
+                    url=f"{HOST}/openai/v1/responses",
                 )
         rendered = " ".join(str(item) for item in logger.warning.call_args)
         self.assertIn("400", rendered)
         self.assertIn("invalid_request", rendered)
-        self.assertIn("/20231130/actions/v1/responses", rendered)
+        self.assertIn("/openai/v1/responses", rendered)
         self.assertNotIn("sk-secret", rendered)
 
 
@@ -335,8 +332,8 @@ class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
                 _material(project=PROJECT) | {"api_endpoint": endpoint},
             )
 
-        self.assertIn(f"{endpoint}/images/generations", captured["urls"])
-        self.assertEqual(f"{endpoint}/responses", captured["url"])
+        self.assertIn(f"{HOST}/openai/v1/images/generations", captured["urls"])
+        self.assertEqual(f"{HOST}/openai/v1/responses", captured["url"])
         self.assertEqual("image_generation", captured["json"]["tools"][0]["type"])
         self.assertNotIn("aspect_ratio", captured["json"]["tools"][0])
         self.assertNotIn("instructions", captured["json"])
@@ -532,7 +529,7 @@ class OciImagesApiAdapterTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(1, len(captured))
-        self.assertEqual(f"{endpoint}/images/generations", captured[0]["url"])
+        self.assertEqual(f"{HOST}/openai/v1/images/generations", captured[0]["url"])
         self.assertEqual("1:1", captured[0]["json"]["aspect_ratio"])
         self.assertEqual("a red cube", captured[0]["json"]["prompt"])
         self.assertEqual("b64_json", captured[0]["json"]["response_format"])

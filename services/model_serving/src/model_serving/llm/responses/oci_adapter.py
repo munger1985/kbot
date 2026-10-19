@@ -13,7 +13,7 @@ from uuid import uuid4
 import requests
 from loguru import logger
 
-from model_serving.common.oci_auth import validated_oci_config
+from model_serving.common.oci_auth import oci_sdk_service_endpoint, validated_oci_config
 from model_serving.llm.responses.errors import GenerativeAdapterError
 from platform_core.contracts import (
     GeneratedImageArtifact,
@@ -298,51 +298,33 @@ def _payload_from_image_bytes(content: bytes) -> dict[str, Any]:
 
 
 def build_oci_responses_url(endpoint: str) -> str:
-    """把配置的 inference 地址规范成实际 POST 的 Responses URL。"""
+    """从 OCI inference 地址提取服务 Origin 并构造 Responses URL。"""
     base = str(endpoint or "").strip().rstrip("/")
     if not base:
         raise GenerativeAdapterError(
             "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI Responses 端点",
             status_code=503,
         )
-    lowered = base.lower()
-    if lowered.endswith("/responses"):
-        return base
-    if lowered.endswith("/openai/v1"):
-        return f"{base}/responses"
-    if lowered.endswith("/openai"):
-        return f"{base}/v1/responses"
-    path = (urlparse(base).path or "").rstrip("/")
-    if path in {"", "/"}:
-        return f"{base}/openai/v1/responses"
-    if path == "/v1":
-        # 旧 Chat host 误带了 /v1，才改写到 OpenAI 兼容路径。
-        return f"{base[:-3]}/openai/v1/responses"
-    if path.endswith("/20231130/actions/v1"):
-        # Codex 把该路径当 Responses base_url，实际 POST 还要加 /responses。
-        return f"{base}/responses"
-    return base
+    try:
+        origin = oci_sdk_service_endpoint(base)
+    except ValueError as exc:
+        raise GenerativeAdapterError(
+            "PROVIDER_UNAVAILABLE", "当前模型的 OCI Responses 端点无效",
+            status_code=503,
+        ) from exc
+    return f"{origin}/openai/v1/responses"
 
 
 def build_oci_images_urls(endpoint: str) -> tuple[str, ...]:
-    """从同一 inference 地址推导 Images API 候选，不猜测模型名。"""
+    """从同一 inference 地址提取 Origin 并构造 Images API URL。"""
     base = str(endpoint or "").strip().rstrip("/")
     if not base:
         return ()
-    urls: list[str] = []
     try:
-        responses = build_oci_responses_url(base)
-    except GenerativeAdapterError:
-        responses = ""
-    if responses.lower().endswith("/responses"):
-        urls.append(f"{responses[:-len('responses')]}images/generations")
-    parsed = urlparse(base if "://" in base else f"https://{base}")
-    origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
-    if origin:
-        openai_url = f"{origin}/openai/v1/images/generations"
-        if openai_url not in urls:
-            urls.append(openai_url)
-    return tuple(urls)
+        origin = oci_sdk_service_endpoint(base)
+    except ValueError:
+        return ()
+    return (f"{origin}/openai/v1/images/generations",)
 
 
 def oci_generative_ai_project(model_params: Any) -> str:
