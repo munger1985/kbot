@@ -10,10 +10,16 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
+import httpx
+import openai
 import requests
 from loguru import logger
 
-from model_serving.common.oci_auth import oci_sdk_service_endpoint, validated_oci_config
+from model_serving.common.oci_auth import (
+    ModelConfigOciAuth,
+    oci_sdk_service_endpoint,
+    validated_oci_config,
+)
 from model_serving.llm.responses.errors import GenerativeAdapterError
 from platform_core.contracts import (
     GeneratedImageArtifact,
@@ -34,7 +40,7 @@ _IMAGE_MAGIC = (
 
 
 class OciGrokResponsesAdapter:
-    """生产路径：对配置的 OCI Responses 端点签发 POST，认证走 IAM。"""
+    """通过 OpenAI SDK 调用 OCI 兼容接口，认证使用官方 IAM 适配器。"""
 
     def __init__(self, *, timeout_seconds: int = 300):
         self._timeout_seconds = timeout_seconds
@@ -85,23 +91,21 @@ class OciGrokResponsesAdapter:
         }
         if request.aspect_ratio:
             body["aspect_ratio"] = request.aspect_ratio
-        for url in build_oci_images_urls(endpoint):
-            path = urlparse(url).path or url
-            try:
-                payload = await self._invoke(material, body, url=url)
-            except GenerativeAdapterError as exc:
-                logger.warning(
-                    "OCI Images API 不可用：path={} code={} status={}",
-                    path, exc.code, exc.status_code,
-                )
-                if exc.code in {"CONTENT_REJECTED", "PROVIDER_QUOTA_EXHAUSTED"}:
-                    raise
-                continue
-            result = await self._image_result_from_payload(payload)
-            if result.status == "COMPLETED" and result.artifacts:
-                logger.info("OCI Images API 已返回图片：path={} count={}", path, len(result.artifacts))
-                return result
-            logger.warning("OCI Images API 没有返回可保存的图片：path={}", path)
+        try:
+            payload = await self._invoke_images(material, body)
+        except GenerativeAdapterError as exc:
+            logger.warning(
+                "OCI Images API 不可用：code={} status={}",
+                exc.code, exc.status_code,
+            )
+            if exc.code in {"CONTENT_REJECTED", "PROVIDER_QUOTA_EXHAUSTED"}:
+                raise
+            return None
+        result = await self._image_result_from_payload(payload)
+        if result.status == "COMPLETED" and result.artifacts:
+            logger.info("OCI Images API 已返回图片：count={}", len(result.artifacts))
+            return result
+        logger.warning("OCI Images API 没有返回可保存的图片")
         return None
 
     async def _image_result_from_payload(
@@ -115,66 +119,76 @@ class OciGrokResponsesAdapter:
         return build_image_result(payload, tuple(artifacts))
 
     async def _invoke(
-        self, material: dict[str, Any], body: dict[str, Any], *, url: str | None = None,
+        self, material: dict[str, Any], body: dict[str, Any],
     ) -> dict[str, Any]:
-        provider = str(material.get("provider") or "").strip().upper()
-        endpoint = str(material.get("api_endpoint") or "").strip().rstrip("/")
-        if provider != "OCI" or not endpoint:
-            raise GenerativeAdapterError(
-                "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI Responses 端点",
-                status_code=503,
-            )
-        model_params = material.get("model_params")
-        project = oci_generative_ai_project(model_params)
-        compartment_id = oci_compartment_id(model_params)
-        try:
-            signer = self._signer(material)
-        except ValueError as exc:
-            raise GenerativeAdapterError(
-                "PROVIDER_UNAVAILABLE", "当前模型的 OCI 认证材料不完整",
-                status_code=503,
-            ) from exc
-        url = url or build_oci_responses_url(endpoint)
+        def _create():
+            with self._client(material) as client:
+                return client.responses.with_raw_response.create(**body).http_response
 
-        def _post() -> requests.Response:
-            return requests.post(
-                url,
-                json=body,
-                auth=signer,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "OpenAI-Project": project,
-                    "CompartmentId": compartment_id,
-                },
-                timeout=self._timeout_seconds,
-            )
+        return await self._execute(_create)
 
+    async def _invoke_images(
+        self, material: dict[str, Any], body: dict[str, Any],
+    ) -> dict[str, Any]:
+        values = dict(body)
+        aspect_ratio = values.pop("aspect_ratio", None)
+
+        def _generate():
+            with self._client(material) as client:
+                extra_body = {"aspect_ratio": aspect_ratio} if aspect_ratio else None
+                return client.images.with_raw_response.generate(
+                    **values, extra_body=extra_body,
+                ).http_response
+
+        return await self._execute(_generate)
+
+    async def _execute(self, operation) -> dict[str, Any]:
+        """在线程中执行同步 SDK，并把 SDK 异常统一成模型服务错误。"""
         try:
-            response = await asyncio.to_thread(_post)
-        except requests.Timeout as exc:
+            response = await asyncio.to_thread(operation)
+        except openai.APITimeoutError as exc:
             raise GenerativeAdapterError(
                 "PROVIDER_TIMEOUT", "上游 Responses 调用超时", status_code=504,
             ) from exc
-        except requests.RequestException as exc:
-            logger.warning("OCI Responses 网络失败：{}", type(exc).__name__)
+        except openai.APIStatusError as exc:
+            response = exc.response
+        except (openai.APIConnectionError, openai.APIError) as exc:
+            logger.warning("OCI Responses SDK 调用失败：{}", type(exc).__name__)
             raise GenerativeAdapterError(
                 "PROVIDER_UNAVAILABLE", "上游 Responses 暂时不可用", status_code=503,
             ) from exc
-        return self._parse_http(response, url=url)
+        return self._parse_http(response, url=_http_response_url(response))
 
-    @staticmethod
-    def _signer(material: dict[str, Any]):
-        import oci
+    def _client(self, material: dict[str, Any]) -> openai.OpenAI:
+        provider = str(material.get("provider") or "").strip().upper()
+        endpoint = str(material.get("api_endpoint") or "").strip()
+        if provider != "OCI" or not endpoint:
+            raise GenerativeAdapterError(
+                "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI 服务 Origin",
+                status_code=503,
+            )
+        params = material.get("model_params")
+        project = oci_generative_ai_project(params)
 
-        config = validated_oci_config((material.get("model_params") or {}).get("config_file"))
-        return oci.signer.Signer(
-            tenancy=config["tenancy"],
-            user=config["user"],
-            fingerprint=config["fingerprint"],
-            private_key_file_location=config.get("key_file"),
-            pass_phrase=config.get("pass_phrase"),
-            private_key_content=config.get("key_content"),
+        try:
+            origin = oci_sdk_service_endpoint(endpoint)
+            config = validated_oci_config((params or {}).get("config_file"))
+            auth = ModelConfigOciAuth(config)
+        except ValueError as exc:
+            raise GenerativeAdapterError(
+                "PROVIDER_UNAVAILABLE", "当前模型的 OCI Endpoint 或认证材料无效",
+                status_code=503,
+            ) from exc
+        http_client = httpx.Client(
+            auth=auth,
+            timeout=httpx.Timeout(self._timeout_seconds),
+        )
+        return openai.OpenAI(
+            base_url=f"{origin}/openai/v1",
+            api_key="not-used",
+            project=project,
+            http_client=http_client,
+            max_retries=0,
         )
 
     @staticmethod
@@ -195,7 +209,7 @@ class OciGrokResponsesAdapter:
         return tool
 
     @staticmethod
-    def _parse_http(response: requests.Response, *, url: str = "") -> dict[str, Any]:
+    def _parse_http(response: Any, *, url: str = "") -> dict[str, Any]:
         status = int(response.status_code)
         payload = decode_oci_http_payload(response)
         if status < 400:
@@ -220,7 +234,12 @@ class OciGrokResponsesAdapter:
         raise classify_provider_http_error(status, payload)
 
 
-def decode_oci_http_payload(response: requests.Response) -> dict[str, Any]:
+def _http_response_url(response: Any) -> str:
+    request = getattr(response, "request", None)
+    return str(getattr(request, "url", "") or "")
+
+
+def decode_oci_http_payload(response: Any) -> dict[str, Any]:
     """把上游正文解析成 JSON；Grok 文生图成功时也可能直接返回图片字节。"""
     content = getattr(response, "content", None)
     content_type = _response_content_type(response)
@@ -297,36 +316,6 @@ def _payload_from_image_bytes(content: bytes) -> dict[str, Any]:
     }
 
 
-def build_oci_responses_url(endpoint: str) -> str:
-    """从 OCI inference 地址提取服务 Origin 并构造 Responses URL。"""
-    base = str(endpoint or "").strip().rstrip("/")
-    if not base:
-        raise GenerativeAdapterError(
-            "PROVIDER_UNAVAILABLE", "当前模型缺少可用的 OCI Responses 端点",
-            status_code=503,
-        )
-    try:
-        origin = oci_sdk_service_endpoint(base)
-    except ValueError as exc:
-        raise GenerativeAdapterError(
-            "PROVIDER_UNAVAILABLE", "当前模型的 OCI Responses 端点无效",
-            status_code=503,
-        ) from exc
-    return f"{origin}/openai/v1/responses"
-
-
-def build_oci_images_urls(endpoint: str) -> tuple[str, ...]:
-    """从同一 inference 地址提取 Origin 并构造 Images API URL。"""
-    base = str(endpoint or "").strip().rstrip("/")
-    if not base:
-        return ()
-    try:
-        origin = oci_sdk_service_endpoint(base)
-    except ValueError:
-        return ()
-    return (f"{origin}/openai/v1/images/generations",)
-
-
 def oci_generative_ai_project(model_params: Any) -> str:
     """读取 Responses 调用所需的 Generative AI project OCID。"""
     if not isinstance(model_params, dict):
@@ -341,22 +330,6 @@ def oci_generative_ai_project(model_params: Any) -> str:
             status_code=503,
         )
     return project
-
-
-def oci_compartment_id(model_params: Any) -> str:
-    """读取 Responses 调用所需的 compartment，与 Chat 使用同一 MODEL_PARAMS 字段。"""
-    if not isinstance(model_params, dict):
-        raise GenerativeAdapterError(
-            "PROVIDER_UNAVAILABLE", "当前模型缺少 compartment",
-            status_code=503,
-        )
-    compartment_id = str(model_params.get("compartment_id") or "").strip()
-    if not compartment_id:
-        raise GenerativeAdapterError(
-            "PROVIDER_UNAVAILABLE", "当前模型缺少 compartment",
-            status_code=503,
-        )
-    return compartment_id
 
 
 def provider_error_fields(payload: Any) -> tuple[str | None, str | None]:

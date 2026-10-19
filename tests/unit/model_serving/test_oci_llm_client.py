@@ -4,7 +4,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from model_serving.common.oci_auth import oci_sdk_service_endpoint
+import httpx
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from model_serving.common.oci_auth import ModelConfigOciAuth, oci_sdk_service_endpoint
 
 from model_serving.llm.model.oci_client import (
     OCIClient,
@@ -29,26 +33,54 @@ def _client(model_name: str, *, max_tokens: int = 8192) -> OCIClient:
 
 
 class OCILLMClientTest(unittest.TestCase):
-    def test_sdk_endpoint_uses_origin_for_dated_actions_base(self):
+    def test_sdk_endpoint_accepts_only_service_origin(self):
         host = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
 
         self.assertEqual(host, oci_sdk_service_endpoint(host))
-        self.assertEqual(
-            host,
-            oci_sdk_service_endpoint(
-                f"{host}/20231130/actions/v1"
-            ),
-        )
-        self.assertEqual(
-            host,
-            oci_sdk_service_endpoint(
-                f"{host}/20231130/actions/v1/responses"
-            ),
-        )
+        for endpoint in (
+            f"{host}/20231130/actions/v1",
+            f"{host}/20231130/actions/v1/responses",
+            f"{host}?region=iad",
+            f"{host}#responses",
+        ):
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaisesRegex(ValueError, "Origin"):
+                    oci_sdk_service_endpoint(endpoint)
 
     def test_sdk_endpoint_rejects_non_http_address(self):
         with self.assertRaisesRegex(ValueError, "HTTP\\(S\\)"):
             oci_sdk_service_endpoint("inference.example.invalid/actions/v1")
+
+    def test_official_iam_auth_signs_httpx_request_body(self):
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        key_content = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("ascii")
+        captured: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(dict(request.headers))
+            return httpx.Response(200, json={"ok": True}, request=request)
+
+        auth = ModelConfigOciAuth({
+            "tenancy": "ocid1.tenancy.oc1..test",
+            "user": "ocid1.user.oc1..test",
+            "fingerprint": "00:11:22:33:44:55:66:77",
+            "key_content": key_content,
+        })
+        with httpx.Client(auth=auth, transport=httpx.MockTransport(handler)) as client:
+            response = client.post(
+                "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/"
+                "openai/v1/responses",
+                json={"model": "xai.grok-4.6", "input": "hello"},
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("Signature", captured["authorization"])
+        self.assertIn("x-content-sha256", captured)
+        self.assertIn("content-length", captured)
 
     def test_gpt5_uses_max_completion_tokens_only(self):
         request = _client("openai.gpt-5.6-sol")._build_chat_request(
@@ -106,10 +138,10 @@ class OCILLMClientTest(unittest.TestCase):
 
 
 class OCIStartupEndpointTest(unittest.IsolatedAsyncioTestCase):
-    async def test_startup_does_not_forward_responses_path_to_sdk(self):
+    async def test_startup_forwards_configured_origin_to_sdk(self):
         host = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
         client = _client("xai.grok-4.6")
-        client.config.api_endpoint = f"{host}/20231130/actions/v1"
+        client.config.api_endpoint = host
 
         with (
             patch(

@@ -1,8 +1,12 @@
-"""OCI Responses 适配器的 URL、project、compartment 与错误日志回归测试。"""
+"""OCI Responses 标准 SDK、project、图片结果与错误日志回归测试。"""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 import unittest
+
+import httpx
+import openai
 
 from platform_core.contracts import ImageGenerationRequest, ImageGenerationResult, ResearchRequest
 from platform_core.identity import uuid7
@@ -10,10 +14,7 @@ from platform_core.identity import uuid7
 from model_serving.llm.responses.errors import GenerativeAdapterError
 from model_serving.llm.responses.oci_adapter import (
     OciGrokResponsesAdapter,
-    build_oci_images_urls,
-    build_oci_responses_url,
     classify_provider_http_error,
-    oci_compartment_id,
     oci_generative_ai_project,
     parse_image_response,
     provider_error_fields,
@@ -45,42 +46,14 @@ def _material(**params):
     }
 
 
-class OciResponsesUrlTest(unittest.TestCase):
-    def test_chat_service_endpoint_gains_openai_responses_path(self):
-        self.assertEqual(
-            f"{HOST}/openai/v1/responses",
-            build_oci_responses_url(HOST),
-        )
-
-    def test_openai_compatible_base_is_not_duplicated(self):
-        self.assertEqual(
-            f"{HOST}/openai/v1/responses",
-            build_oci_responses_url(f"{HOST}/openai/v1/"),
-        )
-        self.assertEqual(
-            f"{HOST}/openai/v1/responses",
-            build_oci_responses_url(f"{HOST}/openai/v1/responses"),
-        )
-
-    def test_legacy_v1_suffix_is_rewritten_to_openai_path(self):
-        self.assertEqual(
-            f"{HOST}/openai/v1/responses",
-            build_oci_responses_url(f"{HOST}/v1"),
-        )
-
-    def test_dated_actions_v1_endpoint_uses_openai_compatible_path(self):
-        endpoint = f"{HOST}/20231130/actions/v1"
-        expected = f"{HOST}/openai/v1/responses"
-        self.assertEqual(expected, build_oci_responses_url(endpoint))
-        self.assertEqual(expected, build_oci_responses_url(endpoint + "/"))
-        self.assertEqual(expected, build_oci_responses_url(f"{endpoint}/responses"))
-
-    def test_dated_actions_v1_endpoint_has_images_generations_sibling(self):
-        endpoint = f"{HOST}/20231130/actions/v1"
-        self.assertEqual(
-            (f"{HOST}/openai/v1/images/generations",),
-            build_oci_images_urls(endpoint),
-        )
+def _openai_client(handler) -> openai.OpenAI:
+    return openai.OpenAI(
+        base_url=f"{HOST}/openai/v1",
+        api_key="not-used",
+        project=PROJECT,
+        max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
 
 
 class OciResponsesProjectTest(unittest.TestCase):
@@ -96,106 +69,95 @@ class OciResponsesProjectTest(unittest.TestCase):
             oci_generative_ai_project({"project": "  "})
 
 
-class OciResponsesCompartmentTest(unittest.TestCase):
-    def test_missing_compartment_is_a_configuration_error(self):
-        with self.assertRaises(GenerativeAdapterError) as raised:
-            oci_compartment_id({"project": PROJECT})
-        self.assertEqual(503, raised.exception.status_code)
-        self.assertEqual("PROVIDER_UNAVAILABLE", raised.exception.code)
-        self.assertIn("compartment", raised.exception.message.lower())
-
-    def test_blank_compartment_is_rejected(self):
-        with self.assertRaises(GenerativeAdapterError):
-            oci_compartment_id({"project": PROJECT, "compartment_id": "  "})
-
-
 class OciResponsesAdapterTest(unittest.IsolatedAsyncioTestCase):
+    def test_client_uses_openai_sdk_base_and_official_iam_auth(self):
+        adapter = OciGrokResponsesAdapter(timeout_seconds=45)
+        config = {"tenancy": "ocid1.tenancy.oc1..test"}
+        auth = object()
+        http_client = object()
+        sdk_client = object()
+
+        with (
+            patch(
+                "model_serving.llm.responses.oci_adapter.validated_oci_config",
+                return_value=config,
+            ),
+            patch(
+                "model_serving.llm.responses.oci_adapter.ModelConfigOciAuth",
+                return_value=auth,
+            ) as auth_factory,
+            patch(
+                "model_serving.llm.responses.oci_adapter.httpx.Client",
+                return_value=http_client,
+            ) as http_client_factory,
+            patch(
+                "model_serving.llm.responses.oci_adapter.openai.OpenAI",
+                return_value=sdk_client,
+            ) as sdk_factory,
+        ):
+            result = adapter._client(_material(project=PROJECT, config_file=config))
+
+        self.assertIs(sdk_client, result)
+        auth_factory.assert_called_once_with(config)
+        self.assertIs(auth, http_client_factory.call_args.kwargs["auth"])
+        self.assertEqual(f"{HOST}/openai/v1", sdk_factory.call_args.kwargs["base_url"])
+        self.assertEqual(PROJECT, sdk_factory.call_args.kwargs["project"])
+        self.assertEqual(0, sdk_factory.call_args.kwargs["max_retries"])
+
     async def test_missing_project_does_not_call_upstream(self):
         adapter = OciGrokResponsesAdapter()
-        with patch("model_serving.llm.responses.oci_adapter.requests.post") as post:
+        with patch("model_serving.llm.responses.oci_adapter.openai.OpenAI") as client:
             with self.assertRaises(GenerativeAdapterError) as raised:
                 await adapter.research(_request(), _material())
         self.assertEqual(503, raised.exception.status_code)
-        post.assert_not_called()
+        client.assert_not_called()
 
-    async def test_missing_compartment_does_not_call_upstream(self):
+    async def test_endpoint_with_api_path_is_rejected(self):
         adapter = OciGrokResponsesAdapter()
-        with patch("model_serving.llm.responses.oci_adapter.requests.post") as post:
-            with self.assertRaises(GenerativeAdapterError) as raised:
-                await adapter.research(
-                    _request(),
-                    _material(project=PROJECT, compartment_id=None),
-                )
+        with self.assertRaises(GenerativeAdapterError) as raised:
+            await adapter.research(
+                _request(),
+                _material(project=PROJECT) | {
+                    "api_endpoint": f"{HOST}/20231130/actions/v1",
+                },
+            )
         self.assertEqual(503, raised.exception.status_code)
-        self.assertIn("compartment", raised.exception.message.lower())
-        post.assert_not_called()
+        self.assertIn("Endpoint", raised.exception.message)
 
     async def test_posts_openai_responses_with_project_header(self):
         adapter = OciGrokResponsesAdapter()
         captured: dict = {}
-        response = SimpleNamespace(
-            status_code=200,
-            text="",
-            json=lambda: {
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(
+                url=str(request.url),
+                json=json.loads(request.content),
+                headers=dict(request.headers),
+            )
+            return httpx.Response(200, json={
                 "id": "resp-1",
+                "object": "response",
+                "created_at": 1,
+                "model": "xai.grok-4.6",
                 "status": "completed",
                 "output": [{
                     "type": "message",
+                    "id": "msg-1",
+                    "role": "assistant",
+                    "status": "completed",
                     "content": [{"type": "output_text", "text": "ok"}],
                 }],
-            },
-        )
+            }, request=request)
 
-        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
-            captured.update(url=url, json=json, headers=headers, auth=auth)
-            return response
-
-        with (
-            patch.object(adapter, "_signer", return_value=object()),
-            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
-        ):
+        with patch.object(adapter, "_client", return_value=_openai_client(handler)):
             result = await adapter.research(_request(), _material(project=PROJECT))
 
         self.assertEqual(f"{HOST}/openai/v1/responses", captured["url"])
-        self.assertEqual(PROJECT, captured["headers"]["OpenAI-Project"])
-        self.assertEqual(COMPARTMENT, captured["headers"]["CompartmentId"])
+        self.assertEqual(PROJECT, captured["headers"]["openai-project"])
+        self.assertNotIn("compartmentid", captured["headers"])
         self.assertEqual("x_search", captured["json"]["tools"][0]["type"])
         self.assertEqual("COMPLETED", result.status)
         self.assertEqual("ok", result.answer)
-
-    async def test_posts_dated_actions_v1_with_openai_compatible_path(self):
-        adapter = OciGrokResponsesAdapter()
-        captured: dict = {}
-        response = SimpleNamespace(
-            status_code=200,
-            text="",
-            json=lambda: {
-                "id": "resp-1",
-                "status": "completed",
-                "output": [{
-                    "type": "message",
-                    "content": [{"type": "output_text", "text": "ok"}],
-                }],
-            },
-        )
-
-        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
-            captured.update(url=url, json=json, headers=headers, auth=auth)
-            return response
-
-        endpoint = f"{HOST}/20231130/actions/v1"
-        with (
-            patch.object(adapter, "_signer", return_value=object()),
-            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
-        ):
-            await adapter.research(
-                _request(),
-                _material(project=PROJECT) | {"api_endpoint": endpoint},
-            )
-
-        self.assertEqual(f"{HOST}/openai/v1/responses", captured["url"])
-        self.assertEqual(PROJECT, captured["headers"]["OpenAI-Project"])
-        self.assertEqual(COMPARTMENT, captured["headers"]["CompartmentId"])
 
 
 class OciResponsesErrorLogTest(unittest.TestCase):
@@ -315,21 +277,29 @@ class OciResponsesImageAdapterTest(unittest.IsolatedAsyncioTestCase):
         adapter = OciGrokResponsesAdapter()
         captured: dict = {}
 
-        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
-            captured.setdefault("urls", []).append(url)
-            captured.update(url=url, json=json, headers=headers)
-            if str(url).endswith("/images/generations"):
-                return _HttpResponse(404, b'{"error":{"code":"not_found","message":"no images api"}}')
-            return _HttpResponse(200, JPEG)
+        def images_handler(request: httpx.Request) -> httpx.Response:
+            captured.setdefault("urls", []).append(str(request.url))
+            return httpx.Response(
+                404,
+                json={"error": {"code": "not_found", "message": "no images api"}},
+                request=request,
+            )
 
-        endpoint = f"{HOST}/20231130/actions/v1"
-        with (
-            patch.object(adapter, "_signer", return_value=object()),
-            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
+        def responses_handler(request: httpx.Request) -> httpx.Response:
+            captured.setdefault("urls", []).append(str(request.url))
+            captured.update(url=str(request.url), json=json.loads(request.content))
+            return httpx.Response(
+                200, content=JPEG, headers={"Content-Type": "image/jpeg"}, request=request,
+            )
+
+        with patch.object(
+            adapter,
+            "_client",
+            side_effect=[_openai_client(images_handler), _openai_client(responses_handler)],
         ):
             result = await adapter.generate_image(
                 _image_request(),
-                _material(project=PROJECT) | {"api_endpoint": endpoint},
+                _material(project=PROJECT),
             )
 
         self.assertIn(f"{HOST}/openai/v1/images/generations", captured["urls"])
@@ -478,22 +448,27 @@ class OciResponsesImageUrlDownloadTest(unittest.IsolatedAsyncioTestCase):
             ],
         }).encode("utf-8")
 
-        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
-            return _HttpResponse(200, body)
+        def images_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, json={"error": {"code": "not_found"}}, request=request)
+
+        def responses_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=body, request=request)
 
         def fake_get(url, timeout=None):
             self.assertEqual("https://cdn.example.test/generated.jpg", url)
             return _HttpResponse(200, JPEG, headers={"Content-Type": "image/jpeg"})
 
-        endpoint = f"{HOST}/20231130/actions/v1"
         with (
-            patch.object(adapter, "_signer", return_value=object()),
-            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
+            patch.object(
+                adapter,
+                "_client",
+                side_effect=[_openai_client(images_handler), _openai_client(responses_handler)],
+            ),
             patch("model_serving.llm.responses.oci_adapter.requests.get", fake_get),
         ):
             result = await adapter.generate_image(
                 _image_request(),
-                _material(project=PROJECT) | {"api_endpoint": endpoint},
+                _material(project=PROJECT),
             )
 
         self.assertEqual("COMPLETED", result.status)
@@ -512,20 +487,14 @@ class OciImagesApiAdapterTest(unittest.IsolatedAsyncioTestCase):
             "data": [{"b64_json": base64.b64encode(JPEG).decode("ascii")}],
         }).encode("utf-8")
 
-        def fake_post(url, json=None, auth=None, headers=None, timeout=None):
-            captured.append({"url": url, "json": json})
-            if str(url).endswith("/images/generations"):
-                return _HttpResponse(200, body)
-            raise AssertionError("Images API 成功后不应再调用 Responses")
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append({"url": str(request.url), "json": json.loads(request.content)})
+            return httpx.Response(200, content=body, request=request)
 
-        endpoint = f"{HOST}/20231130/actions/v1"
-        with (
-            patch.object(adapter, "_signer", return_value=object()),
-            patch("model_serving.llm.responses.oci_adapter.requests.post", fake_post),
-        ):
+        with patch.object(adapter, "_client", return_value=_openai_client(handler)):
             result = await adapter.generate_image(
                 _image_request(),
-                _material(project=PROJECT) | {"api_endpoint": endpoint},
+                _material(project=PROJECT),
             )
 
         self.assertEqual(1, len(captured))

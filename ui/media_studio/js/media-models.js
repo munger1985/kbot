@@ -203,6 +203,19 @@
     return JSON.stringify(normalizedJson(left)) === JSON.stringify(normalizedJson(right));
   }
 
+  function validateEndpoint(endpoint, provider) {
+    if (!endpoint || provider !== "oci") return;
+    let parsed;
+    try { parsed = new URL(endpoint); }
+    catch (_) { throw new Error("OCI API Endpoint 必须是有效的 HTTP(S) 服务 Origin"); }
+    if (!["http:", "https:"].includes(parsed.protocol)
+      || parsed.username || parsed.password
+      || (parsed.pathname && parsed.pathname !== "/")
+      || parsed.search || parsed.hash) {
+      throw new Error("OCI API Endpoint 只能填写服务 Origin，不能包含 API 路径、查询参数或片段");
+    }
+  }
+
   function formPayload() {
     const modelId = element("model-id").value;
     const option = selectedProviderOption();
@@ -210,6 +223,7 @@
     const ociConfig = parseObject(element("model-oci-config").value, "OCI config_file", true);
     if (ociConfig) modelParams.config_file = ociConfig;
     const endpoint = element("model-api-endpoint").value.trim();
+    validateEndpoint(endpoint, option?.provider);
     const apiKey = element("model-api-key").value.trim();
     const description = element("model-description").value.trim();
     if (!modelId) {

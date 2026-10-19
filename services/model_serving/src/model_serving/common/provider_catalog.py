@@ -6,7 +6,7 @@ from typing import Any
 from platform_core.contracts import ModelProviderOption
 from platform_core.dictionary import ModelCategory
 
-from model_serving.common.oci_auth import validated_oci_config
+from model_serving.common.oci_auth import oci_sdk_service_endpoint, validated_oci_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +146,7 @@ def validate_provider_config(values: dict[str, Any]) -> None:
     if missing:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
     if provider == "oci":
+        oci_sdk_service_endpoint(values.get("api_endpoint"))
         validated_oci_config(params.get("config_file"))
 
 

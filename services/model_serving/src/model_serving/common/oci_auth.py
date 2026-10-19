@@ -6,9 +6,11 @@ import json
 from typing import Any
 from urllib.parse import urlsplit
 
+from oci_genai_auth import HttpxOciAuth
+
 
 def oci_sdk_service_endpoint(raw: Any) -> str:
-    """把共享的 OCI API 地址规范成原生 SDK 所需的服务 Origin。"""
+    """校验并返回 OCI SDK 所需的服务 Origin。"""
     endpoint = str(raw or "").strip().rstrip("/")
     parsed = urlsplit(endpoint)
     if (
@@ -16,9 +18,36 @@ def oci_sdk_service_endpoint(raw: Any) -> str:
         or not parsed.netloc
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
     ):
-        raise ValueError("OCI API Endpoint 必须是有效的 HTTP(S) 服务地址")
+        raise ValueError("OCI API Endpoint 必须是无路径、查询参数和片段的 HTTP(S) 服务 Origin")
     return f"{parsed.scheme.lower()}://{parsed.netloc}"
+
+
+def _oci_signer(config: dict[str, Any]):
+    import oci
+
+    return oci.signer.Signer(
+        tenancy=config["tenancy"],
+        user=config["user"],
+        fingerprint=config["fingerprint"],
+        private_key_file_location=config.get("key_file"),
+        pass_phrase=config.get("pass_phrase"),
+        private_key_content=config.get("key_content"),
+    )
+
+
+class ModelConfigOciAuth(HttpxOciAuth):
+    """把模型目录中的 OCI 用户主体凭据接入官方 IAM HTTPX 认证器。"""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self._config = dict(config)
+        super().__init__(signer=_oci_signer(self._config))
+
+    def _refresh_signer(self) -> None:
+        self.signer = _oci_signer(self._config)
 
 
 def validated_oci_config(raw: Any) -> dict[str, Any]:
@@ -36,14 +65,7 @@ def validated_oci_config(raw: Any) -> dict[str, Any]:
         import oci
 
         oci.config.validate_config(config)
-        oci.signer.Signer(
-            tenancy=config["tenancy"],
-            user=config["user"],
-            fingerprint=config["fingerprint"],
-            private_key_file_location=config.get("key_file"),
-            pass_phrase=config.get("pass_phrase"),
-            private_key_content=config.get("key_content"),
-        )
+        _oci_signer(config)
     except oci.exceptions.InvalidConfig as exc:
         details = exc.args[0] if exc.args else {}
         fields = sorted(details) if isinstance(details, dict) else []
@@ -66,6 +88,7 @@ def public_model_params(raw: Any) -> dict[str, Any]:
 
 
 __all__ = [
+    "ModelConfigOciAuth",
     "oci_sdk_service_endpoint",
     "public_model_params",
     "validated_oci_config",

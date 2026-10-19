@@ -124,6 +124,14 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("/agents", blob)
         self.assertNotIn("/knowledge-cores", blob)
 
+    def test_media_model_form_requires_oci_service_origin(self):
+        root = APP_CONFIGS["media_studio"]["root"]
+        page = (root / "models.html").read_text(encoding="utf-8")
+        script = (root / "js" / "media-models.js").read_text(encoding="utf-8")
+        self.assertIn("OCI 仅填写无路径的服务 Origin", page)
+        self.assertIn('provider !== "oci"', script)
+        self.assertIn("parsed.pathname", script)
+
 
 if __name__ == "__main__":
     unittest.main()

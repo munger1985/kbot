@@ -3,6 +3,7 @@
 from decimal import Decimal
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from model_serving.common.model_registry import (
     ModelRegistryConflict,
@@ -391,6 +392,25 @@ class ProviderCatalogS4Test(unittest.TestCase):
                     },
                 },
             })
+
+    def test_oci_endpoint_must_be_service_origin(self):
+        with patch(
+            "model_serving.common.provider_catalog.validated_oci_config",
+            return_value={},
+        ):
+            with self.assertRaisesRegex(ValueError, "Origin"):
+                validate_provider_config({
+                    "category": 1,
+                    "provider": "oci",
+                    "api_endpoint": (
+                        "https://inference.generativeai.us-ashburn-1."
+                        "oci.oraclecloud.com/20231130/actions/v1"
+                    ),
+                    "model_params": {
+                        "compartment_id": "ocid1.compartment.oc1..test",
+                        "config_file": {"secret": "not-read-in-this-test"},
+                    },
+                })
 
 
 if __name__ == "__main__":
