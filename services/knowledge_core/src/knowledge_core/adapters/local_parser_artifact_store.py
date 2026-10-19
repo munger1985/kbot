@@ -15,7 +15,7 @@ class LocalParserArtifactStore:
     _ALLOWED = {
         "raw_docling",
         "atom_ir",
-        "deepseek_ocr_analysis",
+        "ocr_analysis",
         "structure_ir",
         "evidence_manifest",
         "spreadsheet_artifact",

@@ -119,6 +119,42 @@
             "additionalProperties": true,
             "title": "Parse Policy",
             "type": "object"
+          },
+          "parser_llm_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Llm Model Id"
+          },
+          "parser_ocr_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Ocr Model Id"
+          },
+          "parser_vlm_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm Model Id"
           }
         },
         "required": [
@@ -3363,6 +3399,76 @@
           }
         },
         "summary": "Preview Bundle Revision",
+        "tags": [
+          "Knowledge Core Preview"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bundles/{bundle_id}/revisions/{bundle_revision_id}:extract-review-text": {
+      "post": {
+        "operationId": "extract_review_text_internal_v1_knowledge_domains__domain_id__collections__collection_id__bundles__bundle_id__revisions__bundle_revision_id__extract_review_text_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract Review Text",
         "tags": [
           "Knowledge Core Preview"
         ]

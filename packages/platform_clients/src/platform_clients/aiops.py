@@ -454,6 +454,25 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_operations_knowledge_collection_models(
+        self, *, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/collection-models",
+            auth_context=auth_context,
+        )
+
+    async def configure_operations_knowledge_models(
+        self, *, models: dict[str, UUID], auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/collection-models",
+            payload={"models": {role: str(model_id) for role, model_id in models.items()}},
+            auth_context=auth_context,
+        )
+
     async def list_operations_knowledge_tags(
         self, *, include_disabled: bool, auth_context: AuthContext,
     ) -> dict[str, Any]:

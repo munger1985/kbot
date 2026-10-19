@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
@@ -28,6 +29,10 @@ router = APIRouter(
 
 _MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 _MAX_UPLOAD_FILES = 20
+
+
+class CollectionModelsPayload(BaseModel):
+    models: dict[str, UUID]
 
 
 def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
@@ -54,6 +59,29 @@ async def overview(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.overview(
         domain_id=domain_id
+    )
+
+
+@router.get("/collection-models")
+async def get_collection_models(
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.get_collection_models(
+        domain_id=domain_id, context=context,
+    )
+
+
+@router.put("/collection-models")
+async def configure_collection_models(
+    payload: CollectionModelsPayload,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.configure_collections(
+        domain_id=domain_id, models=payload.models, context=context,
     )
 
 

@@ -358,8 +358,12 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             _DetachingKnowledgeUnitOfWork(first_repository, state),
             _KnowledgeUnitOfWork(second_repository),
         ])
-        knowledge_core = SimpleNamespace(extract_review_text=AsyncMock(
-            return_value={
+        parser_llm_id = uuid7()
+        knowledge_core = SimpleNamespace(
+            get_collection=AsyncMock(return_value={
+                "models": {"parser_llm": str(parser_llm_id)},
+            }),
+            extract_review_text=AsyncMock(return_value={
                 "excerpts": [{
                     "document_version_id": str(document_version_id),
                     "file_name": "oracle-manual.pdf",
@@ -367,8 +371,8 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
                     "locator": {"page": 1},
                 }],
                 "warnings": [],
-            }
-        ))
+            }),
+        )
         structured_model = SimpleNamespace(generate_structured=AsyncMock(
             return_value=SimpleNamespace(
                 output={
@@ -548,6 +552,66 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("PUBLISHED", asset.status)
         self.assertEqual(version_id, asset.current_version_id)
         self.assertEqual("READY", index.index_status)
+
+    async def test_explicit_model_configuration_updates_both_fixed_collections(self):
+        collection_ids = [uuid7(), uuid7()]
+        knowledge_core = SimpleNamespace(
+            list_collections=AsyncMock(return_value={"collections": [
+                {
+                    "collection_id": str(collection_ids[0]),
+                    "display_name": "operations-manuals",
+                    "metadata": {"owner_app_id": "aiops", "fixed_resource": True},
+                    "status": "ACTIVE",
+                    "row_version": 3,
+                },
+                {
+                    "collection_id": str(collection_ids[1]),
+                    "display_name": "diagnosis-cases",
+                    "metadata": {"owner_app_id": "aiops", "fixed_resource": True},
+                    "status": "ACTIVE",
+                    "row_version": 4,
+                },
+            ]}),
+            update_collection_models=AsyncMock(side_effect=lambda **kwargs: kwargs["payload"]),
+        )
+        models = {
+            "parser_ocr": uuid7(),
+            "parser_llm": uuid7(),
+            "retrieval_llm": uuid7(),
+            "embedding": uuid7(),
+        }
+        categories = {
+            models["parser_ocr"]: 6,
+            models["parser_llm"]: 1,
+            models["retrieval_llm"]: 1,
+            models["embedding"]: 2,
+        }
+        model_catalog = SimpleNamespace(get_model=AsyncMock(
+            side_effect=lambda model_id, **_kwargs: {
+                "category": categories[model_id], "status": "ACTIVE",
+            }
+        ))
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: None,
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={"composer_llm": uuid7()},
+            knowledge_assistant_instruction="",
+            model_catalog=model_catalog,
+        )
+
+        result = await service.configure_collections(
+            domain_id=42, models=models, context=SimpleNamespace(),
+        )
+
+        self.assertEqual(2, len(result["collections"]))
+        self.assertEqual(2, knowledge_core.update_collection_models.await_count)
+        for call in knowledge_core.update_collection_models.await_args_list:
+            self.assertEqual(
+                {role: str(model_id) for role, model_id in models.items()},
+                call.kwargs["payload"]["models"],
+            )
 
 if __name__ == "__main__":
     unittest.main()

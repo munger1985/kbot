@@ -517,16 +517,6 @@ def load_settings(
             merged = _deep_merge(
                 merged, {"ask_data_api": integrations["mcp_data"]}
             )
-        if service == "knowledge_core" and integrations.get(
-            "deepseek_ocr"
-        ):
-            deepseek = dict(integrations["deepseek_ocr"])
-            ocr_model = deepseek.pop("ocr_model", None)
-            merged = _deep_merge(merged, {"dsocr": deepseek})
-            if ocr_model:
-                merged = _deep_merge(
-                    merged, {"parse_policy": {"ocr_model": ocr_model}}
-                )
     merged["environment"] = resolved_environment
     merged["config_dir"] = str(resolved_file.parent)
     return model.model_validate(merged)

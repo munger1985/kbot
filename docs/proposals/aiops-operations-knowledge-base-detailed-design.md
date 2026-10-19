@@ -81,6 +81,28 @@ Collection、Bundle、Embedding 等 KC 技术概念。
 - 不让模型决定 Domain、Target 权限、安全等级或知识发布状态；
 - 不通过兼容路由、双写或双读长期保留旧 `knowledge-core` 产品接口。
 
+### 3.3 KC 模型绑定与职责
+
+AIOps 的两个固定 Collection 不在初始化脚本中猜选模型。管理员必须在“运维知识 / 解析模型”
+显式配置 `parser_ocr`、`parser_llm`、`retrieval_llm`、`embedding`，并可选配置
+`parser_vlm`、`visual_embedding`。每个角色必须指向当前 Domain 可用且类别匹配的 Model Catalog
+条目；缺少配置时停止标签识别或解析，并返回明确配置错误。
+
+职责边界如下：
+
+| 角色 | 所有者 | 用途 |
+| --- | --- | --- |
+| `parser_ocr` | KC Collection | 低文本页面和图片文字识别 |
+| `parser_vlm` | KC Collection | 页面、图表和图片视觉增强 |
+| `parser_llm` | KC Collection | 解析期结构化提炼及 AIOps 标签预分析 |
+| `retrieval_llm` | KC Collection | KC 查询规划 |
+| `embedding` / `visual_embedding` | KC Collection | 文本与视觉索引 |
+| `composer_llm` | Knowledge Assistant | 最终有引用回答 |
+
+标签词表、标签 Prompt、证据核验与审批仍归 AIOps。`parser_llm` 不得借用或回退到
+`composer_llm`。解析任务冻结 Collection 的解析模型 ID，Worker 记录实际 inference revision；
+模型改绑只影响新任务，旧资料必须显式重解析。快照和 Artifact 不保存密钥。
+
 ## 4. 术语与业务对象
 
 | 对象 | 含义 |

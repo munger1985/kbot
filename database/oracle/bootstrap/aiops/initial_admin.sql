@@ -45,8 +45,6 @@ WHEN NOT MATCHED THEN INSERT (
 
 DECLARE
     l_domain_id NUMBER(38);
-    l_embedding_model_id RAW(16);
-    l_embedding_uuid VARCHAR2(36 CHAR);
     PROCEDURE ensure_collection(
         p_collection_id VARCHAR2,
         p_display_name VARCHAR2,
@@ -68,8 +66,8 @@ DECLARE
             ) VALUES (
                 HEXTORAW(REPLACE(p_collection_id, '-', '')),
                 l_domain_id, p_display_name, p_description,
-                '{"embedding":"' || l_embedding_uuid || '"}',
-                '{"parse_strategy":"AUTO","do_ocr":true,"ocr_engine":"tesseract","image_scale":2.0,"extract_page_images":true,"extract_picture_images":true,"detect_table_structure":true}',
+                '{}',
+                '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}',
                 'ACTIVE', 1,
                 '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
                 1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
@@ -86,22 +84,6 @@ DECLARE
 BEGIN
     SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
      WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE';
-    BEGIN
-        SELECT MODEL_ID INTO l_embedding_model_id FROM (
-            SELECT MODEL_ID FROM KBOT_AI_MODEL
-             WHERE CATEGORY = 2 AND STATUS = 1
-             ORDER BY UPDATED_AT DESC, CREATED_AT DESC
-        ) WHERE ROWNUM = 1;
-    EXCEPTION WHEN NO_DATA_FOUND THEN
-        raise_application_error(-20003, '缺少启用的文本 Embedding 模型。');
-    END;
-    l_embedding_uuid := LOWER(
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 1, 8) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 9, 4) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 13, 4) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 17, 4) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 21, 12)
-    );
     ensure_collection(
         '019ffff0-0000-7000-8000-000000000001',
         'operations-manuals',

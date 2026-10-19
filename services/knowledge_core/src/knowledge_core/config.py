@@ -63,7 +63,6 @@ class JobWakeupConfig(BaseModel):
 
 
 class ParsePolicyConfig(BaseModel):
-    ocr_model: str | None = None
     parse_strategy: Literal["TEXT", "AUTO", "VISUAL"] = "AUTO"
     visual_description_prompt: str = (
         "请客观描述图片中的可见事实、文字、对象及其关系；"
@@ -87,17 +86,6 @@ class EvidenceRetrievalConfig(BaseModel):
     max_scope_concurrency: int = Field(default=8, ge=1, le=32)
 
 
-class DsocrConfig(BaseModel):
-    """DeepSeek OCR 独立推理端点配置，与模型托管服务无关。"""
-
-    enabled: bool = False
-    api_endpoint: str = "http://localhost:18097/v1/chat/completions"
-    timeout: int = Field(default=600, ge=10, le=3600)
-    crop_mode: bool = True
-    max_tokens: int = Field(default=8192, ge=512, le=32768)
-    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
-
-
 class KnowledgeCoreSettings(Settings):
     api: KnowledgeCoreApiConfig = Field(default_factory=KnowledgeCoreApiConfig)
     storage: KnowledgeStorageConfig = Field(default_factory=KnowledgeStorageConfig)
@@ -107,7 +95,6 @@ class KnowledgeCoreSettings(Settings):
     )
     job_wakeup: JobWakeupConfig = Field(default_factory=JobWakeupConfig)
     parse_policy: ParsePolicyConfig = Field(default_factory=ParsePolicyConfig)
-    dsocr: DsocrConfig = Field(default_factory=DsocrConfig)
     embedding: EmbeddingDependencyConfig = Field(
         default_factory=lambda: EmbeddingDependencyConfig(
             base_url="http://127.0.0.1:18091",
@@ -125,6 +112,13 @@ class KnowledgeCoreSettings(Settings):
             timeout_seconds=600,
         )
     )
+    ocr: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18096",
+            audience="kbot-model-ocr",
+            timeout_seconds=600,
+        )
+    )
     visual: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18093",
@@ -139,15 +133,6 @@ class KnowledgeCoreSettings(Settings):
             timeout_seconds=600,
         )
     )
-
-    @model_validator(mode="after")
-    def validate_parser_models(self):
-        if self.parse_policy.ocr_model and not self.dsocr.enabled:
-            raise ValueError(
-                "配置 parse_policy.ocr_model 时必须启用 dsocr.enabled"
-            )
-        return self
-
 
 @lru_cache(maxsize=1)
 def get_knowledge_core_settings() -> KnowledgeCoreSettings:

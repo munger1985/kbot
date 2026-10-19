@@ -17,7 +17,7 @@
           <label class="knowledge-search"><span aria-hidden="true">⌕</span><input id="knowledge-search" type="search" aria-label="搜索运维资料" placeholder="搜索资料名称或 ID"></label>
           <label class="knowledge-status-filter"><span>状态</span><select id="knowledge-status"><option value="">全部状态</option><option value="TAGGING">标签识别中</option><option value="REVIEW_REQUIRED">待审批</option><option value="PROCESSING">解析中</option><option value="PUBLISHED">已发布</option><option value="TAGGING_FAILED">标签识别失败</option><option value="FAILED">解析失败</option><option value="REJECTED">已拒绝</option><option value="RETIRED">已退役</option></select></label>
           <span id="knowledge-count" class="knowledge-count">0 项</span>
-          <button id="refresh-knowledge" type="button">刷新</button><button id="open-upload" class="primary" type="button">上传资料</button>
+          <button id="refresh-knowledge" type="button">刷新</button><button id="open-model-config" type="button">解析模型</button><button id="open-upload" class="primary" type="button">上传资料</button>
         </div>
       </header>
       <div class="ops-table-wrap"><table class="ops-table knowledge-table"><thead><tr><th>资料</th><th>审批</th><th>解析状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody id="knowledge-assets"><tr><td colspan="5" class="ops-empty">正在读取运维资料…</td></tr></tbody></table></div>
@@ -37,6 +37,19 @@
     </form>
   </dialog>
 
+  <dialog id="model-config-drawer" class="knowledge-drawer" aria-labelledby="model-config-title">
+    <form id="model-config-form">
+      <header class="knowledge-drawer-header"><div><span>解析能力</span><h2 id="model-config-title">解析模型</h2><p>模型同时绑定到运维手册和历史诊断案例知识集合，不借用诊断或问答 Agent 模型。</p></div><button type="button" data-close>关闭</button></header>
+      <div class="knowledge-drawer-body">
+        <section class="knowledge-form-section"><header><b>01</b><div><strong>文档解析</strong><small>自动解析必须配置 OCR；VLM 仅在视觉增强时调用。</small></div></header><div class="knowledge-form-grid"><label><span>OCR 解析模型</span><select id="model-parser-ocr" required></select></label><label><span>视觉解析模型</span><select id="model-parser-vlm"></select></label></div></section>
+        <section class="knowledge-form-section"><header><b>02</b><div><strong>语义处理</strong><small>解析 LLM 用于标签预分析；检索规划模型只用于 KC 查询。</small></div></header><div class="knowledge-form-grid"><label><span>LLM 解析模型</span><select id="model-parser-llm" required></select></label><label><span>检索规划模型</span><select id="model-retrieval-llm" required></select></label></div></section>
+        <section class="knowledge-form-section"><header><b>03</b><div><strong>索引模型</strong><small>文本向量模型必选，视觉向量模型按需启用。</small></div></header><div class="knowledge-form-grid"><label><span>文本向量模型</span><select id="model-embedding" required></select></label><label><span>视觉向量模型</span><select id="model-visual-embedding"></select></label></div></section>
+        <p id="model-config-result" class="knowledge-status" role="status"></p>
+      </div>
+      <footer><button type="button" data-close>取消</button><button id="save-model-config" class="primary" type="submit">保存模型配置</button></footer>
+    </form>
+  </dialog>
+
   <dialog id="detail-drawer" class="knowledge-drawer knowledge-detail-drawer" aria-labelledby="detail-title">
     <div class="knowledge-drawer-shell">
       <header class="knowledge-drawer-header"><div><span id="detail-eyebrow">运维知识</span><h2 id="detail-title">知识详情</h2><p id="detail-subtitle"></p></div><div class="knowledge-detail-head-actions"><span id="detail-status"></span><button type="button" data-close aria-label="关闭详情抽屉">关闭</button></div></header>
@@ -45,6 +58,6 @@
     </div>
   </dialog>
 
-  <script src="../runtime-config.js"></script><script src="../shared/kbot-sha256.js?v=20261019_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261016_2"></script><script src="./js/aiops-operations-knowledge.js?v=20261019_1"></script>
+  <script src="../runtime-config.js"></script><script src="../shared/kbot-sha256.js?v=20261019_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261016_2"></script><script src="./js/aiops-operations-knowledge.js?v=20261019_2"></script>
 </body>
 </html>

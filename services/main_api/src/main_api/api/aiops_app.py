@@ -112,6 +112,10 @@ class OperationsKnowledgeReviewPayload(_Payload):
     tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
 
 
+class OperationsKnowledgeCollectionModelsPayload(_Payload):
+    models: dict[str, UUID]
+
+
 class OperationsKnowledgeTagPayload(_Payload):
     category: Literal["RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"]
     display_name: str = Field(min_length=1, max_length=128)
@@ -449,6 +453,26 @@ async def operations_knowledge_overview(request: Request):
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).get_operations_knowledge_overview(
         auth_context=request.state.auth_context
+    )
+
+
+@router.get("/operations-knowledge/collection-models")
+async def get_operations_knowledge_collection_models(request: Request):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).get_operations_knowledge_collection_models(
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/operations-knowledge/collection-models")
+async def configure_operations_knowledge_collection_models(
+    payload: OperationsKnowledgeCollectionModelsPayload,
+    request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).configure_operations_knowledge_models(
+        models=payload.models,
+        auth_context=request.state.auth_context,
     )
 
 

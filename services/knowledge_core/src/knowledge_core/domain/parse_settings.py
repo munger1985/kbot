@@ -5,7 +5,6 @@ from typing import Any
 
 DEFAULT_COLLECTION_PARSE_POLICY: dict[str, Any] = {
     "parse_strategy": "AUTO",
-    "ocr_engine": "tesseract",
     "image_scale": 2.0,
     "detect_table_structure": True,
 }
@@ -18,6 +17,7 @@ _DERIVED_OR_RETIRED_KEYS = {
     "visual_min_text_characters",
     "visual_min_mean_confidence",
     "visual_max_gibberish_ratio",
+    "ocr_engine",
 }
 
 
@@ -45,10 +45,6 @@ def normalize_collection_parse_policy(
     if strategy not in {"TEXT", "AUTO", "VISUAL"}:
         raise ValueError("parse_strategy 必须是 TEXT、AUTO 或 VISUAL")
     normalized["parse_strategy"] = strategy
-    engine = str(normalized["ocr_engine"]).strip().lower()
-    if engine not in {"tesseract", "easyocr"}:
-        raise ValueError("ocr_engine 必须是 tesseract 或 easyocr")
-    normalized["ocr_engine"] = engine
     for key in ("detect_table_structure",):
         if not isinstance(normalized[key], bool):
             raise ValueError(f"{key} 必须是布尔值")

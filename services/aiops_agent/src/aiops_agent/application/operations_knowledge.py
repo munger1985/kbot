@@ -35,6 +35,7 @@ from platform_core.contracts import (
     AuthContext,
     KnowledgeScopeSnapshotV1,
 )
+from platform_core.dictionary import ModelCategory
 from platform_core.identity import uuid7
 from platform_core.security import create_service_auth_context
 from platform_clients.knowledge_core import KnowledgeCoreClient, KnowledgeCoreClientError
@@ -286,6 +287,95 @@ class OperationsKnowledgeService:
             )
         return collection
 
+    async def get_collection_models(
+        self, *, domain_id: int, context: AuthContext,
+    ) -> dict[str, Any]:
+        """读取固定 KC 的统一模型绑定，以手册 Collection 为配置基准。"""
+        collection = await self._collection(
+            domain_id=domain_id, name=MANUAL_COLLECTION, context=context,
+        )
+        return {
+            "collection_id": collection["collection_id"],
+            "models": dict(collection.get("models") or {}),
+        }
+
+    async def configure_collections(
+        self, *, domain_id: int, models: dict[str, UUID], context: AuthContext,
+    ) -> dict[str, Any]:
+        """显式配置两个固定 KC；不猜选模型，也不借用 Agent 模型。"""
+        required = {"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
+        missing = required - set(models)
+        if missing:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_COLLECTION_MODELS_REQUIRED",
+                message=f"运维知识库缺少模型角色：{', '.join(sorted(missing))}",
+                status_code=422,
+            )
+        expected = {
+            "parser_ocr": int(ModelCategory.OCR),
+            "parser_vlm": int(ModelCategory.VLM),
+            "parser_llm": int(ModelCategory.LLM),
+            "retrieval_llm": int(ModelCategory.LLM),
+            "embedding": int(ModelCategory.TXT_EMBEDDING),
+            "visual_embedding": int(ModelCategory.IMG_EMBEDDING),
+        }
+        if self._model_catalog is None:
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
+                message="模型目录暂时不可用",
+                status_code=503,
+                retryable=True,
+            )
+        for role, model_id in models.items():
+            if role not in expected:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_MODEL_ROLE_INVALID",
+                    message=f"不支持的运维知识库模型角色：{role}",
+                    status_code=422,
+                )
+            try:
+                definition = await self._model_catalog.get_model(
+                    model_id, auth_context=context,
+                )
+            except (LookupError, RuntimeError) as exc:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
+                    message=f"模型角色 {role} 当前不可用",
+                    status_code=409,
+                ) from exc
+            if (
+                int(definition.get("category") or 0) != expected[role]
+                or definition.get("status") != "ACTIVE"
+            ):
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
+                    message=f"模型角色 {role} 未绑定到已启用的正确类别模型",
+                    status_code=409,
+                )
+        configured: list[dict[str, Any]] = []
+        for name in (MANUAL_COLLECTION, CASE_COLLECTION):
+            collection = await self._collection(
+                domain_id=domain_id, name=name, context=context,
+            )
+            try:
+                configured.append(await self._kc.update_collection_models(
+                    domain_id=domain_id,
+                    collection_id=UUID(str(collection["collection_id"])),
+                    payload={
+                        "models": {role: str(model_id) for role, model_id in models.items()},
+                        "expected_row_version": int(collection["row_version"]),
+                    },
+                    auth_context=context,
+                ))
+            except KnowledgeCoreClientError as exc:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
+                    message="运维知识库模型配置失败，请刷新后重试",
+                    status_code=503,
+                    retryable=True,
+                ) from exc
+        return {"collections": configured}
+
     async def overview(self, *, domain_id: int) -> dict[str, int]:
         async with self._uow_factory() as uow:
             return await uow.operations_knowledge.overview(domain_id=domain_id)
@@ -445,9 +535,14 @@ class OperationsKnowledgeService:
             excerpts = list(projection.get("excerpts") or [])
             if not excerpts:
                 raise ValueError("审批预分析没有抽取到可用正文")
-            model_id = self._knowledge_assistant_models.get("composer_llm")
+            collection = await self._kc.get_collection(
+                domain_id=domain_id,
+                collection_id=collection_id,
+                auth_context=context,
+            )
+            model_id = dict(collection.get("models") or {}).get("parser_llm")
             if model_id is None:
-                raise ValueError("运维知识助手尚未配置 composer_llm")
+                raise ValueError("运维知识库尚未配置 parser_llm")
             definition = await self._model_catalog.get_model(UUID(str(model_id)))
             technical_name = str(definition.get("served_model_name") or "").strip()
             if not technical_name:

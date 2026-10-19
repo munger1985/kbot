@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from knowledge_core.domain.parse_settings import normalize_collection_parse_policy
+from knowledge_core.domain.model_bindings import parser_model_snapshot
 from knowledge_core.parsing import canonical_json_hash
 
 
@@ -52,16 +53,10 @@ def build_parse_plan(*, collection, version, overrides: dict[str, Any]) -> Parse
             dict(getattr(collection, "parse_policy_json", None) or {})
         )
     )
-    collection_models = dict(collection.models_json or {})
-    policy["models"] = {
-        "parser_vlm": collection_models["parser_vlm"]
-    } if collection_models.get("parser_vlm") else {}
-    if overrides.get("ocr_model"):
-        policy["ocr_model"] = overrides["ocr_model"]
+    policy["models"] = parser_model_snapshot(collection)
     strategy = str(policy.get("parse_strategy", "AUTO")).upper()
-    if policy.get("ocr_model") and strategy != "TEXT":
-        policy["do_ocr"] = False
-        policy["ocr_provider"] = "DEEPSEEK_OCR"
+    if strategy == "AUTO" and not policy["models"].get("parser_ocr"):
+        raise ValueError("AUTO 解析策略必须配置 OCR 解析模型")
     supports_page_visual = version.detected_mime_type in {
         "application/pdf",
         "image/png",
@@ -87,9 +82,9 @@ def build_parse_plan(*, collection, version, overrides: dict[str, Any]) -> Parse
             if strategy == "VISUAL"
             else "kc-object-visual-pipeline"
         )
-    elif policy.get("ocr_model"):
+    elif policy["models"].get("parser_ocr") and strategy != "TEXT":
         view_kind = "TEXT"
-        parser_name = "kc-deepseek-ocr-pipeline"
+        parser_name = "kc-model-ocr-pipeline"
     else:
         view_kind = "TEXT"
         parser_name = "kc-docling-pipeline"

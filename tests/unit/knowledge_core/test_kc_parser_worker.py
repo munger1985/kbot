@@ -15,7 +15,7 @@ from knowledge_core.workers.parser.visual_enricher import (
     VisualPageResult,
 )
 from knowledge_core.workers.job_wait import AdaptiveJobWait
-from tests.unit.knowledge_core.test_kc_docling_atom_normalizer import FakeDocument, item
+from test_kc_docling_atom_normalizer import FakeDocument, item
 
 
 class FakeClient:
@@ -138,7 +138,7 @@ class ParserWorkerTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(client.completed)
             self.assertIsNone(client.failed)
             self.assertEqual(converter.received_path.suffix, ".pdf")
-            self.assertFalse(converter.received_options["generate_page_images"])
+            self.assertTrue(converter.received_options["generate_page_images"])
             self.assertTrue(converter.received_options["generate_picture_images"])
 
     async def test_visual_job_generates_pages_only_and_completes_additively(self):

@@ -68,8 +68,3 @@ mutation_enabled = false
 # [integrations.mcp_data]
 # api_endpoint = "http://aireport.internal:10090/aireport/chat/with_selectai_api"
 # profiles_endpoint = "http://aireport.internal:10090/aireport/admin/list_profiles"
-
-# [integrations.deepseek_ocr]
-# enabled = true
-# api_endpoint = "http://deepseek-ocr.internal:18097/v1/chat/completions"
-# ocr_model = "deepseek-ocr"

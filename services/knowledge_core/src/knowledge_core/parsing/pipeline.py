@@ -7,7 +7,7 @@ from typing import Any
 from docling_core.types.doc import DoclingDocument
 
 from .contracts import build_output_fingerprint, canonical_json_hash
-from .deepseek_ocr_adapter import DeepSeekOcrAtomAdapter
+from .model_ocr_adapter import ModelOcrAtomAdapter
 from .docling_adapter import DoclingAtomNormalizer
 from .evidence_planner import EvidencePlanner, EvidencePolicy, PlannedEvidence
 from .quality import StructureQualityEvaluator, StructureQualityReport
@@ -30,7 +30,7 @@ class KcParsingPipeline:
     def __init__(self, *, parser_version: str, evidence_policy: EvidencePolicy | None = None):
         self._parser_version = parser_version
         self._normalizer = DoclingAtomNormalizer(generator_version=parser_version)
-        self._deepseek_ocr_adapter = DeepSeekOcrAtomAdapter()
+        self._model_ocr_adapter = ModelOcrAtomAdapter()
         self._reading_order = ReadingOrderResolver()
         self._outline = OutlineResolver()
         self._quality = StructureQualityEvaluator()
@@ -55,7 +55,7 @@ class KcParsingPipeline:
         atom_ir = self._normalizer.normalize(
             document_version_id=document_version_id, document=document,
         )
-        atom_ir = self._deepseek_ocr_adapter.apply(
+        atom_ir = self._model_ocr_adapter.apply(
             atom_ir,
             ocr_enrichment,
         )
@@ -125,8 +125,9 @@ class KcParsingPipeline:
         )
         if ocr_enrichment is not None:
             metrics = dict(quality.metrics)
-            metrics["deepseek_ocr"] = {
-                "model": ocr_enrichment.served_model_name,
+            metrics["ocr"] = {
+                "model_id": ocr_enrichment.model_id,
+                "model_revision": ocr_enrichment.model_revision,
                 "recognized_page_count": len(
                     ocr_enrichment.page_results
                 ),
@@ -173,7 +174,7 @@ class KcParsingPipeline:
         ):
             artifacts["visual_analysis"] = visual_enrichment.as_dict()
         if ocr_enrichment is not None:
-            artifacts["deepseek_ocr_analysis"] = (
+            artifacts["ocr_analysis"] = (
                 ocr_enrichment.as_dict()
             )
         artifact_schemas = {
@@ -186,10 +187,8 @@ class KcParsingPipeline:
             artifact_schemas["spreadsheet_artifact"] = "kc-spreadsheet/v1"
         if "visual_analysis" in artifacts:
             artifact_schemas["visual_analysis"] = "kc-visual-analysis/v1"
-        if "deepseek_ocr_analysis" in artifacts:
-            artifact_schemas["deepseek_ocr_analysis"] = (
-                "kc-deepseek-ocr/v1"
-            )
+        if "ocr_analysis" in artifacts:
+            artifact_schemas["ocr_analysis"] = "kc-model-ocr/v1"
         output_fingerprint = build_output_fingerprint(
             artifact_hashes={name: canonical_json_hash(value) for name, value in artifacts.items()},
             evidence_keys=[evidence.evidence_key for evidence in evidences],

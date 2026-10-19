@@ -117,7 +117,6 @@ async def lifespan(app: FastAPI):
         receipt_ttl_seconds=config.receipt_ttl_seconds,
         uow_factory=kc_uow_factory,
         parse_policy_overrides={
-            "ocr_model": settings.parse_policy.ocr_model or None,
             "parse_strategy": settings.parse_policy.parse_strategy,
             "visual_description_prompt": (
                 settings.parse_policy.visual_description_prompt
@@ -277,7 +276,6 @@ async def lifespan(app: FastAPI):
         uow_factory=kc_uow_factory,
         artifact_store=parser_artifact_store,
         parse_policy_overrides={
-            "ocr_model": settings.parse_policy.ocr_model,
             "visual_max_concurrency": settings.parse_policy.visual_max_concurrency,
         },
     )

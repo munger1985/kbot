@@ -66,6 +66,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _collection(*, parser_vlm_model_id=None):
         models = {
+            "parser_ocr": str(uuid7()),
             "embedding": str(uuid7()),
         }
         if parser_vlm_model_id:
@@ -246,15 +247,12 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
             uow.parse_views.added[0].parser_name,
         )
 
-    async def test_deepseek_ocr_disables_docling_builtin_ocr(self):
+    async def test_collection_ocr_model_selects_model_ocr_pipeline(self):
         values = {"collection": self._collection()}
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
-            parse_policy_overrides={
-                "ocr_model": "deepseek-ocr-2",
-            },
         )
         version = SimpleNamespace(
             document_version_id=40,
@@ -271,10 +269,13 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         policy = uow.parse_views.added[0].parse_config_json
-        self.assertFalse(policy["do_ocr"])
-        self.assertEqual("DEEPSEEK_OCR", policy["ocr_provider"])
+        self.assertTrue(policy["do_ocr"])
         self.assertEqual(
-            "kc-deepseek-ocr-pipeline",
+            values["collection"].models_json["parser_ocr"],
+            policy["models"]["parser_ocr"],
+        )
+        self.assertEqual(
+            "kc-model-ocr-pipeline",
             uow.parse_views.added[0].parser_name,
         )
 
@@ -303,7 +304,10 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
 
         policy_models = uow.parse_views.added[0].parse_config_json["models"]
         self.assertEqual(
-            {"parser_vlm": collection.models_json["parser_vlm"]},
+            {
+                "parser_ocr": collection.models_json["parser_ocr"],
+                "parser_vlm": collection.models_json["parser_vlm"],
+            },
             policy_models,
         )
 

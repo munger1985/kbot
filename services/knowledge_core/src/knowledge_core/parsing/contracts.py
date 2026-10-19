@@ -15,7 +15,7 @@ REQUIRED_ARTIFACTS = frozenset({
     "raw_docling", "atom_ir", "structure_ir", "evidence_manifest",
 })
 OPTIONAL_ARTIFACTS = frozenset({
-    "deepseek_ocr_analysis",
+    "ocr_analysis",
     "spreadsheet_artifact",
     "visual_analysis",
 })

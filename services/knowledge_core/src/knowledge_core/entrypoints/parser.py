@@ -28,11 +28,8 @@ from knowledge_core.adapters.oracle_job_wakeup import (
 from knowledge_core.ports.job_wakeup import PARSE_WAKEUP_CHANNEL
 from knowledge_core.workers.parser.visual_enricher import KcVisualEnricher
 from knowledge_core.workers.parser.visual_cache import LocalVisualResultCache
-from knowledge_core.workers.parser.deepseek_ocr import (
-    DeepSeekOcrClient,
-    KcDeepSeekOcrEnricher,
-)
-from platform_clients import AIModelClient, AIModelConfigClient
+from knowledge_core.workers.parser.model_ocr import KcModelOcrEnricher
+from platform_clients import AIModelClient, AIModelConfigClient, OCRClient
 from platform_core.platform.port_check import check_port_available
 
 # Get service configuration from config center
@@ -99,15 +96,15 @@ parse_worker = KcParserWorker(
         caller_service=SERVICE_NAME,
         audience=settings.vlm.audience,
     ),
-    deepseek_ocr_enricher=KcDeepSeekOcrEnricher(
-        client=DeepSeekOcrClient(
-            api_endpoint=settings.dsocr.api_endpoint,
-            timeout=settings.dsocr.timeout,
-            crop_mode=settings.dsocr.crop_mode,
-            max_tokens=settings.dsocr.max_tokens,
-            temperature=settings.dsocr.temperature,
-        )
-    ) if settings.dsocr.enabled else None,
+    model_ocr_enricher=KcModelOcrEnricher(
+        client=OCRClient(
+            base_url=settings.ocr.base_url,
+            timeout_seconds=settings.ocr.timeout_seconds,
+            caller_service=SERVICE_NAME,
+            audience=settings.ocr.audience,
+        ),
+        caller_service=SERVICE_NAME,
+    ),
 )
 
 @asynccontextmanager

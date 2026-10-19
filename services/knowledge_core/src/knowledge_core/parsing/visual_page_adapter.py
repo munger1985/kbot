@@ -240,7 +240,7 @@ class VisualPageAtomAdapter:
     @staticmethod
     def _requires_exact_preservation(atom: Atom) -> bool:
         if any(
-            provenance.get("extractor") == "DEEPSEEK_OCR"
+            provenance.get("extractor") == "MODEL_OCR"
             for provenance in atom.provenance
         ):
             return True

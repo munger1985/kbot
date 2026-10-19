@@ -24,7 +24,7 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertEqual([], check_process_topology())
         processes = load_processes()
 
-        self.assertEqual(22, len(processes))
+        self.assertEqual(23, len(processes))
         self.assertEqual(
             5,
             sum(item["kind"] == "worker" for item in processes),

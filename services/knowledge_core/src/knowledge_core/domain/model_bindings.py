@@ -9,6 +9,17 @@ KC_REQUIRED_MODEL_ROLES = frozenset({"embedding"})
 KC_IMMUTABLE_MODEL_ROLES = frozenset(
     {"embedding", "visual_embedding"}
 )
+KC_PARSER_MODEL_ROLES = frozenset(
+    {"parser_ocr", "parser_vlm", "parser_llm"}
+)
+KC_MODEL_ROLE_CATEGORIES = {
+    "parser_ocr": 6,
+    "parser_vlm": 5,
+    "parser_llm": 1,
+    "retrieval_llm": 1,
+    "embedding": 2,
+    "visual_embedding": 3,
+}
 _ROLE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
@@ -44,3 +55,13 @@ def collection_model_id(collection, role: str) -> UUID | None:
     """从 Collection Entity 或 Snapshot 获取指定角色的模型 UUID。"""
     raw = dict(collection.models_json or {}).get(role)
     return UUID(str(raw)) if raw else None
+
+
+def parser_model_snapshot(collection) -> dict[str, str]:
+    """只冻结解析 Worker 能使用的模型，避免混入检索和回答模型。"""
+    models = dict(collection.models_json or {})
+    return {
+        role: str(models[role])
+        for role in sorted(KC_PARSER_MODEL_ROLES)
+        if models.get(role)
+    }

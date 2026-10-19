@@ -7827,6 +7827,35 @@
             "title": "Embedding",
             "type": "string"
           },
+          "parser_llm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Llm"
+          },
+          "parser_ocr": {
+            "format": "uuid",
+            "title": "Parser Ocr",
+            "type": "string"
+          },
+          "parser_vlm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm"
+          },
           "visual_embedding": {
             "anyOf": [
               {
@@ -7842,7 +7871,8 @@
         },
         "required": [
           "display_name",
-          "embedding"
+          "embedding",
+          "parser_ocr"
         ],
         "title": "KnowledgeRetrievalKnowledgeCoreCreatePayload",
         "type": "object"
@@ -7919,6 +7949,42 @@
             "minimum": 1.0,
             "title": "Expected Row Version",
             "type": "integer"
+          },
+          "parser_llm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Llm"
+          },
+          "parser_ocr": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Ocr"
+          },
+          "parser_vlm": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm"
           },
           "status": {
             "anyOf": [
@@ -10487,6 +10553,24 @@
         "title": "OperationWatchUpdate",
         "type": "object"
       },
+      "OperationsKnowledgeCollectionModelsPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "title": "OperationsKnowledgeCollectionModelsPayload",
+        "type": "object"
+      },
       "OperationsKnowledgeContextPayload": {
         "additionalProperties": false,
         "properties": {
@@ -10602,6 +10686,15 @@
             "minimum": 1.0,
             "title": "Expected Row Version",
             "type": "integer"
+          },
+          "tag_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -10723,6 +10816,15 @@
             "title": "Source Kinds",
             "type": "array"
           },
+          "tag_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag Ids",
+            "type": "array"
+          },
           "topology": {
             "anyOf": [
               {
@@ -10740,6 +10842,78 @@
           "query"
         ],
         "title": "OperationsKnowledgeSearchPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeTagPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "RESOURCE_CATEGORY",
+              "TECHNOLOGY_STACK",
+              "VENDOR"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "display_name"
+        ],
+        "title": "OperationsKnowledgeTagPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeTagStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "OperationsKnowledgeTagStatusPayload",
         "type": "object"
       },
       "OperationsKnowledgeTurnPayload": {
@@ -25675,6 +25849,62 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/operations-knowledge/collection-models": {
+      "get": {
+        "operationId": "get_operations_knowledge_collection_models_api_v1_apps_aiops_operations_knowledge_collection_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Operations Knowledge Collection Models",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "put": {
+        "operationId": "configure_operations_knowledge_collection_models_api_v1_apps_aiops_operations_knowledge_collection_models_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeCollectionModelsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Operations Knowledge Collection Models",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/operations-knowledge/conversations": {
       "get": {
         "operationId": "list_operations_knowledge_conversations_api_v1_apps_aiops_operations_knowledge_conversations_get",
@@ -26408,6 +26638,237 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/operations-knowledge/tags": {
+      "get": {
+        "operationId": "list_operations_knowledge_tags_api_v1_apps_aiops_operations_knowledge_tags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Disabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Tags",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "post": {
+        "operationId": "create_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/tags/{tag_id}": {
+      "put": {
+        "operationId": "update_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags__tag_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/tags/{tag_id}:disable": {
+      "post": {
+        "operationId": "disable_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags__tag_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/tags/{tag_id}:enable": {
+      "post": {
+        "operationId": "enable_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags__tag_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/operations-knowledge/uploads": {
       "post": {
         "description": "把单文件或 Bundle multipart 原样转发到 AIOps 业务服务。",
@@ -26526,6 +26987,57 @@
           }
         },
         "summary": "Download Operations Knowledge Source",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:approve": {
+      "post": {
+        "operationId": "approve_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Operations Knowledge Version",
         "tags": [
           "AIOps App"
         ]
