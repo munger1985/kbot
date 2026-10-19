@@ -28,8 +28,11 @@
     const options = [`<option value="">未选择</option>`].concat(
       rows.map((row) => {
         const selected = String(row.model_id) === String(currentId || "") ? " selected" : "";
-        const label = `${row.display_name || row.served_model_name || row.model_id}`;
-        return `<option value="${escapeHtml(row.model_id)}"${selected}>${escapeHtml(label)}</option>`;
+        const active = KBotMediaApi.isActiveModel(row);
+        const disabled = active ? "" : " disabled";
+        const status = active ? "已启用" : row.status === "ARCHIVED" ? "已归档" : "草稿";
+        const label = `${row.display_name || row.served_model_name || row.model_id}（${status}）`;
+        return `<option value="${escapeHtml(row.model_id)}"${selected}${disabled}>${escapeHtml(label)}</option>`;
       }),
     );
     select.innerHTML = options.join("");
@@ -79,7 +82,7 @@
       KBotMediaApi.json("/model-catalog", "GET"),
     ]);
     bindings = Array.isArray(bindingRows) ? bindingRows : KBotMediaApi.items(bindingRows);
-    catalog = KBotMediaApi.items(catalogRows).filter((row) => KBotMediaApi.isActiveModel(row));
+    catalog = KBotMediaApi.items(catalogRows);
     renderBindings();
   }
 

@@ -158,6 +158,9 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn("data-edit-binding", script)
         self.assertIn("openBindingEditor", script)
         self.assertIn("expected_row_version", script)
+        self.assertIn("catalog = KBotMediaApi.items(catalogRows)", script)
+        self.assertIn('const disabled = active ? "" : " disabled"', script)
+        self.assertIn("显示全部图像生成模型", page)
 
 
 if __name__ == "__main__":

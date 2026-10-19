@@ -1526,6 +1526,15 @@ class MainApiTest(unittest.TestCase):
             "APP_PERMISSION_DENIED", response.json()["code"],
         )
 
+        catalog = self.client.get(
+            "/api/v1/apps/media-studio/model-catalog",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, catalog.status_code, catalog.text)
+        self.assertEqual(1, len(catalog.json()))
+        self.assertEqual(8, catalog.json()[0]["category"])
+        self.assertEqual("DRAFT", catalog.json()[0]["status"])
+
     def test_uninitialized_authentication_returns_service_unavailable(self) -> None:
         from main_api.application import UserAuthenticationError
 

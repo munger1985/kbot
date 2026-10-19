@@ -10,11 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from main_api.api.models import (
     PublicModelCatalogItem,
     load_managed_model_catalog,
-    load_model_catalog,
     load_model_provider_options,
     model_config_client,
 )
-from main_api.application import UserAuthService, authorize_app_request, authorize_app_request_any
+from main_api.application import UserAuthService, authorize_app_request
 from platform_clients import (
     AIModelConfigClientError,
     MediaStudioClient,
@@ -150,12 +149,22 @@ async def get_access(request: Request):
 
 @router.get("/model-catalog", response_model=list[PublicModelCatalogItem])
 async def list_model_catalog(request: Request):
-    await authorize_app_request_any(
-        request,
-        app_id="media_studio",
-        permissions=("media_studio:model_binding_manage", "media_studio:image_generate"),
+    await _require(request, "media_studio:model_binding_manage")
+    client = model_config_client(
+        request, category=ModelCategory.IMAGE_GENERATION.value,
     )
-    return await load_model_catalog(request)
+    try:
+        return await client.list_models(
+            auth_context=request.state.auth_context,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "IMAGE_MODEL_CATALOG_UNAVAILABLE",
+                "message": "图像生成模型目录暂时不可用",
+            },
+        ) from exc
 
 
 @router.get(
