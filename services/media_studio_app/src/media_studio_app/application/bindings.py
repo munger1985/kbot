@@ -60,26 +60,10 @@ class ModelBindingService:
     async def list(self, *, domain_id: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
             assert uow.bindings is not None
-            views = [
+            return [
                 binding_view(row)
                 for row in await uow.bindings.list(domain_id=domain_id)
             ]
-        refreshed = []
-        for view in views:
-            current = safe_model_snapshot(
-                await load_catalog_model(
-                    self._catalog, UUID(str(view["model_id"])),
-                )
-            )
-            refreshed.append({
-                **view,
-                "display_name": current.get("display_name"),
-                "served_model_name": current.get("served_model_name"),
-                "provider": current.get("provider"),
-                "status": current.get("status"),
-                "ready": _ready(view["role"], current),
-            })
-        return refreshed
 
     async def model_references(self, *, model_id: UUID) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:

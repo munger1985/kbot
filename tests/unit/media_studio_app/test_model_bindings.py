@@ -13,8 +13,10 @@ from platform_core.identity import uuid7
 class _Catalog:
     def __init__(self, row):
         self.row = row
+        self.calls = 0
 
     async def get_model(self, model_id):
+        self.calls += 1
         if str(model_id) != str(self.row["model_id"]):
             raise LookupError(model_id)
         return self.row
@@ -117,7 +119,7 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
         references = await service.model_references(model_id=model_id)
         self.assertEqual("image_generation", references[0]["usage"])
 
-    async def test_binding_list_uses_current_status_instead_of_stale_snapshot(self):
+    async def test_binding_list_uses_persisted_safe_snapshot(self):
         model_id = uuid7()
         repository = _Repository()
         catalog = _Catalog({
@@ -142,8 +144,9 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
         catalog.row["status"] = "DRAFT"
         current = await service.list(domain_id=41)
 
-        self.assertFalse(current[0]["ready"])
+        self.assertTrue(current[0]["ready"])
         self.assertEqual("ACTIVE", repository.row.model_snapshot_json["status"])
+        self.assertEqual(1, catalog.calls)
 
     async def test_binding_list_does_not_read_entity_after_uow_closes(self):
         model_id = uuid7()
