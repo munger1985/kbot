@@ -188,6 +188,21 @@ class AIModelConfigClient:
             "GET", f"/{model_id}/references", auth_context=auth_context,
         )
 
+    async def verify_image_generation(
+        self,
+        model_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext | None = None,
+    ) -> dict[str, Any]:
+        """由 LLM 服务执行真实 Canary 并返回最新能力状态。"""
+        return await self._request(
+            "POST",
+            f"/{model_id}/capabilities/image-generation:verify",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
     async def delete_model(
         self,
         model_id: UUID,

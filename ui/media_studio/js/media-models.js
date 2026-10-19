@@ -52,6 +52,9 @@
     if (row.status !== "ARCHIVED") {
       buttons.push(`<button class="small" type="button" data-model-action="edit" data-model-id="${escapeHtml(row.model_id)}">编辑</button>`);
       buttons.push(`<button class="small" type="button" data-model-action="references" data-model-id="${escapeHtml(row.model_id)}">引用</button>`);
+      if (Number(row.category) === 1 && row.status === "ACTIVE") {
+        buttons.push(`<button class="small" type="button" data-model-action="verify-image" data-model-id="${escapeHtml(row.model_id)}">${row.supports_image_generation ? "重新验收图片" : "验收图片生成"}</button>`);
+      }
       buttons.push(`<button class="small" type="button" data-model-action="status" data-model-id="${escapeHtml(row.model_id)}">${row.status === "ACTIVE" ? "停用" : "启用"}</button>`);
       buttons.push(`<button class="small danger" type="button" data-model-action="archive" data-model-id="${escapeHtml(row.model_id)}">归档</button>`);
     } else {
@@ -302,6 +305,21 @@
     }
   }
 
+  async function verifyImageGeneration(row) {
+    const confirmed = confirm(
+      `确认验收模型“${row.display_name}”的图片生成能力？服务端会向上游实际生成一张测试图片，可能产生少量用量。`,
+    );
+    if (!confirmed) return;
+    toast("正在执行真实图片生成 Canary，请稍候…");
+    await KBotMediaApi.json(
+      `/models/${row.category}/${row.model_id}/capabilities/image-generation:verify`,
+      "POST",
+      { expected_row_version: row.row_version },
+    );
+    await loadModels();
+    toast("图片生成 Canary 已通过，能力验收状态已更新。");
+  }
+
   async function changeStatus(row) {
     const next = row.status === "ACTIVE" ? "DRAFT" : "ACTIVE";
     const verb = next === "ACTIVE" ? "启用" : "停用";
@@ -338,6 +356,7 @@
     try {
       if (action === "edit") return openEditDialog(row);
       if (action === "references") return await showReferences(row);
+      if (action === "verify-image") return await verifyImageGeneration(row);
       if (action === "status") return await changeStatus(row);
       if (action === "archive") return await archiveModel(row);
       if (action === "delete") return await deleteModel(row);

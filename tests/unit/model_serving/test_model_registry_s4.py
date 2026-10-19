@@ -312,6 +312,7 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
         verified = await service.record_capability_verification(
             row.model_id,
             supports_image_generation=True,
+            expected_row_version=1,
             actor_id="canary",
         )
         self.assertTrue(verified["supports_image_generation"])

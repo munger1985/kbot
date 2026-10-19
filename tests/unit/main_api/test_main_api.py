@@ -719,6 +719,17 @@ class _FakeModelConfigClient:
             "unavailable_services": [],
         }
 
+    async def verify_image_generation(self, model_id, payload, *, auth_context):
+        self.last_operation = "verify_image_generation"
+        self.last_payload = payload
+        self.last_context = auth_context
+        return self._row(
+            model_id=str(model_id),
+            status="ACTIVE",
+            supports_image_generation=True,
+            row_version=payload["expected_row_version"] + 1,
+        )
+
     async def archive_model(self, model_id, payload, *, auth_context):
         self.last_operation = "archive"
         self.last_payload = payload
@@ -1483,6 +1494,15 @@ class MainApiTest(unittest.TestCase):
         )
         self.assertEqual(200, activated.status_code, activated.text)
         self.assertEqual("ACTIVE", activated.json()["status"])
+
+        verified = self.client.post(
+            f"/api/v1/apps/media-studio/models/1/{model_id}/capabilities/image-generation:verify",
+            headers=self._headers(),
+            json={"expected_row_version": 2},
+        )
+        self.assertEqual(200, verified.status_code, verified.text)
+        self.assertTrue(verified.json()["supports_image_generation"])
+        self.assertEqual("verify_image_generation", llm.last_operation)
 
         references = self.client.get(
             f"/api/v1/apps/media-studio/models/1/{model_id}/references",

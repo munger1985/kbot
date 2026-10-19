@@ -77,6 +77,12 @@ class ModelDeleteRequest(_ModelContract):
     expected_row_version: int = Field(ge=1)
 
 
+class ModelCapabilityVerifyRequest(_ModelContract):
+    """对当前版本的模型连接执行真实能力验收。"""
+
+    expected_row_version: int = Field(ge=1)
+
+
 class ModelCatalogItem(ModelCapabilityState):
     model_id: UUID
     served_model_name: str

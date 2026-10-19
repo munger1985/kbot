@@ -318,6 +318,7 @@ class ModelRegistryService:
         model_id: UUID,
         *,
         supports_image_generation: bool,
+        expected_row_version: int,
         actor_id: str,
         auth_context: AuthContext | None = None,
     ) -> dict[str, Any]:
@@ -325,6 +326,7 @@ class ModelRegistryService:
         async with self._uow_factory() as uow:
             assert uow.models
             row = await self._locked(uow.models, model_id)
+            self._assert_version(row, expected_row_version)
             row.supports_image_generation = int(supports_image_generation)
             row.updated_by = actor_id
             await uow.flush()
@@ -332,6 +334,37 @@ class ModelRegistryService:
             result = self._safe(row)
         await self._notify_changed(result, auth_context=auth_context)
         return result
+
+    async def get_capability_verification_material(
+        self,
+        model_id: UUID,
+        *,
+        expected_row_version: int,
+        category: int,
+    ) -> dict[str, Any]:
+        """锁定 Canary 的配置版本，并只返回进程所属的已启用模型。"""
+        async with self._uow_factory() as uow:
+            assert uow.models
+            try:
+                row = await uow.models.get_by_id(model_id)
+            except DataNotFoundException as exc:
+                raise ModelDefinitionNotFound(model_id) from exc
+            if int(row.category) != category:
+                raise ModelDefinitionNotFound(model_id)
+            self._assert_version(row, expected_row_version)
+            if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
+                raise ModelRegistryConflict(
+                    "MODEL_NOT_ACTIVE", "模型未启用，不能执行能力验收",
+                )
+            return {
+                "provider": row.provider,
+                "api_endpoint": row.api_endpoint,
+                "api_key": row.api_key,
+                "provider_model_name": row.provider_model_name,
+                "served_model_name": row.served_model_name,
+                "model_params": dict(row.model_params or {}),
+                "row_version": int(row.row_version),
+            }
 
     async def get_connection_material(self, model_id: UUID) -> dict[str, Any]:
         """返回调用上游所需的完整连接材料，不得经 HTTP 安全投影对外暴露。"""

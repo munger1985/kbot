@@ -21,6 +21,7 @@ from platform_clients import (
 )
 from platform_core.contracts import (
     ModelArchiveRequest,
+    ModelCapabilityVerifyRequest,
     ModelCatalogItem as ManagedModelCatalogItem,
     ModelCreateRequest,
     ModelDeleteRequest,
@@ -248,6 +249,36 @@ async def get_model_references(
     try:
         return await client.get_model_references(
             model_id, auth_context=request.state.auth_context,
+        )
+    except AIModelConfigClientError as exc:
+        _raise_model_configuration_error(exc)
+
+
+@router.post(
+    "/models/{category}/{model_id}/capabilities/image-generation:verify",
+    response_model=ManagedModelCatalogItem,
+)
+async def verify_model_image_generation(
+    category: ModelCategory,
+    model_id: UUID,
+    payload: ModelCapabilityVerifyRequest,
+    request: Request,
+):
+    await _require_model_manager(request)
+    if category != ModelCategory.LLM:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "MODEL_CAPABILITY_UNSUPPORTED",
+                "message": "只有 LLM 模型可以验收图片生成能力",
+            },
+        )
+    client = model_config_client(request, category=category)
+    try:
+        return await client.verify_image_generation(
+            model_id,
+            payload.model_dump(mode="json"),
+            auth_context=request.state.auth_context,
         )
     except AIModelConfigClientError as exc:
         _raise_model_configuration_error(exc)

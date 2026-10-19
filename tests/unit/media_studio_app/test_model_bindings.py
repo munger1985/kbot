@@ -117,6 +117,36 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
         references = await service.model_references(model_id=model_id)
         self.assertEqual("image_generation", references[0]["usage"])
 
+    async def test_binding_list_uses_current_capability_instead_of_stale_snapshot(self):
+        model_id = uuid7()
+        repository = _Repository()
+        catalog = _Catalog({
+            "model_id": str(model_id),
+            "display_name": "图片模型",
+            "served_model_name": "image-model",
+            "provider": "oci",
+            "status": "ACTIVE",
+            "category": 1,
+            "supports_image_generation": True,
+        })
+        service = ModelBindingService(
+            uow_factory=lambda: _UnitOfWork(repository),
+            catalog_client=catalog,
+        )
+        await service.upsert(UpsertBindingCommand(
+            domain_id=41,
+            role="IMAGE_GENERATION",
+            model_id=model_id,
+            actor_id="user-41",
+        ))
+
+        catalog.row["supports_image_generation"] = False
+        current = await service.list(domain_id=41)
+
+        self.assertFalse(current[0]["supports_image_generation"])
+        self.assertFalse(current[0]["ready"])
+        self.assertTrue(repository.row.model_snapshot_json["supports_image_generation"])
+
 
 if __name__ == "__main__":
     unittest.main()
