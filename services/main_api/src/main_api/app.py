@@ -553,6 +553,19 @@ def create_main_api_app(
             }
             for item in exc.errors()
         ]
+        request_id = request.headers.get("X-Request-ID") or "-"
+        logger.warning(
+            "请求字段校验失败 | path={} | request_id={} | fields={}",
+            request.url.path,
+            request_id,
+            [
+                {
+                    "location": item["location"],
+                    "type": item["type"],
+                }
+                for item in field_errors
+            ],
+        )
         return _problem_response(
             request=request,
             status_code=422,

@@ -21,6 +21,16 @@
   }
 
   function errorMessage(payload, status) {
+    const fieldErrors = Array.isArray(payload?.field_errors) ? payload.field_errors : [];
+    if (fieldErrors.length) {
+      return fieldErrors.map((item) => {
+        const location = Array.isArray(item?.location)
+          ? item.location.filter((part) => part !== "body").join(".")
+          : "";
+        const message = String(item?.message || "字段无效");
+        return location ? `${location}：${message}` : message;
+      }).join("；");
+    }
     const detail = payload?.detail;
     if (Array.isArray(detail)) return detail.map((item) => item?.msg || "请求内容无效").join("；");
     if (detail && typeof detail === "object") return detail.message || detail.detail || detail.code || `请求失败（HTTP ${status}）`;

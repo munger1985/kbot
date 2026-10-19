@@ -143,6 +143,8 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("新增 OCI 模型必须填写 config_file", script)
         self.assertNotIn("capabilities/image-generation:verify", script)
         self.assertNotIn("supports_image_generation", script)
+        self.assertIn("payload?.field_errors", api_script)
+        self.assertIn('part !== "body"', api_script)
 
     def test_media_model_binding_has_row_edit_action(self):
         root = APP_CONFIGS["media_studio"]["root"]
