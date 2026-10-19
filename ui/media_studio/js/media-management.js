@@ -40,6 +40,21 @@
     return bindings.find((row) => row.role === role);
   }
 
+  function openBindingEditor(role) {
+    const current = currentBinding(role);
+    const models = catalog.filter(
+      (row) => Number(row.category) === KBotMediaApi.ModelCategory.IMAGE_GENERATION,
+    );
+    fillSelect(
+      document.getElementById("image-model"),
+      models,
+      current?.model_id,
+    );
+    const title = document.getElementById("model-binding-dialog-title");
+    if (title) title.textContent = current ? `编辑${roleLabel(role)}模型绑定` : "配置模型绑定";
+    openDialog("model-binding-dialog");
+  }
+
   function renderBindings() {
     const node = document.getElementById("binding-rows");
     if (!node) return;
@@ -53,6 +68,7 @@
         <td>${escapeHtml(roleRequirement(role))}</td>
         <td>${status}</td>
         <td>${escapeHtml(row?.updated_at || "—")}</td>
+        <td><button class="small" type="button" data-edit-binding="${escapeHtml(role)}">${row ? "编辑" : "配置"}</button></td>
       </tr>`;
     }).join("");
   }
@@ -65,8 +81,6 @@
     bindings = Array.isArray(bindingRows) ? bindingRows : KBotMediaApi.items(bindingRows);
     catalog = KBotMediaApi.items(catalogRows).filter((row) => KBotMediaApi.isActiveModel(row));
     renderBindings();
-    const image = catalog.filter((row) => Number(row.category) === KBotMediaApi.ModelCategory.IMAGE_GENERATION);
-    fillSelect(document.getElementById("image-model"), image, currentBinding("IMAGE_GENERATION")?.model_id);
   }
 
   async function saveBindings(event) {
@@ -209,6 +223,10 @@
     if (!access) return;
     document.querySelectorAll("[data-open-dialog]").forEach((button) => {
       button.addEventListener("click", () => openDialog(button.dataset.openDialog));
+    });
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-edit-binding]");
+      if (button) openBindingEditor(button.dataset.editBinding);
     });
     document.querySelectorAll("[data-close-dialog]").forEach((button) => {
       button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));

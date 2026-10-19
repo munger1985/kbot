@@ -137,6 +137,16 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("capabilities/image-generation:verify", script)
         self.assertNotIn("supports_image_generation", script)
 
+    def test_media_model_binding_has_row_edit_action(self):
+        root = APP_CONFIGS["media_studio"]["root"]
+        page = (root / "model-bindings.html").read_text(encoding="utf-8")
+        script = (root / "js" / "media-management.js").read_text(encoding="utf-8")
+        self.assertIn("<th>操作</th>", page)
+        self.assertIn('data-edit-binding="IMAGE_GENERATION"', page)
+        self.assertIn("data-edit-binding", script)
+        self.assertIn("openBindingEditor", script)
+        self.assertIn("expected_row_version", script)
+
 
 if __name__ == "__main__":
     unittest.main()
