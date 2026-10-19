@@ -239,9 +239,15 @@
   }
   function normalizeDraftDatabase(database) {
     if (!database) return undefined;
+    const selectedCandidate = (database.candidates || []).find((row) => row.candidate_ref === database.candidate_ref);
+    const selectedHostCandidate = (database.host_candidates || []).find((row) => row.candidate_ref === database.host_candidate_ref);
     return {
       ...database,
       oracle_scope: database.db_type === "ORACLE" && database.oracle_scope === "CDB" ? "CDB_ROOT" : database.oracle_scope,
+      candidate_locator_key: database.candidate_locator_key || selectedCandidate?.locator_key || "",
+      host_candidate_locator_key: database.host_candidate_locator_key || selectedHostCandidate?.locator_key || "",
+      candidates: database.candidates || [],
+      host_candidates: database.host_candidates || [],
       discovering: false,
     };
   }
@@ -259,7 +265,8 @@
         deployment_type: "SINGLE_INSTANCE", rac_node_number: null, db_role: "UNKNOWN",
         host: "", port: 1521, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "",
         username: "", password: "", source_id: "", locator_key: "", candidate_ref: "",
-        host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0,
+        candidate_locator_key: "", host_candidate_ref: "", host_candidate_locator_key: "",
+        candidates: [], host_candidates: [], discovering: false, discovery_revision: 0,
       },
     };
   }
@@ -273,7 +280,8 @@
       responsibility_group_id: "", location_name: source.location_name, display_order: resources.length, saved: false,
       database: {
         ...database, deployment_type: "RAC", rac_node_number: nodeNumber,
-        host: "", database: "", locator_key: "", candidate_ref: "", host_candidate_ref: "",
+        host: "", database: "", locator_key: "", candidate_ref: "", candidate_locator_key: "",
+        host_candidate_ref: "", host_candidate_locator_key: "",
         candidates: [...database.candidates], host_candidates: [...database.host_candidates], discovering: false,
       },
     };
@@ -453,6 +461,8 @@
       if (!node?.database) return;
       connectionTestStates.delete(item.draft_resource_id);
       node.database[input.dataset.racField] = input.dataset.racField === "rac_node_number" ? Number(input.value) : input.value;
+      if (input.dataset.racField === "candidate_ref") node.database.candidate_locator_key = node.database.candidates.find((row) => row.candidate_ref === input.value)?.locator_key || "";
+      if (input.dataset.racField === "host_candidate_ref") node.database.host_candidate_locator_key = node.database.host_candidates.find((row) => row.candidate_ref === input.value)?.locator_key || "";
       node.saved = false;
       if (input.dataset.racField === "rac_node_number") syncRacNames(item);
       else mark();
@@ -533,12 +543,18 @@
         if (!member.database) return;
         member.database.source_id = item.database.source_id;
         member.database.discovery_revision += 1;
-        Object.assign(member.database, { locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [] });
+        Object.assign(member.database, { locator_key: "", candidate_ref: "", candidate_locator_key: "", host_candidate_ref: "", host_candidate_locator_key: "", candidates: [], host_candidates: [] });
         member.saved = Boolean(member.system_resource_id);
       });
       mark(); renderComposition();
       if (item.database.source_id && usesDiscovery(item)) void discover(item);
       return;
+    }
+    if (name === "candidate_ref") {
+      item.database.candidate_locator_key = item.database.candidates.find((row) => row.candidate_ref === input.value)?.locator_key || "";
+    }
+    if (name === "host_candidate_ref") {
+      item.database.host_candidate_locator_key = item.database.host_candidates.find((row) => row.candidate_ref === input.value)?.locator_key || "";
     }
     if (isRacResource(item)) syncRacDatabaseField(item, key);
     if (name === "db_role") syncInferredDatabaseRelations();
@@ -548,34 +564,80 @@
     mark();
   }
 
-  async function discover(item) {
+  function selectedDiscoveryLocators(database) {
+    const candidate = database.candidates.find((row) => row.candidate_ref === database.candidate_ref);
+    const hostCandidate = database.host_candidates.find((row) => row.candidate_ref === database.host_candidate_ref);
+    return {
+      candidate: database.candidate_locator_key || candidate?.locator_key || "",
+      host: database.host_candidate_locator_key || hostCandidate?.locator_key || "",
+    };
+  }
+
+  function applyDiscoveryResult(items, found, selections, requireSelections = false) {
+    const candidates = (found.items || []).map((row) => ({
+      ...row,
+      display_name: `${row.display_name}${row.mapping_status === "MAPPED" ? "（已配置，可复用）" : ""}`,
+    }));
+    const hostCandidates = found.host_items || [];
+    items.forEach((member) => {
+      if (!member.database) return;
+      const selected = selections.get(member.draft_resource_id) || { candidate: "", host: "" };
+      const candidate = candidates.find((row) => row.locator_key === selected.candidate);
+      const hostCandidate = hostCandidates.find((row) => row.locator_key === selected.host);
+      if (requireSelections && !selected.candidate) throw new Error(`${member.display_name}：草稿缺少数据库监控 Target 的稳定定位信息，请重新选择监控 Target。`);
+      if (requireSelections && selected.candidate && !candidate) throw new Error(`${member.display_name}：原数据库监控 Target 已不存在，请重新选择。`);
+      if (requireSelections && sourceFor(member)?.source_type === "PROMETHEUS" && !selected.host) throw new Error(`${member.display_name}：草稿缺少主机监控 Target 的稳定定位信息，请重新选择监控 Target。`);
+      if (requireSelections && selected.host && !hostCandidate) throw new Error(`${member.display_name}：原主机监控 Target 已不存在，请重新选择。`);
+      Object.assign(member.database, {
+        candidates: [...candidates],
+        host_candidates: [...hostCandidates],
+        candidate_ref: candidate?.candidate_ref || "",
+        candidate_locator_key: candidate?.locator_key || "",
+        host_candidate_ref: hostCandidate?.candidate_ref || "",
+        host_candidate_locator_key: hostCandidate?.locator_key || "",
+      });
+    });
+    return { candidates, hostCandidates };
+  }
+
+  async function discover(item, options = {}) {
     if (!item.database?.source_id) { shell.toast("请先选择监控源。"); return; }
+    const members = racMembers(item);
+    const selections = new Map(members.map((member) => [member.draft_resource_id, selectedDiscoveryLocators(member.database)]));
     const sourceId = item.database.source_id;
     const dbType = item.database.db_type;
     const revision = ++item.database.discovery_revision;
-    racMembers(item).forEach((member) => { if (member.database) member.database.discovering = true; });
+    members.forEach((member) => { if (member.database) member.database.discovering = true; });
     renderComposition();
     try {
       const found = await request(`/diagnostic-sources/${encodeURIComponent(sourceId)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [dbType], page_size: 100 }) });
       if (revision !== item.database.discovery_revision || sourceId !== item.database.source_id || dbType !== item.database.db_type) return;
-      const candidates = (found.items || []).map((row) => ({
-        ...row,
-        display_name: `${row.display_name}${row.mapping_status === "MAPPED" ? "（已配置，可复用）" : ""}`,
-      }));
-      const hostCandidates = found.host_items || [];
-      racMembers(item).forEach((member) => {
-        if (!member.database) return;
-        member.database.candidates = [...candidates];
-        member.database.host_candidates = [...hostCandidates];
-      });
-      shell.toast(`发现 ${candidates.length} 个数据库候选、${hostCandidates.length} 个主机候选。`);
-    } catch (error) { shell.toast(error.message); }
-    finally {
+      const { candidates, hostCandidates } = applyDiscoveryResult(members, found, selections, Boolean(options.requireSelections));
+      if (!options.quiet) shell.toast(`发现 ${candidates.length} 个数据库候选、${hostCandidates.length} 个主机候选。`);
+    } catch (error) {
+      if (options.requireSelections) throw error;
+      shell.toast(error.message);
+    } finally {
       if (revision === item.database.discovery_revision) {
-        racMembers(item).forEach((member) => { if (member.database) member.database.discovering = false; });
+        members.forEach((member) => { if (member.database) member.database.discovering = false; });
         renderComposition();
       }
     }
+  }
+
+  async function refreshDiscoveryReferences() {
+    const groups = new Map();
+    resources.filter((item) => item.mode === "NEW" && usesDiscovery(item)).forEach((item) => {
+      const key = `${item.database.source_id}:${item.database.db_type}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    await Promise.all([...groups.values()].map(async (items) => {
+      const sample = items[0];
+      const selections = new Map(items.map((item) => [item.draft_resource_id, selectedDiscoveryLocators(item.database)]));
+      const found = await request(`/diagnostic-sources/${encodeURIComponent(sample.database.source_id)}/instance-discoveries`, { method: "POST", body: JSON.stringify({ db_types: [sample.database.db_type], page_size: 100 }) });
+      applyDiscoveryResult(items, found, selections, true);
+    }));
   }
 
   function targetPayload(item) {
@@ -820,6 +882,7 @@
     if (errors.length) { shell.toast(errors.join("；")); return; }
     saving = true; updateFooter();
     try {
+      await refreshDiscoveryReferences();
       let saved;
       if (creating) {
         const draft = await persistDraft(false);
