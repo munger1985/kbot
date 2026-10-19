@@ -19,6 +19,7 @@ class _Client:
             "model_params": {
                 "max_tokens": 8192,
                 "config_file": {"key_content": "private-key"},
+                "oci_auth": {"key_content": "rotated-private-key"},
             },
         }]
 
@@ -35,7 +36,9 @@ class ModelCatalogSecretsTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(8192, rows[0]["model_params"]["max_tokens"])
         self.assertNotIn("config_file", rows[0]["model_params"])
+        self.assertNotIn("oci_auth", rows[0]["model_params"])
         self.assertNotIn("private-key", repr(rows))
+        self.assertNotIn("rotated-private-key", repr(rows))
 
 
 if __name__ == "__main__":

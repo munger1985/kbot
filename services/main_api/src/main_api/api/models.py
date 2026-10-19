@@ -143,7 +143,7 @@ def _normalize_catalog_row(row: dict[str, Any]) -> dict[str, Any] | None:
         "model_params": {
             key: value
             for key, value in (row.get("model_params") or {}).items()
-            if key != "config_file"
+            if key not in {"config_file", "oci_auth"}
         },
     }
 

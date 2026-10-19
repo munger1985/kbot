@@ -121,8 +121,22 @@
             <small class="model-field-help" id="model-provider-contract">选择 Provider 后显示允许参数。</small>
           </div>
           <div class="media-field full" id="model-oci-secret-field" hidden>
-            <label for="model-oci-config">OCI config_file（Secret JSON Object）</label>
-            <textarea id="model-oci-config" class="model-json secret" spellcheck="false" autocomplete="off" placeholder="新增 OCI 模型时必填；编辑时留空表示保留现有凭据"></textarea>
+            <label>OCI API Key 认证</label>
+            <small class="model-field-help">config 文件可选：可以上传标准 OCI config 自动解析，也可以直接填写下列参数。认证材料保存后不回显。</small>
+            <div class="oci-auth-upload-grid">
+              <label class="oci-auth-upload">OCI config 文件（可选）<input id="model-oci-config-upload" type="file" accept=".config,.ini,.txt,.json,text/plain,application/json"></label>
+              <label class="oci-auth-upload">API 私钥文件（可选）<input id="model-oci-key-upload" type="file" accept=".pem,.key,text/plain,application/x-pem-file"></label>
+            </div>
+            <div class="media-form-grid oci-auth-fields">
+              <div class="media-field full"><label for="model-oci-project">Generative AI Project OCID</label><input id="model-oci-project" autocomplete="off" placeholder="图像生成模型必填；LLM 可选"></div>
+              <div class="media-field full"><label for="model-oci-compartment">Compartment OCID</label><input id="model-oci-compartment" autocomplete="off" placeholder="ocid1.compartment..."></div>
+              <div class="media-field"><label for="model-oci-tenancy">Tenancy OCID</label><input id="model-oci-tenancy" autocomplete="off" placeholder="ocid1.tenancy..."></div>
+              <div class="media-field"><label for="model-oci-user">User OCID</label><input id="model-oci-user" autocomplete="off" placeholder="ocid1.user..."></div>
+              <div class="media-field"><label for="model-oci-fingerprint">Fingerprint</label><input id="model-oci-fingerprint" autocomplete="off" placeholder="xx:xx:xx:..."></div>
+              <div class="media-field"><label for="model-oci-region">Region</label><input id="model-oci-region" autocomplete="off" placeholder="us-ashburn-1"></div>
+              <div class="media-field full"><label for="model-oci-key-content">API 私钥内容</label><textarea id="model-oci-key-content" class="model-json secret" spellcheck="false" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
+              <div class="media-field full"><label for="model-oci-pass-phrase">私钥口令（可选）</label><input id="model-oci-pass-phrase" type="password" autocomplete="new-password"></div>
+            </div>
           </div>
           <div class="media-field full">
             <label for="model-description">说明</label>

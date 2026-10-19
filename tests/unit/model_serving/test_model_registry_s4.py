@@ -136,6 +136,18 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
             {"key_content": "new-key"}, merged["config_file"],
         )
 
+    def test_manual_oci_auth_replaces_legacy_config_file(self):
+        manual = {"key_content": "manual-key"}
+        merged = merge_model_params_preserving_secrets(
+            category=ModelCategory.IMAGE_GENERATION.value,
+            provider="api_oci_image",
+            current={"config_file": {"key_content": "old-key"}},
+            updated={"oci_auth": manual},
+        )
+
+        self.assertEqual(manual, merged["oci_auth"])
+        self.assertNotIn("config_file", merged)
+
     def test_safe_projects_decimal_status_and_category(self):
         row = _model(status=Decimal("1"), category=Decimal("2"))
         payload = ModelRegistryService._safe(row)
@@ -333,7 +345,46 @@ class ProviderCatalogS4Test(unittest.TestCase):
         self.assertEqual(["api_oci_image"], [item.provider for item in options])
         option = options[0]
         self.assertIn("model_params.project", option.required_fields)
+        self.assertNotIn("model_params.config_file", option.required_fields)
         self.assertIn("model_params.config_file", option.secret_fields)
+        self.assertIn("model_params.oci_auth", option.secret_fields)
+
+    def test_oci_accepts_manual_auth_parameters_without_config_file(self):
+        auth = {
+            "tenancy": "ocid1.tenancy.oc1..test",
+            "user": "ocid1.user.oc1..test",
+            "fingerprint": "00:11:22:33",
+            "region": "us-ashburn-1",
+            "key_content": "private-key",
+        }
+        with patch(
+            "model_serving.common.provider_catalog.validated_oci_config",
+            return_value=auth,
+        ) as validate:
+            validate_provider_config({
+                "category": ModelCategory.IMAGE_GENERATION.value,
+                "provider": "api_oci_image",
+                "api_endpoint": "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com",
+                "model_params": {
+                    "compartment_id": "ocid1.compartment.oc1..test",
+                    "project": "ocid1.generativeaiproject.oc1..test",
+                    "oci_auth": auth,
+                },
+            })
+
+        validate.assert_called_once_with(auth)
+
+    def test_oci_requires_uploaded_or_manual_auth_parameters(self):
+        with self.assertRaisesRegex(ValueError, "上传 config 文件或填写"):
+            validate_provider_config({
+                "category": ModelCategory.IMAGE_GENERATION.value,
+                "provider": "api_oci_image",
+                "api_endpoint": "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com",
+                "model_params": {
+                    "compartment_id": "ocid1.compartment.oc1..test",
+                    "project": "ocid1.generativeaiproject.oc1..test",
+                },
+            })
 
     def test_local_deepseek_is_openai_compatible_llm_option(self):
         options = list_provider_options(category=1)

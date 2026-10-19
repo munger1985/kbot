@@ -134,6 +134,13 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn('value="8">图像生成', page)
         api_script = (root / "js" / "media-api.js").read_text(encoding="utf-8")
         self.assertIn("IMAGE_GENERATION: 8", api_script)
+        self.assertIn('id="model-oci-config-upload"', page)
+        self.assertIn('id="model-oci-key-upload"', page)
+        self.assertIn('id="model-oci-tenancy"', page)
+        self.assertIn('id="model-oci-key-content"', page)
+        self.assertIn("parseOciConfigText", script)
+        self.assertIn("modelParams.oci_auth", script)
+        self.assertNotIn("新增 OCI 模型必须填写 config_file", script)
         self.assertNotIn("capabilities/image-generation:verify", script)
         self.assertNotIn("supports_image_generation", script)
 

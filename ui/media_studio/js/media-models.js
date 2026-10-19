@@ -9,6 +9,14 @@
   let models = [];
   let providerOptions = [];
   let editingModel = null;
+  const ociAuthFieldIds = {
+    tenancy: "model-oci-tenancy",
+    user: "model-oci-user",
+    fingerprint: "model-oci-fingerprint",
+    region: "model-oci-region",
+    key_content: "model-oci-key-content",
+    pass_phrase: "model-oci-pass-phrase",
+  };
 
   function element(id) { return document.getElementById(id); }
   function categoryLabel(value) { return categoryLabels.get(Number(value)) || `类别 ${value}`; }
@@ -104,17 +112,103 @@
     return providerOptions.find((item) => Number(item.category) === category && item.provider === provider);
   }
 
+  function usesOciAuth(option) {
+    const fields = option?.secret_fields || [];
+    return fields.includes("model_params.config_file")
+      || fields.includes("model_params.oci_auth");
+  }
+
+  function clearOciAuthFields() {
+    Object.values(ociAuthFieldIds).forEach((id) => { element(id).value = ""; });
+    element("model-oci-project").value = "";
+    element("model-oci-compartment").value = "";
+    element("model-oci-config-upload").value = "";
+    element("model-oci-key-upload").value = "";
+  }
+
+  function applyOciAuthFields(values) {
+    Object.entries(ociAuthFieldIds).forEach(([key, id]) => {
+      if (values[key] != null && String(values[key]).trim()) {
+        element(id).value = String(values[key]).trim();
+      }
+    });
+  }
+
+  function parseOciConfigText(text) {
+    const raw = String(text || "").trim();
+    if (!raw) throw new Error("OCI config 文件为空");
+    if (raw.startsWith("{")) {
+      const parsed = parseObject(raw, "OCI config 文件");
+      return { profile: "JSON", values: parsed };
+    }
+    const profiles = new Map();
+    let profile = "DEFAULT";
+    profiles.set(profile, {});
+    raw.split(/\r?\n/).forEach((sourceLine) => {
+      const line = sourceLine.trim();
+      if (!line || line.startsWith("#") || line.startsWith(";")) return;
+      const section = line.match(/^\[([^\]]+)]$/);
+      if (section) {
+        profile = section[1].trim() || "DEFAULT";
+        if (!profiles.has(profile)) profiles.set(profile, {});
+        return;
+      }
+      const separator = line.indexOf("=");
+      if (separator < 1) return;
+      const key = line.slice(0, separator).trim();
+      const value = line.slice(separator + 1).trim();
+      profiles.get(profile)[key] = value;
+    });
+    const selectedProfile = profiles.has("DEFAULT") && Object.keys(profiles.get("DEFAULT")).length
+      ? "DEFAULT"
+      : Array.from(profiles.entries()).find(([, values]) => Object.keys(values).length)?.[0];
+    const values = profiles.get(selectedProfile) || {};
+    if (!Object.keys(values).length) throw new Error("OCI config 文件中没有可解析的 Profile");
+    return { profile: selectedProfile, values };
+  }
+
+  async function loadOciConfigFile(file) {
+    if (!file) return;
+    const parsed = parseOciConfigText(await file.text());
+    applyOciAuthFields(parsed.values);
+    const keyHint = parsed.values.key_file && !parsed.values.key_content
+      ? "；本机 key_file 路径不会上传，请继续选择 API 私钥文件" : "";
+    toast(`已解析 OCI Profile：${parsed.profile}${keyHint}`);
+  }
+
+  async function loadOciPrivateKey(file) {
+    if (!file) return;
+    const content = String(await file.text()).trim();
+    if (!content.includes("PRIVATE KEY")) throw new Error("所选文件不是有效的 PEM 私钥");
+    element("model-oci-key-content").value = content;
+    toast("OCI API 私钥已读取，保存后不会回显。");
+  }
+
+  function buildOciAuth() {
+    const values = Object.fromEntries(
+      Object.entries(ociAuthFieldIds).map(([key, id]) => [key, element(id).value.trim()]),
+    );
+    const supplied = Object.values(values).some(Boolean);
+    if (!supplied) return null;
+    const required = ["tenancy", "user", "fingerprint", "region", "key_content"];
+    const missing = required.filter((key) => !values[key]);
+    if (missing.length) {
+      throw new Error(`OCI 认证参数不完整：${missing.join("、")}`);
+    }
+    if (!values.pass_phrase) delete values.pass_phrase;
+    return values;
+  }
+
   function renderProviderContract() {
     const option = selectedProviderOption();
     const contract = element("model-provider-contract");
     const ociField = element("model-oci-secret-field");
-    const secretFields = option?.secret_fields || [];
     const allowed = option?.allowed_model_params || [];
     const required = option?.required_fields || [];
     contract.textContent = option
       ? `必要字段：${required.join("、") || "无"}；允许参数：${allowed.join("、") || "无"}`
       : "当前类别没有可用 Provider。";
-    ociField.hidden = !secretFields.includes("model_params.config_file");
+    ociField.hidden = !usesOciAuth(option);
   }
 
   function syncProviderOptions(selected) {
@@ -133,7 +227,7 @@
     element("model-category").value = "1";
     element("model-status").value = "DRAFT";
     element("model-params").value = "{}";
-    element("model-oci-config").value = "";
+    clearOciAuthFields();
     element("model-category").disabled = false;
     element("model-provider").disabled = false;
     element("model-served-name").disabled = false;
@@ -164,6 +258,8 @@
     element("model-api-endpoint").value = row.api_endpoint || "";
     element("model-api-key").value = "";
     element("model-params").value = JSON.stringify(row.model_params || {}, null, 2);
+    element("model-oci-project").value = row.model_params?.project || "";
+    element("model-oci-compartment").value = row.model_params?.compartment_id || "";
     element("model-description").value = row.description || "";
     element("model-category").disabled = true;
     element("model-provider").disabled = true;
@@ -219,8 +315,19 @@
     const modelId = element("model-id").value;
     const option = selectedProviderOption();
     const modelParams = parseObject(element("model-params").value, "模型参数");
-    const ociConfig = parseObject(element("model-oci-config").value, "OCI config_file", true);
-    if (ociConfig) modelParams.config_file = ociConfig;
+    const ociAuth = usesOciAuth(option) ? buildOciAuth() : null;
+    if (usesOciAuth(option)) {
+      const project = element("model-oci-project").value.trim();
+      const compartment = element("model-oci-compartment").value.trim();
+      if (project) modelParams.project = project;
+      else delete modelParams.project;
+      if (compartment) modelParams.compartment_id = compartment;
+      else delete modelParams.compartment_id;
+    }
+    if (ociAuth) {
+      delete modelParams.config_file;
+      modelParams.oci_auth = ociAuth;
+    }
     const endpoint = element("model-api-endpoint").value.trim();
     validateEndpoint(endpoint, option?.provider);
     const apiKey = element("model-api-key").value.trim();
@@ -229,7 +336,14 @@
       const required = new Set(option?.required_fields || []);
       if (required.has("api_endpoint") && !endpoint) throw new Error("当前 Provider 要求填写 API Endpoint");
       if (required.has("api_key") && !apiKey) throw new Error("当前 Provider 要求填写 API Key / Token");
-      if (required.has("model_params.config_file") && !ociConfig) throw new Error("新增 OCI 模型必须填写 config_file");
+      for (const path of required) {
+        if (!path.startsWith("model_params.")) continue;
+        const key = path.slice("model_params.".length);
+        if (!modelParams[key]) throw new Error(`当前 Provider 要求填写模型参数：${key}`);
+      }
+      if (usesOciAuth(option) && !ociAuth) {
+        throw new Error("请上传 OCI config 和私钥，或手工填写完整认证参数");
+      }
       return {
         served_model_name: element("model-served-name").value.trim(),
         display_name: element("model-display-name").value.trim(),
@@ -250,7 +364,7 @@
     if (displayName !== editingModel?.display_name) payload.display_name = displayName;
     if (normalizedEndpoint !== (editingModel?.api_endpoint || null)) payload.api_endpoint = normalizedEndpoint;
     if (normalizedDescription !== (editingModel?.description || null)) payload.description = normalizedDescription;
-    if (ociConfig || !objectsEqual(modelParams, editingModel?.model_params || {})) {
+    if (ociAuth || !objectsEqual(modelParams, editingModel?.model_params || {})) {
       payload.model_params = modelParams;
     }
     if (apiKey) payload.api_key = apiKey;
@@ -352,6 +466,12 @@
     element("model-form")?.addEventListener("submit", saveModel);
     element("model-category")?.addEventListener("change", () => syncProviderOptions());
     element("model-provider")?.addEventListener("change", renderProviderContract);
+    element("model-oci-config-upload")?.addEventListener("change", (event) => {
+      loadOciConfigFile(event.target.files?.[0]).catch((error) => toast(error.message, "error"));
+    });
+    element("model-oci-key-upload")?.addEventListener("change", (event) => {
+      loadOciPrivateKey(event.target.files?.[0]).catch((error) => toast(error.message, "error"));
+    });
     element("model-keyword")?.addEventListener("input", renderModels);
     element("model-category-filter")?.addEventListener("change", renderModels);
     element("model-status-filter")?.addEventListener("change", renderModels);

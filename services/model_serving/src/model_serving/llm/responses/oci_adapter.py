@@ -172,7 +172,10 @@ class OciGrokResponsesAdapter:
 
         try:
             origin = oci_sdk_service_endpoint(endpoint)
-            config = validated_oci_config((params or {}).get("config_file"))
+            config = validated_oci_config(
+                (params or {}).get("oci_auth")
+                or (params or {}).get("config_file")
+            )
             auth = ModelConfigOciAuth(config)
         except ValueError as exc:
             raise GenerativeAdapterError(

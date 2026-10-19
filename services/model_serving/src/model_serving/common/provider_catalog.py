@@ -21,11 +21,11 @@ class _ProviderSchema:
 _COMMON_REMOTE = ("timeout", "max_retries")
 _LLM_PARAMS = (
     "temperature", "max_tokens", "top_p", "frequency_penalty",
-    "presence_penalty", "timeout", "compartment_id", "config_file",
+    "presence_penalty", "timeout", "compartment_id", "config_file", "oci_auth",
 )
 _EMBEDDING_PARAMS = (
     "embedding_dimension", "model_path", "device", "max_tokens", "timeout",
-    "compartment_id", "config_file", "batch_size", "normalize",
+    "compartment_id", "config_file", "oci_auth", "batch_size", "normalize",
 )
 _VLM_PARAMS = ("max_tokens", "temperature", *_COMMON_REMOTE)
 _VISUAL_PARAMS = ("model_path", "device", "dimension", *_COMMON_REMOTE)
@@ -41,7 +41,8 @@ _OCR_DEEPSEEK_PARAMS = (
     "prompt", "max_tokens", "temperature", "timeout_seconds",
 )
 _IMAGE_PARAMS = (
-    "timeout", "max_retries", "compartment_id", "config_file", "project",
+    "timeout", "max_retries", "compartment_id", "config_file", "oci_auth",
+    "project",
 )
 
 PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
@@ -53,10 +54,10 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
         for provider in ("local_deepseek", "api_deepseek", "api_qwen", "chatgpt")
     },
     (ModelCategory.LLM.value, "oci"): _ProviderSchema(
-        ("api_endpoint", "model_params.compartment_id", "model_params.config_file"),
+        ("api_endpoint", "model_params.compartment_id"),
         (*_LLM_PARAMS, "project"),
         supports_tool_calling=True, max_context_tokens=131072,
-        secret_fields=("model_params.config_file",),
+        secret_fields=("model_params.config_file", "model_params.oci_auth"),
     ),
     (ModelCategory.TXT_EMBEDDING.value, "local_bge"): _ProviderSchema(
         ("model_params.model_path", "model_params.embedding_dimension"),
@@ -76,10 +77,10 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     (ModelCategory.TXT_EMBEDDING.value, "oci"): _ProviderSchema(
         (
             "api_endpoint", "model_params.compartment_id",
-            "model_params.config_file", "model_params.embedding_dimension",
+            "model_params.embedding_dimension",
         ),
         _EMBEDDING_PARAMS,
-        secret_fields=("model_params.config_file",),
+        secret_fields=("model_params.config_file", "model_params.oci_auth"),
     ),
     (ModelCategory.IMG_EMBEDDING.value, "local_qwen"): _ProviderSchema(
         ("model_params.model_path",), _VISUAL_PARAMS,
@@ -108,10 +109,10 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     (ModelCategory.IMAGE_GENERATION.value, "api_oci_image"): _ProviderSchema(
         (
             "api_endpoint", "model_params.compartment_id",
-            "model_params.config_file", "model_params.project",
+            "model_params.project",
         ),
         _IMAGE_PARAMS,
-        secret_fields=("model_params.config_file",),
+        secret_fields=("model_params.config_file", "model_params.oci_auth"),
     ),
 }
 
@@ -158,7 +159,12 @@ def validate_provider_config(values: dict[str, Any]) -> None:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
     if provider in {"oci", "api_oci_image"}:
         oci_sdk_service_endpoint(values.get("api_endpoint"))
-        validated_oci_config(params.get("config_file"))
+        auth = params.get("oci_auth")
+        if auth is None:
+            auth = params.get("config_file")
+        if auth is None:
+            raise ValueError("OCI 认证必须上传 config 文件或填写完整认证参数")
+        validated_oci_config(auth)
 
 
 def merge_model_params_preserving_secrets(
@@ -180,4 +186,8 @@ def merge_model_params_preserving_secrets(
         key = path.removeprefix(prefix)
         if key not in merged and key in current:
             merged[key] = current[key]
+    if "oci_auth" in updated:
+        merged.pop("config_file", None)
+    elif "config_file" in updated:
+        merged.pop("oci_auth", None)
     return merged

@@ -166,6 +166,10 @@ dialog.media-dialog { width: min(670px, calc(100vw - 36px)); padding: 0; border:
 .model-secondary { display: block; margin-top: 4px; color: var(--media-muted); font-size: 11px; }
 .model-endpoint { display: block; max-width: 330px; overflow-wrap: anywhere; color: #355148; font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: normal; }
 .model-row-actions { display: flex; gap: 6px; flex-wrap: wrap; min-width: 235px; }
+.oci-auth-upload-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0 14px; }
+.oci-auth-upload { display: grid; gap: 6px; padding: 12px; border: 1px dashed var(--media-line); border-radius: 8px; background: #f7faf8; font-size: 12px; }
+.oci-auth-upload input { width: 100%; }
+.oci-auth-fields { padding: 14px; border: 1px solid var(--media-line); border-radius: 8px; background: #fbfcfb; }
 button.danger { color: var(--media-bad); border-color: #d9aaa7; background: #fff8f7; }
 button.danger:hover { color: #fff; border-color: var(--media-bad); background: var(--media-bad); }
 .model-json { min-height: 150px !important; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
@@ -398,6 +402,7 @@ dialog.media-dialog.wide .media-dialog-body {
   .data-model-steps { grid-template-columns: 1fr; }
   .data-model-steps li { min-height: 68px; border-right: 0; }
   .policy-subject-grid { grid-template-columns: 1fr; }
+  .oci-auth-upload-grid { grid-template-columns: 1fr; }
   .media-dialog-foot { flex-wrap: wrap; }
 }
 

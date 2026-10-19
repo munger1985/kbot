@@ -97,7 +97,7 @@ def public_model_params(raw: Any) -> dict[str, Any]:
     return {
         key: value
         for key, value in raw.items()
-        if key != "config_file"
+        if key not in {"config_file", "oci_auth"}
     }
 
 

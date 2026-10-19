@@ -117,15 +117,17 @@ class EmbeddingModelPool(BaseModelPool[BaseEmbedding[Any]]):
 
         if provider == EmbeddingProvider.OCI.value:
             compartment_id = params.get("compartment_id")
-            config_file = params.get("config_file")
+            auth_config = params.get("oci_auth") or params.get("config_file")
             
-            if not all([api_endpoint, compartment_id, config_file]):
-                raise ValueError(f"OCI model {name} missing required parameters (compartment_id/config_file/endpoint)")
+            if not all([api_endpoint, compartment_id, auth_config]):
+                raise ValueError(
+                    f"OCI 模型 {name} 缺少 compartment_id、认证材料或 api_endpoint"
+                )
 
             return OCIEmbeddingConfig(
                 **common_kwargs,
                 compartment_id=compartment_id,
-                config_file=config_file,
+                config_file=auth_config,
                 api_endpoint=api_endpoint, # type: ignore
                 input_type_doc=params.get("input_type_doc", "search_document"),
                 input_type_query=params.get("input_type_query", "search_query")
