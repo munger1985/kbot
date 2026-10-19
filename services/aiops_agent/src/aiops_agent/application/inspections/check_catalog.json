@@ -9,7 +9,7 @@
           "check_id": "oracle.backup.rman_volume",
           "display_name": "RMAN 备份量",
           "availability": "READY",
-          "tool_id": "db.backup.recent_jobs",
+          "tool_id": "db.oracle.backup.volume_summary",
           "playbook_id": "oracle.maintenance.health",
           "finding_types": [],
           "default_for": [
@@ -23,7 +23,7 @@
           "check_id": "oracle.backup.space_usage",
           "display_name": "占用空间",
           "availability": "READY",
-          "tool_id": "db.backup.recent_jobs",
+          "tool_id": "db.oracle.backup.space_usage",
           "playbook_id": "oracle.maintenance.health",
           "finding_types": [],
           "default_for": [
@@ -195,7 +195,7 @@
           "check_id": "oracle.session.long_running",
           "display_name": "长会话",
           "availability": "READY",
-          "tool_id": "db.session.active",
+          "tool_id": "db.oracle.session.long_running",
           "playbook_id": "oracle.session.active",
           "finding_types": [
             "LONG_SESSION"
@@ -273,8 +273,8 @@
         {
           "check_id": "oracle.object.sparse_index",
           "display_name": "稀疏索引",
-          "availability": "READY",
-          "tool_id": "db.index.health",
+          "availability": "PLANNED",
+          "tool_id": null,
           "playbook_id": null,
           "finding_types": [],
           "default_for": [
@@ -368,7 +368,7 @@
           "check_id": "oracle.performance.heavy_sort_sql",
           "display_name": "严重排序 SQL",
           "availability": "READY",
-          "tool_id": "db.sql.top_current",
+          "tool_id": "db.oracle.performance.heavy_sort_sql",
           "playbook_id": "oracle.sql.top_current",
           "finding_types": [
             "TOP_SQL"

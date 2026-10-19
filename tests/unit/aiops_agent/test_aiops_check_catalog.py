@@ -32,8 +32,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
 
         self.assertEqual(8, len(catalog.groups))
         self.assertEqual(36, len(items))
-        self.assertEqual(31, len(ready))
-        self.assertEqual(5, len(planned))
+        self.assertEqual(30, len(ready))
+        self.assertEqual(6, len(planned))
         self.assertEqual(
             hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest(),
             catalog.catalog_hash,
@@ -85,6 +85,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             normalize_selected_check_ids(["oracle.not.a.check"])
         with self.assertRaisesRegex(ValueError, "检查项尚未开放"):
             normalize_selected_check_ids(["oracle.storage.row_chaining"])
+        with self.assertRaisesRegex(ValueError, "检查项尚未开放"):
+            normalize_selected_check_ids(["oracle.object.sparse_index"])
         with self.assertRaisesRegex(ValueError, "检查项必须是 ID 列表"):
             normalize_selected_check_ids("oracle.backup.rman_volume")
 
@@ -126,7 +128,7 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "勾选检查项没有可执行的取证工具"):
             compile_selected_check_steps(["oracle.exadata.health_report"])
 
-    def test_compile_selected_check_steps_dedupes_tools(self) -> None:
+    def test_compile_selected_check_steps_preserves_semantic_tools(self) -> None:
         daily = default_selected_check_ids("DAILY")
         steps = compile_selected_check_steps(daily)
         tool_ids = [item["tool_id"] for item in steps]
@@ -135,11 +137,12 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         self.assertIn("db.storage.capacity", tool_ids)
         self.assertNotIn("db.alert.recent", tool_ids)
         self.assertNotIn("db.scheduler.failed_jobs", tool_ids)
-        backup = next(
-            item for item in steps if item["tool_id"] == "db.backup.recent_jobs"
-        )
-        self.assertGreaterEqual(len(backup["check_ids"]), 2)
-        self.assertIn("、", backup["title"])
+        self.assertIn("db.oracle.backup.volume_summary", tool_ids)
+        self.assertIn("db.oracle.backup.space_usage", tool_ids)
+        self.assertIn("db.backup.recent_jobs", tool_ids)
+        self.assertIn("db.oracle.session.long_running", tool_ids)
+        self.assertIn("db.oracle.performance.heavy_sort_sql", tool_ids)
+        self.assertNotIn("db.index.health", tool_ids)
         subset = compile_selected_check_steps(
             ["oracle.session.lock_wait", "oracle.storage.tablespace_headroom"]
         )
@@ -244,6 +247,19 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             cron_by_tool["db.storage.capacity"]["measurement_semantics"],
             daily_by_tool["db.storage.capacity"]["measurement_semantics"],
         )
+
+    def test_oracle_checks_use_semantically_specific_tools(self) -> None:
+        steps = compile_selected_check_steps(
+            default_selected_check_ids("DAILY"),
+            database_type="ORACLE",
+        )
+        tool_ids = {item["tool_id"] for item in steps}
+        self.assertIn("db.oracle.backup.volume_summary", tool_ids)
+        self.assertIn("db.oracle.backup.space_usage", tool_ids)
+        self.assertIn("db.backup.recent_jobs", tool_ids)
+        self.assertIn("db.oracle.session.long_running", tool_ids)
+        self.assertIn("db.oracle.performance.heavy_sort_sql", tool_ids)
+        self.assertNotIn("db.index.health", tool_ids)
 
     def test_template_definition_freezes_catalog_and_evidence_steps(self) -> None:
         selected = default_selected_check_ids("DAILY")
