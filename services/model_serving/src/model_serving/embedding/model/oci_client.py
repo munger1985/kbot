@@ -4,6 +4,8 @@ import oci
 from pydantic import Field
 from loguru import logger
 
+from model_serving.common.oci_auth import oci_sdk_service_endpoint
+
 from .base import BaseEmbedding, EmbeddingConfig, EmbeddingResponse
 
 class OCIEmbeddingConfig(EmbeddingConfig):
@@ -32,7 +34,9 @@ class OCIEmbedding(BaseEmbedding[OCIEmbeddingConfig]):
 
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,
-                service_endpoint=self.config.api_endpoint,
+                service_endpoint=oci_sdk_service_endpoint(
+                    self.config.api_endpoint
+                ),
                 retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
             )
             self._is_initialized = True

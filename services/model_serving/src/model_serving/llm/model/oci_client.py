@@ -5,7 +5,10 @@ from typing import Any
 from pydantic import Field
 from loguru import logger
 
-from model_serving.common.oci_auth import validated_oci_config
+from model_serving.common.oci_auth import (
+    oci_sdk_service_endpoint,
+    validated_oci_config,
+)
 
 from .base import LLMConfig, BaseLLM
 
@@ -174,7 +177,9 @@ class OCIClient(BaseLLM[OCILLMConfig]):
             # Note: OCI SDK is synchronous but connection setup is typically fast
             self.client = oci.generative_ai_inference.GenerativeAiInferenceClient(
                 config=oci_config,
-                service_endpoint=self.config.api_endpoint,
+                service_endpoint=oci_sdk_service_endpoint(
+                    self.config.api_endpoint
+                ),
                 retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY,
                 timeout=(10, 240)  # Connect timeout: 10s, read timeout: 240s
             )

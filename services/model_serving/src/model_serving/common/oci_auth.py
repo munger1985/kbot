@@ -4,6 +4,21 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlsplit
+
+
+def oci_sdk_service_endpoint(raw: Any) -> str:
+    """把共享的 OCI API 地址规范成原生 SDK 所需的服务 Origin。"""
+    endpoint = str(raw or "").strip().rstrip("/")
+    parsed = urlsplit(endpoint)
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("OCI API Endpoint 必须是有效的 HTTP(S) 服务地址")
+    return f"{parsed.scheme.lower()}://{parsed.netloc}"
 
 
 def validated_oci_config(raw: Any) -> dict[str, Any]:
@@ -50,4 +65,8 @@ def public_model_params(raw: Any) -> dict[str, Any]:
     }
 
 
-__all__ = ["public_model_params", "validated_oci_config"]
+__all__ = [
+    "oci_sdk_service_endpoint",
+    "public_model_params",
+    "validated_oci_config",
+]

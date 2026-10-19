@@ -2,6 +2,9 @@
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
+
+from model_serving.common.oci_auth import oci_sdk_service_endpoint
 
 from model_serving.llm.model.oci_client import (
     OCIClient,
@@ -26,6 +29,27 @@ def _client(model_name: str, *, max_tokens: int = 8192) -> OCIClient:
 
 
 class OCILLMClientTest(unittest.TestCase):
+    def test_sdk_endpoint_uses_origin_for_dated_actions_base(self):
+        host = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
+
+        self.assertEqual(host, oci_sdk_service_endpoint(host))
+        self.assertEqual(
+            host,
+            oci_sdk_service_endpoint(
+                f"{host}/20231130/actions/v1"
+            ),
+        )
+        self.assertEqual(
+            host,
+            oci_sdk_service_endpoint(
+                f"{host}/20231130/actions/v1/responses"
+            ),
+        )
+
+    def test_sdk_endpoint_rejects_non_http_address(self):
+        with self.assertRaisesRegex(ValueError, "HTTP\\(S\\)"):
+            oci_sdk_service_endpoint("inference.example.invalid/actions/v1")
+
     def test_gpt5_uses_max_completion_tokens_only(self):
         request = _client("openai.gpt-5.6-sol")._build_chat_request(
             [{"role": "user", "content": "你好"}],
@@ -79,6 +103,30 @@ class OCILLMClientTest(unittest.TestCase):
         ]
 
         self.assertEqual("第一段第二段", extract_oci_text_content(content))
+
+
+class OCIStartupEndpointTest(unittest.IsolatedAsyncioTestCase):
+    async def test_startup_does_not_forward_responses_path_to_sdk(self):
+        host = "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com"
+        client = _client("xai.grok-4.6")
+        client.config.api_endpoint = f"{host}/20231130/actions/v1"
+
+        with (
+            patch(
+                "model_serving.llm.model.oci_client.validated_oci_config",
+                return_value={"region": "us-ashburn-1"},
+            ),
+            patch(
+                "model_serving.llm.model.oci_client.oci.generative_ai_inference."
+                "GenerativeAiInferenceClient"
+            ) as client_factory,
+        ):
+            await client.startup()
+
+        self.assertEqual(
+            host,
+            client_factory.call_args.kwargs["service_endpoint"],
+        )
 
 
 if __name__ == "__main__":
