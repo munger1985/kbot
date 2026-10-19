@@ -68,8 +68,24 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261019_1",
+            "aiops-business-system-workspace.js?v=20261019_2",
             WORKSPACE_PAGE,
+        )
+
+    def test_workspace_uses_the_public_oracle_container_scope_contract(self):
+        self.assertIn(
+            'const oracleScopeOptions = [["NON_CDB", "非 CDB"], ["CDB_ROOT", "CDB"], ["PDB", "PDB"]]',
+            WORKSPACE_SCRIPT,
+        )
+        self.assertEqual(
+            2,
+            WORKSPACE_SCRIPT.count(
+                "selectOptions(oracleScopeOptions, database.oracle_scope)"
+            ),
+        )
+        self.assertIn(
+            'database.oracle_scope === "CDB" ? "CDB_ROOT" : database.oracle_scope',
+            WORKSPACE_SCRIPT,
         )
 
 
