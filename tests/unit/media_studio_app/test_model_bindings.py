@@ -147,6 +147,57 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(current[0]["ready"])
         self.assertTrue(repository.row.model_snapshot_json["supports_image_generation"])
 
+    async def test_binding_list_does_not_read_entity_after_uow_closes(self):
+        model_id = uuid7()
+        repository = _Repository()
+        catalog = _Catalog({
+            "model_id": str(model_id),
+            "display_name": "图片模型",
+            "served_model_name": "image-model",
+            "provider": "oci",
+            "status": "ACTIVE",
+            "category": 1,
+            "supports_image_generation": True,
+        })
+        service = ModelBindingService(
+            uow_factory=lambda: _UnitOfWork(repository),
+            catalog_client=catalog,
+        )
+        await service.upsert(UpsertBindingCommand(
+            domain_id=41,
+            role="IMAGE_GENERATION",
+            model_id=model_id,
+            actor_id="user-41",
+        ))
+
+        state = {"closed": False}
+        persisted = repository.row
+
+        class _DetachedGuard:
+            def __getattr__(self, name):
+                if state["closed"]:
+                    raise AssertionError("UoW 关闭后禁止读取 ORM 实体")
+                return getattr(persisted, name)
+
+        class _ClosingUnitOfWork(_UnitOfWork):
+            async def __aenter__(self):
+                state["closed"] = False
+                return await super().__aenter__()
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                state["closed"] = True
+                return await super().__aexit__(exc_type, exc, traceback)
+
+        repository.row = _DetachedGuard()
+        service = ModelBindingService(
+            uow_factory=lambda: _ClosingUnitOfWork(repository),
+            catalog_client=catalog,
+        )
+
+        current = await service.list(domain_id=41)
+
+        self.assertTrue(current[0]["ready"])
+
 
 if __name__ == "__main__":
     unittest.main()

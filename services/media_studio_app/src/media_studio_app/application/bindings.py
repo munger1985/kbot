@@ -35,14 +35,8 @@ def _ready(role: str, snapshot: dict[str, Any]) -> bool:
     return is_role_ready(role, snapshot)
 
 
-def binding_view(
-    row: MediaStudioModelBindingEntity,
-    *,
-    model_snapshot: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    snapshot = dict(
-        model_snapshot if model_snapshot is not None else row.model_snapshot_json or {}
-    )
+def binding_view(row: MediaStudioModelBindingEntity) -> dict[str, Any]:
+    snapshot = dict(row.model_snapshot_json or {})
     return {
         "binding_id": str(row.binding_id),
         "domain_id": int(row.domain_id),
@@ -80,14 +74,29 @@ class ModelBindingService:
     async def list(self, *, domain_id: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
             assert uow.bindings is not None
-            rows = await uow.bindings.list(domain_id=domain_id)
-        views = []
-        for row in rows:
-            current = await load_catalog_model(self._catalog, row.model_id)
-            views.append(
-                binding_view(row, model_snapshot=safe_model_snapshot(current))
+            views = [
+                binding_view(row)
+                for row in await uow.bindings.list(domain_id=domain_id)
+            ]
+        refreshed = []
+        for view in views:
+            current = safe_model_snapshot(
+                await load_catalog_model(
+                    self._catalog, UUID(str(view["model_id"])),
+                )
             )
-        return views
+            refreshed.append({
+                **view,
+                "display_name": current.get("display_name"),
+                "served_model_name": current.get("served_model_name"),
+                "provider": current.get("provider"),
+                "status": current.get("status"),
+                "supports_image_generation": bool(
+                    current.get("supports_image_generation")
+                ),
+                "ready": _ready(view["role"], current),
+            })
+        return refreshed
 
     async def model_references(self, *, model_id: UUID) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
