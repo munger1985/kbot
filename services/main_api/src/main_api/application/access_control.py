@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from platform_core.authorization import (
+    BUILT_IN_APP_ROLE_CODES,
+    built_in_role_permissions,
+)
+
 GLOBAL_ADMIN_USER_ID = "ADMIN"
 
 
@@ -48,12 +53,18 @@ class AccessControlService:
         self, *, app_id: str, domain_id: int, user_id: str
     ) -> AccessSnapshot:
         async with self._uow_factory() as uow:
-            permissions = await uow.access.permissions_for(
+            custom_permissions = await uow.access.permissions_for(
                 app_id=app_id, domain_id=domain_id, user_id=user_id
             )
             roles = await uow.access.list_roles(
                 app_id=app_id, domain_id=domain_id, user_id=user_id
             )
+        permissions = set(custom_permissions)
+        for role_code in roles:
+            if role_code in BUILT_IN_APP_ROLE_CODES:
+                permissions.update(
+                    built_in_role_permissions(app_id, role_code)
+                )
         return AccessSnapshot(
             app_id=app_id,
             domain_id=domain_id,

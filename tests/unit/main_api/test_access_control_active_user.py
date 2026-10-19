@@ -112,6 +112,66 @@ class AccessControlActiveUserTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn('"KBOT_PLATFORM_USER".status = \'ACTIVE\'', sql)
         self.assertIn('"KBOT_APP_ROLE".status = \'ACTIVE\'', sql)
+        for role_code in ("app_user", "app_manager", "app_admin"):
+            self.assertIn(f"'{role_code}'", sql)
+
+    async def test_builtin_roles_use_canonical_permissions_when_rows_lag(self):
+        class Access:
+            async def permissions_for(self, **kwargs):
+                del kwargs
+                return {"media_studio:custom_permission"}
+
+            async def list_roles(self, **kwargs):
+                del kwargs
+                return ("app_admin",)
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+        snapshot = await AccessControlService(uow_factory=Uow).snapshot(
+            app_id="media_studio",
+            domain_id=41,
+            user_id="mediaadmin",
+        )
+
+        self.assertIn("media_studio:model_manage", snapshot.permissions)
+        self.assertIn("media_studio:member_manage", snapshot.permissions)
+        self.assertIn("media_studio:custom_permission", snapshot.permissions)
+
+    async def test_custom_role_does_not_gain_builtin_permissions(self):
+        class Access:
+            async def permissions_for(self, **kwargs):
+                del kwargs
+                return {"media_studio:use"}
+
+            async def list_roles(self, **kwargs):
+                del kwargs
+                return ("content_editor",)
+
+        class Uow:
+            access = Access()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+        snapshot = await AccessControlService(uow_factory=Uow).snapshot(
+            app_id="media_studio",
+            domain_id=41,
+            user_id="editor",
+        )
+
+        self.assertEqual(
+            frozenset({"media_studio:use"}), snapshot.permissions
+        )
 
     async def test_role_delete_respects_foreign_key_order(self):
         session = _DeleteSession()

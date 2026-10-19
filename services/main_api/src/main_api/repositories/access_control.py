@@ -19,6 +19,7 @@ from main_api.entities.access_control import (
     PlatformUserEntity,
     PlatformUserRoleEntity,
 )
+from platform_core.authorization import BUILT_IN_APP_ROLE_CODES
 
 
 class AccessControlRepository:
@@ -196,6 +197,7 @@ class AccessControlRepository:
         return set(rows)
 
     async def permissions_for(self, *, app_id: str, domain_id: int, user_id: str) -> set[str]:
+        """返回自定义角色权限；内置角色权限由统一授权策略实时展开。"""
         rows = await self._session.scalars(
             select(AppRolePermissionEntity.permission_code)
             .join(
@@ -226,6 +228,9 @@ class AccessControlRepository:
                 AppDomainEntity.status == "ACTIVE",
                 PlatformApplicationEntity.status == "ACTIVE",
                 PlatformUserEntity.status == "ACTIVE",
+                AppMemberRoleEntity.role_code.notin_(
+                    BUILT_IN_APP_ROLE_CODES
+                ),
                 self._domain_scope_clause(app_id=app_id, domain_id_column=domain_id),
             )
         )

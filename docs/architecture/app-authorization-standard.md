@@ -24,7 +24,9 @@ Schema Runner、测试和本文档必须在同一变更中同步，不允许由�
 系统角色不可创建同名自定义角色，不可编辑、停用或删除。角色权限必须由
 `platform_core.authorization` 的权限元数据机械生成：`app_user` 获得 USER 层，
 `app_manager` 获得 USER + MANAGER 层，`app_admin` 获得 USER + MANAGER + ADMIN 层。
-业务代码和 SQL 不得各自解释层级。
+运行时直接按这份规范策略展开系统角色权限，不能依赖数据库中物化授权行是否已由部署脚本
+及时刷新；数据库物化映射用于初始化、管理展示和漂移审计。自定义角色仍只使用数据库中
+显式保存的权限。业务代码和 SQL 不得各自解释层级。
 
 `{app_id}:member_manage` 和 `{app_id}:role_manage` 固定属于 ADMIN 层，且禁止加入自定义
 角色。这样只有 `app_admin` 能管理成员和角色，自定义角色不能形成新的委派管理员。
