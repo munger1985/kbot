@@ -56,7 +56,7 @@ def create_model_registry(
             auth=AIOpsClientAuth(
                 caller_service=service_name,
                 audience=settings.aiops.audience,
-                scopes=("aiops.manage",),
+                scopes=("model.references",),
                 auth_context_codec=create_auth_context_codec(),
                 service_identity_codec=create_service_identity_codec(),
             ),

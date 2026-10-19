@@ -108,6 +108,31 @@ def _model(*, status=1, category=1, model_params=None):
 
 
 class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
+    async def test_create_persists_requested_active_status(self):
+        repository = _Repository({})
+        service = ModelRegistryService(
+            uow_factory=lambda: _Uow(repository),
+        )
+
+        result = await service.create(
+            {
+                "served_model_name": "chat-active",
+                "display_name": "已启用对话模型",
+                "provider_model_name": "provider-chat",
+                "category": ModelCategory.LLM.value,
+                "provider": "api_qwen",
+                "api_endpoint": "https://models.example.test/v1",
+                "api_key": "write-only-secret",
+                "status": "ACTIVE",
+                "model_params": {"max_tokens": 4096},
+            },
+            actor_id="operator",
+        )
+
+        self.assertEqual("ACTIVE", result["status"])
+        persisted = next(iter(repository.rows.values()))
+        self.assertEqual(1, persisted.status)
+
     def test_secret_model_params_survive_safe_patch(self):
         current = {
             "max_tokens": 4096,
@@ -278,6 +303,29 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn(row.model_id, repository.rows)
         self.assertEqual(2, len(events))
+
+    async def test_archive_continues_when_reference_service_is_unavailable(self):
+        row = _model()
+        repository = _Repository({row.model_id: row})
+
+        async def unavailable(model_id, auth_context):
+            del model_id, auth_context
+            raise TimeoutError
+
+        service = ModelRegistryService(
+            uow_factory=lambda: _Uow(repository),
+            reference_resolvers={"data-query": unavailable},
+        )
+
+        archived, summary = await service.archive(
+            row.model_id,
+            expected_row_version=1,
+            actor_id="operator",
+            auth_context=_auth_context(),
+        )
+
+        self.assertEqual("ARCHIVED", archived["status"])
+        self.assertEqual(("data-query",), summary.unavailable_services)
 
     async def test_embedding_dimension_cannot_change_in_place(self):
         row = _model(

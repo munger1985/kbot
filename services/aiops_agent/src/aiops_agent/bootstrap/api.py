@@ -432,6 +432,12 @@ def create_aiops_api(
                         "aiops.credentials.issue",
                     }
                 ),
+                "kbot-model-embedding": frozenset({"model.references"}),
+                "kbot-model-llm": frozenset({"model.references"}),
+                "kbot-model-vlm": frozenset({"model.references"}),
+                "kbot-model-visual": frozenset({"model.references"}),
+                "kbot-model-ocr": frozenset({"model.references"}),
+                "kbot-model-image": frozenset({"model.references"}),
             },
         )
     )

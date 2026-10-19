@@ -107,7 +107,7 @@ async def model_references(
     request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
-    require_service_scope(request, "aiops.manage")
+    require_service_scope(request, "model.references")
     return {
         "references": await request.app.state.agent_service.model_references(
             model_id=model_id

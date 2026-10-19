@@ -392,15 +392,27 @@
     try {
       const modelId = element("model-id").value;
       const payload = formPayload();
+      let saved;
       if (modelId) {
         const category = Number(element("model-category").value);
-        await KBotMediaApi.json(`/models/${category}/${modelId}`, "PATCH", payload);
+        saved = await KBotMediaApi.json(`/models/${category}/${modelId}`, "PATCH", payload);
       } else {
-        await KBotMediaApi.json("/models", "POST", payload);
+        saved = await KBotMediaApi.json("/models", "POST", payload);
+        if (saved?.status !== payload.status) {
+          saved = await KBotMediaApi.json(
+            `/models/${saved.category}/${saved.model_id}/status`,
+            "PATCH",
+            {
+              expected_row_version: saved.row_version,
+              status: payload.status,
+            },
+          );
+        }
       }
       element("model-dialog").close();
       await loadModels();
-      toast(modelId ? "模型配置已更新。" : "模型配置已创建。");
+      const finalStatus = saved?.status === "ACTIVE" ? "已启用" : "草稿";
+      toast(modelId ? "模型配置已更新。" : `模型配置已创建，当前状态：${finalStatus}。`);
     } catch (error) {
       toast(error.message || "保存模型配置失败", "error");
     } finally {

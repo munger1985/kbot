@@ -1457,13 +1457,14 @@ class MainApiTest(unittest.TestCase):
                 "provider": "api_oci_image",
                 "api_endpoint": "https://models.example.test/v1",
                 "api_key": "write-only-secret",
-                "status": "DRAFT",
+                "status": "ACTIVE",
                 "model_params": {},
             },
         )
         self.assertEqual(201, created.status_code, created.text)
         self.assertEqual("create", image.last_operation)
         self.assertEqual("portal-user-1", image.last_context.asserted_user_id)
+        self.assertEqual("ACTIVE", created.json()["status"])
         self.assertNotIn("api_key", created.json())
 
         model_id = created.json()["model_id"]

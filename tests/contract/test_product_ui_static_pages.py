@@ -143,6 +143,8 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn("served_model_name: servedModelName", script)
         self.assertIn("保存时自动转为小写", page)
         self.assertIn("modelParams.oci_auth", script)
+        self.assertIn("saved?.status !== payload.status", script)
+        self.assertIn("当前状态：${finalStatus}", script)
         self.assertNotIn("新增 OCI 模型必须填写 config_file", script)
         self.assertNotIn("capabilities/image-generation:verify", script)
         self.assertNotIn("supports_image_generation", script)

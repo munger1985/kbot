@@ -195,6 +195,11 @@ class AIOpsIdentityTest(unittest.TestCase):
             require_service_scope(request, "aiops.manage")
             return {"status": "ok"}
 
+        @app.get("/internal/v1/aiops/model-reference-scope-test")
+        async def model_reference_scope_test(request: Request):
+            require_service_scope(request, "model.references")
+            return {"status": "ok"}
+
         auth_codec = create_auth_context_codec()
         service_codec = create_service_identity_codec()
         app.state.auth_context_codec = auth_codec
@@ -236,6 +241,25 @@ class AIOpsIdentityTest(unittest.TestCase):
             client.get(
                 "/internal/v1/aiops/scope-test",
                 headers=agent_headers,
+            ).status_code,
+        )
+
+        model_context = create_service_auth_context(
+            caller_service="kbot-model-llm"
+        )
+        model_headers = build_scoped_internal_auth_headers(
+            audience="kbot-aiops-api",
+            caller_service="kbot-model-llm",
+            scopes=("model.references",),
+            context=model_context,
+            auth_context_codec=auth_codec,
+            service_identity_codec=service_codec,
+        )
+        self.assertEqual(
+            200,
+            client.get(
+                "/internal/v1/aiops/model-reference-scope-test",
+                headers=model_headers,
             ).status_code,
         )
 

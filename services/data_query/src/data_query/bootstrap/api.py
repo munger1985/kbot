@@ -105,6 +105,8 @@ def create_data_query_api(settings: DataQuerySettings | None = None):
                 "kbot-model-llm": frozenset({"model.references"}),
                 "kbot-model-visual": frozenset({"model.references"}),
                 "kbot-model-vlm": frozenset({"model.references"}),
+                "kbot-model-ocr": frozenset({"model.references"}),
+                "kbot-model-image": frozenset({"model.references"}),
             },
         )
     )

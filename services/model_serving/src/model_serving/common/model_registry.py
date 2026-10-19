@@ -137,6 +137,14 @@ class ModelRegistryService:
                     "MODEL_NATURAL_KEY_CONFLICT", "模型服务名已经存在",
                 ) from exc
             result = self._safe(row)
+            logger.info(
+                "模型配置已创建 | model_id={} | category={} | served_model_name={} | requested_status={} | persisted_status={}",
+                result["model_id"],
+                result["category"],
+                result["served_model_name"],
+                status,
+                result["status"],
+            )
         await self._notify_changed(result, auth_context=auth_context)
         return result
 
@@ -225,7 +233,7 @@ class ModelRegistryService:
         auth_context: AuthContext,
     ) -> tuple[dict[str, Any], ModelReferenceSummary]:
         references = await self.references(model_id, auth_context=auth_context)
-        if references.unavailable_services or references.references:
+        if references.references:
             await self._publish_blocked(
                 event_type="model.catalog.archive_blocked",
                 model_id=model_id, auth_context=auth_context,
@@ -233,8 +241,14 @@ class ModelRegistryService:
             )
             raise ModelRegistryConflict(
                 "MODEL_REFERENCED",
-                "模型仍被引用或引用检查服务不可用，不能归档",
+                "模型仍被业务配置或运行记录引用，不能归档",
                 details=references.model_dump(mode="json"),
+            )
+        if references.unavailable_services:
+            logger.warning(
+                "模型归档时部分引用服务不可用，继续保留不可用服务摘要 | model_id={} | unavailable_services={}",
+                model_id,
+                ",".join(references.unavailable_services),
             )
         async with self._uow_factory() as uow:
             assert uow.models
@@ -299,7 +313,13 @@ class ModelRegistryService:
         for service, resolver in self._reference_resolvers.items():
             try:
                 references.extend(await resolver(model_id, auth_context))
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "模型引用检查失败 | model_id={} | service={} | error_type={}",
+                    model_id,
+                    service,
+                    type(exc).__name__,
+                )
                 unavailable.append(service)
         return ModelReferenceSummary(
             model_id=model_id,
