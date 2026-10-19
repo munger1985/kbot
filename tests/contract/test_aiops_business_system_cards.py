@@ -7,6 +7,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = (ROOT / "ui/aiops/business-systems.html").read_text(encoding="utf-8")
 SCRIPT = (ROOT / "ui/aiops/js/aiops-business-systems.js").read_text(encoding="utf-8")
+WORKSPACE_PAGE = (ROOT / "ui/aiops/business-system-workspace.html").read_text(encoding="utf-8")
+WORKSPACE_SCRIPT = (ROOT / "ui/aiops/js/aiops-business-system-workspace.js").read_text(encoding="utf-8")
 STYLES = (ROOT / "ui/aiops/css/aiops-forms.css").read_text(encoding="utf-8")
 GLOBAL_STYLES = (ROOT / "ui/aiops/css/aiops.css").read_text(encoding="utf-8")
 
@@ -58,6 +60,17 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn(".business-system-directory-card>.business-system-card-actions{display:grid", STYLES)
         self.assertIn(".business-system-card-actions>span{grid-column:1/-1", STYLES)
         self.assertIn(".business-system-card-actions>div{display:flex;grid-column:1/-1", STYLES)
+
+    def test_workspace_recovers_from_a_stale_draft_reference(self):
+        self.assertIn("function clearStaleDraftReference()", WORKSPACE_SCRIPT)
+        self.assertIn('currentUrl.searchParams.delete("draft")', WORKSPACE_SCRIPT)
+        self.assertIn("if (error.status !== 404) throw error;", WORKSPACE_SCRIPT)
+        self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
+        self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
+        self.assertIn(
+            "aiops-business-system-workspace.js?v=20261019_1",
+            WORKSPACE_PAGE,
+        )
 
 
 if __name__ == "__main__":

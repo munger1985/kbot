@@ -737,9 +737,17 @@
       publish: { system: systemPayload(), resources: resources.map(resourcePayload), relations: relations.map((item) => ({ draft_relation_id: item.draft_relation_id, ...relationPayload(item) })) },
     };
   }
+  function clearStaleDraftReference() {
+    draftId = "";
+    draftRevision = 0;
+    const currentUrl = new URL(location.href);
+    currentUrl.searchParams.delete("draft");
+    history.replaceState(null, "", currentUrl);
+  }
   async function persistDraft(showToast = true) {
     const payload = draftPayload();
-    const saved = draftId
+    const canUpdateDraft = Boolean(draftId) && Number.isInteger(draftRevision) && draftRevision >= 1;
+    const saved = canUpdateDraft
       ? await request(`/business-system-drafts/${encodeURIComponent(draftId)}`, { method: "PUT", body: JSON.stringify({ revision: draftRevision, current_step: steps[step], payload }) })
       : await request("/business-system-drafts", { method: "POST", body: JSON.stringify({ mode: creating ? "CREATE" : "EDIT", business_system_id: creating ? null : systemId, current_step: steps[step], payload }) });
     draftId = saved.draft_id;
@@ -872,7 +880,15 @@
       groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
       sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED");
       if (loadedDetail) { hydrate(loadedDetail); notifyValidationIssues(loadedDetail); }
-      if (draftId) hydrateDraft(await request(`/business-system-drafts/${encodeURIComponent(draftId)}`));
+      if (draftId) {
+        try {
+          hydrateDraft(await request(`/business-system-drafts/${encodeURIComponent(draftId)}`));
+        } catch (error) {
+          if (error.status !== 404) throw error;
+          clearStaleDraftReference();
+          shell.toast("原草稿不存在或已失效，已切换为新草稿，请重新保存。");
+        }
+      }
       dirty = false;
     } catch (error) { shell.toast(error.message); }
     finally { loading = false; render(); }
