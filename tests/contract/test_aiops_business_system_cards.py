@@ -68,7 +68,7 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261019_2",
+            "aiops-business-system-workspace.js?v=20261019_3",
             WORKSPACE_PAGE,
         )
 
@@ -87,6 +87,21 @@ class BusinessSystemCardContractTests(unittest.TestCase):
             'database.oracle_scope === "CDB" ? "CDB_ROOT" : database.oracle_scope',
             WORKSPACE_SCRIPT,
         )
+
+    def test_workspace_shows_connection_test_feedback_inside_the_drawer(self):
+        self.assertIn("const connectionTestStates = new Map()", WORKSPACE_SCRIPT)
+        self.assertIn(
+            'id="resource-connection-result" class="ops-connection-result"',
+            WORKSPACE_SCRIPT,
+        )
+        self.assertIn('status: "CHECKING", message: "正在测试数据库连接…"', WORKSPACE_SCRIPT)
+        self.assertIn('connectionTestRunning ? "正在测试…" : "测试连接"', WORKSPACE_SCRIPT)
+        validation = WORKSPACE_SCRIPT.split(
+            "async function validateResource(item)", 1
+        )[1].split("function topologyBoardHtml()", 1)[0]
+        self.assertIn('status: "SUCCEEDED"', validation)
+        self.assertIn('status: "FAILED"', validation)
+        self.assertNotIn("shell.toast", validation)
 
 
 if __name__ == "__main__":

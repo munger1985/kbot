@@ -873,7 +873,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('message("至少有两个资源后才能建立关系。"', systems)
         self.assertIn('return `${label}：未配置数据库监控 Target。`', systems)
         self.assertIn('return `${label}：未配置主机监控 Target。`', systems)
-        self.assertIn("if (configurationError) { shell.toast(configurationError); return; }", systems)
+        self.assertIn('id="resource-connection-result"', systems)
         self.assertIn('"数据库连接测试通过；正式提交前不会创建资源。"', systems)
         self.assertIn("连接测试为可选项，不影响保存", systems)
         self.assertNotIn("function validateStep()", systems)

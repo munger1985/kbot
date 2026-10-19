@@ -67,6 +67,7 @@
   let sources = [];
   let resources = [];
   let relations = [];
+  const connectionTestStates = new Map();
   let activeLayer = "DATA";
   let activeResourceId = "";
   let activeRelationId = "";
@@ -364,6 +365,10 @@
     const source = sourceFor(item);
     const editing = Boolean(item.system_resource_id);
     const rac = isRacResource(item);
+    const connectionTestState = connectionTestStates.get(item.draft_resource_id);
+    const connectionTestMessage = connectionTestState?.message || (editing ? "修改将在保存业务系统时提交" : item.saved ? "数据库连接已测试" : "连接测试为可选项，不影响保存");
+    const connectionTestTone = connectionTestState?.status === "SUCCEEDED" ? "good" : connectionTestState?.status === "FAILED" ? "bad" : "";
+    const connectionTestRunning = connectionTestState?.status === "CHECKING";
     const baseFields = `<div class="business-editor-grid"><label class="span-6"><span>${rac ? "RAC 名称" : "数据库名称"}</span><input name="${rac ? "rac_cluster_name" : "resource_name"}" value="${esc(rac ? item.rac_cluster_name : item.display_name)}"></label><label class="span-6"><span>技术责任组</span><select name="owner_group_id">${groupOptions(item.owner_group_id, "请选择")}</select></label><label class="span-12"><span>位置（可选）</span><input name="location_name" value="${esc(item.location_name)}" placeholder="机房、地域或可用区"></label></div>`;
     const databaseFields = database ? `<div class="business-editor-grid business-database-grid"><label class="span-3"><span>数据库引擎</span><select name="db_type" ${editing || rac ? "disabled" : ""}>${selectOptions([["ORACLE", "Oracle"], ["MYSQL", "MySQL"], ["POSTGRESQL", "PostgreSQL"]], database.db_type)}</select></label><label class="span-3"><span>数据库版本</span><select name="version_code">${selectOptions(versions[database.db_type], database.version_code)}</select></label><label class="span-3"><span>数据库环境</span><select name="db_environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], database.environment)}</select></label><label class="span-3"><span>部署形态</span><select name="deployment_type" ${database.db_type !== "ORACLE" || editing ? "disabled" : ""}>${selectOptions([["SINGLE_INSTANCE", "单实例"], ["RAC", "RAC（多节点）"]], database.deployment_type)}</select></label><label class="span-3"><span>数据库角色</span><select name="db_role">${selectOptions([["UNKNOWN", "待识别"], ["PRIMARY", "主库"], ["STANDBY", "备库"]], database.db_role)}</select></label></div>` : "";
     let connection = "";
@@ -388,7 +393,7 @@
       }).join("");
       connection = `<div class="business-editor-grid business-connection-grid business-rac-editor"><p class="span-12 business-rac-guidance">公共凭据与监控源只填写一次；每个节点分别配置 Host、Service Name、数据库监控 Target 和主机监控 Target。</p><label class="span-3"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-6"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label class="span-6"><span>诊断用户名（所有节点共用）</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码（所有节点共用）</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-12"><span>监控源（所有节点共用）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${database.discovering ? `<p class="span-12 business-inline-note">正在从监控源发现数据库和承载主机…</p>` : ""}<section class="span-12 business-rac-node-list">${nodeCards}<button id="add-rac-node" type="button">＋ 增加 RAC 节点</button></section>${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；每个 RAC 节点分别绑定数据库与承载主机 Target。</p>` : ""}</div>`;
     }
-    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p>${editing ? "修改将在保存业务系统时提交" : item.saved ? "数据库连接已测试" : "连接测试为可选项，不影响保存"}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving ? "disabled" : ""}>测试连接</button>` : ""}</footer></form>`;
+    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}</div><footer><button id="remove-resource" class="business-danger" type="button">移除资源</button><p id="resource-connection-result" class="ops-connection-result" data-tone="${connectionTestTone}">${esc(connectionTestMessage)}</p><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving || connectionTestRunning ? "disabled" : ""}>${connectionTestRunning ? "正在测试…" : "测试连接"}</button>` : ""}</footer></form>`;
   }
 
   function renderComposition() {
@@ -446,6 +451,7 @@
     editor.querySelectorAll("[data-rac-node][data-rac-field]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => {
       const node = resources.find((row) => row.draft_resource_id === input.dataset.racNode);
       if (!node?.database) return;
+      connectionTestStates.delete(item.draft_resource_id);
       node.database[input.dataset.racField] = input.dataset.racField === "rac_node_number" ? Number(input.value) : input.value;
       node.saved = false;
       if (input.dataset.racField === "rac_node_number") syncRacNames(item);
@@ -461,6 +467,7 @@
     });
     document.getElementById("remove-resource").onclick = () => {
       const removed = new Set(racMembers(item).map((member) => member.draft_resource_id));
+      removed.forEach((resourceId) => connectionTestStates.delete(resourceId));
       resources = resources.filter((row) => !removed.has(row.draft_resource_id));
       relations = relations.filter((relation) => relation.draft_relation_id !== item.rac_group_id && !relation.participants.some((participant) => removed.has(participant.draft_resource_id)));
       syncInferredDatabaseRelations();
@@ -472,6 +479,7 @@
 
   function updateResourceField(item, input) {
     const name = input.name;
+    connectionTestStates.delete(item.draft_resource_id);
     if (name === "rac_cluster_name") {
       item.rac_cluster_name = input.value;
       syncRacNames(item);
@@ -620,9 +628,14 @@
 
   async function validateResource(item) {
     const configurationError = resourceConfigurationError(item);
-    if (configurationError) { shell.toast(configurationError); return; }
+    if (configurationError) {
+      connectionTestStates.set(item.draft_resource_id, { status: "FAILED", message: configurationError });
+      renderComposition();
+      return;
+    }
     const members = isRacResource(item) ? racMembers(item) : [item];
-    saving = true; updateFooter();
+    connectionTestStates.set(item.draft_resource_id, { status: "CHECKING", message: "正在测试数据库连接…" });
+    saving = true; renderComposition(); updateFooter();
     try {
       for (const member of members) {
         const target = targetPayload(member);
@@ -630,8 +643,11 @@
         if (!response.ok) throw new Error(`${member.display_name}：${response.error_code || "连接测试失败"}`);
       }
       members.forEach((member) => { member.saved = true; });
-      mark(); shell.toast(isRacResource(item) ? `${members.length} 个 RAC 节点连接测试通过；正式提交前不会创建资源。` : "数据库连接测试通过；正式提交前不会创建资源。");
-    } catch (error) { shell.toast(error.message); }
+      connectionTestStates.set(item.draft_resource_id, { status: "SUCCEEDED", message: isRacResource(item) ? `${members.length} 个 RAC 节点连接测试通过；正式提交前不会创建资源。` : "数据库连接测试通过；正式提交前不会创建资源。" });
+      mark();
+    } catch (error) {
+      connectionTestStates.set(item.draft_resource_id, { status: "FAILED", message: error.message });
+    }
     finally { saving = false; renderComposition(); updateFooter(); }
   }
 
