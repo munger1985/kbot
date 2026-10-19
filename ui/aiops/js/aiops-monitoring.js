@@ -7,7 +7,8 @@
     sources: [], instances: [], profiles: [], view: null,
     sourceId: "", baseline: "1w", profileId: "", window: "1h", selected: [], search: "",
     refreshTimer: null, controller: null, contextController: null, charts: new Map(),
-    visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null, railCollapsed: false,
+    visiblePanels: [], dataDrawerPanelId: "", dataDrawerTrigger: null,
+    instanceDrawerTrigger: null, railCollapsed: false,
   };
   const readinessLabels = {
     READY: "就绪", DISABLED: "已停用", DISCONNECTED: "连接失败",
@@ -233,14 +234,36 @@
     const value = state.search.trim().toLowerCase();
     return state.instances.filter((item) => !value || `${item.business_system_name || ""} ${item.resource_name || ""} ${item.display_name} ${item.db_type}`.toLowerCase().includes(value));
   }
+  function openInstanceDrawer() {
+    if (!state.instances.length) return;
+    const dialog = document.getElementById("monitoring-instance-drawer");
+    state.instanceDrawerTrigger = document.activeElement;
+    if (!dialog.open) dialog.showModal();
+    requestAnimationFrame(() => document.getElementById("monitoring-instance-search").focus());
+  }
+  function closeInstanceDrawer() {
+    const dialog = document.getElementById("monitoring-instance-drawer");
+    if (dialog.open) dialog.close();
+  }
   function renderInstances() {
     const picker = document.getElementById("monitoring-instance-picker");
     picker.hidden = renderGate();
-    if (picker.hidden) return;
+    if (picker.hidden) {
+      closeInstanceDrawer();
+      return;
+    }
     const instances = filteredInstances();
+    const selectedInstance = state.instances.find((item) => state.selected.includes(item.instance_id)) || null;
+    document.getElementById("monitoring-current-instance").textContent = selectedInstance?.resource_name || selectedInstance?.display_name || "未选择";
+    document.getElementById("monitoring-current-instance-meta").textContent = selectedInstance
+      ? [selectedInstance.business_system_name || "未归属业务系统", selectedInstance.db_type].join(" · ")
+      : "请选择一个数据库资源";
+    document.getElementById("monitoring-current-instance-status").innerHTML = selectedInstance
+      ? `${badge(selectedInstance.monitoring_readiness, `监控 ${label(selectedInstance.monitoring_readiness)}`)}<span title="${esc(diagnosticGapText(selectedInstance))}">${badge(selectedInstance.diagnostic_readiness, `自动诊断 ${label(selectedInstance.diagnostic_readiness)}`)}</span>`
+      : "";
     const count = document.getElementById("monitoring-selection-count");
     count.classList.toggle("has-selection", Boolean(state.selected.length));
-    count.innerHTML = `<strong>${state.selected.length}</strong> / ${instances.length} ${state.selected.length ? "已选择" : "请选择"}`;
+    count.innerHTML = `<strong>${instances.length}</strong> 个匹配资源${state.selected.length ? " · 已选择 1 个" : " · 请选择"}`;
     const groups = new Map();
     instances.forEach((instance) => {
       const key = `${instance.business_system_id || "unassigned"}:${instance.resource_id || "unassigned"}`;
@@ -252,9 +275,8 @@
       const selected = state.selected.includes(instance.instance_id);
       const result = state.view?.instances.find((item) => item.instance_id === instance.instance_id);
       const queryStatus = targetPickerStatus(instance, result);
-      const current = state.selected.length === 1 && selected;
       const displayName = instance.resource_name || instance.display_name;
-      return `<label class="ops-monitoring-instance-card ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(displayName)}" ${selected ? "checked" : ""}><span class="ops-monitoring-instance-copy"><span><strong>${esc(displayName)}</strong><em>${esc(instance.db_type)}</em></span><small>${esc(instance.business_system_name || "未归属业务系统")}</small></span><span class="ops-monitoring-instance-action">${current ? "当前查看" : "选择查看"}</span><span class="ops-monitoring-instance-meta"><span><small>接入状态</small><span>${badge(instance.monitoring_readiness, `监控 ${label(instance.monitoring_readiness)}`)} <span title="${esc(diagnosticGapText(instance))}">${badge(instance.diagnostic_readiness, `自动诊断 ${label(instance.diagnostic_readiness)}`)}</span></span></span><span><small>查询状态</small>${badge(queryStatus.value, queryStatus.label)}</span><span><small>最新采样</small><time>${esc(shell.fmt(result ? latestSampleForInstance(instance.instance_id) : null))}</time></span></span></label>`;
+      return `<label class="ops-monitoring-target-option ${selected ? "is-selected" : ""}"><input type="radio" name="monitoring_instance" data-instance-id="${esc(instance.instance_id)}" aria-label="选择 ${esc(displayName)}" ${selected ? "checked" : ""}><span><strong>${esc(displayName)}</strong><small>${esc(instance.db_type)} · 监控 ${esc(label(instance.monitoring_readiness))}</small></span>${badge(queryStatus.value, queryStatus.label)}</label>`;
     };
     const cards = [...groups.values()].map((group) => `<section class="ops-monitoring-instance-group"><header><strong>${esc(group.systemName)}</strong><span>${esc(group.resourceName)} · ${group.items.length} 个数据库入口</span></header><div>${group.items.map(card).join("")}</div></section>`).join("");
     document.getElementById("monitoring-instance-list").innerHTML = cards || '<div class="ops-empty">当前筛选条件下没有数据库实例。</div>';
@@ -344,6 +366,7 @@
       await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
+      closeInstanceDrawer();
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
@@ -372,6 +395,7 @@
       await loadSelectedTargetProfiles({ signal: contextController.signal });
       if (contextController.signal.aborted) return;
       updateLocation();
+      closeInstanceDrawer();
       renderContext(); renderInstances(); scheduleView();
     } catch (error) {
       if (contextController.signal.aborted) return;
@@ -902,6 +926,15 @@
     if (!input?.checked) return;
     void selectInstance(input.dataset.instanceId);
   };
+  document.getElementById("open-monitoring-instance-drawer").onclick = openInstanceDrawer;
+  document.getElementById("close-monitoring-instance-drawer").onclick = closeInstanceDrawer;
+  document.getElementById("monitoring-instance-drawer").addEventListener("close", () => {
+    const trigger = state.instanceDrawerTrigger?.isConnected
+      ? state.instanceDrawerTrigger
+      : document.getElementById("open-monitoring-instance-drawer");
+    state.instanceDrawerTrigger = null;
+    trigger?.focus();
+  });
   document.getElementById("monitoring-panels").onclick = (event) => {
     const capacityRow = event.target.closest("[data-capacity-instance-id]");
     if (capacityRow) {

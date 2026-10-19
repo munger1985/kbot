@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>实时监控 · KBot AIOps</title>
-  <link rel="stylesheet" href="./css/aiops.css?v=20261014_1">
+  <link rel="stylesheet" href="./css/aiops.css?v=20261019_1">
 </head>
 <body data-page="monitoring">
-  <main class="ops-main ops-monitoring-main">
+  <main class="ops-main ops-special-page ops-monitoring-main">
     <header class="ops-head ops-monitoring-head">
       <div>
         <h1>实时监控</h1>
@@ -33,10 +33,13 @@
       <div id="monitoring-readiness" class="ops-monitoring-readiness"></div>
     </section>
 
-    <section id="monitoring-instance-picker" class="ops-panel ops-monitoring-instance-picker" hidden>
-      <div class="ops-panel-head"><div><h2>数据库资源</h2><p>按业务系统与资源选择一个数据库入口查看实时指标和数据质量。</p></div><span id="monitoring-selection-count" class="ops-monitoring-selection-count"><strong>0</strong> / 0 请选择</span></div>
-      <div class="ops-monitoring-instance-tools"><label>搜索数据库<input id="monitoring-instance-search" type="search" placeholder="业务系统、资源名称或数据库类型"></label></div>
-      <div id="monitoring-instance-list" class="ops-monitoring-instance-list" role="radiogroup" aria-label="数据库资源单选"></div>
+    <section id="monitoring-instance-picker" class="ops-monitoring-target-summary" hidden>
+      <span>当前数据库</span>
+      <div class="ops-monitoring-target-heading">
+        <div><strong id="monitoring-current-instance">未选择</strong><small id="monitoring-current-instance-meta">—</small></div>
+        <button id="open-monitoring-instance-drawer" type="button">切换</button>
+      </div>
+      <div id="monitoring-current-instance-status" class="ops-monitoring-current-status"></div>
     </section>
         </div>
       </aside>
@@ -56,6 +59,19 @@
       </div>
     </section>
   </main>
+  <dialog id="monitoring-instance-drawer" class="ops-monitoring-instance-drawer" aria-labelledby="monitoring-instance-drawer-title">
+    <div class="ops-monitoring-instance-drawer-shell">
+      <header>
+        <div><span>数据库切换</span><h2 id="monitoring-instance-drawer-title">选择数据库资源</h2><p>按业务系统与资源分组，也可直接搜索数据库。</p></div>
+        <button id="close-monitoring-instance-drawer" type="button" aria-label="关闭数据库选择">关闭</button>
+      </header>
+      <div class="ops-monitoring-instance-drawer-body">
+        <label class="ops-monitoring-instance-search">搜索业务系统、资源或数据库<input id="monitoring-instance-search" type="search" placeholder="业务系统 / 数据库资源 / 数据库类型"></label>
+        <span id="monitoring-selection-count" class="ops-monitoring-selection-count"><strong>0</strong> / 0 请选择</span>
+        <div id="monitoring-instance-list" class="ops-monitoring-instance-list" role="radiogroup" aria-label="数据库资源单选"></div>
+      </div>
+    </div>
+  </dialog>
   <dialog id="monitoring-data-drawer" class="ops-monitoring-data-drawer" aria-labelledby="monitoring-data-drawer-title">
     <div class="ops-monitoring-data-drawer-shell">
       <header>
@@ -86,6 +102,6 @@
   <script src="../vendor/echarts.min.js?v=6.1.0"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261016_2"></script>
-  <script src="./js/aiops-monitoring.js?v=20261014_1"></script>
+  <script src="./js/aiops-monitoring.js?v=20261019_1"></script>
 </body>
 </html>
