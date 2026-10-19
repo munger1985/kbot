@@ -92,7 +92,8 @@
           </div>
           <div class="media-field">
             <label for="model-served-name">服务模型名</label>
-            <input id="model-served-name" required maxlength="128" pattern="[a-z0-9][a-z0-9._-]{0,127}" placeholder="例如 image-generation-prod">
+            <input id="model-served-name" required maxlength="128" placeholder="例如 image-generation-ashburn">
+            <small class="model-field-help">内部稳定标识；保存时自动转为小写，并将空格等字符替换为连字符。</small>
           </div>
           <div class="media-field">
             <label for="model-provider-name">上游模型标识</label>

@@ -284,6 +284,16 @@
     return value;
   }
 
+  function normalizeServedModelName(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^[^a-z0-9]+/, "")
+      .replace(/[._-]+$/, "")
+      .slice(0, 128);
+  }
+
   function normalizedJson(value) {
     if (Array.isArray(value)) return value.map(normalizedJson);
     if (value && typeof value === "object") {
@@ -333,6 +343,9 @@
     const apiKey = element("model-api-key").value.trim();
     const description = element("model-description").value.trim();
     if (!modelId) {
+      const servedModelName = normalizeServedModelName(element("model-served-name").value);
+      if (!servedModelName) throw new Error("服务模型名必须至少包含一个英文字母或数字");
+      element("model-served-name").value = servedModelName;
       const required = new Set(option?.required_fields || []);
       if (required.has("api_endpoint") && !endpoint) throw new Error("当前 Provider 要求填写 API Endpoint");
       if (required.has("api_key") && !apiKey) throw new Error("当前 Provider 要求填写 API Key / Token");
@@ -345,7 +358,7 @@
         throw new Error("请上传 OCI config 和私钥，或手工填写完整认证参数");
       }
       return {
-        served_model_name: element("model-served-name").value.trim(),
+        served_model_name: servedModelName,
         display_name: element("model-display-name").value.trim(),
         provider_model_name: element("model-provider-name").value.trim(),
         category: Number(element("model-category").value),
