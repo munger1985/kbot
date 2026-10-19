@@ -61,6 +61,14 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn(".business-system-card-actions>span{grid-column:1/-1", STYLES)
         self.assertIn(".business-system-card-actions>div{display:flex;grid-column:1/-1", STYLES)
 
+    def test_offline_confirmation_uses_the_defined_danger_color(self):
+        self.assertIn(
+            ".business-system-lifecycle-dialog button.danger{border-color:var(--bad);color:#fff;background:var(--bad)}",
+            STYLES,
+        )
+        self.assertNotIn("var(--danger)", STYLES)
+        self.assertIn("aiops-forms.css?v=20261019-1", PAGE)
+
     def test_workspace_recovers_from_a_stale_draft_reference(self):
         self.assertIn("function clearStaleDraftReference()", WORKSPACE_SCRIPT)
         self.assertIn('currentUrl.searchParams.delete("draft")', WORKSPACE_SCRIPT)
