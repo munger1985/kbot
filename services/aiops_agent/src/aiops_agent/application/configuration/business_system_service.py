@@ -751,7 +751,7 @@ class BusinessSystemConfigurationMixin:
             entity.updated_by = scope.actor_id
             entity.updated_at = self._now()
             await uow.flush()
-            return ManagedResourceView(
+            result = ManagedResourceView(
                 resource_id=entity.resource_id,
                 resource_code=entity.resource_code,
                 resource_type_key=entity.resource_type_key,
@@ -763,6 +763,8 @@ class BusinessSystemConfigurationMixin:
                 row_version=int(entity.row_version),
                 database=database_view,
             )
+            await uow.commit()
+            return result
 
     async def patch_system_resource(self, *, scope: ConfigurationScope, business_system_id: UUID, system_resource_id: UUID, request: BusinessSystemResourcePatch, expected_version: int) -> BusinessSystemResourceGraphDetail:
         async with self._uow_factory() as uow:
@@ -786,7 +788,9 @@ class BusinessSystemConfigurationMixin:
             entity.updated_by = scope.actor_id
             entity.updated_at = self._now()
             await uow.flush()
-            return await self._system_detail(uow=uow, scope=scope, system=system)
+            result = await self._system_detail(uow=uow, scope=scope, system=system)
+            await uow.commit()
+            return result
 
     async def remove_system_resource(self, *, scope: ConfigurationScope, business_system_id: UUID, system_resource_id: UUID, expected_version: int) -> None:
         async with self._uow_factory() as uow:
@@ -805,6 +809,7 @@ class BusinessSystemConfigurationMixin:
             if await uow.business_systems.resource_count(business_system_id) <= 1:
                 raise validation_failed("业务系统至少保留一个资源")
             await uow.business_systems.remove_system_resource(system_resource_id)
+            await uow.commit()
 
     async def _validate_relation_participants(self, *, uow: AIOpsUnitOfWork, business_system_id: UUID, relation_type_key: str, participants: tuple[RelationParticipantInput, ...]) -> dict[UUID, BusinessSystemResourceView]:
         if relation_type_key not in RELATION_RULES:
@@ -885,7 +890,9 @@ class BusinessSystemConfigurationMixin:
             relation.updated_by = scope.actor_id
             relation.updated_at = self._now()
             await uow.flush()
-            return await self._system_detail(uow=uow, scope=scope, system=system)
+            result = await self._system_detail(uow=uow, scope=scope, system=system)
+            await uow.commit()
+            return result
 
     async def delete_resource_relation(self, *, scope: ConfigurationScope, business_system_id: UUID, relation_id: UUID, expected_version: int) -> None:
         async with self._uow_factory() as uow:
@@ -898,6 +905,7 @@ class BusinessSystemConfigurationMixin:
                 raise resource_not_found("Resource Relation")
             self._check_version(relation.row_version, expected_version)
             await uow.business_systems.delete_relation(relation_id)
+            await uow.commit()
 
     async def get_topology_subgraph(self, *, scope: ConfigurationScope, business_system_id: UUID, focus_resource_id: UUID | None, max_depth: int, max_nodes: int) -> TopologySubgraph:
         detail = await self.get_business_system(scope=scope, business_system_id=business_system_id)
@@ -995,7 +1003,9 @@ class BusinessSystemConfigurationMixin:
             entity = BusinessSystemDraftEntity(**values)
             await uow.business_systems.add_draft(entity)
             await uow.flush()
-            return await self._draft_view(uow=uow, entity=entity)
+            result = await self._draft_view(uow=uow, entity=entity)
+            await uow.commit()
+            return result
 
     async def list_business_system_drafts(self, *, scope: ConfigurationScope, limit: int) -> BusinessSystemDraftPage:
         async with self._uow_factory() as uow:
@@ -1040,6 +1050,9 @@ class BusinessSystemConfigurationMixin:
                 entity.status = "EXPIRED"
                 entity.updated_at = self._now()
                 await uow.flush()
+                result = await self._draft_view(uow=uow, entity=entity)
+                await uow.commit()
+                return result
             return await self._draft_view(uow=uow, entity=entity)
 
     async def save_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, request: BusinessSystemDraftSave) -> BusinessSystemDraftView:
@@ -1061,7 +1074,9 @@ class BusinessSystemConfigurationMixin:
             entity.updated_at = now
             entity.expires_at = now + timedelta(days=90)
             await uow.flush()
-            return await self._draft_view(uow=uow, entity=entity)
+            result = await self._draft_view(uow=uow, entity=entity)
+            await uow.commit()
+            return result
 
     async def abandon_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, expected_revision: int) -> None:
         async with self._uow_factory() as uow:
@@ -1076,6 +1091,7 @@ class BusinessSystemConfigurationMixin:
             entity.status = "ABANDONED"
             entity.updated_by = scope.actor_id
             entity.updated_at = self._now()
+            await uow.commit()
 
     async def commit_business_system_draft(self, *, scope: ConfigurationScope, draft_id: UUID, expected_revision: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
         draft = await self.get_business_system_draft(scope=scope, draft_id=draft_id)
@@ -1099,6 +1115,7 @@ class BusinessSystemConfigurationMixin:
                 entity.business_system_id = result.business_system_id
                 entity.updated_by = scope.actor_id
                 entity.updated_at = self._now()
+                await uow.commit()
         return result
 
     async def patch_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, request: BusinessSystemInfoPatch, expected_version: int) -> BusinessSystemResourceGraphDetail:
@@ -1120,7 +1137,9 @@ class BusinessSystemConfigurationMixin:
             entity.updated_by = scope.actor_id
             entity.updated_at = self._now()
             await uow.flush()
-            return await self._system_detail(uow=uow, scope=scope, system=entity)
+            result = await self._system_detail(uow=uow, scope=scope, system=entity)
+            await uow.commit()
+            return result
 
     async def command_business_system(self, *, scope: ConfigurationScope, business_system_id: UUID, command: str, request: BusinessSystemLifecycleCommand, expected_version: int, idempotency_key: str) -> BusinessSystemResourceGraphDetail:
         reason = request.reason.strip() if request.reason else None
@@ -1187,3 +1206,4 @@ class BusinessSystemConfigurationMixin:
                 row_version=int(entity.row_version),
                 details={"cascade": False},
             )
+            await uow.commit()

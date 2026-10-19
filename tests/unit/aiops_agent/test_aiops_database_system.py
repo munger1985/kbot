@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -238,6 +238,103 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             domain_id=scope.domain_id,
         )
 
+    async def test_create_draft_commits_before_return(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._credential_cipher = ManagedCredentialCipher(
+            key=b"d" * 32,
+            key_version="v1",
+        )
+        scope = self.scope()
+        now = datetime.now(UTC)
+        repository = SimpleNamespace(add_draft=AsyncMock())
+        uow = SimpleNamespace(
+            business_systems=repository,
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+        )
+
+        class UowContext:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        service._uow_factory = UowContext
+        service._now = lambda: now
+        result = await service.create_business_system_draft(
+            scope=scope,
+            request=BusinessSystemDraftCreate(
+                current_step="SYSTEM_COMPOSITION",
+                payload={"system": {"display_name": "ERP"}},
+            ),
+        )
+
+        self.assertEqual("ERP", result.payload["system"]["display_name"])
+        repository.add_draft.assert_awaited_once()
+        uow.flush.assert_awaited_once()
+        uow.commit.assert_awaited_once()
+
+    async def test_save_draft_commits_revision_and_payload(self) -> None:
+        service = object.__new__(AIOpsConfigurationService)
+        service._credential_cipher = ManagedCredentialCipher(
+            key=b"d" * 32,
+            key_version="v1",
+        )
+        scope = self.scope()
+        now = datetime.now(UTC)
+        draft_id = uuid7()
+        entity = SimpleNamespace(
+            draft_id=draft_id,
+            domain_id=scope.domain_id,
+            mode="CREATE",
+            business_system_id=None,
+            current_step="SYSTEM_COMPOSITION",
+            revision=1,
+            status="ACTIVE",
+            system_payload_json=service._seal_draft_payload(
+                scope=scope,
+                draft_id=draft_id,
+                payload={"system": {"display_name": "ERP"}},
+            ),
+            expires_at=now + timedelta(days=90),
+            created_at=now,
+            updated_at=now,
+            updated_by=None,
+        )
+        repository = SimpleNamespace(
+            get_draft_scoped=AsyncMock(return_value=entity),
+        )
+        uow = SimpleNamespace(
+            business_systems=repository,
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+        )
+
+        class UowContext:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        service._uow_factory = UowContext
+        service._now = lambda: now
+        result = await service.save_business_system_draft(
+            scope=scope,
+            draft_id=draft_id,
+            request=BusinessSystemDraftSave(
+                revision=1,
+                current_step="TOPOLOGY_CONFIRMATION",
+                payload={"system": {"display_name": "ERP 生产系统"}},
+            ),
+        )
+
+        self.assertEqual(2, result.revision)
+        self.assertEqual("ERP 生产系统", result.payload["system"]["display_name"])
+        uow.flush.assert_awaited_once()
+        uow.commit.assert_awaited_once()
+
     async def test_disable_requires_reason_before_writing(self) -> None:
         service = object.__new__(AIOpsConfigurationService)
         service._idempotent = AsyncMock()
@@ -261,7 +358,11 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             updated_at=None,
         )
         repository = SimpleNamespace(get_scoped=AsyncMock(return_value=entity))
-        uow = SimpleNamespace(business_systems=repository, flush=AsyncMock())
+        uow = SimpleNamespace(
+            business_systems=repository,
+            flush=AsyncMock(),
+            commit=AsyncMock(),
+        )
 
         class UowContext:
             async def __aenter__(self):
@@ -292,6 +393,7 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             domain_id=scope.domain_id,
         )
         uow.flush.assert_awaited_once()
+        uow.commit.assert_awaited_once()
         self.assertEqual({"cascade": False}, add_event.await_args.kwargs["details"])
 
     async def test_list_business_systems_awaits_each_detail_projection(self) -> None:
