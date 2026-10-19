@@ -8,10 +8,28 @@ from decimal import Decimal
 from loguru import logger
 from typing import Any
 from uuid import UUID
-from platform_core.contracts import EmbeddingDataItem, INTERNAL_API_V1
+from platform_core.contracts import AuthContext, EmbeddingDataItem, INTERNAL_API_V1
 from platform_core.codec.encoder import ImageEncoder
 from platform_core.exceptions import *
 from platform_core.security import build_internal_auth_headers
+
+
+class AIModelConfigClientError(RuntimeError):
+    """保留模型配置服务的稳定错误语义。"""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        message: str,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.context = context or {}
 
 
 class AIModelConfigClient:
@@ -24,6 +42,7 @@ class AIModelConfigClient:
         timeout: int = 10,
         caller_service: str,
         audience: str,
+        category: int | None = None,
     ):
         resolved = base_url.rstrip("/")
         # 0.0.0.0 是监听地址，不能作为客户端目标地址。
@@ -31,8 +50,14 @@ class AIModelConfigClient:
         self.timeout = timeout
         self.caller_service = caller_service
         self.audience = audience
+        self.category = category
 
-    async def get_model(self, model_id: UUID) -> dict[str, Any]:
+    async def get_model(
+        self,
+        model_id: UUID,
+        *,
+        auth_context: AuthContext | None = None,
+    ) -> dict[str, Any]:
         parsed_model_id = model_id if isinstance(model_id, UUID) else UUID(str(model_id))
         url = f"{self.base_url}{INTERNAL_API_V1}/models/{parsed_model_id}"
         headers = {
@@ -40,6 +65,7 @@ class AIModelConfigClient:
             **build_internal_auth_headers(
                 audience=self.audience,
                 caller_service=self.caller_service,
+                context=auth_context,
             ),
         }
         try:
@@ -60,7 +86,9 @@ class AIModelConfigClient:
             logger.error("读取模型配置失败: {}", exc)
             raise RuntimeError("model configuration service is unavailable") from exc
 
-    async def list_models(self) -> list[dict[str, Any]]:
+    async def list_models(
+        self, *, auth_context: AuthContext | None = None,
+    ) -> list[dict[str, Any]]:
         """读取当前模型进程所管理的模型定义。"""
         url = f"{self.base_url}{INTERNAL_API_V1}/models"
         headers = {
@@ -68,6 +96,7 @@ class AIModelConfigClient:
             **build_internal_auth_headers(
                 audience=self.audience,
                 caller_service=self.caller_service,
+                context=auth_context,
             ),
         }
         try:
@@ -93,44 +122,91 @@ class AIModelConfigClient:
             logger.error("读取模型目录失败: {}", exc)
             raise RuntimeError("模型配置服务暂时不可用") from exc
 
-    async def list_provider_options(self) -> list[dict[str, Any]]:
-        payload = await self._request("GET", "/provider-options")
+    async def list_provider_options(
+        self, *, auth_context: AuthContext | None = None,
+    ) -> list[dict[str, Any]]:
+        payload = await self._request(
+            "GET", "/provider-options", auth_context=auth_context,
+        )
         if not isinstance(payload, list):
             raise RuntimeError("模型服务返回了无效 Provider 目录")
         return [item for item in payload if isinstance(item, dict)]
 
-    async def create_model(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._request("POST", "", payload=payload)
+    async def create_model(
+        self,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST", "", payload=payload, auth_context=auth_context,
+        )
 
     async def update_model(
-        self, model_id: UUID, payload: dict[str, Any],
+        self,
+        model_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext | None = None,
     ) -> dict[str, Any]:
-        return await self._request("PATCH", f"/{model_id}", payload=payload)
+        return await self._request(
+            "PATCH", f"/{model_id}", payload=payload,
+            auth_context=auth_context,
+        )
 
     async def change_model_status(
-        self, model_id: UUID, payload: dict[str, Any],
+        self,
+        model_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "PATCH", f"/{model_id}/status", payload=payload,
+            auth_context=auth_context,
         )
 
     async def archive_model(
-        self, model_id: UUID, payload: dict[str, Any],
+        self,
+        model_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "POST", f"/{model_id}/archive", payload=payload,
+            auth_context=auth_context,
         )
 
-    async def get_model_references(self, model_id: UUID) -> dict[str, Any]:
-        return await self._request("GET", f"/{model_id}/references")
+    async def get_model_references(
+        self,
+        model_id: UUID,
+        *,
+        auth_context: AuthContext | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET", f"/{model_id}/references", auth_context=auth_context,
+        )
 
     async def delete_model(
-        self, model_id: UUID, payload: dict[str, Any],
+        self,
+        model_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext | None = None,
     ) -> None:
-        await self._request("DELETE", f"/{model_id}", payload=payload)
+        await self._request(
+            "DELETE", f"/{model_id}", payload=payload,
+            auth_context=auth_context,
+        )
 
     async def _request(
-        self, method: str, suffix: str, *, payload: dict[str, Any] | None = None,
+        self,
+        method: str,
+        suffix: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        auth_context: AuthContext | None = None,
     ) -> Any:
         url = f"{self.base_url}{INTERNAL_API_V1}/models{suffix}"
         headers = {
@@ -139,22 +215,57 @@ class AIModelConfigClient:
             **build_internal_auth_headers(
                 audience=self.audience,
                 caller_service=self.caller_service,
+                context=auth_context,
             ),
         }
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        ) as session:
-            async with session.request(
-                method, url, headers=headers, json=payload,
-            ) as response:
-                if response.status == 204:
-                    return {}
-                body = await response.json(content_type=None)
-                if response.status >= 400:
-                    raise RuntimeError(
-                        f"模型服务返回 HTTP {response.status}: {body}"
-                    )
-                return body
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            ) as session:
+                async with session.request(
+                    method, url, headers=headers, json=payload,
+                ) as response:
+                    if response.status == 204:
+                        return {}
+                    raw = await response.text()
+                    try:
+                        body = json.loads(raw) if raw else {}
+                    except (TypeError, ValueError):
+                        body = {"message": raw[:500]}
+                    if response.status >= 400:
+                        detail = (
+                            body.get("detail", body)
+                            if isinstance(body, dict)
+                            else {"message": str(body)}
+                        )
+                        if not isinstance(detail, dict):
+                            detail = {"message": str(detail)}
+                        raise AIModelConfigClientError(
+                            status_code=response.status,
+                            code=str(
+                                detail.get("code")
+                                or "MODEL_CONFIGURATION_REQUEST_FAILED"
+                            ),
+                            message=str(
+                                detail.get("message")
+                                or detail.get("detail")
+                                or "模型配置请求失败"
+                            ),
+                            context=(
+                                detail.get("context")
+                                if isinstance(detail.get("context"), dict)
+                                else None
+                            ),
+                        )
+                    return body
+        except AIModelConfigClientError:
+            raise
+        except (TimeoutError, aiohttp.ClientError, OSError) as exc:
+            raise AIModelConfigClientError(
+                status_code=503,
+                code="MODEL_CONFIGURATION_SERVICE_UNAVAILABLE",
+                message="模型配置服务暂时不可用",
+            ) from exc
 
 @dataclass
 class LLMChunk:

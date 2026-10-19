@@ -8904,11 +8904,51 @@
         "title": "MemoryItemView",
         "type": "object"
       },
-      "ModelCatalogItem": {
+      "ModelArchiveRequest": {
+        "additionalProperties": false,
         "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "ModelArchiveRequest",
+        "type": "object"
+      },
+      "ModelCatalogItem": {
+        "additionalProperties": false,
+        "properties": {
+          "api_endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Endpoint"
+          },
           "category": {
+            "maximum": 6.0,
+            "minimum": 1.0,
             "title": "Category",
             "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "display_name": {
             "title": "Display Name",
@@ -8932,11 +8972,21 @@
             "title": "Provider Model Name",
             "type": "string"
           },
+          "row_version": {
+            "minimum": 1.0,
+            "title": "Row Version",
+            "type": "integer"
+          },
           "served_model_name": {
             "title": "Served Model Name",
             "type": "string"
           },
           "status": {
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -8953,9 +9003,357 @@
           "provider_model_name",
           "category",
           "provider",
-          "status"
+          "status",
+          "row_version"
         ],
         "title": "ModelCatalogItem",
+        "type": "object"
+      },
+      "ModelCategory": {
+        "description": "Model category enumeration.",
+        "enum": [
+          1,
+          2,
+          3,
+          5,
+          6
+        ],
+        "title": "ModelCategory",
+        "type": "integer"
+      },
+      "ModelCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Endpoint"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "category": {
+            "maximum": 6.0,
+            "minimum": 1.0,
+            "title": "Category",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model_params": {
+            "additionalProperties": true,
+            "title": "Model Params",
+            "type": "object"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_model_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Provider Model Name",
+            "type": "string"
+          },
+          "served_model_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "status": {
+            "default": "DRAFT",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "served_model_name",
+          "display_name",
+          "provider_model_name",
+          "category",
+          "provider"
+        ],
+        "title": "ModelCreateRequest",
+        "type": "object"
+      },
+      "ModelDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "ModelDeleteRequest",
+        "type": "object"
+      },
+      "ModelProviderOption": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_model_params": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Model Params",
+            "type": "array"
+          },
+          "category": {
+            "maximum": 6.0,
+            "minimum": 1.0,
+            "title": "Category",
+            "type": "integer"
+          },
+          "max_context_tokens": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Context Tokens"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "required_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Fields",
+            "type": "array"
+          },
+          "secret_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Fields",
+            "type": "array"
+          },
+          "supports_tool_calling": {
+            "default": false,
+            "title": "Supports Tool Calling",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "category",
+          "provider"
+        ],
+        "title": "ModelProviderOption",
+        "type": "object"
+      },
+      "ModelReference": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "usage": {
+            "title": "Usage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "resource_type",
+          "resource_id",
+          "usage"
+        ],
+        "title": "ModelReference",
+        "type": "object"
+      },
+      "ModelReferenceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelReference"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "unavailable_services": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Services",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model_id"
+        ],
+        "title": "ModelReferenceSummary",
+        "type": "object"
+      },
+      "ModelStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "ACTIVE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "status"
+        ],
+        "title": "ModelStatusRequest",
+        "type": "object"
+      },
+      "ModelUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_endpoint": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Endpoint"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "model_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Params"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "ModelUpdateRequest",
         "type": "object"
       },
       "MonitoringGap": {
@@ -11830,6 +12228,60 @@
           "row_version"
         ],
         "title": "ProposalView",
+        "type": "object"
+      },
+      "PublicModelCatalogItem": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model_id": {
+            "format": "uuid",
+            "title": "Model Id",
+            "type": "string"
+          },
+          "model_params": {
+            "additionalProperties": true,
+            "title": "Model Params",
+            "type": "object"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_model_name": {
+            "title": "Provider Model Name",
+            "type": "string"
+          },
+          "served_model_name": {
+            "title": "Served Model Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "supports_image_generation": {
+            "default": false,
+            "title": "Supports Image Generation",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model_id",
+          "served_model_name",
+          "display_name",
+          "provider_model_name",
+          "category",
+          "provider",
+          "status"
+        ],
+        "title": "PublicModelCatalogItem",
         "type": "object"
       },
       "PublishSemanticModelRequest": {
@@ -36508,7 +36960,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ModelCatalogItem"
+                    "$ref": "#/components/schemas/PublicModelCatalogItem"
                   },
                   "title": "Response List Knowledge Model Catalog Api V1 Apps Knowledge Retrieval Model Catalog Get",
                   "type": "array"
@@ -37642,7 +38094,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ModelCatalogItem"
+                    "$ref": "#/components/schemas/PublicModelCatalogItem"
                   },
                   "title": "Response List Model Catalog Api V1 Apps Media Studio Model Catalog Get",
                   "type": "array"
@@ -37653,6 +38105,379 @@
           }
         },
         "summary": "List Model Catalog",
+        "tags": [
+          "Media Studio App"
+        ]
+      }
+    },
+    "/api/v1/apps/media-studio/models": {
+      "get": {
+        "operationId": "list_models_api_v1_apps_media_studio_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelCatalogItem"
+                  },
+                  "title": "Response List Models Api V1 Apps Media Studio Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "Media Studio App"
+        ]
+      },
+      "post": {
+        "operationId": "create_model_api_v1_apps_media_studio_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Model",
+        "tags": [
+          "Media Studio App"
+        ]
+      }
+    },
+    "/api/v1/apps/media-studio/models/provider-options": {
+      "get": {
+        "operationId": "list_model_provider_options_api_v1_apps_media_studio_models_provider_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelProviderOption"
+                  },
+                  "title": "Response List Model Provider Options Api V1 Apps Media Studio Models Provider Options Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Model Provider Options",
+        "tags": [
+          "Media Studio App"
+        ]
+      }
+    },
+    "/api/v1/apps/media-studio/models/{category}/{model_id}": {
+      "delete": {
+        "operationId": "delete_model_api_v1_apps_media_studio_models__category___model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ModelCategory"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Model",
+        "tags": [
+          "Media Studio App"
+        ]
+      },
+      "patch": {
+        "operationId": "update_model_api_v1_apps_media_studio_models__category___model_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ModelCategory"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Model",
+        "tags": [
+          "Media Studio App"
+        ]
+      }
+    },
+    "/api/v1/apps/media-studio/models/{category}/{model_id}/archive": {
+      "post": {
+        "operationId": "archive_model_api_v1_apps_media_studio_models__category___model_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ModelCategory"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelArchiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Model",
+        "tags": [
+          "Media Studio App"
+        ]
+      }
+    },
+    "/api/v1/apps/media-studio/models/{category}/{model_id}/references": {
+      "get": {
+        "operationId": "get_model_references_api_v1_apps_media_studio_models__category___model_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ModelCategory"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelReferenceSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Model References",
+        "tags": [
+          "Media Studio App"
+        ]
+      }
+    },
+    "/api/v1/apps/media-studio/models/{category}/{model_id}/status": {
+      "patch": {
+        "operationId": "change_model_status_api_v1_apps_media_studio_models__category___model_id__status_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ModelCategory"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Model Status",
         "tags": [
           "Media Studio App"
         ]
@@ -39760,7 +40585,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ModelCatalogItem"
+                    "$ref": "#/components/schemas/PublicModelCatalogItem"
                   },
                   "title": "Response List Model Catalog Api V1 Model Catalog Get",
                   "type": "array"

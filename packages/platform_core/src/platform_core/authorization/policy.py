@@ -228,6 +228,7 @@ APP_AUTHORIZATION_POLICIES: Mapping[str, AppAuthorizationPolicy] = (
                 ("media_read", "查看媒体资产", AppRoleTier.USER, True),
                 ("run_read", "查看生成运行和用量", AppRoleTier.USER, True),
                 ("model_binding_manage", "管理媒体模型绑定", AppRoleTier.MANAGER, True),
+                ("model_manage", "管理模型配置", AppRoleTier.MANAGER, True),
                 ("member_manage", "管理多媒体创作工作台成员", AppRoleTier.ADMIN, False),
                 ("role_manage", "管理多媒体创作工作台角色", AppRoleTier.ADMIN, False),
             ),

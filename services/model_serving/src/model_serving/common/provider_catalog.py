@@ -147,3 +147,25 @@ def validate_provider_config(values: dict[str, Any]) -> None:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
     if provider == "oci":
         validated_oci_config(params.get("config_file"))
+
+
+def merge_model_params_preserving_secrets(
+    *,
+    category: int,
+    provider: str,
+    current: dict[str, Any],
+    updated: dict[str, Any],
+) -> dict[str, Any]:
+    """PATCH 未提交 Secret 时保留当前值，显式提交时才轮换。"""
+    schema = PROVIDER_SCHEMAS.get((int(category), provider.strip().lower()))
+    if schema is None:
+        return dict(updated)
+    merged = dict(updated)
+    for path in schema.secret_fields:
+        prefix = "model_params."
+        if not path.startswith(prefix):
+            continue
+        key = path.removeprefix(prefix)
+        if key not in merged and key in current:
+            merged[key] = current[key]
+    return merged

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>多媒体创作工作台 · 模型管理</title>
+  <link rel="stylesheet" href="./css/media.css">
+</head>
+<body data-page="models">
+  <main class="media-main">
+    <header class="media-page-head">
+      <div>
+        <h1>模型管理</h1>
+        <p>统一管理全部模型配置及生命周期。Secret 只允许写入，不会从服务端回显；业务 App 仍只保存模型引用。</p>
+      </div>
+      <div class="media-actions">
+        <button type="button" id="models-refresh">刷新</button>
+        <button type="button" id="model-create" class="primary">新增模型</button>
+      </div>
+    </header>
+
+    <section class="media-grid model-summary-grid" aria-label="模型配置摘要">
+      <article class="media-panel span-3 model-summary-card"><small>全部配置</small><strong id="model-total">—</strong></article>
+      <article class="media-panel span-3 model-summary-card"><small>已启用</small><strong id="model-active">—</strong></article>
+      <article class="media-panel span-3 model-summary-card"><small>草稿</small><strong id="model-draft">—</strong></article>
+      <article class="media-panel span-3 model-summary-card"><small>已归档</small><strong id="model-archived">—</strong></article>
+    </section>
+
+    <section class="media-grid">
+      <article class="media-panel span-12">
+        <div class="media-filter-bar">
+          <div class="media-field">
+            <label for="model-keyword">搜索</label>
+            <input id="model-keyword" type="search" placeholder="显示名称、服务名、上游模型或 Endpoint">
+          </div>
+          <div class="media-field compact">
+            <label for="model-category-filter">类别</label>
+            <select id="model-category-filter">
+              <option value="">全部类别</option>
+              <option value="1">LLM</option>
+              <option value="2">文本向量</option>
+              <option value="3">视觉向量</option>
+              <option value="5">VLM</option>
+              <option value="6">OCR</option>
+            </select>
+          </div>
+          <div class="media-field compact">
+            <label for="model-status-filter">状态</label>
+            <select id="model-status-filter">
+              <option value="">全部状态</option>
+              <option value="ACTIVE">已启用</option>
+              <option value="DRAFT">草稿</option>
+              <option value="ARCHIVED">已归档</option>
+            </select>
+          </div>
+        </div>
+        <div class="media-table-wrap">
+          <table class="media-table model-table">
+            <thead><tr><th>模型</th><th>类别 / Provider</th><th>Endpoint</th><th>状态</th><th>能力</th><th>版本</th><th>操作</th></tr></thead>
+            <tbody id="model-rows"><tr><td colspan="7"><div class="media-empty"><div><strong>正在读取模型配置</strong><p>等待五类模型服务返回完整目录。</p></div></div></td></tr></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <dialog class="media-dialog wide model-dialog" id="model-dialog">
+    <form id="model-form">
+      <div class="media-dialog-head">
+        <div><h2 id="model-dialog-title">新增模型</h2><p class="dialog-subtitle" id="model-dialog-subtitle">先选择类别与 Provider，再填写其声明的必要字段。</p></div>
+        <button class="media-close" type="button" data-close-model-dialog>×</button>
+      </div>
+      <div class="media-dialog-body">
+        <input id="model-id" type="hidden">
+        <input id="model-row-version" type="hidden">
+        <div class="media-form-grid">
+          <div class="media-field">
+            <label for="model-category">类别</label>
+            <select id="model-category" required>
+              <option value="1">LLM</option>
+              <option value="2">文本向量</option>
+              <option value="3">视觉向量</option>
+              <option value="5">VLM</option>
+              <option value="6">OCR</option>
+            </select>
+          </div>
+          <div class="media-field">
+            <label for="model-provider">Provider</label>
+            <select id="model-provider" required></select>
+          </div>
+          <div class="media-field">
+            <label for="model-served-name">服务模型名</label>
+            <input id="model-served-name" required maxlength="128" pattern="[a-z0-9][a-z0-9._-]{0,127}" placeholder="例如 image-generation-prod">
+          </div>
+          <div class="media-field">
+            <label for="model-provider-name">上游模型标识</label>
+            <input id="model-provider-name" required maxlength="256" placeholder="Provider 使用的实际模型名">
+          </div>
+          <div class="media-field">
+            <label for="model-display-name">显示名称</label>
+            <input id="model-display-name" required maxlength="256">
+          </div>
+          <div class="media-field">
+            <label for="model-status">初始状态</label>
+            <select id="model-status"><option value="DRAFT">草稿</option><option value="ACTIVE">已启用</option></select>
+          </div>
+          <div class="media-field full">
+            <label for="model-api-endpoint">API Endpoint</label>
+            <input id="model-api-endpoint" maxlength="1024" placeholder="填写服务根地址或 Provider 合同要求的完整基地址">
+            <small class="model-field-help">系统不会自动拼接或猜测 Endpoint；保存前请核对路径中是否重复出现版本段。</small>
+          </div>
+          <div class="media-field full">
+            <label for="model-api-key">API Key / Token</label>
+            <input id="model-api-key" type="password" maxlength="4096" autocomplete="new-password" placeholder="编辑时留空表示保留现有 Secret">
+          </div>
+          <div class="media-field full">
+            <label for="model-params">模型参数（JSON Object）</label>
+            <textarea id="model-params" class="model-json" spellcheck="false">{}</textarea>
+            <small class="model-field-help" id="model-provider-contract">选择 Provider 后显示允许参数。</small>
+          </div>
+          <div class="media-field full" id="model-oci-secret-field" hidden>
+            <label for="model-oci-config">OCI config_file（Secret JSON Object）</label>
+            <textarea id="model-oci-config" class="model-json secret" spellcheck="false" autocomplete="off" placeholder="新增 OCI 模型时必填；编辑时留空表示保留现有凭据"></textarea>
+          </div>
+          <div class="media-field full">
+            <label for="model-description">说明</label>
+            <textarea id="model-description" maxlength="512" class="model-description-input"></textarea>
+          </div>
+        </div>
+        <div class="media-notice warn">连接配置发生变化后，已有图片生成能力验收会自动失效；重新验收前不能被图片生成绑定使用。</div>
+      </div>
+      <div class="media-dialog-foot">
+        <button type="button" data-close-model-dialog>取消</button>
+        <button class="primary" id="model-submit" type="submit">保存模型</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="media-dialog" id="model-references-dialog">
+    <div class="media-dialog-head"><h2>模型引用</h2><button class="media-close" type="button" data-close-reference-dialog>×</button></div>
+    <div class="media-dialog-body" id="model-reference-content"></div>
+    <div class="media-dialog-foot"><button type="button" data-close-reference-dialog>关闭</button></div>
+  </dialog>
+
+  <script src="../runtime-config.js"></script>
+  <script src="./js/media-auth.js"></script>
+  <script src="./js/media-api.js"></script>
+  <script src="./js/media-shell.js"></script>
+  <script src="./js/media-models.js"></script>
+</body>
+</html>

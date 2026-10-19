@@ -31,6 +31,10 @@ class MainApiModelCatalogTest(unittest.TestCase):
         clients = app.state.model_config_clients
         self.assertEqual(5, len(clients))
         self.assertEqual(
+            (2, 1, 3, 5, 6),
+            tuple(client.category for client in clients),
+        )
+        self.assertEqual(
             tuple(
                 dependency.base_url.rstrip("/").replace(
                     "://0.0.0.0", "://127.0.0.1"

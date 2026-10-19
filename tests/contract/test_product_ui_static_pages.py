@@ -31,6 +31,7 @@ APP_CONFIGS = {
             "login.html": {"login-form", "password-form"},
             "dashboard.html": set(),
             "image-generation.html": {"image-form", "image-history", "image-result"},
+            "models.html": {"model-rows", "model-dialog", "model-form"},
             "model-bindings.html": {"binding-rows", "model-binding-dialog"},
             "media-assets.html": {"asset-rows", "asset-preview-dialog"},
             "usage-runs.html": {"run-rows"},
@@ -118,6 +119,7 @@ class ProductUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/image-generations/runs", blob)
         self.assertIn("/media-assets", blob)
         self.assertIn("/bindings", blob)
+        self.assertIn("/models", blob)
         self.assertNotIn("/x-search", blob)
         self.assertNotIn("/agents", blob)
         self.assertNotIn("/knowledge-cores", blob)

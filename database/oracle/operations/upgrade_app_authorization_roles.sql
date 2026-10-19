@@ -198,6 +198,9 @@ BEGIN
                'media_studio' APP_ID, '管理多媒体创作工作台成员' DISPLAY_NAME
           FROM DUAL
         UNION ALL
+        SELECT 'media_studio:model_manage', 'media_studio',
+               '管理模型配置' FROM DUAL
+        UNION ALL
         SELECT 'media_studio:role_manage', 'media_studio',
                '管理多媒体创作工作台角色' FROM DUAL
     ) source

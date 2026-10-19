@@ -74,6 +74,7 @@ USING (
     SELECT 'media_studio:image_generate', 'media_studio', '使用图片生成' FROM DUAL UNION ALL
     SELECT 'media_studio:media_read', 'media_studio', '查看媒体资产' FROM DUAL UNION ALL
     SELECT 'media_studio:model_binding_manage', 'media_studio', '管理媒体模型绑定' FROM DUAL UNION ALL
+    SELECT 'media_studio:model_manage', 'media_studio', '管理模型配置' FROM DUAL UNION ALL
     SELECT 'media_studio:run_read', 'media_studio', '查看生成运行和用量' FROM DUAL UNION ALL
     SELECT 'media_studio:member_manage', 'media_studio', '管理多媒体创作工作台成员' FROM DUAL UNION ALL
     SELECT 'media_studio:role_manage', 'media_studio', '管理多媒体创作工作台角色' FROM DUAL

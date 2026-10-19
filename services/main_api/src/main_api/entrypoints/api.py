@@ -35,6 +35,7 @@ from platform_clients import (
     DataQueryClient,
 )
 from platform_core.database.oracle import create_database_runtime
+from platform_core.dictionary import ModelCategory
 from platform_core.logger import LogConfig, LogManager
 from platform_core.platform.port_check import check_port_available
 from platform_core.security import (
@@ -51,11 +52,11 @@ config = settings.api
 def _configure_model_config_clients(app: FastAPI) -> None:
     """把各模型配置服务接入 Main API 的公开目录聚合。"""
     dependencies = (
-        settings.model_embedding,
-        settings.model_llm,
-        settings.model_visual,
-        settings.model_vlm,
-        settings.model_ocr,
+        (ModelCategory.TXT_EMBEDDING.value, settings.model_embedding),
+        (ModelCategory.LLM.value, settings.model_llm),
+        (ModelCategory.IMG_EMBEDDING.value, settings.model_visual),
+        (ModelCategory.VLM.value, settings.model_vlm),
+        (ModelCategory.OCR.value, settings.model_ocr),
     )
     app.state.model_config_clients = tuple(
         AIModelConfigClient(
@@ -63,8 +64,9 @@ def _configure_model_config_clients(app: FastAPI) -> None:
             timeout=dependency.timeout_seconds,
             caller_service=config.service_name,
             audience=dependency.audience,
+            category=category,
         )
-        for dependency in dependencies
+        for category, dependency in dependencies
     )
 
 

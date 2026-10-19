@@ -10,7 +10,10 @@ from loguru import logger
 
 from model_serving.common.entities.ai_model import AIModelEntity
 from model_serving.common.oci_auth import public_model_params
-from model_serving.common.provider_catalog import validate_provider_config
+from model_serving.common.provider_catalog import (
+    merge_model_params_preserving_secrets,
+    validate_provider_config,
+)
 from model_serving.config import get_model_serving_settings
 from platform_core.contracts import (
     AuthContext,
@@ -152,6 +155,13 @@ class ModelRegistryService:
             if int(row.status) == _STATUS_TO_DB["ARCHIVED"]:
                 raise ModelRegistryConflict(
                     "MODEL_ARCHIVED", "归档模型不能继续修改",
+                )
+            if "model_params" in values:
+                values["model_params"] = merge_model_params_preserving_secrets(
+                    category=int(row.category),
+                    provider=row.provider,
+                    current=dict(row.model_params or {}),
+                    updated=dict(values.get("model_params") or {}),
                 )
             effective = {
                 "category": int(row.category), "provider": row.provider,

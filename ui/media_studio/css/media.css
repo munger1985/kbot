@@ -157,6 +157,28 @@ dialog.media-dialog { width: min(670px, calc(100vw - 36px)); padding: 0; border:
 
 .media-toast-region { position: fixed; right: 24px; bottom: 24px; z-index: 60; display: grid; gap: 8px; width: min(360px, calc(100vw - 48px)); }.media-toast { padding: 11px 13px; color: #fff; border-radius: 3px; background: var(--media-sidebar); box-shadow: var(--media-shadow); font-size: 12px; }.media-toast.error { background: var(--media-bad); }
 
+.model-summary-grid { margin-bottom: 16px; }
+.model-summary-card { padding: 16px 18px; }
+.model-summary-card small, .model-summary-card strong { display: block; }
+.model-summary-card small { color: var(--media-muted); font-size: 11px; }
+.model-summary-card strong { margin-top: 5px; font: 600 25px/1 Georgia, "Songti SC", serif; }
+.model-table { min-width: 1180px; }
+.model-secondary { display: block; margin-top: 4px; color: var(--media-muted); font-size: 11px; }
+.model-endpoint { display: block; max-width: 330px; overflow-wrap: anywhere; color: #355148; font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: normal; }
+.model-row-actions { display: flex; gap: 6px; flex-wrap: wrap; min-width: 235px; }
+button.danger { color: var(--media-bad); border-color: #d9aaa7; background: #fff8f7; }
+button.danger:hover { color: #fff; border-color: var(--media-bad); background: var(--media-bad); }
+.model-json { min-height: 150px !important; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+.model-json.secret { min-height: 118px !important; }
+.model-description-input { min-height: 88px !important; }
+.model-field-help { color: var(--media-muted); font-size: 11px; }
+.model-reference-list { margin: 0; padding: 0; list-style: none; }
+.model-reference-list li { padding: 12px 0; border-bottom: 1px solid var(--media-line); }
+.model-reference-list li:last-child { border-bottom: 0; }
+.model-reference-list strong, .model-reference-list span { display: block; }
+.model-reference-list span { margin-top: 3px; color: var(--media-muted); font-size: 11px; overflow-wrap: anywhere; }
+.media-empty.compact { min-height: 110px; }
+
 .data-model-workflow { margin-bottom: 16px; overflow: hidden; }
 .data-model-steps {
   display: grid;

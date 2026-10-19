@@ -217,6 +217,7 @@ INSERT ALL
     INTO KBOT_PERMISSION VALUES ('media_studio:image_generate', 'media_studio', '使用图片生成')
     INTO KBOT_PERMISSION VALUES ('media_studio:media_read', 'media_studio', '查看媒体资产')
     INTO KBOT_PERMISSION VALUES ('media_studio:model_binding_manage', 'media_studio', '管理媒体模型绑定')
+    INTO KBOT_PERMISSION VALUES ('media_studio:model_manage', 'media_studio', '管理模型配置')
     INTO KBOT_PERMISSION VALUES ('media_studio:run_read', 'media_studio', '查看生成运行和用量')
     INTO KBOT_PERMISSION VALUES ('media_studio:member_manage', 'media_studio', '管理多媒体创作工作台成员')
     INTO KBOT_PERMISSION VALUES ('media_studio:role_manage', 'media_studio', '管理多媒体创作工作台角色')

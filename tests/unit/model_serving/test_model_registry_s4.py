@@ -10,6 +10,7 @@ from model_serving.common.model_registry import (
 )
 from model_serving.common.provider_catalog import (
     list_provider_options,
+    merge_model_params_preserving_secrets,
     validate_provider_config,
 )
 from platform_core.contracts import AuthContext, PrincipalKind
@@ -105,6 +106,34 @@ def _model(*, status=1, category=1, model_params=None):
 
 
 class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
+    def test_secret_model_params_survive_safe_patch(self):
+        current = {
+            "max_tokens": 4096,
+            "config_file": {"key_content": "private-key"},
+        }
+
+        merged = merge_model_params_preserving_secrets(
+            category=1,
+            provider="oci",
+            current=current,
+            updated={"max_tokens": 8192},
+        )
+
+        self.assertEqual(8192, merged["max_tokens"])
+        self.assertEqual(current["config_file"], merged["config_file"])
+
+    def test_explicit_secret_model_param_rotates_value(self):
+        merged = merge_model_params_preserving_secrets(
+            category=1,
+            provider="oci",
+            current={"config_file": {"key_content": "old-key"}},
+            updated={"config_file": {"key_content": "new-key"}},
+        )
+
+        self.assertEqual(
+            {"key_content": "new-key"}, merged["config_file"],
+        )
+
     def test_safe_projects_decimal_status_and_category(self):
         row = _model(status=Decimal("1"), category=Decimal("2"))
         payload = ModelRegistryService._safe(row)

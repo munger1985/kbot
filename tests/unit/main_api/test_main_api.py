@@ -640,6 +640,106 @@ class _FakeDomainManagementService:
         }
 
 
+class _FakeModelConfigClient:
+    def __init__(self, category: int):
+        self.category = category
+        self.model_id = UUID(int=category)
+        self.last_operation: str | None = None
+        self.last_payload: dict[str, Any] | None = None
+        self.last_context: AuthContext | None = None
+
+    def _row(self, **values):
+        return {
+            "model_id": str(self.model_id),
+            "served_model_name": f"model-{self.category}",
+            "display_name": f"模型 {self.category}",
+            "provider_model_name": f"provider-model-{self.category}",
+            "category": self.category,
+            "provider": "api_qwen",
+            "api_endpoint": "https://models.example.test/v1",
+            "status": "DRAFT",
+            "model_params": {},
+            "supports_image_generation": False,
+            "description": None,
+            "row_version": 1,
+            **values,
+        }
+
+    async def list_models(self, *, auth_context):
+        self.last_context = auth_context
+        return [self._row()]
+
+    async def list_provider_options(self, *, auth_context):
+        self.last_context = auth_context
+        return [{
+            "category": self.category,
+            "provider": "api_qwen",
+            "required_fields": ["api_endpoint", "api_key"],
+            "secret_fields": ["api_key"],
+            "allowed_model_params": [],
+            "supports_tool_calling": self.category == 1,
+            "max_context_tokens": None,
+        }]
+
+    async def create_model(self, payload, *, auth_context):
+        self.last_operation = "create"
+        self.last_payload = payload
+        self.last_context = auth_context
+        return self._row(
+            served_model_name=payload["served_model_name"],
+            display_name=payload["display_name"],
+            provider_model_name=payload["provider_model_name"],
+            status=payload["status"],
+        )
+
+    async def update_model(self, model_id, payload, *, auth_context):
+        self.last_operation = "update"
+        self.last_payload = payload
+        self.last_context = auth_context
+        return self._row(
+            model_id=str(model_id),
+            display_name=payload.get("display_name", f"模型 {self.category}"),
+            row_version=2,
+        )
+
+    async def change_model_status(self, model_id, payload, *, auth_context):
+        self.last_operation = "status"
+        self.last_payload = payload
+        self.last_context = auth_context
+        return self._row(
+            model_id=str(model_id), status=payload["status"], row_version=2,
+        )
+
+    async def get_model_references(self, model_id, *, auth_context):
+        self.last_operation = "references"
+        self.last_context = auth_context
+        return {
+            "model_id": str(model_id),
+            "references": [],
+            "unavailable_services": [],
+        }
+
+    async def archive_model(self, model_id, payload, *, auth_context):
+        self.last_operation = "archive"
+        self.last_payload = payload
+        self.last_context = auth_context
+        return {
+            "model": self._row(
+                model_id=str(model_id), status="ARCHIVED", row_version=2,
+            ),
+            "reference_summary": {
+                "model_id": str(model_id),
+                "references": [],
+                "unavailable_services": [],
+            },
+        }
+
+    async def delete_model(self, model_id, payload, *, auth_context):
+        self.last_operation = "delete"
+        self.last_payload = payload
+        self.last_context = auth_context
+
+
 class _FakeAccessControlService:
     _PERMISSIONS = frozenset(
         {
@@ -1319,6 +1419,112 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("media_studio", response.json()["app_id"])
         self.assertEqual(
             "media_studio_portal", response.json()["domain_name"]
+        )
+
+    def test_media_studio_model_management_routes_all_categories(self) -> None:
+        self.app.state.access_control_service.permissions = frozenset({
+            "media_studio:use",
+            "media_studio:model_manage",
+        })
+        clients = tuple(
+            _FakeModelConfigClient(category)
+            for category in (1, 2, 3, 5, 6)
+        )
+        self.app.state.model_config_clients = clients
+
+        listed = self.client.get(
+            "/api/v1/apps/media-studio/models", headers=self._headers(),
+        )
+        self.assertEqual(200, listed.status_code, listed.text)
+        self.assertEqual([1, 2, 3, 5, 6], [row["category"] for row in listed.json()])
+        self.assertTrue(all(client.last_context for client in clients))
+
+        providers = self.client.get(
+            "/api/v1/apps/media-studio/models/provider-options",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, providers.status_code, providers.text)
+        self.assertEqual(5, len(providers.json()))
+
+        llm = clients[0]
+        created = self.client.post(
+            "/api/v1/apps/media-studio/models",
+            headers=self._headers(),
+            json={
+                "served_model_name": "image-model-test",
+                "display_name": "图片模型测试",
+                "provider_model_name": "provider-image-model",
+                "category": 1,
+                "provider": "api_qwen",
+                "api_endpoint": "https://models.example.test/v1",
+                "api_key": "write-only-secret",
+                "status": "DRAFT",
+                "model_params": {},
+            },
+        )
+        self.assertEqual(201, created.status_code, created.text)
+        self.assertEqual("create", llm.last_operation)
+        self.assertEqual("portal-user-1", llm.last_context.asserted_user_id)
+        self.assertNotIn("api_key", created.json())
+
+        model_id = created.json()["model_id"]
+        updated = self.client.patch(
+            f"/api/v1/apps/media-studio/models/1/{model_id}",
+            headers=self._headers(),
+            json={"expected_row_version": 1, "display_name": "图片模型已更新"},
+        )
+        self.assertEqual(200, updated.status_code, updated.text)
+        self.assertEqual("update", llm.last_operation)
+
+        activated = self.client.patch(
+            f"/api/v1/apps/media-studio/models/1/{model_id}/status",
+            headers=self._headers(),
+            json={"expected_row_version": 1, "status": "ACTIVE"},
+        )
+        self.assertEqual(200, activated.status_code, activated.text)
+        self.assertEqual("ACTIVE", activated.json()["status"])
+
+        references = self.client.get(
+            f"/api/v1/apps/media-studio/models/1/{model_id}/references",
+            headers=self._headers(),
+        )
+        self.assertEqual(200, references.status_code, references.text)
+        self.assertEqual([], references.json()["references"])
+
+        archived = self.client.post(
+            f"/api/v1/apps/media-studio/models/1/{model_id}/archive",
+            headers=self._headers(),
+            json={"expected_row_version": 1},
+        )
+        self.assertEqual(200, archived.status_code, archived.text)
+        self.assertEqual("ARCHIVED", archived.json()["model"]["status"])
+
+        deleted = self.client.request(
+            "DELETE",
+            f"/api/v1/apps/media-studio/models/1/{model_id}",
+            headers=self._headers(),
+            json={"expected_row_version": 2},
+        )
+        self.assertEqual(204, deleted.status_code, deleted.text)
+        self.assertEqual("delete", llm.last_operation)
+
+    def test_media_studio_model_management_requires_dedicated_permission(self) -> None:
+        self.app.state.access_control_service.permissions = frozenset({
+            "media_studio:use",
+            "media_studio:model_binding_manage",
+        })
+        self.app.state.model_config_clients = tuple(
+            _FakeModelConfigClient(category)
+            for category in (1, 2, 3, 5, 6)
+        )
+
+        response = self.client.get(
+            "/api/v1/apps/media-studio/models", headers=self._headers(),
+        )
+
+        self.assertEqual(403, response.status_code, response.text)
+        self.assertEqual(
+            "APP_PERMISSION_DENIED", response.json()["code"],
         )
 
     def test_uninitialized_authentication_returns_service_unavailable(self) -> None:

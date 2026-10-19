@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from main_api.api.models import ModelCatalogItem, load_model_catalog
+from main_api.api.models import PublicModelCatalogItem, load_model_catalog
 from main_api.application import (
     DomainConflictError,
     DomainLifecycleError,
@@ -687,7 +687,7 @@ async def get_access(request: Request):
     }
 
 
-@router.get("/model-catalog", response_model=list[ModelCatalogItem])
+@router.get("/model-catalog", response_model=list[PublicModelCatalogItem])
 async def list_knowledge_model_catalog(request: Request):
     await _require_any(
         request,

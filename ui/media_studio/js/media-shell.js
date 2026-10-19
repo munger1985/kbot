@@ -1,8 +1,8 @@
 /* 多媒体创作工作台公共 Shell。 */
 (function () {
   "use strict";
-  const PAGE_PERMISSIONS = {"dashboard": "media_studio:use", "image-generation": "media_studio:image_generate", "model-bindings": "media_studio:model_binding_manage", "media-assets": "media_studio:media_read", "usage-runs": "media_studio:run_read"};
-  const sections = [["创作工作区", [["dashboard", "工作台", "./dashboard.html"], ["image-generation", "图片生成", "./image-generation.html"]]], ["管理", [["model-bindings", "模型绑定", "./model-bindings.html"], ["media-assets", "媒体资产", "./media-assets.html"], ["usage-runs", "运行记录", "./usage-runs.html"]]]];
+  const PAGE_PERMISSIONS = {"dashboard": "media_studio:use", "image-generation": "media_studio:image_generate", "models": "media_studio:model_manage", "model-bindings": "media_studio:model_binding_manage", "media-assets": "media_studio:media_read", "usage-runs": "media_studio:run_read"};
+  const sections = [["创作工作区", [["dashboard", "工作台", "./dashboard.html"], ["image-generation", "图片生成", "./image-generation.html"]]], ["管理", [["models", "模型管理", "./models.html"], ["model-bindings", "模型绑定", "./model-bindings.html"], ["media-assets", "媒体资产", "./media-assets.html"], ["usage-runs", "运行记录", "./usage-runs.html"]]]];
   const escapeHtml = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('\"', '&quot;');
   function toast(message, kind = "info") {
     const region = document.getElementById("media-toast-region");
