@@ -144,6 +144,7 @@ SERVICES=(
     "Model Serving:VLM:model_serving:model_serving.entrypoints.vlm"
     "Model Serving:Visual:model_serving:model_serving.entrypoints.visual"
     "Model Serving:OCR:model_serving:model_serving.entrypoints.ocr"
+    "Model Serving:Image:model_serving:model_serving.entrypoints.image"
     "Knowledge Core:API:knowledge_core:knowledge_core.entrypoints.api"
     "Knowledge Core:Index Worker:knowledge_core:knowledge_core.entrypoints.projection"
     "Knowledge Core:Parser:knowledge_core:knowledge_core.entrypoints.parser"
@@ -171,6 +172,7 @@ service_port() {
         model_serving.entrypoints.vlm) echo "18094" ;;
         model_serving.entrypoints.visual) echo "18093" ;;
         model_serving.entrypoints.ocr) echo "18096" ;;
+        model_serving.entrypoints.image) echo "18098" ;;
         knowledge_core.entrypoints.parser) echo "18095" ;;
         knowledge_core.entrypoints.api) echo "18090" ;;
         knowledge_retrieval_app.entrypoints.api) echo "18150" ;;

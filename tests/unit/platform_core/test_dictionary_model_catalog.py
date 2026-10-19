@@ -19,6 +19,8 @@ class DictionaryModelCatalogTest(unittest.TestCase):
         self.assertEqual(ModelCategory.TXT_EMBEDDING, coerce_model_category("embedding"))
         self.assertEqual(ModelCategory.IMG_EMBEDDING, coerce_model_category("VISUAL_EMBEDDING"))
         self.assertEqual(ModelCategory.IMG_EMBEDDING, coerce_model_category("3"))
+        self.assertEqual(ModelCategory.IMAGE_GENERATION, coerce_model_category("IMAGE"))
+        self.assertEqual(ModelCategory.IMAGE_GENERATION, coerce_model_category(8))
         self.assertIsNone(coerce_model_category("unknown-model"))
         self.assertIsNone(coerce_model_category(None))
 

@@ -1,4 +1,4 @@
-"""四个推理进程共享的模型目录装配。"""
+"""各独立推理进程共享的模型目录装配。"""
 
 from model_serving.common.model_registry import ModelRegistryService
 from model_serving.common.notifications import ModelCatalogNotificationPublisher
@@ -98,12 +98,13 @@ def create_model_registry(
             await client.close()
 
     async def invalidate(event):
-        await runtime_service.invalidate_model(event["served_model_name"])
+        if runtime_service is not None:
+            await runtime_service.invalidate_model(event["served_model_name"])
 
     uow_factory = create_model_serving_uow_factory(session_factory)
     return ModelRegistryService(
         uow_factory=uow_factory,
-        on_model_changed=invalidate,
+        on_model_changed=invalidate if runtime_service is not None else None,
         reference_resolvers={
             "knowledge-retrieval-app": knowledge_agent_references,
             "media-studio-app": media_model_references,
@@ -111,7 +112,9 @@ def create_model_registry(
             "knowledge-core": knowledge_references,
             "data-query": data_query_references,
         },
-        is_model_loaded=runtime_service.is_model_loaded,
+        is_model_loaded=(
+            runtime_service.is_model_loaded if runtime_service is not None else None
+        ),
         notification_publisher=ModelCatalogNotificationPublisher(
             uow_factory=uow_factory,
         ),

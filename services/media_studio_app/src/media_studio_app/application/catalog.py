@@ -17,7 +17,7 @@ SAFE_SNAPSHOT_FIELDS = (
     "category",
 )
 
-ROLE_MODEL_CATEGORY = {"IMAGE_GENERATION": 1}
+ROLE_MODEL_CATEGORY = {"IMAGE_GENERATION": 8}
 
 
 def safe_model_snapshot(row: dict[str, Any]) -> dict[str, Any]:

@@ -20,7 +20,7 @@
 
   function roleLabel(role) { return role === "IMAGE_GENERATION" ? "图片生成" : role; }
 
-  function roleRequirement(role) { return role === "IMAGE_GENERATION" ? "已启用的 LLM 模型" : "已启用模型"; }
+  function roleRequirement(role) { return role === "IMAGE_GENERATION" ? "已启用的图像生成模型" : "已启用模型"; }
 
   function kindLabel(kind) { return kind === "IMAGE_GENERATION" ? "图片生成" : kind === "IMAGE_EDIT" ? "图片编辑" : kind; }
 
@@ -65,7 +65,7 @@
     bindings = Array.isArray(bindingRows) ? bindingRows : KBotMediaApi.items(bindingRows);
     catalog = KBotMediaApi.items(catalogRows).filter((row) => KBotMediaApi.isActiveModel(row));
     renderBindings();
-    const image = catalog.filter((row) => Number(row.category) === 1);
+    const image = catalog.filter((row) => Number(row.category) === KBotMediaApi.ModelCategory.IMAGE_GENERATION);
     fillSelect(document.getElementById("image-model"), image, currentBinding("IMAGE_GENERATION")?.model_id);
   }
 
@@ -84,7 +84,7 @@
         saved += 1;
       }
       if (!saved) {
-        toast("请至少选择一个已验收模型后再保存。", "error");
+        toast("请选择一个已启用的图像生成模型后再保存。", "error");
         return;
       }
       await loadBindingsPage();

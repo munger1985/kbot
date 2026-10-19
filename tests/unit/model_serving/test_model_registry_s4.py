@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from model_serving.common.model_registry import (
+    ModelDefinitionNotFound,
     ModelRegistryConflict,
     ModelRegistryService,
 )
@@ -15,6 +16,7 @@ from model_serving.common.provider_catalog import (
     validate_provider_config,
 )
 from platform_core.contracts import AuthContext, PrincipalKind
+from platform_core.dictionary import ModelCategory
 from platform_core.identity import uuid7
 
 
@@ -313,12 +315,26 @@ class ModelRegistryS4Test(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ModelRegistryConflict, "未启用"):
             await service.require_grok_model(row.model_id)
 
+        row.status = 1
+        row.category = ModelCategory.IMAGE_GENERATION.value
+        with self.assertRaises(ModelDefinitionNotFound):
+            await service.require_grok_model(row.model_id)
+
 
 async def _empty():
     return []
 
 
 class ProviderCatalogS4Test(unittest.TestCase):
+    def test_image_generation_has_dedicated_oci_provider_contract(self):
+        options = list_provider_options(
+            category=ModelCategory.IMAGE_GENERATION.value,
+        )
+        self.assertEqual(["api_oci_image"], [item.provider for item in options])
+        option = options[0]
+        self.assertIn("model_params.project", option.required_fields)
+        self.assertIn("model_params.config_file", option.secret_fields)
+
     def test_local_deepseek_is_openai_compatible_llm_option(self):
         options = list_provider_options(category=1)
         providers = {item.provider for item in options}

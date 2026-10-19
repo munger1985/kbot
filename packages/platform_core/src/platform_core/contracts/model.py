@@ -24,7 +24,7 @@ def is_grok_provider_model_name(value: object) -> bool:
 
 
 class ModelProviderOption(_ModelContract):
-    category: int = Field(ge=1, le=6)
+    category: int = Field(ge=1, le=8)
     provider: str = Field(min_length=1, max_length=64)
     required_fields: tuple[str, ...] = ()
     secret_fields: tuple[str, ...] = ()
@@ -40,7 +40,7 @@ class ModelCreateRequest(_ModelContract):
     )
     display_name: str = Field(min_length=1, max_length=256)
     provider_model_name: str = Field(min_length=1, max_length=256)
-    category: int = Field(ge=1, le=6)
+    category: int = Field(ge=1, le=8)
     provider: str = Field(min_length=1, max_length=64)
     api_endpoint: str | None = Field(default=None, max_length=1024)
     api_key: str | None = Field(default=None, max_length=4096)
@@ -76,7 +76,7 @@ class ModelCatalogItem(_ModelContract):
     served_model_name: str
     display_name: str
     provider_model_name: str
-    category: int = Field(ge=1, le=6)
+    category: int = Field(ge=1, le=8)
     provider: str
     api_endpoint: str | None = None
     status: ModelLifecycleStatus

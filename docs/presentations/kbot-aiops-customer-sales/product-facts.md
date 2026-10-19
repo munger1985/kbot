@@ -11,7 +11,7 @@
 - 证据等级：系统验证、用户提供、知识引用、模型推断四类来源；根因结论区分已确认、很可能、可能、无法判断。
 - 报告：故障、性能、巡检、工作负载和处理前后对比等报告均从已保存的事实与证据生成，可追溯版本。
 - 部署事实：Linux x86_64、Python 3.10+；KBot 运行数据使用 Oracle Database 26ai Schema；Portal/APEX 只访问 Main API；生产服务可以拆分部署。单机一体化规格是本演示稿给出的项目建议，不是代码声明的最低硬件要求。
-- 模型目录：模型目录默认不预置业务模型，实际启用项由部署后的 Model Catalog 决定。代码支持 LLM、VLM、OCR、文本 Embedding、视觉 Embedding 五类进程及相应 Provider。
+- 模型目录：模型目录默认不预置业务模型，实际启用项由部署后的 Model Catalog 决定。代码支持 LLM、VLM、OCR、图像生成、文本 Embedding、视觉 Embedding 六类独立进程及相应 Provider。
 - AIOps 生产模型约束：规划/诊断 LLM 绑定要求 `local_deepseek`，即客户近端 OpenAI 兼容推理服务；这不等同于在 KBot Python 进程内直接加载大模型权重。
 
 主要核验来源：

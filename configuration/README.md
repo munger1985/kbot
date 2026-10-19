@@ -71,6 +71,7 @@ ReDoc（`/redoc`）；开发环境默认启用，生产环境默认关闭。
 [endpoints]
 knowledge_core = "http://knowledge-core.internal:18090"
 model_llm = "http://models.internal:18092"
+model_image = "http://models.internal:18098"
 ```
 
 未覆盖的端点继续使用本机地址。MCP问数和DeepSeek OCR等可选集成示例见

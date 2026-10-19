@@ -307,7 +307,9 @@ class ModelRegistryService:
             unavailable_services=tuple(unavailable),
         )
 
-    async def get_connection_material(self, model_id: UUID) -> dict[str, Any]:
+    async def get_connection_material(
+        self, model_id: UUID, *, category: int | None = None,
+    ) -> dict[str, Any]:
         """返回已启用模型的连接材料，不得经 HTTP 安全投影对外暴露。"""
         async with self._uow_factory() as uow:
             assert uow.models
@@ -315,6 +317,8 @@ class ModelRegistryService:
                 row = await uow.models.get_by_id(model_id)
             except DataNotFoundException as exc:
                 raise ModelDefinitionNotFound(model_id) from exc
+            if category is not None and int(row.category) != category:
+                raise ModelDefinitionNotFound(model_id)
             if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
                 raise ModelRegistryConflict(
                     "MODEL_NOT_ACTIVE", "模型未启用，不能执行推理调用",
@@ -336,6 +340,8 @@ class ModelRegistryService:
                 row = await uow.models.get_by_id(model_id)
             except DataNotFoundException as exc:
                 raise ModelDefinitionNotFound(model_id) from exc
+            if int(row.category) != 1:
+                raise ModelDefinitionNotFound(model_id)
             if int(row.status) != _STATUS_TO_DB["ACTIVE"]:
                 raise ModelRegistryConflict(
                     "MODEL_NOT_ACTIVE", "模型未启用，不能使用 X Search",

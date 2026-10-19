@@ -22,10 +22,10 @@ async def main() -> None:
     worker = MediaStudioRunWorker(
         uow_factory=create_media_studio_app_uow(runtime.session_factory),
         generative_client=GenerativeResponsesClient(
-            base_url=settings.llm.base_url,
+            base_url=settings.image.base_url,
             caller_service=settings.worker.service_name,
-            audience=settings.llm.audience,
-            timeout_seconds=settings.llm.timeout_seconds,
+            audience=settings.image.audience,
+            timeout_seconds=settings.image.timeout_seconds,
         ),
         object_store=MediaStudioLocalObjectStore(settings.storage.local_object_storage_path),
         poll_seconds=settings.worker.poll_interval_seconds,

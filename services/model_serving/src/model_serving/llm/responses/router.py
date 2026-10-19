@@ -6,8 +6,6 @@ from model_serving.llm.responses.errors import GenerativeAdapterError
 from model_serving.llm.responses.service import ResponsesService
 from platform_core.contracts import (
     INTERNAL_API_V1,
-    ImageGenerationRequest,
-    ImageGenerationResult,
     ResearchRequest,
     ResearchResult,
 )
@@ -36,18 +34,6 @@ def create_responses_router() -> APIRouter:
     async def research(payload: ResearchRequest, request: Request) -> ResearchResult:
         try:
             return await _service(request).research(payload)
-        except Exception as exc:
-            _raise(exc)
-
-    @router.post(
-        f"{INTERNAL_API_V1}/responses/image-generations",
-        response_model=ImageGenerationResult,
-    )
-    async def generate_image(
-        payload: ImageGenerationRequest, request: Request,
-    ) -> ImageGenerationResult:
-        try:
-            return await _service(request).generate_image(payload)
         except Exception as exc:
             _raise(exc)
 

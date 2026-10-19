@@ -62,6 +62,7 @@ mutation_enabled = false
 # model_visual = "http://models.internal:18093"
 # model_vlm = "http://models.internal:18094"
 # model_ocr = "http://models.internal:18096"
+# model_image = "http://models.internal:18098"
 
 # 以下集成均为可选项，未启用时无需填写。
 # [integrations.mcp_data]

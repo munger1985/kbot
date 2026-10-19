@@ -4,7 +4,7 @@
 
   const { badge, escapeHtml, toast } = KBotMediaShell;
   const categoryLabels = new Map([
-    [1, "LLM"], [2, "文本向量"], [3, "视觉向量"], [5, "VLM"], [6, "OCR"],
+    [1, "LLM"], [2, "文本向量"], [3, "视觉向量"], [5, "VLM"], [6, "OCR"], [8, "图像生成"],
   ]);
   let models = [];
   let providerOptions = [];
@@ -203,7 +203,7 @@
   }
 
   function validateEndpoint(endpoint, provider) {
-    if (!endpoint || provider !== "oci") return;
+    if (!endpoint || !["oci", "api_oci_image"].includes(provider)) return;
     let parsed;
     try { parsed = new URL(endpoint); }
     catch (_) { throw new Error("OCI API Endpoint 必须是有效的 HTTP(S) 服务 Origin"); }

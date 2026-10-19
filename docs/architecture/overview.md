@@ -20,7 +20,7 @@ KBot 4.1 是服务型单仓库。八个服务可独立构建、启动和
 | Knowledge Core | Collection、Bundle、解析、Evidence、索引和检索 | API、Parser、Projection Worker |
 | Data Query | 数据源、Schema 快照、语义模型、策略、绑定和受控查询运行 | API、Worker |
 | AIOps Agent | 监控接入、数据库诊断、HITL、审批执行、巡检和报告 | API、Worker、Scheduler、DB Executor |
-| Model Serving | 模型目录及 LLM、VLM、OCR、文本/视觉 Embedding 推理 | 五类模型进程 |
+| Model Serving | 模型目录及 LLM、VLM、OCR、图像生成、文本/视觉 Embedding 推理 | 六类模型进程 |
 
 KBot 4.1 已物理删除 KM App 及全部集成，不承担 KM 兼容。4.0 与 4.1 的维护边界见
 [KBot 4.0、KM 4.0 与 KBot 4.1 分线规则](release-4.0-4.1-boundary.md)。

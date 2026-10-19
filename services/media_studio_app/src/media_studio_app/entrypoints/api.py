@@ -49,10 +49,10 @@ async def lifespan(app: FastAPIOffline):
     database_runtime = create_database_runtime(settings)
     uow_factory = create_media_studio_app_uow(database_runtime.session_factory)
     catalog_client = AIModelConfigClient(
-        base_url=settings.llm.base_url,
-        timeout=settings.llm.timeout_seconds,
+        base_url=settings.image.base_url,
+        timeout=settings.image.timeout_seconds,
         caller_service=config.service_name,
-        audience=settings.llm.audience,
+        audience=settings.image.audience,
     )
     object_store = MediaStudioLocalObjectStore(settings.storage.local_object_storage_path)
     app.state.db_runtime = database_runtime
@@ -90,6 +90,7 @@ app.middleware("http")(
             "kbot-model-visual": frozenset({"media_studio.manage"}),
             "kbot-model-vlm": frozenset({"media_studio.manage"}),
             "kbot-model-ocr": frozenset({"media_studio.manage"}),
+            "kbot-model-image": frozenset({"media_studio.manage"}),
         },
     )
 )

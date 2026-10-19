@@ -101,7 +101,7 @@ class ModelBindingService:
         if not is_role_ready(command.role, snapshot):
             raise MediaStudioApplicationError(
                 "MODEL_NOT_ACTIVE",
-                "图片生成只能绑定已启用的 LLM 模型",
+                "图片生成只能绑定已启用的图像生成模型",
                 status_code=422,
             )
         now = datetime.now(timezone.utc)

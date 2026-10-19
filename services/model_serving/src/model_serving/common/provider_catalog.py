@@ -40,6 +40,9 @@ _OCR_TESSERACT_PARAMS = (*_OCR_LOCAL_PARAMS, "executable")
 _OCR_DEEPSEEK_PARAMS = (
     "prompt", "max_tokens", "temperature", "timeout_seconds",
 )
+_IMAGE_PARAMS = (
+    "timeout", "max_retries", "compartment_id", "config_file", "project",
+)
 
 PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     **{
@@ -102,6 +105,14 @@ PROVIDER_SCHEMAS: dict[tuple[int, str], _ProviderSchema] = {
     (ModelCategory.OCR.value, "api_deepseek_ocr"): _ProviderSchema(
         ("api_endpoint", "api_key"), _OCR_DEEPSEEK_PARAMS,
     ),
+    (ModelCategory.IMAGE_GENERATION.value, "api_oci_image"): _ProviderSchema(
+        (
+            "api_endpoint", "model_params.compartment_id",
+            "model_params.config_file", "model_params.project",
+        ),
+        _IMAGE_PARAMS,
+        secret_fields=("model_params.config_file",),
+    ),
 }
 
 
@@ -145,7 +156,7 @@ def validate_provider_config(values: dict[str, Any]) -> None:
             missing.append(path)
     if missing:
         raise ValueError(f"Provider 配置缺少必要字段：{missing}")
-    if provider == "oci":
+    if provider in {"oci", "api_oci_image"}:
         oci_sdk_service_endpoint(values.get("api_endpoint"))
         validated_oci_config(params.get("config_file"))
 

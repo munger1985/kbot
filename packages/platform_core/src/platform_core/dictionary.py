@@ -119,6 +119,7 @@ class ModelCategory(IntEnum):
     IMG_EMBEDDING = 3
     VLM = 5
     OCR = 6
+    IMAGE_GENERATION = 8
 
 class PromptCategory(IntEnum):
     """Prompt category enumeration."""
@@ -209,6 +210,12 @@ class OCRProvider(str, Enum):
     LOCAL_TESSERACT = "local_tesseract"
     API_DEEPSEEK_OCR = "api_deepseek_ocr"
 
+
+class ImageGenerationProvider(str, Enum):
+    """由独立图像生成进程托管的提供方。"""
+
+    OCI = "api_oci_image"
+
 # OCR 引擎中文标签映射
 OCR_ENGINE_LABELS: dict[str, str] = {
     "local_rapidocr": "RapidOCR",
@@ -243,6 +250,8 @@ _MODEL_CATEGORY_ALIASES = {
     "TEXT_EMBEDDING": ModelCategory.TXT_EMBEDDING,
     "IMAGE_EMBEDDING": ModelCategory.IMG_EMBEDDING,
     "VISUAL_EMBEDDING": ModelCategory.IMG_EMBEDDING,
+    "IMAGE": ModelCategory.IMAGE_GENERATION,
+    "IMAGE_GENERATION": ModelCategory.IMAGE_GENERATION,
 }
 
 

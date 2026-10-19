@@ -1427,7 +1427,7 @@ class MainApiTest(unittest.TestCase):
         })
         clients = tuple(
             _FakeModelConfigClient(category)
-            for category in (1, 2, 3, 5, 6)
+            for category in (1, 2, 3, 5, 6, 8)
         )
         self.app.state.model_config_clients = clients
 
@@ -1435,7 +1435,7 @@ class MainApiTest(unittest.TestCase):
             "/api/v1/apps/media-studio/models", headers=self._headers(),
         )
         self.assertEqual(200, listed.status_code, listed.text)
-        self.assertEqual([1, 2, 3, 5, 6], [row["category"] for row in listed.json()])
+        self.assertEqual([1, 2, 3, 5, 6, 8], [row["category"] for row in listed.json()])
         self.assertTrue(all(client.last_context for client in clients))
 
         providers = self.client.get(
@@ -1443,9 +1443,9 @@ class MainApiTest(unittest.TestCase):
             headers=self._headers(),
         )
         self.assertEqual(200, providers.status_code, providers.text)
-        self.assertEqual(5, len(providers.json()))
+        self.assertEqual(6, len(providers.json()))
 
-        llm = clients[0]
+        image = clients[-1]
         created = self.client.post(
             "/api/v1/apps/media-studio/models",
             headers=self._headers(),
@@ -1453,8 +1453,8 @@ class MainApiTest(unittest.TestCase):
                 "served_model_name": "image-model-test",
                 "display_name": "图片模型测试",
                 "provider_model_name": "provider-image-model",
-                "category": 1,
-                "provider": "api_qwen",
+                "category": 8,
+                "provider": "api_oci_image",
                 "api_endpoint": "https://models.example.test/v1",
                 "api_key": "write-only-secret",
                 "status": "DRAFT",
@@ -1462,21 +1462,21 @@ class MainApiTest(unittest.TestCase):
             },
         )
         self.assertEqual(201, created.status_code, created.text)
-        self.assertEqual("create", llm.last_operation)
-        self.assertEqual("portal-user-1", llm.last_context.asserted_user_id)
+        self.assertEqual("create", image.last_operation)
+        self.assertEqual("portal-user-1", image.last_context.asserted_user_id)
         self.assertNotIn("api_key", created.json())
 
         model_id = created.json()["model_id"]
         updated = self.client.patch(
-            f"/api/v1/apps/media-studio/models/1/{model_id}",
+            f"/api/v1/apps/media-studio/models/8/{model_id}",
             headers=self._headers(),
             json={"expected_row_version": 1, "display_name": "图片模型已更新"},
         )
         self.assertEqual(200, updated.status_code, updated.text)
-        self.assertEqual("update", llm.last_operation)
+        self.assertEqual("update", image.last_operation)
 
         activated = self.client.patch(
-            f"/api/v1/apps/media-studio/models/1/{model_id}/status",
+            f"/api/v1/apps/media-studio/models/8/{model_id}/status",
             headers=self._headers(),
             json={"expected_row_version": 1, "status": "ACTIVE"},
         )
@@ -1484,14 +1484,14 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("ACTIVE", activated.json()["status"])
 
         references = self.client.get(
-            f"/api/v1/apps/media-studio/models/1/{model_id}/references",
+            f"/api/v1/apps/media-studio/models/8/{model_id}/references",
             headers=self._headers(),
         )
         self.assertEqual(200, references.status_code, references.text)
         self.assertEqual([], references.json()["references"])
 
         archived = self.client.post(
-            f"/api/v1/apps/media-studio/models/1/{model_id}/archive",
+            f"/api/v1/apps/media-studio/models/8/{model_id}/archive",
             headers=self._headers(),
             json={"expected_row_version": 1},
         )
@@ -1500,12 +1500,12 @@ class MainApiTest(unittest.TestCase):
 
         deleted = self.client.request(
             "DELETE",
-            f"/api/v1/apps/media-studio/models/1/{model_id}",
+            f"/api/v1/apps/media-studio/models/8/{model_id}",
             headers=self._headers(),
             json={"expected_row_version": 2},
         )
         self.assertEqual(204, deleted.status_code, deleted.text)
-        self.assertEqual("delete", llm.last_operation)
+        self.assertEqual("delete", image.last_operation)
 
     def test_media_studio_model_management_requires_dedicated_permission(self) -> None:
         self.app.state.access_control_service.permissions = frozenset({
@@ -1514,7 +1514,7 @@ class MainApiTest(unittest.TestCase):
         })
         self.app.state.model_config_clients = tuple(
             _FakeModelConfigClient(category)
-            for category in (1, 2, 3, 5, 6)
+            for category in (1, 2, 3, 5, 6, 8)
         )
 
         response = self.client.get(

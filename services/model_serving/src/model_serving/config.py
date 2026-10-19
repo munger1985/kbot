@@ -53,12 +53,19 @@ class OcrConfig(ModelProcessConfig):
     timeout: int = Field(default=300, ge=1, le=3600)
 
 
+class ImageConfig(ModelProcessConfig):
+    service_name: str = "kbot-model-image"
+    service_port: int = 18098
+    timeout: int = Field(default=600, ge=1, le=3600)
+
+
 class ModelServingSettings(Settings):
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
     vlm: VlmConfig = Field(default_factory=VlmConfig)
     visual: VisualConfig = Field(default_factory=VisualConfig)
     ocr: OcrConfig = Field(default_factory=OcrConfig)
+    image: ImageConfig = Field(default_factory=ImageConfig)
     knowledge_retrieval_app: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18150",
@@ -114,3 +121,7 @@ def get_visual_config() -> VisualConfig:
 
 def get_ocr_config() -> OcrConfig:
     return get_model_serving_settings().ocr
+
+
+def get_image_config() -> ImageConfig:
+    return get_model_serving_settings().image

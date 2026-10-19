@@ -27,11 +27,11 @@ class MediaStudioAppSettings(Settings):
     api: MediaStudioAppApiConfig = Field(default_factory=MediaStudioAppApiConfig)
     worker: MediaStudioAppWorkerConfig = Field(default_factory=MediaStudioAppWorkerConfig)
     storage: MediaStudioAppStorageConfig = Field(default_factory=MediaStudioAppStorageConfig)
-    llm: ServiceDependencyConfig = Field(
+    image: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
-            base_url="http://127.0.0.1:18092",
-            audience="kbot-model-llm",
-            timeout_seconds=300,
+            base_url="http://127.0.0.1:18098",
+            audience="kbot-model-image",
+            timeout_seconds=600,
         )
     )
 

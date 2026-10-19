@@ -165,6 +165,7 @@
     IMG_EMBEDDING: 3,
     VLM: 5,
     OCR: 6,
+    IMAGE_GENERATION: 8,
   });
 
   function items(payload) {

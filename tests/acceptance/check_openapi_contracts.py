@@ -32,6 +32,7 @@ def build_contracts() -> dict[str, dict[str, Any]]:
         app as embedding_app,
     )
     from model_serving.entrypoints.llm import app as llm_app  # noqa: PLC0415
+    from model_serving.entrypoints.image import app as image_app  # noqa: PLC0415
     from model_serving.entrypoints.visual import (  # noqa: PLC0415
         app as visual_app,
     )
@@ -64,6 +65,7 @@ def build_contracts() -> dict[str, dict[str, Any]]:
         "data_query_internal_v1.json": create_data_query_contract_app(),
         "model_embedding_v1.json": embedding_app,
         "model_llm_v1.json": llm_app,
+        "model_image_v1.json": image_app,
         "model_visual_v1.json": visual_app,
         "model_vlm_v1.json": vlm_app,
         "model_ocr_v1.json": ocr_app,

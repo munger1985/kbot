@@ -46,6 +46,15 @@ kind = "http"
 port = 18096
 
 [[processes]]
+process_key = "model_image"
+module = "model_serving.entrypoints.image"
+service_config = "model_serving"
+config_section = "image"
+service_name = "kbot-model-image"
+kind = "http"
+port = 18098
+
+[[processes]]
 process_key = "knowledge_core_api"
 module = "knowledge_core.entrypoints.api"
 service_config = "knowledge_core"
@@ -207,6 +216,7 @@ model_llm = "model_llm"
 model_visual = "model_visual"
 model_vlm = "model_vlm"
 model_ocr = "model_ocr"
+model_image = "model_image"
 
 [dependencies.main_api.knowledge_core]
 endpoint = "knowledge_core"
@@ -225,9 +235,9 @@ timeout_seconds = 300
 endpoint = "media_studio_app"
 timeout_seconds = 120
 
-[dependencies.media_studio_app.llm]
-endpoint = "model_llm"
-timeout_seconds = 300
+[dependencies.media_studio_app.image]
+endpoint = "model_image"
+timeout_seconds = 600
 
 [dependencies.main_api.agent_runtime]
 endpoint = "agent_runtime"
@@ -260,6 +270,10 @@ timeout_seconds = 120
 [dependencies.main_api.model_ocr]
 endpoint = "model_ocr"
 timeout_seconds = 120
+
+[dependencies.main_api.model_image]
+endpoint = "model_image"
+timeout_seconds = 600
 
 [dependencies.knowledge_core.embedding]
 endpoint = "model_embedding"

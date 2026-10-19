@@ -6,7 +6,7 @@ import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from model_serving.llm.responses.router import create_responses_router
+from model_serving.image.router import create_image_router
 from platform_core.contracts import (
     INTERNAL_API_V1,
     GeneratedImageArtifact,
@@ -21,9 +21,9 @@ JPEG = b"\xff\xd8\xff\xdb" + b"\x00" * 32
 class ResponsesImageHttpTest(unittest.TestCase):
     def test_completed_jpeg_result_returns_json_instead_of_500(self):
         app = FastAPI()
-        app.include_router(create_responses_router())
-        app.state.responses_service = AsyncMock()
-        app.state.responses_service.generate_image.return_value = ImageGenerationResult(
+        app.include_router(create_image_router())
+        app.state.image_service = AsyncMock()
+        app.state.image_service.generate_image.return_value = ImageGenerationResult(
             status="COMPLETED",
             artifacts=(GeneratedImageArtifact(mime_type="image/jpeg", content=JPEG),),
             provider_request_id="resp-img-1",

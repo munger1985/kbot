@@ -59,15 +59,15 @@ class _UnitOfWork:
 
 
 class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
-    async def test_image_binding_requires_active_llm_model(self):
+    async def test_image_binding_requires_active_image_generation_model(self):
         model_id = uuid7()
-        for status, category in (("DRAFT", 1), ("ACTIVE", 2)):
+        for status, category in (("DRAFT", 8), ("ACTIVE", 1)):
             with self.subTest(status=status, category=category):
                 row = {
                     "model_id": str(model_id),
                     "display_name": "图片模型",
                     "served_model_name": "image-model",
-                    "provider": "oci",
+                    "provider": "api_oci_image",
                     "status": status,
                     "category": category,
                     "api_key": "不能进入快照",
@@ -87,7 +87,7 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual("MODEL_NOT_ACTIVE", raised.exception.code)
 
-    async def test_active_llm_model_is_bound_with_safe_snapshot(self):
+    async def test_active_image_generation_model_is_bound_with_safe_snapshot(self):
         model_id = uuid7()
         repository = _Repository()
         service = ModelBindingService(
@@ -96,9 +96,9 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
                 "model_id": str(model_id),
                 "display_name": "图片模型",
                 "served_model_name": "image-model",
-                "provider": "oci",
+                "provider": "api_oci_image",
                 "status": "ACTIVE",
-                "category": 1,
+                "category": 8,
                 "api_key": "不能进入快照",
             }),
         )
@@ -124,9 +124,9 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
             "model_id": str(model_id),
             "display_name": "图片模型",
             "served_model_name": "image-model",
-            "provider": "oci",
+            "provider": "api_oci_image",
             "status": "ACTIVE",
-            "category": 1,
+            "category": 8,
         })
         service = ModelBindingService(
             uow_factory=lambda: _UnitOfWork(repository),
@@ -152,9 +152,9 @@ class ModelBindingTest(unittest.IsolatedAsyncioTestCase):
             "model_id": str(model_id),
             "display_name": "图片模型",
             "served_model_name": "image-model",
-            "provider": "oci",
+            "provider": "api_oci_image",
             "status": "ACTIVE",
-            "category": 1,
+            "category": 8,
         })
         service = ModelBindingService(
             uow_factory=lambda: _UnitOfWork(repository),

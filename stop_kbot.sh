@@ -11,6 +11,7 @@ SERVICES=(
     "model_serving.entrypoints.vlm"
     "model_serving.entrypoints.visual"
     "model_serving.entrypoints.ocr"
+    "model_serving.entrypoints.image"
     "knowledge_core.entrypoints.api"
     "knowledge_core.entrypoints.parser"
     "knowledge_core.entrypoints.projection"

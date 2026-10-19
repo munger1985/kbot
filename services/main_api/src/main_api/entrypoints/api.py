@@ -57,6 +57,7 @@ def _configure_model_config_clients(app: FastAPI) -> None:
         (ModelCategory.IMG_EMBEDDING.value, settings.model_visual),
         (ModelCategory.VLM.value, settings.model_vlm),
         (ModelCategory.OCR.value, settings.model_ocr),
+        (ModelCategory.IMAGE_GENERATION.value, settings.model_image),
     )
     app.state.model_config_clients = tuple(
         AIModelConfigClient(

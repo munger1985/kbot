@@ -130,6 +130,13 @@ class MainApiSettings(Settings):
             audience="kbot-model-ocr",
         )
     )
+    model_image: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18098",
+            audience="kbot-model-image",
+            timeout_seconds=600,
+        )
+    )
     integrations: MainApiIntegrationConfig = Field(
         default_factory=MainApiIntegrationConfig
     )
