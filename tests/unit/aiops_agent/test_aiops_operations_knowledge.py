@@ -222,6 +222,31 @@ class _KnowledgeUnitOfWork:
         self.commits += 1
 
 
+class _SessionBoundEntity:
+    def __init__(self, state, **values):
+        self._state = state
+        self._values = values
+
+    def __getattr__(self, name):
+        if not self._state.active:
+            raise RuntimeError("detached entity attribute accessed")
+        return self._values[name]
+
+
+class _SessionState:
+    active = True
+
+
+class _DetachingKnowledgeUnitOfWork(_KnowledgeUnitOfWork):
+    def __init__(self, repository, state):
+        super().__init__(repository)
+        self.state = state
+
+    async def __aexit__(self, *_args):
+        self.state.active = False
+        return None
+
+
 class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def service(repository, knowledge_core):
@@ -288,6 +313,111 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("PROCESSING", version.status)
         self.assertEqual("PROCESSING", index.index_status)
         self.assertEqual([str(tag_id)], version.tag_analysis_json["approved_tag_ids"])
+
+    async def test_tag_analysis_snapshots_entities_before_read_transaction_closes(self):
+        asset_id, version_id, tag_id = uuid7(), uuid7(), uuid7()
+        collection_id, bundle_id, revision_id = uuid7(), uuid7(), uuid7()
+        document_version_id = uuid7()
+        state = _SessionState()
+        first_repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=_SessionBoundEntity(
+                state, asset_id=asset_id, status="TAGGING"
+            )),
+            get_asset=AsyncMock(return_value=_SessionBoundEntity(
+                state, asset_kind="MANUAL"
+            )),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [_SessionBoundEntity(
+                    state,
+                    collection_id=collection_id,
+                    bundle_id=bundle_id,
+                    bundle_revision_id=revision_id,
+                )]
+            }),
+            list_tags=AsyncMock(return_value=[_SessionBoundEntity(
+                state,
+                tag_id=tag_id,
+                category="VENDOR",
+                display_name="Oracle",
+                description="Oracle 数据库资料",
+            )]),
+        )
+        locked = SimpleNamespace(
+            asset_id=asset_id, status="TAGGING", tag_analysis_json=None
+        )
+        locked_asset = SimpleNamespace(
+            current_version_id=None, status="TAGGING"
+        )
+        second_repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=locked),
+            get_asset=AsyncMock(return_value=locked_asset),
+        )
+        units = iter([
+            _DetachingKnowledgeUnitOfWork(first_repository, state),
+            _KnowledgeUnitOfWork(second_repository),
+        ])
+        knowledge_core = SimpleNamespace(extract_review_text=AsyncMock(
+            return_value={
+                "excerpts": [{
+                    "document_version_id": str(document_version_id),
+                    "file_name": "oracle-manual.pdf",
+                    "content": "Oracle Exadata 运维手册",
+                    "locator": {"page": 1},
+                }],
+                "warnings": [],
+            }
+        ))
+        structured_model = SimpleNamespace(generate_structured=AsyncMock(
+            return_value=SimpleNamespace(
+                output={
+                    "schema_version": "OPS_KNOWLEDGE_TAG_ANALYSIS.v1",
+                    "suggestions": [{
+                        "tag_id": str(tag_id),
+                        "confidence": 0.98,
+                        "evidence": [{
+                            "document_version_id": str(document_version_id),
+                            "file_name": "oracle-manual.pdf",
+                            "quote": "Oracle Exadata",
+                            "locator": {"page": 1},
+                        }],
+                    }],
+                },
+                receipt=SimpleNamespace(model_dump=lambda **_kwargs: {
+                    "model_call_id": str(uuid7())
+                }),
+            )
+        ))
+        prompt = SimpleNamespace(
+            content="从受控词表选择标签",
+            ref=lambda: {"prompt_id": "knowledge_tag_classify"},
+        )
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: next(units),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={"composer_llm": uuid7()},
+            knowledge_assistant_instruction="",
+            model_catalog=SimpleNamespace(get_model=AsyncMock(
+                return_value={"served_model_name": "tag-model"}
+            )),
+            structured_model=structured_model,
+            prompt_registry=SimpleNamespace(resolve=AsyncMock(return_value=prompt)),
+        )
+        service.get_version = AsyncMock(return_value={"status": "REVIEW_REQUIRED"})
+
+        result = await service.analyze_tags(
+            domain_id=42,
+            asset_version_id=version_id,
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual({"status": "REVIEW_REQUIRED"}, result)
+        self.assertEqual("REVIEW_REQUIRED", locked.status, locked.tag_analysis_json)
+        self.assertEqual("REVIEW_REQUIRED", locked_asset.status)
+        self.assertEqual("Oracle", locked.tag_analysis_json["suggestions"][0]["display_name"])
+        knowledge_core.extract_review_text.assert_awaited_once()
+        structured_model.generate_structured.assert_awaited_once()
 
     async def test_ready_manual_is_published_automatically(self):
         asset_id, version_id = uuid7(), uuid7()

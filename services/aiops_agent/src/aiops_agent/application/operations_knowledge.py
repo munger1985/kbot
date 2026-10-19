@@ -406,23 +406,40 @@ class OperationsKnowledgeService:
             asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=version.asset_id)
             relations = await uow.operations_knowledge.get_version_relations(asset_version_id=asset_version_id)
             tags = await uow.operations_knowledge.list_tags(domain_id=domain_id, status="ACTIVE")
-        if asset.asset_kind != "MANUAL" or version.status != "TAGGING":
+            asset_kind = str(asset.asset_kind)
+            version_status = str(version.status)
+            index = next(iter(relations["indexes"]), None)
+            index_locator = (
+                (
+                    index.collection_id,
+                    index.bundle_id,
+                    index.bundle_revision_id,
+                )
+                if index is not None
+                else None
+            )
+            vocabulary = [{
+                "tag_id": str(tag.tag_id), "category": str(tag.category),
+                "display_name": str(tag.display_name),
+                "description": tag.description,
+            } for tag in tags]
+        if asset_kind != "MANUAL" or version_status != "TAGGING":
             return await self.get_version(domain_id=domain_id, asset_version_id=asset_version_id)
-        if not tags:
+        if not vocabulary:
             return await self._mark_tagging_failed(
                 domain_id=domain_id, asset_version_id=asset_version_id,
                 code="TAG_VOCABULARY_EMPTY", message="请先在配置与治理中维护至少一个有效知识标签",
             )
-        index = next(iter(relations["indexes"]), None)
-        if index is None:
+        if index_locator is None:
             return await self._mark_tagging_failed(
                 domain_id=domain_id, asset_version_id=asset_version_id,
                 code="TAG_SOURCE_MISSING", message="知识版本缺少 KC 源文件引用",
             )
         try:
+            collection_id, bundle_id, bundle_revision_id = index_locator
             projection = await self._kc.extract_review_text(
-                domain_id=domain_id, collection_id=index.collection_id,
-                bundle_id=index.bundle_id, bundle_revision_id=index.bundle_revision_id,
+                domain_id=domain_id, collection_id=collection_id,
+                bundle_id=bundle_id, bundle_revision_id=bundle_revision_id,
                 auth_context=context,
             )
             excerpts = list(projection.get("excerpts") or [])
@@ -436,10 +453,6 @@ class OperationsKnowledgeService:
             if not technical_name:
                 raise ValueError("标签识别模型缺少 served_model_name")
             prompt = await self._prompt_registry.resolve("knowledge_tag_classify")
-            vocabulary = [{
-                "tag_id": str(tag.tag_id), "category": tag.category,
-                "display_name": tag.display_name, "description": tag.description,
-            } for tag in tags]
             result = await self._structured_model.generate_structured(
                 purpose="operations_knowledge.tag_classify",
                 output_model=KnowledgeTagAnalysisOutput,
@@ -453,7 +466,7 @@ class OperationsKnowledgeService:
                 idempotency_key=f"knowledge-tags:{asset_version_id}",
             )
             output = KnowledgeTagAnalysisOutput.model_validate(result.output)
-            allowed = {str(tag.tag_id): tag for tag in tags}
+            allowed = {item["tag_id"]: item for item in vocabulary}
             source_by_id = {str(item["document_version_id"]): item for item in excerpts}
             suggestions: list[dict[str, Any]] = []
             seen: set[str] = set()
@@ -476,8 +489,8 @@ class OperationsKnowledgeService:
                     continue
                 seen.add(suggestion.tag_id)
                 suggestions.append({
-                    "tag_id": suggestion.tag_id, "category": tag.category,
-                    "display_name": tag.display_name,
+                    "tag_id": suggestion.tag_id, "category": tag["category"],
+                    "display_name": tag["display_name"],
                     "confidence": suggestion.confidence, "evidence": evidence,
                 })
             analysis = {
