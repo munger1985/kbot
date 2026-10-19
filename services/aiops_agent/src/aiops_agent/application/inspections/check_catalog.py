@@ -17,6 +17,7 @@ from platform_core.contracts.aiops import (
 
 _CATALOG_PATH = Path(__file__).with_name("check_catalog.json")
 _CATALOG_SCHEMA_VERSION = "AIOPS_CHECK_CATALOG.v1"
+_V1_DEFAULT_SUPPORTED_DB_TYPES = ("ORACLE",)
 
 
 def _canonical_json(value: Any) -> str:
@@ -73,7 +74,8 @@ def load_check_catalog() -> InspectionCheckCatalogView:
                 default_for=tuple(item_payload.get("default_for") or ()),
                 trend_required=bool(item_payload.get("trend_required")),
                 supported_db_types=tuple(
-                    item_payload.get("supported_db_types") or ("ORACLE",)
+                    item_payload.get("supported_db_types")
+                    or _V1_DEFAULT_SUPPORTED_DB_TYPES
                 ),
             )
             if item.check_id in seen_ids:
@@ -255,7 +257,10 @@ def inspection_template_steps(
         step = dict(raw)
         supported = {
             str(value).upper()
-            for value in step.get("supported_db_types") or ()
+            for value in (
+                step.get("supported_db_types")
+                or _V1_DEFAULT_SUPPORTED_DB_TYPES
+            )
         }
         if normalized_db_type and normalized_db_type not in supported:
             continue

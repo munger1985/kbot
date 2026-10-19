@@ -180,6 +180,40 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             [item["tool_id"] for item in mysql_steps],
         )
 
+    def test_v1_frozen_steps_without_db_types_keep_oracle_semantics(self) -> None:
+        definition = {
+            "schema_version": "INSPECTION_TEMPLATE.v1",
+            "selected_check_ids": ["oracle.session.lock_wait"],
+            "evidence_steps": [
+                {
+                    "title": "锁等待与阻塞链",
+                    "tool_id": "db.session.blocking_chain",
+                    "input": {},
+                    "expected_evidence_kind": "LOCK_WAIT",
+                    "optional": False,
+                    "check_ids": ["oracle.session.lock_wait"],
+                    "trend_required": False,
+                }
+            ],
+        }
+
+        oracle_steps = inspection_template_steps(
+            definition,
+            schedule_type="DAILY",
+            database_type="ORACLE",
+        )
+        postgresql_steps = inspection_template_steps(
+            definition,
+            schedule_type="DAILY",
+            database_type="POSTGRESQL",
+        )
+
+        self.assertEqual(
+            ["db.session.blocking_chain"],
+            [item["tool_id"] for item in oracle_steps],
+        )
+        self.assertEqual((), postgresql_steps)
+
     def test_compile_weekly_trend_required_uses_historical_samples(self) -> None:
         selected = [
             "oracle.session.lock_wait",
