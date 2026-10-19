@@ -2,6 +2,8 @@
   "use strict";
   const appApi = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
+  const hasNumber = (value) => value !== null && value !== undefined
+    && value !== "" && Number.isFinite(Number(value));
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
   const configs = {
@@ -713,13 +715,18 @@
     const rawCoverage = scope.evidence_coverage_percent;
     const hasCoverage = typeof rawCoverage === "number" && Number.isFinite(rawCoverage);
     const coverage = hasCoverage
-      ? `${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项证据` : ""}`
+      ? `业务检查语义满足率 ${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项` : ""}`
       : "历史报告未记录覆盖率";
+    const quality = [
+      hasNumber(scope.tool_execution_coverage_percent) ? `固定工具执行率 ${Number(scope.tool_execution_coverage_percent)}%` : "",
+      hasNumber(scope.monitoring_sample_coverage_percent) ? `监控采样覆盖率 ${Number(scope.monitoring_sample_coverage_percent)}%` : "",
+      hasNumber(scope.evidence_gap_count) ? `数据缺口 ${Number(scope.evidence_gap_count)} 项` : "",
+    ].filter(Boolean).join(" · ");
     const profile = scope.monitoring_profile?.display_name
       ? `${scope.monitoring_profile.display_name}${scope.monitoring_profile.version ? ` · ${scope.monitoring_profile.version}` : ""}`
       : "";
     const item = (label, value, className = "") => `<div class="${className}"><dt>${shell.escape(label)}</dt><dd>${value}</dd></div>`;
-    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("报告状态", reportStatusBadge(report.status))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("采集与证据覆盖", `<strong>${shell.escape(coverage)}</strong><small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
+    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("报告状态", reportStatusBadge(report.status))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("证据质量", `<strong>${shell.escape(coverage)}</strong>${quality ? `<small>${shell.escape(quality)}</small>` : ""}<small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
   }
 
   function reportPresentationHtml(data, report, versions, target) {

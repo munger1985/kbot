@@ -28,13 +28,39 @@ class ConversationStarterCatalog:
             for item in payload.get("starters", ())
         }
 
-    def list_for_target(self, target: Any) -> dict[str, Any]:
-        db_type = str(target.db_type)
+    def list_for_agent(
+        self,
+        *,
+        agent_id,
+        capabilities: set[str],
+        targets: tuple[Any, ...],
+        context_hint=None,
+    ) -> dict[str, Any]:
         items = []
         for item in self._items.values():
-            if db_type not in item.get("supported_db_types", ()):
+            required = self._required_capabilities(item)
+            if not set(required) <= capabilities:
                 continue
-            status, reason = self._availability(target)
+            compatible_targets = tuple(
+                target
+                for target in targets
+                if str(target.db_type) in item.get("supported_db_types", ())
+            )
+            if not compatible_targets:
+                continue
+            availability = [self._availability(target) for target in compatible_targets]
+            status = next(
+                (
+                    candidate
+                    for candidate in ("AVAILABLE", "LIMITED", "UNAVAILABLE")
+                    if any(value[0] == candidate for value in availability)
+                ),
+                "UNAVAILABLE",
+            )
+            reason = next(
+                (value[1] for value in availability if value[0] == status),
+                None,
+            )
             input_schema = self._input_schema(item)
             items.append(
                 {
@@ -50,6 +76,7 @@ class ConversationStarterCatalog:
                     )
                 }
                 | {
+                    "required_capabilities": required,
                     "input_schema": input_schema,
                     "status": status,
                     "availability_reason": reason,
@@ -57,22 +84,36 @@ class ConversationStarterCatalog:
             )
         return {
             "catalog_version": self.version,
-            "target_id": str(target.target_id),
-            "db_type": db_type,
+            "agent_id": str(agent_id),
+            "context_hint": (
+                context_hint.model_dump(mode="json")
+                if context_hint is not None
+                else None
+            ),
             "starters": sorted(items, key=lambda value: value["sort_order"]),
         }
 
-    def freeze(self, *, selection: Any, target: Any) -> dict[str, Any]:
+    def freeze(
+        self,
+        *,
+        selection: Any,
+        capabilities: set[str],
+        target: Any | None = None,
+    ) -> dict[str, Any]:
         if str(selection.catalog_version) != self.version:
             raise validation_failed("功能目录已经更新，请重新打开功能菜单")
         item = self._items.get(str(selection.starter_id))
         if item is None:
             raise validation_failed("所选功能不存在或已经下线")
-        if str(target.db_type) not in item.get("supported_db_types", ()):
-            raise validation_failed("所选功能不支持当前 Target 数据库类型")
-        status, reason = self._availability(target)
-        if status == "UNAVAILABLE":
-            raise validation_failed(reason)
+        required = set(self._required_capabilities(item))
+        if not required <= capabilities:
+            raise validation_failed("当前 Agent 未启用该功能所需能力")
+        if target is not None:
+            if str(target.db_type) not in item.get("supported_db_types", ()):
+                raise validation_failed("所选功能不支持当前业务资源数据库类型")
+            status, reason = self._availability(target)
+            if status == "UNAVAILABLE":
+                raise validation_failed(reason)
         input_schema = self._input_schema(item)
         try:
             if str(dict(item.get("planning") or {}).get("kind") or "") == "IMPLEMENTATION":
@@ -94,12 +135,18 @@ class ConversationStarterCatalog:
             "category": item["category"],
             "title": item["title"],
             "execution_mode": item["execution_mode"],
+            "required_capabilities": sorted(required),
             "parameters": parameters,
             "planning": dict(item["planning"]),
             "user_message": self._user_message(
                 item, parameters, input_schema=input_schema
             ),
         }
+
+    @staticmethod
+    def _required_capabilities(item: dict[str, Any]) -> tuple[str, ...]:
+        declared = tuple(item.get("required_capabilities") or ())
+        return declared or ("ACTIVE_DIAGNOSIS",)
 
     @staticmethod
     def _input_schema(item: dict[str, Any]) -> tuple[dict[str, Any], ...]:

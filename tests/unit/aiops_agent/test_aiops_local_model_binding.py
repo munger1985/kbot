@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from platform_core.identity import uuid7
+from platform_core.contracts.aiops import AIOpsCapability
 
 from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
 from aiops_agent.application.agents import (
@@ -20,9 +21,23 @@ from aiops_agent.application.diagnosis.local_models import (
 )
 from aiops_agent.application.errors import AIOpsApplicationError
 from tests.unit.aiops_agent.test_aiops_agent_creation import (
-    _AgentRepository,
     _UnitOfWork,
+    _database_row,
 )
+
+
+def _active_command(unit_of_work, *, display_name, models, status="ACTIVE"):
+    return CreateAIOpsAgentCommand(
+        domain_id=100,
+        display_name=display_name,
+        allowed_business_system_ids=(
+            unit_of_work.system.business_system_id,
+        ),
+        capabilities=(AIOpsCapability.ACTIVE_DIAGNOSIS,),
+        models=models,
+        status=status,
+        actor_id="kbotui_dev",
+    )
 
 
 class LocalModelHelperTest(unittest.TestCase):
@@ -62,51 +77,45 @@ class LocalModelHelperTest(unittest.TestCase):
 
 class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_development_active_agent_allows_any_bound_model(self):
-        source_id = uuid7()
-        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        unit_of_work = _UnitOfWork(rows=(_database_row(),))
         service = AIOpsAgentService(uow_factory=lambda: unit_of_work)
 
         result = await service.create(
-            CreateAIOpsAgentCommand(
-                domain_id=100,
+            _active_command(
+                unit_of_work,
                 display_name="开发诊断助手",
-                target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": uuid7(),
                     "diagnosis_llm": uuid7(),
+                    "composer_llm": uuid7(),
                 },
-                status="ACTIVE",
-                actor_id="kbotui_dev",
             )
         )
         self.assertEqual("ACTIVE", result["status"])
 
     async def test_production_draft_does_not_require_local_model(self):
-        source_id = uuid7()
-        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        unit_of_work = _UnitOfWork(rows=(_database_row(),))
         service = AIOpsAgentService(
             uow_factory=lambda: unit_of_work,
             environment="production",
         )
 
         result = await service.create(
-            CreateAIOpsAgentCommand(
-                domain_id=100,
+            _active_command(
+                unit_of_work,
                 display_name="生产草稿",
-                target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": uuid7(),
                     "diagnosis_llm": uuid7(),
+                    "composer_llm": uuid7(),
                 },
                 status="DRAFT",
-                actor_id="kbotui_dev",
             )
         )
         self.assertEqual("DRAFT", result["status"])
 
     async def test_production_active_without_directory_is_unavailable(self):
-        source_id = uuid7()
-        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        unit_of_work = _UnitOfWork(rows=(_database_row(),))
         service = AIOpsAgentService(
             uow_factory=lambda: unit_of_work,
             environment="production",
@@ -114,16 +123,14 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(AIOpsAgentError) as raised:
             await service.create(
-                CreateAIOpsAgentCommand(
-                    domain_id=100,
+                _active_command(
+                    unit_of_work,
                     display_name="生产诊断助手",
-                    target_ids=(unit_of_work.target.target_id,),
                     models={
                         "planner_llm": uuid7(),
                         "diagnosis_llm": uuid7(),
+                        "composer_llm": uuid7(),
                     },
-                    status="ACTIVE",
-                    actor_id="kbotui_dev",
                 )
             )
         self.assertEqual(
@@ -133,10 +140,10 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(503, raised.exception.status_code)
 
     async def test_production_active_rejects_cloud_provider(self):
-        source_id = uuid7()
         planner_id = uuid7()
         diagnosis_id = uuid7()
-        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        composer_id = uuid7()
+        unit_of_work = _UnitOfWork(rows=(_database_row(),))
         model_client = AsyncMock()
         model_client.get_model.side_effect = lambda model_id: {
             "provider": "chatgpt",
@@ -151,16 +158,14 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(AIOpsAgentError) as raised:
             await service.create(
-                CreateAIOpsAgentCommand(
-                    domain_id=100,
+                _active_command(
+                    unit_of_work,
                     display_name="生产诊断助手",
-                    target_ids=(unit_of_work.target.target_id,),
                     models={
                         "planner_llm": planner_id,
                         "diagnosis_llm": diagnosis_id,
+                        "composer_llm": composer_id,
                     },
-                    status="ACTIVE",
-                    actor_id="kbotui_dev",
                 )
             )
         self.assertEqual(
@@ -170,10 +175,10 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(422, raised.exception.status_code)
 
     async def test_production_active_accepts_local_deepseek(self):
-        source_id = uuid7()
         planner_id = uuid7()
         diagnosis_id = uuid7()
-        unit_of_work = _UnitOfWork(_AgentRepository(), source_id)
+        composer_id = uuid7()
+        unit_of_work = _UnitOfWork(rows=(_database_row(),))
         model_client = AsyncMock()
         model_client.get_model.side_effect = lambda model_id: {
             "provider": "local_deepseek",
@@ -187,16 +192,14 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await service.create(
-            CreateAIOpsAgentCommand(
-                domain_id=100,
+            _active_command(
+                unit_of_work,
                 display_name="生产诊断助手",
-                target_ids=(unit_of_work.target.target_id,),
                 models={
                     "planner_llm": planner_id,
                     "diagnosis_llm": diagnosis_id,
+                    "composer_llm": composer_id,
                 },
-                status="ACTIVE",
-                actor_id="kbotui_dev",
             )
         )
         self.assertEqual("ACTIVE", result["status"])

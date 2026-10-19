@@ -17,6 +17,7 @@ from aiops_agent.application.investigation import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
+from aiops_agent.application.turn_capabilities import CapabilityResult
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.api.conversations import _require_turn_contract
 from aiops_agent.tools import InvestigationCatalogChangedError
@@ -26,10 +27,15 @@ from aiops_agent.workers.outbox_dispatcher import (
 )
 from aiops_agent.workers.reconciliation import AIOpsReconciler
 from platform_core.contracts.aiops import (
+    AIOpsCapability,
+    ClarificationResponseV1,
     ConversationCreate,
     ConversationSourceContext,
     TurnCreate,
+    TurnPlanStepV1,
+    TurnPlanV1,
     TurnReceipt,
+    ScopeType,
     TurnSummary,
     TurnView,
 )
@@ -76,9 +82,87 @@ class _PlannerStage:
         self.calls.append(dict(payload))
         return self.result
 
+    async def start_active_diagnosis(self, payload):
+        return {
+            **payload,
+            "status": "UNDERSTANDING",
+            "target_id": str(uuid7()),
+        }
+
     async def execute(self, payload):
         self.calls.append(dict(payload))
         return {"status": "COLLECTING"}
+
+
+class _RouterModel:
+    def __init__(self, capability=AIOpsCapability.ACTIVE_DIAGNOSIS) -> None:
+        self.capability = capability
+
+    async def generate_structured(self, **kwargs):
+        input_payload = kwargs["input_payload"]
+        plan = TurnPlanV1(
+            turn_id=input_payload["turn_id"],
+            revision_no=input_payload["revision_no"],
+            requested_capabilities=(self.capability,),
+            requires_active_diagnosis=(
+                self.capability == AIOpsCapability.ACTIVE_DIAGNOSIS
+            ),
+            steps=(
+                TurnPlanStepV1(
+                    step_id="s1",
+                    capability=self.capability,
+                    objective="执行测试能力",
+                    scope_type=(
+                        ScopeType.RESOURCE
+                        if self.capability
+                        != AIOpsCapability.KNOWLEDGE_QA
+                        else ScopeType.NONE
+                    ),
+                ),
+            ),
+            policy_snapshot_hash=input_payload["policy_snapshot_hash"],
+        )
+        receipt = SimpleNamespace(
+            model_dump=lambda **_: {"purpose": "aiops_turn_router"}
+        )
+        return SimpleNamespace(output=plan, receipt=receipt)
+
+
+class _RouterPrompt:
+    content = "测试 Turn Router"
+
+    def ref(self):
+        return {
+            "prompt_id": "aiops_agent.turn_router",
+            "prompt_version": "1.0.0",
+            "prompt_sha256": "0" * 64,
+        }
+
+
+class _RouterPrompts:
+    async def resolve(self, prompt_id):
+        if prompt_id != "turn_router":
+            raise AssertionError(prompt_id)
+        return _RouterPrompt()
+
+
+def _turn_planner(uow, capability=AIOpsCapability.ACTIVE_DIAGNOSIS):
+    if capability.value not in uow.version.capabilities_json:
+        uow.version.capabilities_json.append(capability.value)
+
+    async def resolve_model(model_id):
+        return {
+            "model_id": str(model_id),
+            "technical_name": "router-test",
+            "revision": str(model_id),
+        }
+
+    return TurnPlannerService(
+        uow_factory=lambda: uow,
+        structured_model=_RouterModel(capability),
+        prompt_registry=_RouterPrompts(),
+        model_resolver=resolve_model,
+    )
 
 
 class _UnsupportedPlanningStage(_PlannerStage):
@@ -99,6 +183,60 @@ class _UnsupportedPlanningStage(_PlannerStage):
             }
         )
         return {"status": "FAILED"}
+
+
+class _ReadOnlyCapabilityAdapter:
+    async def execute(self, *, capability, plan, scope, internal_scope):
+        del plan, scope, internal_scope
+        return CapabilityResult(
+            capability=capability,
+            supported=True,
+            markdown="当前有一条高优先级告警。",
+            evidence=(
+                {
+                    "source_kind": "ALERT",
+                    "source_id": str(uuid7()),
+                },
+            ),
+        )
+
+
+class _MultiResourceRuntime:
+    def __init__(self, uow) -> None:
+        self.uow = uow
+        self.commands = []
+        self.receipts = {}
+
+    async def create_run(self, command):
+        prior = self.receipts.get(command.idempotency_key)
+        if prior is not None:
+            return prior
+        self.commands.append(command)
+        run_id = uuid7()
+        receipt = SimpleNamespace(ops_run_id=run_id)
+        self.receipts[command.idempotency_key] = receipt
+        self.uow.turns.run_links.append(
+            SimpleNamespace(
+                turn_id=UUID(str(command.client_metadata["parent_turn_id"])),
+                ops_run_id=run_id,
+                purpose=(
+                    f"RESOURCE_{int(command.client_metadata['resource_sequence']):03d}"
+                ),
+                sequence_no=int(command.client_metadata["resource_sequence"]),
+            )
+        )
+        self.uow.runs.rows.append(
+            SimpleNamespace(
+                ops_run_id=run_id,
+                domain_id=command.domain_id,
+                status="CREATED",
+                final_artifact_id=None,
+                cancel_requested_at=None,
+                cancel_requested_by=None,
+                completed_at=None,
+            )
+        )
+        return receipt
 
 
 class _InvalidPlanningStage(_UnsupportedPlanningStage):
@@ -205,6 +343,18 @@ class _TurnRepository:
                 if row.turn_id == turn_id and row.purpose == purpose
             ),
             None,
+        )
+
+    async def get_run_link_by_ops_run_id(self, *, ops_run_id):
+        return next(
+            (row for row in self.run_links if row.ops_run_id == ops_run_id),
+            None,
+        )
+
+    async def list_run_links(self, *, turn_id):
+        return sorted(
+            (row for row in self.run_links if row.turn_id == turn_id),
+            key=lambda row: row.sequence_no,
         )
 
     async def list_messages(self, *, turn_id):
@@ -339,7 +489,36 @@ class _Uow:
         self.agent = SimpleNamespace(
             agent_id=uuid7(), status="ACTIVE", current_version_id=uuid7()
         )
-        self.target = SimpleNamespace(target_id=uuid7(), status="ENABLED")
+        self.target = SimpleNamespace(
+            target_id=uuid7(),
+            status="ENABLED",
+            readonly_connection_enabled=True,
+        )
+        self.system = SimpleNamespace(
+            business_system_id=uuid7(),
+            status="ENABLED",
+            system_code="MES",
+            display_name="MES",
+            environment="PROD",
+        )
+        self.resource = SimpleNamespace(
+            resource_id=uuid7(),
+            lifecycle_status="ACTIVE",
+            resource_code="MESDB",
+            display_name="MES 数据库",
+            resource_type_key="DATABASE",
+            location_name=None,
+            attributes_json={},
+        )
+        self.system_resource = SimpleNamespace(
+            system_resource_id=uuid7(),
+            resource_id=self.resource.resource_id,
+            status="ACTIVE",
+        )
+        self.database_resource = SimpleNamespace(
+            resource_id=self.resource.resource_id,
+            target_id=self.target.target_id,
+        )
         self.situation = SimpleNamespace(
             situation_id=uuid7(),
             domain_id=7,
@@ -350,7 +529,9 @@ class _Uow:
         )
         self.version = SimpleNamespace(
             agent_version_id=self.agent.current_version_id,
-            target_id=self.target.target_id,
+            capabilities_json=["ACTIVE_DIAGNOSIS"],
+            knowledge_policy_json={},
+            models_json={"planner_llm": str(uuid7())},
         )
         self.conversation_rows = []
         self.turns = _TurnRepository()
@@ -362,6 +543,7 @@ class _Uow:
             version=self._get_version,
             version_source_ids=self._source_ids,
             version_has_target=self._version_has_target,
+            version_business_system_ids=self._business_system_ids,
         )
         self.targets = SimpleNamespace(
             target_ids_shared_by_sources=self._target_candidates,
@@ -369,6 +551,14 @@ class _Uow:
             list_target_facts=self._list_target_facts,
         )
         self.runs = _RunRepository()
+        self.business_systems = SimpleNamespace(
+            get_resource_for_target=self._resource_for_target,
+            find_system_for_target=self._system_for_target,
+            get_scoped=self._get_business_system,
+            list_system_resource_rows=self._system_resource_rows,
+            list_relations=self._list_relations,
+            list_participants=self._list_participants,
+        )
         self.situations = SimpleNamespace(
             get_situation_scoped=self._get_situation,
         )
@@ -404,6 +594,43 @@ class _Uow:
 
     async def _source_ids(self, *, agent_version_id):
         self.assert_version(agent_version_id)
+        return []
+
+    async def _business_system_ids(self, *, agent_version_id):
+        self.assert_version(agent_version_id)
+        return [self.system.business_system_id]
+
+    async def _resource_for_target(self, *, target_id, domain_id):
+        if target_id == self.target.target_id and domain_id == 7:
+            return self.resource
+        return None
+
+    async def _system_for_target(self, *, target_id, domain_id):
+        if target_id == self.target.target_id and domain_id == 7:
+            return self.system
+        return None
+
+    async def _get_business_system(self, *, business_system_id, domain_id):
+        if business_system_id == self.system.business_system_id and domain_id == 7:
+            return self.system
+        return None
+
+    async def _system_resource_rows(self, business_system_id):
+        if business_system_id != self.system.business_system_id:
+            return []
+        return [
+            (
+                self.system_resource,
+                self.resource,
+                self.database_resource,
+                self.target,
+            )
+        ]
+
+    async def _list_relations(self, business_system_id):
+        return []
+
+    async def _list_participants(self, relation_ids):
         return []
 
     async def _version_has_target(self, *, agent_version_id, target_id):
@@ -574,7 +801,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             conversation_id=uuid7(),
             turn_no=1,
             status="PARTIAL",
-            resolved_target_id=uuid7(),
+            capability_plan_json=None,
+            scope_resolution_json=None,
+            clarification_json=None,
             current_plan_revision=1,
             investigation_round=2,
             tool_call_count=3,
@@ -617,7 +846,6 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-start",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
-                target_id=uow.target.target_id,
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
@@ -650,9 +878,11 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         await TurnQueueService(uow_factory=lambda: uow).accept_created(
             created_payload
         )
-        await TurnPlannerService(uow_factory=lambda: uow).begin(
-            dict(uow.outbox.rows[1].payload_json)
-        )
+        payload = dict(uow.outbox.rows[1].payload_json)
+        planner = _turn_planner(uow)
+        route = await planner.begin(payload)
+        self.assertEqual([], uow.runs.rows)
+        await planner.start_active_diagnosis(payload)
         self.assertEqual(
             [
                 {
@@ -677,7 +907,6 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-1",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
-                target_id=uow.target.target_id,
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
@@ -724,7 +953,6 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-upload",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
-                target_id=uow.target.target_id,
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
@@ -774,7 +1002,6 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-upload-read",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
-                target_id=uow.target.target_id,
                 source=ConversationSourceContext(),
             ),
             first_turn=TurnCreate(
@@ -810,7 +1037,6 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             trace_id="trace-situation",
             conversation_create=ConversationCreate(
                 agent_id=uow.agent.agent_id,
-                target_id=uow.target.target_id,
                 source=ConversationSourceContext(
                     source_type="SITUATION",
                     situation_id=uow.situation.situation_id,
@@ -841,9 +1067,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             created_payload
         )
         planning_payload = dict(uow.outbox.rows[1].payload_json)
-        await TurnPlannerService(uow_factory=lambda: uow).begin(
-            planning_payload
-        )
+        planner = _turn_planner(uow)
+        await planner.begin(planning_payload)
+        await planner.start_active_diagnosis(planning_payload)
         self.assertEqual(
             uow.situation.situation_id,
             uow.runs.rows[0].situation_id,
@@ -901,9 +1127,10 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         await TurnQueueService(uow_factory=lambda: uow).accept_created(
             dict(command)
         )
-        await TurnPlannerService(uow_factory=lambda: uow).begin(
-            dict(uow.outbox.rows[1].payload_json)
-        )
+        planning_payload = dict(uow.outbox.rows[1].payload_json)
+        planner = _turn_planner(uow)
+        await planner.begin(planning_payload)
+        await planner.start_active_diagnosis(planning_payload)
         run = uow.runs.rows[0]
         self.assertEqual("ALERT", run.trigger_type)
         self.assertEqual("AUTONOMOUS", run.interaction_mode)
@@ -1057,14 +1284,13 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             view.display_dictionary["WAITING_APPROVAL"],
         )
 
-    async def test_start_rejects_disabled_target(self) -> None:
+    async def test_start_does_not_require_a_preselected_target(self) -> None:
         uow = _Uow()
         uow.target.status = "DISABLED"
 
-        with self.assertRaises(AIOpsApplicationError) as raised:
-            await self._start(uow)
+        _, receipt = await self._start(uow)
 
-        self.assertEqual("AIOPS_TARGET_NOT_ENABLED", raised.exception.code)
+        self.assertEqual("QUEUED", receipt["status"])
 
     async def test_continue_rechecks_current_agent_status(self) -> None:
         uow = _Uow()
@@ -1208,7 +1434,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         return False
 
     async def test_planning_outbox_runs_both_transaction_stages(self) -> None:
-        begin = _PlannerStage(result={"status": "UNDERSTANDING"})
+        begin = _PlannerStage(
+            result={"status": "UNDERSTANDING", "dispatch": "ACTIVE_DIAGNOSIS"}
+        )
         planning = _PlannerStage()
         sink = AIOpsDomainOutboxSink(
             runtime_service=object(),
@@ -1221,12 +1449,15 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         await sink.publish("aiops.turn.understanding_requested", payload)
 
         self.assertEqual([payload], begin.calls)
-        self.assertEqual([payload], planning.calls)
+        self.assertEqual(payload["turn_id"], planning.calls[0]["turn_id"])
+        self.assertIn("target_id", planning.calls[0])
 
     async def test_unsupported_planning_is_terminal_without_outbox_retry(
         self,
     ) -> None:
-        begin = _PlannerStage(result={"status": "UNDERSTANDING"})
+        begin = _PlannerStage(
+            result={"status": "UNDERSTANDING", "dispatch": "ACTIVE_DIAGNOSIS"}
+        )
         planning = _UnsupportedPlanningStage()
         sink = AIOpsDomainOutboxSink(
             runtime_service=object(),
@@ -1246,7 +1477,9 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_invalid_planning_log_preserves_policy_reason(self) -> None:
-        begin = _PlannerStage(result={"status": "UNDERSTANDING"})
+        begin = _PlannerStage(
+            result={"status": "UNDERSTANDING", "dispatch": "ACTIVE_DIAGNOSIS"}
+        )
         planning = _InvalidPlanningStage()
         sink = AIOpsDomainOutboxSink(
             runtime_service=object(),
@@ -1376,7 +1609,6 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
                 trace_id="trace-failed",
                 conversation_create=ConversationCreate(
                     agent_id=uow.agent.agent_id,
-                    target_id=uow.target.target_id,
                     source=ConversationSourceContext(),
                 ),
                 first_turn=TurnCreate(
@@ -1427,43 +1659,25 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(uow.turns.turns))
         self.assertEqual("QUEUED", uow.turns.turns[0].status)
 
-    async def test_empty_flow_reaches_replayable_terminal_turn(self) -> None:
+    async def test_resource_catalog_flow_completes_without_a_run(self) -> None:
         uow = _Uow()
         _, receipt = await self._start(uow)
         created_payload = dict(uow.outbox.rows[0].payload_json)
         queue = TurnQueueService(uow_factory=lambda: uow)
-        planner = TurnPlannerService(uow_factory=lambda: uow)
+        planner = _turn_planner(
+            uow, AIOpsCapability.RESOURCE_CATALOG_QUERY
+        )
 
         await queue.accept_created(created_payload)
         planning_payload = dict(uow.outbox.rows[1].payload_json)
-        planning = await planner.begin(planning_payload)
-        completed = await planner.complete_empty(
-            domain_id=7,
-            turn_id=UUID(receipt["turn_id"]),
-            ops_run_id=UUID(planning["ops_run_id"]),
-        )
+        completed = await planner.begin(planning_payload)
 
         turn = uow.turns.turns[0]
-        run = uow.runs.rows[0]
         self.assertEqual("COMPLETED", completed["status"])
         self.assertEqual("COMPLETED", turn.status)
-        self.assertEqual("COMPLETED", run.status)
-        self.assertEqual(1, len(uow.turns.run_links))
-        self.assertEqual("PRIMARY", uow.turns.run_links[0].purpose)
-        self.assertEqual(1, len(uow.runs.artifacts))
+        self.assertEqual([], uow.runs.rows)
+        self.assertEqual([], uow.turns.run_links)
         self.assertEqual(1, len(uow.turns.answer_blocks))
-        self.assertEqual(
-            [
-                "turn.created",
-                "turn.status",
-                "planning.started",
-                "turn.status",
-                "answer.delta",
-                "answer.completed",
-                "turn.status",
-            ],
-            [row.event_type for row in uow.turns.events],
-        )
         event_page = await ConversationTurnService(
             uow_factory=lambda: uow
         ).list_events(
@@ -1473,19 +1687,45 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             actor_id="dba@example.com",
         )
         self.assertTrue(event_page["terminal"])
-        self.assertEqual(7, event_page["next_sequence"])
-        replay = await ConversationTurnService(
-            uow_factory=lambda: uow
-        ).list_events(
-            domain_id=7,
-            conversation_id=UUID(receipt["conversation_id"]),
-            turn_id=UUID(receipt["turn_id"]),
-            actor_id="dba@example.com",
-            after_sequence=3,
+
+    async def test_read_only_specialist_freezes_evidence_without_a_run(self) -> None:
+        uow = _Uow()
+        _, receipt = await self._start(uow)
+        uow.version.capabilities_json.append(AIOpsCapability.ALERT_QUERY.value)
+
+        async def resolve_model(model_id):
+            return {
+                "model_id": str(model_id),
+                "technical_name": "router-test",
+                "revision": str(model_id),
+            }
+
+        planner = TurnPlannerService(
+            uow_factory=lambda: uow,
+            structured_model=_RouterModel(AIOpsCapability.ALERT_QUERY),
+            prompt_registry=_RouterPrompts(),
+            model_resolver=resolve_model,
+            capability_adapters={
+                AIOpsCapability.ALERT_QUERY: _ReadOnlyCapabilityAdapter()
+            },
+        )
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            dict(uow.outbox.rows[0].payload_json)
+        )
+        completed = await planner.begin(dict(uow.outbox.rows[1].payload_json))
+
+        self.assertEqual("COMPLETED", completed["status"])
+        self.assertEqual([], uow.runs.rows)
+        self.assertEqual([], uow.turns.run_links)
+        block = uow.turns.answer_blocks[0]
+        self.assertEqual("ALERT", block.payload_json["citations"][0]["source_kind"])
+        assistant = next(
+            item for item in uow.turns.messages
+            if item.message_type == "ASSISTANT_MESSAGE"
         )
         self.assertEqual(
-            [4, 5, 6, 7],
-            [row["sequence_no"] for row in replay["events"]],
+            [AIOpsCapability.ALERT_QUERY.value],
+            assistant.payload_json["capabilities_used"],
         )
 
     async def test_scheduled_turn_context_reaches_primary_run(self) -> None:
@@ -1512,11 +1752,12 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         }
         uow.outbox.rows[0].payload_json = created_payload
         queue = TurnQueueService(uow_factory=lambda: uow)
-        planner = TurnPlannerService(uow_factory=lambda: uow)
+        planner = _turn_planner(uow)
 
         await queue.accept_created(created_payload)
         planning_payload = dict(uow.outbox.rows[1].payload_json)
         await planner.begin(planning_payload)
+        await planner.start_active_diagnosis(planning_payload)
 
         run = uow.runs.rows[0]
         self.assertEqual(run.trigger_type, "SCHEDULE")
@@ -1546,13 +1787,113 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(event_page["terminal"])
 
+    async def test_clarification_response_resumes_the_same_turn_idempotently(
+        self,
+    ) -> None:
+        uow = _Uow()
+        service, receipt = await self._start(uow)
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            created_payload
+        )
+        planner = _turn_planner(uow)
+        first_system_id = uuid7()
+        second_system_id = uuid7()
+
+        def system(system_id, code, target_id):
+            resource_id = uuid7()
+            return {
+                "business_system_id": str(system_id),
+                "system_code": code,
+                "display_name": f"{code} 生产系统",
+                "environment": "PROD",
+                "resources": [
+                    {
+                        "system_resource_id": str(uuid7()),
+                        "resource_id": str(resource_id),
+                        "resource_code": f"{code}DB",
+                        "display_name": f"{code} 数据库",
+                        "resource_type_key": "DATABASE",
+                        "location_name": None,
+                        "attributes": {},
+                        "topology_roles": [],
+                        "target_id": str(target_id),
+                        "target_ready": True,
+                    }
+                ],
+                "relations": [],
+            }
+
+        async def load_context(payload):
+            del payload
+            return {
+                "turn_id": receipt["turn_id"],
+                "status": "ACCEPTED",
+                "question": "检查数据库性能",
+                "capabilities": ("ACTIVE_DIAGNOSIS",),
+                "planner_model_id": str(uuid7()),
+                "policy_snapshot_hash": "1" * 64,
+                "systems": [
+                    system(first_system_id, "MES", uow.target.target_id),
+                    system(second_system_id, "ERP", uuid7()),
+                ],
+                "context_hint": {},
+                "plan_revision": 1,
+            }
+
+        planner._load_context = load_context
+        planning_payload = dict(uow.outbox.rows[1].payload_json)
+        waiting = await planner.begin(planning_payload)
+
+        self.assertEqual("WAITING_USER", waiting["status"])
+        self.assertEqual([], uow.runs.rows)
+        clarification = uow.turns.turns[0].clarification_json
+        command = ClarificationResponseV1(
+            clarification_id=clarification["clarification_id"],
+            idempotency_key="choose-mes",
+            candidate_id=clarification["candidates"][0]["candidate_id"],
+        )
+        first = await service.respond_to_clarification(
+            domain_id=7,
+            conversation_id=UUID(receipt["conversation_id"]),
+            turn_id=UUID(receipt["turn_id"]),
+            actor_id="dba@example.com",
+            trace_id="trace-clarification",
+            command=command,
+        )
+        second = await service.respond_to_clarification(
+            domain_id=7,
+            conversation_id=UUID(receipt["conversation_id"]),
+            turn_id=UUID(receipt["turn_id"]),
+            actor_id="dba@example.com",
+            trace_id="trace-clarification-retry",
+            command=command,
+        )
+
+        self.assertEqual(receipt["turn_id"], first["turn_id"])
+        self.assertEqual(first["turn_id"], second["turn_id"])
+        responses = [
+            row
+            for row in uow.turns.messages
+            if row.message_type == "CLARIFICATION_RESPONSE"
+        ]
+        self.assertEqual(1, len(responses))
+        resolved_payload = dict(uow.outbox.rows[-1].payload_json)
+        routed = await planner.resume(resolved_payload)
+        self.assertEqual("ACTIVE_DIAGNOSIS", routed["dispatch"])
+        await planner.start_active_diagnosis(resolved_payload)
+        self.assertEqual(1, len(uow.runs.rows))
+
     async def test_cancel_propagates_to_primary_run(self) -> None:
         uow = _Uow()
         service, receipt = await self._start(uow)
         queue = TurnQueueService(uow_factory=lambda: uow)
-        planner = TurnPlannerService(uow_factory=lambda: uow)
+        planner = _turn_planner(uow)
         await queue.accept_created(dict(uow.outbox.rows[0].payload_json))
         planning = await planner.begin(dict(uow.outbox.rows[1].payload_json))
+        diagnosis = await planner.start_active_diagnosis(
+            dict(uow.outbox.rows[1].payload_json)
+        )
 
         await service.cancel_turn(
             domain_id=7,
@@ -1568,9 +1909,156 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("CANCELLED", uow.turns.turns[0].status)
         self.assertEqual("CANCELLED", uow.runs.rows[0].status)
         self.assertEqual(
-            UUID(planning["ops_run_id"]),
+            UUID(diagnosis["ops_run_id"]),
             uow.turns.run_links[0].ops_run_id,
         )
+
+    async def test_multi_resource_diagnosis_launches_bounded_child_runs(
+        self,
+    ) -> None:
+        uow = _Uow()
+        _, receipt = await self._start(uow)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            dict(uow.outbox.rows[0].payload_json)
+        )
+        rows = []
+        for index in range(6):
+            target = SimpleNamespace(
+                target_id=uuid7(),
+                status="ENABLED",
+                readonly_connection_enabled=True,
+            )
+            resource = SimpleNamespace(
+                resource_id=uuid7(),
+                lifecycle_status="ACTIVE",
+                resource_code=f"MESDB{index + 1}",
+                display_name=f"MES 数据库 {index + 1}",
+                resource_type_key="DATABASE",
+                location_name=None,
+                attributes_json={},
+            )
+            link = SimpleNamespace(
+                system_resource_id=uuid7(),
+                resource_id=resource.resource_id,
+                status="ACTIVE",
+            )
+            rows.append(
+                (
+                    link,
+                    resource,
+                    SimpleNamespace(
+                        resource_id=resource.resource_id,
+                        target_id=target.target_id,
+                    ),
+                    target,
+                )
+            )
+
+        async def list_rows(_business_system_id):
+            return rows
+
+        uow.business_systems.list_system_resource_rows = list_rows
+        runtime = _MultiResourceRuntime(uow)
+        planner = _turn_planner(uow)
+        planner._runtime_service = runtime
+        payload = dict(uow.outbox.rows[1].payload_json)
+
+        routed = await planner.begin(payload)
+        launched = await planner.start_active_diagnosis(payload)
+        replayed = await planner.start_active_diagnosis(payload)
+
+        self.assertEqual("ACTIVE_DIAGNOSIS", routed["dispatch"])
+        self.assertTrue(launched["multi_resource"])
+        self.assertTrue(replayed["multi_resource"])
+        self.assertEqual(4, len(runtime.commands))
+        self.assertEqual(4, len(uow.turns.run_links))
+        self.assertTrue(
+            all(
+                command.client_metadata["multi_resource_child"] is True
+                for command in runtime.commands
+            )
+        )
+        coordination = uow.turns.turns[0].orchestration_internal_json[
+            "multi_resource_diagnosis"
+        ]
+        self.assertEqual(2, len(coordination["omitted_resource_ids"]))
+        self.assertEqual("COLLECTING", uow.turns.turns[0].status)
+        self.assertEqual(receipt["turn_id"], launched["turn_id"])
+
+        for command, run in zip(runtime.commands, uow.runs.rows, strict=True):
+            artifact_id = uuid7()
+            run.status = "COMPLETED"
+            run.final_artifact_id = artifact_id
+            uow.runs.artifacts.append(
+                SimpleNamespace(
+                    artifact_id=artifact_id,
+                    schema_version="DIAGNOSIS_REPORT_DRAFT.v1",
+                    payload_json={
+                        "summary": (
+                            "诊断完成 " + str(command.target_id)
+                        )
+                    },
+                )
+            )
+        aggregated = await planner.aggregate_multi_resource_diagnosis(
+            {"domain_id": 7, "turn_id": receipt["turn_id"]}
+        )
+        self.assertEqual("PARTIAL", aggregated["status"])
+        answer = uow.turns.messages[-1].payload_json["text"]
+        self.assertIn("已完成 4/4", answer)
+        self.assertIn("预算限制", answer)
+        self.assertTrue(
+            all(str(command.target_id) not in answer for command in runtime.commands)
+        )
+
+    async def test_multi_resource_diagnosis_all_failed_fails_parent(self) -> None:
+        uow = _Uow()
+        _, receipt = await self._start(uow)
+        turn = uow.turns.turns[0]
+        turn.status = "COLLECTING"
+        resources = []
+        for sequence in (1, 2):
+            run_id = uuid7()
+            resources.append(
+                {
+                    "sequence_no": sequence,
+                    "resource_id": str(uuid7()),
+                    "target_id": str(uuid7()),
+                    "display_name": f"MES 数据库 {sequence}",
+                }
+            )
+            uow.turns.run_links.append(
+                SimpleNamespace(
+                    turn_id=turn.turn_id,
+                    ops_run_id=run_id,
+                    purpose=f"RESOURCE_{sequence:03d}",
+                    sequence_no=sequence,
+                )
+            )
+            uow.runs.rows.append(
+                SimpleNamespace(
+                    ops_run_id=run_id,
+                    domain_id=7,
+                    status="FAILED",
+                    final_artifact_id=None,
+                )
+            )
+        turn.orchestration_internal_json = {
+            "multi_resource_diagnosis": {
+                "launch_complete": True,
+                "resources": resources,
+                "launch_failures": [],
+                "omitted_resource_ids": [],
+            }
+        }
+
+        result = await _turn_planner(uow).aggregate_multi_resource_diagnosis(
+            {"domain_id": 7, "turn_id": receipt["turn_id"]}
+        )
+
+        self.assertEqual("FAILED", result["status"])
+        self.assertEqual("FAILED", turn.status)
+        self.assertIn("0/2", uow.turns.messages[-1].payload_json["text"])
 
 
 if __name__ == "__main__":

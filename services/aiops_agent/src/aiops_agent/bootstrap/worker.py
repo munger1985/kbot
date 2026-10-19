@@ -26,6 +26,12 @@ from aiops_agent.persistence import create_aiops_uow_factory
 from aiops_agent.application.runtime import AIOpsRuntimeService
 from aiops_agent.application.turn_queue import TurnQueueService
 from aiops_agent.application.turn_planner import TurnPlannerService
+from aiops_agent.application.turn_capabilities import (
+    KnowledgeQuestionAdapter,
+    MonitoringQueryAdapter,
+    RuntimeQueryAdapter,
+)
+from aiops_agent.application.monitoring_views import MonitoringApplicationService
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.application.investigation import (
     InvestigationReasoner,
@@ -71,10 +77,25 @@ from aiops_agent.workers import (
     WorkloadRetentionWorker,
 )
 from platform_core.database.oracle import create_database_runtime
+from platform_core.contracts.aiops import AIOpsCapability
 from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_core.prompts import PromptResolver
 from platform_clients.knowledge_core import KnowledgeCoreClient
 from platform_clients.model import AIModelConfigClient
+
+
+async def _resolve_model_snapshot(
+    model_client: AIModelConfigClient, model_id
+) -> dict[str, str]:
+    definition = await model_client.get_model(model_id)
+    technical_name = str(definition.get("served_model_name") or "").strip()
+    if not technical_name:
+        raise RuntimeError("规划模型缺少 served_model_name")
+    return {
+        "model_id": str(model_id),
+        "technical_name": technical_name,
+        "revision": str(model_id),
+    }
 
 
 def create_aiops_worker_probe(
@@ -246,6 +267,14 @@ def create_aiops_worker_probe(
             ),
             max_response_bytes=resolved.monitoring.max_response_bytes,
         )
+        monitoring_service = MonitoringApplicationService(
+            uow_factory=runtime.uow_factory,
+            metric_catalog=metric_catalog,
+            profile_catalog=monitoring_profile_catalog,
+            diagnostic_source_registry=diagnostic_source_registry,
+            secret_store=secret_store,
+            max_response_bytes=resolved.monitoring.max_response_bytes,
+        )
         runtime_service = AIOpsRuntimeService(
             uow_factory=runtime.uow_factory,
             blueprint_registry=create_kernel_blueprint_registry(),
@@ -318,6 +347,37 @@ def create_aiops_worker_probe(
                 ),
                 turn_planner_service=TurnPlannerService(
                     uow_factory=runtime.uow_factory,
+                    runtime_service=runtime_service,
+                    structured_model=diagnosis_model_client,
+                    prompt_registry=diagnosis_prompts,
+                    model_resolver=partial(
+                        _resolve_model_snapshot, model_client
+                    ),
+                    capability_adapters={
+                        AIOpsCapability.KNOWLEDGE_QA: KnowledgeQuestionAdapter(
+                            knowledge_service=operations_knowledge_service,
+                            structured_model=diagnosis_model_client,
+                            prompt_registry=diagnosis_prompts,
+                            model_resolver=partial(
+                                _resolve_model_snapshot, model_client
+                            ),
+                            caller_service=config.service_name,
+                        ),
+                        AIOpsCapability.ALERT_QUERY: RuntimeQueryAdapter(
+                            runtime_service=runtime_service
+                        ),
+                        AIOpsCapability.INSPECTION_QUERY: RuntimeQueryAdapter(
+                            runtime_service=runtime_service
+                        ),
+                        AIOpsCapability.REPORT_CASE_QUERY: RuntimeQueryAdapter(
+                            runtime_service=runtime_service,
+                            knowledge_service=operations_knowledge_service,
+                            caller_service=config.service_name,
+                        ),
+                        AIOpsCapability.MONITORING_QUERY: MonitoringQueryAdapter(
+                            monitoring_service=monitoring_service
+                        ),
+                    },
                 ),
                 turn_planning_service=TurnPlanningService(
                     uow_factory=runtime.uow_factory,

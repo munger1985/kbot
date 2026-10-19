@@ -160,6 +160,10 @@ class InspectionSchedulerTest(unittest.TestCase):
             updated_at=None,
         )
         conversations = []
+        resources = {
+            target_id: SimpleNamespace(resource_id=uuid7())
+            for target_id in target_ids
+        }
 
         async def add_conversation(entity):
             conversations.append(entity)
@@ -189,6 +193,13 @@ class InspectionSchedulerTest(unittest.TestCase):
                 active_version_target_ids=AsyncMock(
                     return_value=target_ids
                 ),
+            ),
+            business_systems=SimpleNamespace(
+                get_resource_for_target=AsyncMock(
+                    side_effect=lambda *, target_id, domain_id: resources.get(
+                        target_id
+                    )
+                )
             ),
             commit=AsyncMock(),
         )
@@ -276,6 +287,7 @@ class InspectionSchedulerTest(unittest.TestCase):
             target_count=0,
             updated_at=None,
         )
+        resource = SimpleNamespace(resource_id=uuid7())
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
                 get_fire=AsyncMock(return_value=fire),
@@ -300,6 +312,9 @@ class InspectionSchedulerTest(unittest.TestCase):
                 active_version_target_ids=AsyncMock(
                     return_value=target_ids
                 ),
+            ),
+            business_systems=SimpleNamespace(
+                get_resource_for_target=AsyncMock(return_value=resource)
             ),
             commit=AsyncMock(),
         )

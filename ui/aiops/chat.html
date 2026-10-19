@@ -10,7 +10,7 @@
 <body data-page="chat">
   <main class="ops-main ops-special-page ops-chat-main">
     <header class="ops-head">
-      <div><h1>智能运维</h1><p>先选择要运维的逻辑数据库 Target，再选择能够管理它的 Agent。</p></div>
+      <div><h1>智能运维</h1><p>选择统一 AIOps Agent，用自然语言说明业务系统、资源、问题和时间范围。</p></div>
       <button id="new-conversation" class="primary" type="button">新建运维对话</button>
     </header>
 
@@ -21,25 +21,23 @@
         <div id="chat-rail-content" class="ops-special-rail-content">
           <div class="ops-workspace-list-head">
             <h2>诊断会话</h2>
-            <label for="target-select">逻辑 Target</label>
-            <select id="target-select" aria-label="选择逻辑 Target"><option value="">正在读取 Target…</option></select>
             <label for="agent-select">Agent</label>
-            <select id="agent-select" aria-label="选择 Agent" disabled><option value="">请先选择 Target</option></select>
-            <p id="agent-target-context" class="ops-composer-hint">会话创建后会冻结 Target 和 Agent 版本。</p>
+            <select id="agent-select" aria-label="选择 Agent"><option value="">正在读取 Agent…</option></select>
+            <p id="agent-target-context" class="ops-composer-hint">每轮会在 Agent 获授权的业务系统中解析资源范围；不明确时会请你确认。</p>
           </div>
           <div id="conversation-list" class="ops-workspace-items"></div>
         </div>
       </aside>
       <article class="ops-conversation">
-        <header class="ops-conversation-head"><h2 id="conversation-title">开始一次数据库诊断</h2><p id="conversation-context">选择 Target 和 Agent，随后选择功能或直接提问。</p></header>
+        <header class="ops-conversation-head"><h2 id="conversation-title">开始一次智能运维问答</h2><p id="conversation-context">选择 Agent 后，可以诊断、查知识、看监控告警、巡检报告或资源拓扑。</p></header>
         <div id="message-list" class="ops-messages"></div>
         <form id="conversation-form" class="ops-composer">
-          <textarea name="message" maxlength="32000" placeholder="描述现象、影响和时间范围，或直接粘贴日志、SQL输出和命令结果…"></textarea>
+          <textarea name="message" maxlength="32000" placeholder="例如：帮我查一下 MES 系统现在为什么变慢；也可以询问手册、告警、巡检报告或系统主机与 IP…"></textarea>
           <div id="upload-preview" class="ops-composer-hint"></div>
           <div class="ops-composer-row">
             <button id="open-starter-menu" class="ops-button" type="button">功能</button>
             <label class="ops-button">选择诊断材料<input id="evidence-file" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,text/html,text/csv,application/json,application/sql,.html,.htm,.txt,.log,.trc,.trace,.out,.lst,.sql" hidden></label>
-            <span class="ops-composer-hint">可以选择功能快速执行，也可以自由提问；AWR/ASH（HTML/TXT）等诊断材料会在点击“发送”时上传。不要上传密码、密钥或完整连接串。</span>
+            <span class="ops-composer-hint">无需选择 Target；系统会先识别意图和业务范围，必要时在同一轮中请你确认。已选文件将在点击“发送”时上传，支持 AWR/ASH（HTML/TXT）等诊断材料；不要上传密码、密钥或完整连接串。</span>
             <button class="primary" type="submit">发送</button>
           </div>
         </form>
@@ -58,6 +56,6 @@
   <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
   <script src="./js/aiops-auth.js?v=20260911_1"></script>
   <script src="./js/aiops-shell.js?v=20261016_2"></script>
-  <script src="./js/aiops-workspaces.js?v=20261016_1"></script>
+  <script src="./js/aiops-workspaces.js?v=20261019_1"></script>
 </body>
 </html>

@@ -13,19 +13,20 @@ MAIN_API = ROOT / "services" / "main_api" / "src" / "main_api" / "api" / "aiops_
 
 
 class AIOpsAgentEditorUiTest(unittest.TestCase):
-    def test_agent_only_selects_targets_for_resource_scope(self) -> None:
+    def test_agent_selects_business_systems_for_authorized_scope(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn('name="target_ids"', script)
-        self.assertIn("至少选择一个 Target", script)
+        self.assertIn('name="allowed_business_system_ids"', script)
+        self.assertIn("至少选择一个业务系统", script)
+        self.assertNotIn('name="target_ids"', script)
         self.assertNotIn("diagnostic_source_ids", script)
         self.assertNotIn('id="agent-sources"', page)
 
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20261012-1", page)
+        self.assertIn("aiops-agents.js?v=20261019_1", page)
 
     def test_agent_does_not_maintain_monitor_mappings(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
@@ -42,11 +43,16 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
 
         self.assertIn('name="ocr_model_id"', page)
         self.assertIn('name="vlm_model_id"', page)
-        self.assertIn('renderImageModelOptions("agent-ocr-model", 6', script)
-        self.assertIn('renderImageModelOptions("agent-vlm-model", 5', script)
-        self.assertIn("image_capabilities: imageCapabilities", script)
-        self.assertIn("allowed_model_ids: [ocrModelId]", script)
-        self.assertIn("allowed_model_ids: [vlmModelId]", script)
+        self.assertIn('renderModelOptions("agent-ocr-model", 6', script)
+        self.assertIn('renderModelOptions("agent-vlm-model", 5', script)
+        self.assertIn(
+            'image_capabilities: { ocr: imageCapability(form, "ocr"), '
+            'vlm: imageCapability(form, "vlm") }',
+            script,
+        )
+        self.assertIn(
+            "allowed_model_ids: modelId ? [modelId] : []", script
+        )
 
     def test_agent_list_exposes_versioned_delete(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")

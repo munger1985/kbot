@@ -19,6 +19,7 @@ from aiops_agent.api.dependencies import (
 )
 from platform_core.contracts import AuthContext
 from platform_core.contracts.aiops import (
+    ClarificationResponseV1,
     ConversationUploadReceipt,
     ConversationStart,
     ConversationSummary,
@@ -136,7 +137,6 @@ async def start_conversation(
 async def list_conversations(
     request: Request,
     agent_id: UUID | None = None,
-    target_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=50),
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
@@ -145,7 +145,6 @@ async def list_conversations(
         domain_id=domain_id,
         actor_id=actor_id,
         agent_id=agent_id,
-        target_id=target_id,
         limit=limit,
     )
 
@@ -218,6 +217,29 @@ async def list_turns(
         actor_id=actor_id,
         after_turn_no=after_turn_no,
         limit=limit,
+    )
+
+
+@router.post(
+    "/{conversation_id}/turns/{turn_id}/clarification-responses",
+    status_code=202,
+    response_model=TurnReceipt,
+)
+async def respond_to_turn_clarification(
+    conversation_id: UUID,
+    turn_id: UUID,
+    payload: ClarificationResponseV1,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, actor_id = _scope(request, context)
+    return await request.app.state.conversation_turn_service.respond_to_clarification(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        actor_id=actor_id,
+        trace_id=context.trace_id,
+        command=payload,
     )
 
 

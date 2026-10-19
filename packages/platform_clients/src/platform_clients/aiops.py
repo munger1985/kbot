@@ -994,73 +994,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def list_agent_bindings(
-        self, target_id: UUID, *, auth_context: AuthContext
-    ) -> list[dict[str, Any]]:
-        return await self._json(
-            "GET",
-            f"{self._CONFIG}/targets/{target_id}/agent-bindings",
-            auth_context=auth_context,
-        )
-
-    async def create_agent_binding(
-        self,
-        target_id: UUID,
-        payload: dict[str, Any],
-        *,
-        idempotency_key: str,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "POST",
-            f"{self._CONFIG}/targets/{target_id}/agent-bindings",
-            payload=payload,
-            idempotency_key=idempotency_key,
-            auth_context=auth_context,
-        )
-
-    async def patch_agent_binding(
-        self,
-        target_id: UUID,
-        binding_id: UUID,
-        payload: dict[str, Any],
-        *,
-        if_match: str,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "PATCH",
-            (
-                f"{self._CONFIG}/targets/{target_id}"
-                f"/agent-bindings/{binding_id}"
-            ),
-            payload=payload,
-            if_match=if_match,
-            auth_context=auth_context,
-        )
-
-    async def command_agent_binding(
-        self,
-        target_id: UUID,
-        binding_id: UUID,
-        command: str,
-        *,
-        if_match: str,
-        idempotency_key: str,
-        auth_context: AuthContext,
-    ) -> dict[str, Any]:
-        return await self._json(
-            "POST",
-            (
-                f"{self._CONFIG}/targets/{target_id}"
-                f"/agent-bindings/{binding_id}/{command}"
-            ),
-            payload={},
-            if_match=if_match,
-            idempotency_key=idempotency_key,
-            auth_context=auth_context,
-        )
-
     async def create_diagnostic_source(
         self,
         payload: dict[str, Any],
@@ -2114,11 +2047,11 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
     async def get_private_action_catalog(
-        self, target_id: UUID, *, auth_context: AuthContext
+        self, resource_id: UUID, *, auth_context: AuthContext
     ):
         return await self._json(
             "GET",
-            f"{INTERNAL_API_V1}/aiops/agents/action-catalog/{target_id}",
+            f"{INTERNAL_API_V1}/aiops/agents/action-catalog/{resource_id}",
             auth_context=auth_context,
         )
 
@@ -2184,15 +2117,19 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         self,
         *,
         agent_id: UUID,
-        target_id: UUID,
+        context_hint: dict[str, Any] | None = None,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
+        query = {"agent_id": str(agent_id)}
+        if context_hint is not None:
+            query["context_hint"] = json.dumps(
+                context_hint,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
         return await self._json(
             "GET",
-            (
-                f"{INTERNAL_API_V1}/aiops/conversation-starters"
-                f"?agent_id={agent_id}&target_id={target_id}"
-            ),
+            f"{INTERNAL_API_V1}/aiops/conversation-starters?{urlencode(query)}",
             auth_context=auth_context,
         )
 
@@ -2217,14 +2154,11 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         *,
         agent_id: UUID | None,
         limit: int,
-        target_id: UUID | None = None,
         auth_context: AuthContext,
     ) -> list[dict[str, Any]]:
         path = f"{INTERNAL_API_V1}/aiops/conversations?limit={limit}"
         if agent_id is not None:
             path += f"&agent_id={agent_id}"
-        if target_id is not None:
-            path += f"&target_id={target_id}"
         return await self._json("GET", path, auth_context=auth_context)
 
     async def get_conversation(
@@ -2289,6 +2223,24 @@ class AIOpsManagementClient(_BaseAIOpsClient):
                 f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
                 f"/turns/{turn_id}"
             ),
+            auth_context=auth_context,
+        )
+
+    async def respond_to_conversation_turn_clarification(
+        self,
+        conversation_id: UUID,
+        turn_id: UUID,
+        payload: dict[str, Any],
+        *,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/aiops/conversations/{conversation_id}"
+                f"/turns/{turn_id}/clarification-responses"
+            ),
+            payload=payload,
             auth_context=auth_context,
         )
 

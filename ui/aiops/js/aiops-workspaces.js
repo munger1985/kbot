@@ -5,7 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   const markdown = globalThis.KBotMarkdown;
   const state = {
-    agents: [], targets: [], conversation: null, selectedFiles: [],
+    agents: [], conversation: null, selectedFiles: [],
     caseAgents: [], caseTargets: [],
     permissions: new Set(), starters: [], starterCatalogVersion: "",
     starterCatalogLoaded: false,
@@ -28,6 +28,8 @@
 
   const esc = shell.escape;
   const values = (items) => Array.isArray(items) ? items : [];
+  const hasNumber = (value) => value !== null && value !== undefined
+    && value !== "" && Number.isFinite(Number(value));
   const displayText = (value, dictionary = {}) => String(value ?? "")
     .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g)
     .map((part, index) => index % 2 ? part : part.replace(
@@ -108,8 +110,13 @@
     const summary = payload.summary || "本期巡检已完成。";
     const scope = payload.scope || {};
     const coverage = scope.evidence_coverage_percent;
+    const qualityParts = [
+      hasNumber(scope.tool_execution_coverage_percent) ? `固定工具执行率 ${Number(scope.tool_execution_coverage_percent)}%` : "",
+      hasNumber(scope.monitoring_sample_coverage_percent) ? `监控采样覆盖率 ${Number(scope.monitoring_sample_coverage_percent)}%` : "",
+      hasNumber(scope.evidence_gap_count) ? `数据缺口 ${Number(scope.evidence_gap_count)} 项` : "",
+    ].filter(Boolean);
     const coverageLine = typeof coverage === "number" && Number.isFinite(coverage)
-      ? `\n\n**证据覆盖率：${coverage}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)} 个计划检查）**`
+      ? `\n\n**业务检查语义满足率：${coverage}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)} 项）**${qualityParts.length ? `\n\n${qualityParts.join(" · ")}` : ""}`
       : "";
     const heading = markdown.render(`## ${payload.title || "巡检报告"}\n\n${summary}${coverageLine}`);
     const findingCards = findingCardsHtml({
@@ -141,7 +148,10 @@
   function inspectionReportQualityText(run) {
     const coverage = run?.evidence_coverage_percent;
     if (coverage !== null && coverage !== undefined && coverage !== "" && Number.isFinite(Number(coverage))) {
-      return `证据覆盖 ${Number(run.evidence_coverage_percent)}%`;
+      const parts = [`语义满足 ${Number(run.evidence_coverage_percent)}%`];
+      if (hasNumber(run.tool_execution_coverage_percent)) parts.push(`工具执行 ${Number(run.tool_execution_coverage_percent)}%`);
+      if (hasNumber(run.monitoring_sample_coverage_percent)) parts.push(`监控采样 ${Number(run.monitoring_sample_coverage_percent)}%`);
+      return parts.join(" · ");
     }
     return ({
       READY: "证据完整",
@@ -167,8 +177,12 @@
       const scope = payload.scope || {};
       const rawPercent = scope.evidence_coverage_percent;
       const hasCoverage = typeof rawPercent === "number" && Number.isFinite(rawPercent);
+      const quality = [
+        hasNumber(scope.tool_execution_coverage_percent) ? `工具执行 ${Number(scope.tool_execution_coverage_percent)}%` : "",
+        hasNumber(scope.monitoring_sample_coverage_percent) ? `监控采样 ${Number(scope.monitoring_sample_coverage_percent)}%` : "",
+      ].filter(Boolean);
       const coverage = hasCoverage
-        ? `证据覆盖 ${rawPercent}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)}）`
+        ? `语义满足 ${rawPercent}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)}）${quality.length ? ` · ${quality.join(" · ")}` : ""}`
         : "历史报告未记录覆盖率";
       return { status: payload.status === "READY" ? "证据充分" : "证据有缺口", coverage };
     }
@@ -334,6 +348,110 @@
     return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划与判断依据</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header>${frameHtml}${hypothesisHtml}${actionsHtml}</section>`;
   }
 
+  function turnOrchestrationHtml(turn) {
+    const plan = turn.capability_plan || {};
+    const scope = turn.scope_resolution || {};
+    const clarification = turn.clarification || null;
+    const capabilityLabels = {
+      RESOURCE_CATALOG_QUERY: "资源信息", KNOWLEDGE_QA: "运维知识",
+      MONITORING_QUERY: "监控现状", ALERT_QUERY: "告警",
+      INSPECTION_QUERY: "巡检", REPORT_CASE_QUERY: "报告与案例",
+      ACTIVE_DIAGNOSIS: "主动诊断", CONTROLLED_CHANGE: "受控变更",
+    };
+    const capabilities = values(plan.requested_capabilities).map((item) => capabilityLabels[item] || item);
+    const systems = values(scope.business_systems).map((item) => item.display_name).filter(Boolean);
+    const resources = values(scope.resources).map((item) => {
+      const roles = values(item.topology_roles);
+      return `${item.display_name}${roles.length ? `（${roles.join(" / ")}）` : ""}`;
+    });
+    if (!capabilities.length && !systems.length && !resources.length && !clarification) return "";
+    const scopeText = scope.status === "NOT_REQUIRED"
+      ? "本轮不需要实时资源"
+      : [systems.join("、"), resources.join("、")].filter(Boolean).join(" → ") || "正在解析业务范围";
+    const candidates = values(clarification?.candidates);
+    const clarificationResponse = values(turn.messages).find(
+      (item) => item.message_type === "CLARIFICATION_RESPONSE"
+        && String(item.payload?.clarification_id) === String(clarification?.clarification_id),
+    );
+    const selectedCandidate = candidates.find(
+      (item) => item.candidate_id === clarificationResponse?.payload?.candidate_id,
+    );
+    const responseText = clarificationResponse
+      ? clarificationResponse.payload?.free_text || selectedCandidate?.label || "已提交范围确认"
+      : "";
+    const controls = clarification && turn.status === "WAITING_USER" && !clarificationResponse
+      ? `<div class="ops-clarification-controls" data-clarification-controls><div class="ops-starter-grid">${candidates.map((item) => `<button class="ops-starter-card" type="button" data-clarification-candidate="${esc(item.candidate_id)}" data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}" data-clarification-id="${esc(clarification.clarification_id)}"><strong>${esc(item.label)}</strong>${item.description ? `<span>${esc(item.description)}</span>` : ""}<small>选择后在当前轮继续</small></button>`).join("")}</div>${clarification.allow_free_text !== false ? `<form class="ops-starter-parameters" data-clarification-response data-conversation-id="${esc(turn.conversation_id)}" data-turn-id="${esc(turn.turn_id)}" data-clarification-id="${esc(clarification.clarification_id)}"><label><span>补充范围说明</span><textarea name="free_text" maxlength="2000" required placeholder="输入业务系统、资源名称或其他可帮助确定范围的信息"></textarea></label><div class="ops-query-actions"><button class="primary" type="submit">提交并在当前轮继续</button></div></form>` : ""}</div>`
+      : responseText ? `<p><strong>已确认：</strong>${esc(responseText)}</p>` : "";
+    const clarificationHtml = clarification
+      ? `<section class="ops-plan-section"><strong>需要确认范围</strong><p>${esc(clarification.question)}</p>${controls}</section>`
+      : "";
+    return `<details class="ops-evidence ops-turn-orchestration" open><summary>本轮理解与范围</summary><div class="ops-evidence-body"><p><strong>能力：</strong>${esc(capabilities.join("、") || "正在识别")}</p><p><strong>范围：</strong>${esc(scopeText)}</p>${clarificationHtml}</div></details>`;
+  }
+
+  function clarificationIdempotencyKey(clarificationId) {
+    return `clarification:${clarificationId}`;
+  }
+
+  async function submitClarificationResponse(control, { candidateId = null, freeText = null } = {}) {
+    const container = control.closest("[data-clarification-controls]");
+    const conversationId = control.dataset.conversationId;
+    const turnId = control.dataset.turnId;
+    const clarificationId = control.dataset.clarificationId;
+    const normalizedText = String(freeText || "").trim();
+    if (!conversationId || !turnId || !clarificationId || (!candidateId && !normalizedText)) {
+      shell.toast("请选择候选范围或填写补充说明");
+      return;
+    }
+    container?.querySelectorAll("button, textarea").forEach((item) => { item.disabled = true; });
+    try {
+      const receipt = await KBotAIOpsAuth.request(
+        `${api}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/clarification-responses`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            clarification_id: clarificationId,
+            idempotency_key: clarificationIdempotencyKey(clarificationId),
+            ...(candidateId ? { candidate_id: candidateId } : { free_text: normalizedText }),
+          }),
+        },
+      );
+      const progress = document.querySelector(`[data-turn-progress="${CSS.escape(String(receipt.turn_id))}"]`);
+      if (progress) {
+        appendProgress(progress, "clarification.responded", {
+          public_summary: "范围已确认，正在当前轮继续处理…",
+        }, `clarification.responded:${clarificationId}`);
+        await followTurn(receipt.conversation_id, receipt.turn_id, progress);
+      }
+      await loadConversation(receipt.conversation_id);
+      await loadConversationList();
+    } catch (error) {
+      shell.toast(error.message);
+      container?.querySelectorAll("button, textarea").forEach((item) => { item.disabled = false; });
+    }
+  }
+
+  function bindClarificationActions(root) {
+    root.querySelectorAll("[data-clarification-candidate]").forEach((button) => {
+      button.onclick = () => submitClarificationResponse(button, {
+        candidateId: button.dataset.clarificationCandidate,
+      });
+    });
+    root.querySelectorAll("[data-clarification-response]").forEach((form) => {
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        submitClarificationResponse(form, {
+          freeText: new FormData(form).get("free_text"),
+        });
+      };
+    });
+  }
+
+  function pendingClarificationTurn() {
+    return values(state.turns).find(
+      (turn) => turn.status === "WAITING_USER" && turn.clarification,
+    ) || null;
+  }
+
   function showInvestigationPlan(progress, plan) {
     const html = investigationPlanHtml(plan);
     if (!html) return;
@@ -446,29 +564,19 @@
   }
 
   async function agents() {
-    const [rows, targetPage] = await Promise.all([
-      KBotAIOpsAuth.request(`${api}/agents`),
-      KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
-    ]);
+    const rows = await KBotAIOpsAuth.request(`${api}/agents`);
     state.caseAgents = values(rows);
     state.agents = state.caseAgents.filter((item) => item.status === "ACTIVE");
-    state.targets = values(targetPage?.items);
     return state.agents;
   }
 
   function syncAgentTargetContext() {
     const agentId = document.getElementById("agent-select").value;
-    const targetId = document.getElementById("target-select").value;
     const context = document.getElementById("agent-target-context");
     const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
-    const target = state.targets.find((item) => String(item.target_id) === String(targetId));
-    context.textContent = !targetId
-      ? "先选择要运维的数据库对象。"
-      : !agentId
-        ? `已选择 ${target?.display_name || shell.short(targetId)}，请选择 Agent。`
-      : target
-        ? `诊断 Target：${target.display_name || shell.short(target.target_id)} · ${target.readonly_connection_enabled ? (target.connectivity_status || "UNKNOWN") : "仅监控模式"}`
-        : "当前 Target 不可用";
+    context.textContent = !agentId
+      ? "请选择统一 AIOps Agent；无需预先选择 Target。"
+      : `已选择 ${agent?.display_name || shell.short(agentId)} · 可访问 ${values(agent?.allowed_business_system_ids).length} 个业务系统；每轮自动解析实际资源范围。`;
   }
 
   async function confirmTargetFact(form) {
@@ -1206,11 +1314,12 @@
     const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type));
     const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
+    const orchestration = turnOrchestrationHtml(turn);
     const plan = investigationPlanHtml(turn.investigation_plan, turn.display_dictionary);
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(displayText(assistant?.payload?.text || "", turn.display_dictionary))}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(displayText(turn.error_message || `当前状态：${turn.status}`, turn.display_dictionary))}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${plan}${progress}${answer}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${answer}`;
   }
 
   async function renderConversation(conversation, turns) {
@@ -1257,6 +1366,8 @@
     bindReportArtifactActions(panel);
     bindImplementationRunbookActions(panel);
     bindReportActions(panel);
+    bindClarificationActions(panel);
+    setComposerAvailability(!pendingClarificationTurn());
     resumeActiveTurns(conversation.conversation_id, turns);
   }
 
@@ -1265,7 +1376,6 @@
     const turnRows = await KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns?limit=200`);
     const turns = await Promise.all(turnRows.map((turn) => KBotAIOpsAuth.request(`${api}/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn.turn_id)}`)));
     document.getElementById("agent-select").value = conversation.agent_id;
-    document.getElementById("target-select").value = conversation.target_id;
     renderAgentOptions(conversation.agent_id);
     syncAgentTargetContext();
     await renderConversation(conversation, turns);
@@ -1277,14 +1387,14 @@
     state.conversation = null;
     syncAgentTargetContext();
     document.getElementById("conversation-title").textContent = agentSelected
-      ? "开始一次数据库诊断"
-      : "请先选择 Target 和 Agent";
+      ? "开始一次智能运维问答"
+      : "请先选择 Agent";
     document.getElementById("conversation-context").textContent = agentSelected
       ? "可以选择历史会话，或在下方发起一次新诊断。"
-      : "选择 Target 和 Agent 后可开始新的诊断，也可以从左侧打开历史会话。";
+      : "选择 Agent 后可直接描述业务系统和问题，也可以从左侧打开历史会话。";
     document.getElementById("message-list").innerHTML = agentSelected
       ? starterHomeHtml()
-      : '<div class="ops-empty">请选择 Target 和 Agent 开始新诊断，或从左侧打开历史会话。</div>';
+      : '<div class="ops-empty">请选择 Agent 开始问答，或从左侧打开历史会话。</div>';
     if (agentSelected) bindStarterButtons(document.getElementById("message-list"));
   }
 
@@ -1316,7 +1426,7 @@
   function starterHomeHtml() {
     if (!state.starters.length) return state.starterCatalogLoaded
       ? '<div class="ops-empty">功能目录暂不可用，仍可在下方直接输入数据库运维问题。</div>'
-      : '<div class="ops-empty">正在读取当前 Target 可用功能…</div>';
+      : '<div class="ops-empty">正在读取当前 Agent 可用功能…</div>';
     return `<section class="ops-starter-home"><header><h3>今天要处理什么？</h3><p>选择一个功能直接执行，或在下方输入任何数据库运维问题。</p></header>${starterSectionsHtml(state.starters, { recommendedOnly: true })}<button class="ops-button ops-starter-more" type="button" data-open-all-starters>查看全部功能</button></section>`;
   }
 
@@ -1331,13 +1441,12 @@
 
   async function loadConversationStarters() {
     const agentId = document.getElementById("agent-select").value;
-    const targetId = document.getElementById("target-select").value;
     state.starters = [];
     state.starterCatalogVersion = "";
     state.starterCatalogLoaded = false;
-    if (!agentId || !targetId) return;
+    if (!agentId) return;
     try {
-      const payload = await KBotAIOpsAuth.request(`${api}/conversation-starters?agent_id=${encodeURIComponent(agentId)}&target_id=${encodeURIComponent(targetId)}`);
+      const payload = await KBotAIOpsAuth.request(`${api}/conversation-starters?agent_id=${encodeURIComponent(agentId)}`);
       state.starters = values(payload.starters);
       state.starterCatalogVersion = payload.catalog_version || "";
     } catch (error) {
@@ -1352,7 +1461,7 @@
     if (!document.getElementById("agent-select").value) return shell.toast("请先选择 Agent");
     const dialog = document.getElementById("starter-dialog");
     document.getElementById("starter-dialog-title").textContent = "全部功能";
-    document.getElementById("starter-dialog-description").textContent = "功能会根据当前 Target 类型和连接状态自动筛选。";
+    document.getElementById("starter-dialog-description").textContent = "功能会根据 Agent 能力与当轮自然语言范围自动筛选。";
     const content = document.getElementById("starter-dialog-content");
     content.innerHTML = starterSectionsHtml(state.starters)
       || '<div class="ops-empty">当前没有可展示的功能，请直接在聊天框中描述问题。</div>';
@@ -1456,7 +1565,6 @@
 
   async function executeStarter(item, parameters) {
     const agentId = document.getElementById("agent-select").value;
-    const targetId = document.getElementById("target-select").value;
     const path = state.conversation
       ? `${api}/conversations/${state.conversation.conversation_id}/turns`
       : `${api}/conversations`;
@@ -1467,7 +1575,7 @@
     };
     const body = state.conversation
       ? { content: [], starter }
-      : { agent_id: agentId, target_id: targetId, content: [], starter };
+      : { agent_id: agentId, content: [], starter };
     const receipt = await KBotAIOpsAuth.request(path, {
       method: "POST",
       headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
@@ -1529,15 +1637,14 @@
       await loadConversation(requestedId);
     }
     const selectedAgent = select.value;
-    const selectedTarget = document.getElementById("target-select").value;
     const rows = await KBotAIOpsAuth.request(`${api}/conversations?limit=50`);
     renderConversationList(mergePinnedConversation(rows, state.conversation));
-    if (!selectedAgent || !selectedTarget) {
+    if (!selectedAgent) {
       setComposerAvailability(false);
       resetConversationView();
       return;
     }
-    setComposerAvailability(true);
+    setComposerAvailability(!pendingClarificationTurn());
     await loadConversationStarters();
   }
 
@@ -1703,13 +1810,10 @@
     const form = event.currentTarget;
     const button = form.querySelector('button[type="submit"]');
     const agentId = document.getElementById("agent-select").value;
-    const targetId = document.getElementById("target-select").value;
-    const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
     const text = form.elements.message.value.trim();
     const selectedFiles = state.selectedFiles;
+    if (pendingClarificationTurn()) return shell.toast("请先在当前轮回答范围确认");
     if (!agentId) return shell.toast("请先选择 Agent");
-    if (!targetId) return shell.toast("请先选择逻辑 Target");
-    if (!values(agent?.target_ids).includes(targetId)) return shell.toast("当前 Agent 未绑定所选 Target");
     if (!text && !selectedFiles.length) return shell.toast("请输入问题或上传诊断材料");
     button.disabled = true;
     try {
@@ -1736,7 +1840,7 @@
       }
       const body = state.conversation
         ? { content }
-        : { agent_id: agentId, target_id: targetId, content };
+        : { agent_id: agentId, content };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
@@ -1768,22 +1872,7 @@
     railToggle.onclick = () => setRailCollapsed(!workspace.classList.contains("is-rail-collapsed"));
     const select = document.getElementById("agent-select");
     await agents();
-    const targetSelect = document.getElementById("target-select");
-    targetSelect.innerHTML = '<option value="">选择逻辑 Target</option>' + state.targets.map((item) => `<option value="${esc(item.target_id)}">${esc(item.display_name)} · ${esc(item.db_type)}${item.readonly_connection_enabled ? "" : " · 仅监控"}</option>`).join("");
-    const requestedTargetId = new URLSearchParams(location.search).get("target_id");
-    if (requestedTargetId && state.targets.some((item) => String(item.target_id) === requestedTargetId)) {
-      targetSelect.value = requestedTargetId;
-      renderAgentOptions();
-      syncAgentTargetContext();
-    }
-    targetSelect.onchange = () => {
-      clearConversationUrl();
-      state.conversation = null;
-      renderAgentOptions();
-      syncAgentTargetContext();
-      resetConversationView();
-      loadConversationList().catch((error) => shell.toast(error.message));
-    };
+    renderAgentOptions();
     select.onchange = () => {
       clearConversationUrl();
       syncAgentTargetContext();
@@ -1818,16 +1907,15 @@
   }
 
   function renderAgentOptions(preferredId = "") {
-    const targetId = document.getElementById("target-select").value;
     const select = document.getElementById("agent-select");
-    const rows = state.agents.filter((item) => values(item.target_ids).includes(targetId));
-    select.disabled = !targetId;
+    const rows = state.agents;
+    select.disabled = false;
     select.innerHTML = '<option value="">选择 Agent</option>' + rows.map((item) => `<option value="${esc(item.agent_id)}">${esc(item.display_name || item.name || item.agent_key || shell.short(item.agent_id))}</option>`).join("");
     if (rows.some((item) => String(item.agent_id) === String(preferredId))) select.value = preferredId;
   }
 
   function continueForm(source, title) {
-    const allowed = state.agents.filter((item) => values(item.target_ids).includes(String(source.target_id)));
+    const allowed = state.agents;
     const inherited = source.source_run_id ? "自动诊断结果与证据" : "告警情境及其监控信号";
     const prompt = source.source_run_id
       ? `请基于“${title}”的自动诊断结果继续分析：`
@@ -1843,7 +1931,6 @@
       const fields = Object.fromEntries(new FormData(form));
       const body = {
         agent_id: fields.agent_id,
-        target_id: source.target_id,
         content: [{ content_type: "TEXT", text: fields.message }],
       };
       if (source.source_run_id) body.source_run_id = source.source_run_id;
@@ -1972,9 +2059,9 @@
     const requestedTargetId = requested.get("target_id");
     const requestedPlanId = page === "inspections" ? requested.get("plan_id") : "";
     const requestedSituationId = page === "situations" ? requested.get("situation") : "";
-    state.caseTargets = page === "situations"
-      ? values((await KBotAIOpsAuth.request(`${api}/targets?limit=200`))?.items)
-      : state.targets;
+    state.caseTargets = values(
+      (await KBotAIOpsAuth.request(`${api}/targets?limit=200`))?.items,
+    );
     const list = document.getElementById("case-list");
     const filters = document.getElementById("case-filters");
     if (filters) {

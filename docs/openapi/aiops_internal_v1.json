@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "AIOpsCapability": {
+        "enum": [
+          "RESOURCE_CATALOG_QUERY",
+          "KNOWLEDGE_QA",
+          "MONITORING_QUERY",
+          "ALERT_QUERY",
+          "INSPECTION_QUERY",
+          "REPORT_CASE_QUERY",
+          "ACTIVE_DIAGNOSIS",
+          "CONTROLLED_CHANGE"
+        ],
+        "title": "AIOpsCapability",
+        "type": "string"
+      },
       "ActivitySamplerPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -378,6 +392,16 @@
             "minimum": 1.0,
             "title": "Citation No",
             "type": "integer"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CitationEvidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "label": {
             "maxLength": 256,
@@ -1221,6 +1245,40 @@
         "title": "BusinessSystemLifecycleCommand",
         "type": "object"
       },
+      "BusinessSystemRefV1": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "display_name"
+        ],
+        "title": "BusinessSystemRefV1",
+        "type": "object"
+      },
       "BusinessSystemResourceCommit": {
         "additionalProperties": false,
         "description": "Wizard 草稿中的资源；draft_resource_id 由客户端生成但不向用户展示。",
@@ -1843,6 +1901,57 @@
         "title": "CancelRunCommand",
         "type": "object"
       },
+      "CitationEvidenceView": {
+        "additionalProperties": false,
+        "description": "回答引用中可直接展示的安全结构化证据。",
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "columns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "row_count": {
+            "minimum": 0.0,
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "tool_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Tool Id",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tool_id",
+          "captured_at",
+          "row_count"
+        ],
+        "title": "CitationEvidenceView",
+        "type": "object"
+      },
       "ClaimOpsTaskCommand": {
         "additionalProperties": false,
         "properties": {
@@ -1876,6 +1985,166 @@
           "trace_id"
         ],
         "title": "ClaimOpsTaskCommand",
+        "type": "object"
+      },
+      "ClarificationCandidateV1": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "maxLength": 256,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ScopeType"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "label",
+          "scope_type"
+        ],
+        "title": "ClarificationCandidateV1",
+        "type": "object"
+      },
+      "ClarificationRequestV1": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_free_text": {
+            "default": true,
+            "title": "Allow Free Text",
+            "type": "boolean"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ClarificationCandidateV1"
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "clarification_id": {
+            "format": "uuid",
+            "title": "Clarification Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,127}$",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clarification_id",
+          "turn_id",
+          "question",
+          "reason_code",
+          "candidates"
+        ],
+        "title": "ClarificationRequestV1",
+        "type": "object"
+      },
+      "ClarificationResponseV1": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 16,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "clarification_id": {
+            "format": "uuid",
+            "title": "Clarification Id",
+            "type": "string"
+          },
+          "free_text": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Text"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clarification_id",
+          "idempotency_key"
+        ],
+        "title": "ClarificationResponseV1",
         "type": "object"
       },
       "CompleteOpsTaskCommand": {
@@ -1937,18 +2206,23 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "context_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustedContextHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
           "source": {
             "$ref": "#/components/schemas/ConversationSourceContext"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
           },
           "title": {
             "anyOf": [
@@ -1965,8 +2239,7 @@
           }
         },
         "required": [
-          "agent_id",
-          "target_id"
+          "agent_id"
         ],
         "title": "ConversationCreate",
         "type": "object"
@@ -2117,7 +2390,7 @@
             "$ref": "#/components/schemas/TurnCreate"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           }
@@ -2132,16 +2405,25 @@
       "ConversationStarterCatalogView": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "catalog_version": {
             "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
             "title": "Catalog Version",
             "type": "string"
           },
-          "db_type": {
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Db Type",
-            "type": "string"
+          "context_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustedContextHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "starters": {
             "items": {
@@ -2149,17 +2431,11 @@
             },
             "title": "Starters",
             "type": "array"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
           }
         },
         "required": [
           "catalog_version",
-          "target_id",
-          "db_type",
+          "agent_id",
           "starters"
         ],
         "title": "ConversationStarterCatalogView",
@@ -2242,6 +2518,14 @@
             "title": "Input Schema",
             "type": "array"
           },
+          "required_capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/AIOpsCapability"
+            },
+            "minItems": 1,
+            "title": "Required Capabilities",
+            "type": "array"
+          },
           "sort_order": {
             "minimum": 0.0,
             "title": "Sort Order",
@@ -2284,6 +2568,7 @@
           "description",
           "supported_db_types",
           "execution_mode",
+          "required_capabilities",
           "sort_order",
           "status"
         ],
@@ -2312,6 +2597,16 @@
             "title": "Agent Version Id",
             "type": "string"
           },
+          "context_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustedContextHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "conversation_id": {
             "format": "uuid",
             "title": "Conversation Id",
@@ -2328,7 +2623,7 @@
             "type": "integer"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -2386,11 +2681,6 @@
           "status": {
             "$ref": "#/components/schemas/ConversationStatus"
           },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
           "title": {
             "anyOf": [
               {
@@ -2413,7 +2703,6 @@
           "conversation_id",
           "agent_id",
           "agent_version_id",
-          "target_id",
           "status",
           "source_type",
           "last_turn_no",
@@ -4390,6 +4679,48 @@
         "title": "EventReceipt",
         "type": "object"
       },
+      "ExecutionBudgetV1": {
+        "additionalProperties": false,
+        "properties": {
+          "max_delegations": {
+            "default": 8,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Delegations",
+            "type": "integer"
+          },
+          "max_diagnosis_runs": {
+            "default": 1,
+            "maximum": 16.0,
+            "minimum": 0.0,
+            "title": "Max Diagnosis Runs",
+            "type": "integer"
+          },
+          "max_live_queries": {
+            "default": 12,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Max Live Queries",
+            "type": "integer"
+          },
+          "max_parallel_delegations": {
+            "default": 4,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Delegations",
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "default": 300,
+            "maximum": 7200.0,
+            "minimum": 10.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "ExecutionBudgetV1",
+        "type": "object"
+      },
       "ExecutionStatus": {
         "enum": [
           "CREATED",
@@ -4662,6 +4993,15 @@
         ],
         "title": "FinalDiagnosisRef",
         "type": "object"
+      },
+      "FreshnessRequirement": {
+        "enum": [
+          "STORED_ACCEPTABLE",
+          "LATEST_AVAILABLE",
+          "LIVE_REQUIRED"
+        ],
+        "title": "FreshnessRequirement",
+        "type": "string"
       },
       "GenerateUserReportRequest": {
         "additionalProperties": false,
@@ -5984,6 +6324,18 @@
             ],
             "title": "Evidence Covered Count"
           },
+          "evidence_gap_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Gap Count"
+          },
           "evidence_total_count": {
             "anyOf": [
               {
@@ -5995,6 +6347,43 @@
               }
             ],
             "title": "Evidence Total Count"
+          },
+          "monitoring_low_coverage_metric_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Low Coverage Metric Count"
+          },
+          "monitoring_metric_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Metric Count"
+          },
+          "monitoring_sample_coverage_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Sample Coverage Percent"
           },
           "report_status": {
             "anyOf": [
@@ -6023,6 +6412,43 @@
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
+          },
+          "tool_execution_coverage_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Coverage Percent"
+          },
+          "tool_execution_covered_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Covered Count"
+          },
+          "tool_execution_total_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Total Count"
           }
         },
         "required": [
@@ -6393,6 +6819,15 @@
             "minimum": 1.0,
             "title": "Expected Row Version",
             "type": "integer"
+          },
+          "tag_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -6514,6 +6949,15 @@
             "title": "Source Kinds",
             "type": "array"
           },
+          "tag_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag Ids",
+            "type": "array"
+          },
           "topology": {
             "anyOf": [
               {
@@ -6531,6 +6975,78 @@
           "query"
         ],
         "title": "KnowledgeSearchRequest",
+        "type": "object"
+      },
+      "KnowledgeTagStatusCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "KnowledgeTagStatusCommand",
+        "type": "object"
+      },
+      "KnowledgeTagWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "RESOURCE_CATEGORY",
+              "TECHNOLOGY_STACK",
+              "VENDOR"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "display_name"
+        ],
+        "title": "KnowledgeTagWrite",
         "type": "object"
       },
       "LeadershipBriefing": {
@@ -10928,6 +11444,56 @@
         "title": "ResourceRef",
         "type": "object"
       },
+      "ResourceRefV1": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Resource Type Key",
+            "type": "string"
+          },
+          "system_resource_id": {
+            "format": "uuid",
+            "title": "System Resource Id",
+            "type": "string"
+          },
+          "topology_roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Topology Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resource_id",
+          "system_resource_id",
+          "business_system_id",
+          "display_name",
+          "resource_type_key"
+        ],
+        "title": "ResourceRefV1",
+        "type": "object"
+      },
       "ResourceRelationCommit": {
         "additionalProperties": false,
         "properties": {
@@ -11594,6 +12160,129 @@
         ],
         "title": "RunTerminalEvent",
         "type": "object"
+      },
+      "ScopeResolutionStatus": {
+        "enum": [
+          "NOT_REQUIRED",
+          "RESOLVED",
+          "NEEDS_CLARIFICATION",
+          "DENIED"
+        ],
+        "title": "ScopeResolutionStatus",
+        "type": "string"
+      },
+      "ScopeResolutionV1": {
+        "additionalProperties": false,
+        "description": "用户可见的范围解析；禁止包含内部 Target 身份。",
+        "properties": {
+          "authorization_snapshot_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Authorization Snapshot Hash",
+            "type": "string"
+          },
+          "business_systems": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemRefV1"
+            },
+            "maxItems": 32,
+            "title": "Business Systems",
+            "type": "array"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "inherited_from_turn_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited From Turn Id"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TopologyRelationRefV1"
+            },
+            "maxItems": 256,
+            "title": "Relations",
+            "type": "array"
+          },
+          "resolution_basis": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Resolution Basis",
+            "type": "array"
+          },
+          "resource_graph_snapshot_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Graph Snapshot Hash"
+          },
+          "resources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResourceRefV1"
+            },
+            "maxItems": 256,
+            "title": "Resources",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ScopeType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScopeResolutionStatus"
+          }
+        },
+        "required": [
+          "status",
+          "scope_type",
+          "authorization_snapshot_hash"
+        ],
+        "title": "ScopeResolutionV1",
+        "type": "object"
+      },
+      "ScopeType": {
+        "enum": [
+          "NONE",
+          "SYSTEM",
+          "TOPOLOGY_GROUP",
+          "RESOURCE_SET",
+          "RESOURCE"
+        ],
+        "title": "ScopeType",
+        "type": "string"
       },
       "SecretRefStatus": {
         "additionalProperties": false,
@@ -13419,7 +14108,7 @@
             "title": "Note"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -14343,6 +15032,51 @@
         "title": "TaskStatusEvent",
         "type": "object"
       },
+      "TimeRangeV1": {
+        "additionalProperties": false,
+        "description": "绝对时间范围或相对窗口，两种表达必须二选一。",
+        "properties": {
+          "end_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End At"
+          },
+          "relative_window_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Window Seconds"
+          },
+          "start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At"
+          }
+        },
+        "title": "TimeRangeV1",
+        "type": "object"
+      },
       "TopologyParticipantEdge": {
         "additionalProperties": false,
         "properties": {
@@ -14415,6 +15149,46 @@
           "verification_status"
         ],
         "title": "TopologyRelationNode",
+        "type": "object"
+      },
+      "TopologyRelationRefV1": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "relation_id": {
+            "format": "uuid",
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "relation_type_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Relation Type Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_id",
+          "business_system_id",
+          "relation_type_key"
+        ],
+        "title": "TopologyRelationRefV1",
         "type": "object"
       },
       "TopologyResourceNode": {
@@ -14548,6 +15322,56 @@
         "title": "TriggerType",
         "type": "string"
       },
+      "TrustedContextHint": {
+        "additionalProperties": false,
+        "description": "服务端校验过的入口提示，不替代当轮范围解析与授权。",
+        "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "resource_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Resource Ids",
+            "type": "array"
+          },
+          "source_kind": {
+            "pattern": "^(BUSINESS_SYSTEM_PAGE|RESOURCE_PAGE|SITUATION|RUN|REPORT|INSPECTION)$",
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Resource Id"
+          }
+        },
+        "required": [
+          "source_kind"
+        ],
+        "title": "TrustedContextHint",
+        "type": "object"
+      },
       "TurnCompletionRequirementView": {
         "additionalProperties": false,
         "description": "用户明确要求、且由真实工具证据验证的完成义务。",
@@ -14613,7 +15437,7 @@
             "type": "string"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -14728,6 +15552,18 @@
         "additionalProperties": false,
         "description": "对话页可安全展示的未取证摘要，不包含原始证据行。",
         "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
           "code": {
             "anyOf": [
               {
@@ -14751,6 +15587,18 @@
               }
             ],
             "title": "Detail"
+          },
+          "diagnostic_source_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Source Id"
           },
           "retryable": {
             "default": false,
@@ -14992,6 +15840,163 @@
         "title": "TurnInvestigationPlanView",
         "type": "object"
       },
+      "TurnOutputMode": {
+        "enum": [
+          "SUMMARY",
+          "DETAIL",
+          "TABLE",
+          "TREND",
+          "REPORT",
+          "DIAGNOSIS"
+        ],
+        "title": "TurnOutputMode",
+        "type": "string"
+      },
+      "TurnPlanStepV1": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/AIOpsCapability"
+          },
+          "depends_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Depends On",
+            "type": "array"
+          },
+          "objective": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "optional": {
+            "default": false,
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "requested_evidence_kinds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Requested Evidence Kinds",
+            "type": "array"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ScopeType"
+          },
+          "step_id": {
+            "pattern": "^s[1-9][0-9]*$",
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "capability",
+          "objective",
+          "scope_type"
+        ],
+        "title": "TurnPlanStepV1",
+        "type": "object"
+      },
+      "TurnPlanV1": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/ExecutionBudgetV1"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/FreshnessRequirement",
+            "default": "LATEST_AVAILABLE"
+          },
+          "output_mode": {
+            "$ref": "#/components/schemas/TurnOutputMode",
+            "default": "SUMMARY"
+          },
+          "policy_snapshot_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Policy Snapshot Hash",
+            "type": "string"
+          },
+          "requested_capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/AIOpsCapability"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Requested Capabilities",
+            "type": "array"
+          },
+          "requested_facts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Requested Facts",
+            "type": "array"
+          },
+          "requires_active_diagnosis": {
+            "default": false,
+            "title": "Requires Active Diagnosis",
+            "type": "boolean"
+          },
+          "revision_no": {
+            "minimum": 1.0,
+            "title": "Revision No",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TurnPlanStepV1"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRangeV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "revision_no",
+          "requested_capabilities",
+          "steps",
+          "policy_snapshot_hash"
+        ],
+        "title": "TurnPlanV1",
+        "type": "object"
+      },
       "TurnReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -15011,7 +16016,7 @@
             "type": "integer"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -15063,6 +16068,26 @@
       "TurnSummary": {
         "additionalProperties": false,
         "properties": {
+          "capability_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnPlanV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clarification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClarificationRequestV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -15146,17 +16171,15 @@
             "title": "Investigation Round",
             "type": "integer"
           },
-          "resolved_target_id": {
+          "scope_resolution": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "$ref": "#/components/schemas/ScopeResolutionV1"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Resolved Target Id"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/TurnStatus"
@@ -15340,6 +16363,19 @@
             },
             "title": "Unknowns",
             "type": "array"
+          },
+          "visualization_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9_]*)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visualization Profile Id"
           }
         },
         "title": "TurnTaskFrameView",
@@ -15355,6 +16391,26 @@
             },
             "title": "Answer Blocks",
             "type": "array"
+          },
+          "capability_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnPlanV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clarification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClarificationRequestV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "completed_at": {
             "anyOf": [
@@ -15476,22 +16532,20 @@
             ],
             "title": "Ops Run Id"
           },
-          "resolved_target_id": {
+          "schema_version": {
+            "default": "aiops.conversation.v2",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope_resolution": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "$ref": "#/components/schemas/ScopeResolutionV1"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Resolved Target Id"
-          },
-          "schema_version": {
-            "default": "aiops.conversation.v1",
-            "title": "Schema Version",
-            "type": "string"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/TurnStatus"
@@ -20700,12 +21754,18 @@
           },
           {
             "in": "query",
-            "name": "target_id",
-            "required": true,
+            "name": "context_hint",
+            "required": false,
             "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context Hint"
             }
           }
         ],
@@ -20756,23 +21816,6 @@
                 }
               ],
               "title": "Agent Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "target_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Target Id"
             }
           },
           {
@@ -21251,6 +22294,69 @@
           }
         },
         "summary": "Cancel Turn",
+        "tags": [
+          "AIOps Conversations"
+        ]
+      }
+    },
+    "/internal/v1/aiops/conversations/{conversation_id}/turns/{turn_id}/clarification-responses": {
+      "post": {
+        "operationId": "respond_to_turn_clarification_internal_v1_aiops_conversations__conversation_id__turns__turn_id__clarification_responses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClarificationResponseV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Respond To Turn Clarification",
         "tags": [
           "AIOps Conversations"
         ]
@@ -22817,6 +23923,237 @@
         ]
       }
     },
+    "/internal/v1/aiops/operations-knowledge/tags": {
+      "get": {
+        "operationId": "list_tags_internal_v1_aiops_operations_knowledge_tags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Disabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Tags",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      },
+      "post": {
+        "operationId": "create_tag_internal_v1_aiops_operations_knowledge_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeTagWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Tag",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/tags/{tag_id}": {
+      "put": {
+        "operationId": "update_tag_internal_v1_aiops_operations_knowledge_tags__tag_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeTagWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Tag",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/tags/{tag_id}:disable": {
+      "post": {
+        "operationId": "disable_tag_internal_v1_aiops_operations_knowledge_tags__tag_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeTagStatusCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Tag",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/tags/{tag_id}:enable": {
+      "post": {
+        "operationId": "enable_tag_internal_v1_aiops_operations_knowledge_tags__tag_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeTagStatusCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Tag",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
     "/internal/v1/aiops/operations-knowledge/uploads:ingest": {
       "post": {
         "operationId": "ingest_upload_internal_v1_aiops_operations_knowledge_uploads_ingest_post",
@@ -22913,6 +24250,57 @@
           }
         },
         "summary": "Stream Source",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/versions/{asset_version_id}:approve": {
+      "post": {
+        "operationId": "approve_version_internal_v1_aiops_operations_knowledge_versions__asset_version_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeReviewCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Version",
         "tags": [
           "AIOps Operations Knowledge"
         ]

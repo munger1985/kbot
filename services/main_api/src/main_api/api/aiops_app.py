@@ -24,6 +24,7 @@ from platform_core.contracts import (
     UpdateConversationRequest,
 )
 from platform_core.contracts.aiops import (
+    ClarificationResponseV1,
     ConversationUploadReceipt,
     ConversationStarterSelection,
     ConversationStarterCatalogView,
@@ -36,6 +37,7 @@ from platform_core.contracts.aiops import (
     TurnReceipt,
     TurnSummary,
     TurnView,
+    TrustedContextHint,
     WorkloadDiffRequest,
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
@@ -185,8 +187,8 @@ class AIOpsControlledActionObjectScopes(_Payload):
     object_privileges: tuple[str, ...] = ()
 
 
-class AIOpsTargetControlledActionExecution(_Payload):
-    target_id: UUID
+class AIOpsResourceControlledActionExecution(_Payload):
+    resource_id: UUID
     enabled: bool = False
     allowed_action_ids: tuple[str, ...] = ()
     object_scopes: AIOpsControlledActionObjectScopes = Field(
@@ -206,9 +208,13 @@ class AIOpsTargetControlledActionExecution(_Payload):
 class AIOpsAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    allowed_business_system_ids: tuple[UUID, ...] = Field(
+        min_length=1, max_length=32
+    )
+    capabilities: tuple[str, ...] = Field(min_length=1, max_length=8)
+    knowledge_policy: dict[str, Any] = Field(default_factory=dict)
     controlled_action_execution: tuple[
-        AIOpsTargetControlledActionExecution, ...
+        AIOpsResourceControlledActionExecution, ...
     ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
@@ -227,11 +233,15 @@ class AIOpsAgentUpdatePayload(_Payload):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    target_ids: tuple[UUID, ...] | None = Field(
+    allowed_business_system_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
+    capabilities: tuple[str, ...] | None = Field(
+        default=None, min_length=1, max_length=8
+    )
+    knowledge_policy: dict[str, Any] | None = None
     controlled_action_execution: tuple[
-        AIOpsTargetControlledActionExecution, ...
+        AIOpsResourceControlledActionExecution, ...
     ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
@@ -250,7 +260,7 @@ class AIOpsAgentUpdatePayload(_Payload):
 
 class ConversationStartPayload(_Payload):
     agent_id: UUID
-    target_id: UUID
+    context_hint: TrustedContextHint | None = None
     content: list[InputContent] = Field(default_factory=list, max_length=16)
     starter: ConversationStarterSelection | None = None
     title: str | None = Field(default=None, min_length=1, max_length=256)
@@ -407,19 +417,61 @@ _AIOPS_AGENT_USE_FIELDS = (
     "status",
     "agent_version_id",
     "version_no",
-    "target_ids",
+    "allowed_business_system_ids",
+    "business_system_candidates",
+    "capabilities",
     "target_candidates",
     "image_capabilities",
 )
+_AIOPS_PUBLIC_TARGET_CANDIDATE_FIELDS = (
+    "resource_id",
+    "display_name",
+    "db_type",
+    "importance_level",
+)
+_AIOPS_PUBLIC_ACTION_POLICY_FIELDS = (
+    "resource_id",
+    "enabled",
+    "allowed_action_ids",
+    "object_scopes",
+    "max_daily_executions",
+)
+
+
+def _aiops_agent_public_view(agent: dict[str, Any]) -> dict[str, Any]:
+    """把内部执行绑定投影为不包含 Target 与连接状态的业务资源视图。"""
+
+    projected = dict(agent)
+    projected["target_candidates"] = [
+        {
+            field: candidate[field]
+            for field in _AIOPS_PUBLIC_TARGET_CANDIDATE_FIELDS
+            if field in candidate
+        }
+        for candidate in agent.get("target_candidates") or ()
+        if candidate.get("resource_id") is not None
+    ]
+    if "controlled_action_execution" in agent:
+        projected["controlled_action_execution"] = [
+            {
+                field: policy[field]
+                for field in _AIOPS_PUBLIC_ACTION_POLICY_FIELDS
+                if field in policy
+            }
+            for policy in agent.get("controlled_action_execution") or ()
+            if policy.get("resource_id") is not None
+        ]
+    return projected
 
 
 def _aiops_agent_use_view(agent: dict[str, Any]) -> dict[str, Any]:
     """仅返回聊天选择和输入能力所需的 Agent 字段。"""
 
+    public = _aiops_agent_public_view(agent)
     return {
-        field: agent[field]
+        field: public[field]
         for field in _AIOPS_AGENT_USE_FIELDS
-        if field in agent
+        if field in public
     }
 
 
@@ -1007,24 +1059,25 @@ async def list_agents(request: Request):
         request.state.auth_context.principal_kind != PrincipalKind.APP_API_CLIENT
         and "aiops:agent_manage" in snapshot.permissions
     ):
-        return visible
+        return [_aiops_agent_public_view(dict(item)) for item in visible]
     return [_aiops_agent_use_view(dict(item)) for item in visible]
 
 
-@router.get("/action-catalog/{target_id}")
-async def action_catalog(target_id: UUID, request: Request):
+@router.get("/action-catalog/{resource_id}")
+async def action_catalog(resource_id: UUID, request: Request):
     await _require(request, "aiops:agent_manage")
     return await _client(request).get_private_action_catalog(
-        target_id, auth_context=request.state.auth_context
+        resource_id, auth_context=request.state.auth_context
     )
 
 
 @router.post("/agents", status_code=status.HTTP_201_CREATED)
 async def create_agent(payload: AIOpsAgentCreatePayload, request: Request):
     await _require(request, "aiops:agent_manage")
-    return await _client(request).create_private_agent(
+    agent = await _client(request).create_private_agent(
         payload.model_dump(mode="json"), auth_context=request.state.auth_context
     )
+    return _aiops_agent_public_view(agent)
 
 
 @router.get("/agents/{agent_id}")
@@ -1047,7 +1100,7 @@ async def get_agent(agent_id: UUID, request: Request):
         request.state.auth_context.principal_kind != PrincipalKind.APP_API_CLIENT
         and "aiops:agent_manage" in snapshot.permissions
     ):
-        return agent
+        return _aiops_agent_public_view(agent)
     return _aiops_agent_use_view(agent)
 
 
@@ -1056,11 +1109,12 @@ async def update_agent(
     agent_id: UUID, payload: AIOpsAgentUpdatePayload, request: Request
 ):
     await _require(request, "aiops:agent_manage")
-    return await _client(request).update_private_agent(
+    agent = await _client(request).update_private_agent(
         agent_id,
         payload.model_dump(mode="json", exclude_unset=True),
         auth_context=request.state.auth_context,
     )
+    return _aiops_agent_public_view(agent)
 
 
 @router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1269,9 +1323,13 @@ async def start_conversation(
         {
             "conversation": {
                 "agent_id": str(payload.agent_id),
-                "target_id": str(payload.target_id),
                 "title": payload.title,
                 "source": source,
+                "context_hint": (
+                    payload.context_hint.model_dump(mode="json")
+                    if payload.context_hint is not None
+                    else None
+                ),
             },
             "first_turn": {
                 "content": [
@@ -1300,15 +1358,30 @@ async def start_conversation(
 )
 async def list_conversation_starters(
     request: Request,
-    target_id: UUID,
     agent_id: UUID,
+    context_hint: str | None = None,
 ):
-    """返回当前 Agent 与 Target 可以执行的结构化功能入口。"""
+    """返回当前 Agent 在可选可信业务上下文中可用的功能入口。"""
     await _require(request, "aiops:use")
     require_app_api_agent(request, agent_id)
+    try:
+        parsed_hint = (
+            TrustedContextHint.model_validate_json(context_hint)
+            if context_hint
+            else None
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            422,
+            {"code": "AIOPS_CONTEXT_HINT_INVALID", "message": str(exc)},
+        ) from exc
     return await _client(request).list_conversation_starters(
         agent_id=agent_id,
-        target_id=target_id,
+        context_hint=(
+            parsed_hint.model_dump(mode="json")
+            if parsed_hint is not None
+            else None
+        ),
         auth_context=request.state.auth_context,
     )
 
@@ -1317,7 +1390,6 @@ async def list_conversation_starters(
 async def list_conversations(
     request: Request,
     agent_id: UUID | None = None,
-    target_id: UUID | None = None,
     limit: int = Query(50, ge=1, le=50),
 ):
     await _require(request, "aiops:use")
@@ -1325,7 +1397,6 @@ async def list_conversations(
         require_app_api_agent(request, agent_id)
     rows = await _client(request).list_conversations(
         agent_id=agent_id,
-        target_id=target_id,
         limit=limit,
         auth_context=request.state.auth_context,
     )
@@ -1440,6 +1511,31 @@ async def get_conversation_turn(
         turn_id,
         auth_context=request.state.auth_context,
     )
+
+
+@router.post(
+    "/conversations/{conversation_id}/turns/{turn_id}/clarification-responses",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=TurnReceipt,
+)
+async def respond_to_conversation_turn_clarification(
+    conversation_id: UUID,
+    turn_id: UUID,
+    body: ClarificationResponseV1,
+    request: Request,
+) -> TurnReceipt:
+    # _conversation_with_access 同时执行 aiops:use 权限校验与 App API
+    # Agent 授权校验，不能只依赖上游会话所有权。
+    await _conversation_with_access(request, conversation_id)
+    payload = await _client(
+        request
+    ).respond_to_conversation_turn_clarification(
+        conversation_id,
+        turn_id,
+        body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return TurnReceipt.model_validate(payload)
 
 
 @router.get("/conversations/{conversation_id}/turns/{turn_id}/inputs/{item_no}/content")

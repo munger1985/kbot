@@ -43,6 +43,22 @@ class AIOpsRoutePermissionsTest(unittest.TestCase):
             AIOPS_ROUTE_PERMISSIONS["review_recovery_drill"],
         )
 
+    def test_legacy_target_agent_binding_routes_are_not_public(self) -> None:
+        paths = {
+            route.path
+            for route in router.routes
+            if isinstance(route, APIRoute)
+        }
+        self.assertFalse(any("agent-bindings" in path for path in paths))
+        self.assertTrue(
+            {
+                "list_agent_bindings",
+                "create_agent_binding",
+                "patch_agent_binding",
+                "command_agent_binding",
+            }.isdisjoint(AIOPS_ROUTE_PERMISSIONS)
+        )
+
     def test_elevated_work_item_visibility_requires_manage_permission(self) -> None:
         ordinary = SimpleNamespace(state=SimpleNamespace(
             aiops_access_snapshot=SimpleNamespace(permissions=frozenset({"aiops:use"}))

@@ -108,7 +108,9 @@
     const situation = situationResult.status === "fulfilled" ? situationResult.value : null;
     const run = runResult.status === "fulfilled" ? runResult.value : null;
     const result = diagnosisResult.status === "fulfilled" ? diagnosisResult.value : null;
-    const agents = agentResult.status === "fulfilled" ? values(agentResult.value).filter((agent) => agent.status === "ACTIVE" && values(agent.target_ids).map(String).includes(String(item.target_id))) : [];
+    const agents = agentResult.status === "fulfilled"
+      ? values(agentResult.value).filter((agent) => agent.status === "ACTIVE")
+      : [];
     const source = result?.final_artifact && runId
       ? { source_run_id: runId }
       : situationId

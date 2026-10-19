@@ -52,6 +52,12 @@ class AIOpsAgentVersionEntity(BaseEntity):
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False, index=True)
     version_no: Mapped[int] = mapped_column(Numeric(10, 0), nullable=False)
     policy_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    capabilities_json: Mapped[list[str]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
+    knowledge_policy_json: Mapped[dict[str, Any]] = mapped_column(
+        OracleNativeJSON, nullable=False
+    )
     models_json: Mapped[dict[str, str]] = mapped_column(OracleNativeJSON, nullable=False)
     image_capabilities_json: Mapped[dict[str, Any]] = mapped_column(
         OracleNativeJSON, nullable=False, default=dict
@@ -64,15 +70,31 @@ class AIOpsAgentVersionEntity(BaseEntity):
     )
 
 
-class AIOpsAgentVersionTargetEntity(BaseEntity):
-    """固定一个 Agent 版本可以运维的逻辑数据库 Target 集合。"""
+class AIOpsAgentVersionBusinessSystemEntity(BaseEntity):
+    """固定一个 Agent 版本可以访问的业务系统集合。"""
 
-    __tablename__ = "KBOT_OPS_AGENT_VERSION_TARGET"
+    __tablename__ = "KBOT_OPS_AGENT_VERSION_SYSTEM"
 
     agent_version_id: Mapped[UUID] = mapped_column(
         UUIDv7Type(), primary_key=True
     )
-    target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    business_system_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AIOpsAgentVersionResourceActionPolicyEntity(BaseEntity):
+    """固定版本内显式授权的业务资源受控变更策略。"""
+
+    __tablename__ = "KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY"
+
+    agent_version_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True
+    )
+    resource_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
     controlled_action_policy_json: Mapped[dict[str, Any]] = mapped_column(
         OracleNativeJSON, nullable=False, default=dict
     )

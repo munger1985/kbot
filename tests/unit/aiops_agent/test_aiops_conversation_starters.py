@@ -27,8 +27,21 @@ class ConversationStarterCatalogTest(unittest.TestCase):
     def setUp(self) -> None:
         self.catalog = ConversationStarterCatalog()
 
+    def _list(self, target):
+        return self.catalog.list_for_agent(
+            agent_id="00000000-0000-7000-8000-000000000001",
+            capabilities={"ACTIVE_DIAGNOSIS"},
+            targets=(target,),
+        )
+
+    def _freeze(self, **kwargs):
+        return self.catalog.freeze(
+            capabilities={"ACTIVE_DIAGNOSIS"},
+            **kwargs,
+        )
+
     def test_catalog_filters_database_type_and_hides_internal_planning(self) -> None:
-        payload = self.catalog.list_for_target(_target(db_type="MYSQL"))
+        payload = self._list(_target(db_type="MYSQL"))
         ids = {item["starter_id"] for item in payload["starters"]}
         self.assertIn("database.health.overview", ids)
         self.assertIn("database.replication.status", ids)
@@ -36,7 +49,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         self.assertTrue(all("planning" not in item for item in payload["starters"]))
 
     def test_unavailable_target_disables_every_starter(self) -> None:
-        payload = self.catalog.list_for_target(
+        payload = self._list(
             _target(readonly_connection_enabled=False)
         )
         self.assertTrue(payload["starters"])
@@ -46,7 +59,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         )
 
     def test_unknown_connectivity_is_limited_but_still_selectable(self) -> None:
-        payload = self.catalog.list_for_target(
+        payload = self._list(
             _target(connectivity_status="UNKNOWN")
         )
         self.assertEqual(
@@ -67,10 +80,10 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             },
         )
         with self.assertRaisesRegex(Exception, "必须等长"):
-            self.catalog.freeze(selection=selection, target=_target())
+            self._freeze(selection=selection, target=_target())
 
     def test_freeze_uses_server_catalog_planning_and_message(self) -> None:
-        frozen = self.catalog.freeze(
+        frozen = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.adg-build",
                 catalog_version="1.3.0",
@@ -85,7 +98,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         self.assertEqual("执行功能：ADG 部署文档", frozen["user_message"])
 
     def test_runbook_starters_publish_optional_parameter_schema(self) -> None:
-        payload = self.catalog.list_for_target(_target())
+        payload = self._list(_target())
         datapump = next(
             item
             for item in payload["starters"]
@@ -97,7 +110,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         self.assertTrue(all(not item["required"] for item in fields.values()))
 
     def test_datapump_parameters_are_normalized_and_empty_values_ignored(self) -> None:
-        frozen = self.catalog.freeze(
+        frozen = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.datapump",
                 catalog_version="1.3.0",
@@ -115,7 +128,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         )
 
     def test_rman_recovery_time_is_normalized_for_oracle(self) -> None:
-        payload = self.catalog.list_for_target(_target())
+        payload = self._list(_target())
         recovery = next(
             item
             for item in payload["starters"]
@@ -127,7 +140,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             fields["RECOVERY_TARGET_TIME"]["type"],
         )
 
-        frozen = self.catalog.freeze(
+        frozen = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.rman-recovery",
                 catalog_version="1.3.0",
@@ -145,7 +158,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
     def test_rman_recovery_time_rejects_invalid_calendar_date(self) -> None:
         with self.assertRaisesRegex(Exception, "YYYY-MM-DD HH24:MI:SS"):
-            self.catalog.freeze(
+            self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rman-recovery",
                     catalog_version="1.3.0",
@@ -158,7 +171,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
     def test_runbook_parameters_reject_unknown_and_unsafe_values(self) -> None:
         with self.assertRaisesRegex(Exception, "未知字段"):
-            self.catalog.freeze(
+            self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
                     catalog_version="1.3.0",
@@ -167,7 +180,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
                 target=_target(),
             )
         with self.assertRaisesRegex(Exception, "安全的绝对路径"):
-            self.catalog.freeze(
+            self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
                     catalog_version="1.3.0",
@@ -178,7 +191,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
 
     def test_rac_parameter_validation_rejects_duplicate_nodes(self) -> None:
         with self.assertRaisesRegex(Exception, "不能相同"):
-            self.catalog.freeze(
+            self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rac-build",
                     catalog_version="1.3.0",

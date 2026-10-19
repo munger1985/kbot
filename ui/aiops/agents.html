@@ -13,7 +13,7 @@
       <div>
         <p class="agent-eyebrow">DIAGNOSIS WORKFORCE</p>
         <h1>AIOps Agent</h1>
-        <p>为一个或多个运维 Target 配置诊断模型、自动触发规则和受控动作边界。</p>
+        <p>按业务系统配置统一问答范围、专业能力、运维知识与模型角色。</p>
       </div>
       <button id="create-agent" class="primary" type="button" data-write-ready>新增 Agent</button>
     </header>
@@ -22,14 +22,14 @@
       <div class="agent-roster-head">
         <div>
           <h2 id="agent-roster-title">诊断角色</h2>
-          <p>Agent 与 Target 是多对多关系；监控源和 label 由 Target 统一管理。</p>
+          <p>Agent 只绑定可访问的业务系统；具体资源与内部 Target 由每轮问题自动解析。</p>
         </div>
         <div id="agent-summary" class="agent-summary" aria-live="polite"></div>
       </div>
       <div class="ops-table-wrap">
         <table class="ops-table agent-table">
           <thead>
-            <tr><th>Agent</th><th>运行状态</th><th>证据范围</th><th>数据库权限</th><th>自动告警诊断</th><th>操作</th></tr>
+            <tr><th>Agent</th><th>运行状态</th><th>业务系统范围</th><th>能力</th><th>知识与自动观察</th><th>操作</th></tr>
           </thead>
           <tbody id="agent-rows"><tr><td class="ops-empty" colspan="6">正在加载 Agent…</td></tr></tbody>
         </table>
@@ -83,7 +83,17 @@
                 <select id="agent-model" name="diagnosis_model_id" required>
                   <option value="">正在加载已启用的 LLM…</option>
                 </select>
-                <small>必选。负责证据评估、诊断结论和最终回答生成。</small>
+                <small>主动诊断能力启用时必选，负责证据评估与根因推理。</small>
+              </div>
+              <div class="ops-field span-6">
+                <label for="agent-composer-model">回答组织模型</label>
+                <select id="agent-composer-model" name="composer_model_id" required><option value="">正在加载已启用的 LLM…</option></select>
+                <small>必选。组合知识、监控、告警、报告与诊断证据。</small>
+              </div>
+              <div class="ops-field span-6">
+                <label for="agent-memory-model">会话摘要模型</label>
+                <select id="agent-memory-model" name="memory_model_id"><option value="">复用回答模型</option></select>
+                <small>可选。用于连续会话摘要；未选择时复用回答组织模型。</small>
               </div>
             </div>
             <p id="agent-status-help" class="agent-inline-note">新增 Agent 固定保存为草稿；确认资源后再启用。</p>
@@ -123,22 +133,31 @@
           <div class="agent-section-content">
             <div class="agent-section-heading">
               <div>
-                <h3 id="agent-section-evidence">运维对象与执行边界</h3>
-                <p>Target 必选且可多选；Agent 自动继承每个 Target 已配置的监控 label 和可选数据库连接能力。</p>
+                <h3 id="agent-section-evidence">业务系统、能力与知识范围</h3>
+                <p>用户只需选择 Agent 并自然语言描述系统或资源；每轮在这里授权的业务系统内解析实际执行范围。</p>
               </div>
             </div>
             <div class="ops-field agent-target-field">
-              <label>运维 Target</label>
-              <div id="agent-targets" class="agent-target-list"></div>
-              <small>必选，可多选。监控 label 与数据库连接均在 Target 页面维护。</small>
+              <label>允许访问的业务系统</label>
+              <div id="agent-business-systems" class="agent-target-list"></div>
+              <small>必选，可多选。系统内当前有效资源会进入受控候选范围；凭据与内部 Target 不向用户暴露。</small>
             </div>
-
-            <div id="agent-change-field" class="agent-permission-row">
-              <div>
-                <strong>Agent–Target 执行策略</strong>
-                <small id="agent-change-help">默认仅允许只读诊断；按 Target 显式选择动作后，才可逐条审批执行。</small>
+            <div class="ops-field agent-target-field">
+              <label>开放能力</label>
+              <div id="agent-capabilities" class="agent-target-list"></div>
+              <small>一次提问可组合多项能力；受控变更仍需资源级白名单与逐条审批。</small>
+            </div>
+            <div class="agent-permission-row">
+              <div class="agent-section-heading">
+                <div><strong>运维知识策略</strong><small>知识只使用已审批版本，并在回答中保留原文引用。</small></div>
+                <label class="agent-compact-switch"><input name="knowledge_enabled" type="checkbox" checked><span>启用知识问答</span></label>
               </div>
-              <div id="agent-controlled-actions" class="agent-source-list"></div>
+              <div id="agent-knowledge-policy-fields" class="ops-form">
+                <div class="ops-field span-6"><label>知识来源</label><div class="agent-source-list"><label class="agent-switch-row"><input type="checkbox" name="knowledge_source_kinds" value="MANUAL" checked><span><strong>运维手册</strong><small>已审批并发布的原始资料</small></span></label><label class="agent-switch-row"><input type="checkbox" name="knowledge_source_kinds" value="DIAGNOSIS_CASE" checked><span><strong>诊断案例</strong><small>由正式会话报告沉淀的历史案例</small></span></label></div></div>
+                <div class="ops-field span-3"><label>最高安全级别</label><select name="max_security_level"><option value="1">L1</option><option value="2">L2</option><option value="3" selected>L3</option><option value="4">L4</option><option value="5">L5</option></select></div>
+                <div class="ops-field span-3"><label>最多引用</label><input name="maximum_references" type="number" min="1" max="20" value="8"></div>
+                <div class="ops-field span-12"><label>知识标签（可选）</label><div id="agent-knowledge-tags" class="agent-scope-options"></div><small>不选择标签表示使用安全级别内全部已审批知识。</small></div>
+              </div>
             </div>
           </div>
         </section>
@@ -147,7 +166,7 @@
           <div class="agent-section-index">04</div>
           <div class="agent-section-content">
             <div class="agent-section-heading">
-              <div><h3 id="agent-section-automation">自动告警诊断</h3><p>告警级别、Target 重要程度和冷却时间只适用于自动触发，不影响聊天诊断、人工运行和计划巡检。</p></div>
+              <div><h3 id="agent-section-automation">自动告警诊断</h3><p>告警级别、资源重要程度和冷却时间只适用于自动触发，不影响聊天、知识问答和报告查询。</p></div>
               <label class="agent-compact-switch"><input name="auto_alert_enabled" type="checkbox" checked><span>允许自动触发</span></label>
             </div>
             <div id="agent-alert-settings" class="ops-form">
@@ -158,9 +177,9 @@
                 </select>
               </div>
               <div class="ops-field span-4">
-                <label for="agent-min-target-level">最低 Target 重要程度</label>
+                <label for="agent-min-target-level">最低资源重要程度</label>
                 <select id="agent-min-target-level" name="auto_observe_min_target_level">
-                  <option value="1" selected>1 · 全部 Target</option><option value="2">2 及以上</option><option value="3">3 及以上</option><option value="4">4 及以上</option><option value="5">仅 5</option>
+                  <option value="1" selected>1 · 全部资源</option><option value="2">2 及以上</option><option value="3">3 及以上</option><option value="4">4 及以上</option><option value="5">仅 5</option>
                 </select>
               </div>
               <div class="ops-field span-4">
@@ -194,6 +213,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261016_2"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20261012-1"></script>
+  <script src="./js/aiops-agents.js?v=20261019_1"></script>
 </body>
 </html>

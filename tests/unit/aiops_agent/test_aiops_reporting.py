@@ -354,6 +354,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
         self.assertEqual(2, payload["scope"]["evidence_covered_count"])
         self.assertEqual(2, payload["scope"]["evidence_total_count"])
+        self.assertEqual(100.0, payload["scope"]["tool_execution_coverage_percent"])
+        self.assertEqual(0, payload["scope"]["evidence_gap_count"])
         self.assertEqual([], payload["recommendations"])
         report = uow.inspections.publish_report.await_args.args[0]
         self.assertEqual("system:inspection.daily", report.template_id)
@@ -805,6 +807,23 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertIn("低置信度预测未来30天", recommendations[0])
         self.assertIn("使用率约为96.50%", recommendations[0])
         self.assertIn("约8.17天历史数据", recommendations[0])
+
+    def test_monitoring_sample_coverage_is_reported_separately(self) -> None:
+        source = SimpleNamespace(
+            evidence=(
+                SimpleNamespace(
+                    tool_id="metric.query_range",
+                    columns=({"name": "coverage_ratio"},),
+                    rows=((0.8,), (0.2417,), (1.0,)),
+                ),
+            )
+        )
+
+        quality = AIOpsRuntimeService._inspection_monitoring_quality(source)
+
+        self.assertEqual(24.17, quality["coverage_percent"])
+        self.assertEqual(3, quality["metric_count"])
+        self.assertEqual(1, quality["low_coverage_metric_count"])
 
     def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(
         self,

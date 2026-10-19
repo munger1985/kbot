@@ -7,6 +7,7 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -150,7 +151,10 @@ class _Uow:
         self.conversations = SimpleNamespace(
             get_conversation=self._get_conversation
         )
-        self.turns = SimpleNamespace(get_turn=self._get_turn)
+        self.turns = SimpleNamespace(
+            get_turn=self._get_turn,
+            list_run_links=AsyncMock(return_value=[]),
+        )
 
     async def __aenter__(self):
         return self
@@ -352,6 +356,7 @@ class TargetFactConversationConfirmTest(unittest.IsolatedAsyncioTestCase):
             turn_id=self.turn_id,
             domain_id=100,
             conversation_id=self.conversation_id,
+            focused_target_id=self.target_id,
         )
         self.service = ConversationTurnService(uow_factory=lambda: self.uow)
 
@@ -440,7 +445,7 @@ class TargetFactConversationConfirmTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual("OPS_VALIDATION_FAILED", caught.exception.code)
         self.assertEqual(
-            "确认的 Target 必须与当前对话一致",
+            "确认的 Target 必须属于当前 Turn 范围",
             caught.exception.message,
         )
         self.assertEqual([], self.store.rows)
@@ -452,9 +457,9 @@ class TargetFactSchemaContractTest(unittest.TestCase):
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         rebuild = REBUILD_SCRIPT.read_text(encoding="utf-8")
         roots = (SCHEMA_DIR / "001_ops_roots.sql").read_text(encoding="utf-8")
-        self.assertEqual(45, manifest["schema_version"])
+        self.assertEqual(47, manifest["schema_version"])
         self.assertEqual(
-            "aiops-oracle-v45-shared-monitor-locator",
+            "aiops-oracle-v47-unified-assistant",
             manifest["contract_version"],
         )
         self.assertIn("KBOT_OPS_TARGET_FACT", manifest["tables"])

@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiops_agent.application.errors import StateConflictError
 from aiops_agent.entities import (
     ActivitySampleEntity,
-    AIOpsAgentVersionTargetEntity,
     ApprovalTokenEntity,
     ChangeProposalEntity,
     DiagnosticSourceEntity,
@@ -125,29 +124,42 @@ class TargetRepository(AIOpsRepository):
                 ReportEntity.ops_run_id.in_(run_ids),
             )
         )
-        conversation_ids = select(OpsConversationEntity.conversation_id).where(
-            OpsConversationEntity.target_id == target_id
+        run_turn_ids = select(OpsTurnRunEntity.turn_id).where(
+            OpsTurnRunEntity.ops_run_id.in_(run_ids)
         )
-        turn_ids = select(OpsConversationTurnEntity.turn_id).where(
-            OpsConversationTurnEntity.conversation_id.in_(conversation_ids)
+        affected_turn_ids = select(OpsConversationTurnEntity.turn_id).where(
+            or_(
+                OpsConversationTurnEntity.focused_target_id == target_id,
+                OpsConversationTurnEntity.turn_id.in_(run_turn_ids),
+            )
         )
         revision_ids = select(OpsInvestigationRevisionEntity.revision_id).where(
-            OpsInvestigationRevisionEntity.turn_id.in_(turn_ids)
+            or_(
+                OpsInvestigationRevisionEntity.plan_artifact_id.in_(artifact_ids),
+                OpsInvestigationRevisionEntity.task_frame_artifact_id.in_(artifact_ids),
+                OpsInvestigationRevisionEntity.assessment_artifact_id.in_(artifact_ids),
+            )
         )
         playbook_ids = select(
             OpsPlaybookInvocationEntity.playbook_invocation_id
-        ).where(OpsPlaybookInvocationEntity.turn_id.in_(turn_ids))
+        ).where(
+            or_(
+                OpsPlaybookInvocationEntity.ops_run_id.in_(run_ids),
+                OpsPlaybookInvocationEntity.revision_id.in_(revision_ids),
+            )
+        )
         tool_ids = select(OpsToolInvocationEntity.tool_invocation_id).where(
-            OpsToolInvocationEntity.turn_id.in_(turn_ids)
+            or_(
+                OpsToolInvocationEntity.ops_run_id.in_(run_ids),
+                OpsToolInvocationEntity.revision_id.in_(revision_ids),
+            )
         )
         evidence_ids = select(OpsTurnEvidenceEntity.turn_evidence_id).where(
-            OpsTurnEvidenceEntity.turn_id.in_(turn_ids)
-        )
-        answer_block_ids = select(OpsAnswerBlockEntity.answer_block_id).where(
-            OpsAnswerBlockEntity.turn_id.in_(turn_ids)
-        )
-        request_ids = select(EvidenceRequestEntity.request_id).where(
-            EvidenceRequestEntity.turn_id.in_(turn_ids)
+            or_(
+                OpsTurnEvidenceEntity.artifact_id.in_(artifact_ids),
+                OpsTurnEvidenceEntity.extraction_artifact_id.in_(artifact_ids),
+                OpsTurnEvidenceEntity.tool_invocation_id.in_(tool_ids),
+            )
         )
         work_item_ids = select(WorkItemEntity.work_item_id).where(
             WorkItemEntity.target_id == target_id
@@ -165,11 +177,17 @@ class TargetRepository(AIOpsRepository):
             SituationEntity.target_id == target_id
         )
 
-        # 先解除其他 Target 可能持有的可空历史引用，避免误删共享父对象。
+        # Conversation/Turn 是跨资源审计边界。删除 Target 时只解除其私有
+        # 编排与运行引用，不删除可能同时包含其他资源的会话历史。
         await self._execute_update(
             OpsConversationTurnEntity,
-            OpsConversationTurnEntity.resolved_target_id == target_id,
-            {"resolved_target_id": None},
+            OpsConversationTurnEntity.turn_id.in_(affected_turn_ids),
+            {"orchestration_internal_json": None},
+        )
+        await self._execute_update(
+            OpsConversationTurnEntity,
+            OpsConversationTurnEntity.focused_target_id == target_id,
+            {"focused_target_id": None},
         )
         await self._execute_update(
             OpsConversationEntity,
@@ -202,6 +220,55 @@ class TargetRepository(AIOpsRepository):
             {"source_ops_run_id": None},
         )
 
+        for field in (
+            "input_analysis_artifact_id",
+            "task_frame_artifact_id",
+            "current_plan_artifact_id",
+            "assessment_artifact_id",
+            "sufficiency_artifact_id",
+        ):
+            column = getattr(OpsConversationTurnEntity, field)
+            await self._execute_update(
+                OpsConversationTurnEntity,
+                column.in_(artifact_ids),
+                {field: None},
+            )
+        await self._execute_update(
+            OpsConversationMessageEntity,
+            OpsConversationMessageEntity.artifact_id.in_(artifact_ids),
+            {"artifact_id": None},
+        )
+        for field in ("source_artifact_id", "extracted_artifact_id"):
+            column = getattr(OpsTurnInputItemEntity, field)
+            await self._execute_update(
+                OpsTurnInputItemEntity,
+                column.in_(artifact_ids),
+                {field: None},
+            )
+        for field in ("query_artifact_id", "response_artifact_id"):
+            column = getattr(EvidenceRequestEntity, field)
+            await self._execute_update(
+                EvidenceRequestEntity,
+                column.in_(artifact_ids),
+                {field: None},
+            )
+        await self._execute_update(
+            ImageEvidenceProcessingEntity,
+            ImageEvidenceProcessingEntity.output_artifact_id.in_(artifact_ids),
+            {"output_artifact_id": None},
+        )
+        for field in (
+            "playbook_invocation_id",
+            "tool_invocation_id",
+        ):
+            column = getattr(OpsTurnEventEntity, field)
+            referenced_ids = playbook_ids if field == "playbook_invocation_id" else tool_ids
+            await self._execute_update(
+                OpsTurnEventEntity,
+                column.in_(referenced_ids),
+                {field: None},
+            )
+
         # 清除 Run/Artifact、报告和自引用形成的环，再按子到父顺序删除。
         await self._execute_update(
             OpsRunEntity,
@@ -230,68 +297,30 @@ class TargetRepository(AIOpsRepository):
             ReportEntity.report_id.in_(report_ids),
             {"content_artifact_id": None, "supersedes_report_id": None},
         )
-        await self._execute_update(
-            OpsPlaybookInvocationEntity,
-            OpsPlaybookInvocationEntity.playbook_invocation_id.in_(playbook_ids),
-            {"parent_invocation_id": None},
-        )
-        await self._execute_update(
-            OpsAnswerBlockEntity,
-            OpsAnswerBlockEntity.answer_block_id.in_(answer_block_ids),
-            {"supersedes_id": None},
-        )
-        await self._execute_update(
-            EvidenceRequestEntity,
-            EvidenceRequestEntity.request_id.in_(request_ids),
-            {"parent_request_id": None},
-        )
-
         await self._execute_delete(
             ImageEvidenceProcessingEntity,
-            ImageEvidenceProcessingEntity.turn_id.in_(turn_ids),
+            ImageEvidenceProcessingEntity.source_artifact_id.in_(artifact_ids),
         )
         await self._execute_delete(
             OpsAnswerCitationEntity,
-            or_(
-                OpsAnswerCitationEntity.answer_block_id.in_(answer_block_ids),
-                OpsAnswerCitationEntity.turn_evidence_id.in_(evidence_ids),
-            ),
-        )
-        await self._execute_delete(
-            OpsTurnEventEntity,
-            OpsTurnEventEntity.turn_id.in_(turn_ids),
+            OpsAnswerCitationEntity.turn_evidence_id.in_(evidence_ids),
         )
         await self._execute_delete(
             OpsTurnEvidenceEntity,
-            OpsTurnEvidenceEntity.turn_id.in_(turn_ids),
+            OpsTurnEvidenceEntity.turn_evidence_id.in_(evidence_ids),
         )
         await self._execute_delete(
             OpsToolInvocationEntity,
-            OpsToolInvocationEntity.turn_id.in_(turn_ids),
+            OpsToolInvocationEntity.tool_invocation_id.in_(tool_ids),
+        )
+        await self._execute_update(
+            OpsPlaybookInvocationEntity,
+            OpsPlaybookInvocationEntity.parent_invocation_id.in_(playbook_ids),
+            {"parent_invocation_id": None},
         )
         await self._execute_delete(
             OpsPlaybookInvocationEntity,
-            OpsPlaybookInvocationEntity.turn_id.in_(turn_ids),
-        )
-        await self._execute_delete(
-            ImageEvidenceProcessingEntity,
-            ImageEvidenceProcessingEntity.evidence_request_id.in_(request_ids),
-        )
-        await self._execute_delete(
-            EvidenceRequestEntity,
-            EvidenceRequestEntity.turn_id.in_(turn_ids),
-        )
-        await self._execute_delete(
-            OpsAnswerBlockEntity,
-            OpsAnswerBlockEntity.turn_id.in_(turn_ids),
-        )
-        await self._execute_delete(
-            OpsTurnInputItemEntity,
-            OpsTurnInputItemEntity.turn_id.in_(turn_ids),
-        )
-        await self._execute_delete(
-            OpsConversationMessageEntity,
-            OpsConversationMessageEntity.turn_id.in_(turn_ids),
+            OpsPlaybookInvocationEntity.playbook_invocation_id.in_(playbook_ids),
         )
 
         await self._execute_delete(
@@ -349,15 +378,7 @@ class TargetRepository(AIOpsRepository):
         )
         await self._execute_delete(
             OpsTurnRunEntity,
-            OpsTurnRunEntity.turn_id.in_(turn_ids),
-        )
-        await self._execute_delete(
-            OpsConversationTurnEntity,
-            OpsConversationTurnEntity.turn_id.in_(turn_ids),
-        )
-        await self._execute_delete(
-            OpsConversationEntity,
-            OpsConversationEntity.conversation_id.in_(conversation_ids),
+            OpsTurnRunEntity.ops_run_id.in_(run_ids),
         )
         await self._execute_delete(
             OpsRunEventEntity,
@@ -421,7 +442,6 @@ class TargetRepository(AIOpsRepository):
 
         for model in (
             NotificationSubscriptionEntity,
-            AIOpsAgentVersionTargetEntity,
             TargetFactEntity,
             TargetBindingEntity,
             TargetSourceBindingEntity,

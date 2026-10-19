@@ -119,6 +119,8 @@ class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
             agent_version_id=uuid7(),
             policy_id=uuid7(),
             instruction=None,
+            capabilities_json=["ACTIVE_DIAGNOSIS"],
+            knowledge_policy_json={},
         )
         policy = SimpleNamespace(
             policy_id=version.policy_id,
@@ -144,14 +146,16 @@ class AutoAlertAgentRepositoryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent.agent_id, binding.agent_id)
         self.assertEqual((evidence_source_id,), binding.diagnostic_source_ids)
         self.assertEqual(policy, resolved_policy)
-        self.assertEqual(1, session.execute.await_count)
+        self.assertEqual(2, session.execute.await_count)
         candidate_sql = str(
             session.execute.await_args_list[0].args[0].compile(
                 dialect=oracle.dialect()
             )
         ).upper()
         self.assertNotIn("KBOT_OPS_AGENT_VERSION_SOURCE", candidate_sql)
-        self.assertIn("KBOT_OPS_AGENT_VERSION_TARGET", candidate_sql)
+        self.assertIn("KBOT_OPS_AGENT_VERSION_SYSTEM", candidate_sql)
+        self.assertIn("KBOT_OPS_BUSINESS_SYSTEM_RESOURCE", candidate_sql)
+        self.assertIn("KBOT_OPS_DATABASE_RESOURCE", candidate_sql)
 
 
 class SignalIntakeReceiptTest(unittest.IsolatedAsyncioTestCase):

@@ -64,6 +64,7 @@ from aiops_agent.entities import (
     OpsTaskEntity,
     OpsTurnEventEntity,
     OpsTurnEvidenceEntity,
+    OpsTurnRunEntity,
     OutboxEntity,
     ReportEntity,
     ReportSourceEntity,
@@ -1090,6 +1091,29 @@ class AIOpsRuntimeService:
             except IntegrityError:
                 await uow.rollback()
                 return await self._replay_concurrent_create(command)
+            if command.client_metadata.get("multi_resource_child") is True:
+                try:
+                    parent_turn_id = UUID(
+                        str(command.client_metadata["parent_turn_id"])
+                    )
+                    resource_sequence = int(
+                        command.client_metadata["resource_sequence"]
+                    )
+                except (KeyError, TypeError, ValueError):
+                    raise validation_failed(
+                        "多资源诊断子 Run 缺少有效父 Turn 或资源序号"
+                    ) from None
+                if resource_sequence < 1 or resource_sequence > 999:
+                    raise validation_failed("多资源诊断资源序号无效")
+                await uow.turns.add_run(
+                    OpsTurnRunEntity(
+                        turn_run_id=uuid7(),
+                        turn_id=parent_turn_id,
+                        ops_run_id=run_id,
+                        purpose=f"RESOURCE_{resource_sequence:03d}",
+                        sequence_no=resource_sequence,
+                    )
+                )
             task_ids = {
                 spec.task_key: uuid7() for spec in blueprint.tasks
             }
@@ -3133,29 +3157,42 @@ class AIOpsRuntimeService:
             item for item in facts
             if str(item.get("kind") or "") == "inspection_check"
         )
-        evidence_covered_count = sum(
+        tool_execution_covered_count = sum(
             bool(item.get("evidence_refs"))
             for item in inspection_checks
         )
-        uncovered_check_ids = {
-            str(item.get("tool_id") or "")
-            for item in inspection_checks
-            if not item.get("evidence_refs")
-        }
-        extra_gap_keys = {
-            (
-                str(item.get("source_id") or ""),
-                str(item.get("step_id") or ""),
-                str(item.get("code") or ""),
+        tool_execution_total_count = len(inspection_checks)
+        tool_execution_coverage_percent = round(
+            tool_execution_covered_count * 100 / tool_execution_total_count,
+            2,
+        ) if tool_execution_total_count else 0.0
+        semantic_check_ids: set[str] = set()
+        unsatisfied_check_ids: set[str] = set()
+        check_ids_by_tool: dict[str, set[str]] = {}
+        for item in inspection_checks:
+            tool_id = str(item.get("tool_id") or "")
+            check_ids = {
+                str(value)
+                for value in item.get("check_ids", ())
+                if str(value)
+            } or ({tool_id} if tool_id else set())
+            semantic_check_ids.update(check_ids)
+            check_ids_by_tool.setdefault(tool_id, set()).update(check_ids)
+            if not item.get("evidence_refs"):
+                unsatisfied_check_ids.update(check_ids)
+        for item in gaps:
+            unsatisfied_check_ids.update(
+                check_ids_by_tool.get(str(item.get("step_id") or ""), set())
             )
-            for item in gaps
-            if str(item.get("step_id") or "") not in uncovered_check_ids
-        }
-        evidence_total_count = len(inspection_checks) + len(extra_gap_keys)
+        evidence_total_count = len(semantic_check_ids)
+        evidence_covered_count = len(
+            semantic_check_ids.difference(unsatisfied_check_ids)
+        )
         evidence_coverage_percent = round(
             evidence_covered_count * 100 / evidence_total_count,
             2,
         ) if evidence_total_count else 0.0
+        monitoring_quality = self._inspection_monitoring_quality(source)
         status = (
             "READY"
             if (
@@ -3200,6 +3237,21 @@ class AIOpsRuntimeService:
                 "evidence_coverage_percent": evidence_coverage_percent,
                 "evidence_covered_count": evidence_covered_count,
                 "evidence_total_count": evidence_total_count,
+                "tool_execution_coverage_percent": (
+                    tool_execution_coverage_percent
+                ),
+                "tool_execution_covered_count": (
+                    tool_execution_covered_count
+                ),
+                "tool_execution_total_count": tool_execution_total_count,
+                "monitoring_sample_coverage_percent": monitoring_quality[
+                    "coverage_percent"
+                ],
+                "monitoring_metric_count": monitoring_quality["metric_count"],
+                "monitoring_low_coverage_metric_count": monitoring_quality[
+                    "low_coverage_metric_count"
+                ],
+                "evidence_gap_count": len(gaps),
                 **(
                     {"monitoring_profile": monitoring_profile}
                     if monitoring_profile
@@ -3441,6 +3493,41 @@ class AIOpsRuntimeService:
         return tuple(facts)
 
     @staticmethod
+    def _inspection_monitoring_quality(
+        source: AIOpsTurnResult,
+    ) -> dict[str, float | int | None]:
+        """独立汇总监控采样质量，避免与固定数据库检查覆盖率混算。"""
+        coverage_values: list[float] = []
+        for evidence in source.evidence:
+            if evidence.tool_id != "metric.query_range":
+                continue
+            indexes = {
+                str(column.get("name") or ""): index
+                for index, column in enumerate(evidence.columns)
+            }
+            coverage_index = indexes.get("coverage_ratio")
+            if coverage_index is None:
+                continue
+            for row in evidence.rows:
+                raw_value = row[coverage_index]
+                if raw_value is None:
+                    continue
+                coverage_values.append(
+                    min(1.0, max(0.0, float(raw_value)))
+                )
+        return {
+            "coverage_percent": (
+                round(min(coverage_values) * 100, 2)
+                if coverage_values
+                else None
+            ),
+            "metric_count": len(coverage_values),
+            "low_coverage_metric_count": sum(
+                value < 0.8 for value in coverage_values
+            ),
+        }
+
+    @staticmethod
     def _inspection_report_projection(
         *,
         inspection: dict[str, Any],
@@ -3542,6 +3629,7 @@ class AIOpsRuntimeService:
                         "summary": summary,
                         "check_status": check_status,
                         "tool_id": tool_id,
+                        "check_ids": list(step.get("check_ids") or ()),
                         "expected_evidence_kind": str(
                             step.get("expected_evidence_kind") or ""
                         ),
@@ -3568,6 +3656,7 @@ class AIOpsRuntimeService:
                         "summary": f"{title}：检查未完成，{detail}",
                         "check_status": "GAP",
                         "tool_id": tool_id,
+                        "check_ids": list(step.get("check_ids") or ()),
                     }
                 )
                 continue
@@ -3587,6 +3676,7 @@ class AIOpsRuntimeService:
                     "summary": f"{title}：未形成可验证观测，已列入数据缺口",
                     "check_status": "MISSING",
                     "tool_id": tool_id,
+                    "check_ids": list(step.get("check_ids") or ()),
                 }
             )
 
@@ -5517,6 +5607,9 @@ class AIOpsRuntimeService:
                             "trace_id": command.trace_id,
                         },
                     )
+                    await self._add_multi_resource_terminal_outbox(
+                        uow, run=run, trace_id=command.trace_id, now=now
+                    )
                     assert uow.platform_notifications is not None
                     await uow.platform_notifications.emit_run_event(
                         run=run,
@@ -5619,6 +5712,9 @@ class AIOpsRuntimeService:
                         "trace_id": trace_id,
                     },
                 )
+                await self._add_multi_resource_terminal_outbox(
+                    uow, run=run, trace_id=trace_id, now=now
+                )
             await uow.commit()
             return self._run_receipt(run, int(event.sequence_no))
 
@@ -5670,6 +5766,9 @@ class AIOpsRuntimeService:
                         "status": DomainOpsRunStatus.EXPIRED.value,
                         "trace_id": trace_id,
                     },
+                )
+                await self._add_multi_resource_terminal_outbox(
+                    uow, run=run, trace_id=trace_id, now=now
                 )
                 await uow.commit()
                 return True
@@ -6092,6 +6191,9 @@ class AIOpsRuntimeService:
                                     "trace_id": trace_id,
                                 },
                             )
+                            await self._add_multi_resource_terminal_outbox(
+                                uow, run=run, trace_id=trace_id, now=now
+                            )
                 else:
                     retry = int(task.attempt_count) < int(
                         task.max_attempts
@@ -6173,6 +6275,9 @@ class AIOpsRuntimeService:
                             "error_code": "WORKER_LEASE_EXPIRED",
                             "trace_id": trace_id,
                         },
+                    )
+                    await self._add_multi_resource_terminal_outbox(
+                        uow, run=run, trace_id=trace_id, now=now
                     )
                     assert uow.platform_notifications is not None
                     await uow.platform_notifications.emit_run_event(
@@ -6573,6 +6678,7 @@ class AIOpsRuntimeService:
                 evidence_coverage_percent = None
                 evidence_covered_count = None
                 evidence_total_count = None
+                quality_scope: dict[str, Any] = {}
                 if final_artifact is not None:
                     artifact_payload = dict(final_artifact.payload_json or {})
                     artifact_status = str(artifact_payload.get("status") or "")
@@ -6584,6 +6690,7 @@ class AIOpsRuntimeService:
                         "GENERATING": "GENERATING",
                     }.get(artifact_status)
                     artifact_scope = dict(artifact_payload.get("scope") or {})
+                    quality_scope = artifact_scope
                     evidence_coverage_percent = artifact_scope.get(
                         "evidence_coverage_percent"
                     )
@@ -6602,6 +6709,27 @@ class AIOpsRuntimeService:
                         evidence_coverage_percent=evidence_coverage_percent,
                         evidence_covered_count=evidence_covered_count,
                         evidence_total_count=evidence_total_count,
+                        tool_execution_coverage_percent=quality_scope.get(
+                            "tool_execution_coverage_percent"
+                        ),
+                        tool_execution_covered_count=quality_scope.get(
+                            "tool_execution_covered_count"
+                        ),
+                        tool_execution_total_count=quality_scope.get(
+                            "tool_execution_total_count"
+                        ),
+                        monitoring_sample_coverage_percent=quality_scope.get(
+                            "monitoring_sample_coverage_percent"
+                        ),
+                        monitoring_metric_count=quality_scope.get(
+                            "monitoring_metric_count"
+                        ),
+                        monitoring_low_coverage_metric_count=quality_scope.get(
+                            "monitoring_low_coverage_metric_count"
+                        ),
+                        evidence_gap_count=quality_scope.get(
+                            "evidence_gap_count"
+                        ),
                         error_code=item.error_code,
                         error_message=item.error_message,
                         completed_at=item.completed_at,
@@ -7690,6 +7818,8 @@ class AIOpsRuntimeService:
     @staticmethod
     def _workflow_kind(command: CreateOpsRunCommand) -> str:
         trigger_type = str(command.trigger_type)
+        if command.client_metadata.get("multi_resource_child") is True:
+            return "RESOURCE_DIAGNOSIS_CHILD"
         if command.blueprint_id == "change.advisory-verify":
             return "VERIFICATION"
         if trigger_type == "SCHEDULE":
@@ -8921,6 +9051,24 @@ class AIOpsRuntimeService:
                 max_attempts=5,
                 trace_id=trace_id,
             )
+        )
+
+    async def _add_multi_resource_terminal_outbox(
+        self, uow, *, run, trace_id: str, now: datetime
+    ) -> None:
+        if run.workflow_kind != "RESOURCE_DIAGNOSIS_CHILD":
+            return
+        await self._add_outbox(
+            uow,
+            aggregate_id=run.ops_run_id,
+            event_type="OPS_RUN_TERMINATED",
+            idempotency_key=f"run:{run.ops_run_id}:terminated",
+            payload={
+                "ops_run_id": str(run.ops_run_id),
+                "status": str(run.status),
+            },
+            trace_id=trace_id,
+            now=now,
         )
 
     @staticmethod

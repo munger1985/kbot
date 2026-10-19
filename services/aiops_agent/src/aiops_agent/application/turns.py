@@ -50,6 +50,7 @@ from aiops_agent.entities import (
     OutboxEntity,
 )
 from platform_core.contracts.aiops import (
+    ClarificationResponseV1,
     ConversationCreate,
     ConversationSourceContext,
     ConversationSourceType,
@@ -183,8 +184,14 @@ class ConversationTurnService:
                 trace_id=trace_id,
                 conversation_create=ConversationCreate(
                     agent_id=agent_id,
-                    target_id=target_id,
                     title=f"{situation.title} · 自动诊断"[:256],
+                    context_hint=await self._context_hint_for_target(
+                        uow=uow,
+                        domain_id=domain_id,
+                        target_id=target_id,
+                        source="SITUATION",
+                        source_resource_id=situation_id,
+                    ),
                     source=ConversationSourceContext(
                         source_type=ConversationSourceType.SITUATION,
                         situation_id=situation_id,
@@ -224,17 +231,11 @@ class ConversationTurnService:
         )
         if version is None:
             raise resource_not_found("Agent Version")
-        target_id = conversation_create.target_id
-        if not await uow.agents.version_has_target(
+        await self._validate_context_hint(
+            uow=uow,
+            domain_id=domain_id,
             agent_version_id=version.agent_version_id,
-            target_id=target_id,
-        ):
-            raise self._error(
-                "AIOPS_AGENT_TARGET_NOT_BOUND",
-                "所选 Target 不属于当前 Agent 版本",
-            )
-        await self._require_existing_target(
-            uow=uow, domain_id=domain_id, target_id=target_id
+            context_hint=conversation_create.context_hint,
         )
         source = conversation_create.source
         source_run = None
@@ -248,10 +249,13 @@ class ConversationTurnService:
                     "AIOPS_SOURCE_RUN_INVALID",
                     "来源 Run 必须存在且已经产生可用结果",
                 )
-            if source_run.target_id != target_id:
+            if not await uow.agents.version_has_target(
+                agent_version_id=version.agent_version_id,
+                target_id=source_run.target_id,
+            ):
                 raise self._error(
-                    "AIOPS_SOURCE_TARGET_CONFLICT",
-                    "来源 Run 的 Target 与新会话选择的 Target 不一致",
+                    "AIOPS_SOURCE_SCOPE_DENIED",
+                    "来源 Run 不属于当前 Agent 获授权的业务系统",
                 )
         elif source.source_type == ConversationSourceType.SITUATION:
             source_situation = await uow.situations.get_situation_scoped(
@@ -263,16 +267,23 @@ class ConversationTurnService:
                     "AIOPS_SOURCE_SITUATION_INVALID",
                     "来源 Situation 不存在",
                 )
-            if source_situation.target_id != target_id:
+            if not await uow.agents.version_has_target(
+                agent_version_id=version.agent_version_id,
+                target_id=source_situation.target_id,
+            ):
                 raise self._error(
-                    "AIOPS_SOURCE_TARGET_CONFLICT",
-                    "来源 Situation 的 Target 与新会话选择的 Target 不一致",
+                    "AIOPS_SOURCE_SCOPE_DENIED",
+                    "来源 Situation 不属于当前 Agent 获授权的业务系统",
                 )
         conversation = OpsConversationEntity(
             domain_id=domain_id,
             agent_id=agent.agent_id,
             agent_version_id=version.agent_version_id,
-            target_id=target_id,
+            context_hint_json=(
+                conversation_create.context_hint.model_dump(mode="json")
+                if conversation_create.context_hint is not None
+                else None
+            ),
             title=conversation_create.title,
             status="ACTIVE",
             source_type=str(source.source_type),
@@ -463,7 +474,10 @@ class ConversationTurnService:
                     domain_id=domain_id,
                     agent_id=agent.agent_id,
                     agent_version_id=version.agent_version_id,
-                    target_id=target_id,
+                    context_hint_json={
+                        "source": "INSPECTION",
+                        "resource_ids": [str(resource.resource_id)],
+                    },
                     title=f"{payload['plan_display_name']} · 定期巡检",
                     status="ACTIVE",
                     source_type="INSPECTION",
@@ -611,7 +625,6 @@ class ConversationTurnService:
         domain_id: int,
         actor_id: str,
         agent_id: UUID | None = None,
-        target_id: UUID | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:
@@ -619,7 +632,6 @@ class ConversationTurnService:
                 domain_id=domain_id,
                 created_by=actor_id,
                 agent_id=agent_id,
-                target_id=target_id,
                 limit=limit,
             )
             return [self._conversation_summary(row) for row in rows]
@@ -1192,6 +1204,128 @@ class ConversationTurnService:
                 },
             }
 
+    async def respond_to_clarification(
+        self,
+        *,
+        domain_id: int,
+        conversation_id: UUID,
+        turn_id: UUID,
+        actor_id: str,
+        trace_id: str,
+        command: ClarificationResponseV1,
+    ) -> dict[str, Any]:
+        """幂等记录澄清回答，并让同一 Turn 从冻结候选继续。"""
+        async with self._uow_factory() as uow:
+            conversation = await uow.conversations.get_conversation(
+                domain_id=domain_id,
+                conversation_id=conversation_id,
+                lock=True,
+            )
+            turn = await uow.turns.get_turn(
+                domain_id=domain_id, turn_id=turn_id, lock=True
+            )
+            if (
+                conversation is None
+                or conversation.created_by != actor_id
+                or turn is None
+                or turn.conversation_id != conversation_id
+            ):
+                raise resource_not_found("Conversation Turn")
+            messages = await uow.turns.list_messages(turn_id=turn_id)
+            duplicate = next(
+                (
+                    row
+                    for row in messages
+                    if row.message_type == "CLARIFICATION_RESPONSE"
+                    and row.payload_json.get("idempotency_key")
+                    == command.idempotency_key
+                ),
+                None,
+            )
+            if duplicate is not None:
+                return self._receipt(turn)
+            if turn.status != "WAITING_USER" or not turn.clarification_json:
+                raise state_conflict("当前 Turn 没有等待回答的范围澄清")
+            clarification = dict(turn.clarification_json)
+            if str(command.clarification_id) != str(
+                clarification.get("clarification_id")
+            ):
+                raise validation_failed("澄清请求已经变化，请刷新后重试")
+            if command.candidate_id is not None:
+                candidate_ids = {
+                    str(item.get("candidate_id"))
+                    for item in clarification.get("candidates", [])
+                    if isinstance(item, dict)
+                }
+                if command.candidate_id not in candidate_ids:
+                    raise validation_failed("澄清候选不存在或已经失效")
+            elif not clarification.get("allow_free_text", False):
+                raise validation_failed("当前澄清不接受自由文字")
+            conversation.last_message_no = int(conversation.last_message_no) + 1
+            conversation.updated_by = actor_id
+            conversation.updated_at = datetime.now(UTC)
+            response_payload = command.model_dump(mode="json")
+            await uow.turns.add_message(
+                OpsConversationMessageEntity(
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                    sequence_no=conversation.last_message_no,
+                    role="USER",
+                    message_type="CLARIFICATION_RESPONSE",
+                    payload_schema="AIOPS_CLARIFICATION_RESPONSE.v1",
+                    payload_json=response_payload,
+                    created_by=actor_id,
+                )
+            )
+            turn.status = "ACCEPTED"
+            turn.completed_at = None
+            turn.event_cursor = int(turn.event_cursor) + 1
+            await uow.turns.add_event(
+                OpsTurnEventEntity(
+                    turn_id=turn_id,
+                    sequence_no=turn.event_cursor,
+                    event_type="clarification.responded",
+                    event_key=(
+                        f"clarification.responded:{command.clarification_id}:"
+                        f"{command.idempotency_key}"
+                    )[:128],
+                    visibility="USER",
+                    payload_json={
+                        "clarification_id": str(command.clarification_id),
+                        "status": "ACCEPTED",
+                    },
+                )
+            )
+            created = await uow.outbox.get_by_idempotency(
+                idempotency_key=f"turn-created:{turn_id}"
+            )
+            if created is None:
+                raise state_conflict("Turn 缺少可重放的创建命令")
+            outbox_payload = {
+                **dict(created.payload_json or {}),
+                "response": response_payload,
+                "trace_id": trace_id,
+            }
+            encoded = json.dumps(
+                outbox_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            await uow.outbox.add(
+                OutboxEntity(
+                    aggregate_type="CONVERSATION_TURN",
+                    aggregate_id=turn_id,
+                    event_type="aiops.turn.clarification_resolved",
+                    idempotency_key=(
+                        f"turn-clarification:{command.clarification_id}:"
+                        f"{command.idempotency_key}"
+                    )[:128],
+                    payload_json=outbox_payload,
+                    payload_hash=hashlib.sha256(encoded).hexdigest(),
+                    trace_id=trace_id,
+                )
+            )
+            await uow.commit()
+            return self._receipt(turn)
+
     async def cancel_turn(
         self,
         *,
@@ -1284,8 +1418,15 @@ class ConversationTurnService:
                     or turn.conversation_id != conversation_id
                 ):
                     raise resource_not_found("Conversation Turn")
-                if command.target_id != conversation.target_id:
-                    raise validation_failed("确认的 Target 必须与当前对话一致")
+                allowed_targets: set[str] = set()
+                if turn.focused_target_id is not None:
+                    allowed_targets.add(str(turn.focused_target_id))
+                for link in await uow.turns.list_run_links(turn_id=turn_id):
+                    run = await uow.runs.get_run(ops_run_id=link.ops_run_id)
+                    if run is not None and run.target_id is not None:
+                        allowed_targets.add(str(run.target_id))
+                if str(command.target_id) not in allowed_targets:
+                    raise validation_failed("确认的 Target 必须属于当前 Turn 范围")
                 scope = ConfigurationScope(
                     domain_id=domain_id,
                     principal_id=f"USER:{actor_id}",
@@ -1326,25 +1467,12 @@ class ConversationTurnService:
         source_run,
         execution_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        target_id = await self._resolve_target(
-            uow=uow,
-            domain_id=int(conversation.domain_id),
-            conversation=conversation,
-            version=version,
-            source_run=source_run,
-        )
         effective_context = dict(execution_context or {})
         content = tuple(command.content)
         if command.starter is not None:
-            target = await uow.targets.get_scoped(
-                target_id=target_id,
-                domain_id=int(conversation.domain_id),
-            )
-            if target is None:
-                raise resource_not_found("Target")
             frozen_starter = self._conversation_starter_catalog.freeze(
                 selection=command.starter,
-                target=target,
+                capabilities=set(version.capabilities_json or ()),
             )
             content = (
                 InputContent(
@@ -1410,7 +1538,8 @@ class ConversationTurnService:
             turn_no=conversation.last_turn_no,
             idempotency_key=command.idempotency_key,
             status="QUEUED",
-            resolved_target_id=target_id,
+            focused_target_id=None,
+            scope_resolution_json=None,
             event_cursor=1,
             created_by=actor_id,
         )
@@ -1436,11 +1565,10 @@ class ConversationTurnService:
             payload_json={"status": "QUEUED", "turn_no": turn.turn_no},
         )
         outbox_payload = {
-            "schema_version": "aiops.turn-command.v1",
+            "schema_version": "aiops.turn-command.v2",
             "domain_id": int(conversation.domain_id),
             "conversation_id": str(conversation.conversation_id),
             "turn_id": str(turn.turn_id),
-            "target_id": str(target_id),
             "agent_id": str(conversation.agent_id),
             "agent_version_id": str(conversation.agent_version_id),
             "source_situation_id": (
@@ -1491,37 +1619,83 @@ class ConversationTurnService:
         await uow.outbox.add(outbox)
         return self._receipt(turn)
 
-    async def _resolve_target(
+    async def _validate_context_hint(
         self,
         *,
         uow,
         domain_id: int,
-        conversation,
-        version,
-        source_run,
-    ) -> UUID:
-        """Turn只能继承 Conversation 冻结的单一逻辑 Target。"""
-        fixed_target_id = conversation.target_id
-        source_target_id = source_run.target_id if source_run is not None else None
-        if not await uow.agents.version_has_target(
-            agent_version_id=version.agent_version_id,
-            target_id=fixed_target_id,
+        agent_version_id: UUID,
+        context_hint,
+    ) -> None:
+        if context_hint is None:
+            return
+        allowed_system_ids = set(
+            await uow.agents.version_business_system_ids(
+                agent_version_id=agent_version_id
+            )
+        )
+        if (
+            context_hint.business_system_id is not None
+            and context_hint.business_system_id not in allowed_system_ids
         ):
             raise self._error(
-                "AIOPS_AGENT_TARGET_NOT_BOUND",
-                "会话 Target 已不属于其冻结的 Agent 版本",
+                "AIOPS_CONTEXT_SCOPE_DENIED",
+                "上下文业务系统不在当前 Agent 授权范围内",
             )
-        if source_target_id is not None and source_target_id != fixed_target_id:
-            raise self._error(
-                "AIOPS_SOURCE_TARGET_CONFLICT",
-                "来源 Run 的 Target 与当前 Agent 绑定的 Target 不一致",
-            )
-        await self._require_existing_target(
-            uow=uow,
-            domain_id=domain_id,
-            target_id=fixed_target_id,
+        allowed_resources: set[UUID] = set()
+        relevant_system_ids = (
+            {context_hint.business_system_id}
+            if context_hint.business_system_id is not None
+            else allowed_system_ids
         )
-        return fixed_target_id
+        for business_system_id in relevant_system_ids:
+            system = await uow.business_systems.get_scoped(
+                business_system_id=business_system_id,
+                domain_id=domain_id,
+            )
+            if system is None or system.status != "ENABLED":
+                continue
+            allowed_resources.update(
+                resource.resource_id
+                for link, resource, _database, _target in (
+                    await uow.business_systems.list_system_resource_rows(
+                        business_system_id
+                    )
+                )
+                if link.status == "ACTIVE"
+                and resource.lifecycle_status == "ACTIVE"
+            )
+        if not set(context_hint.resource_ids).issubset(allowed_resources):
+            raise self._error(
+                "AIOPS_CONTEXT_SCOPE_DENIED",
+                "上下文资源不在当前 Agent 授权范围内",
+            )
+
+    @staticmethod
+    async def _context_hint_for_target(
+        *,
+        uow,
+        domain_id: int,
+        target_id: UUID,
+        source: str,
+        source_resource_id: UUID,
+    ) -> dict[str, Any]:
+        resource = await uow.business_systems.get_resource_for_target(
+            target_id=target_id,
+            domain_id=domain_id,
+        )
+        system = await uow.business_systems.find_system_for_target(
+            target_id=target_id,
+            domain_id=domain_id,
+        )
+        if resource is None or system is None:
+            raise resource_not_found("Business System Resource")
+        return {
+            "source_kind": source,
+            "business_system_id": system.business_system_id,
+            "resource_ids": (resource.resource_id,),
+            "source_resource_id": source_resource_id,
+        }
 
     async def _require_existing_target(
         self,
@@ -1548,7 +1722,7 @@ class ConversationTurnService:
         domain_id: int,
         conversation: OpsConversationEntity,
     ) -> None:
-        """继续聊天前重新校验当前 Agent、Target 与当前版本绑定。"""
+        """继续聊天前重新校验 Agent 状态和冻结版本。"""
 
         agent = await uow.agents.get(
             domain_id=domain_id,
@@ -1557,21 +1731,15 @@ class ConversationTurnService:
         if (
             agent is None
             or agent.status != "ACTIVE"
-            or agent.current_version_id is None
-            or not await uow.agents.version_has_target(
-                agent_version_id=agent.current_version_id,
-                target_id=conversation.target_id,
-            )
+            or await uow.agents.version(
+                agent_id=conversation.agent_id,
+                agent_version_id=conversation.agent_version_id,
+            ) is None
         ):
             raise self._error(
                 "AIOPS_CONVERSATION_AGENT_NOT_RUNNABLE",
-                "当前 Agent 已停用或不再绑定该 Target，不能继续聊天",
+                "当前 Agent 已停用或冻结版本不可用，不能继续聊天",
             )
-        await self._require_existing_target(
-            uow=uow,
-            domain_id=domain_id,
-            target_id=conversation.target_id,
-        )
 
     @staticmethod
     def _title(message: str) -> str:
@@ -1595,7 +1763,7 @@ class ConversationTurnService:
             "conversation_id": str(row.conversation_id),
             "agent_id": str(row.agent_id),
             "agent_version_id": str(row.agent_version_id),
-            "target_id": str(row.target_id),
+            "context_hint": dict(row.context_hint_json or {}) or None,
             "title": row.title,
             "status": row.status,
             "source_type": row.source_type,
@@ -1624,9 +1792,15 @@ class ConversationTurnService:
             "conversation_id": str(row.conversation_id),
             "turn_no": int(row.turn_no),
             "status": row.status,
-            "resolved_target_id": (
-                str(row.resolved_target_id) if row.resolved_target_id else None
-            ),
+            "capability_plan": dict(
+                getattr(row, "capability_plan_json", None) or {}
+            ) or None,
+            "scope_resolution": dict(
+                getattr(row, "scope_resolution_json", None) or {}
+            ) or None,
+            "clarification": dict(
+                getattr(row, "clarification_json", None) or {}
+            ) or None,
             "current_plan_revision": int(row.current_plan_revision or 0),
             "investigation_round": int(row.investigation_round or 0),
             "tool_call_count": int(row.tool_call_count or 0),

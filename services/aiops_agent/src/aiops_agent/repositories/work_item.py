@@ -12,7 +12,10 @@ from aiops_agent.entities import (
     ResponsibilityGroupEntity,
     ResponsibilityGroupMemberEntity,
     AIOpsAgentEntity,
-    AIOpsAgentVersionTargetEntity,
+    AIOpsAgentVersionBusinessSystemEntity,
+    BusinessSystemResourceEntity,
+    DatabaseResourceEntity,
+    ManagedResourceEntity,
     TargetEntity,
     WorkItemActivityEntity,
     WorkItemEntity,
@@ -200,13 +203,28 @@ class WorkItemRepository(AIOpsRepository):
                 AIOpsAgentEntity.display_name,
             )
             .join(
-                AIOpsAgentVersionTargetEntity,
-                AIOpsAgentVersionTargetEntity.agent_version_id
+                AIOpsAgentVersionBusinessSystemEntity,
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id
                 == AIOpsAgentEntity.current_version_id,
             )
             .join(
+                BusinessSystemResourceEntity,
+                BusinessSystemResourceEntity.business_system_id
+                == AIOpsAgentVersionBusinessSystemEntity.business_system_id,
+            )
+            .join(
+                ManagedResourceEntity,
+                ManagedResourceEntity.resource_id
+                == BusinessSystemResourceEntity.resource_id,
+            )
+            .join(
+                DatabaseResourceEntity,
+                DatabaseResourceEntity.resource_id
+                == ManagedResourceEntity.resource_id,
+            )
+            .join(
                 TargetEntity,
-                TargetEntity.target_id == AIOpsAgentVersionTargetEntity.target_id,
+                TargetEntity.target_id == DatabaseResourceEntity.target_id,
             )
             .where(
                 AIOpsAgentEntity.domain_id == domain_id,
@@ -214,6 +232,8 @@ class WorkItemRepository(AIOpsRepository):
                 TargetEntity.target_id == target_id,
                 TargetEntity.domain_id == domain_id,
                 TargetEntity.status == "ENABLED",
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
             )
             .order_by(AIOpsAgentEntity.agent_id)
         )

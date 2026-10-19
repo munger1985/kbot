@@ -10,10 +10,10 @@ from aiops_agent.api.dependencies import get_aiops_auth_context, require_service
 from aiops_agent.application.agents import (
     AIOpsAgentError,
     ArchiveAIOpsAgentCommand,
+    ResourceControlledActionExecution,
     AgentImageCapabilities,
     AgentModelBindings,
     CreateAIOpsAgentCommand,
-    TargetControlledActionExecution,
     UpdateAIOpsAgentCommand,
 )
 from platform_core.contracts import AuthContext
@@ -29,9 +29,13 @@ class _Request(BaseModel):
 class AgentCreateRequest(_Request):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    allowed_business_system_ids: tuple[UUID, ...] = Field(
+        min_length=1, max_length=32
+    )
+    capabilities: tuple[str, ...] = Field(min_length=1, max_length=8)
+    knowledge_policy: dict[str, Any] = Field(default_factory=dict)
     controlled_action_execution: tuple[
-        TargetControlledActionExecution, ...
+        ResourceControlledActionExecution, ...
     ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
@@ -52,11 +56,15 @@ class AgentUpdateRequest(_Request):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    target_ids: tuple[UUID, ...] | None = Field(
+    allowed_business_system_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
+    capabilities: tuple[str, ...] | None = Field(
+        default=None, min_length=1, max_length=8
+    )
+    knowledge_policy: dict[str, Any] | None = None
     controlled_action_execution: tuple[
-        TargetControlledActionExecution, ...
+        ResourceControlledActionExecution, ...
     ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
@@ -115,16 +123,16 @@ async def model_references(
     }
 
 
-@router.get("/action-catalog/{target_id}")
+@router.get("/action-catalog/{resource_id}")
 async def action_catalog(
-    target_id: UUID,
+    resource_id: UUID,
     request: Request,
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _scope(request, context)
     try:
         return await request.app.state.agent_service.action_catalog(
-            domain_id=domain_id, target_id=target_id
+            domain_id=domain_id, resource_id=resource_id
         )
     except AIOpsAgentError as exc:
         _raise(exc)

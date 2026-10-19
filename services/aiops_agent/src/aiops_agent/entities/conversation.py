@@ -17,7 +17,9 @@ class OpsConversationEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False, index=True)
     agent_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
-    target_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    context_hint_json: Mapped[dict[str, Any] | None] = mapped_column(
+        OracleNativeJSON
+    )
     title: Mapped[str | None] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     source_type: Mapped[str] = mapped_column(String(24), nullable=False, default="CHAT")
@@ -57,7 +59,19 @@ class OpsConversationTurnEntity(BaseEntity):
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="QUEUED"
     )
-    resolved_target_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    focused_target_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    capability_plan_json: Mapped[dict[str, Any] | None] = mapped_column(
+        OracleNativeJSON
+    )
+    scope_resolution_json: Mapped[dict[str, Any] | None] = mapped_column(
+        OracleNativeJSON
+    )
+    clarification_json: Mapped[dict[str, Any] | None] = mapped_column(
+        OracleNativeJSON
+    )
+    orchestration_internal_json: Mapped[dict[str, Any] | None] = mapped_column(
+        OracleNativeJSON
+    )
     input_analysis_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     task_frame_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     current_plan_artifact_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())

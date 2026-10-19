@@ -38,7 +38,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections",
         "business-systems", "business-system-workspace", "targets", "target-detail",
         "recovery-drills", "data-protection",
-        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat", "knowledge-tags",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -61,7 +61,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(18, len(scripts))
+        self.assertEqual(19, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -448,7 +448,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("selectedFiles", workspace)
         self.assertIn("HTML_TEXT_EXTRACT", (ROOT / "services" / "aiops_agent" / "src" / "aiops_agent" / "application" / "conversation_inputs.py").read_text(encoding="utf-8"))
 
-    def test_chat_exposes_target_aware_conversation_starters(self):
+    def test_chat_exposes_capability_aware_conversation_starters(self):
         chat = (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8")
         workspace = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
             encoding="utf-8"
@@ -471,16 +471,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261016_1",
-            "situations": "20261011_1",
-            "inspections": "20261012_1",
+            "chat": "20261019_1",
+            "situations": "20261019_1",
+            "inspections": "20261019_1",
         }
         for page_name, version in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
                 encoding="utf-8"
             )
             self.assertIn("workspaces.css?v=20261008_2", page)
-            self.assertIn("aiops-shell.js?v=20261016_1", page)
+            self.assertIn("aiops-shell.js?v=20261016_2", page)
             self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -649,12 +649,11 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             encoding="utf-8"
         )
         self.assertIn("Array.isArray(detail)", auth)
-        self.assertIn('button.textContent = editing ? "保存中…" : "创建中…"', agent)
+        self.assertIn('button.textContent = wasEditing ? "保存中…" : "创建中…"', agent)
         self.assertIn("shell.toast(error.message)", agent)
-        self.assertIn('status: editing ? form.elements.status.value : "DRAFT"', agent)
-        self.assertIn("controlled_change_enabled", agent)
-        self.assertIn("逐条人工审批", agent)
-        self.assertNotIn("selected && !executionConfigured", agent)
+        self.assertIn('showResult(error.message, "bad")', agent)
+        self.assertIn("controlled_action_execution: values(editing?.controlled_action_execution)", agent)
+        self.assertIn("新增授权需在资源治理中完成", agent)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
             encoding="utf-8"
         )
@@ -1326,42 +1325,33 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('method: deleting ? "DELETE" : "POST"', pages_script)
         self.assertNotIn('"inspection-plans": globalThis.KBotAIOpsConfigurations', pages_script)
 
-    def test_agent_form_owns_resources_and_approval_is_not_a_policy_input(self):
+    def test_agent_form_owns_business_system_capability_and_knowledge_scope(self):
         page = (AIOPS_ROOT / "agents.html").read_text(encoding="utf-8")
         script = (AIOPS_ROOT / "js" / "aiops-agents.js").read_text(
             encoding="utf-8"
         )
         self.assertNotIn('name="diagnostic_source_ids"', script)
-        self.assertIn('name="target_ids"', script)
-        self.assertIn('id="agent-targets"', page)
-        self.assertIn("Target 必选且可多选", page)
-        self.assertIn("至少选择一个 Target", script)
+        self.assertNotIn('name="target_ids"', script)
+        self.assertNotIn('id="agent-targets"', page)
+        self.assertIn('name="allowed_business_system_ids"', script)
+        self.assertIn('id="agent-business-systems"', page)
+        self.assertIn("请至少选择一个业务系统", script)
+        self.assertIn('id="agent-capabilities"', page)
+        self.assertIn('name="capabilities"', script)
+        self.assertIn('id="agent-knowledge-policy-fields"', page)
+        self.assertIn('name="knowledge_source_kinds"', page)
+        self.assertIn('name="knowledge_tag_ids"', script)
         self.assertNotIn('name="allow_change_execution"', page)
-        self.assertIn('id="agent-controlled-actions"', page)
         self.assertIn("controlled_action_execution:", script)
-        self.assertIn('/action-catalog/', script)
-        self.assertIn("默认仅允许只读诊断", page)
-        self.assertIn('data-action-panel-toggle=', script)
-        self.assertIn('data-action-policy-details', script)
-        self.assertIn('expandedActionTargetId === targetId', script)
-        self.assertIn('已授权 ${selectedActions.size} 项', script)
-        self.assertIn('data-scope-kind="dynamic_parameters"', script)
-        self.assertIn("selectedDynamicParameters", script)
-        self.assertIn("data-action-scope", script)
-        self.assertIn("scope_requirements", script)
-        self.assertIn("当前 Target 没有可选项", script)
-        self.assertNotIn("parseDynamicParameters", script)
-        self.assertNotIn("逗号分隔", script)
-        self.assertNotIn("分号分隔", script)
+        self.assertNotIn('/action-catalog/', script)
         self.assertIn('name="auto_alert_enabled"', page)
         self.assertIn('name="auto_observe_min_target_level"', page)
         self.assertIn("auto_observe_min_target_level:", script)
         self.assertIn('name="diagnosis_model_id" required', page)
         self.assertIn('name="planner_model_id" required', page)
-        self.assertIn('planner_llm: plannerModelId', script)
-        self.assertIn('diagnosis_llm: diagnosisModelId', script)
-        self.assertIn('request("/api/v1/model-catalog")', script)
-        self.assertNotIn('`${api}/model-catalog`', script)
+        self.assertIn('planner_llm: form.elements.planner_model_id.value', script)
+        self.assertIn('diagnosis_llm: form.elements.diagnosis_model_id.value', script)
+        self.assertIn('`${api}/agent-model-catalog`', script)
         self.assertNotIn('models: modelId ? { diagnosis:', script)
         self.assertIn("只适用于自动触发", page)
         self.assertNotIn('id="agent-binding-summary"', page)
@@ -1504,9 +1494,13 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("ops-progress-timeline", workspace)
         self.assertIn('"assessment.started"', workspace)
         self.assertIn("updateProgressElapsed", workspace)
-        self.assertIn('id="target-select"', (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8"))
-        self.assertIn("target_id: targetId", workspace)
-        self.assertIn("当前 Agent 未绑定所选 Target", workspace)
+        self.assertNotIn('id="target-select"', (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8"))
+        self.assertNotIn("当前 Agent 未绑定所选 Target", workspace)
+        self.assertIn("无需预先选择 Target", workspace)
+        self.assertIn(': { agent_id: agentId, content: [], starter }', workspace)
+        self.assertIn(': { agent_id: agentId, content }', workspace)
+        self.assertNotIn("state.targets", workspace)
+        self.assertIn('request(`${api}/targets?limit=200`)', workspace)
         self.assertIn(
             'content: [{ content_type: "TEXT", text: fields.message }]',
             workspace,
@@ -1561,7 +1555,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("证据有缺口", workspace)
         self.assertIn("证据覆盖", workspace)
         self.assertIn("历史报告未记录覆盖率", workspace)
-        self.assertIn("证据覆盖率：${coverage}%", workspace)
+        self.assertIn("业务检查语义满足率：${coverage}%", workspace)
+        self.assertIn("固定工具执行率", workspace)
+        self.assertIn("监控采样覆盖率", workspace)
+        self.assertIn("数据缺口", workspace)
         self.assertIn('typeof coverage === "number" && Number.isFinite(coverage)', workspace)
         self.assertIn('typeof rawPercent === "number" && Number.isFinite(rawPercent)', workspace)
         self.assertIn("个目标完成", workspace)
@@ -1651,6 +1648,16 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("resumeActiveTurns(conversation.conversation_id, turns)", workspace)
         self.assertIn("activeTurnFollowers.has(followerKey)", workspace)
         self.assertNotIn("followTurn(receipt.conversation_id, receipt.turn_id, progress)\n        .then", workspace)
+        self.assertIn("data-clarification-candidate", workspace)
+        self.assertIn("data-clarification-response", workspace)
+        self.assertIn("/clarification-responses", workspace)
+        self.assertIn("clarification_id: clarificationId", workspace)
+        self.assertIn("idempotency_key: clarificationIdempotencyKey(clarificationId)", workspace)
+        self.assertIn("return `clarification:${clarificationId}`", workspace)
+        self.assertIn("candidate_id: candidateId", workspace)
+        self.assertIn("free_text: normalizedText", workspace)
+        self.assertIn("await followTurn(receipt.conversation_id, receipt.turn_id, progress)", workspace)
+        self.assertIn("请先在当前轮回答范围确认", workspace)
         self.assertIn("也可以从左侧打开历史会话", workspace)
         self.assertIn("`${api}/conversations?limit=50`", workspace)
         self.assertIn("archiveConversation", workspace)

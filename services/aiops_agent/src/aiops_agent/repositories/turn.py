@@ -33,6 +33,7 @@ _TURN_QUEUE_BLOCKING_STATUSES = (
     "ASSESSING",
     "REPLANNING",
     "ANSWERING",
+    "WAITING_USER",
 )
 
 
@@ -69,9 +70,18 @@ class TurnRepository(AIOpsRepository):
     ) -> OpsTurnRunEntity | None:
         statement = select(OpsTurnRunEntity).where(
             OpsTurnRunEntity.ops_run_id == ops_run_id,
-            OpsTurnRunEntity.purpose == "PRIMARY",
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_run_links(
+        self, *, turn_id: UUID
+    ) -> list[OpsTurnRunEntity]:
+        rows = await self._session.scalars(
+            select(OpsTurnRunEntity)
+            .where(OpsTurnRunEntity.turn_id == turn_id)
+            .order_by(OpsTurnRunEntity.sequence_no)
+        )
+        return list(rows)
 
     async def add_input_item(
         self, row: OpsTurnInputItemEntity
@@ -211,6 +221,24 @@ class TurnRepository(AIOpsRepository):
             OpsConversationTurnEntity.idempotency_key == idempotency_key,
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def save_orchestration(
+        self,
+        *,
+        turn: OpsConversationTurnEntity,
+        capability_plan: dict[str, Any] | None,
+        scope_resolution: dict[str, Any] | None,
+        clarification: dict[str, Any] | None,
+        orchestration_internal: dict[str, Any] | None,
+        focused_target_id: UUID | None,
+    ) -> None:
+        """在同一事务中冻结统一编排计划与范围事实。"""
+        self._check_active()
+        turn.capability_plan_json = capability_plan
+        turn.scope_resolution_json = scope_resolution
+        turn.clarification_json = clarification
+        turn.orchestration_internal_json = orchestration_internal
+        turn.focused_target_id = focused_target_id
 
     async def get_blocking_turn(
         self,

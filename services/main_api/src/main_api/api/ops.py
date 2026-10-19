@@ -29,9 +29,6 @@ from platform_core.contracts.aiops import (
     ResponsibilityGroupPage,
     ResponsibilityGroupPatch,
     ResponsibilityGroupView,
-    AgentBindingCreate,
-    AgentBindingPatch,
-    AgentBindingView,
     ApprovalCommand,
     ApprovalReceipt,
     CancelRunCommand,
@@ -194,8 +191,6 @@ def _route_permissions() -> dict[str, str]:
             "disable_target", "request_target_connectivity_check",
             "list_target_facts", "create_target_fact", "retire_target_fact",
             "upsert_recovery_profile",
-            "list_agent_bindings", "create_agent_binding",
-            "patch_agent_binding", "command_agent_binding",
             "commit_business_system", "patch_business_system",
             "patch_managed_resource", "add_system_resource",
             "patch_system_resource", "remove_system_resource",
@@ -1739,86 +1734,6 @@ async def review_recovery_drill(
         auth_context=request.state.auth_context,
     )
     return _validated(RecoveryDrillView, payload, response)
-
-
-@router.get(
-    "/targets/{target_id}/agent-bindings",
-    response_model=tuple[AgentBindingView, ...],
-)
-async def list_agent_bindings(
-    target_id: UUID, request: Request
-) -> tuple[AgentBindingView, ...]:
-    payload = await _client(request).list_agent_bindings(
-        target_id, auth_context=request.state.auth_context
-    )
-    return tuple(AgentBindingView.model_validate(item) for item in payload)
-
-
-@router.post(
-    "/targets/{target_id}/agent-bindings",
-    response_model=AgentBindingView,
-    status_code=201,
-)
-async def create_agent_binding(
-    target_id: UUID,
-    body: AgentBindingCreate,
-    request: Request,
-    response: Response,
-    idempotency_key: IdempotencyKey,
-) -> AgentBindingView:
-    payload = await _client(request).create_agent_binding(
-        target_id,
-        body.model_dump(mode="json"),
-        idempotency_key=idempotency_key,
-        auth_context=request.state.auth_context,
-    )
-    return _validated(AgentBindingView, payload, response)
-
-
-@router.patch(
-    "/targets/{target_id}/agent-bindings/{binding_id}",
-    response_model=AgentBindingView,
-)
-async def patch_agent_binding(
-    target_id: UUID,
-    binding_id: UUID,
-    body: AgentBindingPatch,
-    request: Request,
-    response: Response,
-    if_match: IfMatch,
-) -> AgentBindingView:
-    payload = await _client(request).patch_agent_binding(
-        target_id,
-        binding_id,
-        body.model_dump(mode="json", exclude_unset=True),
-        if_match=if_match,
-        auth_context=request.state.auth_context,
-    )
-    return _validated(AgentBindingView, payload, response)
-
-
-@router.post(
-    "/targets/{target_id}/agent-bindings/{binding_id}/{command}",
-    response_model=AgentBindingView,
-)
-async def command_agent_binding(
-    target_id: UUID,
-    binding_id: UUID,
-    command: Literal["revoke", "restore"],
-    request: Request,
-    response: Response,
-    if_match: IfMatch,
-    idempotency_key: IdempotencyKey,
-) -> AgentBindingView:
-    payload = await _client(request).command_agent_binding(
-        target_id,
-        binding_id,
-        command,
-        if_match=if_match,
-        idempotency_key=idempotency_key,
-        auth_context=request.state.auth_context,
-    )
-    return _validated(AgentBindingView, payload, response)
 
 
 @router.post(

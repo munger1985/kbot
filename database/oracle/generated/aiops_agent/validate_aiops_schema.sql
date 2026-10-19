@@ -61,7 +61,8 @@ BEGIN
             'KBOT_OPS_OUTBOX',
             'KBOT_OPS_AGENT',
             'KBOT_OPS_AGENT_VERSION',
-            'KBOT_OPS_AGENT_VERSION_TARGET',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY',
             'KBOT_OPS_REPORT_TEMPLATE',
             'KBOT_OPS_REPORT_TEMPLATE_VER',
             'KBOT_OPS_CONVERSATION',
@@ -152,7 +153,8 @@ BEGIN
             'KBOT_OPS_OUTBOX',
             'KBOT_OPS_AGENT',
             'KBOT_OPS_AGENT_VERSION',
-            'KBOT_OPS_AGENT_VERSION_TARGET',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY',
             'KBOT_OPS_REPORT_TEMPLATE',
             'KBOT_OPS_REPORT_TEMPLATE_VER',
             'KBOT_OPS_CONVERSATION',
@@ -199,7 +201,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 74 项。');
+        dbms_output.put_line('[通过] AIOps 表: 75 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -299,10 +301,11 @@ BEGIN
             'IX_OPS_ACTIVITY_SCOPE_TIME',
             'IX_OPS_ACTIVITY_TARGET',
             'IX_OPS_AGENT_CURRENT_VERSION',
+            'IX_OPS_AGENT_RES_ACT_RESOURCE',
             'IX_OPS_AGENT_SCOPE_STATUS',
             'IX_OPS_AGENT_VERSION_AGENT',
             'IX_OPS_AGENT_VERSION_POLICY',
-            'IX_OPS_AGENT_VER_TARGET_TARGET',
+            'IX_OPS_AGENT_VER_SYSTEM_SYSTEM',
             'IX_OPS_ANSWER_BLOCK_MSG_OWNER',
             'IX_OPS_ANSWER_BLOCK_SUPERSEDES',
             'IX_OPS_ANSWER_BLOCK_TURN',
@@ -327,7 +330,6 @@ BEGIN
             'IX_OPS_CONV_SOURCE_REPORT',
             'IX_OPS_CONV_SOURCE_RUN',
             'IX_OPS_CONV_SOURCE_SITUATION',
-            'IX_OPS_CONV_TARGET',
             'IX_OPS_DB_RESOURCE_TARGET',
             'IX_OPS_DISCOVERY_DRAFT',
             'IX_OPS_DRAFT_CHANGE_SEQ',
@@ -521,7 +523,8 @@ BEGIN
             'IX_OPS_WORK_ITEM_SCOPE',
             'IX_OPS_WORK_ITEM_SLA',
             'IX_OPS_WORK_ITEM_TARGET',
-            'PK_OPS_AGENT_VERSION_TARGET',
+            'PK_OPS_AGENT_VERSION_SYSTEM',
+            'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
@@ -602,10 +605,11 @@ BEGIN
             'IX_OPS_ACTIVITY_SCOPE_TIME',
             'IX_OPS_ACTIVITY_TARGET',
             'IX_OPS_AGENT_CURRENT_VERSION',
+            'IX_OPS_AGENT_RES_ACT_RESOURCE',
             'IX_OPS_AGENT_SCOPE_STATUS',
             'IX_OPS_AGENT_VERSION_AGENT',
             'IX_OPS_AGENT_VERSION_POLICY',
-            'IX_OPS_AGENT_VER_TARGET_TARGET',
+            'IX_OPS_AGENT_VER_SYSTEM_SYSTEM',
             'IX_OPS_ANSWER_BLOCK_MSG_OWNER',
             'IX_OPS_ANSWER_BLOCK_SUPERSEDES',
             'IX_OPS_ANSWER_BLOCK_TURN',
@@ -630,7 +634,6 @@ BEGIN
             'IX_OPS_CONV_SOURCE_REPORT',
             'IX_OPS_CONV_SOURCE_RUN',
             'IX_OPS_CONV_SOURCE_SITUATION',
-            'IX_OPS_CONV_TARGET',
             'IX_OPS_DB_RESOURCE_TARGET',
             'IX_OPS_DISCOVERY_DRAFT',
             'IX_OPS_DRAFT_CHANGE_SEQ',
@@ -824,7 +827,8 @@ BEGIN
             'IX_OPS_WORK_ITEM_SCOPE',
             'IX_OPS_WORK_ITEM_SLA',
             'IX_OPS_WORK_ITEM_TARGET',
-            'PK_OPS_AGENT_VERSION_TARGET',
+            'PK_OPS_AGENT_VERSION_SYSTEM',
+            'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
@@ -893,7 +897,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 284 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 285 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -903,10 +907,12 @@ BEGIN
             'FK_OPS_ACTIVITY_TARGET',
             'FK_OPS_AGENT_CURRENT_VERSION',
             'FK_OPS_AGENT_DOMAIN',
+            'FK_OPS_AGENT_RES_ACT_RESOURCE',
+            'FK_OPS_AGENT_RES_ACT_VER',
             'FK_OPS_AGENT_VERSION_AGENT',
             'FK_OPS_AGENT_VERSION_POLICY',
-            'FK_OPS_AGENT_VER_TARGET_TARGET',
-            'FK_OPS_AGENT_VER_TARGET_VER',
+            'FK_OPS_AGENT_VER_SYSTEM_SYSTEM',
+            'FK_OPS_AGENT_VER_SYSTEM_VER',
             'FK_OPS_ANSWER_BLOCK_MESSAGE',
             'FK_OPS_ANSWER_BLOCK_SUPERSEDES',
             'FK_OPS_ANSWER_BLOCK_TURN',
@@ -931,7 +937,6 @@ BEGIN
             'FK_OPS_CONV_SOURCE_REPORT',
             'FK_OPS_CONV_SOURCE_RUN',
             'FK_OPS_CONV_SOURCE_SITUATION',
-            'FK_OPS_CONV_TARGET',
             'FK_OPS_DB_RESOURCE_RESOURCE',
             'FK_OPS_DB_RESOURCE_TARGET',
             'FK_OPS_DISCOVERY_DRAFT',
@@ -1081,13 +1086,13 @@ BEGIN
             'FK_OPS_TURN_EVID_EXTRACT',
             'FK_OPS_TURN_EVID_TOOL',
             'FK_OPS_TURN_EVID_TURN',
+            'FK_OPS_TURN_FOCUSED_TARGET',
             'FK_OPS_TURN_FRAME_ART',
             'FK_OPS_TURN_INPUT_ART',
             'FK_OPS_TURN_PLAN_ART',
             'FK_OPS_TURN_RUN_RUNTIME',
             'FK_OPS_TURN_RUN_TURN',
             'FK_OPS_TURN_SUFF_ART',
-            'FK_OPS_TURN_TARGET',
             'FK_OPS_WI_ACTIVITY_ITEM',
             'FK_OPS_WI_LINK_ITEM',
             'FK_OPS_WI_OCC_ITEM',
@@ -1105,7 +1110,8 @@ BEGIN
             'FK_OPS_WORK_ITEM_DOMAIN',
             'FK_OPS_WORK_ITEM_GROUP',
             'FK_OPS_WORK_ITEM_TARGET',
-            'PK_OPS_AGENT_VERSION_TARGET',
+            'PK_OPS_AGENT_VERSION_SYSTEM',
+            'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
@@ -1173,10 +1179,12 @@ BEGIN
             'FK_OPS_ACTIVITY_TARGET',
             'FK_OPS_AGENT_CURRENT_VERSION',
             'FK_OPS_AGENT_DOMAIN',
+            'FK_OPS_AGENT_RES_ACT_RESOURCE',
+            'FK_OPS_AGENT_RES_ACT_VER',
             'FK_OPS_AGENT_VERSION_AGENT',
             'FK_OPS_AGENT_VERSION_POLICY',
-            'FK_OPS_AGENT_VER_TARGET_TARGET',
-            'FK_OPS_AGENT_VER_TARGET_VER',
+            'FK_OPS_AGENT_VER_SYSTEM_SYSTEM',
+            'FK_OPS_AGENT_VER_SYSTEM_VER',
             'FK_OPS_ANSWER_BLOCK_MESSAGE',
             'FK_OPS_ANSWER_BLOCK_SUPERSEDES',
             'FK_OPS_ANSWER_BLOCK_TURN',
@@ -1201,7 +1209,6 @@ BEGIN
             'FK_OPS_CONV_SOURCE_REPORT',
             'FK_OPS_CONV_SOURCE_RUN',
             'FK_OPS_CONV_SOURCE_SITUATION',
-            'FK_OPS_CONV_TARGET',
             'FK_OPS_DB_RESOURCE_RESOURCE',
             'FK_OPS_DB_RESOURCE_TARGET',
             'FK_OPS_DISCOVERY_DRAFT',
@@ -1351,13 +1358,13 @@ BEGIN
             'FK_OPS_TURN_EVID_EXTRACT',
             'FK_OPS_TURN_EVID_TOOL',
             'FK_OPS_TURN_EVID_TURN',
+            'FK_OPS_TURN_FOCUSED_TARGET',
             'FK_OPS_TURN_FRAME_ART',
             'FK_OPS_TURN_INPUT_ART',
             'FK_OPS_TURN_PLAN_ART',
             'FK_OPS_TURN_RUN_RUNTIME',
             'FK_OPS_TURN_RUN_TURN',
             'FK_OPS_TURN_SUFF_ART',
-            'FK_OPS_TURN_TARGET',
             'FK_OPS_WI_ACTIVITY_ITEM',
             'FK_OPS_WI_LINK_ITEM',
             'FK_OPS_WI_OCC_ITEM',
@@ -1375,7 +1382,8 @@ BEGIN
             'FK_OPS_WORK_ITEM_DOMAIN',
             'FK_OPS_WORK_ITEM_GROUP',
             'FK_OPS_WORK_ITEM_TARGET',
-            'PK_OPS_AGENT_VERSION_TARGET',
+            'PK_OPS_AGENT_VERSION_SYSTEM',
+            'PK_OPS_AGENT_VER_RES_ACT',
             'PK_OPS_ANSWER_CITATION',
             'PK_OPS_REPORT_SOURCE',
             'PK_OPS_RUN_EVENT',
@@ -1431,7 +1439,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_CONSTRAINTS: AIOps 命名约束集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名约束: 251 项。');
+        dbms_output.put_line('[通过] AIOps 命名约束: 253 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -1463,17 +1471,22 @@ BEGIN
             'KBOT_OPS_ACTIVITY_SAMPLE|USERNAME_HASH',
             'KBOT_OPS_ACTIVITY_SAMPLE|WAIT_NAME',
             'KBOT_OPS_ACTIVITY_SAMPLE|WORKER_IDENTIFIER',
-            'KBOT_OPS_AGENT_VERSION_TARGET|AGENT_VERSION_ID',
-            'KBOT_OPS_AGENT_VERSION_TARGET|CONTROLLED_ACTION_POLICY_JSON',
-            'KBOT_OPS_AGENT_VERSION_TARGET|CREATED_AT',
-            'KBOT_OPS_AGENT_VERSION_TARGET|TARGET_ID',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|AGENT_VERSION_ID',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|CONTROLLED_ACTION_POLICY_JSON',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|CREATED_AT',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|RESOURCE_ID',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM|AGENT_VERSION_ID',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM|BUSINESS_SYSTEM_ID',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM|CREATED_AT',
             'KBOT_OPS_AGENT_VERSION|AGENT_ID',
             'KBOT_OPS_AGENT_VERSION|AGENT_VERSION_ID',
+            'KBOT_OPS_AGENT_VERSION|CAPABILITIES_JSON',
             'KBOT_OPS_AGENT_VERSION|CONFIG_JSON',
             'KBOT_OPS_AGENT_VERSION|CREATED_AT',
             'KBOT_OPS_AGENT_VERSION|CREATED_BY',
             'KBOT_OPS_AGENT_VERSION|IMAGE_CAPABILITIES_JSON',
             'KBOT_OPS_AGENT_VERSION|INSTRUCTION',
+            'KBOT_OPS_AGENT_VERSION|KNOWLEDGE_POLICY_JSON',
             'KBOT_OPS_AGENT_VERSION|MODELS_JSON',
             'KBOT_OPS_AGENT_VERSION|POLICY_ID',
             'KBOT_OPS_AGENT_VERSION|VERSION_NO',
@@ -1637,6 +1650,8 @@ BEGIN
             'KBOT_OPS_CONVERSATION_TURN|ASSESSMENT_ARTIFACT_ID',
             'KBOT_OPS_CONVERSATION_TURN|CANCEL_REQUESTED_AT',
             'KBOT_OPS_CONVERSATION_TURN|CANCEL_REQUESTED_BY',
+            'KBOT_OPS_CONVERSATION_TURN|CAPABILITY_PLAN_JSON',
+            'KBOT_OPS_CONVERSATION_TURN|CLARIFICATION_JSON',
             'KBOT_OPS_CONVERSATION_TURN|COMPLETED_AT',
             'KBOT_OPS_CONVERSATION_TURN|CONVERSATION_ID',
             'KBOT_OPS_CONVERSATION_TURN|CREATED_AT',
@@ -1648,12 +1663,14 @@ BEGIN
             'KBOT_OPS_CONVERSATION_TURN|ERROR_DOMAIN',
             'KBOT_OPS_CONVERSATION_TURN|ERROR_MESSAGE',
             'KBOT_OPS_CONVERSATION_TURN|EVENT_CURSOR',
+            'KBOT_OPS_CONVERSATION_TURN|FOCUSED_TARGET_ID',
             'KBOT_OPS_CONVERSATION_TURN|IDEMPOTENCY_KEY',
             'KBOT_OPS_CONVERSATION_TURN|INPUT_ANALYSIS_ARTIFACT_ID',
             'KBOT_OPS_CONVERSATION_TURN|INVESTIGATION_ROUND',
             'KBOT_OPS_CONVERSATION_TURN|NO_PROGRESS_COUNT',
-            'KBOT_OPS_CONVERSATION_TURN|RESOLVED_TARGET_ID',
+            'KBOT_OPS_CONVERSATION_TURN|ORCHESTRATION_INTERNAL_JSON',
             'KBOT_OPS_CONVERSATION_TURN|ROW_VERSION',
+            'KBOT_OPS_CONVERSATION_TURN|SCOPE_RESOLUTION_JSON',
             'KBOT_OPS_CONVERSATION_TURN|STARTED_AT',
             'KBOT_OPS_CONVERSATION_TURN|STATUS',
             'KBOT_OPS_CONVERSATION_TURN|SUFFICIENCY_ARTIFACT_ID',
@@ -1666,6 +1683,7 @@ BEGIN
             'KBOT_OPS_CONVERSATION_TURN|UPDATED_AT',
             'KBOT_OPS_CONVERSATION|AGENT_ID',
             'KBOT_OPS_CONVERSATION|AGENT_VERSION_ID',
+            'KBOT_OPS_CONVERSATION|CONTEXT_HINT_JSON',
             'KBOT_OPS_CONVERSATION|CONVERSATION_ID',
             'KBOT_OPS_CONVERSATION|CREATED_AT',
             'KBOT_OPS_CONVERSATION|CREATED_BY',
@@ -1679,7 +1697,6 @@ BEGIN
             'KBOT_OPS_CONVERSATION|SOURCE_SITUATION_ID',
             'KBOT_OPS_CONVERSATION|SOURCE_TYPE',
             'KBOT_OPS_CONVERSATION|STATUS',
-            'KBOT_OPS_CONVERSATION|TARGET_ID',
             'KBOT_OPS_CONVERSATION|TITLE',
             'KBOT_OPS_CONVERSATION|UPDATED_AT',
             'KBOT_OPS_CONVERSATION|UPDATED_BY',
@@ -2678,17 +2695,22 @@ BEGIN
             'KBOT_OPS_ACTIVITY_SAMPLE|USERNAME_HASH',
             'KBOT_OPS_ACTIVITY_SAMPLE|WAIT_NAME',
             'KBOT_OPS_ACTIVITY_SAMPLE|WORKER_IDENTIFIER',
-            'KBOT_OPS_AGENT_VERSION_TARGET|AGENT_VERSION_ID',
-            'KBOT_OPS_AGENT_VERSION_TARGET|CONTROLLED_ACTION_POLICY_JSON',
-            'KBOT_OPS_AGENT_VERSION_TARGET|CREATED_AT',
-            'KBOT_OPS_AGENT_VERSION_TARGET|TARGET_ID',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|AGENT_VERSION_ID',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|CONTROLLED_ACTION_POLICY_JSON',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|CREATED_AT',
+            'KBOT_OPS_AGENT_VERSION_RESOURCE_ACTION_POLICY|RESOURCE_ID',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM|AGENT_VERSION_ID',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM|BUSINESS_SYSTEM_ID',
+            'KBOT_OPS_AGENT_VERSION_SYSTEM|CREATED_AT',
             'KBOT_OPS_AGENT_VERSION|AGENT_ID',
             'KBOT_OPS_AGENT_VERSION|AGENT_VERSION_ID',
+            'KBOT_OPS_AGENT_VERSION|CAPABILITIES_JSON',
             'KBOT_OPS_AGENT_VERSION|CONFIG_JSON',
             'KBOT_OPS_AGENT_VERSION|CREATED_AT',
             'KBOT_OPS_AGENT_VERSION|CREATED_BY',
             'KBOT_OPS_AGENT_VERSION|IMAGE_CAPABILITIES_JSON',
             'KBOT_OPS_AGENT_VERSION|INSTRUCTION',
+            'KBOT_OPS_AGENT_VERSION|KNOWLEDGE_POLICY_JSON',
             'KBOT_OPS_AGENT_VERSION|MODELS_JSON',
             'KBOT_OPS_AGENT_VERSION|POLICY_ID',
             'KBOT_OPS_AGENT_VERSION|VERSION_NO',
@@ -2852,6 +2874,8 @@ BEGIN
             'KBOT_OPS_CONVERSATION_TURN|ASSESSMENT_ARTIFACT_ID',
             'KBOT_OPS_CONVERSATION_TURN|CANCEL_REQUESTED_AT',
             'KBOT_OPS_CONVERSATION_TURN|CANCEL_REQUESTED_BY',
+            'KBOT_OPS_CONVERSATION_TURN|CAPABILITY_PLAN_JSON',
+            'KBOT_OPS_CONVERSATION_TURN|CLARIFICATION_JSON',
             'KBOT_OPS_CONVERSATION_TURN|COMPLETED_AT',
             'KBOT_OPS_CONVERSATION_TURN|CONVERSATION_ID',
             'KBOT_OPS_CONVERSATION_TURN|CREATED_AT',
@@ -2863,12 +2887,14 @@ BEGIN
             'KBOT_OPS_CONVERSATION_TURN|ERROR_DOMAIN',
             'KBOT_OPS_CONVERSATION_TURN|ERROR_MESSAGE',
             'KBOT_OPS_CONVERSATION_TURN|EVENT_CURSOR',
+            'KBOT_OPS_CONVERSATION_TURN|FOCUSED_TARGET_ID',
             'KBOT_OPS_CONVERSATION_TURN|IDEMPOTENCY_KEY',
             'KBOT_OPS_CONVERSATION_TURN|INPUT_ANALYSIS_ARTIFACT_ID',
             'KBOT_OPS_CONVERSATION_TURN|INVESTIGATION_ROUND',
             'KBOT_OPS_CONVERSATION_TURN|NO_PROGRESS_COUNT',
-            'KBOT_OPS_CONVERSATION_TURN|RESOLVED_TARGET_ID',
+            'KBOT_OPS_CONVERSATION_TURN|ORCHESTRATION_INTERNAL_JSON',
             'KBOT_OPS_CONVERSATION_TURN|ROW_VERSION',
+            'KBOT_OPS_CONVERSATION_TURN|SCOPE_RESOLUTION_JSON',
             'KBOT_OPS_CONVERSATION_TURN|STARTED_AT',
             'KBOT_OPS_CONVERSATION_TURN|STATUS',
             'KBOT_OPS_CONVERSATION_TURN|SUFFICIENCY_ARTIFACT_ID',
@@ -2881,6 +2907,7 @@ BEGIN
             'KBOT_OPS_CONVERSATION_TURN|UPDATED_AT',
             'KBOT_OPS_CONVERSATION|AGENT_ID',
             'KBOT_OPS_CONVERSATION|AGENT_VERSION_ID',
+            'KBOT_OPS_CONVERSATION|CONTEXT_HINT_JSON',
             'KBOT_OPS_CONVERSATION|CONVERSATION_ID',
             'KBOT_OPS_CONVERSATION|CREATED_AT',
             'KBOT_OPS_CONVERSATION|CREATED_BY',
@@ -2894,7 +2921,6 @@ BEGIN
             'KBOT_OPS_CONVERSATION|SOURCE_SITUATION_ID',
             'KBOT_OPS_CONVERSATION|SOURCE_TYPE',
             'KBOT_OPS_CONVERSATION|STATUS',
-            'KBOT_OPS_CONVERSATION|TARGET_ID',
             'KBOT_OPS_CONVERSATION|TITLE',
             'KBOT_OPS_CONVERSATION|UPDATED_AT',
             'KBOT_OPS_CONVERSATION|UPDATED_BY',
@@ -3861,7 +3887,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1198 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1207 项。');
     END IF;
 
     l_issue_count := 0;
@@ -3953,19 +3979,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 46
-           OR l_contract_version <> 'aiops-oracle-v46-knowledge-tags' THEN
+           OR l_schema_version <> 47
+           OR l_contract_version <> 'aiops-oracle-v47-unified-assistant' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '46/aiops-oracle-v46-knowledge-tags'
+                || '47/aiops-oracle-v47-unified-assistant'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/46/'
-                || 'aiops-oracle-v46-knowledge-tags'
+                '[通过] Schema 合同：AIOPS/47/'
+                || 'aiops-oracle-v47-unified-assistant'
             );
         END IF;
     EXCEPTION
@@ -3991,10 +4017,10 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：74 张表、10 个视图、'
+        '验证通过：75 张表、10 个视图、'
         || '1 个属性图、'
-        || '284 个命名索引、251 个命名约束、'
-        || '1198 个表列；Schema 与当前规范一致。'
+        || '285 个命名索引、253 个命名约束、'
+        || '1207 个表列；Schema 与当前规范一致。'
     );
 END;
 /

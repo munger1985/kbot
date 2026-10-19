@@ -48,255 +48,6 @@
         "title": "ActivitySamplerPolicy",
         "type": "object"
       },
-      "AgentBindingCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "allow_mutation": {
-            "default": false,
-            "title": "Allow Mutation",
-            "type": "boolean"
-          },
-          "allowed_actions": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Actions",
-            "type": "array"
-          },
-          "change_window": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Change Window"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id"
-        ],
-        "title": "AgentBindingCreate",
-        "type": "object"
-      },
-      "AgentBindingPatch": {
-        "additionalProperties": false,
-        "properties": {
-          "allow_mutation": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allow Mutation"
-          },
-          "allowed_actions": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allowed Actions"
-          },
-          "change_window": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Change Window"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "title": "AgentBindingPatch",
-        "type": "object"
-      },
-      "AgentBindingView": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "allow_mutation": {
-            "title": "Allow Mutation",
-            "type": "boolean"
-          },
-          "allowed_actions": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Actions",
-            "type": "array"
-          },
-          "binding_id": {
-            "format": "uuid",
-            "title": "Binding Id",
-            "type": "string"
-          },
-          "change_window": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Change Window"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "REVOKED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "binding_id",
-          "target_id",
-          "agent_id",
-          "allow_mutation",
-          "status",
-          "row_version",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AgentBindingView",
-        "type": "object"
-      },
       "ApprovalCommand": {
         "additionalProperties": false,
         "properties": {
@@ -4217,6 +3968,18 @@
             ],
             "title": "Evidence Covered Count"
           },
+          "evidence_gap_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Gap Count"
+          },
           "evidence_total_count": {
             "anyOf": [
               {
@@ -4228,6 +3991,43 @@
               }
             ],
             "title": "Evidence Total Count"
+          },
+          "monitoring_low_coverage_metric_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Low Coverage Metric Count"
+          },
+          "monitoring_metric_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Metric Count"
+          },
+          "monitoring_sample_coverage_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Sample Coverage Percent"
           },
           "report_status": {
             "anyOf": [
@@ -4256,6 +4056,43 @@
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
+          },
+          "tool_execution_coverage_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Coverage Percent"
+          },
+          "tool_execution_covered_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Covered Count"
+          },
+          "tool_execution_total_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Total Count"
           }
         },
         "required": [
@@ -19304,283 +19141,6 @@
           }
         },
         "summary": "Patch Target",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings": {
-      "get": {
-        "operationId": "list_agent_bindings_api_v1_apps_aiops_targets__target_id__agent_bindings_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AgentBindingView"
-                  },
-                  "title": "Response List Agent Bindings Api V1 Apps Aiops Targets  Target Id  Agent Bindings Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Agent Bindings",
-        "tags": [
-          "AIOps"
-        ]
-      },
-      "post": {
-        "operationId": "create_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentBindingCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentBindingView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Agent Binding",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings/{binding_id}": {
-      "patch": {
-        "operationId": "patch_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings__binding_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "binding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Binding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentBindingPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentBindingView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Patch Agent Binding",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings/{binding_id}/{command}": {
-      "post": {
-        "operationId": "command_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings__binding_id___command__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "binding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Binding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "command",
-            "required": true,
-            "schema": {
-              "enum": [
-                "revoke",
-                "restore"
-              ],
-              "title": "Command",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentBindingView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Command Agent Binding",
         "tags": [
           "AIOps"
         ]

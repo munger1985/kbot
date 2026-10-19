@@ -153,7 +153,22 @@ class StableResourceOrderingTest(unittest.IsolatedAsyncioTestCase):
             for statement in session.statements
         ]
         self.assertTrue(any("delete from kbot_ops_run" in item for item in sql))
-        self.assertTrue(any("delete from kbot_ops_conversation" in item for item in sql))
+        self.assertFalse(any("delete from kbot_ops_conversation" in item for item in sql))
+        self.assertFalse(any("delete from kbot_ops_conversation_turn" in item for item in sql))
+        self.assertTrue(
+            any(
+                "update kbot_ops_conversation_turn" in item
+                and "focused_target_id" in item
+                for item in sql
+            )
+        )
+        self.assertTrue(
+            any(
+                "delete from kbot_ops_turn_run" in item
+                and "ops_run_id" in item
+                for item in sql
+            )
+        )
         self.assertTrue(any("delete from kbot_ops_target_source_binding" in item for item in sql))
         self.assertTrue(any("delete from kbot_ops_work_item" in item for item in sql))
         self.assertTrue(any("delete from kbot_ops_target" in item for item in sql))
@@ -323,6 +338,7 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
         agent_id = uuid7()
         version_id = uuid7()
         target_id = uuid7()
+        resource_id = uuid7()
         policy_id = uuid7()
         agent_service = AsyncMock()
         agent_service.get.return_value = {
@@ -330,10 +346,11 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
             "agent_version_id": str(version_id),
             "domain_id": 100,
             "status": "ACTIVE",
-            "target_ids": [str(target_id)],
+            "capabilities": ["ACTIVE_DIAGNOSIS", "CONTROLLED_CHANGE"],
             "target_candidates": [
                 {
                     "target_id": str(target_id),
+                    "resource_id": str(resource_id),
                     "controlled_change_enabled": True,
                 }
             ],
@@ -341,7 +358,7 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
             "row_version": 3,
             "controlled_action_execution": [
                 {
-                    "target_id": str(target_id),
+                    "resource_id": str(resource_id),
                     "enabled": True,
                     "allowed_action_ids": ["db.session.terminate"],
                     "object_scopes": {

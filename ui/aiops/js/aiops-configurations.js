@@ -798,7 +798,7 @@
         planForm.elements.agent_id.replaceChildren(
           new Option("请选择已启用的 DBA Agent", ""),
           ...inspectionAgents.map((agent) => new Option(
-            `${agent.display_name} · ${agent.target_ids?.length || 0} 个 Target`,
+            `${agent.display_name} · ${agent.allowed_business_system_ids?.length || 0} 个业务系统`,
             agent.agent_id,
           )),
         );

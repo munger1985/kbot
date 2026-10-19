@@ -9,9 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
     AIOpsAgentEntity,
+    AIOpsAgentVersionBusinessSystemEntity,
     AIOpsAgentVersionEntity,
-    AIOpsAgentVersionTargetEntity,
+    AIOpsAgentVersionResourceActionPolicyEntity,
+    BusinessSystemResourceEntity,
+    DatabaseResourceEntity,
     InspectionPlanEntity,
+    ManagedResourceEntity,
     PolicyEntity,
     TargetEntity,
     TargetSourceBindingEntity,
@@ -33,23 +37,37 @@ class AIOpsAgentRepository:
         self._session.add(row)
         await self._session.flush()
 
-    async def add_version_targets(
+    async def add_version_business_systems(
         self,
         *,
         version_id: UUID,
-        target_ids: tuple[UUID, ...],
+        business_system_ids: tuple[UUID, ...],
+    ) -> None:
+        self._write_guard()
+        self._session.add_all(
+            AIOpsAgentVersionBusinessSystemEntity(
+                agent_version_id=version_id,
+                business_system_id=business_system_id,
+            )
+            for business_system_id in business_system_ids
+        )
+        await self._session.flush()
+
+    async def add_version_resource_policies(
+        self,
+        *,
+        version_id: UUID,
         controlled_action_policies: dict[UUID, dict[str, Any]],
     ) -> None:
         self._write_guard()
         self._session.add_all(
-            AIOpsAgentVersionTargetEntity(
+            AIOpsAgentVersionResourceActionPolicyEntity(
                 agent_version_id=version_id,
-                target_id=target_id,
-                controlled_action_policy_json=dict(
-                    controlled_action_policies.get(target_id, {})
-                ),
+                resource_id=resource_id,
+                controlled_action_policy_json=dict(policy),
             )
-            for target_id in target_ids
+            for resource_id, policy in controlled_action_policies.items()
+            if policy
         )
         await self._session.flush()
 
@@ -59,14 +77,17 @@ class AIOpsAgentRepository:
         """由 Agent 版本关联的 Target 动态解析有效监控源。"""
         statement = (
             select(TargetSourceBindingEntity.diagnostic_source_id)
-            .join(
-                AIOpsAgentVersionTargetEntity,
-                AIOpsAgentVersionTargetEntity.target_id
-                == TargetSourceBindingEntity.target_id,
-            )
+            .join(TargetEntity, TargetEntity.target_id == TargetSourceBindingEntity.target_id)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.target_id == TargetEntity.target_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
             .where(
-                AIOpsAgentVersionTargetEntity.agent_version_id
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id
                 == agent_version_id,
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
+                TargetEntity.status == "ENABLED",
                 TargetSourceBindingEntity.status == "ACTIVE",
             )
             .distinct()
@@ -80,28 +101,83 @@ class AIOpsAgentRepository:
         return list(rows)
 
     async def version_target_ids(self, *, agent_version_id: UUID) -> list[UUID]:
+        """按版本授权业务系统动态解析当前可用的内部 Target。"""
         rows = await self._session.scalars(
-            select(AIOpsAgentVersionTargetEntity.target_id)
+            select(DatabaseResourceEntity.target_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
             .where(
-                AIOpsAgentVersionTargetEntity.agent_version_id
-                == agent_version_id
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id == agent_version_id,
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
             )
-            .order_by(AIOpsAgentVersionTargetEntity.target_id)
+            .distinct()
+            .order_by(DatabaseResourceEntity.target_id)
         )
         return list(rows)
 
-    async def version_target_policies(
+    async def version_business_system_ids(
+        self, *, agent_version_id: UUID
+    ) -> list[UUID]:
+        rows = await self._session.scalars(
+            select(AIOpsAgentVersionBusinessSystemEntity.business_system_id)
+            .where(
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id
+                == agent_version_id
+            )
+            .order_by(AIOpsAgentVersionBusinessSystemEntity.business_system_id)
+        )
+        return list(rows)
+
+    async def version_has_business_system(
+        self, *, agent_version_id: UUID, business_system_id: UUID
+    ) -> bool:
+        value = await self._session.scalar(
+            select(AIOpsAgentVersionBusinessSystemEntity.business_system_id).where(
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id
+                == agent_version_id,
+                AIOpsAgentVersionBusinessSystemEntity.business_system_id
+                == business_system_id,
+            )
+        )
+        return value is not None
+
+    async def version_resource_policies(
         self, *, agent_version_id: UUID
     ) -> dict[UUID, dict[str, Any]]:
         rows = await self._session.scalars(
-            select(AIOpsAgentVersionTargetEntity).where(
-                AIOpsAgentVersionTargetEntity.agent_version_id
+            select(AIOpsAgentVersionResourceActionPolicyEntity).where(
+                AIOpsAgentVersionResourceActionPolicyEntity.agent_version_id
                 == agent_version_id
             )
         )
         return {
-            row.target_id: dict(row.controlled_action_policy_json or {})
+            row.resource_id: dict(row.controlled_action_policy_json or {})
             for row in rows
+        }
+
+    async def version_target_policies(
+        self, *, agent_version_id: UUID
+    ) -> dict[UUID, dict[str, Any]]:
+        """仅供单 Target 执行器把资源级变更策略投影到内部端点。"""
+        rows = await self._session.execute(
+            select(
+                DatabaseResourceEntity.target_id,
+                AIOpsAgentVersionResourceActionPolicyEntity.controlled_action_policy_json,
+            )
+            .join(
+                DatabaseResourceEntity,
+                DatabaseResourceEntity.resource_id
+                == AIOpsAgentVersionResourceActionPolicyEntity.resource_id,
+            )
+            .where(
+                AIOpsAgentVersionResourceActionPolicyEntity.agent_version_id
+                == agent_version_id
+            )
+        )
+        return {
+            target_id: dict(policy or {}) for target_id, policy in rows.all()
         }
 
     async def active_version_target_ids(
@@ -109,17 +185,23 @@ class AIOpsAgentRepository:
     ) -> list[UUID]:
         """返回 Agent 当前版本中仍处于启用状态的 Target。"""
         rows = await self._session.scalars(
-            select(AIOpsAgentVersionTargetEntity.target_id)
+            select(DatabaseResourceEntity.target_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
             .join(
                 TargetEntity,
-                TargetEntity.target_id == AIOpsAgentVersionTargetEntity.target_id,
+                TargetEntity.target_id == DatabaseResourceEntity.target_id,
             )
             .where(
-                AIOpsAgentVersionTargetEntity.agent_version_id == agent_version_id,
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id == agent_version_id,
                 TargetEntity.domain_id == domain_id,
                 TargetEntity.status == "ENABLED",
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
             )
-            .order_by(AIOpsAgentVersionTargetEntity.target_id)
+            .distinct()
+            .order_by(DatabaseResourceEntity.target_id)
         )
         return list(rows)
 
@@ -127,10 +209,15 @@ class AIOpsAgentRepository:
         self, *, agent_version_id: UUID, target_id: UUID
     ) -> bool:
         value = await self._session.scalar(
-            select(AIOpsAgentVersionTargetEntity.target_id).where(
-                AIOpsAgentVersionTargetEntity.agent_version_id
-                == agent_version_id,
-                AIOpsAgentVersionTargetEntity.target_id == target_id,
+            select(DatabaseResourceEntity.target_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == DatabaseResourceEntity.resource_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.resource_id == ManagedResourceEntity.resource_id)
+            .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.business_system_id == BusinessSystemResourceEntity.business_system_id)
+            .where(
+                AIOpsAgentVersionBusinessSystemEntity.agent_version_id == agent_version_id,
+                DatabaseResourceEntity.target_id == target_id,
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
             )
         )
         return value is not None
@@ -266,6 +353,9 @@ class AIOpsAgentRepository:
         target_ids = await self.version_target_ids(
             agent_version_id=version.agent_version_id
         )
+        business_system_ids = await self.version_business_system_ids(
+            agent_version_id=version.agent_version_id
+        )
         target_policies = await self.version_target_policies(
             agent_version_id=version.agent_version_id
         )
@@ -273,7 +363,7 @@ class AIOpsAgentRepository:
             return None
         policy = await self._session.get(PolicyEntity, version.policy_id)
         return _execution_binding(
-            agent, version, source_ids, target_ids, target_policies, policy,
+            agent, version, source_ids, business_system_ids, target_ids, target_policies, policy,
             selected_target_id=target_id,
         )
 
@@ -302,6 +392,9 @@ class AIOpsAgentRepository:
         target_ids = await self.version_target_ids(
             agent_version_id=agent_version_id
         )
+        business_system_ids = await self.version_business_system_ids(
+            agent_version_id=agent_version_id
+        )
         target_policies = await self.version_target_policies(
             agent_version_id=agent_version_id
         )
@@ -312,6 +405,7 @@ class AIOpsAgentRepository:
             agent,
             version,
             source_ids,
+            business_system_ids,
             target_ids,
             target_policies,
             policy,
@@ -336,6 +430,9 @@ class AIOpsAgentRepository:
             target_ids = await self.version_target_ids(
                 agent_version_id=version.agent_version_id
             )
+            business_system_ids = await self.version_business_system_ids(
+                agent_version_id=version.agent_version_id
+            )
             target_policies = await self.version_target_policies(
                 agent_version_id=version.agent_version_id
             )
@@ -343,6 +440,7 @@ class AIOpsAgentRepository:
                 agent,
                 version,
                 source_ids,
+                business_system_ids,
                 target_ids,
                 target_policies,
                 policy,
@@ -364,16 +462,17 @@ class AIOpsAgentRepository:
                 AIOpsAgentVersionEntity.agent_version_id
                 == AIOpsAgentEntity.current_version_id,
             )
-            .join(
-                AIOpsAgentVersionTargetEntity,
-                AIOpsAgentVersionTargetEntity.agent_version_id
-                == AIOpsAgentVersionEntity.agent_version_id,
-            )
+            .join(AIOpsAgentVersionBusinessSystemEntity, AIOpsAgentVersionBusinessSystemEntity.agent_version_id == AIOpsAgentVersionEntity.agent_version_id)
+            .join(BusinessSystemResourceEntity, BusinessSystemResourceEntity.business_system_id == AIOpsAgentVersionBusinessSystemEntity.business_system_id)
+            .join(ManagedResourceEntity, ManagedResourceEntity.resource_id == BusinessSystemResourceEntity.resource_id)
+            .join(DatabaseResourceEntity, DatabaseResourceEntity.resource_id == ManagedResourceEntity.resource_id)
             .join(PolicyEntity, PolicyEntity.policy_id == AIOpsAgentVersionEntity.policy_id)
             .where(
                 AIOpsAgentEntity.domain_id == domain_id,
                 AIOpsAgentEntity.status == "ACTIVE",
-                AIOpsAgentVersionTargetEntity.target_id == target_id,
+                DatabaseResourceEntity.target_id == target_id,
+                BusinessSystemResourceEntity.status == "ACTIVE",
+                ManagedResourceEntity.lifecycle_status == "ACTIVE",
                 PolicyEntity.status == "ACTIVE",
             )
             .order_by(AIOpsAgentEntity.agent_id)
@@ -387,7 +486,10 @@ class AIOpsAgentExecutionBinding:
     agent_id: UUID
     policy_id: UUID
     target_id: UUID | None
+    allowed_business_system_ids: tuple[UUID, ...]
     target_ids: tuple[UUID, ...]
+    capabilities: tuple[str, ...]
+    knowledge_policy: dict[str, Any]
     diagnostic_source_ids: tuple[UUID, ...]
     status: str
     row_version: int
@@ -402,6 +504,7 @@ def _execution_binding(
     agent: AIOpsAgentEntity,
     version: AIOpsAgentVersionEntity,
     source_ids: list[UUID],
+    business_system_ids: list[UUID],
     target_ids: list[UUID],
     target_policies: dict[UUID, dict[str, Any]],
     policy: PolicyEntity | None,
@@ -415,7 +518,10 @@ def _execution_binding(
         agent_id=agent.agent_id,
         policy_id=version.policy_id,
         target_id=selected_target_id,
+        allowed_business_system_ids=tuple(business_system_ids),
         target_ids=tuple(target_ids),
+        capabilities=tuple(version.capabilities_json or ()),
+        knowledge_policy=dict(version.knowledge_policy_json or {}),
         diagnostic_source_ids=tuple(source_ids),
         status=agent.status,
         row_version=int(agent.row_version),

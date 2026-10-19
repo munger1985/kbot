@@ -11,6 +11,16 @@
             "title": "Alert Cooldown Minutes",
             "type": "integer"
           },
+          "allowed_business_system_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Allowed Business System Ids",
+            "type": "array"
+          },
           "auto_alert_enabled": {
             "default": true,
             "title": "Auto Alert Enabled",
@@ -34,6 +44,15 @@
             "title": "Auto Observe Min Target Level",
             "type": "integer"
           },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Capabilities",
+            "type": "array"
+          },
           "config": {
             "additionalProperties": true,
             "title": "Config",
@@ -42,7 +61,7 @@
           "controlled_action_execution": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/AIOpsTargetControlledActionExecution"
+              "$ref": "#/components/schemas/AIOpsResourceControlledActionExecution"
             },
             "title": "Controlled Action Execution",
             "type": "array"
@@ -82,6 +101,11 @@
             ],
             "title": "Instruction"
           },
+          "knowledge_policy": {
+            "additionalProperties": true,
+            "title": "Knowledge Policy",
+            "type": "object"
+          },
           "models": {
             "additionalProperties": {
               "format": "uuid",
@@ -98,21 +122,12 @@
             ],
             "title": "Status",
             "type": "string"
-          },
-          "target_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "maxItems": 32,
-            "minItems": 1,
-            "title": "Target Ids",
-            "type": "array"
           }
         },
         "required": [
           "display_name",
-          "target_ids"
+          "allowed_business_system_ids",
+          "capabilities"
         ],
         "title": "AIOpsAgentCreatePayload",
         "type": "object"
@@ -132,6 +147,23 @@
               }
             ],
             "title": "Alert Cooldown Minutes"
+          },
+          "allowed_business_system_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Business System Ids"
           },
           "auto_alert_enabled": {
             "anyOf": [
@@ -174,6 +206,22 @@
             ],
             "title": "Auto Observe Min Target Level"
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
+          },
           "config": {
             "anyOf": [
               {
@@ -190,7 +238,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/AIOpsTargetControlledActionExecution"
+                  "$ref": "#/components/schemas/AIOpsResourceControlledActionExecution"
                 },
                 "type": "array"
               },
@@ -254,6 +302,18 @@
             ],
             "title": "Instruction"
           },
+          "knowledge_policy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Policy"
+          },
           "models": {
             "anyOf": [
               {
@@ -285,23 +345,6 @@
               }
             ],
             "title": "Status"
-          },
-          "target_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "maxItems": 32,
-                "minItems": 1,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Ids"
           }
         },
         "required": [
@@ -309,6 +352,20 @@
         ],
         "title": "AIOpsAgentUpdatePayload",
         "type": "object"
+      },
+      "AIOpsCapability": {
+        "enum": [
+          "RESOURCE_CATALOG_QUERY",
+          "KNOWLEDGE_QA",
+          "MONITORING_QUERY",
+          "ALERT_QUERY",
+          "INSPECTION_QUERY",
+          "REPORT_CASE_QUERY",
+          "ACTIVE_DIAGNOSIS",
+          "CONTROLLED_CHANGE"
+        ],
+        "title": "AIOpsCapability",
+        "type": "string"
       },
       "AIOpsControlledActionObjectScopes": {
         "additionalProperties": false,
@@ -478,7 +535,7 @@
         "title": "AIOpsPasswordChangePayload",
         "type": "object"
       },
-      "AIOpsTargetControlledActionExecution": {
+      "AIOpsResourceControlledActionExecution": {
         "additionalProperties": false,
         "properties": {
           "allowed_action_ids": {
@@ -510,16 +567,16 @@
           "object_scopes": {
             "$ref": "#/components/schemas/AIOpsControlledActionObjectScopes"
           },
-          "target_id": {
+          "resource_id": {
             "format": "uuid",
-            "title": "Target Id",
+            "title": "Resource Id",
             "type": "string"
           }
         },
         "required": [
-          "target_id"
+          "resource_id"
         ],
-        "title": "AIOpsTargetControlledActionExecution",
+        "title": "AIOpsResourceControlledActionExecution",
         "type": "object"
       },
       "ActivitySamplerPolicy": {
@@ -569,75 +626,6 @@
         "title": "ActivitySamplerPolicy",
         "type": "object"
       },
-      "AgentBindingCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "allow_mutation": {
-            "default": false,
-            "title": "Allow Mutation",
-            "type": "boolean"
-          },
-          "allowed_actions": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Actions",
-            "type": "array"
-          },
-          "change_window": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Change Window"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id"
-        ],
-        "title": "AgentBindingCreate",
-        "type": "object"
-      },
       "AgentBindingCreateRequest": {
         "properties": {
           "agent_id": {
@@ -662,186 +650,6 @@
           "policy_binding_id"
         ],
         "title": "AgentBindingCreateRequest",
-        "type": "object"
-      },
-      "AgentBindingPatch": {
-        "additionalProperties": false,
-        "properties": {
-          "allow_mutation": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allow Mutation"
-          },
-          "allowed_actions": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Allowed Actions"
-          },
-          "change_window": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Change Window"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          }
-        },
-        "title": "AgentBindingPatch",
-        "type": "object"
-      },
-      "AgentBindingView": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_id": {
-            "format": "uuid",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "allow_mutation": {
-            "title": "Allow Mutation",
-            "type": "boolean"
-          },
-          "allowed_actions": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Actions",
-            "type": "array"
-          },
-          "binding_id": {
-            "format": "uuid",
-            "title": "Binding Id",
-            "type": "string"
-          },
-          "change_window": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Change Window"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "max_daily_executions": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Daily Executions"
-          },
-          "policy_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Policy Id"
-          },
-          "row_version": {
-            "minimum": 1.0,
-            "title": "Row Version",
-            "type": "integer"
-          },
-          "schema_version": {
-            "default": "aiops.public.v1",
-            "title": "Schema Version",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "ACTIVE",
-              "REVOKED"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "binding_id",
-          "target_id",
-          "agent_id",
-          "allow_mutation",
-          "status",
-          "row_version",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AgentBindingView",
         "type": "object"
       },
       "AnswerBlockType": {
@@ -925,6 +733,16 @@
             "minimum": 1.0,
             "title": "Citation No",
             "type": "integer"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CitationEvidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "label": {
             "maxLength": 256,
@@ -2120,6 +1938,40 @@
         "title": "BusinessSystemLifecycleCommand",
         "type": "object"
       },
+      "BusinessSystemRefV1": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "display_name"
+        ],
+        "title": "BusinessSystemRefV1",
+        "type": "object"
+      },
       "BusinessSystemResourceCommit": {
         "additionalProperties": false,
         "description": "Wizard 草稿中的资源；draft_resource_id 由客户端生成但不向用户展示。",
@@ -2682,6 +2534,217 @@
         "title": "BusinessSystemResourceView",
         "type": "object"
       },
+      "CitationEvidenceView": {
+        "additionalProperties": false,
+        "description": "回答引用中可直接展示的安全结构化证据。",
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "columns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "row_count": {
+            "minimum": 0.0,
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "tool_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Tool Id",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tool_id",
+          "captured_at",
+          "row_count"
+        ],
+        "title": "CitationEvidenceView",
+        "type": "object"
+      },
+      "ClarificationCandidateV1": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "maxLength": 256,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ScopeType"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "label",
+          "scope_type"
+        ],
+        "title": "ClarificationCandidateV1",
+        "type": "object"
+      },
+      "ClarificationRequestV1": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_free_text": {
+            "default": true,
+            "title": "Allow Free Text",
+            "type": "boolean"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ClarificationCandidateV1"
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "clarification_id": {
+            "format": "uuid",
+            "title": "Clarification Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,127}$",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clarification_id",
+          "turn_id",
+          "question",
+          "reason_code",
+          "candidates"
+        ],
+        "title": "ClarificationRequestV1",
+        "type": "object"
+      },
+      "ClarificationResponseV1": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 16,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Id"
+          },
+          "clarification_id": {
+            "format": "uuid",
+            "title": "Clarification Id",
+            "type": "string"
+          },
+          "free_text": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Text"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clarification_id",
+          "idempotency_key"
+        ],
+        "title": "ClarificationResponseV1",
+        "type": "object"
+      },
       "CollectionBindingRequest": {
         "properties": {
           "note": {
@@ -2878,6 +2941,16 @@
             "title": "Content",
             "type": "array"
           },
+          "context_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustedContextHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source_run_id": {
             "anyOf": [
               {
@@ -2912,11 +2985,6 @@
               }
             ]
           },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
           "title": {
             "anyOf": [
               {
@@ -2932,8 +3000,7 @@
           }
         },
         "required": [
-          "agent_id",
-          "target_id"
+          "agent_id"
         ],
         "title": "ConversationStartPayload",
         "type": "object"
@@ -2941,16 +3008,25 @@
       "ConversationStarterCatalogView": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "format": "uuid",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "catalog_version": {
             "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
             "title": "Catalog Version",
             "type": "string"
           },
-          "db_type": {
-            "maxLength": 32,
-            "minLength": 1,
-            "title": "Db Type",
-            "type": "string"
+          "context_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustedContextHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "starters": {
             "items": {
@@ -2958,17 +3034,11 @@
             },
             "title": "Starters",
             "type": "array"
-          },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
           }
         },
         "required": [
           "catalog_version",
-          "target_id",
-          "db_type",
+          "agent_id",
           "starters"
         ],
         "title": "ConversationStarterCatalogView",
@@ -3051,6 +3121,14 @@
             "title": "Input Schema",
             "type": "array"
           },
+          "required_capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/AIOpsCapability"
+            },
+            "minItems": 1,
+            "title": "Required Capabilities",
+            "type": "array"
+          },
           "sort_order": {
             "minimum": 0.0,
             "title": "Sort Order",
@@ -3093,6 +3171,7 @@
           "description",
           "supported_db_types",
           "execution_mode",
+          "required_capabilities",
           "sort_order",
           "status"
         ],
@@ -3121,6 +3200,16 @@
             "title": "Agent Version Id",
             "type": "string"
           },
+          "context_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustedContextHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "conversation_id": {
             "format": "uuid",
             "title": "Conversation Id",
@@ -3137,7 +3226,7 @@
             "type": "integer"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -3195,11 +3284,6 @@
           "status": {
             "$ref": "#/components/schemas/ConversationStatus"
           },
-          "target_id": {
-            "format": "uuid",
-            "title": "Target Id",
-            "type": "string"
-          },
           "title": {
             "anyOf": [
               {
@@ -3222,7 +3306,6 @@
           "conversation_id",
           "agent_id",
           "agent_version_id",
-          "target_id",
           "status",
           "source_type",
           "last_turn_no",
@@ -5436,6 +5519,48 @@
         "title": "ExchangeAppPayload",
         "type": "object"
       },
+      "ExecutionBudgetV1": {
+        "additionalProperties": false,
+        "properties": {
+          "max_delegations": {
+            "default": 8,
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Delegations",
+            "type": "integer"
+          },
+          "max_diagnosis_runs": {
+            "default": 1,
+            "maximum": 16.0,
+            "minimum": 0.0,
+            "title": "Max Diagnosis Runs",
+            "type": "integer"
+          },
+          "max_live_queries": {
+            "default": 12,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Max Live Queries",
+            "type": "integer"
+          },
+          "max_parallel_delegations": {
+            "default": 4,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Max Parallel Delegations",
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "default": 300,
+            "maximum": 7200.0,
+            "minimum": 10.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "ExecutionBudgetV1",
+        "type": "object"
+      },
       "FindingCard": {
         "additionalProperties": false,
         "properties": {
@@ -5658,6 +5783,15 @@
           "BLOAT_CANDIDATE"
         ],
         "title": "FindingType",
+        "type": "string"
+      },
+      "FreshnessRequirement": {
+        "enum": [
+          "STORED_ACCEPTABLE",
+          "LATEST_AVAILABLE",
+          "LIVE_REQUIRED"
+        ],
+        "title": "FreshnessRequirement",
         "type": "string"
       },
       "HTTPValidationError": {
@@ -6840,6 +6974,18 @@
             ],
             "title": "Evidence Covered Count"
           },
+          "evidence_gap_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Gap Count"
+          },
           "evidence_total_count": {
             "anyOf": [
               {
@@ -6851,6 +6997,43 @@
               }
             ],
             "title": "Evidence Total Count"
+          },
+          "monitoring_low_coverage_metric_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Low Coverage Metric Count"
+          },
+          "monitoring_metric_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Metric Count"
+          },
+          "monitoring_sample_coverage_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitoring Sample Coverage Percent"
           },
           "report_status": {
             "anyOf": [
@@ -6879,6 +7062,43 @@
             "format": "uuid",
             "title": "Target Id",
             "type": "string"
+          },
+          "tool_execution_coverage_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Coverage Percent"
+          },
+          "tool_execution_covered_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Covered Count"
+          },
+          "tool_execution_total_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Execution Total Count"
           }
         },
         "required": [
@@ -10602,6 +10822,15 @@
             "minimum": 1.0,
             "title": "Expected Row Version",
             "type": "integer"
+          },
+          "tag_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -10723,6 +10952,15 @@
             "title": "Source Kinds",
             "type": "array"
           },
+          "tag_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Tag Ids",
+            "type": "array"
+          },
           "topology": {
             "anyOf": [
               {
@@ -10740,6 +10978,78 @@
           "query"
         ],
         "title": "OperationsKnowledgeSearchPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeTagPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "RESOURCE_CATEGORY",
+              "TECHNOLOGY_STACK",
+              "VENDOR"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "display_name"
+        ],
+        "title": "OperationsKnowledgeTagPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeTagStatusPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "OperationsKnowledgeTagStatusPayload",
         "type": "object"
       },
       "OperationsKnowledgeTurnPayload": {
@@ -14048,6 +14358,56 @@
         "title": "ResourceProtectionProfileView",
         "type": "object"
       },
+      "ResourceRefV1": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Resource Type Key",
+            "type": "string"
+          },
+          "system_resource_id": {
+            "format": "uuid",
+            "title": "System Resource Id",
+            "type": "string"
+          },
+          "topology_roles": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Topology Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resource_id",
+          "system_resource_id",
+          "business_system_id",
+          "display_name",
+          "resource_type_key"
+        ],
+        "title": "ResourceRefV1",
+        "type": "object"
+      },
       "ResourceRelationCommit": {
         "additionalProperties": false,
         "properties": {
@@ -14975,6 +15335,129 @@
         ],
         "title": "SchemaObjectSelectionRequest",
         "type": "object"
+      },
+      "ScopeResolutionStatus": {
+        "enum": [
+          "NOT_REQUIRED",
+          "RESOLVED",
+          "NEEDS_CLARIFICATION",
+          "DENIED"
+        ],
+        "title": "ScopeResolutionStatus",
+        "type": "string"
+      },
+      "ScopeResolutionV1": {
+        "additionalProperties": false,
+        "description": "用户可见的范围解析；禁止包含内部 Target 身份。",
+        "properties": {
+          "authorization_snapshot_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Authorization Snapshot Hash",
+            "type": "string"
+          },
+          "business_systems": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BusinessSystemRefV1"
+            },
+            "maxItems": 32,
+            "title": "Business Systems",
+            "type": "array"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "inherited_from_turn_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited From Turn Id"
+          },
+          "relations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TopologyRelationRefV1"
+            },
+            "maxItems": 256,
+            "title": "Relations",
+            "type": "array"
+          },
+          "resolution_basis": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Resolution Basis",
+            "type": "array"
+          },
+          "resource_graph_snapshot_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Graph Snapshot Hash"
+          },
+          "resources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResourceRefV1"
+            },
+            "maxItems": 256,
+            "title": "Resources",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ScopeType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScopeResolutionStatus"
+          }
+        },
+        "required": [
+          "status",
+          "scope_type",
+          "authorization_snapshot_hash"
+        ],
+        "title": "ScopeResolutionV1",
+        "type": "object"
+      },
+      "ScopeType": {
+        "enum": [
+          "NONE",
+          "SYSTEM",
+          "TOPOLOGY_GROUP",
+          "RESOURCE_SET",
+          "RESOURCE"
+        ],
+        "title": "ScopeType",
+        "type": "string"
       },
       "SecretRefStatus": {
         "additionalProperties": false,
@@ -16905,7 +17388,7 @@
             "title": "Note"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -17549,6 +18032,51 @@
         "title": "TargetSummary",
         "type": "object"
       },
+      "TimeRangeV1": {
+        "additionalProperties": false,
+        "description": "绝对时间范围或相对窗口，两种表达必须二选一。",
+        "properties": {
+          "end_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End At"
+          },
+          "relative_window_seconds": {
+            "anyOf": [
+              {
+                "maximum": 31536000.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Window Seconds"
+          },
+          "start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At"
+          }
+        },
+        "title": "TimeRangeV1",
+        "type": "object"
+      },
       "TopologyParticipantEdge": {
         "additionalProperties": false,
         "properties": {
@@ -17621,6 +18149,46 @@
           "verification_status"
         ],
         "title": "TopologyRelationNode",
+        "type": "object"
+      },
+      "TopologyRelationRefV1": {
+        "additionalProperties": false,
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "relation_id": {
+            "format": "uuid",
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "relation_type_key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Relation Type Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_id",
+          "business_system_id",
+          "relation_type_key"
+        ],
+        "title": "TopologyRelationRefV1",
         "type": "object"
       },
       "TopologyResourceNode": {
@@ -17754,6 +18322,56 @@
         "title": "TriggerType",
         "type": "string"
       },
+      "TrustedContextHint": {
+        "additionalProperties": false,
+        "description": "服务端校验过的入口提示，不替代当轮范围解析与授权。",
+        "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
+          "resource_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Resource Ids",
+            "type": "array"
+          },
+          "source_kind": {
+            "pattern": "^(BUSINESS_SYSTEM_PAGE|RESOURCE_PAGE|SITUATION|RUN|REPORT|INSPECTION)$",
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Resource Id"
+          }
+        },
+        "required": [
+          "source_kind"
+        ],
+        "title": "TrustedContextHint",
+        "type": "object"
+      },
       "TurnCompletionRequirementView": {
         "additionalProperties": false,
         "description": "用户明确要求、且由真实工具证据验证的完成义务。",
@@ -17804,6 +18422,18 @@
         "additionalProperties": false,
         "description": "对话页可安全展示的未取证摘要，不包含原始证据行。",
         "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
           "code": {
             "anyOf": [
               {
@@ -17827,6 +18457,18 @@
               }
             ],
             "title": "Detail"
+          },
+          "diagnostic_source_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Source Id"
           },
           "retryable": {
             "default": false,
@@ -18068,6 +18710,163 @@
         "title": "TurnInvestigationPlanView",
         "type": "object"
       },
+      "TurnOutputMode": {
+        "enum": [
+          "SUMMARY",
+          "DETAIL",
+          "TABLE",
+          "TREND",
+          "REPORT",
+          "DIAGNOSIS"
+        ],
+        "title": "TurnOutputMode",
+        "type": "string"
+      },
+      "TurnPlanStepV1": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/AIOpsCapability"
+          },
+          "depends_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Depends On",
+            "type": "array"
+          },
+          "objective": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "optional": {
+            "default": false,
+            "title": "Optional",
+            "type": "boolean"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "requested_evidence_kinds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Requested Evidence Kinds",
+            "type": "array"
+          },
+          "scope_type": {
+            "$ref": "#/components/schemas/ScopeType"
+          },
+          "step_id": {
+            "pattern": "^s[1-9][0-9]*$",
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "capability",
+          "objective",
+          "scope_type"
+        ],
+        "title": "TurnPlanStepV1",
+        "type": "object"
+      },
+      "TurnPlanV1": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/ExecutionBudgetV1"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/FreshnessRequirement",
+            "default": "LATEST_AVAILABLE"
+          },
+          "output_mode": {
+            "$ref": "#/components/schemas/TurnOutputMode",
+            "default": "SUMMARY"
+          },
+          "policy_snapshot_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Policy Snapshot Hash",
+            "type": "string"
+          },
+          "requested_capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/AIOpsCapability"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Requested Capabilities",
+            "type": "array"
+          },
+          "requested_facts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Requested Facts",
+            "type": "array"
+          },
+          "requires_active_diagnosis": {
+            "default": false,
+            "title": "Requires Active Diagnosis",
+            "type": "boolean"
+          },
+          "revision_no": {
+            "minimum": 1.0,
+            "title": "Revision No",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "aiops.orchestration.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/TurnPlanStepV1"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRangeV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "turn_id": {
+            "format": "uuid",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "turn_id",
+          "revision_no",
+          "requested_capabilities",
+          "steps",
+          "policy_snapshot_hash"
+        ],
+        "title": "TurnPlanV1",
+        "type": "object"
+      },
       "TurnReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -18087,7 +18886,7 @@
             "type": "integer"
           },
           "schema_version": {
-            "default": "aiops.conversation.v1",
+            "default": "aiops.conversation.v2",
             "title": "Schema Version",
             "type": "string"
           },
@@ -18139,6 +18938,26 @@
       "TurnSummary": {
         "additionalProperties": false,
         "properties": {
+          "capability_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnPlanV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clarification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClarificationRequestV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -18222,17 +19041,15 @@
             "title": "Investigation Round",
             "type": "integer"
           },
-          "resolved_target_id": {
+          "scope_resolution": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "$ref": "#/components/schemas/ScopeResolutionV1"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Resolved Target Id"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/TurnStatus"
@@ -18416,6 +19233,19 @@
             },
             "title": "Unknowns",
             "type": "array"
+          },
+          "visualization_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9_]*)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visualization Profile Id"
           }
         },
         "title": "TurnTaskFrameView",
@@ -18431,6 +19261,26 @@
             },
             "title": "Answer Blocks",
             "type": "array"
+          },
+          "capability_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TurnPlanV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clarification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClarificationRequestV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "completed_at": {
             "anyOf": [
@@ -18552,22 +19402,20 @@
             ],
             "title": "Ops Run Id"
           },
-          "resolved_target_id": {
+          "schema_version": {
+            "default": "aiops.conversation.v2",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope_resolution": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "$ref": "#/components/schemas/ScopeResolutionV1"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Resolved Target Id"
-          },
-          "schema_version": {
-            "default": "aiops.conversation.v1",
-            "title": "Schema Version",
-            "type": "string"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/TurnStatus"
@@ -20434,17 +21282,17 @@
         ]
       }
     },
-    "/api/v1/apps/aiops/action-catalog/{target_id}": {
+    "/api/v1/apps/aiops/action-catalog/{resource_id}": {
       "get": {
-        "operationId": "action_catalog_api_v1_apps_aiops_action_catalog__target_id__get",
+        "operationId": "action_catalog_api_v1_apps_aiops_action_catalog__resource_id__get",
         "parameters": [
           {
             "in": "path",
-            "name": "target_id",
+            "name": "resource_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Target Id",
+              "title": "Resource Id",
               "type": "string"
             }
           }
@@ -22003,19 +22851,9 @@
     },
     "/api/v1/apps/aiops/conversation-starters": {
       "get": {
-        "description": "返回当前 Agent 与 Target 可以执行的结构化功能入口。",
+        "description": "返回当前 Agent 在可选可信业务上下文中可用的功能入口。",
         "operationId": "list_conversation_starters_api_v1_apps_aiops_conversation_starters_get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
           {
             "in": "query",
             "name": "agent_id",
@@ -22024,6 +22862,22 @@
               "format": "uuid",
               "title": "Agent Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "context_hint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Context Hint"
             }
           }
         ],
@@ -22096,23 +22950,6 @@
                 }
               ],
               "title": "Agent Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "target_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Target Id"
             }
           },
           {
@@ -22587,6 +23424,69 @@
           }
         },
         "summary": "Cancel Conversation Turn",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/clarification-responses": {
+      "post": {
+        "operationId": "respond_to_conversation_turn_clarification_api_v1_apps_aiops_conversations__conversation_id__turns__turn_id__clarification_responses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "turn_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Turn Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClarificationResponseV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Respond To Conversation Turn Clarification",
         "tags": [
           "AIOps App"
         ]
@@ -26408,6 +27308,237 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/operations-knowledge/tags": {
+      "get": {
+        "operationId": "list_operations_knowledge_tags_api_v1_apps_aiops_operations_knowledge_tags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Disabled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Tags",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "post": {
+        "operationId": "create_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/tags/{tag_id}": {
+      "put": {
+        "operationId": "update_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags__tag_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/tags/{tag_id}:disable": {
+      "post": {
+        "operationId": "disable_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags__tag_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/tags/{tag_id}:enable": {
+      "post": {
+        "operationId": "enable_operations_knowledge_tag_api_v1_apps_aiops_operations_knowledge_tags__tag_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeTagStatusPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Operations Knowledge Tag",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/operations-knowledge/uploads": {
       "post": {
         "description": "把单文件或 Bundle multipart 原样转发到 AIOps 业务服务。",
@@ -26526,6 +27657,57 @@
           }
         },
         "summary": "Download Operations Knowledge Source",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:approve": {
+      "post": {
+        "operationId": "approve_operations_knowledge_version_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Operations Knowledge Version",
         "tags": [
           "AIOps App"
         ]
@@ -29512,283 +30694,6 @@
           }
         },
         "summary": "Patch Target",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings": {
-      "get": {
-        "operationId": "list_agent_bindings_api_v1_apps_aiops_targets__target_id__agent_bindings_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AgentBindingView"
-                  },
-                  "title": "Response List Agent Bindings Api V1 Apps Aiops Targets  Target Id  Agent Bindings Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Agent Bindings",
-        "tags": [
-          "AIOps"
-        ]
-      },
-      "post": {
-        "operationId": "create_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentBindingCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentBindingView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Agent Binding",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings/{binding_id}": {
-      "patch": {
-        "operationId": "patch_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings__binding_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "binding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Binding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentBindingPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentBindingView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Patch Agent Binding",
-        "tags": [
-          "AIOps"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/targets/{target_id}/agent-bindings/{binding_id}/{command}": {
-      "post": {
-        "operationId": "command_agent_binding_api_v1_apps_aiops_targets__target_id__agent_bindings__binding_id___command__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "target_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Target Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "binding_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Binding Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "command",
-            "required": true,
-            "schema": {
-              "enum": [
-                "revoke",
-                "restore"
-              ],
-              "title": "Command",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentBindingView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Command Agent Binding",
         "tags": [
           "AIOps"
         ]

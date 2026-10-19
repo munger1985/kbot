@@ -9,6 +9,7 @@ from platform_core.prompts import PromptIntegrityError, ResolvedPrompt
 
 
 PROMPT_KEYS = {
+    "turn_router": "aiops_agent.turn_router",
     "compact_planner": "aiops_agent.compact_planner",
     "investigation_planner": "aiops_agent.investigation_planner",
     "investigation_policy_repair": (
@@ -25,6 +26,7 @@ PROMPT_KEYS = {
     "diagnosis_answer_stream": "aiops_agent.diagnosis_answer_stream",
     "image_evidence_extract": "aiops_agent.image_evidence_extract",
     "knowledge_tag_classify": "aiops_agent.knowledge_tag_classify",
+    "knowledge_answer_compose": "aiops_agent.knowledge_answer_compose",
 }
 
 DIAGNOSIS_PROMPT_IDS = (
@@ -33,6 +35,7 @@ DIAGNOSIS_PROMPT_IDS = (
     "grounding_verify",
 )
 TURN_PROMPT_IDS = (
+    "turn_router",
     "compact_planner",
     "investigation_planner",
     "investigation_policy_repair",

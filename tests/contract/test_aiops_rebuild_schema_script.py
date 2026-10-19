@@ -469,7 +469,7 @@ class AIOpsRebuildSchemaScriptTest(unittest.TestCase):
         self.assertIn("'AIOPS-ORACLE-V16' AS CONTRACT_VERSION", normalized)
         self.assertIn("AIOPS-ORACLE-V13", normalized)
         self.assertIn("AIOPS-ORACLE-V14", normalized)
-        self.assertEqual(18, len(ready_ids))
+        self.assertEqual(17, len(ready_ids))
         for check_id in ready_ids:
             self.assertIn(check_id, sql)
         self.assertNotIn("user.report", sql)

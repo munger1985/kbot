@@ -72,32 +72,14 @@ class AIOpsDomainOutboxSink:
             and self._turn_planner_service is not None
         ):
             result = await self._turn_planner_service.begin(payload)
-            if (
-                result.get("status") == "UNDERSTANDING"
-                and self._turn_planning_service is not None
-            ):
-                try:
-                    await self._turn_planning_service.execute(payload)
-                except (
-                    InvestigationPlanValidationError,
-                    InvestigationCatalogChangedError,
-                ) as exc:
-                    error_code = getattr(
-                        exc, "code", "AIOPS_INVESTIGATION_PLAN_INVALID"
-                    )
-                    logger.warning(
-                        "AIOps Turn 规划无法执行："
-                        "turn_id={} code={} type={} reason={}",
-                        payload.get("turn_id"),
-                        error_code,
-                        type(exc).__name__,
-                        str(exc),
-                    )
-                    await self._turn_planning_service.fail_terminal(
-                        payload,
-                        error_code=error_code,
-                        error_message=str(exc),
-                    )
+            await self._dispatch_turn_route(result, payload)
+            return
+        if (
+            event_type == "aiops.turn.clarification_resolved"
+            and self._turn_planner_service is not None
+        ):
+            result = await self._turn_planner_service.resume(payload)
+            await self._dispatch_turn_route(result, payload)
             return
         if (
             event_type == "aiops.turn.replanning_requested"
@@ -122,12 +104,24 @@ class AIOpsDomainOutboxSink:
                     error_code=error_code,
                 )
             return
+
         if (
             event_type == "aiops.turn.cancel_requested"
             and self._turn_planner_service is not None
         ):
             await self._turn_planner_service.cancel(payload)
             return
+        if (
+            event_type in {"OPS_RUN_COMPLETED", "OPS_RUN_TERMINATED"}
+            and self._turn_planner_service is not None
+        ):
+            result = await (
+                self._turn_planner_service.aggregate_multi_resource_diagnosis(
+                    payload
+                )
+            )
+            if result.get("status") != "IGNORED":
+                return
         if (
             event_type == "SOURCE_CONNECTIVITY_CHECK_REQUESTED"
             and self._diagnostic_source_connectivity_service is not None
@@ -218,6 +212,43 @@ class AIOpsDomainOutboxSink:
             result["turn_id"],
         )
 
+    async def _dispatch_turn_route(self, result: dict, payload: dict) -> None:
+        if (
+            result.get("dispatch") != "ACTIVE_DIAGNOSIS"
+            or self._turn_planning_service is None
+            or self._turn_planner_service is None
+        ):
+            return
+        diagnosis_payload = (
+            await self._turn_planner_service.start_active_diagnosis(payload)
+        )
+        if diagnosis_payload.get("multi_resource") is True:
+            return
+        if diagnosis_payload.get("status") != "UNDERSTANDING":
+            return
+        try:
+            await self._turn_planning_service.execute(diagnosis_payload)
+        except (
+            InvestigationPlanValidationError,
+            InvestigationCatalogChangedError,
+        ) as exc:
+            error_code = getattr(
+                exc, "code", "AIOPS_INVESTIGATION_PLAN_INVALID"
+            )
+            logger.warning(
+                "AIOps Turn 规划无法执行："
+                "turn_id={} code={} type={} reason={}",
+                diagnosis_payload.get("turn_id"),
+                error_code,
+                type(exc).__name__,
+                str(exc),
+            )
+            await self._turn_planning_service.fail_terminal(
+                diagnosis_payload,
+                error_code=error_code,
+                error_message=str(exc),
+            )
+
     async def on_terminal_failure(
         self,
         event_type: str,
@@ -234,15 +265,18 @@ class AIOpsDomainOutboxSink:
                 type(exc).__name__,
             )
             return
-        if self._turn_planning_service is None:
-            return
         if event_type == "aiops.turn.replanning_requested":
+            if self._turn_planning_service is None:
+                return
             await self._turn_planning_service.fall_back_from_replan(
                 payload,
                 error_code="AIOPS_INVESTIGATION_REPLAN_FAILED",
             )
             return
-        if event_type != "aiops.turn.understanding_requested":
+        if event_type not in {
+            "aiops.turn.understanding_requested",
+            "aiops.turn.clarification_resolved",
+        }:
             return
         error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
         logger.opt(exception=exc).error(
@@ -255,7 +289,9 @@ class AIOpsDomainOutboxSink:
             getattr(exc, "safe_detail", "not-recorded"),
             getattr(exc, "location", "unknown"),
         )
-        await self._turn_planning_service.fail_terminal(
+        if self._turn_planner_service is None:
+            return
+        await self._turn_planner_service.fail_terminal(
             payload,
             error_code=error_code,
             error_message=str(exc),

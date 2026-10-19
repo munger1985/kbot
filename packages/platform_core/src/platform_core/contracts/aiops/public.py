@@ -155,6 +155,19 @@ class InspectionRunSummary(AIOpsContract):
     )
     evidence_covered_count: int | None = Field(default=None, ge=0)
     evidence_total_count: int | None = Field(default=None, ge=0)
+    tool_execution_coverage_percent: float | None = Field(
+        default=None, ge=0, le=100
+    )
+    tool_execution_covered_count: int | None = Field(default=None, ge=0)
+    tool_execution_total_count: int | None = Field(default=None, ge=0)
+    monitoring_sample_coverage_percent: float | None = Field(
+        default=None, ge=0, le=100
+    )
+    monitoring_metric_count: int | None = Field(default=None, ge=0)
+    monitoring_low_coverage_metric_count: int | None = Field(
+        default=None, ge=0
+    )
+    evidence_gap_count: int | None = Field(default=None, ge=0)
     error_code: str | None = None
     error_message: str | None = None
     completed_at: UtcDatetime | None = None

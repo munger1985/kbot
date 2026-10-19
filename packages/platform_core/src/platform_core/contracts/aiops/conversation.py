@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -16,9 +16,16 @@ from .types import (
     UUIDv7,
     UtcDatetime,
 )
+from .orchestration import (
+    AIOpsCapability,
+    ClarificationRequestV1,
+    ScopeResolutionV1,
+    TrustedContextHint,
+    TurnPlanV1,
+)
 
 
-CONVERSATION_SCHEMA_VERSION = "aiops.conversation.v1"
+CONVERSATION_SCHEMA_VERSION = "aiops.conversation.v2"
 TURN_EVENT_SCHEMA_VERSION = "aiops.turn-event.v1"
 
 
@@ -132,11 +139,41 @@ class ConversationSourceContext(AIOpsContract):
 class ConversationCreate(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     agent_id: UUIDv7
-    target_id: UUIDv7
     title: str | None = Field(default=None, min_length=1, max_length=256)
+    context_hint: TrustedContextHint | None = None
     source: ConversationSourceContext = Field(
         default_factory=ConversationSourceContext
     )
+
+    @model_validator(mode="after")
+    def validate_context_hint(self) -> "ConversationCreate":
+        if self.context_hint is None:
+            return self
+        source_type = ConversationSourceType(self.source.source_type)
+        expected_kind = {
+            ConversationSourceType.SITUATION: "SITUATION",
+            ConversationSourceType.RUN: "RUN",
+            ConversationSourceType.REPORT: "REPORT",
+            ConversationSourceType.INSPECTION: "INSPECTION",
+        }.get(source_type)
+        if source_type == ConversationSourceType.CHAT:
+            if self.context_hint.source_kind not in {
+                "BUSINESS_SYSTEM_PAGE",
+                "RESOURCE_PAGE",
+            }:
+                raise ValueError("CHAT 只能使用页面产生的可信上下文")
+            return self
+        if self.context_hint.source_kind != expected_kind:
+            raise ValueError("来源类型与可信上下文不一致")
+        source_id = {
+            ConversationSourceType.SITUATION: self.source.situation_id,
+            ConversationSourceType.RUN: self.source.run_id,
+            ConversationSourceType.REPORT: self.source.report_id,
+            ConversationSourceType.INSPECTION: self.source.inspection_fire_id,
+        }[source_type]
+        if self.context_hint.source_resource_id != source_id:
+            raise ValueError("来源资源与可信上下文不一致")
+        return self
 
 
 class ConversationStart(AIOpsContract):
@@ -162,6 +199,7 @@ class ConversationStarterView(AIOpsContract):
     description: str = Field(min_length=1, max_length=1000)
     supported_db_types: tuple[str, ...] = Field(min_length=1, max_length=3)
     execution_mode: Literal["DIAGNOSTIC", "REPORT", "RUNBOOK"]
+    required_capabilities: tuple[AIOpsCapability, ...] = Field(min_length=1)
     input_schema: tuple[JsonObject, ...] = Field(default=(), max_length=24)
     sort_order: int = Field(ge=0)
     status: Literal["AVAILABLE", "LIMITED", "UNAVAILABLE"]
@@ -170,8 +208,8 @@ class ConversationStarterView(AIOpsContract):
 
 class ConversationStarterCatalogView(AIOpsContract):
     catalog_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
-    target_id: UUIDv7
-    db_type: str = Field(min_length=1, max_length=32)
+    agent_id: UUIDv7
+    context_hint: TrustedContextHint | None = None
     starters: tuple[ConversationStarterView, ...]
 
 
@@ -180,7 +218,7 @@ class ConversationReceipt(AIOpsContract):
     conversation_id: UUIDv7
     agent_id: UUIDv7
     agent_version_id: UUIDv7
-    target_id: UUIDv7
+    context_hint: TrustedContextHint | None = None
     status: ConversationStatus
     title: str | None = None
     created_at: UtcDatetime
@@ -191,7 +229,7 @@ class ConversationSummary(AIOpsContract):
     conversation_id: UUIDv7
     agent_id: UUIDv7
     agent_version_id: UUIDv7
-    target_id: UUIDv7
+    context_hint: TrustedContextHint | None = None
     title: str | None = Field(default=None, max_length=256)
     status: ConversationStatus
     source_type: ConversationSourceType
@@ -228,10 +266,22 @@ class TurnReceipt(AIOpsContract):
     created_at: UtcDatetime
 
 
+class CitationEvidenceView(AIOpsContract):
+    """回答引用中可直接展示的安全结构化证据。"""
+
+    tool_id: str = Field(min_length=1, max_length=128)
+    captured_at: UtcDatetime
+    row_count: int = Field(ge=0)
+    truncated: bool = False
+    columns: tuple[str, ...] = ()
+    rows: tuple[tuple[Any, ...], ...] = ()
+
+
 class AnswerCitationView(AIOpsContract):
     citation_no: int = Field(ge=1)
     turn_evidence_id: UUIDv7
     label: str = Field(min_length=1, max_length=256)
+    evidence: CitationEvidenceView | None = None
 
 
 class AnswerBlockView(AIOpsContract):
@@ -260,6 +310,8 @@ class TurnEvidenceGapView(AIOpsContract):
 
     source_id: str | None = Field(default=None, max_length=128)
     step_id: str | None = Field(default=None, max_length=128)
+    diagnostic_source_id: UUIDv7 | None = None
+    binding_id: UUIDv7 | None = None
     code: str | None = Field(default=None, max_length=128)
     detail: str | None = Field(default=None, max_length=2000)
     retryable: bool = False
@@ -311,6 +363,11 @@ class TurnTaskFrameView(AIOpsContract):
     forecast_horizon_seconds: int | None = Field(
         default=None, ge=60, le=31_536_000
     )
+    visualization_profile_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9_]*)+$",
+        max_length=128,
+    )
     known_facts: tuple[str, ...] = ()
     unknowns: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
@@ -356,7 +413,9 @@ class TurnSummary(AIOpsContract):
     conversation_id: UUIDv7
     turn_no: int = Field(ge=1)
     status: TurnStatus
-    resolved_target_id: UUIDv7 | None = None
+    capability_plan: TurnPlanV1 | None = None
+    scope_resolution: ScopeResolutionV1 | None = None
+    clarification: ClarificationRequestV1 | None = None
     current_plan_revision: int = Field(default=0, ge=0)
     investigation_round: int = Field(default=0, ge=0)
     tool_call_count: int = Field(default=0, ge=0)
@@ -387,7 +446,6 @@ class TurnPage(CursorPage):
 class TurnCancelCommand(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     reason: str | None = Field(default=None, max_length=1000)
-
 
 
 class TargetFactConfirmCommand(AIOpsContract):

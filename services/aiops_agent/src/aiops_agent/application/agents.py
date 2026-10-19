@@ -17,6 +17,7 @@ from aiops_agent.entities import (
 )
 from aiops_agent.application.configuration.common import sha256_json
 from aiops_agent.tools.capabilities import target_capability_names
+from platform_core.contracts.aiops import AIOpsCapability, AgentKnowledgePolicy
 from platform_core.identity import uuid7
 
 
@@ -72,6 +73,9 @@ class AgentModelBindings(_Model):
 
     planner_llm: UUID | None = None
     diagnosis_llm: UUID | None = None
+    composer_llm: UUID | None = None
+    memory_llm: UUID | None = None
+    memory_embedding: UUID | None = None
 
 
 class ControlledDynamicParameterRule(_Model):
@@ -148,8 +152,8 @@ class ControlledActionObjectScopes(_Model):
         return self
 
 
-class TargetControlledActionExecution(_Model):
-    target_id: UUID
+class ResourceControlledActionExecution(_Model):
+    resource_id: UUID
     enabled: bool = False
     allowed_action_ids: tuple[str, ...] = ()
     object_scopes: ControlledActionObjectScopes = Field(
@@ -170,9 +174,13 @@ class CreateAIOpsAgentCommand(_Model):
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    allowed_business_system_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    capabilities: tuple[AIOpsCapability, ...] = Field(min_length=1, max_length=8)
+    knowledge_policy: AgentKnowledgePolicy = Field(
+        default_factory=AgentKnowledgePolicy
+    )
     controlled_action_execution: tuple[
-        TargetControlledActionExecution, ...
+        ResourceControlledActionExecution, ...
     ] = ()
     auto_alert_enabled: bool = True
     auto_observe_min_severity: Literal[
@@ -191,13 +199,13 @@ class CreateAIOpsAgentCommand(_Model):
 
     @model_validator(mode="after")
     def validate_resources(self):
-        if len(set(self.target_ids)) != len(self.target_ids):
-            raise ValueError("target_ids 不能重复")
-        policy_targets = [item.target_id for item in self.controlled_action_execution]
-        if len(set(policy_targets)) != len(policy_targets):
-            raise ValueError("每个 Target 只能声明一份受控动作策略")
-        if not set(policy_targets).issubset(self.target_ids):
-            raise ValueError("受控动作策略只能引用已选择的 Target")
+        if len(set(self.allowed_business_system_ids)) != len(self.allowed_business_system_ids):
+            raise ValueError("allowed_business_system_ids 不能重复")
+        if len(set(self.capabilities)) != len(self.capabilities):
+            raise ValueError("capabilities 不能重复")
+        policy_resources = [item.resource_id for item in self.controlled_action_execution]
+        if len(set(policy_resources)) != len(policy_resources):
+            raise ValueError("每个资源只能声明一份受控动作策略")
         return self
 
 
@@ -207,11 +215,15 @@ class UpdateAIOpsAgentCommand(_Model):
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    target_ids: tuple[UUID, ...] | None = Field(
+    allowed_business_system_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
+    capabilities: tuple[AIOpsCapability, ...] | None = Field(
+        default=None, min_length=1, max_length=8
+    )
+    knowledge_policy: AgentKnowledgePolicy | None = None
     controlled_action_execution: tuple[
-        TargetControlledActionExecution, ...
+        ResourceControlledActionExecution, ...
     ] | None = None
     auto_alert_enabled: bool | None = None
     auto_observe_min_severity: Literal[
@@ -230,20 +242,20 @@ class UpdateAIOpsAgentCommand(_Model):
 
     @model_validator(mode="after")
     def validate_resources(self):
-        if self.target_ids is not None and len(set(self.target_ids)) != len(
-            self.target_ids
+        if self.allowed_business_system_ids is not None and len(set(self.allowed_business_system_ids)) != len(
+            self.allowed_business_system_ids
         ):
-            raise ValueError("target_ids 不能重复")
+            raise ValueError("allowed_business_system_ids 不能重复")
+        if self.capabilities is not None and len(set(self.capabilities)) != len(
+            self.capabilities
+        ):
+            raise ValueError("capabilities 不能重复")
         if self.controlled_action_execution is not None:
-            policy_targets = [
-                item.target_id for item in self.controlled_action_execution
+            policy_resources = [
+                item.resource_id for item in self.controlled_action_execution
             ]
-            if len(set(policy_targets)) != len(policy_targets):
-                raise ValueError("每个 Target 只能声明一份受控动作策略")
-            if self.target_ids is not None and not set(policy_targets).issubset(
-                self.target_ids
-            ):
-                raise ValueError("受控动作策略只能引用已选择的 Target")
+            if len(set(policy_resources)) != len(policy_resources):
+                raise ValueError("每个资源只能声明一份受控动作策略")
         return self
 
 
@@ -313,12 +325,13 @@ class AIOpsAgentService:
                         actor_id=command.actor_id,
                     )
                 )
-                await uow.agents.add_version_targets(
+                await uow.agents.add_version_business_systems(
                     version_id=version_id,
-                    target_ids=command.target_ids,
-                    controlled_action_policies=(
-                        self._controlled_action_policies(values)
-                    ),
+                    business_system_ids=command.allowed_business_system_ids,
+                )
+                await uow.agents.add_version_resource_policies(
+                    version_id=version_id,
+                    controlled_action_policies=self._controlled_action_policies(values),
                 )
                 agent.current_version_id = version_id
                 await uow.commit()
@@ -385,12 +398,19 @@ class AIOpsAgentService:
             await uow.commit()
 
     async def action_catalog(
-        self, *, domain_id: int, target_id: UUID
+        self, *, domain_id: int, resource_id: UUID
     ) -> dict[str, Any]:
-        """返回一个 Target 可见动作及当前可执行原因。"""
+        """返回一个业务资源可见动作及当前可执行原因。"""
         async with self._uow_factory() as uow:
+            resource = await uow.business_systems.get_resource_scoped(
+                resource_id=resource_id,
+                domain_id=domain_id,
+            )
+            database = await uow.business_systems.get_database_profile(resource_id)
+            if resource is None or database is None:
+                self._not_found()
             target = await uow.targets.get_scoped(
-                target_id=target_id, domain_id=domain_id
+                target_id=database.target_id, domain_id=domain_id
             )
             if target is None:
                 self._not_found()
@@ -406,7 +426,7 @@ class AIOpsAgentService:
                 dict(target.capabilities_json or {})
             )
             return {
-                "target_id": str(target.target_id),
+                "resource_id": str(resource.resource_id),
                 "catalog_hash": (
                     self._action_registry.catalog_hash
                     if self._action_registry is not None
@@ -474,10 +494,10 @@ class AIOpsAgentService:
                     "STATE_VERSION_CONFLICT", "Agent 配置版本已变化"
                 )
             current = await self._version(uow.agents, agent)
-            current_targets = await uow.agents.version_target_ids(
+            current_business_systems = await uow.agents.version_business_system_ids(
                 agent_version_id=current.agent_version_id
             )
-            current_action_policies = await uow.agents.version_target_policies(
+            current_action_policies = await uow.agents.version_resource_policies(
                 agent_version_id=current.agent_version_id
             )
             current_policy = await uow.policies.get_scoped(
@@ -492,17 +512,25 @@ class AIOpsAgentService:
                 exclude={"domain_id", "agent_id", "expected_row_version", "actor_id"},
                 exclude_unset=True,
             )
-            effective_target_ids = tuple(
-                changes.get("target_ids", tuple(current_targets))
+            effective_business_system_ids = tuple(
+                changes.get("allowed_business_system_ids", tuple(current_business_systems))
             )
             current_controlled_actions = [
-                {"target_id": target_id, **policy}
-                for target_id, policy in current_action_policies.items()
-                if policy and target_id in effective_target_ids
+                {"resource_id": resource_id, **policy}
+                for resource_id, policy in current_action_policies.items()
+                if policy
             ]
             effective = {
                 "domain_id": command.domain_id,
-                "target_ids": effective_target_ids,
+                "allowed_business_system_ids": effective_business_system_ids,
+                "capabilities": changes.get(
+                    "capabilities",
+                    tuple(current.capabilities_json or ()),
+                ),
+                "knowledge_policy": changes.get(
+                    "knowledge_policy",
+                    dict(current.knowledge_policy_json or {}),
+                ),
                 "controlled_action_execution": changes.get(
                     "controlled_action_execution", current_controlled_actions
                 ),
@@ -536,7 +564,9 @@ class AIOpsAgentService:
                 effective,
             )
             version_fields = {
-                "target_ids",
+                "allowed_business_system_ids",
+                "capabilities",
+                "knowledge_policy",
                 "controlled_action_execution",
                 "auto_alert_enabled",
                 "auto_observe_min_severity",
@@ -574,12 +604,13 @@ class AIOpsAgentService:
                         actor_id=command.actor_id,
                     )
                 )
-                await uow.agents.add_version_targets(
+                await uow.agents.add_version_business_systems(
                     version_id=version_id,
-                    target_ids=effective["target_ids"],
-                    controlled_action_policies=(
-                        self._controlled_action_policies(effective)
-                    ),
+                    business_system_ids=effective["allowed_business_system_ids"],
+                )
+                await uow.agents.add_version_resource_policies(
+                    version_id=version_id,
+                    controlled_action_policies=self._controlled_action_policies(effective),
                 )
                 agent.current_version_id = version_id
             for field in (
@@ -608,12 +639,14 @@ class AIOpsAgentService:
             "consumer_agent_version_id": row["agent_version_id"],
             "agent_kind": "AIOPS",
             "display_name": row["display_name"],
-            "enabled_capabilities": ["aiops"],
+            "enabled_capabilities": row["capabilities"],
             "models": row["models"],
             "instruction": row["instruction"],
             "resource_context": {
                 "policy_id": row["policy_id"],
-                "target_ids": row["target_ids"],
+                "allowed_business_system_ids": row["allowed_business_system_ids"],
+                "capabilities": row["capabilities"],
+                "knowledge_policy": row["knowledge_policy"],
                 "controlled_action_execution": row[
                     "controlled_action_execution"
                 ],
@@ -646,7 +679,7 @@ class AIOpsAgentService:
             ]
 
     async def _validate_production_llm_providers(self, values) -> None:
-        """生产环境启用 Agent 时，规划/诊断模型必须是本地 DeepSeek。"""
+        """生产环境启用 Agent 时，运行时 LLM 必须是本地 DeepSeek。"""
         from aiops_agent.application.diagnosis.local_models import (
             LocalModelBindingError,
             is_production_environment,
@@ -659,6 +692,7 @@ class AIOpsAgentService:
         for role, role_label in (
             ("planner_llm", "规划"),
             ("diagnosis_llm", "诊断"),
+            ("composer_llm", "回答组织"),
         ):
             model_id = models.get(role)
             if not model_id:
@@ -691,8 +725,38 @@ class AIOpsAgentService:
     async def _validate_resources(
         self, uow, domain_id: int, status: str, values
     ) -> None:
-        if status == "ACTIVE" and not dict(values.get("models") or {}).get(
-            "diagnosis_llm"
+        capabilities = {
+            AIOpsCapability(item) for item in values.get("capabilities") or ()
+        }
+        policies = self._controlled_action_policies(values)
+        enabled_policies = {
+            resource_id: policy
+            for resource_id, policy in policies.items()
+            if policy.get("enabled")
+        }
+        if (
+            enabled_policies
+            and AIOpsCapability.CONTROLLED_CHANGE not in capabilities
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_CHANGE_CAPABILITY_REQUIRED",
+                "配置受控动作前必须启用 CONTROLLED_CHANGE 能力",
+                status_code=422,
+            )
+        if (
+            status == "ACTIVE"
+            and AIOpsCapability.CONTROLLED_CHANGE in capabilities
+            and not enabled_policies
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_CHANGE_POLICY_REQUIRED",
+                "启用 CONTROLLED_CHANGE 前必须至少授权一个业务资源",
+                status_code=422,
+            )
+        if (
+            status == "ACTIVE"
+            and AIOpsCapability.ACTIVE_DIAGNOSIS in capabilities
+            and not dict(values.get("models") or {}).get("diagnosis_llm")
         ):
             raise AIOpsAgentError(
                 "AIOPS_AGENT_DIAGNOSIS_MODEL_REQUIRED",
@@ -707,64 +771,98 @@ class AIOpsAgentService:
                 "启用 Agent 前必须选择规划模型",
                 status_code=422,
             )
-        if status == "ACTIVE":
-            await self._validate_production_llm_providers(values)
-        target_ids = tuple(values.get("target_ids") or ())
-        if not target_ids:
+        if status == "ACTIVE" and not dict(values.get("models") or {}).get(
+            "composer_llm"
+        ):
             raise AIOpsAgentError(
-                "AIOPS_AGENT_TARGET_REQUIRED",
-                "Agent 至少需要关联一个 Target",
+                "AIOPS_AGENT_COMPOSER_MODEL_REQUIRED",
+                "启用 Agent 前必须选择回答组织模型",
                 status_code=422,
             )
+        if status == "ACTIVE":
+            await self._validate_production_llm_providers(values)
+        business_system_ids = tuple(
+            values.get("allowed_business_system_ids") or ()
+        )
+        if not business_system_ids:
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_BUSINESS_SYSTEM_REQUIRED",
+                "Agent 至少需要关联一个业务系统",
+                status_code=422,
+            )
+        business_systems = [
+            await uow.business_systems.get_scoped(
+                business_system_id=business_system_id,
+                domain_id=domain_id,
+            )
+            for business_system_id in business_system_ids
+        ]
+        if any(system is None for system in business_systems):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的业务系统不存在"
+            )
+        if status == "ACTIVE" and any(
+            system.status != "ENABLED" for system in business_systems
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_BUSINESS_SYSTEM_DISABLED",
+                "启用 Agent 前，所选业务系统必须已上线",
+                status_code=422,
+            )
+        target_ids = {
+            database.target_id
+            for business_system_id in business_system_ids
+            for link, resource, database, _target in await uow.business_systems.list_system_resource_rows(
+                business_system_id
+            )
+            if link.status == "ACTIVE"
+            and resource.lifecycle_status == "ACTIVE"
+            and database is not None
+        }
         targets = [
             await uow.targets.get_scoped(target_id=target_id, domain_id=domain_id)
-            for target_id in target_ids
+            for target_id in sorted(target_ids, key=str)
         ]
         if any(target is None for target in targets):
             raise AIOpsAgentError(
-                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "Agent 引用的 Target 不存在"
+                "AIOPS_AGENT_RESOURCE_NOT_FOUND", "业务系统引用的 Target 不存在"
             )
-        if status == "ACTIVE" and any(target.status != "ENABLED" for target in targets):
+        target_capabilities = {
+            AIOpsCapability.MONITORING_QUERY,
+            AIOpsCapability.ALERT_QUERY,
+            AIOpsCapability.INSPECTION_QUERY,
+            AIOpsCapability.ACTIVE_DIAGNOSIS,
+            AIOpsCapability.CONTROLLED_CHANGE,
+        }
+        if status == "ACTIVE" and capabilities.intersection(
+            target_capabilities
+        ) and not any(
+            target is not None and target.status == "ENABLED" for target in targets
+        ):
             raise AIOpsAgentError(
-                "AIOPS_AGENT_TARGET_DISABLED",
-                "启用 Agent 前，所选逻辑 Target 必须已启用",
+                "AIOPS_AGENT_NO_ELIGIBLE_TARGET",
+                "启用 Agent 前，至少一个业务系统资源必须具备已启用的诊断 Target",
                 status_code=422,
             )
-        if status == "ACTIVE":
-            for target in targets:
-                bindings = await uow.targets.list_source_bindings(
-                    target_id=target.target_id,
-                    domain_id=domain_id,
-                    active_only=True,
+        resources_by_id = {
+            resource.resource_id: (resource, database, target)
+            for business_system_id in business_system_ids
+            for link, resource, database, target in await uow.business_systems.list_system_resource_rows(
+                business_system_id
+            )
+            if link.status == "ACTIVE" and resource.lifecycle_status == "ACTIVE"
+        }
+        for resource_id, action_policy in policies.items():
+            resource_context = resources_by_id.get(resource_id)
+            if resource_context is None:
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_ACTION_RESOURCE_NOT_ALLOWED",
+                    "受控动作资源必须属于 Agent 已授权业务系统中的活跃资源",
+                    status_code=422,
                 )
-                if not bindings:
-                    raise AIOpsAgentError(
-                        "AIOPS_AGENT_SOURCE_BINDING_REQUIRED",
-                        "启用 Agent 前，每个 Target 必须至少配置一条有效监控 Label 映射",
-                        status_code=422,
-                    )
-                sources = [
-                    await uow.diagnostic_sources.get_scoped(
-                        diagnostic_source_id=binding.diagnostic_source_id,
-                        domain_id=domain_id,
-                    )
-                    for binding in bindings
-                ]
-                if any(
-                    source is None or source.status != "ENABLED"
-                    for source in sources
-                ):
-                    raise AIOpsAgentError(
-                        "AIOPS_AGENT_SOURCE_UNAVAILABLE",
-                        "启用 Agent 前，Target 的监控映射必须引用已启用的监控源",
-                        status_code=422,
-                    )
-        policies = self._controlled_action_policies(values)
-        target_by_id = {target.target_id: target for target in targets}
-        for target_id, action_policy in policies.items():
             if not action_policy.get("enabled"):
                 continue
-            target = target_by_id.get(target_id)
+            target = resource_context[2]
             if (
                 target is None
                 or not target.controlled_change_enabled
@@ -861,20 +959,20 @@ class AIOpsAgentService:
 
     @staticmethod
     def _controlled_action_policies(values) -> dict[UUID, dict[str, Any]]:
-        """把请求中的每 Target 策略规范化为不可变版本快照。"""
+        """把请求中的每个业务资源策略规范化为不可变版本快照。"""
         result: dict[UUID, dict[str, Any]] = {}
         for raw in values.get("controlled_action_execution") or ():
             item = (
                 raw.model_dump(mode="python")
-                if isinstance(raw, TargetControlledActionExecution)
+                if isinstance(raw, ResourceControlledActionExecution)
                 else dict(raw)
             )
-            target_id = UUID(str(item.pop("target_id")))
+            resource_id = UUID(str(item.pop("resource_id")))
             item["allowed_action_ids"] = sorted(
                 set(item.get("allowed_action_ids") or ())
             )
             item["object_scopes"] = dict(item.get("object_scopes") or {})
-            result[target_id] = item
+            result[resource_id] = item
         return result
 
     async def _create_policy(
@@ -917,11 +1015,18 @@ class AIOpsAgentService:
 
     @staticmethod
     def _new_version(*, agent_id, version_id, version_no, values, actor_id):
+        knowledge_policy = values.get("knowledge_policy") or {}
+        if isinstance(knowledge_policy, AgentKnowledgePolicy):
+            knowledge_policy = knowledge_policy.model_dump(mode="json")
         return AIOpsAgentVersionEntity(
             agent_version_id=version_id,
             agent_id=agent_id,
             version_no=version_no,
             policy_id=values["policy_id"],
+            capabilities_json=[
+                str(item) for item in values.get("capabilities") or ()
+            ],
+            knowledge_policy_json=dict(knowledge_policy),
             models_json={
                 key: str(value)
                 for key, value in dict(values.get("models") or {}).items()
@@ -951,10 +1056,13 @@ class AIOpsAgentService:
 
     @staticmethod
     async def _view(uow, agent, version):
+        business_system_ids = set(await uow.agents.version_business_system_ids(
+            agent_version_id=version.agent_version_id
+        ))
         candidate_ids = set(await uow.agents.version_target_ids(
             agent_version_id=version.agent_version_id
         ))
-        action_policies = await uow.agents.version_target_policies(
+        action_policies = await uow.agents.version_resource_policies(
             agent_version_id=version.agent_version_id
         )
         target_candidates = []
@@ -965,9 +1073,18 @@ class AIOpsAgentService:
             )
             if target is None:
                 continue
+            resource = await uow.business_systems.get_resource_for_target(
+                target_id=target_id,
+                domain_id=int(agent.domain_id),
+            )
             target_candidates.append(
                 {
                     "target_id": str(target.target_id),
+                    "resource_id": (
+                        str(resource.resource_id)
+                        if resource is not None
+                        else None
+                    ),
                     "display_name": target.display_name,
                     "db_type": target.db_type,
                     "status": target.status,
@@ -979,6 +1096,23 @@ class AIOpsAgentService:
                     "controlled_change_enabled": bool(
                         target.controlled_change_enabled
                     ),
+                }
+            )
+        business_system_candidates = []
+        for business_system_id in sorted(business_system_ids, key=str):
+            system = await uow.business_systems.get_scoped(
+                business_system_id=business_system_id,
+                domain_id=int(agent.domain_id),
+            )
+            if system is None:
+                continue
+            business_system_candidates.append(
+                {
+                    "business_system_id": str(system.business_system_id),
+                    "system_code": system.system_code,
+                    "display_name": system.display_name,
+                    "environment": system.environment,
+                    "status": system.status,
                 }
             )
         policy = await uow.policies.get_scoped(
@@ -994,12 +1128,15 @@ class AIOpsAgentService:
             "agent_version_id": str(version.agent_version_id),
             "version_no": int(version.version_no),
             "policy_id": str(version.policy_id),
-            "target_ids": [str(item) for item in sorted(candidate_ids, key=str)],
+            "allowed_business_system_ids": [
+                str(item) for item in sorted(business_system_ids, key=str)
+            ],
+            "business_system_candidates": business_system_candidates,
             "target_candidates": target_candidates,
             "controlled_action_execution": [
-                {"target_id": str(target_id), **dict(action_policies[target_id])}
-                for target_id in sorted(action_policies, key=str)
-                if action_policies[target_id]
+                {"resource_id": str(resource_id), **dict(action_policies[resource_id])}
+                for resource_id in sorted(action_policies, key=str)
+                if action_policies[resource_id]
             ],
             "auto_alert_enabled": bool(rules.get("auto_alert_enabled", True)),
             "auto_observe_min_severity": rules.get(
@@ -1012,6 +1149,8 @@ class AIOpsAgentService:
                 rules.get("alert_cooldown_seconds", 900)
             ) // 60,
             "models": dict(version.models_json or {}),
+            "capabilities": list(version.capabilities_json or ()),
+            "knowledge_policy": dict(version.knowledge_policy_json or {}),
             "instruction": version.instruction,
             "image_capabilities": dict(version.image_capabilities_json or {}),
             "config": dict(version.config_json or {}),

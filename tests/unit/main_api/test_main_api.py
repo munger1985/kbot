@@ -543,12 +543,9 @@ class _FakeAIOpsClient:
         self.last_start_payload = None
         self.last_target_status = None
 
-    async def is_ready(self):
-        return True
-
-    async def list_private_agents(self, *, auth_context):
-        del auth_context
-        return [{
+    @staticmethod
+    def _agent_view(**values):
+        return {
             "agent_id": str(
                 UUID("019f8eae-2c25-7d48-b044-350ec3f5a120")
             ),
@@ -558,16 +555,49 @@ class _FakeAIOpsClient:
             "instruction": "内部诊断指令",
             "models": {"planner_llm": "internal-model"},
             "config": {"internal": True},
-        }]
+            "target_candidates": [
+                {
+                    "target_id": "019f8eae-2c25-7d48-b044-350ec3f5a112",
+                    "resource_id": "019f8eae-2c25-7d48-b044-350ec3f5a113",
+                    "display_name": "MES RAC",
+                    "db_type": "ORACLE",
+                    "importance_level": 1,
+                    "connectivity_status": "CONNECTED",
+                    "readonly_connection_enabled": True,
+                }
+            ],
+            "controlled_action_execution": [
+                {
+                    "target_id": "019f8eae-2c25-7d48-b044-350ec3f5a112",
+                    "resource_id": "019f8eae-2c25-7d48-b044-350ec3f5a113",
+                    "enabled": True,
+                    "allowed_action_ids": ["db.session.terminate"],
+                }
+            ],
+            "row_version": 1,
+            **values,
+        }
+
+    async def is_ready(self):
+        return True
+
+    async def list_private_agents(self, *, auth_context):
+        del auth_context
+        return [self._agent_view()]
 
     async def create_private_agent(self, payload, *, auth_context):
         del auth_context
         self.last_agent_payload = payload
-        return {
-            "agent_id": "019f8eae-2c25-7d48-b044-350ec3f5a120",
-            "row_version": 1,
-            **payload,
-        }
+        return self._agent_view(**payload)
+
+    async def get_private_agent(self, agent_id, *, auth_context):
+        del auth_context
+        return self._agent_view(agent_id=str(agent_id))
+
+    async def update_private_agent(self, agent_id, payload, *, auth_context):
+        del auth_context
+        self.last_agent_payload = payload
+        return self._agent_view(agent_id=str(agent_id), **payload)
 
     async def list_targets(
         self, *, status, cursor, limit, auth_context
@@ -596,34 +626,6 @@ class _FakeAIOpsClient:
             "event_cursor": 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-
-    async def create_agent_binding(
-        self,
-        target_id,
-        payload,
-        *,
-        idempotency_key,
-        auth_context,
-    ):
-        now = datetime.now(timezone.utc).isoformat()
-        return {
-            "schema_version": "aiops.public.v1",
-            "binding_id": str(self.binding_id),
-            "target_id": str(target_id),
-            "agent_id": payload["agent_id"],
-            "allow_mutation": payload.get("allow_mutation", False),
-            "policy_id": payload.get("policy_id"),
-            "allowed_actions": payload.get("allowed_actions", []),
-            "change_window": payload.get("change_window"),
-            "max_daily_executions": payload.get(
-                "max_daily_executions"
-            ),
-            "status": "ACTIVE",
-            "row_version": 1,
-            "created_at": now,
-            "updated_at": now,
-        }
-
 
 class _FakeDomainManagementService:
     def __init__(self):
@@ -2014,13 +2016,11 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("PRECONDITION_REQUIRED", response.json()["code"])
 
     def test_aiops_manager_starts_chat_without_agent_grant(self) -> None:
-        target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a112")
         response = self.client.post(
             "/api/v1/apps/aiops/conversations",
             headers={**self._headers(), "Idempotency-Key": "chat-turn-1"},
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
-                "target_id": str(target_id),
                 "content": [
                     {"content_type": "TEXT", "text": "检查数据库负载"}
                 ],
@@ -2047,16 +2047,18 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(422, response.status_code, response.text)
 
     def test_aiops_agent_forwards_explicit_controlled_actions(self) -> None:
-        target_id = "019f8eae-2c25-7d48-b044-350ec3f5a115"
+        system_id = "019f8eae-2c25-7d48-b044-350ec3f5a114"
+        resource_id = "019f8eae-2c25-7d48-b044-350ec3f5a115"
 
         response = self.client.post(
             "/api/v1/apps/aiops/agents",
             headers=self._headers(),
             json={
                 "display_name": "数据库诊断 Agent",
-                "target_ids": [target_id],
+                "allowed_business_system_ids": [system_id],
+                "capabilities": ["CONTROLLED_CHANGE"],
                 "controlled_action_execution": [{
-                    "target_id": target_id,
+                    "resource_id": resource_id,
                     "enabled": True,
                     "allowed_action_ids": ["db.session.terminate"],
                 }],
@@ -2067,10 +2069,47 @@ class MainApiTest(unittest.TestCase):
         action_policy = self.aiops.last_agent_payload[
             "controlled_action_execution"
         ][0]
-        self.assertEqual(target_id, action_policy["target_id"])
+        self.assertEqual(resource_id, action_policy["resource_id"])
         self.assertEqual(
             ["db.session.terminate"], action_policy["allowed_action_ids"]
         )
+        self.assertNotIn(
+            "target_id", response.json()["target_candidates"][0]
+        )
+        self.assertNotIn(
+            "connectivity_status", response.json()["target_candidates"][0]
+        )
+
+    def test_aiops_agent_management_responses_redact_internal_targets(self) -> None:
+        agent_id = "019f8eae-2c25-7d48-b044-350ec3f5a120"
+
+        listed = self.client.get(
+            "/api/v1/apps/aiops/agents", headers=self._headers()
+        )
+        detail = self.client.get(
+            f"/api/v1/apps/aiops/agents/{agent_id}",
+            headers=self._headers(),
+        )
+        updated = self.client.patch(
+            f"/api/v1/apps/aiops/agents/{agent_id}",
+            headers=self._headers(),
+            json={"expected_row_version": 1, "description": "更新说明"},
+        )
+
+        for response in (listed, detail, updated):
+            self.assertEqual(200, response.status_code, response.text)
+        rows = (listed.json()[0], detail.json(), updated.json())
+        for row in rows:
+            candidate = row["target_candidates"][0]
+            self.assertEqual(
+                "019f8eae-2c25-7d48-b044-350ec3f5a113",
+                candidate["resource_id"],
+            )
+            self.assertNotIn("target_id", candidate)
+            self.assertNotIn("connectivity_status", candidate)
+            self.assertNotIn("readonly_connection_enabled", candidate)
+            action = row["controlled_action_execution"][0]
+            self.assertNotIn("target_id", action)
 
     def test_aiops_use_permission_reads_active_agents_and_target_list(self) -> None:
         self.app.state.access_control_service = _ScopedAccessControlService(
@@ -2201,7 +2240,6 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual("APP_PRINCIPAL_UNSUPPORTED", response.json()["code"])
 
     def test_aiops_starts_conversation_from_situation(self) -> None:
-        target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a112")
         situation_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a113")
         response = self.client.post(
             "/api/v1/apps/aiops/conversations",
@@ -2211,7 +2249,6 @@ class MainApiTest(unittest.TestCase):
             },
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
-                "target_id": str(target_id),
                 "source_situation_id": str(situation_id),
                 "content": [
                     {
@@ -2244,7 +2281,6 @@ class MainApiTest(unittest.TestCase):
             },
             json={
                 "agent_id": str(self.agent_runtime.agent_id),
-                "target_id": "019f8eae-2c25-7d48-b044-350ec3f5a112",
                 "source_situation_id": source_id,
                 "source_run_id": source_id,
                 "content": [
@@ -2256,7 +2292,7 @@ class MainApiTest(unittest.TestCase):
         self.assertEqual(422, response.status_code)
         self.assertIsNone(self.aiops.last_start_payload)
 
-    def test_aiops_binding_selects_agent_chat_target(self) -> None:
+    def test_aiops_target_agent_binding_route_is_not_public(self) -> None:
         target_id = UUID("019f8eae-2c25-7d48-b044-350ec3f5a102")
         response = self.client.post(
             f"/api/v1/apps/aiops/targets/{target_id}/agent-bindings",
@@ -2271,8 +2307,7 @@ class MainApiTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(201, response.status_code)
-        self.assertEqual(str(target_id), response.json()["target_id"])
+        self.assertEqual(404, response.status_code)
         self.assertIsNone(self.agent_runtime.last_update_payload)
 
     def test_health_is_public(self) -> None:

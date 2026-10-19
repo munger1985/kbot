@@ -306,9 +306,15 @@ def _deterministic_checks(
             "detail": "证据评估已执行",
         },
         {
-            "name": "target_scope",
-            "passed": str(turn.get("resolved_target_id")) == target_id,
-            "detail": str(turn.get("resolved_target_id")),
+            "name": "resource_scope",
+            "passed": (
+                (turn.get("scope_resolution") or {}).get("status")
+                == "RESOLVED"
+                and bool(
+                    (turn.get("scope_resolution") or {}).get("resources")
+                )
+            ),
+            "detail": str(turn.get("scope_resolution")),
         },
         {
             "name": "obsolete_error_absent",

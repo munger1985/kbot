@@ -3,87 +3,75 @@
 
   const api = "/api/v1/apps/aiops";
   const shell = globalThis.KBotAIOpsShell;
-  let agents = [];
-  let targets = [];
-  let models = [];
-  const actionDraftsByTarget = new Map();
-  const actionCatalogsByTarget = new Map();
-  let editing = null;
-  let expandedActionTargetId = null;
-
   const escape = (value) => shell.escape(value ?? "—");
-  const targetName = (id) => targets.find((item) => item.target_id === id)?.display_name || shell.short(id);
-
-  const scopeLabels = {
-    schemas: "Schema",
-    dynamic_parameters: "动态参数及允许值",
-    resource_manager_plans: "Resource Manager Plan",
-    privilege_grantees: "允许授权的本地用户",
-    system_privileges: "系统权限",
-    object_privileges: "对象权限",
+  const values = (items) => Array.isArray(items) ? items : [];
+  const capabilityCatalog = [
+    ["RESOURCE_CATALOG_QUERY", "资源信息", "查询业务系统拓扑、主机、IP 与资源属性"],
+    ["KNOWLEDGE_QA", "运维知识", "检索已审批手册与历史诊断案例"],
+    ["MONITORING_QUERY", "监控现状", "查询业务系统当前指标与趋势"],
+    ["ALERT_QUERY", "告警查询", "查询当前与历史告警"],
+    ["INSPECTION_QUERY", "巡检查询", "读取巡检结果与报告"],
+    ["REPORT_CASE_QUERY", "报告与案例", "查询诊断、告警和巡检沉淀"],
+    ["ACTIVE_DIAGNOSIS", "主动诊断", "按自然语言范围执行有界诊断"],
+    ["CONTROLLED_CHANGE", "受控变更", "仅保留已有资源级授权；新增授权需在资源治理中完成"],
+  ];
+  const capabilityLabels = Object.fromEntries(capabilityCatalog.map(([key, label]) => [key, label]));
+  const providerLabels = {
+    local_deepseek: "本地部署 · DeepSeek",
+    api_deepseek: "API 调用 · DeepSeek",
+    api_qwen: "API 调用 · Qwen",
+    chatgpt: "API 调用 · OpenAI",
+    oci: "API 调用 · OCI",
   };
 
-  function uniqueValues(...groups) {
-    return [...new Set(groups.flat().map((value) => String(value || "").trim()).filter(Boolean))]
-      .sort((left, right) => left.localeCompare(right, "zh"));
-  }
+  let agents = [];
+  let systems = [];
+  let models = [];
+  let knowledgeTags = [];
+  let editing = null;
 
-  function groupedActions(catalog) {
-    const grouped = new Map();
-    (catalog.actions || [])
-      .filter((item) => item.execution_mode === "EXECUTABLE_AFTER_APPROVAL")
-      .forEach((action) => {
-        const current = grouped.get(action.action_id);
-        if (!current) {
-          grouped.set(action.action_id, { ...action, scope_requirements: [...(action.scope_requirements || [])] });
-          return;
-        }
-        current.currently_executable = current.currently_executable || action.currently_executable;
-        current.scope_requirements = uniqueValues(current.scope_requirements, action.scope_requirements || []);
-      });
-    return [...grouped.values()];
-  }
+  const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || shell.short(id);
+  const selected = (name) => [...document.querySelectorAll(`[name="${name}"]:checked`)].map((input) => input.value);
 
-  function optionPicker(kind, label, options, selected, help) {
-    const normalizedOptions = (options || []).map((value) => String(value).toUpperCase());
-    const normalizedSelected = (selected || []).map((value) => String(value).toUpperCase());
-    const values = uniqueValues(normalizedOptions, normalizedSelected);
-    const selectedValues = new Set(normalizedSelected);
-    const choices = values.length
-      ? values.map((value) => `<label class="agent-scope-option" data-option-label="${escape(value.toLocaleLowerCase())}">
-          <input type="checkbox" data-action-scope="${escape(kind)}" value="${escape(value)}" ${selectedValues.has(value) ? "checked" : ""}>
-          <span>${escape(value)}</span>
-        </label>`).join("")
-      : '<p class="agent-scope-empty">当前 Target 没有可选项。请先在 Target 页面执行连接测试，刷新数据库目录。</p>';
-    const search = values.length > 8
-      ? `<input class="agent-scope-search" type="search" data-scope-search="${escape(kind)}" placeholder="搜索${escape(label)}" aria-label="搜索${escape(label)}">`
-      : "";
-    return `<section class="agent-scope-panel" data-scope-kind="${escape(kind)}" hidden>
-      <div class="agent-scope-title"><div><strong>${escape(label)}</strong><small>${escape(help)}</small></div><span data-scope-count>已选 ${selectedValues.size} 项</span></div>
-      ${search}<div class="agent-scope-options">${choices}</div>
-    </section>`;
-  }
-
-  function dynamicParameterPicker(options, configured) {
-    const configuredByName = new Map((configured || []).map((item) => [String(item.name).toLowerCase(), (item.allowed_values || []).map((value) => String(value).toUpperCase())]));
-    const catalogByName = new Map((options || []).map((item) => [String(item.name).toLowerCase(), (item.allowed_values || []).map((value) => String(value).toUpperCase())]));
-    configuredByName.forEach((values, name) => catalogByName.set(name, uniqueValues(catalogByName.get(name) || [], values)));
-    const rows = [...catalogByName.entries()].map(([name, values]) => {
-      const selected = new Set(configuredByName.get(name) || []);
-      return `<div class="agent-parameter-row" data-dynamic-parameter="${escape(name)}">
-        <strong>${escape(name)}</strong>
-        <div class="agent-parameter-values">${values.map((value) => `<label><input type="checkbox" data-dynamic-value value="${escape(value)}" ${selected.has(value) ? "checked" : ""}><span>${escape(value)}</span></label>`).join("")}</div>
-      </div>`;
-    }).join("");
-    return `<section class="agent-scope-panel" data-scope-kind="dynamic_parameters" hidden>
-      <div class="agent-scope-title"><div><strong>动态参数及允许值</strong><small>逐个选择参数和值，未选择的值不会获得授权。</small></div><span data-scope-count>已选 0 项</span></div>
-      <div class="agent-parameter-list">${rows || '<p class="agent-scope-empty">动作目录没有可授权的动态参数。</p>'}</div>
-    </section>`;
-  }
   function showResult(message = "", tone = "") {
     const result = document.getElementById("agent-result");
     result.textContent = message;
     result.dataset.tone = tone;
+  }
+
+  function modelLabel(model) {
+    const provider = providerLabels[String(model.provider || "").toLowerCase()] || model.provider || "未知提供方";
+    return `${model.display_name} · ${model.served_model_name} · ${provider}`;
+  }
+
+  function llmModels() {
+    return models.filter((item) => Number(item.category) === 1).slice().sort((left, right) => {
+      const leftLocal = String(left.provider || "").toLowerCase() === "local_deepseek" ? 0 : 1;
+      const rightLocal = String(right.provider || "").toLowerCase() === "local_deepseek" ? 0 : 1;
+      return leftLocal - rightLocal || String(left.display_name || "").localeCompare(String(right.display_name || ""), "zh");
+    });
+  }
+
+  function defaultLlmId() {
+    return llmModels().find((item) => String(item.provider || "").toLowerCase() === "local_deepseek")?.model_id || llmModels()[0]?.model_id || "";
+  }
+
+  function renderModelOptions(elementId, category, emptyLabel) {
+    const rows = models.filter((item) => Number(item.category) === category);
+    document.getElementById(elementId).innerHTML = `<option value="">${emptyLabel}</option>${rows.map((item) => `<option value="${escape(item.model_id)}">${escape(category === 1 ? modelLabel(item) : `${item.display_name} · ${item.served_model_name}`)}</option>`).join("")}`;
+  }
+
+  function renderResources() {
+    document.getElementById("agent-business-systems").innerHTML = systems.length
+      ? systems.map((item) => `<label class="agent-switch-row"><input type="checkbox" name="allowed_business_system_ids" value="${escape(item.business_system_id)}"><span><strong>${escape(item.display_name)}</strong><small>${escape(item.system_code)} · ${escape(item.environment)} · ${Number(item.resource_count || 0)} 个资源 · ${item.status === "ENABLED" ? "已上线" : "未上线"}</small></span></label>`).join("")
+      : '<div class="ops-error">暂无业务系统。请先建立业务系统与资源拓扑。</div>';
+    document.getElementById("agent-capabilities").innerHTML = capabilityCatalog.map(([key, label, help]) => `<label class="agent-switch-row"><input type="checkbox" name="capabilities" value="${key}" ${key === "CONTROLLED_CHANGE" ? "disabled" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
+    document.getElementById("agent-knowledge-tags").innerHTML = knowledgeTags.length
+      ? knowledgeTags.filter((item) => item.status === "ACTIVE").map((item) => `<label class="agent-scope-option"><input type="checkbox" name="knowledge_tag_ids" value="${escape(item.tag_id)}"><span>${escape(item.display_name)}</span></label>`).join("")
+      : '<p class="agent-scope-empty">未配置知识标签时，将在安全级别内使用全部已审批运维知识。</p>';
+    ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答模型" : "请选择 LLM"));
+    renderModelOptions("agent-ocr-model", 6, "不启用 OCR");
+    renderModelOptions("agent-vlm-model", 5, "不启用 VLM");
   }
 
   function renderSummary() {
@@ -91,7 +79,7 @@
     document.getElementById("agent-summary").innerHTML = [
       `<span><strong>${agents.length}</strong> 全部</span>`,
       `<span><strong>${active}</strong> 已启用</span>`,
-      `<span><strong>${targets.length}</strong> 可用 Target</span>`,
+      `<span><strong>${systems.length}</strong> 业务系统</span>`,
     ].join("");
   }
 
@@ -103,38 +91,184 @@
       return;
     }
     body.innerHTML = agents.map((agent) => {
-      const targetNames = (agent.target_ids || []).map((id) => escape(targetName(id)));
-      const actionCount = (agent.controlled_action_execution || []).reduce((count, item) => count + (item.allowed_action_ids || []).length, 0);
-      const access = actionCount ? `诊断 + ${actionCount} 个受控动作` : "仅诊断";
+      const names = values(agent.allowed_business_system_ids).map(systemName);
+      const capabilities = values(agent.capabilities).map((item) => capabilityLabels[item] || item);
+      const knowledge = agent.knowledge_policy?.enabled
+        ? `${values(agent.knowledge_policy.source_kinds).length} 类来源 · 最多 ${agent.knowledge_policy.maximum_references || 8} 条引用`
+        : "未启用";
       return `<tr>
         <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
         <td>${shell.badge(agent.status)}</td>
-        <td><strong>${targetNames.length} 个 Target</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
-        <td><strong>${access}</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
-        <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起 · Target L${escape(agent.auto_observe_min_target_level)}+</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
+        <td><strong>${names.length} 个业务系统</strong><small class="agent-row-description">${escape(names.join("、") || "—")}</small></td>
+        <td><strong>${capabilities.length} 项能力</strong><small class="agent-row-description">${escape(capabilities.join("、") || "—")}</small></td>
+        <td><strong>${escape(knowledge)}</strong><small class="agent-row-description">${agent.auto_alert_enabled ? `自动观察 ${escape(agent.auto_observe_min_severity || "CRITICAL")} 起` : "自动观察已关闭"}</small></td>
         <td><div class="ops-actions"><button type="button" data-agent-action="edit" data-agent-id="${escape(agent.agent_id)}">编辑</button><button type="button" class="danger" data-agent-action="delete" data-agent-id="${escape(agent.agent_id)}">删除</button></div></td>
       </tr>`;
     }).join("");
     body.querySelectorAll("[data-agent-action]").forEach((button) => {
-      button.addEventListener("click", () => {
-        if (button.dataset.agentAction === "edit") {
-          void openEdit(button.dataset.agentId);
-          return;
-        }
-        const agent = agents.find((item) => item.agent_id === button.dataset.agentId);
-        if (agent) void deleteAgent(agent, button);
-      });
+      button.onclick = () => button.dataset.agentAction === "edit"
+        ? openEdit(button.dataset.agentId)
+        : deleteAgent(agents.find((item) => item.agent_id === button.dataset.agentId), button);
     });
   }
 
+  function resetChecks() {
+    document.querySelectorAll('#agent-form input[type="checkbox"]').forEach((input) => { input.checked = false; });
+  }
+
+  function setChecked(name, selectedValues) {
+    const chosen = new Set(values(selectedValues).map(String));
+    document.querySelectorAll(`[name="${name}"]`).forEach((input) => { input.checked = chosen.has(String(input.value)); });
+  }
+
+  function toggleKnowledgePolicy() {
+    const enabled = document.querySelector('[name="knowledge_enabled"]').checked;
+    document.getElementById("agent-knowledge-policy-fields").hidden = !enabled;
+    const knowledgeCapability = document.querySelector('[name="capabilities"][value="KNOWLEDGE_QA"]');
+    if (knowledgeCapability) knowledgeCapability.checked = enabled;
+  }
+
+  function toggleAlertSettings() {
+    const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
+    document.getElementById("agent-alert-settings").hidden = !enabled;
+    document.getElementById("agent-alert-settings").querySelectorAll("select,input").forEach((input) => { input.disabled = !enabled; });
+  }
+
+  function openCreate() {
+    editing = null;
+    const form = document.getElementById("agent-form");
+    form.reset();
+    resetChecks();
+    document.getElementById("agent-dialog-title").textContent = "新增 Agent";
+    document.getElementById("save-agent").textContent = "创建 Agent";
+    form.elements.status.value = "DRAFT";
+    const defaultModel = defaultLlmId();
+    form.elements.planner_model_id.value = defaultModel;
+    form.elements.diagnosis_model_id.value = defaultModel;
+    form.elements.composer_model_id.value = defaultModel;
+    form.elements.memory_model_id.value = "";
+    setChecked("capabilities", ["RESOURCE_CATALOG_QUERY", "KNOWLEDGE_QA", "MONITORING_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY", "ACTIVE_DIAGNOSIS"]);
+    setChecked("knowledge_source_kinds", ["MANUAL", "DIAGNOSIS_CASE"]);
+    form.elements.knowledge_enabled.checked = true;
+    form.elements.auto_alert_enabled.checked = true;
+    form.elements.max_security_level.value = "3";
+    form.elements.maximum_references.value = "8";
+    toggleKnowledgePolicy();
+    toggleAlertSettings();
+    showResult();
+    document.getElementById("agent-dialog").showModal();
+  }
+
+  async function openEdit(agentId) {
+    editing = await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agentId)}`);
+    const form = document.getElementById("agent-form");
+    form.reset();
+    resetChecks();
+    document.getElementById("agent-dialog-title").textContent = "编辑 Agent";
+    document.getElementById("save-agent").textContent = "保存新版本";
+    form.elements.display_name.value = editing.display_name || "";
+    form.elements.description.value = editing.description || "";
+    form.elements.status.value = editing.status || "DRAFT";
+    form.elements.planner_model_id.value = editing.models?.planner_llm || "";
+    form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
+    form.elements.composer_model_id.value = editing.models?.composer_llm || "";
+    form.elements.memory_model_id.value = editing.models?.memory_llm || "";
+    form.elements.ocr_model_id.value = editing.image_capabilities?.ocr?.default_model_id || "";
+    form.elements.vlm_model_id.value = editing.image_capabilities?.vlm?.default_model_id || "";
+    form.elements.instruction.value = editing.instruction || "";
+    form.elements.auto_alert_enabled.checked = editing.auto_alert_enabled !== false;
+    form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
+    form.elements.auto_observe_min_target_level.value = String(editing.auto_observe_min_target_level || 1);
+    form.elements.alert_cooldown_minutes.value = String(editing.alert_cooldown_minutes ?? 15);
+    const policy = editing.knowledge_policy || {};
+    form.elements.knowledge_enabled.checked = policy.enabled !== false;
+    form.elements.max_security_level.value = String(policy.max_security_level || 3);
+    form.elements.maximum_references.value = String(policy.maximum_references || 8);
+    setChecked("allowed_business_system_ids", editing.allowed_business_system_ids);
+    setChecked("capabilities", editing.capabilities);
+    setChecked("knowledge_source_kinds", policy.source_kinds || ["MANUAL", "DIAGNOSIS_CASE"]);
+    setChecked("knowledge_tag_ids", policy.tag_ids);
+    const controlled = document.querySelector('[name="capabilities"][value="CONTROLLED_CHANGE"]');
+    if (controlled && values(editing.capabilities).includes("CONTROLLED_CHANGE")) controlled.checked = true;
+    toggleKnowledgePolicy();
+    toggleAlertSettings();
+    showResult();
+    document.getElementById("agent-dialog").showModal();
+  }
+
+  function imageCapability(form, name) {
+    const modelId = form.elements[`${name}_model_id`].value || null;
+    return { enabled: Boolean(modelId), default_model_id: modelId, allowed_model_ids: modelId ? [modelId] : [] };
+  }
+
+  function buildPayload(form) {
+    const capabilityValues = selected("capabilities");
+    if (editing && values(editing.capabilities).includes("CONTROLLED_CHANGE")) capabilityValues.push("CONTROLLED_CHANGE");
+    const knowledgeEnabled = form.elements.knowledge_enabled.checked;
+    const modelsPayload = {
+      planner_llm: form.elements.planner_model_id.value || null,
+      diagnosis_llm: form.elements.diagnosis_model_id.value || null,
+      composer_llm: form.elements.composer_model_id.value || null,
+      memory_llm: form.elements.memory_model_id.value || form.elements.composer_model_id.value || null,
+    };
+    return {
+      display_name: form.elements.display_name.value.trim(),
+      description: form.elements.description.value.trim() || null,
+      allowed_business_system_ids: selected("allowed_business_system_ids"),
+      capabilities: [...new Set(capabilityValues)],
+      knowledge_policy: {
+        enabled: knowledgeEnabled,
+        source_kinds: knowledgeEnabled ? selected("knowledge_source_kinds") : ["MANUAL", "DIAGNOSIS_CASE"],
+        tag_ids: knowledgeEnabled ? selected("knowledge_tag_ids") : [],
+        max_security_level: Number(form.elements.max_security_level.value || 3),
+        maximum_references: Number(form.elements.maximum_references.value || 8),
+      },
+      controlled_action_execution: values(editing?.controlled_action_execution),
+      auto_alert_enabled: form.elements.auto_alert_enabled.checked,
+      auto_observe_min_severity: form.elements.auto_observe_min_severity.value,
+      auto_observe_min_target_level: Number(form.elements.auto_observe_min_target_level.value || 1),
+      alert_cooldown_minutes: Number(form.elements.alert_cooldown_minutes.value || 15),
+      models: Object.fromEntries(Object.entries(modelsPayload).filter(([, value]) => value)),
+      image_capabilities: { ocr: imageCapability(form, "ocr"), vlm: imageCapability(form, "vlm") },
+      instruction: form.elements.instruction.value.trim() || null,
+      config: editing?.config || {},
+      status: form.elements.status.value,
+    };
+  }
+
+  async function save(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const body = buildPayload(form);
+    if (!body.allowed_business_system_ids.length) return showResult("请至少选择一个业务系统。", "bad");
+    if (!body.capabilities.length) return showResult("请至少启用一项能力。", "bad");
+    if (body.knowledge_policy.enabled && !body.knowledge_policy.source_kinds.length) return showResult("请至少选择一种知识来源。", "bad");
+    const button = document.getElementById("save-agent");
+    const buttonLabel = button.textContent;
+    const wasEditing = Boolean(editing);
+    button.disabled = true;
+    button.textContent = wasEditing ? "保存中…" : "创建中…";
+    try {
+      const path = editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`;
+      const options = { method: editing ? "PATCH" : "POST", body: JSON.stringify(body) };
+      if (editing) options.headers = { "If-Match": `"rv-${editing.row_version}"` };
+      await KBotAIOpsAuth.request(path, options);
+      document.getElementById("agent-dialog").close();
+      shell.toast(editing ? "Agent 新版本已保存" : "Agent 已创建");
+      await load();
+    } catch (error) {
+      showResult(error.message, "bad");
+    } finally {
+      button.disabled = false;
+      button.textContent = buttonLabel;
+    }
+  }
+
   async function deleteAgent(agent, button) {
-    if (!globalThis.confirm(`确认删除 Agent“${agent.display_name}”？删除后不再接收新任务，历史运行和报告仍会保留。`)) return;
+    if (!agent || !globalThis.confirm(`确认删除 Agent“${agent.display_name}”？历史运行和报告仍会保留。`)) return;
     button.disabled = true;
     try {
-      await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agent.agent_id)}`, {
-        method: "DELETE",
-        headers: { "If-Match": `"rv-${agent.row_version}"` },
-      });
+      await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agent.agent_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${agent.row_version}"` } });
       shell.toast("Agent 已删除");
       await load();
     } catch (error) {
@@ -143,428 +277,29 @@
     }
   }
 
-
-  const LLM_PROVIDER_LABELS = {
-    local_deepseek: "本地部署 · DeepSeek",
-    api_deepseek: "API 调用 · DeepSeek",
-    api_qwen: "API 调用 · Qwen",
-    chatgpt: "API 调用 · OpenAI",
-    oci: "API 调用 · OCI",
-  };
-
-  function isLocalLlmProvider(provider) {
-    return String(provider || "").trim().toLowerCase() === "local_deepseek";
-  }
-
-  function llmProviderLabel(provider) {
-    const key = String(provider || "").trim().toLowerCase();
-    return LLM_PROVIDER_LABELS[key] || provider || "未知提供方";
-  }
-
-  function llmOptionLabel(model) {
-    return `${model.display_name} · ${model.served_model_name} · ${llmProviderLabel(model.provider)}`;
-  }
-
-  function sortedDiagnosisModels() {
-    return models
-      .filter((model) => Number(model.category) === 1)
-      .slice()
-      .sort((left, right) => {
-        const leftLocal = isLocalLlmProvider(left.provider) ? 0 : 1;
-        const rightLocal = isLocalLlmProvider(right.provider) ? 0 : 1;
-        if (leftLocal !== rightLocal) return leftLocal - rightLocal;
-        return String(left.display_name || "").localeCompare(String(right.display_name || ""), "zh");
-      });
-  }
-
-  function firstLocalDeepseekId() {
-    const local = sortedDiagnosisModels().find((model) => isLocalLlmProvider(model.provider));
-    return local ? local.model_id : "";
-  }
-
-  function renderResources() {
-    document.getElementById("agent-targets").innerHTML = targets.length
-      ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
-      : '<div class="ops-error">暂无已启用的 Target。请先创建 Target，并完成监控 Label 映射后启用。</div>';
-    const diagnosisModels = sortedDiagnosisModels();
-    document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
-      ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
-      : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
-    document.getElementById("agent-model").innerHTML = diagnosisModels.length
-      ? '<option value="">请选择诊断模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
-      : '<option value="">没有已启用的 LLM，请先配置模型服务</option>';
-    renderImageModelOptions("agent-ocr-model", 6, "不启用 OCR", "OCR");
-    renderImageModelOptions("agent-vlm-model", 5, "不启用 VLM", "VLM");
-  }
-
-  function renderImageModelOptions(elementId, category, disabledLabel, capabilityName) {
-    const imageModels = models.filter((model) => Number(model.category) === category);
-    document.getElementById(elementId).innerHTML = imageModels.length
-      ? `<option value="">${disabledLabel}</option>` + imageModels.map((model) => `<option value="${escape(model.model_id)}">${escape(model.display_name)} · ${escape(model.served_model_name)}</option>`).join("")
-      : `<option value="">没有已启用的 ${capabilityName} 模型</option>`;
-  }
-
-  function toggleTargetFields() {
-    const selected = selectedTargetIds();
-    const changeTargets = targets.filter((item) => selected.includes(item.target_id) && item.controlled_change_enabled);
-    document.getElementById("agent-change-help").textContent = !selected.length
-      ? "请选择至少一个 Target。"
-      : changeTargets.length
-        ? `当前有 ${changeTargets.length} 个 Target 可配置；未选择动作时保持只读诊断。`
-        : "所选 Target 均未启用受控变更，Agent 保持只读诊断。";
-    renderControlledActions();
-    loadActionCatalogs(changeTargets.map((item) => item.target_id))
-      .then(renderControlledActions)
-      .catch((error) => showResult(`读取动作目录失败：${error.message}`, "bad"));
-  }
-
-  async function loadActionCatalogs(targetIds) {
-    await Promise.all(targetIds.map(async (targetId) => {
-      if (actionCatalogsByTarget.has(targetId)) return;
-      const catalog = await KBotAIOpsAuth.request(`${api}/action-catalog/${encodeURIComponent(targetId)}`);
-      actionCatalogsByTarget.set(targetId, catalog);
-    }));
-  }
-
-  function renderControlledActions() {
-    captureActionDrafts();
-    const selected = selectedTargetIds();
-    if (!selected.includes(expandedActionTargetId)) expandedActionTargetId = null;
-    const container = document.getElementById("agent-controlled-actions");
-    if (!selected.length) {
-      container.innerHTML = '<div class="ops-empty">未选择数据库 Target，无数据库直连或变更权限。</div>';
-      return;
-    }
-    container.innerHTML = selected.map((targetId) => {
-      const target = targets.find((item) => item.target_id === targetId);
-      if (!target?.controlled_change_enabled) {
-        return `<article class="agent-source-card"><strong>${escape(target?.display_name)}</strong><small>仅只读诊断；该 Target 未启用受控变更。</small></article>`;
-      }
-      const catalog = actionCatalogsByTarget.get(targetId);
-      if (!catalog) return `<article class="agent-source-card"><strong>${escape(target.display_name)}</strong><small>正在读取动作目录…</small></article>`;
-      const configured = actionDraftsByTarget.get(targetId)
-        || (editing?.controlled_action_execution || []).find((item) => item.target_id === targetId)
-        || {};
-      const selectedActions = new Set(configured.allowed_action_ids || []);
-      const expanded = expandedActionTargetId === targetId;
-      const actions = groupedActions(catalog);
-      const choices = actions.length
-        ? actions.map((action) => `<label class="agent-switch-row agent-action-choice">
-          <input type="checkbox" data-action-target="${escape(targetId)}" data-scope-requirements="${escape((action.scope_requirements || []).join(","))}" value="${escape(action.action_id)}" ${selectedActions.has(action.action_id) ? "checked" : ""} ${action.currently_executable ? "" : "disabled"}>
-          <span><strong>${escape(action.action_id)}</strong><small>${escape(action.action_family)} · ${escape(action.risk_level)} · ${escape(action.lock_impact)}</small></span>
-        </label>`).join("")
-        : '<small>当前 Target 没有可授权的受控动作，保持只读诊断。</small>';
-      const scopes = configured.object_scopes || {};
-      const options = catalog.scope_options || {};
-      return `<article class="agent-source-card agent-action-policy" data-action-policy-target="${escape(targetId)}">
-        <div class="agent-policy-head"><div><strong>${escape(target.display_name)}</strong><small><span data-action-summary>已授权 ${selectedActions.size} 项</span> · 默认保持只读诊断</small></div><div class="agent-policy-head-actions"><span>只读为默认</span><button type="button" data-action-panel-toggle="${escape(targetId)}" aria-expanded="${expanded}">${expanded ? "收起权限" : "配置权限"}</button></div></div>
-        <div class="agent-action-details" data-action-policy-details ${expanded ? "" : "hidden"}>
-          <p>只有这里明确选择并限定范围的动作才可进入逐条人工审批。</p>
-          <div class="agent-action-list">${choices}</div>
-          <div class="agent-policy-settings" data-action-policy-settings hidden>
-            <div class="agent-execution-limit"><div><strong>执行频率</strong><small>限制此 Agent 在当前 Target 上每天最多执行的受控动作次数。</small></div><label>每日上限 <input data-action-limit type="number" min="1" max="10000" value="${escape(configured.max_daily_executions || 10)}"></label></div>
-            <div class="agent-scope-grid">
-              ${optionPicker("schemas", "允许操作的 Schema", options.schemas || [], scopes.schemas || [], "来自 Target 最近一次只读目录探测，可多选。")}
-              ${dynamicParameterPicker(options.dynamic_parameters || [], scopes.dynamic_parameters || [])}
-              ${optionPicker("resource_manager_plans", "Resource Manager Plan", options.resource_manager_plans || [], scopes.resource_manager_plans || [], "只显示数据库中可发现的有效 Plan。")}
-              ${optionPicker("privilege_grantees", "允许授权的本地用户", options.privilege_grantees || [], scopes.privilege_grantees || [], "排除 Oracle 维护用户与公共用户。")}
-              ${optionPicker("system_privileges", "系统权限", options.system_privileges || [], scopes.system_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
-              ${optionPicker("object_privileges", "对象权限", options.object_privileges || [], scopes.object_privileges || [], "只提供受控动作 Catalog 允许的权限。")}
-            </div>
-          </div>
-        </div>
-      </article>`;
-    }).join("");
-    container.querySelectorAll("[data-action-policy-target]").forEach(syncActionScopeVisibility);
-  }
-
-  function captureActionDrafts() {
-    document.querySelectorAll("[data-action-policy-target]").forEach((card) => {
-      actionDraftsByTarget.set(card.dataset.actionPolicyTarget, {
-        allowed_action_ids: [...card.querySelectorAll("[data-action-target]:checked")].map((input) => input.value),
-        max_daily_executions: Number(card.querySelector("[data-action-limit]")?.value || 10),
-        object_scopes: {
-          schemas: selectedScopeValues(card, "schemas"),
-          dynamic_parameters: selectedDynamicParameters(card),
-          resource_manager_plans: selectedScopeValues(card, "resource_manager_plans"),
-          privilege_grantees: selectedScopeValues(card, "privilege_grantees"),
-          system_privileges: selectedScopeValues(card, "system_privileges"),
-          object_privileges: selectedScopeValues(card, "object_privileges"),
-        },
-      });
-    });
-  }
-
-  function requiredScopeKinds(card) {
-    return new Set([...card.querySelectorAll("[data-action-target]:checked")]
-      .flatMap((input) => String(input.dataset.scopeRequirements || "").split(","))
-      .map((value) => value.trim()).filter(Boolean));
-  }
-
-  function updateScopeCounts(card) {
-    card.querySelectorAll("[data-scope-kind]").forEach((panel) => {
-      const count = panel.querySelectorAll('input[type="checkbox"]:checked').length;
-      const indicator = panel.querySelector("[data-scope-count]");
-      if (indicator) indicator.textContent = `已选 ${count} 项`;
-    });
-  }
-
-  function syncActionScopeVisibility(card) {
-    const selectedActions = card.querySelectorAll("[data-action-target]:checked");
-    const summary = card.querySelector("[data-action-summary]");
-    if (summary) summary.textContent = `已授权 ${selectedActions.length} 项`;
-    const settings = card.querySelector("[data-action-policy-settings]");
-    if (!settings) return;
-    settings.hidden = !selectedActions.length;
-    const requirements = requiredScopeKinds(card);
-    card.querySelectorAll("[data-scope-kind]").forEach((panel) => {
-      panel.hidden = !requirements.has(panel.dataset.scopeKind);
-    });
-    card.classList.toggle("selected", Boolean(selectedActions.length));
-    updateScopeCounts(card);
-  }
-
-  function selectedTargetIds() {
-    return [...document.querySelectorAll('[name="target_ids"]:checked')].map((input) => input.value);
-  }
-
-  function toggleAlertSettings() {
-    const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
-    document.getElementById("agent-alert-settings").classList.toggle("agent-settings-disabled", !enabled);
-    document.getElementById("agent-min-severity").disabled = !enabled;
-    document.getElementById("agent-min-target-level").disabled = !enabled;
-    document.getElementById("agent-cooldown").disabled = !enabled;
-  }
-
-  function openCreate() {
-    editing = null;
-    expandedActionTargetId = null;
-    actionDraftsByTarget.clear();
-    actionCatalogsByTarget.clear();
-    document.getElementById("agent-controlled-actions").innerHTML = "";
-    const form = document.getElementById("agent-form");
-    form.reset();
-    form.elements.status.value = "DRAFT";
-    form.elements.alert_cooldown_minutes.value = 15;
-    form.elements.auto_observe_min_target_level.value = 1;
-    form.elements.auto_alert_enabled.checked = true;
-    form.elements.status.disabled = true;
-    const localModelId = firstLocalDeepseekId();
-    form.elements.planner_model_id.value = localModelId;
-    form.elements.diagnosis_model_id.value = localModelId;
-    document.getElementById("agent-status-help").textContent = "新增 Agent 固定保存为草稿；创建成功后可在编辑时启用。";
-    toggleTargetFields();
-    toggleAlertSettings();
-    showResult();
-    document.getElementById("agent-dialog-title").textContent = "新增 Agent";
-    document.getElementById("save-agent").textContent = "创建 Agent";
-    document.getElementById("agent-dialog").showModal();
-  }
-
-  async function openEdit(agentId) {
-    editing = agents.find((item) => item.agent_id === agentId);
-    if (!editing) return;
-    expandedActionTargetId = null;
-    actionDraftsByTarget.clear();
-    actionCatalogsByTarget.clear();
-    document.getElementById("agent-controlled-actions").innerHTML = "";
-    const form = document.getElementById("agent-form");
-    form.reset();
-    form.elements.status.disabled = false;
-    form.elements.display_name.value = editing.display_name;
-    form.elements.description.value = editing.description || "";
-    form.elements.status.value = editing.status;
-    form.elements.auto_alert_enabled.checked = Boolean(editing.auto_alert_enabled);
-    form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
-    form.elements.auto_observe_min_target_level.value = editing.auto_observe_min_target_level || 1;
-    form.elements.alert_cooldown_minutes.value = editing.alert_cooldown_minutes ?? 15;
-    form.elements.planner_model_id.value = editing.models?.planner_llm || "";
-    form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
-    form.elements.ocr_model_id.value = editing.image_capabilities?.ocr?.default_model_id || "";
-    form.elements.vlm_model_id.value = editing.image_capabilities?.vlm?.default_model_id || "";
-    form.elements.instruction.value = editing.instruction || "";
-    form.querySelectorAll('[name="target_ids"]').forEach((input) => {
-      input.checked = (editing.target_ids || []).includes(input.value);
-    });
-    document.getElementById("agent-status-help").textContent = "启用前会检查每个 Target 均已启用，并至少存在一条引用已启用监控源的有效 Label 映射。";
-    toggleTargetFields();
-    toggleAlertSettings();
-    showResult();
-    document.getElementById("agent-dialog-title").textContent = "修改 Agent";
-    document.getElementById("save-agent").textContent = "保存修改";
-    document.getElementById("agent-dialog").showModal();
-  }
-
-  function selectedScopeValues(card, kind) {
-    return [...card.querySelectorAll(`[data-action-scope="${kind}"]:checked`)]
-      .map((input) => input.value);
-  }
-
-  function selectedDynamicParameters(card) {
-    return [...card.querySelectorAll("[data-dynamic-parameter]")].map((row) => ({
-      name: row.dataset.dynamicParameter,
-      allowed_values: [...row.querySelectorAll("[data-dynamic-value]:checked")].map((input) => input.value),
-    })).filter((item) => item.allowed_values.length);
-  }
-
-  function assertRequiredScopes(requirements, values) {
-    requirements.forEach((kind) => {
-      if (!values[kind]?.length) {
-        throw new Error(`请为已选受控动作选择${scopeLabels[kind] || kind}。`);
-      }
-    });
-  }
-
-  function payload(form) {
-    const targetIds = selectedTargetIds();
-    if (!targetIds.length) throw new Error("至少选择一个 Target。");
-    const plannerModelId = form.elements.planner_model_id.value.trim();
-    const diagnosisModelId = form.elements.diagnosis_model_id.value.trim();
-    const ocrModelId = form.elements.ocr_model_id.value.trim();
-    const vlmModelId = form.elements.vlm_model_id.value.trim();
-    if (!plannerModelId) throw new Error("请选择规划模型。");
-    if (!diagnosisModelId) throw new Error("请选择诊断模型。");
-    const imageCapabilities = {};
-    if (ocrModelId) {
-      imageCapabilities.ocr = {
-        allowed_model_ids: [ocrModelId],
-        default_model_id: ocrModelId,
-      };
-    }
-    if (vlmModelId) {
-      imageCapabilities.vlm = {
-        allowed_model_ids: [vlmModelId],
-        default_model_id: vlmModelId,
-      };
-    }
-    const autoAlertEnabled = form.elements.auto_alert_enabled.checked;
-    const controlledActionExecution = targetIds.map((targetId) => {
-      const card = document.querySelector(`[data-action-policy-target="${CSS.escape(targetId)}"]`);
-      if (!card) return null;
-      const actionIds = [...card.querySelectorAll("[data-action-target]:checked")].map((input) => input.value);
-      if (!actionIds.length) return null;
-      const requirements = requiredScopeKinds(card);
-      const scopeValues = {
-        schemas: requirements.has("schemas") ? selectedScopeValues(card, "schemas") : [],
-        dynamic_parameters: requirements.has("dynamic_parameters") ? selectedDynamicParameters(card) : [],
-        resource_manager_plans: requirements.has("resource_manager_plans") ? selectedScopeValues(card, "resource_manager_plans") : [],
-        privilege_grantees: requirements.has("privilege_grantees") ? selectedScopeValues(card, "privilege_grantees") : [],
-        system_privileges: requirements.has("system_privileges") ? selectedScopeValues(card, "system_privileges") : [],
-        object_privileges: requirements.has("object_privileges") ? selectedScopeValues(card, "object_privileges") : [],
-      };
-      assertRequiredScopes(requirements, scopeValues);
-      return {
-        target_id: targetId,
-        enabled: true,
-        allowed_action_ids: actionIds,
-        object_scopes: {
-          schemas: scopeValues.schemas,
-          exclude_system_objects: true,
-          dynamic_parameters: scopeValues.dynamic_parameters,
-          resource_manager_plans: scopeValues.resource_manager_plans,
-          privilege_grantees: scopeValues.privilege_grantees,
-          system_privileges: scopeValues.system_privileges,
-          object_privileges: scopeValues.object_privileges,
-        },
-        max_daily_executions: Number(card.querySelector("[data-action-limit]").value),
-      };
-    }).filter(Boolean);
-    return {
-      display_name: form.elements.display_name.value.trim(),
-      description: form.elements.description.value.trim() || null,
-      status: editing ? form.elements.status.value : "DRAFT",
-      target_ids: targetIds,
-      controlled_action_execution: controlledActionExecution,
-      auto_alert_enabled: autoAlertEnabled,
-      auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
-      auto_observe_min_target_level: autoAlertEnabled ? Number(form.elements.auto_observe_min_target_level.value) : (editing?.auto_observe_min_target_level || 1),
-      alert_cooldown_minutes: autoAlertEnabled ? Number(form.elements.alert_cooldown_minutes.value) : (editing?.alert_cooldown_minutes ?? 15),
-      models: {
-        planner_llm: plannerModelId,
-        diagnosis_llm: diagnosisModelId,
-      },
-      instruction: form.elements.instruction.value.trim() || null,
-      image_capabilities: imageCapabilities,
-      config: {},
-    };
-  }
-
-  async function save(event) {
-    event.preventDefault();
-    const button = document.getElementById("save-agent");
-    const originalText = button.textContent;
-    button.disabled = true;
-    button.textContent = editing ? "保存中…" : "创建中…";
-    showResult(editing ? "正在校验 Agent 配置…" : "正在创建 Agent…");
-    try {
-      const body = payload(event.currentTarget);
-      if (editing) body.expected_row_version = editing.row_version;
-      await KBotAIOpsAuth.request(editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`, {
-        method: editing ? "PATCH" : "POST",
-        body: JSON.stringify(body),
-      });
-      document.getElementById("agent-dialog").close();
-      shell.toast(editing ? "Agent 已更新" : "Agent 已创建");
-      await load();
-    } catch (error) {
-      showResult(error.message, "bad");
-      shell.toast(error.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = originalText;
-    }
-  }
-
   async function load() {
-    const [agentRows, targetPage, modelRows] = await Promise.all([
+    const [agentRows, systemPage, modelRows, tagPage] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
-      KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
-      KBotAIOpsAuth.request("/api/v1/model-catalog"),
+      KBotAIOpsAuth.request(`${api}/business-systems?limit=200`),
+      KBotAIOpsAuth.request(`${api}/agent-model-catalog`),
+      KBotAIOpsAuth.request(`${api}/operations-knowledge/tags?limit=200`),
     ]);
-    agents = Array.isArray(agentRows) ? agentRows : [];
-    targets = targetPage.items || [];
-    models = Array.isArray(modelRows) ? modelRows : [];
+    agents = values(agentRows);
+    systems = values(systemPage?.items);
+    models = values(modelRows);
+    knowledgeTags = values(tagPage?.items || tagPage);
     renderResources();
     renderRows();
   }
 
-  shell.ready.then(async () => {
+  addEventListener("DOMContentLoaded", async () => {
+    await shell.initialize();
     const dialog = document.getElementById("agent-dialog");
-    dialog.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => dialog.close()));
-    document.getElementById("create-agent").addEventListener("click", openCreate);
-    document.getElementById("agent-targets").addEventListener("change", () => toggleTargetFields());
-    document.getElementById("agent-controlled-actions").addEventListener("change", (event) => {
-      const card = event.target.closest("[data-action-policy-target]");
-      if (!card) return;
-      if (event.target.matches("[data-action-target]")) syncActionScopeVisibility(card);
-      else if (event.target.matches('[type="checkbox"]')) updateScopeCounts(card);
-    });
-    document.getElementById("agent-controlled-actions").addEventListener("click", (event) => {
-      const button = event.target.closest("[data-action-panel-toggle]");
-      if (!button) return;
-      expandedActionTargetId = expandedActionTargetId === button.dataset.actionPanelToggle ? null : button.dataset.actionPanelToggle;
-      document.querySelectorAll("[data-action-policy-target]").forEach((card) => {
-        const expanded = card.dataset.actionPolicyTarget === expandedActionTargetId;
-        card.querySelector("[data-action-policy-details]").hidden = !expanded;
-        const toggle = card.querySelector("[data-action-panel-toggle]");
-        toggle.setAttribute("aria-expanded", String(expanded));
-        toggle.textContent = expanded ? "收起权限" : "配置权限";
-      });
-    });
-    document.getElementById("agent-controlled-actions").addEventListener("input", (event) => {
-      if (!event.target.matches("[data-scope-search]")) return;
-      const query = event.target.value.trim().toLocaleLowerCase();
-      const panel = event.target.closest("[data-scope-kind]");
-      panel.querySelectorAll("[data-option-label]").forEach((option) => {
-        option.hidden = Boolean(query && !option.dataset.optionLabel.includes(query));
-      });
-    });
-    document.querySelector('[name="auto_alert_enabled"]').addEventListener("change", toggleAlertSettings);
-    document.getElementById("agent-form").addEventListener("submit", save);
-    try {
-      await load();
-    } catch (error) {
-      document.getElementById("agent-rows").innerHTML = `<tr><td class="ops-empty" colspan="6">${escape(error.message)}</td></tr>`;
-    }
-  });
+    dialog.querySelectorAll("[data-close-dialog]").forEach((button) => { button.onclick = () => dialog.close(); });
+    document.getElementById("create-agent").onclick = openCreate;
+    document.querySelector('[name="knowledge_enabled"]').onchange = toggleKnowledgePolicy;
+    document.querySelector('[name="auto_alert_enabled"]').onchange = toggleAlertSettings;
+    document.getElementById("agent-form").onsubmit = save;
+    await load();
+  }, { once: true });
 })();
