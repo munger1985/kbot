@@ -785,6 +785,28 @@ class InspectionRepository(AIOpsRepository):
             statement = statement.with_for_update()
         return (await self._session.execute(statement)).scalars().first()
 
+    async def get_previous_current_period_report(
+        self, *, target_id: UUID, report_type: str,
+        before_period_start: datetime,
+    ) -> ReportEntity | None:
+        """读取同一 Target 在当前周期之前最近一份有效周期报告。"""
+        self._check_active()
+        statement = (
+            select(ReportEntity)
+            .where(
+                ReportEntity.target_id == target_id,
+                ReportEntity.report_type == report_type,
+                ReportEntity.is_current == 1,
+                ReportEntity.period_end.is_not(None),
+                ReportEntity.period_end <= before_period_start,
+            )
+            .order_by(
+                ReportEntity.period_end.desc(),
+                ReportEntity.created_at.desc(),
+            )
+        )
+        return (await self._session.execute(statement)).scalars().first()
+
     async def get_report_scoped(
         self,
         *,

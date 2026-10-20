@@ -1781,6 +1781,21 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn(".daily-trend-svg", css)
         self.assertIn("grid-template-columns:repeat(4,minmax(0,1fr))", css)
 
+    def test_monthly_inspection_report_uses_natural_month_layout(self):
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        css = (AIOPS_ROOT / "css" / "aiops.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MONTHLY_INSPECTION_PRESENTATION.v1", script)
+        self.assertIn("上月对比", script)
+        self.assertIn("月度关键指标", script)
+        self.assertIn("容量与增长", script)
+        self.assertIn("问题台账", script)
+        self.assertIn("扩展接口状态", script)
+        self.assertIn(".monthly-formal-report", css)
+
     def test_report_template_configuration_is_not_a_business_entry(self):
         page = (AIOPS_ROOT / "report-templates.html").read_text(
             encoding="utf-8"

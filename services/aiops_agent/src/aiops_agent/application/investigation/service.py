@@ -108,6 +108,7 @@ DEFAULT_MONITORING_LOOKBACK_LABEL = (
     f"最近{DEFAULT_MONITORING_LOOKBACK_SECONDS // 86_400}天"
     "（Prometheus最大保留范围）"
 )
+DEFAULT_FORECAST_HORIZON_SECONDS = 30 * 86_400
 DAILY_INSPECTION_WINDOW_SECONDS = 7 * 86_400
 WEEKLY_INSPECTION_WINDOW_SECONDS = 7 * 86_400
 
@@ -972,7 +973,7 @@ class TurnPlanningService:
             ),
             forecast_scope="未来30天" if weekly else None,
             forecast_horizon_seconds=(
-                DEFAULT_MONITORING_LOOKBACK_SECONDS if weekly else None
+                DEFAULT_FORECAST_HORIZON_SECONDS if weekly else None
             ),
             visualization_profile_id=(
                 "inspection.weekly" if weekly_trend else None
@@ -2564,7 +2565,7 @@ class TurnPlanningService:
                 ),
                 "forecast_horizon_seconds": (
                     task_frame.forecast_horizon_seconds
-                    or DEFAULT_MONITORING_LOOKBACK_SECONDS
+                    or DEFAULT_FORECAST_HORIZON_SECONDS
                     if task_frame.temporal_analysis_mode
                     == TemporalAnalysisMode.HISTORICAL_AND_FORECAST
                     else None

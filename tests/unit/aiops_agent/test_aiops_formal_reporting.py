@@ -13,6 +13,8 @@ from aiops_agent.application.reporting import (
     REPORT_TYPE_SYSTEM_TEMPLATES,
     SYSTEM_REPORT_TEMPLATES,
     closed_period_window,
+    compare_monthly_inspection_summaries,
+    monthly_inspection_summary,
     render_pdf,
     report_presentation,
     normalize_report_source,
@@ -28,6 +30,90 @@ from platform_core.identity import uuid7
 
 
 class FormalReportingTest(unittest.TestCase):
+    def test_monthly_presentation_uses_frozen_summary_and_pdf(self) -> None:
+        summary = {
+            "schema_version": "MONTHLY_INSPECTION_SUMMARY.v1",
+            "metrics": [{
+                "metric_key": "db.availability|-|AVAILABILITY|percent",
+                "metric_code": "db.availability", "semantic_role": "AVAILABILITY",
+                "display_name": "数据库可用率", "dimension_label": "全部",
+                "unit": "percent", "monthly_average": 99.9,
+                "monthly_average_display": "99.90%", "p95": 100.0,
+                "p95_display": "100.00%", "minimum": 99.0,
+                "minimum_display": "99.00%", "maximum": 100.0,
+                "maximum_display": "100.00%", "first": 100.0,
+                "first_display": "100.00%", "last": 99.9,
+                "last_display": "99.90%", "net_change": -0.1,
+                "net_change_display": "-0.10%", "change_percent": -0.1,
+                "effective_days": 28, "expected_days": 28,
+                "coverage_percent": 100.0, "daily_points": [],
+                "is_capacity": False,
+            }],
+            "issues": [], "database_checks": {"status_counts": {"CLEAR": 8}},
+            "coverage": {"completed_run_count": 28, "metric_day_coverage_percent": 100.0},
+        }
+        payload = {
+            "report_key": "inspection.monthly", "report_type": "INSPECTION_MONTHLY",
+            "target_id": str(uuid7()), "title": "数据库月度巡检报告",
+            "status": "READY", "summary": "月度巡检完成。",
+            "period_start": "2026-02-01T00:00:00+00:00",
+            "period_end": "2026-03-01T00:00:00+00:00",
+            "scope": {
+                "monthly_summary": summary,
+                "previous_month_comparison": {"status": "NO_PREVIOUS_REPORT", "status_display": "无上月报告"},
+                "scope_type": "TARGET", "scope_name": "Oracle 生产库", "target_count": 1,
+                "database_types": ["ORACLE"],
+            },
+            "facts": [], "gaps": [], "evidence_refs": [], "recommendations": [],
+        }
+        presentation = report_presentation(
+            payload=payload,
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.monthly"],
+            report_context={"report_id": str(uuid7()), "report_version": 1},
+        )
+        self.assertEqual("MONTHLY_INSPECTION_PRESENTATION.v1", presentation["monthly_inspection"]["schema_version"])
+        self.assertNotIn("current", presentation["monthly_inspection"]["metrics"][0])
+        self.assertGreater(len(render_pdf(presentation)), 1_000)
+
+    def test_monthly_summary_deduplicates_days_and_excludes_backup(self) -> None:
+        start = datetime(2026, 1, 31, 16, tzinfo=UTC)
+        end = datetime(2026, 2, 28, 16, tzinfo=UTC)
+        base = {
+            "kind": "inspection_monitoring_metric",
+            "metric_code": "db.storage.used_bytes",
+            "semantic_role": "STORAGE_USED",
+            "dimensions": "tablespace=USERS",
+            "unit": "bytes",
+        }
+        facts = [
+            {**base, "_source_observed_at": "2026-02-03T00:00:00+00:00", "daily_points": [
+                {"date": "2026-02-01", "value": 10}, {"date": "2026-02-02", "value": 20},
+            ]},
+            {**base, "_source_observed_at": "2026-02-04T00:00:00+00:00", "daily_points": [
+                {"date": "2026-02-02", "value": 30}, {"date": "2026-02-03", "value": 50},
+            ]},
+            {"kind": "inspection_check", "tool_id": "db.oracle.tablespace", "title": "表空间检查", "check_status": "FINDING", "_source_observed_at": "2026-02-03T00:00:00+00:00", "findings": [
+                {"finding_id": "TABLESPACE_GROWTH", "severity": "MEDIUM", "summary": "增长较快"},
+            ]},
+            {"kind": "inspection_check", "tool_id": "db.oracle.rman_backup", "check_status": "FINDING", "findings": [
+                {"finding_id": "BACKUP", "finding_type": "BACKUP_FAILED", "severity": "HIGH"},
+            ]},
+        ]
+        summary = monthly_inspection_summary(
+            facts=facts, period_start=start, period_end=end,
+            timezone="Asia/Shanghai", run_summary={"completed_run_count": 2},
+        )
+        metric = summary["metrics"][0]
+        self.assertEqual(30, metric["monthly_average"])
+        self.assertEqual(3, metric["effective_days"])
+        self.assertEqual(28, metric["expected_days"])
+        self.assertEqual(40, metric["net_change"])
+        self.assertEqual(["TABLESPACE_GROWTH"], [item["finding_id"] for item in summary["issues"]])
+        self.assertEqual(
+            "NO_PREVIOUS_REPORT",
+            compare_monthly_inspection_summaries(summary, None)["status"],
+        )
+
     def test_system_templates_cover_requested_periods(self) -> None:
         self.assertEqual(
             {

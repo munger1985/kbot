@@ -573,12 +573,76 @@ class DailyInspectionPresentation(BaseModel):
     evidence_boundary: dict[str, Any]
 
 
+class MonthlyInspectionHeader(BaseModel):
+    """月度巡检正式报告头，兼容单 Target 和业务系统范围。"""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    report_time: str | None = None
+    period_start: str | None = None
+    period_end: str | None = None
+    scope_type: Literal["TARGET", "BUSINESS_SYSTEM"]
+    scope_name: str
+    target_count: int = Field(ge=1)
+    database_types: tuple[str, ...] = ()
+    environment: str
+    report_version: int = Field(ge=1)
+    report_number: str
+    responsibility_domain: str
+
+
+class MonthlyInspectionMetric(BaseModel):
+    """自然月日点聚合后的指标统计。"""
+
+    model_config = ConfigDict(extra="allow")
+    metric_key: str
+    metric_code: str
+    semantic_role: str
+    display_name: str
+    dimension_label: str
+    unit: str
+    monthly_average: float
+    monthly_average_display: str
+    p95: float
+    p95_display: str
+    minimum: float
+    maximum: float
+    first: float
+    last: float
+    net_change: float
+    change_percent: float | None = None
+    effective_days: int = Field(ge=0)
+    expected_days: int = Field(ge=0)
+    coverage_percent: float | None = None
+    daily_points: tuple[dict[str, Any], ...] = ()
+
+
+class MonthlyInspectionPresentation(BaseModel):
+    """月报冻结结构化展示投影。"""
+
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["MONTHLY_INSPECTION_PRESENTATION.v1"]
+    header: MonthlyInspectionHeader
+    conclusion: dict[str, Any]
+    period_comparison: dict[str, Any]
+    coverage: dict[str, Any]
+    metrics: tuple[MonthlyInspectionMetric, ...] = ()
+    capacity_rows: tuple[MonthlyInspectionMetric, ...] = ()
+    issues: tuple[dict[str, Any], ...] = ()
+    database_checks: dict[str, Any]
+    recommendations: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
+    extensions: tuple[dict[str, Any], ...] = ()
+    evidence_boundary: dict[str, Any]
+
+
 class ReportPresentation(BaseModel):
     """报告预览投影；日常巡检使用专用结构化展示合同。"""
 
     model_config = ConfigDict(extra="allow")
     leadership_briefing: LeadershipBriefing
     daily_inspection: DailyInspectionPresentation | None = None
+    monthly_inspection: MonthlyInspectionPresentation | None = None
 
 
 DashboardHealth = Literal[

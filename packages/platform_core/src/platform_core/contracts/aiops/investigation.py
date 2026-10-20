@@ -190,7 +190,7 @@ class TaskFrame(AIOpsContract):
         le=31_536_000,
         description=(
             "用户明确时间窗口对应的秒数；MONITORING_FIRST且用户未明确时"
-            "使用Prometheus最大保留范围2592000秒，其他情况为空。"
+            "使用Prometheus最大保留范围5184000秒，其他情况为空。"
         ),
     )
     visualization_profile_id: str | None = Field(
@@ -443,7 +443,7 @@ class CompactPlanningOutput(AIOpsContract):
         le=31_536_000,
         description=(
             "用户明确时间窗口对应的秒数；MONITORING_FIRST且用户未明确时"
-            "使用Prometheus最大保留范围2592000秒，其他情况为空。"
+            "使用Prometheus最大保留范围5184000秒，其他情况为空。"
         ),
     )
     temporal_analysis_mode: TemporalAnalysisMode = (

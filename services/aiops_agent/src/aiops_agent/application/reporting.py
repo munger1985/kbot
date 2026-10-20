@@ -473,6 +473,376 @@ def _daily_inspection_presentation(
     }
 
 
+_CAPACITY_METRIC_ROLES = {
+    "STORAGE_UTILIZATION", "STORAGE_USED", "STORAGE_FREE", "STORAGE_MAX",
+    "DATABASE_SIZE", "FILESYSTEM_UTILIZATION",
+}
+_BACKUP_RECOVERY_FINDING_TYPES = {
+    "BACKUP_MISSING", "BACKUP_FAILED", "RECOVERY_CONFIGURATION",
+}
+
+
+def _percentile_95(values: list[float]) -> float | None:
+    """用线性插值计算可复现的 P95；单点序列返回该点。"""
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * 0.95
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
+
+def is_monthly_backup_recovery_item(value: object) -> bool:
+    """识别由未来备份恢复模块接管、不得进入本期月报正文的内容。"""
+    fact = value if isinstance(value, dict) else {}
+    finding_types = {
+        str(item.get("finding_type") or "").upper()
+        for item in fact.get("findings") or () if isinstance(item, dict)
+    }
+    if finding_types & _BACKUP_RECOVERY_FINDING_TYPES:
+        return True
+    identity = " ".join(str(fact.get(key) or "") for key in (
+        "tool_id", "code", "finding_type", "extension_key",
+    )).lower()
+    if any(token in identity for token in ("backup", "recovery", "rman")):
+        return True
+    if isinstance(value, str):
+        text = value.lower()
+        return any(token in text for token in ("rman", "备份", "恢复演练"))
+    return False
+
+
+def monthly_inspection_summary(
+    *, facts: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    period_start: datetime, period_end: datetime, timezone: str = "UTC",
+    run_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """从冻结日报事实形成自然月统计，结果可直接随月报冻结。"""
+    try:
+        report_timezone = ZoneInfo(timezone)
+    except ZoneInfoNotFoundError:
+        report_timezone = ZoneInfo("UTC")
+    start_date = period_start.astimezone(report_timezone).date()
+    end_date = period_end.astimezone(report_timezone).date()
+    expected_days = max(0, (end_date - start_date).days)
+    metric_groups: dict[str, dict[str, Any]] = {}
+    issues: dict[str, dict[str, Any]] = {}
+    check_counts: dict[str, int] = {}
+
+    for raw_fact in facts:
+        if not isinstance(raw_fact, dict) or is_monthly_backup_recovery_item(raw_fact):
+            continue
+        kind = str(raw_fact.get("kind") or "")
+        observed_at = str(raw_fact.get("_source_observed_at") or "")
+        if kind == "inspection_monitoring_metric":
+            metric_code = str(raw_fact.get("metric_code") or "")
+            semantic_role = str(raw_fact.get("semantic_role") or "")
+            dimensions = str(raw_fact.get("dimensions") or "-")
+            unit = str(raw_fact.get("unit") or "")
+            source_target_id = str(raw_fact.get("_source_target_id") or "")
+            source_target_name = str(raw_fact.get("_source_target_name") or "")
+            key = "|".join((
+                source_target_id, metric_code, dimensions, semantic_role, unit,
+            ))
+            group = metric_groups.setdefault(key, {
+                "metric_key": key,
+                "metric_code": metric_code,
+                "semantic_role": semantic_role,
+                "display_name": display_metric_name(metric_code),
+                "dimensions": dimensions,
+                "dimension_label": " · ".join(filter(None, (
+                    source_target_name,
+                    display_metric_dimensions(dimensions).strip(),
+                ))),
+                "target_id": source_target_id or None,
+                "target_name": source_target_name or None,
+                "unit": unit,
+                "value_kind": str(raw_fact.get("value_kind") or ""),
+                "days": {},
+            })
+            for point in raw_fact.get("daily_points") or ():
+                if not isinstance(point, dict):
+                    continue
+                date_text = str(point.get("date") or "")[:10]
+                value = _number(point.get("value"))
+                try:
+                    point_date = datetime.fromisoformat(date_text).date()
+                except ValueError:
+                    continue
+                if value is None or not start_date <= point_date < end_date:
+                    continue
+                previous = group["days"].get(date_text)
+                if previous is None or observed_at >= previous[0]:
+                    group["days"][date_text] = (observed_at, {
+                        "date": date_text,
+                        "value": value,
+                        "sample_count": point.get("sample_count"),
+                        "minimum": _number(point.get("minimum")),
+                        "maximum": _number(point.get("maximum")),
+                    })
+        elif kind == "inspection_check":
+            status = str(raw_fact.get("check_status") or "UNKNOWN")
+            check_counts[status] = check_counts.get(status, 0) + 1
+            tool_id = str(raw_fact.get("tool_id") or "")
+            for finding in raw_fact.get("findings") or ():
+                if not isinstance(finding, dict):
+                    continue
+                finding_type = str(finding.get("finding_type") or "")
+                if finding_type.upper() in _BACKUP_RECOVERY_FINDING_TYPES:
+                    continue
+                fingerprint = str(
+                    finding.get("finding_id")
+                    or f"{finding_type or 'FINDING'}:{tool_id or raw_fact.get('title') or 'unknown'}"
+                )
+                issue = issues.setdefault(fingerprint, {
+                    "finding_id": fingerprint,
+                    "title": str(finding.get("title") or raw_fact.get("title") or "巡检发现"),
+                    "summary": str(finding.get("summary") or raw_fact.get("summary") or "已记录巡检发现。"),
+                    "severity": str(finding.get("severity") or "INFO"),
+                    "occurrence_count": 0,
+                    "dates": set(),
+                })
+                issue["occurrence_count"] += 1
+                severity_rank = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
+                severity = str(finding.get("severity") or "INFO")
+                if severity_rank.get(severity, 0) > severity_rank.get(issue["severity"], 0):
+                    issue["severity"] = severity
+                try:
+                    issue["dates"].add(
+                        datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+                        .astimezone(report_timezone).date().isoformat()
+                    )
+                except ValueError:
+                    pass
+
+    metrics: list[dict[str, Any]] = []
+    for group in metric_groups.values():
+        points = [item[1] for _, item in sorted(group["days"].items())]
+        values = [float(item["value"]) for item in points]
+        if not values:
+            continue
+        average = sum(values) / len(values)
+        first, last = values[0], values[-1]
+        net_change = last - first
+        change_percent = net_change / first * 100 if first != 0 else None
+        coverage_ratio = len(values) / expected_days if expected_days else None
+        unit = str(group["unit"])
+        metrics.append({
+            **{key: value for key, value in group.items() if key != "days"},
+            "monthly_average": round(average, 6),
+            "monthly_average_display": format_metric_value(average, unit),
+            "p95": round(_percentile_95(values) or 0.0, 6),
+            "p95_display": format_metric_value(_percentile_95(values), unit),
+            "minimum": min(values),
+            "minimum_display": format_metric_value(min(values), unit),
+            "maximum": max(values),
+            "maximum_display": format_metric_value(max(values), unit),
+            "first": first,
+            "first_display": format_metric_value(first, unit),
+            "last": last,
+            "last_display": format_metric_value(last, unit),
+            "net_change": round(net_change, 6),
+            "net_change_display": format_metric_value(net_change, unit),
+            "change_percent": round(change_percent, 2) if change_percent is not None else None,
+            "effective_days": len(values),
+            "expected_days": expected_days,
+            "coverage_ratio": round(coverage_ratio, 6) if coverage_ratio is not None else None,
+            "coverage_percent": round(coverage_ratio * 100, 2) if coverage_ratio is not None else None,
+            "daily_points": points,
+            "is_capacity": group["semantic_role"] in _CAPACITY_METRIC_ROLES,
+        })
+    metrics.sort(key=lambda item: (
+        item["coverage_percent"] is None or item["coverage_percent"] < 80,
+        -abs(item.get("change_percent") or 0), item["display_name"],
+    ))
+    issue_rows = []
+    for issue in issues.values():
+        dates = sorted(issue.pop("dates"))
+        issue_rows.append({
+            **issue,
+            "affected_days": len(dates),
+            "first_seen": dates[0] if dates else None,
+            "last_seen": dates[-1] if dates else None,
+            "lifecycle": "REPEATED" if len(dates) > 1 else "NEW",
+        })
+    issue_rows.sort(key=lambda item: (-item["affected_days"], item["finding_id"]))
+    effective_metric_days = len({
+        point["date"] for metric in metrics for point in metric["daily_points"]
+    })
+    return {
+        "schema_version": "MONTHLY_INSPECTION_SUMMARY.v1",
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "timezone": timezone,
+        "metrics": metrics,
+        "issues": issue_rows,
+        "database_checks": {
+            "status_counts": check_counts,
+            "observation_count": sum(check_counts.values()),
+        },
+        "coverage": {
+            "expected_days": expected_days,
+            "effective_metric_days": effective_metric_days,
+            "metric_day_coverage_percent": (
+                round(effective_metric_days * 100 / expected_days, 2)
+                if expected_days else None
+            ),
+            **dict(run_summary or {}),
+        },
+    }
+
+
+def compare_monthly_inspection_summaries(
+    current: dict[str, Any], previous: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """冻结相同口径指标和问题台账的环比结果。"""
+    if not previous:
+        return {
+            "status": "NO_PREVIOUS_REPORT",
+            "status_display": "无上月报告",
+            "metric_changes": [], "new_issues": [],
+            "persistent_issues": [], "resolved_issues": [],
+        }
+    if previous.get("schema_version") != "MONTHLY_INSPECTION_SUMMARY.v1":
+        return {
+            "status": "INCOMPARABLE",
+            "status_display": "上月报告口径不可比较",
+            "metric_changes": [], "new_issues": [],
+            "persistent_issues": [], "resolved_issues": [],
+        }
+    previous_metrics = {
+        str(item.get("metric_key")): item for item in previous.get("metrics") or ()
+        if isinstance(item, dict)
+    }
+    metric_changes = []
+    for metric in current.get("metrics") or ():
+        before = previous_metrics.get(str(metric.get("metric_key")))
+        if not before:
+            continue
+        current_average = _number(metric.get("monthly_average"))
+        previous_average = _number(before.get("monthly_average"))
+        if current_average is None or previous_average is None:
+            continue
+        change = current_average - previous_average
+        metric_changes.append({
+            "metric_key": metric.get("metric_key"),
+            "display_name": metric.get("display_name"),
+            "dimension_label": metric.get("dimension_label"),
+            "unit": metric.get("unit"),
+            "current_average": current_average,
+            "current_average_display": metric.get("monthly_average_display"),
+            "previous_average": previous_average,
+            "previous_average_display": before.get("monthly_average_display"),
+            "change": round(change, 6),
+            "change_percent": round(change * 100 / previous_average, 2) if previous_average else None,
+        })
+    current_issues = {
+        str(item.get("finding_id")): item for item in current.get("issues") or ()
+    }
+    previous_issues = {
+        str(item.get("finding_id")): item for item in previous.get("issues") or ()
+    }
+    return {
+        "status": "AVAILABLE",
+        "status_display": "已完成上月环比",
+        "metric_changes": metric_changes,
+        "new_issues": [current_issues[key] for key in sorted(current_issues.keys() - previous_issues.keys())],
+        "persistent_issues": [current_issues[key] for key in sorted(current_issues.keys() & previous_issues.keys())],
+        "resolved_issues": [previous_issues[key] for key in sorted(previous_issues.keys() - current_issues.keys())],
+    }
+
+
+def _monthly_inspection_presentation(
+    *, payload: dict[str, Any], report_context: dict[str, Any],
+) -> dict[str, Any]:
+    """生成与日报同骨架、但按自然月统计的正式展示投影。"""
+    scope = dict(payload.get("scope") or {})
+    target = dict(scope.get("target") or {})
+    summary = dict(scope.get("monthly_summary") or {})
+    comparison = dict(scope.get("previous_month_comparison") or {})
+    metrics = list(summary.get("metrics") or ())
+    coverage = dict(summary.get("coverage") or {})
+    issues = list(summary.get("issues") or ())
+    report_id = str(report_context.get("report_id") or "")
+    report_date = str(payload.get("period_end") or "")[:10].replace("-", "")
+    report_number = (
+        f"AIOPS-MI-{report_date}-{report_id[-8:].upper()}"
+        if report_id and report_date else str(payload.get("report_key") or "inspection.monthly")
+    )
+    scope_type = str(scope.get("scope_type") or "TARGET")
+    scope_name = str(
+        scope.get("scope_name") or target.get("display_name")
+        or payload.get("target_id") or "未记录"
+    )
+    conclusion = (
+        f"本月覆盖 {coverage.get('completed_run_count', 0)} 次已完成巡检，"
+        f"形成 {len(metrics)} 组可统计指标和 {len(issues)} 项问题。"
+    )
+    if comparison.get("status") == "AVAILABLE":
+        conclusion += (
+            f" 环比新增问题 {len(comparison.get('new_issues') or ())} 项，"
+            f"持续问题 {len(comparison.get('persistent_issues') or ())} 项，"
+            f"已解决 {len(comparison.get('resolved_issues') or ())} 项。"
+        )
+    return {
+        "schema_version": "MONTHLY_INSPECTION_PRESENTATION.v1",
+        "header": {
+            "title": str(payload.get("title") or "数据库月度巡检报告"),
+            "report_time": report_context.get("created_at") or payload.get("period_end"),
+            "period_start": payload.get("period_start"),
+            "period_end": payload.get("period_end"),
+            "scope_type": scope_type,
+            "scope_name": scope_name,
+            "target_count": int(scope.get("target_count") or 1),
+            "database_types": list(scope.get("database_types") or [
+                target.get("database_type") or scope.get("database_type") or "未记录"
+            ]),
+            "environment": _report_display_text(target.get("environment") or "未记录"),
+            "report_version": int(report_context.get("report_version") or 1),
+            "report_number": report_number,
+            "responsibility_domain": _report_display_text(
+                scope.get("responsibility_domain") or "数据库平台 / 月度运维"
+            ),
+        },
+        "conclusion": {
+            "text": conclusion,
+            "issue_count": len(issues),
+            "metric_count": len(metrics),
+            "coverage_percent": coverage.get("metric_day_coverage_percent"),
+        },
+        "period_comparison": comparison,
+        "coverage": coverage,
+        "metrics": metrics,
+        "capacity_rows": [item for item in metrics if item.get("is_capacity")],
+        "issues": issues,
+        "database_checks": dict(summary.get("database_checks") or {}),
+        "recommendations": [
+            _report_display_text(item) for item in payload.get("recommendations") or ()
+        ],
+        "gaps": _report_gap_items(list(payload.get("gaps") or ())),
+        "extensions": list(scope.get("monthly_report_extensions") or ({
+            "schema_version": "MONTHLY_REPORT_EXTENSION.v1",
+            "extension_key": "backup_recovery",
+            "status": "RESERVED",
+            "items": [],
+        },)),
+        "evidence_boundary": {
+            "methodology": (
+                "指标按自然月、同一指标与维度逐日去重后统计月均值、P95、峰谷和变化；"
+                "覆盖不足和口径不可比较项单独标记。生成日瞬时值不进入月度结论。"
+            ),
+            "sources": [
+                f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
+                for item in payload.get("evidence_refs") or () if isinstance(item, dict)
+            ],
+        },
+    }
+
+
 def closed_period_window(
     *, period_kind: str, timezone: str, now: datetime,
 ) -> tuple[datetime, datetime]:
@@ -937,6 +1307,14 @@ def report_presentation(
             payload=payload,
             report_context=dict(report_context or {}),
         )
+    if (
+        str(payload.get("report_type") or "") == "INSPECTION_MONTHLY"
+        or template.template_ref == "system:inspection.monthly"
+    ):
+        presentation["monthly_inspection"] = _monthly_inspection_presentation(
+            payload=payload,
+            report_context=dict(report_context or {}),
+        )
     return presentation
 
 
@@ -1167,6 +1545,127 @@ def _daily_pdf_story(
     return story
 
 
+def _monthly_pdf_story(
+    *, presentation: dict[str, Any], font_name: str,
+    body: ParagraphStyle, section: ParagraphStyle,
+    cover_title: ParagraphStyle,
+) -> list[Any]:
+    """按日报出版物骨架输出月度统计、环比与问题台账。"""
+    monthly = dict(presentation.get("monthly_inspection") or {})
+    header = dict(monthly.get("header") or {})
+    conclusion = dict(monthly.get("conclusion") or {})
+    comparison = dict(monthly.get("period_comparison") or {})
+    coverage = dict(monthly.get("coverage") or {})
+    story: list[Any] = [
+        Paragraph(_pdf_paragraph(header.get("title") or "数据库月度巡检报告"), cover_title),
+        Paragraph("数据库月度巡检 · 正式运维报告", body),
+        Spacer(1, 5 * mm),
+    ]
+    metadata = [
+        ["报告时间", header.get("report_time") or "未记录", "报告编号", header.get("report_number") or "未记录"],
+        ["统计周期", f"{header.get('period_start') or '未记录'} 至 {header.get('period_end') or '未记录'}", "报告版本", f"v{header.get('report_version') or 1}"],
+        ["运维范围", header.get("scope_name") or "未记录", "范围类型", header.get("scope_type") or "TARGET"],
+        ["数据库类型", "、".join(header.get("database_types") or ()) or "未记录", "责任域", header.get("responsibility_domain") or "数据库月度运维"],
+    ]
+    metadata_table = Table(
+        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in metadata],
+        colWidths=(23 * mm, 61 * mm, 23 * mm, 63 * mm),
+    )
+    metadata_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF1F2")),
+        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EEF1F2")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#C6CDD1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.extend((metadata_table, Spacer(1, 7 * mm)))
+    story.append(Paragraph("月度结论", section))
+    story.append(Paragraph(_pdf_paragraph(conclusion.get("text") or "未形成结论"), body))
+    ledger = [
+        ["完成巡检", str(coverage.get("completed_run_count") or 0)],
+        ["指标日覆盖率", f"{coverage.get('metric_day_coverage_percent') if coverage.get('metric_day_coverage_percent') is not None else '未记录'}%"],
+        ["问题总数", str(conclusion.get("issue_count") or 0)],
+        ["上月对比", comparison.get("status_display") or "无上月报告"],
+    ]
+    ledger_table = Table(
+        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in ledger],
+        colWidths=(48 * mm, 122 * mm),
+    )
+    ledger_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9BA8AF")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D3D9DC")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7F8F7")),
+    ]))
+    story.extend((ledger_table, Spacer(1, 6 * mm)))
+
+    story.append(Paragraph("上月对比", section))
+    if comparison.get("status") == "AVAILABLE":
+        story.append(Paragraph(_pdf_paragraph(
+            f"新增问题 {len(comparison.get('new_issues') or ())} 项；"
+            f"持续问题 {len(comparison.get('persistent_issues') or ())} 项；"
+            f"已解决问题 {len(comparison.get('resolved_issues') or ())} 项。"
+        ), body))
+    else:
+        story.append(Paragraph(_pdf_paragraph(comparison.get("status_display") or "无可比较的上月报告。"), body))
+
+    story.append(Paragraph("月度关键指标", section))
+    rows: list[list[Any]] = [["指标", "范围", "月均值", "P95", "最小 / 最大", "月内变化", "覆盖率"]]
+    for metric in monthly.get("metrics") or ():
+        change = metric.get("change_percent")
+        rows.append([
+            metric.get("display_name") or "指标",
+            metric.get("dimension_label") or "全部",
+            metric.get("monthly_average_display") or "无有效值",
+            metric.get("p95_display") or "无有效值",
+            f"{metric.get('minimum_display') or '-'} / {metric.get('maximum_display') or '-'}",
+            f"{float(change):+.2f}%" if change is not None else "不可计算",
+            f"{metric.get('coverage_percent')}%" if metric.get("coverage_percent") is not None else "未记录",
+        ])
+    metric_table = Table(
+        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in rows],
+        repeatRows=1, colWidths=(27 * mm, 27 * mm, 25 * mm, 22 * mm, 32 * mm, 20 * mm, 19 * mm),
+    )
+    metric_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8ECEE")),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#C9D0D4")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.extend((metric_table, Spacer(1, 5 * mm)))
+
+    for title, key, empty in (
+        ("问题台账", "issues", "本月未形成需跟踪的问题。"),
+        ("处置建议与下月重点", "recommendations", "当前没有新增处置建议。"),
+        ("数据缺口", "gaps", "未发现额外的数据缺口。"),
+    ):
+        story.append(Paragraph(title, section))
+        items = list(monthly.get(key) or ()) or [empty]
+        for item in items:
+            if isinstance(item, dict):
+                value = (
+                    f"{item.get('title') or item.get('finding_id') or '问题'}："
+                    f"{item.get('summary') or ''}（影响 {item.get('affected_days') or 0} 天，"
+                    f"出现 {item.get('occurrence_count') or 0} 次）"
+                )
+            else:
+                value = str(item)
+            story.append(Paragraph(_pdf_paragraph(value), body, bulletText="•"))
+    story.append(Paragraph("扩展接口状态", section))
+    for extension in monthly.get("extensions") or ():
+        story.append(Paragraph(_pdf_paragraph(
+            f"{extension.get('extension_key') or '扩展'}：{extension.get('status') or 'RESERVED'}"
+        ), body, bulletText="•"))
+    boundary = dict(monthly.get("evidence_boundary") or {})
+    story.append(Paragraph("证据边界", section))
+    story.append(Paragraph(_pdf_paragraph(boundary.get("methodology") or "以冻结证据为准。"), body))
+    return story
+
+
 def render_pdf(presentation: dict[str, Any]) -> bytes:
     """以标准 PDF 生成器输出可显示、复制和搜索的中文报告。"""
     font_name = _pdf_report_font_name()
@@ -1196,6 +1695,19 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
     if presentation.get("daily_inspection"):
         document.build(
             _daily_pdf_story(
+                presentation=presentation,
+                font_name=font_name,
+                body=body,
+                section=section,
+                cover_title=cover_title,
+            ),
+            onFirstPage=_report_page_chrome,
+            onLaterPages=_report_page_chrome,
+        )
+        return buffer.getvalue()
+    if presentation.get("monthly_inspection"):
+        document.build(
+            _monthly_pdf_story(
                 presentation=presentation,
                 font_name=font_name,
                 body=body,

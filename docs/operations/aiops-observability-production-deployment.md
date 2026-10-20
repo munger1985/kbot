@@ -68,7 +68,7 @@ local_access = true
 
 [metrics]
 enabled = true
-prometheus_retention = 45d
+prometheus_retention = 60d
 alertmanager_retention = 120h
 
 [logs]
@@ -196,7 +196,7 @@ local_access = true
 
 [metrics]
 enabled = true
-prometheus_retention = 45d
+prometheus_retention = 60d
 
 [prometheus_target:oracle-prod-01]
 enabled = true

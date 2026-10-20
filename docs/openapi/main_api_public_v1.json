@@ -10672,6 +10672,331 @@
         "title": "MonitoringWindow",
         "type": "object"
       },
+      "MonthlyInspectionHeader": {
+        "additionalProperties": false,
+        "description": "月度巡检正式报告头，兼容单 Target 和业务系统范围。",
+        "properties": {
+          "database_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Database Types",
+            "type": "array"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "report_number": {
+            "title": "Report Number",
+            "type": "string"
+          },
+          "report_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Time"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "responsibility_domain": {
+            "title": "Responsibility Domain",
+            "type": "string"
+          },
+          "scope_name": {
+            "title": "Scope Name",
+            "type": "string"
+          },
+          "scope_type": {
+            "enum": [
+              "TARGET",
+              "BUSINESS_SYSTEM"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "target_count": {
+            "minimum": 1.0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "scope_type",
+          "scope_name",
+          "target_count",
+          "environment",
+          "report_version",
+          "report_number",
+          "responsibility_domain"
+        ],
+        "title": "MonthlyInspectionHeader",
+        "type": "object"
+      },
+      "MonthlyInspectionMetric": {
+        "additionalProperties": true,
+        "description": "自然月日点聚合后的指标统计。",
+        "properties": {
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "coverage_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Percent"
+          },
+          "daily_points": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Daily Points",
+            "type": "array"
+          },
+          "dimension_label": {
+            "title": "Dimension Label",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "effective_days": {
+            "minimum": 0.0,
+            "title": "Effective Days",
+            "type": "integer"
+          },
+          "expected_days": {
+            "minimum": 0.0,
+            "title": "Expected Days",
+            "type": "integer"
+          },
+          "first": {
+            "title": "First",
+            "type": "number"
+          },
+          "last": {
+            "title": "Last",
+            "type": "number"
+          },
+          "maximum": {
+            "title": "Maximum",
+            "type": "number"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "minimum": {
+            "title": "Minimum",
+            "type": "number"
+          },
+          "monthly_average": {
+            "title": "Monthly Average",
+            "type": "number"
+          },
+          "monthly_average_display": {
+            "title": "Monthly Average Display",
+            "type": "string"
+          },
+          "net_change": {
+            "title": "Net Change",
+            "type": "number"
+          },
+          "p95": {
+            "title": "P95",
+            "type": "number"
+          },
+          "p95_display": {
+            "title": "P95 Display",
+            "type": "string"
+          },
+          "semantic_role": {
+            "title": "Semantic Role",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_key",
+          "metric_code",
+          "semantic_role",
+          "display_name",
+          "dimension_label",
+          "unit",
+          "monthly_average",
+          "monthly_average_display",
+          "p95",
+          "p95_display",
+          "minimum",
+          "maximum",
+          "first",
+          "last",
+          "net_change",
+          "effective_days",
+          "expected_days"
+        ],
+        "title": "MonthlyInspectionMetric",
+        "type": "object"
+      },
+      "MonthlyInspectionPresentation": {
+        "additionalProperties": true,
+        "description": "月报冻结结构化展示投影。",
+        "properties": {
+          "capacity_rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonthlyInspectionMetric"
+            },
+            "title": "Capacity Rows",
+            "type": "array"
+          },
+          "conclusion": {
+            "additionalProperties": true,
+            "title": "Conclusion",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "database_checks": {
+            "additionalProperties": true,
+            "title": "Database Checks",
+            "type": "object"
+          },
+          "evidence_boundary": {
+            "additionalProperties": true,
+            "title": "Evidence Boundary",
+            "type": "object"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "gaps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "header": {
+            "$ref": "#/components/schemas/MonthlyInspectionHeader"
+          },
+          "issues": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonthlyInspectionMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "period_comparison": {
+            "additionalProperties": true,
+            "title": "Period Comparison",
+            "type": "object"
+          },
+          "recommendations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "MONTHLY_INSPECTION_PRESENTATION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "header",
+          "conclusion",
+          "period_comparison",
+          "coverage",
+          "database_checks",
+          "evidence_boundary"
+        ],
+        "title": "MonthlyInspectionPresentation",
+        "type": "object"
+      },
       "MySQLRecoveryMarker": {
         "additionalProperties": false,
         "properties": {
@@ -13918,6 +14243,16 @@
           },
           "leadership_briefing": {
             "$ref": "#/components/schemas/LeadershipBriefing"
+          },
+          "monthly_inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyInspectionPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
