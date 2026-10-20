@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
+from knowledge_core.parsing.source_format import source_suffix
 from knowledge_core.persistence import KnowledgeCoreUnitOfWork
 
 
@@ -221,7 +222,7 @@ class KnowledgeCorePreviewService:
             if revision.approval_status != "PENDING":
                 raise ValueError("只有待审批 Revision 可以生成审批预分析文本")
             members = await uow.members.list_by_revision(bundle_revision_id=bundle_revision_id)
-            sources: list[tuple[UUID, str, str]] = []
+            sources: list[tuple[UUID, str, str, str | None]] = []
             for member in sorted(members, key=lambda item: int(item.ordinal)):
                 if member.document_role == "MANIFEST" or member.document_version_id is None:
                     continue
@@ -237,40 +238,72 @@ class KnowledgeCorePreviewService:
                     version.document_version_id,
                     member.declared_name or member.external_document_id or "document",
                     version.storage_uri,
+                    version.detected_mime_type,
                 ))
         excerpts: list[ReviewTextExcerpt] = []
         warnings: list[str] = []
         remaining = self._max_total_chars
         with tempfile.TemporaryDirectory(prefix="kbot-kc-review-") as directory:
             root = Path(directory)
-            for ordinal, (document_version_id, file_name, storage_uri) in enumerate(sources, start=1):
+            for ordinal, (
+                document_version_id,
+                file_name,
+                storage_uri,
+                detected_mime_type,
+            ) in enumerate(sources, start=1):
                 if remaining <= 0:
                     warnings.append("审批预分析文本达到总量上限，后续文件未继续抽取")
                     break
-                source_path = root / f"{ordinal:03d}{Path(file_name).suffix or '.bin'}"
+                suffix = source_suffix(
+                    detected_mime_type=detected_mime_type,
+                    file_name=file_name,
+                )
+                if suffix is None:
+                    warnings.append(
+                        f"{file_name} 的文件格式不受审批预分析支持"
+                    )
+                    continue
+                source_path = root / f"{ordinal:03d}{suffix}"
                 try:
                     with source_path.open("wb") as writer:
                         async for chunk in self._object_store.stream(storage_uri):
                             writer.write(chunk)
-                    document = await self._converter.convert(
-                        source_path=source_path, do_ocr=True, ocr_engine="tesseract",
-                        generate_page_images=False, generate_picture_images=False,
-                        generate_table_images=False,
-                    )
-                    content = document.export_to_markdown().strip()
-                    if not content:
-                        warnings.append(f"{file_name} 未抽取到可用于标签识别的文字")
-                        continue
-                    bounded = content[:min(self._max_chars_per_file, remaining)]
-                    remaining -= len(bounded)
-                    excerpts.append(ReviewTextExcerpt(
-                        document_version_id=document_version_id,
-                        file_name=file_name,
-                        content=bounded,
-                        locator={"ordinal": ordinal - 1, "projection": "DOCLING_MARKDOWN", "truncated": len(bounded) < len(content)},
-                    ))
                 except Exception as exc:
-                    warnings.append(f"{file_name} 审批预分析失败：{type(exc).__name__}")
+                    warnings.append(
+                        f"{file_name} 源文件读取失败：{type(exc).__name__}"
+                    )
+                    continue
+                failures: list[str] = []
+                content = ""
+                for do_ocr, mode in ((False, "普通解析"), (True, "OCR")):
+                    try:
+                        document = await self._converter.convert(
+                            source_path=source_path,
+                            do_ocr=do_ocr,
+                            ocr_engine="tesseract",
+                            generate_page_images=False,
+                            generate_picture_images=False,
+                            generate_table_images=False,
+                        )
+                        content = document.export_to_markdown().strip()
+                        if content:
+                            break
+                        failures.append(f"{mode}未抽取到文字")
+                    except Exception as exc:
+                        failures.append(f"{mode}{type(exc).__name__}")
+                if not content:
+                    warnings.append(
+                        f"{file_name} 审批预分析失败：{'；'.join(failures)}"
+                    )
+                    continue
+                bounded = content[:min(self._max_chars_per_file, remaining)]
+                remaining -= len(bounded)
+                excerpts.append(ReviewTextExcerpt(
+                    document_version_id=document_version_id,
+                    file_name=file_name,
+                    content=bounded,
+                    locator={"ordinal": ordinal - 1, "projection": "DOCLING_MARKDOWN", "truncated": len(bounded) < len(content)},
+                ))
         return ReviewTextProjection(bundle_revision_id=bundle_revision_id, excerpts=excerpts, warnings=warnings)
 
     @staticmethod

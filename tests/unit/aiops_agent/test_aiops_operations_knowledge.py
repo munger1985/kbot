@@ -810,6 +810,61 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(raised.exception.retryable)
         self.assertEqual("TAGGING", version.status)
 
+    async def test_tag_analysis_preserves_preview_warning_when_text_is_empty(self):
+        asset_id, version_id = uuid7(), uuid7()
+        version = SimpleNamespace(
+            asset_id=asset_id, status="TAGGING", tag_analysis_json=None
+        )
+        asset = SimpleNamespace(
+            asset_kind="MANUAL", current_version_id=None, status="TAGGING"
+        )
+        repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=asset),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [SimpleNamespace(
+                    collection_id=uuid7(),
+                    bundle_id=uuid7(),
+                    bundle_revision_id=uuid7(),
+                )]
+            }),
+            list_tags=AsyncMock(return_value=[SimpleNamespace(
+                tag_id=uuid7(),
+                category="VENDOR",
+                display_name="Oracle",
+                description=None,
+            )]),
+        )
+        warning = "Oracle Exadata 手册 审批预分析失败：普通解析RuntimeError；OCR未抽取到文字"
+        knowledge_core = SimpleNamespace(extract_review_text=AsyncMock(
+            return_value={"excerpts": [], "warnings": [warning]}
+        ))
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_instruction="",
+            model_catalogs={1: SimpleNamespace()},
+            structured_model=SimpleNamespace(),
+            prompt_registry=SimpleNamespace(),
+        )
+        service.get_version = AsyncMock(return_value={
+            "version": {"status": "TAGGING_FAILED"}
+        })
+
+        await service.analyze_tags(
+            domain_id=42,
+            asset_version_id=version_id,
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual("TAGGING_FAILED", version.status)
+        self.assertEqual("TAGGING_FAILED", asset.status)
+        self.assertEqual(
+            warning, version.tag_analysis_json["error_summary"]
+        )
+
     async def test_ready_manual_is_published_automatically(self):
         asset_id, version_id = uuid7(), uuid7()
         bundle_id, revision_id, collection_id = uuid7(), uuid7(), uuid7()

@@ -16,31 +16,13 @@ from loguru import logger
 from knowledge_core.parsing import canonical_json_hash
 from knowledge_core.parsing.converter import KcDoclingConverter
 from knowledge_core.parsing.pipeline import KcParsingPipeline
+from knowledge_core.parsing.source_format import source_suffix
 from knowledge_core.workers.job_wait import AdaptiveJobWait
 from knowledge_core.workers.parser.visual_evidence import (
     build_visual_page_evidence,
 )
 from platform_core.dictionary import ModelCategory
 from .client import KcParseClient, KcParserProtocolError, ParseTask
-
-
-_MIME_SUFFIX = {
-    "application/pdf": ".pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-    "application/msword": ".doc",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
-    "application/vnd.ms-powerpoint": ".ppt",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-    "application/vnd.ms-excel": ".xls",
-    "text/markdown": ".md",
-    "text/plain": ".md",
-    "text/csv": ".csv",
-    "text/html": ".html",
-    "application/xhtml+xml": ".html",
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/tiff": ".tiff",
-}
 
 
 class KcParserWorker:
@@ -314,7 +296,7 @@ class KcParserWorker:
             await self._client.heartbeat(task, lease_seconds=self._lease_seconds)
 
     async def _materialize_source(self, task: ParseTask, directory: Path) -> Path:
-        suffix = _MIME_SUFFIX.get(task.detected_mime_type.lower())
+        suffix = source_suffix(detected_mime_type=task.detected_mime_type)
         if suffix is None:
             raise ValueError(f"unsupported MIME type: {task.detected_mime_type}")
         target = directory / f"source{suffix}"

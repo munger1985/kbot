@@ -954,7 +954,13 @@ class OperationsKnowledgeService:
             )
             excerpts = list(projection.get("excerpts") or [])
             if not excerpts:
-                raise ValueError("审批预分析没有抽取到可用正文")
+                warnings = [
+                    str(item).strip()
+                    for item in projection.get("warnings") or []
+                    if str(item).strip()
+                ]
+                detail = "；".join(warnings) or "审批预分析没有抽取到可用正文"
+                raise ValueError(detail)
             collection = await self._kc.get_collection(
                 domain_id=domain_id,
                 collection_id=collection_id,
