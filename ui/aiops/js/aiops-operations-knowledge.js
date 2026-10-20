@@ -12,7 +12,6 @@
     uploadAsset: null,
     tags: [],
     selectedTagIds: [],
-    modelCatalog: [],
     knowledgeBases: [],
   };
 
@@ -31,61 +30,6 @@
   const selectedKnowledgeBaseId = () => document.getElementById("knowledge-base-filter").value;
 
   const digest = (file) => KBotSha256.file(file);
-
-  function fillModelSelect(id, category, selected, emptyLabel) {
-    const select = document.getElementById(id);
-    const options = state.modelCatalog
-      .filter((item) => Number(item.category) === category)
-      .map((item) => `<option value="${escape(item.model_id)}" ${String(item.model_id) === String(selected || "") ? "selected" : ""}>${escape(item.display_name)} · ${escape(item.provider)}</option>`)
-      .join("");
-    select.innerHTML = `<option value="">${escape(emptyLabel)}</option>${options}`;
-  }
-
-  async function openModelConfiguration() {
-    if (!selectedKnowledgeBaseId()) throw new Error("请先选择运维知识库");
-    const [catalog, configured] = await Promise.all([
-      KBotAIOpsAuth.request("/api/v1/model-catalog"),
-      KBotAIOpsAuth.request(`${api}/knowledge-bases/${encodeURIComponent(selectedKnowledgeBaseId())}/models`),
-    ]);
-    state.modelCatalog = Array.isArray(catalog) ? catalog : [];
-    const models = configured.models || {};
-    fillModelSelect("model-parser-ocr", 6, models.parser_ocr, "请选择 OCR 模型");
-    fillModelSelect("model-parser-vlm", 5, models.parser_vlm, "不启用视觉解析");
-    fillModelSelect("model-parser-llm", 1, models.parser_llm, "请选择 LLM 解析模型");
-    fillModelSelect("model-retrieval-llm", 1, models.retrieval_llm, "请选择检索规划模型");
-    fillModelSelect("model-embedding", 2, models.embedding, "请选择文本向量模型");
-    fillModelSelect("model-visual-embedding", 3, models.visual_embedding, "不启用视觉向量");
-    document.getElementById("model-config-result").textContent = "";
-    document.getElementById("model-config-drawer").showModal();
-  }
-
-  async function saveModelConfiguration(event) {
-    event.preventDefault();
-    const roles = {
-      parser_ocr: "model-parser-ocr",
-      parser_vlm: "model-parser-vlm",
-      parser_llm: "model-parser-llm",
-      retrieval_llm: "model-retrieval-llm",
-      embedding: "model-embedding",
-      visual_embedding: "model-visual-embedding",
-    };
-    const models = Object.fromEntries(Object.entries(roles)
-      .map(([role, id]) => [role, document.getElementById(id).value])
-      .filter(([, value]) => Boolean(value)));
-    const button = document.getElementById("save-model-config");
-    button.disabled = true;
-    try {
-      await KBotAIOpsAuth.request(`${api}/knowledge-bases/${encodeURIComponent(selectedKnowledgeBaseId())}/models`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ models }),
-      });
-      document.getElementById("model-config-drawer").close();
-      shell.toast("运维知识库解析模型已保存");
-    } finally {
-      button.disabled = false;
-    }
-  }
 
   function assetRow(item) {
     const action = item.status === "REVIEW_REQUIRED" ? "审批标签" : ["TAGGING", "PROCESSING"].includes(item.status) ? "查看进度" : ["FAILED", "TAGGING_FAILED"].includes(item.status) ? "处理异常" : item.status === "DRAFT" ? "审核" : "查看";
@@ -121,7 +65,6 @@
       : '<option value="">请先创建运维知识库</option>';
     if (preferred && state.knowledgeBases.some((item) => item.knowledge_base_id === preferred)) select.value = preferred;
     document.getElementById("open-upload").disabled = !select.value;
-    document.getElementById("open-model-config").disabled = !select.value;
   }
 
   async function loadTags() {
@@ -325,8 +268,6 @@
   shell.ready.then(async () => {
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("open-upload").onclick = () => { resetUpload(); document.getElementById("upload-drawer").showModal(); };
-    document.getElementById("open-model-config").onclick = () => openModelConfiguration().catch((error) => shell.toast(error.message));
-    document.getElementById("model-config-form").onsubmit = (event) => saveModelConfiguration(event).catch((error) => { document.getElementById("model-config-result").textContent = error.message; shell.toast(error.message); });
     document.getElementById("refresh-knowledge").onclick = () => loadAssets().catch((error) => shell.toast(error.message));
     document.getElementById("knowledge-search").oninput = renderAssets;
     document.getElementById("knowledge-status").onchange = () => loadAssets().catch((error) => shell.toast(error.message));
