@@ -1,5 +1,6 @@
 """运维知识提炼合同与原文命令边界测试。"""
 
+import hashlib
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -15,6 +16,10 @@ from aiops_agent.contracts.knowledge import KnowledgeBaseWrite, ManualUploadMeta
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
 from platform_clients.knowledge_core import KnowledgeCoreClientError
+
+
+async def _body_chunks(body: bytes):
+    yield body
 
 
 class _OrderedFlushSession:
@@ -686,6 +691,152 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("PROCESSING", index.index_status)
         self.assertIsNone(index.error_code)
         self.assertIsNone(index.error_summary)
+
+    async def test_profile_revision_preserves_every_manual_source_member(self):
+        asset_id, version_id = uuid7(), uuid7()
+        bundle_id, revision_id, replacement_id = uuid7(), uuid7(), uuid7()
+        collection_id = uuid7()
+        document_ids = (uuid7(), uuid7())
+        bodies = (b"primary manual", b"supporting appendix")
+        digests = tuple(hashlib.sha256(body).hexdigest() for body in bodies)
+        profile = {"schema_version": "OPS_MANUAL_PROFILE.v1", "warnings": []}
+        version = SimpleNamespace(
+            asset_id=asset_id,
+            asset_version_id=version_id,
+            status="PROCESSING",
+            profile_json=profile,
+            extraction_warnings_json=[],
+        )
+        asset = SimpleNamespace(
+            asset_kind="MANUAL", current_version_id=None, status="PROCESSING"
+        )
+        index = SimpleNamespace(
+            bundle_revision_id=revision_id,
+            index_status="PROCESSING",
+            last_checked_at=None,
+            expected_row_version=None,
+            error_code=None,
+            error_summary=None,
+        )
+        repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=asset),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [index], "scopes": [], "sources": []
+            }),
+        )
+
+        def stream_source_file(**kwargs):
+            position = document_ids.index(kwargs["document_version_id"])
+            return SimpleNamespace(
+                headers={"content-type": "application/pdf"},
+                body=_body_chunks(bodies[position]),
+            )
+
+        knowledge_core = SimpleNamespace(
+            get_bundle_status=AsyncMock(return_value={
+                "current_revision_id": str(revision_id),
+                "availability_status": "READY",
+                "row_version": 12,
+            }),
+            get_revision_status=AsyncMock(return_value={
+                "status": "READY",
+                "source_revision": str(version_id),
+                "members": [
+                    {
+                        "document_role": "CONTENT",
+                        "document_version_id": str(document_ids[0]),
+                        "declared_name": "exadata.pdf",
+                        "declared_mime_type": "application/pdf",
+                        "ordinal": 0,
+                        "required_flag": True,
+                        "member_status": "READY",
+                    },
+                    {
+                        "document_role": "SUPPLEMENT",
+                        "document_version_id": str(document_ids[1]),
+                        "declared_name": "appendix.pdf",
+                        "declared_mime_type": "application/pdf",
+                        "ordinal": 1,
+                        "required_flag": False,
+                        "member_status": "READY",
+                    },
+                ],
+            }),
+            stream_source_file=AsyncMock(side_effect=stream_source_file),
+            ingest_user_bundle=AsyncMock(return_value=SimpleNamespace(
+                payload={"items": [{
+                    "status": "ACCEPTED",
+                    "bundle_revision_id": str(replacement_id),
+                }]}
+            )),
+            review_user_intake=AsyncMock(),
+        )
+        service = self.service(repository, knowledge_core)
+        detail = {
+            "asset": {
+                "asset_id": str(asset_id), "asset_kind": "MANUAL",
+                "display_name": "Oracle Exadata 手册", "security_level": 1,
+            },
+            "version": {
+                "status": "PROCESSING", "profile": profile,
+                "source_hash": "bundle-digest",
+            },
+            "sources": [
+                {
+                    "source_kind": "MANUAL_FILE",
+                    "external_id": "exadata.pdf",
+                    "content_hash": digests[0],
+                    "locator": {
+                        "ordinal": 0, "role": "CONTENT",
+                        "required_flag": True,
+                    },
+                },
+                {
+                    "source_kind": "MANUAL_FILE",
+                    "external_id": "appendix.pdf",
+                    "content_hash": digests[1],
+                    "locator": {
+                        "ordinal": 1, "role": "SUPPLEMENT",
+                        "required_flag": False,
+                    },
+                },
+            ],
+            "indexes": [{
+                "collection_id": str(collection_id),
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+            }],
+        }
+        service.get_version = AsyncMock(
+            side_effect=[detail, {"version": {"status": "PROCESSING"}}]
+        )
+
+        await service.reconcile_version(
+            domain_id=42,
+            asset_version_id=version_id,
+            context=SimpleNamespace(),
+        )
+
+        documents = knowledge_core.ingest_user_bundle.await_args.kwargs[
+            "documents"
+        ]
+        self.assertEqual(3, len(documents))
+        self.assertEqual(
+            ["exadata.pdf", "appendix.pdf"],
+            [item["file_name"] for item in documents[:2]],
+        )
+        self.assertEqual(
+            ["CONTENT", "SUPPLEMENT"],
+            [item["role"] for item in documents[:2]],
+        )
+        self.assertEqual([True, False], [
+            item["required_flag"] for item in documents[:2]
+        ])
+        self.assertEqual(list(digests), [
+            item["content_sha256"] for item in documents[:2]
+        ])
+        self.assertEqual(replacement_id, index.bundle_revision_id)
 
     async def test_explicit_model_configuration_updates_selected_knowledge_base(self):
         knowledge_base_id = uuid7()

@@ -17,7 +17,10 @@ class MemberStatus:
     external_document_id: str
     document_version_id: UUID | None
     declared_name: str | None
+    declared_mime_type: str | None
     document_role: str
+    ordinal: int
+    required_flag: bool
     member_status: str
     failure_stage: str | None
     failure_code: str | None
@@ -195,7 +198,10 @@ class KnowledgeCoreStatusService:
                     external_document_id=item.external_document_id,
                     document_version_id=item.document_version_id,
                     declared_name=item.declared_name,
+                    declared_mime_type=item.declared_mime_type,
                     document_role=item.document_role,
+                    ordinal=int(item.ordinal),
+                    required_flag=bool(item.required_flag),
                     member_status=item.member_status,
                     failure_stage=item.failure_stage,
                     failure_code=item.failure_code,

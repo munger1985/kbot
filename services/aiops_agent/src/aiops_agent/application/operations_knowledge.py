@@ -1423,7 +1423,12 @@ class OperationsKnowledgeService:
             source_kind="MANUAL_FILE",
             source_external_id=file_name,
             content_hash=digest,
-            source_locator_json={"metadata": metadata.model_dump(mode="json")},
+            source_locator_json={
+                "metadata": metadata.model_dump(mode="json"),
+                "ordinal": 0,
+                "role": "CONTENT",
+                "required_flag": True,
+            },
         )
         index = OperationsKnowledgeIndexEntity(
             asset_version_id=version_id,
@@ -1549,7 +1554,12 @@ class OperationsKnowledgeService:
                 source_kind="MANUAL_FILE",
                 source_external_id=file_name,
                 content_hash=digest,
-                source_locator_json={"metadata": metadata.model_dump(mode="json")},
+                source_locator_json={
+                    "metadata": metadata.model_dump(mode="json"),
+                    "ordinal": 0,
+                    "role": "CONTENT",
+                    "required_flag": True,
+                },
             )
             index = OperationsKnowledgeIndexEntity(
                 asset_version_id=version_id,
@@ -1943,47 +1953,103 @@ class OperationsKnowledgeService:
             and str(revision.get("source_revision") or "")
             != expected_profile_revision
         ):
-            source_member = next(
+            source_members = sorted(
                 (
                     item for item in members
-                    if str(item.get("document_role") or "").upper() == "CONTENT"
+                    if str(item.get("document_role") or "").upper()
+                    != "MANIFEST"
                     and item.get("document_version_id")
                 ),
-                None,
+                key=lambda item: (
+                    int(item["ordinal"])
+                    if item.get("ordinal") is not None else -1
+                ),
             )
-            if source_member is None:
+            source_snapshots = {
+                int((item.get("locator") or {}).get("ordinal")): item
+                for item in detail.get("sources") or ()
+                if item.get("source_kind") == "MANUAL_FILE"
+                and (item.get("locator") or {}).get("ordinal") is not None
+            }
+            member_ordinals = [
+                int(item["ordinal"])
+                for item in source_members
+                if item.get("ordinal") is not None
+            ]
+            if (
+                not source_members
+                or len(member_ordinals) != len(source_members)
+                or len(source_members) != len(source_snapshots)
+                or set(member_ordinals) != set(source_snapshots)
+            ):
                 raise AIOpsApplicationError(
                     code="AIOPS_KNOWLEDGE_INDEX_STALE",
-                    message="手册原文索引成员缺少可下载版本",
+                    message="手册原文成员与 Registry 快照不一致",
                     status_code=409,
                 )
-            streamed = await self._kc.stream_source_file(
-                domain_id=domain_id,
-                collection_id=UUID(index_payload["collection_id"]),
-                bundle_id=bundle_id,
-                bundle_revision_id=revision_id,
-                document_version_id=UUID(str(source_member["document_version_id"])),
-                range_header=None,
-                auth_context=context,
-            )
-            source_chunks: list[bytes] = []
+            source_documents: list[dict[str, Any]] = []
             source_size = 0
-            async for chunk in streamed.body:
-                source_size += len(chunk)
-                if source_size > 64 * 1024 * 1024:
+            for source_member in source_members:
+                ordinal = int(source_member["ordinal"])
+                snapshot = source_snapshots[ordinal]
+                locator = snapshot.get("locator") or {}
+                member_role = str(source_member.get("document_role") or "")
+                if (
+                    str(locator.get("role") or "") != member_role
+                    or bool(locator.get("required_flag"))
+                    != bool(source_member.get("required_flag"))
+                ):
                     raise AIOpsApplicationError(
-                        code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
-                        message="手册原文超过提炼版本重建上限",
-                        status_code=422,
+                        code="AIOPS_KNOWLEDGE_INDEX_STALE",
+                        message="手册原文成员语义与 Registry 快照不一致",
+                        status_code=409,
                     )
-                source_chunks.append(bytes(chunk))
-            source_body = b"".join(source_chunks)
-            if hashlib.sha256(source_body).hexdigest() != detail["version"]["source_hash"]:
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_INDEX_STALE",
-                    message="手册原文摘要与 Registry 不一致",
-                    status_code=409,
+                streamed = await self._kc.stream_source_file(
+                    domain_id=domain_id,
+                    collection_id=UUID(index_payload["collection_id"]),
+                    bundle_id=bundle_id,
+                    bundle_revision_id=revision_id,
+                    document_version_id=UUID(str(
+                        source_member["document_version_id"]
+                    )),
+                    range_header=None,
+                    auth_context=context,
                 )
+                source_chunks: list[bytes] = []
+                async for chunk in streamed.body:
+                    source_size += len(chunk)
+                    if source_size > 64 * 1024 * 1024:
+                        raise AIOpsApplicationError(
+                            code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
+                            message="手册原文超过提炼版本重建上限",
+                            status_code=422,
+                        )
+                    source_chunks.append(bytes(chunk))
+                source_body = b"".join(source_chunks)
+                source_digest = hashlib.sha256(source_body).hexdigest()
+                if source_digest != str(snapshot.get("content_hash") or ""):
+                    raise AIOpsApplicationError(
+                        code="AIOPS_KNOWLEDGE_INDEX_STALE",
+                        message="手册原文成员摘要与 Registry 快照不一致",
+                        status_code=409,
+                    )
+                source_documents.append({
+                    "file_name": str(
+                        source_member.get("declared_name")
+                        or snapshot.get("external_id")
+                        or f"manual-{ordinal + 1}.bin"
+                    ),
+                    "media_type": str(
+                        source_member.get("declared_mime_type")
+                        or streamed.headers.get(
+                            "content-type", "application/octet-stream"
+                        )
+                    ),
+                    "body": source_body,
+                    "content_sha256": source_digest,
+                    "role": member_role,
+                    "required_flag": bool(source_member.get("required_flag")),
+                })
             profile_body = (
                 "# 运维手册结构化导航\n\n"
                 "以下内容只用于候选定位；命令和结论仍以原始手册引用为准。\n\n"
@@ -2004,15 +2070,7 @@ class OperationsKnowledgeService:
                 title=detail["asset"]["display_name"],
                 security_level=int(detail["asset"]["security_level"]),
                 documents=(
-                    {
-                        "file_name": str(source_member.get("declared_name") or "manual.bin"),
-                        "media_type": streamed.headers.get(
-                            "content-type", "application/octet-stream"
-                        ),
-                        "body": source_body,
-                        "content_sha256": detail["version"]["source_hash"],
-                        "role": "CONTENT",
-                    },
+                    *source_documents,
                     {
                         "file_name": "operations-manual-profile.md",
                         "media_type": "text/markdown",
