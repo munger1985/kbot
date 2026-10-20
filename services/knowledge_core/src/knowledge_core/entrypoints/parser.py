@@ -30,6 +30,7 @@ from knowledge_core.workers.parser.visual_enricher import KcVisualEnricher
 from knowledge_core.workers.parser.visual_cache import LocalVisualResultCache
 from knowledge_core.workers.parser.model_ocr import KcModelOcrEnricher
 from platform_clients import AIModelClient, AIModelConfigClient, OCRClient
+from platform_core.dictionary import ModelCategory
 from platform_core.platform.port_check import check_port_available
 
 # Get service configuration from config center
@@ -90,12 +91,20 @@ parse_worker = KcParserWorker(
             / "visual-cache"
         ),
     ),
-    model_config_client=AIModelConfigClient(
-        base_url=settings.vlm.base_url,
-        timeout=settings.vlm.timeout_seconds,
-        caller_service=SERVICE_NAME,
-        audience=settings.vlm.audience,
-    ),
+    model_config_clients={
+        int(ModelCategory.VLM): AIModelConfigClient(
+            base_url=settings.vlm.base_url,
+            timeout=settings.vlm.timeout_seconds,
+            caller_service=SERVICE_NAME,
+            audience=settings.vlm.audience,
+        ),
+        int(ModelCategory.OCR): AIModelConfigClient(
+            base_url=settings.ocr.base_url,
+            timeout=settings.ocr.timeout_seconds,
+            caller_service=SERVICE_NAME,
+            audience=settings.ocr.audience,
+        ),
+    },
     model_ocr_enricher=KcModelOcrEnricher(
         client=OCRClient(
             base_url=settings.ocr.base_url,

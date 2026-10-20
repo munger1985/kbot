@@ -15,6 +15,7 @@ from knowledge_core.workers.parser.visual_enricher import (
     VisualPageResult,
 )
 from knowledge_core.workers.job_wait import AdaptiveJobWait
+from platform_core.dictionary import ModelCategory
 from test_kc_docling_atom_normalizer import FakeDocument, item
 
 
@@ -88,11 +89,19 @@ class FakeVisualEnricher:
 
 
 class FakeModelConfigClient:
+    def __init__(
+        self, *, category=int(ModelCategory.VLM), served_model_name="vlm-a",
+    ):
+        self.category = category
+        self.served_model_name = served_model_name
+        self.model_ids = []
+
     async def get_model(self, model_id):
+        self.model_ids.append(model_id)
         return {
-            "category": 5,
+            "category": self.category,
             "status": "ACTIVE",
-            "served_model_name": "vlm-a",
+            "served_model_name": self.served_model_name,
         }
 
 
@@ -189,7 +198,9 @@ class ParserWorkerTest(unittest.IsolatedAsyncioTestCase):
                 ),
                 evidence_batch_size=2,
                 visual_enricher=FakeVisualEnricher(),
-                model_config_client=FakeModelConfigClient(),
+                model_config_clients={
+                    int(ModelCategory.VLM): FakeModelConfigClient()
+                },
             )
 
             await worker._process(task)
@@ -200,6 +211,45 @@ class ParserWorkerTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(client.visual_assets)
             self.assertTrue(client.visual_completed)
             self.assertIsNone(client.failed)
+
+    async def test_model_roles_use_their_category_catalog_clients(self):
+        vlm_model_id = UUID("00000000-0000-4000-8000-000000000005")
+        ocr_model_id = UUID("00000000-0000-4000-8000-000000000006")
+        vlm_catalog = FakeModelConfigClient(
+            category=int(ModelCategory.VLM), served_model_name="vlm-a"
+        )
+        ocr_catalog = FakeModelConfigClient(
+            category=int(ModelCategory.OCR), served_model_name="ocr-a"
+        )
+        worker = KcParserWorker(
+            client=FakeClient(),
+            converter=FakeConverter(FakeDocument([])),
+            pipeline=KcParsingPipeline(parser_version="test/1"),
+            worker_id="worker",
+            lease_seconds=600,
+            job_wait=AdaptiveJobWait(
+                listener=None,
+                notification_timeout_seconds=30,
+                fallback_min_seconds=1,
+                fallback_max_seconds=30,
+                fallback_multiplier=2,
+                jitter_ratio=0,
+            ),
+            evidence_batch_size=2,
+            model_config_clients={
+                int(ModelCategory.VLM): vlm_catalog,
+                int(ModelCategory.OCR): ocr_catalog,
+            },
+        )
+        policy = {"models": {
+            "parser_vlm": str(vlm_model_id),
+            "parser_ocr": str(ocr_model_id),
+        }}
+
+        self.assertEqual("vlm-a", await worker._resolve_vlm_model(policy))
+        self.assertEqual(ocr_model_id, await worker._resolve_ocr_model(policy))
+        self.assertEqual([vlm_model_id], vlm_catalog.model_ids)
+        self.assertEqual([ocr_model_id], ocr_catalog.model_ids)
 
 
 if __name__ == "__main__":

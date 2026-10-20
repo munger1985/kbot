@@ -20,6 +20,7 @@ from knowledge_core.workers.job_wait import AdaptiveJobWait
 from knowledge_core.workers.parser.visual_evidence import (
     build_visual_page_evidence,
 )
+from platform_core.dictionary import ModelCategory
 from .client import KcParseClient, KcParserProtocolError, ParseTask
 
 
@@ -48,7 +49,7 @@ class KcParserWorker:
         pipeline: KcParsingPipeline, worker_id: str, lease_seconds: int,
         job_wait: AdaptiveJobWait,
         evidence_batch_size: int, visual_enricher=None,
-        model_ocr_enricher=None, model_config_client=None,
+        model_ocr_enricher=None, model_config_clients=None,
     ):
         self._client = client
         self._converter = converter
@@ -59,7 +60,7 @@ class KcParserWorker:
         self._evidence_batch_size = evidence_batch_size
         self._visual_enricher = visual_enricher
         self._model_ocr_enricher = model_ocr_enricher
-        self._model_config_client = model_config_client
+        self._model_config_clients = dict(model_config_clients or {})
         self._stop = asyncio.Event()
         self._run_task: asyncio.Task | None = None
 
@@ -276,10 +277,12 @@ class KcParserWorker:
         model_id = policy.get("models", {}).get("parser_vlm")
         if not model_id:
             return None
-        if self._model_config_client is None:
-            raise RuntimeError("KC Parser 未配置模型目录客户端")
-        model = await self._model_config_client.get_model(UUID(str(model_id)))
-        if int(model.get("category") or 0) != 5:
+        expected_category = int(ModelCategory.VLM)
+        model_config_client = self._model_config_clients.get(expected_category)
+        if model_config_client is None:
+            raise RuntimeError("KC Parser 未配置 VLM 模型目录客户端")
+        model = await model_config_client.get_model(UUID(str(model_id)))
+        if int(model.get("category") or 0) != expected_category:
             raise RuntimeError("Collection models.parser_vlm 不是 VLM")
         if model.get("status") != "ACTIVE":
             raise RuntimeError("Collection 绑定的 Parser VLM 不可用")
@@ -293,11 +296,13 @@ class KcParserWorker:
         model_id = policy.get("models", {}).get("parser_ocr")
         if not model_id:
             return None
-        if self._model_config_client is None:
-            raise RuntimeError("KC Parser 未配置模型目录客户端")
+        expected_category = int(ModelCategory.OCR)
+        model_config_client = self._model_config_clients.get(expected_category)
+        if model_config_client is None:
+            raise RuntimeError("KC Parser 未配置 OCR 模型目录客户端")
         resolved_model_id = UUID(str(model_id))
-        model = await self._model_config_client.get_model(resolved_model_id)
-        if int(model.get("category") or 0) != 6:
+        model = await model_config_client.get_model(resolved_model_id)
+        if int(model.get("category") or 0) != expected_category:
             raise RuntimeError("Collection models.parser_ocr 不是 OCR 模型")
         if model.get("status") != "ACTIVE":
             raise RuntimeError("Collection 绑定的 Parser OCR 不可用")
