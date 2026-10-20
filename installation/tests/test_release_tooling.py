@@ -28,7 +28,7 @@ class ReleaseToolingTest(unittest.TestCase):
     def test_catalog_covers_every_topology_process(self) -> None:
         image_ids = {item["id"] for item in self.catalog["images"]}
         self.assertEqual(8, len(image_ids))
-        self.assertEqual(22, len(self.topology["processes"]))
+        self.assertEqual(23, len(self.topology["processes"]))
         self.assertTrue(
             all(
                 process["service_config"] in image_ids
