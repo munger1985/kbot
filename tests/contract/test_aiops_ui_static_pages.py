@@ -68,6 +68,14 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             shell_assets = [asset for asset in parser.assets if "aiops-shell.js" in asset]
             self.assertEqual([expected], shell_assets, path.name)
 
+    def test_pages_share_current_navigation_styles(self):
+        expected = "./css/aiops.css?v=20261020_2"
+        for path in AIOPS_ROOT.glob("*.html"):
+            parser = _Parser()
+            parser.feed(path.read_text(encoding="utf-8"))
+            style_assets = [asset for asset in parser.assets if "css/aiops.css" in asset]
+            self.assertEqual([expected], style_assets, path.name)
+
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
         self.assertEqual(20, len(scripts))
@@ -141,7 +149,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("过去 1 月平均值", page)
         self.assertNotIn('id="monitoring-compare-source"', page)
         self.assertNotIn("monitoring-query-drawer", page)
-        self.assertIn("aiops.css?v=20261019_1", page)
+        self.assertIn("aiops.css?v=20261020_2", page)
         self.assertIn("aiops-monitoring.js?v=20261019_1", page)
         self.assertIn('class="ops-main ops-special-page ops-monitoring-main"', page)
         self.assertIn('id="monitoring-workspace" class="ops-special-workspace ops-monitoring-workspace"', page)
@@ -1458,6 +1466,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("const shouldOpen = candidate === group && !isOpen", shell)
         self.assertNotIn("items.querySelector", shell)
         stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
+        self.assertIn(
+            ".ops-nav-group>.ops-nav-items[hidden]{display:none!important}",
+            stylesheet,
+        )
         self.assertIn(".ops-nav-group.is-open", stylesheet)
         self.assertIn(".ops-nav-footer-mark", stylesheet)
 
