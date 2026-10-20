@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aiops_agent.contracts.knowledge import KnowledgeTagScopeSnapshot
 from aiops_agent.entities import (
     OperationsKnowledgeAssetEntity,
     OperationsKnowledgeAssistantBaseEntity,
@@ -246,7 +247,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
 
     async def replace_tag_scopes(
         self, *, version: OperationsKnowledgeVersionEntity,
-        tags: Sequence[OperationsKnowledgeTagEntity],
+        tags: Sequence[KnowledgeTagScopeSnapshot],
     ) -> None:
         """用审批结果整体替换手册标签，保留其他业务范围。"""
         self._check_active()

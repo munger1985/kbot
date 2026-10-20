@@ -303,6 +303,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_approve_manual_freezes_selected_tags_and_starts_kc_parse(self):
         asset_id, version_id, tag_id = uuid7(), uuid7(), uuid7()
+        state = _SessionState()
         version = SimpleNamespace(
             asset_id=asset_id,
             status="REVIEW_REQUIRED",
@@ -315,7 +316,8 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         index = SimpleNamespace(
             index_status="PENDING_APPROVAL", error_code=None, error_summary=None
         )
-        tag = SimpleNamespace(
+        tag = _SessionBoundEntity(
+            state,
             tag_id=tag_id, category="VENDOR", display_name="Oracle"
         )
         repository = SimpleNamespace(
@@ -327,7 +329,18 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             add_review=AsyncMock(),
         )
         knowledge_core = SimpleNamespace(review_user_intake=AsyncMock())
-        service = self.service(repository, knowledge_core)
+        units = iter([
+            _DetachingKnowledgeUnitOfWork(repository, state),
+            _KnowledgeUnitOfWork(repository),
+        ])
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: next(units),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={},
+            knowledge_assistant_instruction="",
+        )
         detail = {
             "asset": {"asset_kind": "MANUAL"},
             "version": {"status": "REVIEW_REQUIRED", "row_version": 3},
@@ -349,9 +362,11 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         )
 
         knowledge_core.review_user_intake.assert_awaited_once()
-        repository.replace_tag_scopes.assert_awaited_once_with(
-            version=version, tags=[tag]
-        )
+        repository.replace_tag_scopes.assert_awaited_once()
+        tag_snapshot = repository.replace_tag_scopes.await_args.kwargs["tags"][0]
+        self.assertEqual(tag_id, tag_snapshot.tag_id)
+        self.assertEqual("VENDOR", tag_snapshot.category)
+        self.assertEqual("Oracle", tag_snapshot.display_name)
         self.assertEqual("PROCESSING", version.status)
         self.assertEqual("PROCESSING", index.index_status)
         self.assertEqual([str(tag_id)], version.tag_analysis_json["approved_tag_ids"])

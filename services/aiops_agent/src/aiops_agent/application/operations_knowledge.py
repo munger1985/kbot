@@ -17,6 +17,7 @@ from aiops_agent.contracts.knowledge import (
     KnowledgeBaseWrite,
     KnowledgeSearchRequest,
     KnowledgeTagAnalysisOutput,
+    KnowledgeTagScopeSnapshot,
     KnowledgeTagWrite,
     ManualProcedureCard,
     ManualProcedureStep,
@@ -2218,7 +2219,14 @@ class OperationsKnowledgeService:
             raise self._state_conflict("当前手册的 KC 入库状态不能批准")
         async with self._uow_factory() as uow:
             active_tags = await uow.operations_knowledge.list_tags(domain_id=domain_id, status="ACTIVE")
-        tags_by_id = {tag.tag_id: tag for tag in active_tags}
+            tags_by_id = {
+                tag.tag_id: KnowledgeTagScopeSnapshot(
+                    tag_id=tag.tag_id,
+                    category=tag.category,
+                    display_name=tag.display_name,
+                )
+                for tag in active_tags
+            }
         if any(tag_id not in tags_by_id for tag_id in selected_ids):
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_TAG_STALE",

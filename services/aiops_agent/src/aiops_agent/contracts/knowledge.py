@@ -39,6 +39,15 @@ class ManualUploadMetadata(BaseModel):
 KnowledgeTagCategory = Literal["RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"]
 
 
+class KnowledgeTagScopeSnapshot(BaseModel):
+    """审批读事务关闭后仍可安全使用的标签范围快照。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    tag_id: UUID
+    category: KnowledgeTagCategory
+    display_name: str = Field(min_length=1, max_length=128)
+
+
 class KnowledgeTagWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
     category: KnowledgeTagCategory
