@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
+from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.bootstrap.common import AIOpsProcessRuntime
 from aiops_agent.workers.outbox_dispatcher import AIOpsOutboxDispatcher
 from platform_core.identity import uuid7
@@ -94,6 +95,18 @@ class _IntegrityFailureSink:
         )
 
 
+class _ApplicationFailureSink:
+    async def publish(self, _event_type, _payload):
+        raise AIOpsApplicationError(
+            code="AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
+            message="巡检模板没有覆盖 MySQL 订单库",
+            status_code=422,
+        )
+
+    async def on_terminal_failure(self, _event_type, _payload, _exc):
+        return None
+
+
 class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
     async def test_ready_checks_database_connectivity_only(self) -> None:
         session = _DatabaseSession((1,))
@@ -140,6 +153,29 @@ class AIOpsReadinessTest(unittest.IsolatedAsyncioTestCase):
             uow.outbox.release["error_code"],
         )
         self.assertEqual(1, len(sink.terminal_failures))
+
+    async def test_application_error_keeps_safe_code_and_message(self) -> None:
+        uow = _OutboxUow()
+        dispatcher = AIOpsOutboxDispatcher(
+            uow_factory=lambda: uow,
+            sink=_ApplicationFailureSink(),
+            dispatcher_id="test-outbox",
+            lease_seconds=30,
+            interval_seconds=1,
+        )
+
+        worked = await dispatcher.run_once()
+
+        self.assertTrue(worked)
+        self.assertEqual("FAILED", uow.outbox.release["new_status"])
+        self.assertEqual(
+            "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
+            uow.outbox.release["error_code"],
+        )
+        self.assertEqual(
+            "巡检模板没有覆盖 MySQL 订单库",
+            uow.outbox.release["error_message"],
+        )
 
     def test_planning_integrity_error_keeps_safe_terminal_semantics(self) -> None:
         error = IntegrityError(

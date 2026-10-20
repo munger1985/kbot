@@ -32,7 +32,10 @@ from aiops_agent.application.configuration.projections import (
 from aiops_agent.application.configuration.inspection_service import (
     InspectionConfigurationMixin,
 )
-from aiops_agent.application.inspections import default_selected_check_ids
+from aiops_agent.application.inspections import (
+    compile_selected_check_steps,
+    default_selected_check_ids,
+)
 from aiops_agent.application.configuration.service import (
     AIOpsConfigurationService,
 )
@@ -392,6 +395,7 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
     def _template(self):
         template_id = uuid7()
         version_id = uuid7()
+        selected_check_ids = default_selected_check_ids("DAILY")
         template = SimpleNamespace(
             inspection_template_id=template_id,
             domain_id=100,
@@ -405,8 +409,9 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             version_no=1,
             definition_json={
                 "schema_version": "INSPECTION_TEMPLATE.v1",
-                "selected_check_ids": list(
-                    default_selected_check_ids("DAILY")
+                "selected_check_ids": list(selected_check_ids),
+                "evidence_steps": list(
+                    compile_selected_check_steps(selected_check_ids)
                 ),
             },
         )
@@ -446,6 +451,8 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         version.inspection_template_version_id = (
             entity.inspection_template_version_id
         )
+        target_id = uuid7()
+        agent_version_id = uuid7()
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
                 get_plan_scoped=AsyncMock(return_value=entity),
@@ -456,8 +463,20 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             ),
             agents=SimpleNamespace(
                 get_active=AsyncMock(
-                    return_value=SimpleNamespace(target_ids=(uuid7(),))
+                    return_value=SimpleNamespace(binding_id=agent_version_id)
                 ),
+                active_version_target_ids=AsyncMock(
+                    return_value=[target_id]
+                ),
+            ),
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(
+                    return_value=SimpleNamespace(
+                        target_id=target_id,
+                        display_name="Oracle 生产库",
+                        db_type="ORACLE",
+                    )
+                )
             ),
             outbox=SimpleNamespace(add=AsyncMock()),
             session=SimpleNamespace(flush=AsyncMock()),
@@ -484,6 +503,18 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
         agent_id = uuid7()
         agent_version_id = uuid7()
         target_ids = [uuid7(), uuid7()]
+        targets = {
+            target_ids[0]: SimpleNamespace(
+                target_id=target_ids[0],
+                display_name="Oracle 生产库",
+                db_type="ORACLE",
+            ),
+            target_ids[1]: SimpleNamespace(
+                target_id=target_ids[1],
+                display_name="PostgreSQL 报表库",
+                db_type="POSTGRESQL",
+            ),
+        }
         added = []
         uow = SimpleNamespace(
             inspections=SimpleNamespace(
@@ -501,6 +532,13 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
                 active_version_target_ids=AsyncMock(return_value=target_ids),
+            ),
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(
+                    side_effect=lambda *, target_id, domain_id: (
+                        targets.get(target_id) if domain_id == 100 else None
+                    )
+                )
             ),
             outbox=SimpleNamespace(add=AsyncMock()),
         )
@@ -546,6 +584,91 @@ class AgentDrivenInspectionPlanTest(unittest.IsolatedAsyncioTestCase):
             result.selected_check_ids,
         )
         self.assertEqual(2, result.agent_target_count)
+        uow.agents.active_version_target_ids.assert_awaited_once_with(
+            domain_id=100,
+            agent_version_id=agent_version_id,
+        )
+
+    async def test_create_plan_rejects_agent_targets_not_covered_by_template(
+        self,
+    ) -> None:
+        service = object.__new__(InspectionConfigurationMixin)
+        template, template_version = self._template()
+        template_version.definition_json = {
+            **template_version.definition_json,
+            "selected_check_ids": ["oracle.session.count"],
+            "evidence_steps": [
+                step
+                for step in template_version.definition_json["evidence_steps"]
+                if "ORACLE" in step.get("supported_db_types", ())
+            ],
+        }
+        agent_version_id = uuid7()
+        oracle_target_id = uuid7()
+        mysql_target_id = uuid7()
+        targets = {
+            oracle_target_id: SimpleNamespace(
+                target_id=oracle_target_id,
+                display_name="Oracle 生产库",
+                db_type="ORACLE",
+            ),
+            mysql_target_id: SimpleNamespace(
+                target_id=mysql_target_id,
+                display_name="MySQL 订单库",
+                db_type="MYSQL",
+            ),
+        }
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(
+                add_plan=AsyncMock(),
+                get_inspection_template=AsyncMock(return_value=template),
+                get_inspection_template_version=AsyncMock(
+                    return_value=template_version
+                ),
+            ),
+            agents=SimpleNamespace(
+                get_active=AsyncMock(
+                    return_value=SimpleNamespace(binding_id=agent_version_id)
+                ),
+                active_version_target_ids=AsyncMock(
+                    return_value=[oracle_target_id, mysql_target_id]
+                ),
+            ),
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(
+                    side_effect=lambda *, target_id, domain_id: (
+                        targets.get(target_id) if domain_id == 100 else None
+                    )
+                )
+            ),
+            outbox=SimpleNamespace(add=AsyncMock()),
+        )
+
+        async def execute_idempotently(**kwargs):
+            return await kwargs["handler"](uow, datetime.now(UTC))
+
+        service._idempotent = execute_idempotently
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            await service.create_inspection_plan(
+                scope=self._scope(),
+                request=InspectionPlanCreate(
+                    display_name="仅 Oracle 的巡检模板",
+                    agent_id=uuid7(),
+                    schedule_type="DAILY",
+                    cron_expression="0 13 * * *",
+                    timezone="Asia/Shanghai",
+                    inspection_template_id=template.inspection_template_id,
+                    timeout_seconds=1800,
+                ),
+                idempotency_key="inspection-create-mixed-database",
+            )
+
+        self.assertEqual(
+            "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
+            caught.exception.code,
+        )
+        self.assertIn("MySQL 订单库（MYSQL）", caught.exception.message)
+        uow.inspections.add_plan.assert_not_awaited()
 
     async def test_delete_plan_requires_disabled_plan_without_execution_history(self) -> None:
         service = object.__new__(AIOpsConfigurationService)

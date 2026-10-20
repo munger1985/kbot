@@ -24,7 +24,10 @@ from aiops_agent.application.configuration.common import (
     sha256_json,
 )
 from aiops_agent.application.configuration.schedule import next_cron_run
-from aiops_agent.application.inspections.check_catalog import load_check_catalog
+from aiops_agent.application.inspections.check_catalog import (
+    inspection_template_steps,
+    load_check_catalog,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     resource_not_found,
@@ -105,16 +108,71 @@ class InspectionConfigurationMixin:
     async def _inspection_agent_target_count(
         self, *, uow, domain_id: int, agent_id: UUID
     ) -> int:
-        """返回计划所选 Agent 当前版本关联的 Target 数。"""
+        """返回计划所选 Agent 当前版本仍可访问的启用 Target 数。"""
         assert uow.agents is not None
         agent = await uow.agents.get(domain_id=domain_id, agent_id=agent_id)
         if agent is None or agent.current_version_id is None:
             return 0
         return len(
-            await uow.agents.version_target_ids(
+            await uow.agents.active_version_target_ids(
+                domain_id=domain_id,
                 agent_version_id=agent.current_version_id
             )
         )
+
+    async def _validate_inspection_target_coverage(
+        self,
+        *,
+        uow,
+        domain_id: int,
+        binding,
+        template_version,
+        schedule_type: str,
+    ) -> int:
+        """确保 Agent 当前访问范围内的每个 Target 都有可执行巡检内容。"""
+        assert uow.agents is not None
+        assert uow.targets is not None
+        target_ids = await uow.agents.active_version_target_ids(
+            domain_id=domain_id,
+            agent_version_id=binding.binding_id,
+        )
+        if not target_ids:
+            raise AIOpsApplicationError(
+                code="AIOPS_INSPECTION_AGENT_TARGET_REQUIRED",
+                message="巡检计划所选 Agent 当前没有可访问的启用 Target",
+                status_code=422,
+            )
+        definition = dict(template_version.definition_json or {})
+        uncovered: list[str] = []
+        for target_id in target_ids:
+            target = await uow.targets.get_scoped(
+                target_id=target_id,
+                domain_id=domain_id,
+            )
+            if target is None:
+                raise AIOpsApplicationError(
+                    code="AIOPS_INSPECTION_TARGET_NOT_FOUND",
+                    message="巡检 Agent 访问范围中的 Target 不存在",
+                    status_code=422,
+                )
+            if not inspection_template_steps(
+                definition,
+                schedule_type=schedule_type,
+                database_type=str(target.db_type),
+            ):
+                uncovered.append(
+                    f"{target.display_name}（{target.db_type}）"
+                )
+        if uncovered:
+            raise AIOpsApplicationError(
+                code="AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
+                message=(
+                    "巡检模板没有覆盖 Agent 当前访问范围内的 Target："
+                    + "、".join(uncovered)
+                ),
+                status_code=422,
+            )
+        return len(target_ids)
 
     def _validate_plan_definition(
         self,
@@ -167,11 +225,17 @@ class InspectionConfigurationMixin:
                 domain_id=scope.domain_id,
                 agent_id=request.agent_id,
             )
-            target_count = len(binding.target_ids)
             template, template_version = await self._inspection_template_version(
                 uow=uow,
                 domain_id=scope.domain_id,
                 template_id=request.inspection_template_id,
+            )
+            target_count = await self._validate_inspection_target_coverage(
+                uow=uow,
+                domain_id=scope.domain_id,
+                binding=binding,
+                template_version=template_version,
+                schedule_type=request.schedule_type,
             )
             entity = InspectionPlanEntity(
                 inspection_plan_id=uuid7(),
@@ -369,7 +433,13 @@ class InspectionConfigurationMixin:
                 domain_id=scope.domain_id,
                 agent_id=entity.agent_id,
             )
-            target_count = len(binding.target_ids)
+            target_count = await self._validate_inspection_target_coverage(
+                uow=uow,
+                domain_id=scope.domain_id,
+                binding=binding,
+                template_version=template_version,
+                schedule_type=entity.schedule_type,
+            )
             if entity.status == "ACTIVE":
                 entity.next_run_at = next_run_at
             else:
@@ -495,24 +565,6 @@ class InspectionConfigurationMixin:
                 raise state_conflict(
                     f"Inspection Plan 不能从 {entity.status} 执行 {command}"
                 )
-            if destination == "ACTIVE":
-                binding = await self._active_inspection_agent(
-                    uow=uow,
-                    domain_id=scope.domain_id,
-                    agent_id=entity.agent_id,
-                )
-                target_count = len(binding.target_ids)
-                entity.next_run_at = self._validate_plan_definition(
-                    cron_expression=entity.cron_expression,
-                    timezone=entity.timezone,
-                )
-            else:
-                target_count = await self._inspection_agent_target_count(
-                    uow=uow,
-                    domain_id=scope.domain_id,
-                    agent_id=entity.agent_id,
-                )
-                entity.next_run_at = None
             template = await uow.inspections.get_inspection_template(
                 domain_id=scope.domain_id,
                 inspection_template_id=entity.inspection_template_id,
@@ -524,6 +576,30 @@ class InspectionConfigurationMixin:
             )
             if template is None or template_version is None:
                 raise state_conflict("巡检计划引用的模板版本不存在")
+            if destination == "ACTIVE":
+                binding = await self._active_inspection_agent(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    agent_id=entity.agent_id,
+                )
+                target_count = await self._validate_inspection_target_coverage(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    binding=binding,
+                    template_version=template_version,
+                    schedule_type=entity.schedule_type,
+                )
+                entity.next_run_at = self._validate_plan_definition(
+                    cron_expression=entity.cron_expression,
+                    timezone=entity.timezone,
+                )
+            else:
+                target_count = await self._inspection_agent_target_count(
+                    uow=uow,
+                    domain_id=scope.domain_id,
+                    agent_id=entity.agent_id,
+                )
+                entity.next_run_at = None
             entity.status = destination
             entity.updated_by = scope.actor_id
             entity.updated_at = now

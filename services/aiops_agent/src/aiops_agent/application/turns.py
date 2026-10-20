@@ -364,17 +364,8 @@ class ConversationTurnService:
             period_start = datetime.fromisoformat(str(payload["period_start"]))
             period_end = datetime.fromisoformat(str(payload["period_end"]))
             schedule_type = str(payload["schedule_type"])
-            task_text = (
-                "请对你负责的数据库执行本期健康巡检并生成巡检报告。"
-                f"观测窗口为 [{period_start.isoformat()}, {period_end.isoformat()})，"
-                f"巡检周期类型为 {schedule_type}。"
-                "本次巡检将执行已勾选检查项对应的固定只读取证步骤，"
-                "并基于实际证据评估健康风险、结论和建议。"
-            )
-            deadline_at = datetime.now(UTC) + timedelta(
-                seconds=int(payload["timeout_seconds"])
-            )
-            receipts: list[dict[str, Any]] = []
+            target_work: list[tuple[Any, tuple[dict[str, Any], ...]]] = []
+            uncovered: list[str] = []
             for target_id in target_ids:
                 target = await self._require_existing_target(
                     uow=uow,
@@ -386,6 +377,31 @@ class ConversationTurnService:
                     schedule_type=schedule_type,
                     database_type=str(target.db_type),
                 )
+                if not evidence_steps:
+                    uncovered.append(
+                        f"{target.display_name}（{target.db_type}）"
+                    )
+                    continue
+                target_work.append((target, evidence_steps))
+            if uncovered:
+                raise self._error(
+                    "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
+                    "巡检模板没有覆盖 Agent 当前访问范围内的 Target："
+                    + "、".join(uncovered),
+                )
+            task_text = (
+                "请对你负责的数据库执行本期健康巡检并生成巡检报告。"
+                f"观测窗口为 [{period_start.isoformat()}, {period_end.isoformat()})，"
+                f"巡检周期类型为 {schedule_type}。"
+                "本次巡检将执行已勾选检查项对应的固定只读取证步骤，"
+                "并基于实际证据评估健康风险、结论和建议。"
+            )
+            deadline_at = datetime.now(UTC) + timedelta(
+                seconds=int(payload["timeout_seconds"])
+            )
+            receipts: list[dict[str, Any]] = []
+            for target, evidence_steps in target_work:
+                target_id = target.target_id
                 recovery_repository = getattr(uow, "recovery", None)
                 business_system_repository = getattr(uow, "business_systems", None)
                 resource = (
@@ -454,11 +470,6 @@ class ConversationTurnService:
                             else item
                             for item in evidence_steps
                         )
-                if not evidence_steps:
-                    raise self._error(
-                        "AIOPS_INSPECTION_CHECK_SELECTION_INVALID",
-                        "巡检模板没有适用于当前数据库类型的检查项",
-                    )
                 conversation = OpsConversationEntity(
                     domain_id=domain_id,
                     agent_id=agent.agent_id,

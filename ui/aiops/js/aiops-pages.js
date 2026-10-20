@@ -65,7 +65,7 @@
     if (type === "latest-inspection") {
       const latest = item._latest_fire;
       return latest
-        ? `${shell.badge(latest.status)}<small>${shell.escape(shell.fmt(latest.scheduled_at))}</small>`
+        ? `${shell.badge(latest.status)}<small>${shell.escape(latest.error_message || shell.fmt(latest.scheduled_at))}</small>`
         : '<span class="ops-badge">尚未执行</span>';
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {

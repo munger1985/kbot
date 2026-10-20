@@ -1932,7 +1932,10 @@
     const runSelector = runs.length > 1
       ? `<div class="inspection-run-selector">${runs.map((run, index) => `<button type="button" data-inspection-run="${esc(run.run_id)}" aria-pressed="${index === 0}"><strong>${esc(targetNames.get(String(run.target_id)) || shell.short(run.target_id))}</strong><span>${shell.badge(run.status)}${inspectionReportQualityText(run) ? shell.badge(inspectionReportQualityText(run)) : ""}</span></button>`).join("")}</div>`
       : "";
-    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${esc(detail.completed_count)}/${esc(detail.target_count)} 个目标完成 · ${esc(detail.failed_count)} 个失败</div>${runSelector}<div id="inspection-run-report"><div class="ops-empty">正在读取巡检报告…</div></div>`;
+    const fireError = detail.error_message || detail.error_code
+      ? `<div class="ops-error"><strong>巡检未完成</strong><br>${esc(detail.error_message || detail.error_code)}</div>`
+      : "";
+    panel.innerHTML = `<div class="ops-context-banner">${shell.badge(detail.status)} · ${esc(detail.completed_count)}/${esc(detail.target_count)} 个目标完成 · ${esc(detail.failed_count)} 个失败</div>${fireError}${runSelector}<div id="inspection-run-report"><div class="ops-empty">正在读取巡检报告…</div></div>`;
     const reportPanel = document.getElementById("inspection-run-report");
     const renderRun = async (runSummary) => {
       panel.querySelectorAll("[data-inspection-run]").forEach((button) => {

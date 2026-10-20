@@ -7725,6 +7725,8 @@ class AIOpsRuntimeService:
             target_count=int(fire.target_count),
             completed_count=int(fire.completed_count),
             failed_count=int(fire.failed_count),
+            error_code=fire.error_code,
+            error_message=fire.error_message,
             completed_at=fire.completed_at,
         )
 

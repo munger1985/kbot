@@ -170,6 +170,8 @@ class InspectionFireSummary(AIOpsContract):
     target_count: int = Field(ge=0)
     completed_count: int = Field(ge=0)
     failed_count: int = Field(ge=0)
+    error_code: str | None = None
+    error_message: str | None = None
     completed_at: UtcDatetime | None = None
 
 
