@@ -22,7 +22,12 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from aiops_agent.application.errors import validation_failed
-from aiops_agent.application.display_dictionary import display_name, display_text
+from aiops_agent.application.display_dictionary import (
+    display_field_name,
+    display_field_value,
+    display_name,
+    display_text,
+)
 from aiops_agent.application.leadership import project_leadership_briefing
 
 
@@ -205,7 +210,7 @@ def _report_fact_items(facts: list[dict[str, Any]]) -> list[str]:
         if observations:
             rows = [
                 "，".join(
-                    f"{key}={'—' if value is None or value == '' else value}"
+                    f"{display_field_name(key)}：{display_field_value(key, value)}"
                     for key, value in row.items()
                 )
                 for row in observations

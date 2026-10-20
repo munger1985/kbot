@@ -667,6 +667,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                         for name in (
                             "metric_code",
                             "dimensions",
+                            "unit",
                             "first",
                             "latest",
                             "change",
@@ -679,6 +680,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                         (
                             "db.storage.used_bytes",
                             "tablespace=USERS",
+                            "bytes",
                             80.0,
                             120.0,
                             40.0,
@@ -734,8 +736,11 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(80.0, trend["first"])
         self.assertEqual(120.0, trend["latest"])
         self.assertEqual(5.7143, trend["change_per_day"])
-        self.assertIn("first=80.0", trend["summary"])
-        self.assertIn("change_per_day=5.7143", trend["summary"])
+        self.assertIn("存储已使用容量（表空间：USERS）", trend["summary"])
+        self.assertIn("期初值 80.00 B", trend["summary"])
+        self.assertIn("日均变化量 5.71 B", trend["summary"])
+        self.assertNotIn("db.storage.used_bytes", trend["summary"])
+        self.assertNotIn("change_per_day", trend["summary"])
         self.assertTrue(
             all(item["kind"] != "inspection_trend" for item in daily_facts)
         )
@@ -745,7 +750,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
             if item["kind"] == "inspection_monitoring_metric"
         )
         self.assertEqual("db.storage.used_bytes", monitoring_fact["metric_code"])
-        self.assertIn("最新值 120.0", monitoring_fact["summary"])
+        self.assertIn("当前值 120.00 B", monitoring_fact["summary"])
+        self.assertNotIn("db.storage.used_bytes", monitoring_fact["summary"])
         self.assertEqual("artifact:test#trend", monitoring_fact["evidence_ref"])
 
     def test_inspection_capacity_recommendation_uses_forecast(self) -> None:

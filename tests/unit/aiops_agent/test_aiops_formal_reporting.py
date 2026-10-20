@@ -191,7 +191,7 @@ class FormalReportingTest(unittest.TestCase):
         sections = {item["kind"]: item for item in presentation["sections"]}
 
         self.assertIn(
-            "关键观测：log_mode=NOARCHIVELOG",
+            "关键观测：日志模式：NOARCHIVELOG",
             sections["FINDINGS"]["items"][0],
         )
         self.assertTrue(

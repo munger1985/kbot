@@ -86,6 +86,7 @@ def summarize_numeric_trend(
 _TREND_FIELDS = (
     "metric_code",
     "dimensions",
+    "unit",
     "first",
     "latest",
     "change",

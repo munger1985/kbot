@@ -12,7 +12,12 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
-from aiops_agent.application.display_dictionary import dictionary_for_payload
+from aiops_agent.application.display_dictionary import (
+    dictionary_for_payload,
+    display_metric_dimensions,
+    display_metric_name,
+    format_metric_value,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     dependency_unavailable,
@@ -3501,17 +3506,19 @@ class AIOpsRuntimeService:
                 average = row[indexes["average"]] if "average" in indexes else None
                 maximum = row[indexes["maximum"]] if "maximum" in indexes else None
                 sample_count = row[indexes["sample_count"]] if "sample_count" in indexes else None
-                details = [f"最新值 {latest}{unit}"]
+                metric_name = display_metric_name(metric_code)
+                dimension_display = display_metric_dimensions(dimensions)
+                details = [f"当前值 {format_metric_value(latest, unit)}"]
                 if average is not None:
-                    details.append(f"平均值 {average}{unit}")
+                    details.append(f"平均值 {format_metric_value(average, unit)}")
                 if maximum is not None:
-                    details.append(f"最大值 {maximum}{unit}")
+                    details.append(f"最大值 {format_metric_value(maximum, unit)}")
                 if sample_count is not None:
                     details.append(f"{sample_count} 个样本")
                 facts.append({
                     "kind": "inspection_monitoring_metric",
-                    "title": metric_code,
-                    "summary": f"{metric_code}[{dimensions}]：" + "，".join(details) + "。",
+                    "title": metric_name,
+                    "summary": f"{metric_name}{dimension_display}：" + "，".join(details) + "。",
                     "check_status": "OBSERVED",
                     "tool_id": "metric.query_range",
                     "metric_code": metric_code,
@@ -3929,14 +3936,18 @@ class AIOpsRuntimeService:
 
         if str(inspection.get("schedule_type") or "") == "WEEKLY":
             for trend in extract_metric_trend_rows(source.evidence):
+                metric_name = display_metric_name(trend["metric_code"])
+                dimension_display = display_metric_dimensions(trend["dimensions"])
+                unit = trend.get("unit", "")
                 facts.append(
                     {
                         "kind": "inspection_trend",
-                        "title": f"指标 {trend['metric_code']} 趋势",
+                        "title": f"{metric_name}趋势",
                         "summary": (
-                            f"{trend['metric_code']}[{trend['dimensions']}]："
-                            f"first={trend['first']}，latest={trend['latest']}，"
-                            f"change_per_day={trend['change_per_day']}"
+                            f"{metric_name}{dimension_display}："
+                            f"期初值 {format_metric_value(trend['first'], unit)}，"
+                            f"当前值 {format_metric_value(trend['latest'], unit)}，"
+                            f"日均变化量 {format_metric_value(trend['change_per_day'], unit)}。"
                         ),
                         "check_status": "OBSERVED",
                         "tool_id": "metric.query_range",
