@@ -11,7 +11,7 @@
   <main class="ops-main">
     <header class="ops-head"><div><h1>运维知识库</h1><p>在当前 Domain 内创建和管理独立知识边界，Agent 可同时绑定多个知识库。</p></div><a class="ops-related-link" href="./operations-knowledge.html"><span><small>关联页面</small><strong>查看运维知识</strong></span><b aria-hidden="true">→</b></a></header>
     <section class="ops-panel">
-      <header class="ops-panel-head"><div><h2>知识库目录</h2><p>维护知识库及其 KC Collection 模型，并配置知识问答 Agent 的检索范围。</p></div><div class="ops-actions"><button id="configure-knowledge-assistant" type="button">配置知识问答 Agent</button><button id="create-knowledge-base" class="primary" type="button">新建知识库</button></div></header>
+      <header class="ops-panel-head"><div><h2>知识库目录</h2><p>维护知识库及其 KC Collection 解析与索引模型。</p></div><div class="ops-actions"><button id="create-knowledge-base" class="primary" type="button">新建知识库</button></div></header>
       <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>知识库</th><th>状态</th><th>资料</th><th>Agent 引用</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="knowledge-base-rows"><tr><td colspan="6" class="ops-empty">正在读取运维知识库…</td></tr></tbody></table></div>
     </section>
   </main>
@@ -35,16 +35,6 @@
       <footer><button type="button" data-close>取消</button><button id="save-knowledge-base" class="primary" type="submit">创建知识库</button></footer>
     </form>
   </dialog>
-  <dialog id="knowledge-assistant-dialog" class="ops-dialog">
-    <form id="knowledge-assistant-form">
-      <header><div><h2>知识问答 Agent 绑定</h2><p>固定选择该 Agent 可以检索的运维知识库，问答会话不能临时扩大范围。</p></div><button type="button" data-close>关闭</button></header>
-      <div class="ops-dialog-body ops-form">
-        <div class="ops-field span-12"><span>可检索知识库（可多选）</span><div id="knowledge-assistant-bases" class="agent-target-list"></div><small>至少选择一个。删除知识库前需要先解除这里的绑定。</small></div>
-        <p id="knowledge-assistant-result" class="ops-connection-result" role="status"></p>
-      </div>
-      <footer><button type="button" data-close>取消</button><button id="save-knowledge-assistant" class="primary" type="submit">保存绑定</button></footer>
-    </form>
-  </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_2"></script><script src="./js/aiops-knowledge-bases.js?v=20261020_2"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_3"></script><script src="./js/aiops-knowledge-bases.js?v=20261020_2"></script>
 </body>
 </html>

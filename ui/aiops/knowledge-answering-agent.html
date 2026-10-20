@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AIOps 知识问答 Agent</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
+  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261020_1">
+  <link rel="stylesheet" href="./css/aiops-knowledge-answering-agent.css?v=20261020_1">
+</head>
+<body data-page="knowledge-answering-agent">
+  <main class="ops-main knowledge-answering-agent-page">
+    <header class="ops-head"><div><h1>知识问答 Agent</h1><p>为当前 Domain 配置回答模型和可检索的运维知识库；问答会话只使用这里保存的范围。</p></div><a class="ops-related-link" href="./knowledge-bases.html"><span><small>关联页面</small><strong>运维知识库管理</strong></span><b aria-hidden="true">→</b></a></header>
+    <section class="ops-panel assistant-config-panel">
+      <header class="ops-panel-head"><div><h2>Agent 配置</h2><p>回答模型负责依据引用证据组织答案；知识库可选择 1–N 个。</p></div><span id="assistant-config-status" class="ops-badge">读取中</span></header>
+      <form id="knowledge-assistant-form" class="assistant-config-form">
+        <section class="assistant-config-section"><header><b>01</b><div><strong>回答模型</strong><small>仅列出 Model Serving 中已启用的 LLM，不借用诊断 Agent 或 KC 解析模型。</small></div></header><label class="ops-field span-12"><span>回答组织模型</span><select name="composer_model_id" required><option value="">正在读取模型…</option></select></label></section>
+        <section class="assistant-config-section"><header><b>02</b><div><strong>知识范围</strong><small>至少选择一个运维知识库；每轮问答只检索所选知识库的已发布资料。</small></div></header><div id="knowledge-assistant-bases" class="assistant-base-grid"></div></section>
+        <p id="knowledge-assistant-result" class="ops-connection-result" role="status"></p>
+        <footer><span id="assistant-config-meta">尚未保存</span><button id="save-knowledge-assistant" class="primary" type="submit">保存 Agent 配置</button></footer>
+      </form>
+    </section>
+  </main>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_3"></script><script src="./js/aiops-knowledge-answering-agent.js?v=20261020_1"></script>
+</body>
+</html>

@@ -38,7 +38,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections",
         "business-systems", "business-system-workspace", "targets", "target-detail",
         "recovery-drills", "data-protection",
-        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat", "knowledge-bases", "knowledge-tags",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat", "knowledge-bases", "knowledge-answering-agent", "knowledge-tags",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -60,7 +60,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261020_2"
+        expected = "./js/aiops-shell.js?v=20261020_3"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             parser = _Parser()
@@ -69,7 +69,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             self.assertEqual([expected], shell_assets, path.name)
 
     def test_pages_share_current_navigation_styles(self):
-        expected = "./css/aiops.css?v=20261020_2"
+        expected = "./css/aiops.css?v=20261020_3"
         for path in AIOPS_ROOT.glob("*.html"):
             parser = _Parser()
             parser.feed(path.read_text(encoding="utf-8"))
@@ -78,7 +78,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(20, len(scripts))
+        self.assertEqual(21, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -149,7 +149,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("过去 1 月平均值", page)
         self.assertNotIn('id="monitoring-compare-source"', page)
         self.assertNotIn("monitoring-query-drawer", page)
-        self.assertIn("aiops.css?v=20261020_2", page)
+        self.assertIn("aiops.css?v=20261020_3", page)
         self.assertIn("aiops-monitoring.js?v=20261019_1", page)
         self.assertIn('class="ops-main ops-special-page ops-monitoring-main"', page)
         self.assertIn('id="monitoring-workspace" class="ops-special-workspace ops-monitoring-workspace"', page)
@@ -497,7 +497,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("workspaces.css?v=20261008_2", page)
-            self.assertIn("aiops-shell.js?v=20261020_2", page)
+            self.assertIn("aiops-shell.js?v=20261020_3", page)
             self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -624,6 +624,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('["operations-knowledge-chat", "知识问答"]', shell)
         self.assertIn('["operations-knowledge", "运维知识"]', shell)
         self.assertIn('["knowledge-bases", "运维知识库"]', shell)
+        self.assertIn('["knowledge-answering-agent", "知识问答 Agent"]', shell)
         self.assertNotIn("Knowledge Core", page)
         self.assertNotIn("Collection", page)
         self.assertNotIn("Embedding", page)
@@ -643,6 +644,27 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('/api/v1/model-catalog', script)
         self.assertIn('/models`)', script)
         self.assertIn('const payload = { display_name:', script)
+
+    def test_knowledge_answering_agent_manages_domain_binding(self):
+        page = (AIOPS_ROOT / "knowledge-answering-agent.html").read_text(
+            encoding="utf-8"
+        )
+        script = (
+            AIOPS_ROOT / "js" / "aiops-knowledge-answering-agent.js"
+        ).read_text(encoding="utf-8")
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('data-page="knowledge-answering-agent"', page)
+        self.assertIn('name="composer_model_id"', page)
+        self.assertIn('name="knowledge_base_ids"', script)
+        self.assertIn("/knowledge-answering/binding", script)
+        self.assertIn("/api/v1/model-catalog", script)
+        self.assertIn('"knowledge-answering-agent": "aiops:knowledge_manage"', shell)
+        self.assertIn('["knowledge-answering-agent", "知识问答 Agent"]', shell)
+        self.assertNotIn("knowledge-answering/binding", (
+            AIOPS_ROOT / "js" / "aiops-knowledge-bases.js"
+        ).read_text(encoding="utf-8"))
 
     def test_login_uses_fixed_aiops_domain_contract(self):
         login = (AIOPS_ROOT / "login.html").read_text(encoding="utf-8")

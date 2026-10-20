@@ -1,11 +1,9 @@
 (function () {
   "use strict";
   const api = "/api/v1/apps/aiops/operations-knowledge/knowledge-bases";
-  const assistantApi = "/api/v1/apps/aiops/operations-knowledge/knowledge-answering/binding";
   const shell = globalThis.KBotAIOpsShell;
   let rows = [];
   let editing = null;
-  let assistantBinding = null;
   let modelCatalog = [];
   const modelRoles = {
     parser_ocr: [6, "请选择 OCR 模型"],
@@ -42,31 +40,6 @@
     </tr>`).join("") : '<tr><td colspan="6" class="ops-empty">当前 Domain 还没有运维知识库。</td></tr>';
   }
   async function load() { const page = await KBotAIOpsAuth.request(api); rows = page.items || []; render(); }
-  async function loadAssistantBinding() {
-    assistantBinding = await KBotAIOpsAuth.request(assistantApi);
-  }
-  function openAssistantBinding() {
-    const selected = new Set(assistantBinding?.knowledge_base_ids || []);
-    document.getElementById("knowledge-assistant-bases").innerHTML = rows.length
-      ? rows.map((item) => `<label class="agent-switch-row"><input type="checkbox" name="knowledge_base_ids" value="${shell.escape(item.knowledge_base_id)}" ${selected.has(item.knowledge_base_id) ? "checked" : ""}><span><strong>${shell.escape(item.display_name)}</strong><small>${shell.escape(item.description || "未填写说明")}</small></span></label>`).join("")
-      : '<p class="ops-empty">请先创建运维知识库。</p>';
-    document.getElementById("knowledge-assistant-result").textContent = "";
-    document.getElementById("knowledge-assistant-dialog").showModal();
-  }
-  async function saveAssistantBinding(event) {
-    event.preventDefault();
-    const knowledgeBaseIds = [...event.currentTarget.querySelectorAll('[name="knowledge_base_ids"]:checked')].map((item) => item.value);
-    const result = document.getElementById("knowledge-assistant-result");
-    if (!knowledgeBaseIds.length) { result.textContent = "请至少选择一个运维知识库"; return; }
-    const button = document.getElementById("save-knowledge-assistant"); button.disabled = true;
-    const payload = { knowledge_base_ids: knowledgeBaseIds };
-    if (assistantBinding?.configured) payload.expected_row_version = assistantBinding.row_version;
-    try {
-      assistantBinding = await KBotAIOpsAuth.request(assistantApi, { method: "PUT", body: JSON.stringify(payload) });
-      document.getElementById("knowledge-assistant-dialog").close(); shell.toast("知识问答 Agent 绑定已保存"); await load();
-    } catch (error) { result.textContent = error.message; }
-    finally { button.disabled = false; }
-  }
   async function open(row = null) {
     editing = row;
     const form = document.getElementById("knowledge-base-form"); form.reset();
@@ -100,11 +73,9 @@
   }
   shell.ready.then(async () => {
     document.getElementById("create-knowledge-base").onclick = () => open().catch((error) => shell.toast(error.message));
-    document.getElementById("configure-knowledge-assistant").onclick = openAssistantBinding;
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("knowledge-base-form").onsubmit = save;
-    document.getElementById("knowledge-assistant-form").onsubmit = saveAssistantBinding;
     document.getElementById("knowledge-base-rows").onclick = (event) => { const edit = event.target.closest("[data-edit]"); const deletion = event.target.closest("[data-delete]"); const id = edit?.dataset.edit || deletion?.dataset.delete; const row = rows.find((item) => item.knowledge_base_id === id); if (edit && row) void open(row).catch((error) => shell.toast(error.message)); if (deletion && row) void remove(row); };
-    try { await Promise.all([load(), loadAssistantBinding()]); } catch (error) { shell.toast(error.message); }
+    try { await load(); } catch (error) { shell.toast(error.message); }
   });
 })();

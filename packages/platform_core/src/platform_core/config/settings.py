@@ -388,7 +388,6 @@ def load_settings(
     unknown_aiops = set(aiops) - {
         "agent_execution_enabled",
         "mutation_enabled",
-        "knowledge_assistant_models",
     }
     if unknown_aiops:
         names = "、".join(sorted(unknown_aiops))
@@ -396,11 +395,6 @@ def load_settings(
     for name in ("agent_execution_enabled", "mutation_enabled"):
         if name in aiops and not isinstance(aiops[name], bool):
             raise ValueError(f"[aiops].{name} 必须是布尔值")
-    if "knowledge_assistant_models" in aiops and not isinstance(
-        aiops["knowledge_assistant_models"], dict
-    ):
-        raise ValueError("[aiops].knowledge_assistant_models 必须是对象")
-
     resource_dir = Path(
         os.getenv("KBOT_RESOURCE_DIR")
         or Path.cwd() / "resources"
@@ -466,11 +460,7 @@ def load_settings(
                 "embedding": {"cache_dir": str(data_dir / "models")}
             },
             "aiops_agent": {
-                "runtime": {
-                    "knowledge_assistant_models": dict(
-                        aiops.get("knowledge_assistant_models") or {}
-                    )
-                },
+                "runtime": {},
                 "executor": {
                     "mutation_enabled": bool(
                         aiops.get("mutation_enabled", False)

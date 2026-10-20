@@ -22,6 +22,7 @@ class KnowledgeBaseWrite(BaseModel):
 
 class KnowledgeAssistantBindingWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    composer_model_id: UUID
     knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     expected_row_version: int | None = Field(default=None, ge=1)
 

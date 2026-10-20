@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 47,
-  "contract_version": "aiops-oracle-v47-knowledge-bases",
+  "schema_version": 48,
+  "contract_version": "aiops-oracle-v48-knowledge-assistant",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "791760a9d84f38eb00f94ea820da72ad58884ffe4584e78855a686fc57333833"
+      "sha256": "be02b07bac0d0de50ebaa18c2f3a15d45c3bb4dfa0209e80c9a9adffba883d31"
     },
     {
       "name": "007_ops_agents.sql",
@@ -52,7 +52,7 @@
     {
       "name": "010_ops_knowledge.sql",
       "statements": 29,
-      "sha256": "b8cd4ab0215bd0704490c10c2150ce80a86425e057f69bfbf979378aa7742096"
+      "sha256": "7c4cbfa5d200519170bfe2778ecc9f77d04ff810b5736e7b2b163228ee49daf3"
     },
     {
       "name": "011_ops_recovery.sql",

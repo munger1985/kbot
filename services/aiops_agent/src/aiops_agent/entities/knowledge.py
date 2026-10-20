@@ -53,6 +53,7 @@ class OperationsKnowledgeAssistantBindingEntity(BaseEntity):
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
     assistant_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
     assistant_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    composer_model_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     created_by: Mapped[str] = mapped_column(String(256), nullable=False)
     updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

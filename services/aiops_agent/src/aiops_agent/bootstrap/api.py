@@ -307,9 +307,6 @@ def create_aiops_api(
             knowledge_assistant_version_id=(
                 resolved.runtime.knowledge_assistant_version_id
             ),
-            knowledge_assistant_models=(
-                resolved.runtime.knowledge_assistant_models
-            ),
             knowledge_assistant_instruction=(
                 resolved.runtime.knowledge_assistant_instruction
             ),

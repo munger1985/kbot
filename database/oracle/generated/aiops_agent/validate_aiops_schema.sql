@@ -2018,6 +2018,7 @@ BEGIN
             'KBOT_OPS_KNOW_ASSISTANT_BASE|KNOWLEDGE_BASE_ID',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|ASSISTANT_ID',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|ASSISTANT_VERSION_ID',
+            'KBOT_OPS_KNOW_ASSISTANT_BIND|COMPOSER_MODEL_ID',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|CREATED_AT',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|CREATED_BY',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|DOMAIN_ID',
@@ -3259,6 +3260,7 @@ BEGIN
             'KBOT_OPS_KNOW_ASSISTANT_BASE|KNOWLEDGE_BASE_ID',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|ASSISTANT_ID',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|ASSISTANT_VERSION_ID',
+            'KBOT_OPS_KNOW_ASSISTANT_BIND|COMPOSER_MODEL_ID',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|CREATED_AT',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|CREATED_BY',
             'KBOT_OPS_KNOW_ASSISTANT_BIND|DOMAIN_ID',
@@ -3949,7 +3951,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1224 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1225 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4041,19 +4043,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 47
-           OR l_contract_version <> 'aiops-oracle-v47-knowledge-bases' THEN
+           OR l_schema_version <> 48
+           OR l_contract_version <> 'aiops-oracle-v48-knowledge-assistant' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '47/aiops-oracle-v47-knowledge-bases'
+                || '48/aiops-oracle-v48-knowledge-assistant'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/47/'
-                || 'aiops-oracle-v47-knowledge-bases'
+                '[通过] Schema 合同：AIOPS/48/'
+                || 'aiops-oracle-v48-knowledge-assistant'
             );
         END IF;
     EXCEPTION
@@ -4082,7 +4084,7 @@ BEGIN
         '验证通过：78 张表、10 个视图、'
         || '1 个属性图、'
         || '289 个命名索引、260 个命名约束、'
-        || '1224 个表列；Schema 与当前规范一致。'
+        || '1225 个表列；Schema 与当前规范一致。'
     );
 END;
 /

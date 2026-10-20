@@ -33,7 +33,6 @@ class AIOpsRuntimeConfig(BaseModel):
     knowledge_assistant_version_id: UUID = UUID(
         "019d2a10-0000-7000-8000-000000000002"
     )
-    knowledge_assistant_models: dict[str, UUID] = Field(default_factory=dict)
     knowledge_assistant_instruction: str = Field(
         default=(
             "只依据已发布的运维知识原文回答，保留前置条件、停止条件、"

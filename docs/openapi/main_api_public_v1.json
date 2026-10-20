@@ -10584,6 +10584,11 @@
       "OperationsKnowledgeAssistantBindingPayload": {
         "additionalProperties": false,
         "properties": {
+          "composer_model_id": {
+            "format": "uuid",
+            "title": "Composer Model Id",
+            "type": "string"
+          },
           "expected_row_version": {
             "anyOf": [
               {
@@ -10608,6 +10613,7 @@
           }
         },
         "required": [
+          "composer_model_id",
           "knowledge_base_ids"
         ],
         "title": "OperationsKnowledgeAssistantBindingPayload",

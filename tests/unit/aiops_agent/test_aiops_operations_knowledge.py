@@ -12,7 +12,11 @@ from aiops_agent.application.operations_knowledge import (
     _bundle_source_hash,
 )
 from aiops_agent.application.errors import AIOpsApplicationError
-from aiops_agent.contracts.knowledge import KnowledgeBaseWrite, ManualUploadMetadata
+from aiops_agent.contracts.knowledge import (
+    KnowledgeAssistantBindingWrite,
+    KnowledgeBaseWrite,
+    ManualUploadMetadata,
+)
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
 from platform_clients.knowledge_core import KnowledgeCoreClientError
@@ -39,6 +43,12 @@ class _OrderedFlushSession:
 
 
 class OperationsKnowledgeContractTest(unittest.TestCase):
+    def test_knowledge_assistant_binding_requires_composer_model(self):
+        with self.assertRaises(ValidationError):
+            KnowledgeAssistantBindingWrite(
+                knowledge_base_ids=(uuid7(),),
+            )
+
     def test_knowledge_base_write_requires_models(self):
         with self.assertRaises(ValidationError):
             KnowledgeBaseWrite(display_name="Oracle 运维库")
@@ -181,7 +191,6 @@ class OperationsKnowledgeUploadTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=SimpleNamespace(),
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={},
             knowledge_assistant_instruction="",
         )
         service.ingest_manual = AsyncMock(return_value={
@@ -259,6 +268,261 @@ class _DetachingKnowledgeUnitOfWork(_KnowledgeUnitOfWork):
         return None
 
 
+class OperationsKnowledgeAssistantBindingTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def service(repository, model_catalog=None, knowledge_core=None):
+        return OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=knowledge_core or SimpleNamespace(),
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_instruction="仅依据运维知识证据回答",
+            model_catalogs=(
+                {1: model_catalog} if model_catalog is not None else {}
+            ),
+        )
+
+    async def test_binding_is_configured_only_with_model_and_active_base(self):
+        knowledge_base_id = uuid7()
+        active_base = SimpleNamespace(
+            knowledge_base_id=knowledge_base_id,
+            domain_id=42,
+            display_name="Oracle 运维库",
+            description=None,
+            collection_id=uuid7(),
+            status="ACTIVE",
+            row_version=1,
+            created_by="operator",
+            updated_by="operator",
+            created_at=None,
+            updated_at=None,
+        )
+        binding = SimpleNamespace(
+            assistant_id=uuid7(),
+            assistant_version_id=uuid7(),
+            composer_model_id=None,
+            row_version=1,
+            updated_at=None,
+        )
+        repository = SimpleNamespace(
+            get_assistant_binding=AsyncMock(return_value=binding),
+            assistant_knowledge_base_ids=AsyncMock(
+                return_value=[knowledge_base_id]
+            ),
+            get_knowledge_base=AsyncMock(return_value=active_base),
+        )
+        service = self.service(repository)
+
+        missing_model = await service.get_knowledge_assistant_binding(
+            domain_id=42
+        )
+        binding.composer_model_id = uuid7()
+        configured = await service.get_knowledge_assistant_binding(
+            domain_id=42
+        )
+
+        self.assertFalse(missing_model["configured"])
+        self.assertTrue(configured["configured"])
+        self.assertEqual(
+            str(binding.composer_model_id),
+            configured["composer_model_id"],
+        )
+
+    async def test_create_binding_persists_model_and_multiple_knowledge_bases(self):
+        model_id = uuid7()
+        knowledge_base_ids = (uuid7(), uuid7())
+        repository = SimpleNamespace(
+            get_knowledge_base=AsyncMock(side_effect=[
+                SimpleNamespace(status="ACTIVE"),
+                SimpleNamespace(status="ACTIVE"),
+            ]),
+            get_assistant_binding=AsyncMock(return_value=None),
+            add_assistant_binding=AsyncMock(),
+            replace_assistant_knowledge_bases=AsyncMock(),
+        )
+        catalog = SimpleNamespace(get_model=AsyncMock(return_value={
+            "category": 1,
+            "status": "ACTIVE",
+        }))
+        service = self.service(repository, catalog)
+        service.get_knowledge_assistant_binding = AsyncMock(return_value={
+            "configured": True,
+        })
+        context = SimpleNamespace(
+            asserted_user_id="operator",
+            client_id="portal",
+        )
+
+        result = await service.configure_knowledge_assistant_binding(
+            domain_id=42,
+            command=KnowledgeAssistantBindingWrite(
+                composer_model_id=model_id,
+                knowledge_base_ids=knowledge_base_ids,
+            ),
+            context=context,
+        )
+
+        self.assertTrue(result["configured"])
+        catalog.get_model.assert_awaited_once_with(
+            model_id, auth_context=context,
+        )
+        created = repository.add_assistant_binding.await_args.args[0]
+        self.assertEqual(model_id, created.composer_model_id)
+        repository.replace_assistant_knowledge_bases.assert_awaited_once_with(
+            domain_id=42,
+            knowledge_base_ids=knowledge_base_ids,
+        )
+
+    async def test_update_binding_rotates_version_and_model(self):
+        old_version_id = uuid7()
+        new_model_id = uuid7()
+        knowledge_base_id = uuid7()
+        binding = SimpleNamespace(
+            assistant_id=uuid7(),
+            assistant_version_id=old_version_id,
+            composer_model_id=uuid7(),
+            row_version=4,
+            updated_by="old-user",
+            updated_at=None,
+        )
+        repository = SimpleNamespace(
+            get_knowledge_base=AsyncMock(return_value=SimpleNamespace(
+                status="ACTIVE"
+            )),
+            get_assistant_binding=AsyncMock(return_value=binding),
+            replace_assistant_knowledge_bases=AsyncMock(),
+        )
+        catalog = SimpleNamespace(get_model=AsyncMock(return_value={
+            "category": 1,
+            "status": "ACTIVE",
+        }))
+        service = self.service(repository, catalog)
+        service.get_knowledge_assistant_binding = AsyncMock(return_value={
+            "configured": True,
+        })
+
+        await service.configure_knowledge_assistant_binding(
+            domain_id=42,
+            command=KnowledgeAssistantBindingWrite(
+                composer_model_id=new_model_id,
+                knowledge_base_ids=(knowledge_base_id,),
+                expected_row_version=4,
+            ),
+            context=SimpleNamespace(
+                asserted_user_id="operator",
+                client_id="portal",
+            ),
+        )
+
+        self.assertEqual(new_model_id, binding.composer_model_id)
+        self.assertNotEqual(old_version_id, binding.assistant_version_id)
+        self.assertEqual(5, binding.row_version)
+
+    async def test_binding_rejects_inactive_or_non_llm_model(self):
+        for definition in (
+            {"category": 1, "status": "DISABLED"},
+            {"category": 2, "status": "ACTIVE"},
+        ):
+            with self.subTest(definition=definition):
+                catalog = SimpleNamespace(
+                    get_model=AsyncMock(return_value=definition)
+                )
+                service = self.service(SimpleNamespace(), catalog)
+                with self.assertRaises(AIOpsApplicationError) as raised:
+                    await service.configure_knowledge_assistant_binding(
+                        domain_id=42,
+                        command=KnowledgeAssistantBindingWrite(
+                            composer_model_id=uuid7(),
+                            knowledge_base_ids=(uuid7(),),
+                        ),
+                        context=SimpleNamespace(),
+                    )
+                self.assertEqual(409, raised.exception.status_code)
+                self.assertEqual(
+                    "AIOPS_KNOWLEDGE_ASSISTANT_MODEL_UNAVAILABLE",
+                    raised.exception.code,
+                )
+
+    async def test_execution_spec_uses_persisted_binding_model_and_ids(self):
+        assistant_id = uuid7()
+        assistant_version_id = uuid7()
+        composer_model_id = uuid7()
+        knowledge_base_id = uuid7()
+        collection_id = uuid7()
+        revision_id = uuid7()
+        asset_version_id = uuid7()
+        repository = SimpleNamespace(
+            get_assistant_binding=AsyncMock(return_value=SimpleNamespace(
+                assistant_id=assistant_id,
+                assistant_version_id=assistant_version_id,
+                composer_model_id=composer_model_id,
+            )),
+            assistant_knowledge_base_ids=AsyncMock(
+                return_value=[knowledge_base_id]
+            ),
+            list_published_candidates=AsyncMock(return_value=[(
+                SimpleNamespace(),
+                SimpleNamespace(asset_version_id=asset_version_id),
+                SimpleNamespace(
+                    collection_id=collection_id,
+                    bundle_revision_id=revision_id,
+                ),
+            )]),
+        )
+        knowledge_core = SimpleNamespace(bind_collection=AsyncMock())
+        service = self.service(repository, knowledge_core=knowledge_core)
+        context = SimpleNamespace()
+
+        spec = await service.knowledge_execution_spec(
+            domain_id=42,
+            max_security_level=2,
+            business_context={},
+            context=context,
+        )
+
+        self.assertEqual(str(assistant_id), spec["consumer_agent_id"])
+        self.assertEqual(
+            str(assistant_version_id),
+            spec["consumer_agent_version_id"],
+        )
+        self.assertEqual(
+            str(composer_model_id),
+            spec["models"]["composer_llm"],
+        )
+        knowledge_core.bind_collection.assert_awaited_once_with(
+            domain_id=42,
+            agent_id=assistant_id,
+            collection_id=collection_id,
+            note="AIOps 内部运维知识助手检索授权",
+            auth_context=context,
+        )
+
+    async def test_execution_spec_requires_persisted_model(self):
+        repository = SimpleNamespace(
+            get_assistant_binding=AsyncMock(return_value=SimpleNamespace(
+                assistant_id=uuid7(),
+                assistant_version_id=uuid7(),
+                composer_model_id=None,
+            )),
+            assistant_knowledge_base_ids=AsyncMock(return_value=[uuid7()]),
+        )
+        service = self.service(repository)
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.knowledge_execution_spec(
+                domain_id=42,
+                max_security_level=2,
+                business_context={},
+                context=SimpleNamespace(),
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual(
+            "AIOPS_KNOWLEDGE_ASSISTANT_MODEL_REQUIRED",
+            raised.exception.code,
+        )
+
+
 class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def service(repository, knowledge_core):
@@ -267,7 +531,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={},
             knowledge_assistant_instruction="",
         )
 
@@ -288,7 +551,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={},
             knowledge_assistant_instruction="",
         )
         context = SimpleNamespace()
@@ -343,7 +605,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={},
             knowledge_assistant_instruction="",
         )
         detail = {
@@ -462,7 +723,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={"composer_llm": uuid7()},
             knowledge_assistant_instruction="",
             model_catalogs={1: SimpleNamespace(get_model=AsyncMock(
                 return_value={"served_model_name": "tag-model"}
@@ -519,7 +779,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={"composer_llm": uuid7()},
             knowledge_assistant_instruction="",
             model_catalogs={1: SimpleNamespace()},
             structured_model=SimpleNamespace(),
@@ -906,7 +1165,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={"composer_llm": uuid7()},
             knowledge_assistant_instruction="",
             model_catalogs=model_catalogs,
         )
@@ -968,7 +1226,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={},
             knowledge_assistant_instruction="",
             model_catalogs={category: SimpleNamespace(get_model=AsyncMock(
                 side_effect=lambda model_id, **_kwargs: {
@@ -1027,7 +1284,6 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
-            knowledge_assistant_models={},
             knowledge_assistant_instruction="",
             model_catalogs={category: SimpleNamespace(get_model=AsyncMock(
                 side_effect=lambda model_id, **_kwargs: {
