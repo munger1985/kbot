@@ -101,6 +101,17 @@ Schema 44 / `aiops-oracle-v44-resource-graph`。脚本跳过已否定且未部�
 `aiops-oracle-v45-shared-monitor-locator`。脚本移除监控 Locator 的全局唯一约束，允许 RAC
 节点等多个 Target 复用同一监控对象；不删除 Target、监控源或绑定业务行。
 
+`apply_aiops_schema_46.sql` 用于将 AIOps Schema 45 /
+`aiops-oracle-v45-shared-monitor-locator` 升级到 Schema 46 /
+`aiops-oracle-v46-knowledge-tags`，增加受控知识标签和审批识别结果。
+
+`apply_aiops_schema_47.sql` 用于将 AIOps Schema 46 /
+`aiops-oracle-v46-knowledge-tags` 升级到 Schema 47 /
+`aiops-oracle-v47-knowledge-bases`。脚本为每个已有 AIOps Domain 的
+`operations-manuals` Collection 建立默认运维知识库，将既有知识资产、诊断 Agent 历史版本
+和固定知识问答 Agent 无损绑定到默认知识库。执行前必须停止 AIOps 写入服务并完成 Schema
+备份；缺少或重复默认 Collection 时脚本会在执行 DDL 前拒绝升级。
+
 `../generated/kbot_41/apply_kbot_41_from_aiops_schema_42.sql` 是 SQL Developer 可直接
 执行的单文件追平产物，严格从 AIOps Schema 42 / `aiops-oracle-v32` 依次升级到 Schema 45 /
 `aiops-oracle-v45-shared-monitor-locator`，随后执行 KBot 4.1 的 KM Asset 退役。该脚本由

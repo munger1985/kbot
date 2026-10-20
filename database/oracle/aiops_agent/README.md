@@ -43,6 +43,10 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 从 Schema 45 升级时执行 `../operations/apply_aiops_schema_46.sql`。该脚本创建受控标签表，
 为知识版本增加标签分析结果，并把知识范围关联到稳定标签 ID；执行前必须先备份并停止 AIOps 写入服务。
 
+从 Schema 46 升级时执行 `../operations/apply_aiops_schema_47.sql`。该脚本创建 Domain 级运维
+知识库和 Agent 多选绑定表，并把既有运维知识、诊断 Agent 版本及固定知识问答 Agent 迁移到
+默认运维知识库；执行前必须先备份并停止 AIOps 写入服务。
+
 升级失败但必须保留已配置的监控源和运维目标时，改用
 `../generated/aiops_agent/rebuild_aiops_preserve_sources_targets.sql`。该文件同样在
 SQL Developer 中使用 Run Script（F5）执行，会保留下列配置数据并重建全部 AIOps
