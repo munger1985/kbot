@@ -108,6 +108,8 @@ DEFAULT_MONITORING_LOOKBACK_LABEL = (
     f"最近{DEFAULT_MONITORING_LOOKBACK_SECONDS // 86_400}天"
     "（Prometheus最大保留范围）"
 )
+DAILY_INSPECTION_WINDOW_SECONDS = 86_400
+WEEKLY_INSPECTION_WINDOW_SECONDS = 7 * 86_400
 
 
 @dataclass(frozen=True)
@@ -935,13 +937,20 @@ class TurnPlanningService:
         ]
         success_criteria = [
             "完成全部可用的勾选取证步骤",
-            "表空间先展示历史变化，再预测未来30天容量风险并给出处置建议",
             "明确展示已验证发现、处置建议和数据缺口",
         ]
+        monitoring_window_seconds = (
+            WEEKLY_INSPECTION_WINDOW_SECONDS
+            if weekly
+            else DAILY_INSPECTION_WINDOW_SECONDS
+        )
         if weekly_trend:
             known_facts.append("本期为周检，已勾选需要趋势窗口的检查项")
             success_criteria.append(
                 "周趋势必须引用监控证据中的 first、latest、change_per_day 等服务端字段，禁止自行重算"
+            )
+            success_criteria.append(
+                "对有历史证据的容量指标评估未来30天风险，低置信度预测只能作为提示"
             )
         task_frame = TaskFrame(
             objectives=(TaskObjective.DIAGNOSE, TaskObjective.ASSESS),
@@ -950,18 +959,26 @@ class TurnPlanningService:
                 f"评估 {display_name} 的数据库健康状态"
             ),
             database_context=dict(context.target_context),
-            time_scope=DEFAULT_MONITORING_LOOKBACK_LABEL,
-            requested_window_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
+            time_scope=(
+                "最近7天（周巡检周期）"
+                if weekly
+                else "最近24小时（日巡检周期）"
+            ),
+            requested_window_seconds=monitoring_window_seconds,
             temporal_analysis_mode=(
                 TemporalAnalysisMode.HISTORICAL_AND_FORECAST
+                if weekly
+                else TemporalAnalysisMode.HISTORICAL
             ),
-            forecast_scope="未来30天",
-            forecast_horizon_seconds=DEFAULT_MONITORING_LOOKBACK_SECONDS,
+            forecast_scope="未来30天" if weekly else None,
+            forecast_horizon_seconds=(
+                DEFAULT_MONITORING_LOOKBACK_SECONDS if weekly else None
+            ),
             visualization_profile_id=(
                 "inspection.weekly" if weekly_trend else None
             ),
             visualization_window_seconds=(
-                DEFAULT_MONITORING_LOOKBACK_SECONDS if weekly_trend else None
+                monitoring_window_seconds if weekly_trend else None
             ),
             known_facts=tuple(known_facts),
             unknowns=tuple(

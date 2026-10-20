@@ -3133,45 +3133,98 @@ class AIOpsRuntimeService:
             item for item in facts
             if str(item.get("kind") or "") == "inspection_check"
         )
+        check_status_counts: dict[str, int] = {}
+        for item in inspection_checks:
+            check_status = str(item.get("check_status") or "UNKNOWN")
+            check_status_counts[check_status] = (
+                check_status_counts.get(check_status, 0) + 1
+            )
         evidence_covered_count = sum(
             bool(item.get("evidence_refs"))
             for item in inspection_checks
         )
-        uncovered_check_ids = {
-            str(item.get("tool_id") or "")
-            for item in inspection_checks
-            if not item.get("evidence_refs")
-        }
-        extra_gap_keys = {
-            (
-                str(item.get("source_id") or ""),
-                str(item.get("step_id") or ""),
-                str(item.get("code") or ""),
-            )
-            for item in gaps
-            if str(item.get("step_id") or "") not in uncovered_check_ids
-        }
-        evidence_total_count = len(inspection_checks) + len(extra_gap_keys)
+        evidence_total_count = len(inspection_checks)
         evidence_coverage_percent = round(
             evidence_covered_count * 100 / evidence_total_count,
             2,
         ) if evidence_total_count else 0.0
+        incomplete_statuses = {"PARTIAL", "GAP", "MISSING"}
+        incomplete_check_count = sum(
+            count for check_status, count in check_status_counts.items()
+            if check_status in incomplete_statuses
+        )
         status = (
             "READY"
             if (
-                source.status == "COMPLETED"
-                and evidence_coverage_percent == 100
+                incomplete_check_count == 0
                 and not gaps
             )
             else "PARTIAL"
         )
-        summary = coverage_summary
-        recommendations = self._inspection_capacity_recommendations(source)
-        if source.evidence_gaps:
+        severity_order = {
+            "CRITICAL": 5, "HIGH": 4, "MEDIUM": 3,
+            "LOW": 2, "INFO": 1,
+        }
+        finding_severities = [
+            str(finding.get("severity") or "")
+            for item in inspection_checks
+            for finding in item.get("findings") or ()
+        ]
+        health_status = (
+            max(
+                finding_severities,
+                key=lambda value: severity_order.get(value, 0),
+            )
+            if finding_severities
+            else ("UNKNOWN" if status == "PARTIAL" else "NORMAL")
+        )
+        summary = (
+            f"共执行 {len(inspection_checks)} 项检查："
+            f"正常 {check_status_counts.get('CLEAR', 0)} 项，"
+            f"需关注 {check_status_counts.get('FINDING', 0)} 项，"
+            f"仅观测 {check_status_counts.get('OBSERVED', 0)} 项，"
+            f"不适用 {check_status_counts.get('NOT_APPLICABLE', 0)} 项，"
+            f"不完整 {incomplete_check_count} 项；"
+            f"数据缺口 {len(gaps)} 项。"
+        )
+        recommendations = (
+            self._inspection_capacity_recommendations(source)
+            if schedule_type == "WEEKLY"
+            else ()
+        )
+        if not gaps and not recommendations:
+            recommendations = (
+                "继续按既定周期执行该巡检模板并关注趋势变化。",
+            )
+        gap_categories = {
+            str(item.get("category") or "DATA_SOURCE") for item in gaps
+        }
+        if "PRODUCT_CONTRACT" in gap_categories:
             recommendations = (
                 *recommendations,
-                "请先处理本报告列出的数据缺口，再重新执行同一巡检模板。",
+                "报告证据契约存在字段不一致，应由产品修复 Tool 输出与规则目录后重跑，不能由用户补值。",
             )
+        if "MONITORING" in gap_categories:
+            recommendations = (
+                *recommendations,
+                "监控时序覆盖不足时应检查采集目标、抓取间隔和保留期；修复采集后等待形成完整巡检窗口。",
+            )
+        if "SOURCE_ACCESS" in gap_categories:
+            recommendations = (
+                *recommendations,
+                "数据库只读访问失败时，仅核对报告中列明的连接或最小查询权限，不应扩大账号授权范围。",
+            )
+        if "SOURCE_CAPABILITY" in gap_categories:
+            recommendations = (
+                *recommendations,
+                "目标版本或数据库能力不支持该检查时，应调整模板适用范围或选用对应版本的固定查询。",
+            )
+        if gap_categories & {"DATA_SOURCE", "REPORT_CONTRACT"}:
+            recommendations = (
+                *recommendations,
+                "数据库查询无数据时，应先核对查询窗口、数据库角色和功能是否实际启用；确认读取方式正确后再判定为真实缺失。",
+            )
+        recommendations = tuple(dict.fromkeys(recommendations))
         security_level = await self._report_security_level(
             uow=uow,
             run=run,
@@ -3180,6 +3233,7 @@ class AIOpsRuntimeService:
         monitoring_profile = dict(
             dict(plan.get("monitoring") or {}).get("monitoring_profile") or {}
         )
+        monitoring_quality = self._inspection_monitoring_quality(source)
         content = ReportContent(
             report_key=report_key,
             report_type=report_type,
@@ -3197,9 +3251,27 @@ class AIOpsRuntimeService:
                 "schedule_type": schedule_type,
                 "timezone": inspection["timezone"],
                 "inspection_coverage": coverage_summary,
+                "database_type": str(
+                    dict(plan.get("target") or {}).get("db_type") or "ORACLE"
+                ),
+                "health_status": health_status,
+                "check_status_counts": check_status_counts,
                 "evidence_coverage_percent": evidence_coverage_percent,
                 "evidence_covered_count": evidence_covered_count,
                 "evidence_total_count": evidence_total_count,
+                "tool_execution_coverage_percent": evidence_coverage_percent,
+                "tool_execution_covered_count": evidence_covered_count,
+                "tool_execution_total_count": evidence_total_count,
+                "monitoring_sample_coverage_percent": monitoring_quality[
+                    "coverage_percent"
+                ],
+                "monitoring_metric_count": monitoring_quality[
+                    "metric_count"
+                ],
+                "monitoring_low_coverage_metric_count": monitoring_quality[
+                    "low_coverage_metric_count"
+                ],
+                "evidence_gap_count": len(gaps),
                 **(
                     {"monitoring_profile": monitoring_profile}
                     if monitoring_profile
@@ -3441,14 +3513,118 @@ class AIOpsRuntimeService:
         return tuple(facts)
 
     @staticmethod
+    def _inspection_observation_rows(
+        observations: list[Any],
+        *,
+        report_columns: tuple[str, ...],
+        limit: int = 5,
+    ) -> tuple[dict[str, Any], ...]:
+        """只按检查目录白名单冻结少量可审计观测，不泄露 SQL 文本等字段。"""
+        if not report_columns:
+            return ()
+        rows: list[dict[str, Any]] = []
+        for observation in observations:
+            indexes = {
+                str(column.get("name") or ""): index
+                for index, column in enumerate(observation.columns)
+            }
+            selected = [
+                column for column in report_columns if column in indexes
+            ]
+            for raw_row in observation.rows:
+                rows.append({
+                    column: raw_row[indexes[column]] for column in selected
+                })
+                if len(rows) >= limit:
+                    return tuple(rows)
+        return tuple(rows)
+
+    @staticmethod
+    def _inspection_gap_category(gap: dict[str, Any]) -> str:
+        """区分读取错误、访问限制、能力不支持与真实数据缺口。"""
+        source_id = str(gap.get("source_id") or "")
+        code = str(gap.get("code") or "").upper()
+        product_contract_codes = {
+            "FINDING_COLUMN_MISSING",
+            "FINDING_VALUE_UNPARSEABLE",
+            "OUTPUT_COLUMNS_MISMATCH",
+            "OUTPUT_COLUMN_LIMIT_EXCEEDED",
+            "OUTPUT_VALUE_TYPE_UNSUPPORTED",
+            "OUTPUT_COLUMN_TYPE_MISMATCH",
+            "OUTPUT_SCHEMA_INVALID",
+            "QUERY_COLUMN_INVALID",
+            "QUERY_COLUMN_AMBIGUOUS",
+            "QUERY_SYNTAX_INVALID",
+        }
+        source_access_codes = {
+            "AUTH_FAILED",
+            "PRIVILEGE_MISSING",
+            "CONNECTION_FAILED",
+            "SOURCE_UNREACHABLE",
+            "TIMEOUT",
+        }
+        source_capability_codes = {
+            "VERSION_UNSUPPORTED",
+            "QUERY_INCOMPATIBLE",
+            "QUERY_OBJECT_UNAVAILABLE",
+            "SOURCE_QUERY_UNSUPPORTED",
+            "INSPECTION_FIXED_TOOL_UNAVAILABLE",
+        }
+        if source_id == "finding.compiler" or code in product_contract_codes:
+            return "PRODUCT_CONTRACT"
+        if source_id.startswith("monitoring."):
+            return "MONITORING"
+        if code in source_access_codes:
+            return "SOURCE_ACCESS"
+        if code in source_capability_codes:
+            return "SOURCE_CAPABILITY"
+        if source_id.startswith("inspection.report"):
+            return "REPORT_CONTRACT"
+        return "DATA_SOURCE"
+
+    @staticmethod
+    def _inspection_monitoring_quality(
+        source: AIOpsTurnResult,
+    ) -> dict[str, Any]:
+        """把数据库检查覆盖和监控采样覆盖分开统计。"""
+        coverage_values: list[float] = []
+        for evidence in source.evidence:
+            if evidence.tool_id != "metric.query_range":
+                continue
+            indexes = {
+                str(column.get("name") or ""): index
+                for index, column in enumerate(evidence.columns)
+            }
+            coverage_index = indexes.get("coverage_ratio")
+            if coverage_index is None:
+                continue
+            for row in evidence.rows:
+                raw_value = row[coverage_index]
+                if isinstance(raw_value, (int, float)):
+                    coverage_values.append(float(raw_value))
+        return {
+            "coverage_percent": (
+                round(min(coverage_values) * 100, 2)
+                if coverage_values else None
+            ),
+            "metric_count": len(coverage_values),
+            "low_coverage_metric_count": sum(
+                value < 0.8 for value in coverage_values
+            ),
+        }
+
+    @staticmethod
     def _inspection_report_projection(
         *,
         inspection: dict[str, Any],
         source: AIOpsTurnResult,
         action_tool_ids: dict[str, str],
-        database_type: str = "ORACLE",
+        database_type: str | None = None,
     ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], str]:
         """把冻结模板的每项检查投影为报告条目，不能因正常零行而省略。"""
+        database_type = str(
+            database_type or inspection.get("database_type") or "ORACLE"
+        ).upper()
         steps = tuple(
             item
             for item in inspection.get("evidence_steps", ())
@@ -3461,7 +3637,15 @@ class AIOpsRuntimeService:
             str(item["tool_id"]): str(item.get("title") or item["tool_id"])
             for item in steps
         }
-        gaps = [item.model_dump(mode="json") for item in source.evidence_gaps]
+        gaps = []
+        for evidence_gap in source.evidence_gaps:
+            item = evidence_gap.model_dump(mode="json")
+            if item.get("source_id") == "investigation.assessment":
+                continue
+            item["category"] = AIOpsRuntimeService._inspection_gap_category(
+                item
+            )
+            gaps.append(item)
         gaps_by_step: dict[str, list[dict[str, Any]]] = {}
         for item in gaps:
             step_id = str(item.get("step_id") or "")
@@ -3474,6 +3658,25 @@ class AIOpsRuntimeService:
             gaps_by_step.setdefault(tool_id, []).append(item)
 
         facts: list[dict[str, Any]] = []
+        for identity in evidence_by_tool.get("db.instance.identity", ()):
+            identity_rows = AIOpsRuntimeService._inspection_observation_rows(
+                [identity],
+                report_columns=(
+                    "product", "version", "instance_name",
+                    "database_role", "server_time",
+                ),
+                limit=1,
+            )
+            if identity_rows:
+                facts.append({
+                    "kind": "inspection_identity",
+                    "title": "巡检目标",
+                    "summary": "已确认数据库实例身份和服务端时间。",
+                    "check_status": "OBSERVED",
+                    "tool_id": "db.instance.identity",
+                    "observations": identity_rows,
+                    "evidence_refs": [identity.evidence_ref],
+                })
         covered_count = 0
         for step in steps:
             tool_id = str(step["tool_id"])
@@ -3484,6 +3687,10 @@ class AIOpsRuntimeService:
                 covered_count += 1
                 row_count = sum(item.row_count for item in observations)
                 truncated = any(item.truncated for item in observations)
+                report_rows = AIOpsRuntimeService._inspection_observation_rows(
+                    observations,
+                    report_columns=tuple(step.get("report_columns") or ()),
+                )
                 compilation = compile_findings(
                     tuple(observations),
                     database_type=database_type,
@@ -3495,6 +3702,7 @@ class AIOpsRuntimeService:
                         "code": finding_gap.code,
                         "detail": finding_gap.detail,
                         "retryable": False,
+                        "category": "PRODUCT_CONTRACT",
                     }
                     gap["summary"] = (
                         AIOpsRuntimeService._inspection_gap_summary(
@@ -3510,6 +3718,20 @@ class AIOpsRuntimeService:
                     ):
                         gaps.append(gap)
                         step_gaps.append(gap)
+                zero_row_status = str(
+                    step.get("zero_row_status") or "CLEAR"
+                )
+                if row_count == 0 and zero_row_status == "GAP":
+                    zero_gap = {
+                        "source_id": "inspection.report",
+                        "step_id": tool_id,
+                        "code": "INSPECTION_EXPECTED_ROWS_MISSING",
+                        "detail": f"{title} 查询成功但未返回预期状态行",
+                        "retryable": True,
+                        "category": "DATA_SOURCE",
+                    }
+                    gaps.append(zero_gap)
+                    step_gaps.append(zero_gap)
                 if step_gaps:
                     gap_summary = str(step_gaps[0]["summary"])
                     if gap_summary.startswith(f"{title}："):
@@ -3525,8 +3747,17 @@ class AIOpsRuntimeService:
                         findings=compilation.findings,
                     )
                     check_status = "FINDING"
+                elif row_count == 0 and zero_row_status == "NOT_APPLICABLE":
+                    summary = f"{title}：查询成功，当前未配置或不适用。"
+                    check_status = "NOT_APPLICABLE"
+                elif row_count == 0 and zero_row_status == "OBSERVED":
+                    summary = f"{title}：查询成功，本期返回 0 条记录。"
+                    check_status = "OBSERVED"
                 elif compilation.empty_reasons:
                     summary = f"{title}：{compilation.empty_reasons[0]}"
+                    check_status = "CLEAR"
+                elif row_count == 0 and zero_row_status == "CLEAR":
+                    summary = f"{title}：查询成功，未发现达到报告条件的记录。"
                     check_status = "CLEAR"
                 else:
                     summary = AIOpsRuntimeService._inspection_observed_summary(
@@ -3548,6 +3779,9 @@ class AIOpsRuntimeService:
                         "evidence_refs": [
                             item.evidence_ref for item in observations
                         ],
+                        "observation_count": row_count,
+                        "observations": report_rows,
+                        "truncated": truncated,
                         "findings": [
                             item.model_dump(mode="json")
                             for item in compilation.findings
@@ -3577,6 +3811,7 @@ class AIOpsRuntimeService:
                 "code": "INSPECTION_OBSERVATION_MISSING",
                 "detail": f"模板检查项未形成可验证观测：{title}",
                 "retryable": False,
+                "category": "REPORT_CONTRACT",
             }
             missing_gap["summary"] = missing_gap["detail"]
             gaps.append(missing_gap)
@@ -3659,6 +3894,7 @@ class AIOpsRuntimeService:
                         "code": "BACKUP_SUCCESS_NOT_FOUND",
                         "detail": "RMAN 观测中没有可解析的成功备份记录",
                         "retryable": False,
+                        "category": "DATA_SOURCE",
                     })
             else:
                 facts.append({
@@ -3675,6 +3911,7 @@ class AIOpsRuntimeService:
                     "code": "BACKUP_SUCCESS_NOT_OBSERVABLE",
                     "detail": "归档链观测不能替代备份平台成功记录，需要接入对应备份来源证据",
                     "retryable": False,
+                    "category": "DATA_SOURCE",
                 })
 
         if str(inspection.get("schedule_type") or "") == "WEEKLY":
@@ -3711,6 +3948,7 @@ class AIOpsRuntimeService:
                     "code": "INSPECTION_TEMPLATE_STEPS_MISSING",
                     "detail": "巡检 Run 未保存冻结的勾选检查项",
                     "retryable": False,
+                    "category": "REPORT_CONTRACT",
                 }
             )
         coverage_summary = f"本期按模板取得 {covered_count}/{len(steps)} 个取证步骤的观测"

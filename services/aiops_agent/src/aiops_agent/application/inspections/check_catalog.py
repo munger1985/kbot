@@ -77,6 +77,12 @@ def load_check_catalog() -> InspectionCheckCatalogView:
                     item_payload.get("supported_db_types")
                     or _V1_DEFAULT_SUPPORTED_DB_TYPES
                 ),
+                zero_row_status=str(
+                    item_payload.get("zero_row_status") or "CLEAR"
+                ),
+                report_columns=tuple(
+                    item_payload.get("report_columns") or ()
+                ),
             )
             if item.check_id in seen_ids:
                 raise ValueError(f"Check Catalog 检查项重复：{item.check_id}")
@@ -182,7 +188,7 @@ def compile_selected_check_steps(
     weekly = schedule_type in {"WEEKLY", "MONTHLY"}
     normalized_db_type = str(database_type or "").strip().upper()
     steps: list[dict[str, Any]] = []
-    index_by_tool: dict[str, int] = {}
+    index_by_scope: dict[tuple[str, tuple[str, ...]], int] = {}
     for check_id in selected:
         item = by_id[check_id]
         if normalized_db_type and normalized_db_type not in {
@@ -192,8 +198,12 @@ def compile_selected_check_steps(
         tool_id = item.tool_id
         if not _is_inspection_executor_tool(tool_id):
             continue
-        if tool_id in index_by_tool:
-            step = steps[index_by_tool[tool_id]]
+        supported_db_types = tuple(
+            sorted(str(value).upper() for value in item.supported_db_types)
+        )
+        scope_key = (str(tool_id), supported_db_types)
+        if scope_key in index_by_scope:
+            step = steps[index_by_scope[scope_key]]
             check_ids_value = list(step["check_ids"])
             if check_id not in check_ids_value:
                 check_ids_value.append(check_id)
@@ -208,8 +218,12 @@ def compile_selected_check_steps(
                     weekly=weekly,
                     trend_required=True,
                 )
+            step["report_columns"] = list(dict.fromkeys((
+                *step.get("report_columns", ()),
+                *item.report_columns,
+            )))
             continue
-        index_by_tool[tool_id] = len(steps)
+        index_by_scope[scope_key] = len(steps)
         evidence_kind = (
             item.finding_types[0]
             if item.finding_types
@@ -230,6 +244,8 @@ def compile_selected_check_steps(
                 "check_ids": [check_id],
                 "trend_required": trend_required,
                 "supported_db_types": list(item.supported_db_types),
+                "zero_row_status": item.zero_row_status,
+                "report_columns": list(item.report_columns),
             }
         )
     if not steps:

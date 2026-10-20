@@ -5211,6 +5211,14 @@
             ],
             "title": "Playbook Id"
           },
+          "report_columns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Report Columns",
+            "type": "array"
+          },
           "supported_db_types": {
             "default": [
               "ORACLE"
@@ -5237,6 +5245,17 @@
           "trend_required": {
             "title": "Trend Required",
             "type": "boolean"
+          },
+          "zero_row_status": {
+            "default": "CLEAR",
+            "enum": [
+              "CLEAR",
+              "OBSERVED",
+              "NOT_APPLICABLE",
+              "GAP"
+            ],
+            "title": "Zero Row Status",
+            "type": "string"
           }
         },
         "required": [

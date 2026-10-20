@@ -928,6 +928,45 @@
       "impact_template": "FRA 使用率 {fra_used_percent}%，已用 {fra_used_mb} MB / 上限 {fra_limit_mb} MB。"
     },
     {
+      "finding_type": "RECOVERY_CONFIGURATION",
+      "database_types": ["ORACLE"],
+      "source_tool_id": "db.archive.status",
+      "playbook_id": "oracle.instance.archive",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "未取得 Oracle 归档配置状态。",
+      "no_match_reason": "数据库处于 ARCHIVELOG 模式。",
+      "severity": "HIGH",
+      "object_kind": "DATABASE",
+      "identity_fields": ["database_role", "log_mode"],
+      "required_columns": ["database_role", "open_mode", "log_mode"],
+      "field_columns": ["database_role", "open_mode", "log_mode", "force_logging", "flashback_on"],
+      "object_ref": {"object_name": "database_role"},
+      "predicates": [
+        {"op": "not_null", "column": "log_mode"},
+        {"op": "neq", "column": "log_mode", "value": "ARCHIVELOG", "ignore_case": true}
+      ],
+      "impact_template": "数据库当前为 {log_mode}，无法提供基于归档日志的时间点恢复能力。"
+    },
+    {
+      "finding_type": "BACKUP_MISSING",
+      "database_types": ["ORACLE"],
+      "source_tool_id": "db.oracle.backup.volume_summary",
+      "playbook_id": "oracle.maintenance.health",
+      "zero_row_policy": "NO_FINDING",
+      "empty_reason": "未取得 Oracle RMAN 汇总证据。",
+      "no_match_reason": "当前检查窗口内存在 RMAN 备份任务。",
+      "severity": "HIGH",
+      "object_kind": "BACKUP_WINDOW",
+      "identity_fields": ["job_count", "first_start_time", "last_end_time"],
+      "required_columns": ["job_count", "successful_job_count", "failed_job_count"],
+      "field_columns": ["job_count", "successful_job_count", "failed_job_count", "input_mb", "output_mb", "first_start_time", "last_end_time"],
+      "object_ref": {"object_name": "RMAN"},
+      "predicates": [
+        {"op": "lte", "column": "job_count", "value": 0}
+      ],
+      "impact_template": "当前检查窗口内没有 RMAN 备份任务记录，恢复点目标无法得到证明。"
+    },
+    {
       "finding_type": "BACKUP_FAILED",
       "database_types": ["ORACLE"],
       "source_tool_id": "db.backup.recent_jobs",
@@ -1116,6 +1155,39 @@
       "object_ref": {"object_name": "last_failed_wal"},
       "predicates": [{"op": "gte", "column": "failed_count", "value": 1}, {"op": "not_null", "column": "last_failed_time"}, {"op": "gt_column", "column": "last_failed_time", "other": "last_archived_time"}],
       "impact_template": "WAL {last_failed_wal} 在 {last_failed_time} 归档失败，之后尚无成功归档证据。"
+    },
+    {
+      "finding_type": "RECOVERY_CONFIGURATION", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.archiver.status", "playbook_id": "postgresql.wal.archive",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "未取得 PostgreSQL 归档配置状态。", "no_match_reason": "PostgreSQL WAL 归档配置已启用。",
+      "severity": "HIGH", "object_kind": "DATABASE", "identity_fields": ["archive_mode", "archive_command_configured"],
+      "required_columns": ["archive_mode", "archive_command_configured"],
+      "field_columns": ["archive_mode", "archive_command_configured", "archived_count", "last_archived_time", "failed_count", "last_failed_time"],
+      "object_ref": {"object_name": "archive_mode"},
+      "predicates": [{"op": "eq", "column": "archive_mode", "value": "off", "ignore_case": true}],
+      "impact_template": "PostgreSQL archive_mode={archive_mode}，无法形成连续 WAL 归档恢复链。"
+    },
+    {
+      "finding_type": "RECOVERY_CONFIGURATION", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.archiver.status", "playbook_id": "postgresql.wal.archive",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "未取得 PostgreSQL 归档命令配置状态。", "no_match_reason": "PostgreSQL WAL 归档命令或归档库已配置。",
+      "severity": "HIGH", "object_kind": "DATABASE", "identity_fields": ["archive_mode", "archive_command_configured"],
+      "required_columns": ["archive_mode", "archive_command_configured"],
+      "field_columns": ["archive_mode", "archive_command_configured", "archived_count", "last_archived_time", "failed_count", "last_failed_time"],
+      "object_ref": {"object_name": "archive_mode"},
+      "predicates": [
+        {"op": "in", "column": "archive_mode", "values": ["on", "always"], "ignore_case": true},
+        {"op": "eq", "column": "archive_command_configured", "value": "NO", "ignore_case": true}
+      ],
+      "impact_template": "PostgreSQL archive_mode={archive_mode}，但未配置有效 archive_command 或 archive_library。"
+    },
+    {
+      "finding_type": "RECOVERY_CONFIGURATION", "database_types": ["MYSQL"], "source_tool_id": "db.mysql.binlog.status", "playbook_id": "mysql.replication.status",
+      "zero_row_policy": "NO_FINDING", "empty_reason": "未取得 MySQL Binlog 配置状态。", "no_match_reason": "MySQL Binlog 已启用。",
+      "severity": "HIGH", "object_kind": "DATABASE", "identity_fields": ["log_bin", "binlog_format", "gtid_mode"],
+      "required_columns": ["log_bin", "binlog_format", "gtid_mode"],
+      "field_columns": ["log_bin", "binlog_format", "gtid_mode", "binlog_expire_logs_seconds", "sync_binlog"],
+      "object_ref": {"object_name": "BINLOG"},
+      "predicates": [{"op": "not_null", "column": "log_bin"}, {"op": "neq", "column": "log_bin", "value": "ON", "ignore_case": true}],
+      "impact_template": "MySQL log_bin={log_bin}，无法提供基于 Binlog 的时间点恢复能力。"
     },
     {
       "finding_type": "CHECKPOINT_PRESSURE", "database_types": ["POSTGRESQL"], "source_tool_id": "db.postgresql.checkpoint.statistics", "playbook_id": "postgresql.instance.performance",

@@ -488,15 +488,15 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261016_1",
-            "situations": "20261011_1",
-            "inspections": "20261012_1",
+            "chat": "20261020_4",
+            "situations": "20261020_4",
+            "inspections": "20261020_4",
         }
         for page_name, version in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("workspaces.css?v=20261008_2", page)
+            self.assertIn("workspaces.css?v=20261020_4", page)
             self.assertIn("aiops-shell.js?v=20261020_3", page)
             self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
@@ -1623,7 +1623,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("证据有缺口", workspace)
         self.assertIn("证据覆盖", workspace)
         self.assertIn("历史报告未记录覆盖率", workspace)
-        self.assertIn("证据覆盖率：${coverage}%", workspace)
+        self.assertIn("数据库检查覆盖率：${coverage}%", workspace)
         self.assertIn('typeof coverage === "number" && Number.isFinite(coverage)', workspace)
         self.assertIn('typeof rawPercent === "number" && Number.isFinite(rawPercent)', workspace)
         self.assertIn("个目标完成", workspace)
@@ -1637,7 +1637,9 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn(".ops-analysis", css)
         self.assertIn(".ops-solution", css)
         self.assertIn("inspectionBullets", workspace)
-        self.assertIn("本期没有需要报告的记录，结果正常。", workspace)
+        self.assertIn("需按检查项规则判断", workspace)
+        self.assertIn("inspectionChecksHtml", workspace)
+        self.assertIn("关键观测（最多 5 条）", workspace)
         self.assertIn("未发现数据缺口，全部检查已形成可验证观测。", workspace)
         self.assertIn("继续按既定周期执行该巡检模板并关注趋势变化。", workspace)
         self.assertNotIn('`**根因等级：**', workspace)
@@ -1750,6 +1752,12 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("evidence_coverage_percent", script)
         self.assertIn('typeof rawCoverage === "number" && Number.isFinite(rawCoverage)', script)
         self.assertIn("monitoring_profile", script)
+        self.assertIn("health_status", script)
+        self.assertIn("database_type", script)
+        self.assertIn("monitoring_sample_coverage_percent", script)
+        self.assertIn("数据库检查覆盖率", script)
+        self.assertIn("监控采样覆盖率", script)
+        self.assertIn("证据完整性", script)
         self.assertIn("target?.display_name", script)
         self.assertIn("/targets/${encodeURIComponent(report.target_id)}", script)
         css = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")

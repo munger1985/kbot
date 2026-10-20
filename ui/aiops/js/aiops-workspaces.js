@@ -49,9 +49,55 @@
   const inspectionEvidenceFacts = (payload) => values(payload?.evidence).map((item) => {
     const title = item.tool_id || "检查项";
     const count = Number(item.row_count || 0);
-    if (count <= 0) return `${title}：检查已完成，本期没有需要报告的记录，结果正常。`;
-    return `${title}：检查已完成，采集 ${count} 条可验证观测，结果正常。`;
+    if (count <= 0) return `${title}：查询成功，本期返回 0 条记录，需按检查项规则判断。`;
+    return `${title}：查询成功，采集 ${count} 条可验证观测，需按检查项规则判断。`;
   });
+
+  const inspectionStatusLabels = {
+    CLEAR: "正常",
+    FINDING: "需关注",
+    OBSERVED: "仅观测",
+    NOT_APPLICABLE: "不适用",
+    PARTIAL: "证据不完整",
+    GAP: "未完成",
+    MISSING: "未取证",
+  };
+  const inspectionHealthLabels = {
+    NORMAL: "正常",
+    INFO: "提示",
+    LOW: "低风险",
+    MEDIUM: "中风险",
+    HIGH: "高风险",
+    CRITICAL: "严重风险",
+    UNKNOWN: "无法判定",
+  };
+  const inspectionGapCategoryLabels = {
+    PRODUCT_CONTRACT: "产品证据契约",
+    MONITORING: "监控采集",
+    REPORT_CONTRACT: "报告契约",
+    SOURCE_ACCESS: "数据库访问",
+    SOURCE_CAPABILITY: "版本或能力",
+    DATA_SOURCE: "数据源取证",
+  };
+
+  function inspectionObservationText(item) {
+    const rows = values(item?.observations);
+    if (!rows.length) return "";
+    return rows.map((row) => Object.entries(row || {})
+      .map(([key, value]) => `${key}=${value === null || value === undefined || value === "" ? "—" : value}`)
+      .join("，"))
+      .join("；");
+  }
+
+  function inspectionChecksHtml(checks) {
+    if (!checks.length) return markdown.render("### 检查清单\n\n- 正式报告未记录检查项。");
+    const rows = checks.map((item) => {
+      const status = String(item?.check_status || "OBSERVED");
+      const detail = inspectionObservationText(item);
+      return `<tr><td><span class="ops-badge ${status === "FINDING" ? "danger" : (["PARTIAL", "GAP", "MISSING"].includes(status) ? "warn" : "neutral")}">${esc(inspectionStatusLabels[status] || status)}</span></td><td>${esc(item?.title || item?.tool_id || "检查项")}</td><td>${esc(inspectionItemText(item))}</td><td>${esc(detail || "—")}</td></tr>`;
+    }).join("");
+    return `<section class="ops-inspection-checks"><header><strong>检查清单</strong></header><div class="ops-table-wrap"><table><thead><tr><th>状态</th><th>检查项</th><th>结论</th><th>关键观测（最多 5 条）</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+  }
 
   function uploadMediaType(file) {
     const suffix = String(file.name || "").toLowerCase().split(".").pop();
@@ -101,25 +147,30 @@
     const facts = values(payload.facts);
     const checks = facts.filter((item) => item?.kind === "inspection_check");
     const findings = checks.flatMap((item) => values(item?.findings));
-    const checksWithoutFindings = checks.filter((item) => !values(item?.findings).length);
     const healthyRecommendation = "继续按既定周期执行该巡检模板并关注趋势变化。";
     const emptyFindings = "本期未发现达到规则阈值的异常。";
     const emptyGaps = "未发现数据缺口，全部检查已形成可验证观测。";
     const summary = payload.summary || "本期巡检已完成。";
     const scope = payload.scope || {};
     const coverage = scope.evidence_coverage_percent;
+    const healthStatus = String(scope.health_status || (payload.status === "PARTIAL" ? "UNKNOWN" : "NORMAL"));
+    const monitoringCoverage = scope.monitoring_sample_coverage_percent;
     const coverageLine = typeof coverage === "number" && Number.isFinite(coverage)
-      ? `\n\n**证据覆盖率：${coverage}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)} 个计划检查）**`
+      ? `\n\n**健康状态：${inspectionHealthLabels[healthStatus] || healthStatus} · 数据库检查覆盖率：${coverage}%（${Number(scope.evidence_covered_count || 0)}/${Number(scope.evidence_total_count || 0)} 项）${typeof monitoringCoverage === "number" && Number.isFinite(monitoringCoverage) ? ` · 监控采样覆盖率：${monitoringCoverage}%` : ""}**`
       : "";
     const heading = markdown.render(`## ${payload.title || "巡检报告"}\n\n${summary}${coverageLine}`);
     const findingCards = findingCardsHtml({
       findings,
       empty_reasons: findings.length ? [] : [emptyFindings],
     });
-    const checksMarkdown = `### 其他检查结果\n${inspectionBullets(checksWithoutFindings, "全部检查结果已在发现卡片中展示。")}`;
+    const checksHtml = inspectionChecksHtml(checks);
     const recommendationsMarkdown = `### 建议\n${inspectionBullets(payload.recommendations, healthyRecommendation)}`;
-    const gapsMarkdown = `### 数据缺口\n${inspectionBullets(payload.gaps, emptyGaps)}`;
-    return `${heading}${findingCards}${markdown.render(`${checksMarkdown}\n\n${recommendationsMarkdown}\n\n${gapsMarkdown}`)}`;
+    const gapLines = values(payload.gaps).map((item) => {
+      const category = inspectionGapCategoryLabels[item?.category] || "数据源取证";
+      return `[${category}] ${inspectionItemText(item)}`;
+    });
+    const gapsMarkdown = `### 数据缺口\n${inspectionBullets(gapLines, emptyGaps)}`;
+    return `${heading}${findingCards}${checksHtml}${markdown.render(`${recommendationsMarkdown}\n\n${gapsMarkdown}`)}`;
   }
 
   function inspectionAnswerHtml(result, turn) {
@@ -569,6 +620,8 @@
     INVALID_OBJECT: "无效对象",
     ARCHIVE_HEADROOM: "FRA 余量",
     BACKUP_FAILED: "备份失败",
+    BACKUP_MISSING: "缺少备份记录",
+    RECOVERY_CONFIGURATION: "恢复链配置风险",
     LONG_TRANSACTION: "长事务",
     TOP_SQL: "高耗时 SQL",
   };

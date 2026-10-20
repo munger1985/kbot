@@ -75,9 +75,9 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         ready = [item for item in items if item.availability == "READY"]
         planned = [item for item in items if item.availability == "PLANNED"]
 
-        self.assertEqual(8, len(catalog.groups))
-        self.assertEqual(36, len(items))
-        self.assertEqual(30, len(ready))
+        self.assertEqual(9, len(catalog.groups))
+        self.assertEqual(54, len(items))
+        self.assertEqual(48, len(ready))
         self.assertEqual(6, len(planned))
         self.assertEqual(
             hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest(),
@@ -86,6 +86,45 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         for item in ready:
             self.assertTrue(item.tool_id or item.playbook_id)
             self.assertTrue(item.supported_db_types)
+
+    def test_ready_checks_reference_real_tools_playbooks_and_columns(self) -> None:
+        """目录不能把读取错误伪装成数据库缺少指标。"""
+        package_root = _CATALOG_PATH.parents[2]
+        playbook_ids = {
+            json.loads(path.read_text(encoding="utf-8"))["playbook_id"]
+            for path in (package_root / "playbooks" / "catalog").rglob(
+                "manifest.json"
+            )
+        }
+        tools_by_database: dict[str, dict[str, set[str]]] = {}
+        for database_type in ("oracle", "postgresql", "mysql"):
+            manifest = json.loads((
+                package_root / "diagnostics" / "catalog"
+                / database_type / "manifest.json"
+            ).read_text(encoding="utf-8"))
+            tools: dict[str, set[str]] = {}
+            for tool in manifest["tools"]:
+                tools.setdefault(tool["tool_id"], set()).update(
+                    column["name"] for column in tool["output_columns"]
+                )
+            tools_by_database[database_type.upper()] = tools
+
+        for group in load_check_catalog().groups:
+            for item in group.checks:
+                if item.availability != "READY":
+                    continue
+                if item.playbook_id:
+                    self.assertIn(item.playbook_id, playbook_ids, item.check_id)
+                if not item.tool_id or item.tool_id.startswith("user."):
+                    continue
+                for database_type in item.supported_db_types:
+                    tools = tools_by_database[database_type]
+                    self.assertIn(item.tool_id, tools, item.check_id)
+                    self.assertLessEqual(
+                        set(item.report_columns),
+                        tools[item.tool_id],
+                        item.check_id,
+                    )
 
     def test_default_selection_uses_ready_daily_or_weekly(self) -> None:
         daily = default_selected_check_ids("DAILY")
@@ -177,7 +216,7 @@ class CheckCatalogLoaderTest(unittest.TestCase):
 
     def test_compile_selected_check_steps_preserves_semantic_tools(self) -> None:
         daily = default_selected_check_ids("DAILY")
-        steps = compile_selected_check_steps(daily)
+        steps = compile_selected_check_steps(daily, database_type="ORACLE")
         tool_ids = [item["tool_id"] for item in steps]
         self.assertEqual(len(tool_ids), len(set(tool_ids)))
         self.assertIn("db.session.blocking_chain", tool_ids)
@@ -202,12 +241,29 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             item["measurement_semantics"] == "CURRENT_ACTIVITY"
             for item in steps
         ))
+        postgres_steps = compile_selected_check_steps(
+            daily, database_type="POSTGRESQL"
+        )
+        mysql_steps = compile_selected_check_steps(
+            daily, database_type="MYSQL"
+        )
+        self.assertEqual(
+            len(postgres_steps),
+            len({item["tool_id"] for item in postgres_steps}),
+        )
+        self.assertEqual(
+            len(mysql_steps),
+            len({item["tool_id"] for item in mysql_steps}),
+        )
+        self.assertTrue(all(
+            "xmin" not in item["title"].lower() for item in steps
+        ))
 
     def test_compile_and_frozen_steps_reject_cross_dialect_selection(self) -> None:
         selected = (
             "oracle.session.lock_wait",
             "postgresql.session.blocking",
-            "mysql.backup.binlog_chain",
+            "mysql.binlog.status",
         )
         postgres_steps = compile_selected_check_steps(
             selected, database_type="POSTGRESQL"

@@ -83,6 +83,17 @@ def _report_gap_item(value: object) -> str:
         label = f"第 {turn_no} 轮：{label}"
     if detail and detail not in label:
         label = f"{label}：{_report_display_text(detail)}"
+    category = str(value.get("category") or "")
+    category_label = {
+        "PRODUCT_CONTRACT": "产品证据契约",
+        "MONITORING": "监控采集",
+        "REPORT_CONTRACT": "报告契约",
+        "SOURCE_ACCESS": "数据库访问",
+        "SOURCE_CAPABILITY": "版本或能力",
+        "DATA_SOURCE": "数据源取证",
+    }.get(category)
+    if category_label:
+        label = f"[{category_label}] {label}"
     return label
 
 
@@ -184,7 +195,23 @@ def _report_fact_items(facts: list[dict[str, Any]]) -> list[str]:
         if kind == "comparison_result":
             result.extend(_comparison_report_items(fact))
             continue
-        result.append(str(fact.get("summary") or fact.get("fact_summary") or fact))
+        summary = str(
+            fact.get("summary") or fact.get("fact_summary") or fact
+        )
+        observations = [
+            item for item in fact.get("observations") or ()
+            if isinstance(item, dict)
+        ]
+        if observations:
+            rows = [
+                "，".join(
+                    f"{key}={'—' if value is None or value == '' else value}"
+                    for key, value in row.items()
+                )
+                for row in observations
+            ]
+            summary = f"{summary} 关键观测：{'；'.join(rows)}"
+        result.append(summary)
     return result
 
 

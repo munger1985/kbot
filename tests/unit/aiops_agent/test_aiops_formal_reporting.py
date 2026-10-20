@@ -167,6 +167,39 @@ class FormalReportingTest(unittest.TestCase):
         self.assertNotIn(b"FEFF", pdf)
         self.assertIn(b"/ToUnicode", pdf)
 
+    def test_inspection_presentation_keeps_key_observations_and_gap_category(
+        self,
+    ) -> None:
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            payload={
+                "title": "数据库日常巡检报告",
+                "status": "PARTIAL",
+                "summary": "检查已完成。",
+                "facts": [{
+                    "kind": "inspection_check",
+                    "summary": "归档配置存在恢复风险。",
+                    "observations": [{"log_mode": "NOARCHIVELOG"}],
+                }],
+                "gaps": [{
+                    "code": "PRIVILEGE_MISSING",
+                    "detail": "缺少最小只读权限",
+                    "category": "SOURCE_ACCESS",
+                }],
+            },
+        )
+        sections = {item["kind"]: item for item in presentation["sections"]}
+
+        self.assertIn(
+            "关键观测：log_mode=NOARCHIVELOG",
+            sections["FINDINGS"]["items"][0],
+        )
+        self.assertTrue(
+            sections["EVIDENCE_BOUNDARY"]["items"][0].startswith(
+                "[数据库访问]"
+            )
+        )
+
     def test_comparison_facts_are_projected_as_findings(self) -> None:
         template = SYSTEM_REPORT_TEMPLATES["system:comparison.standard"]
         presentation = report_presentation(

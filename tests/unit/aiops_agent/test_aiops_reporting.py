@@ -20,6 +20,32 @@ from platform_core.identity import uuid7
 
 
 class InspectionReportPublishingTest(unittest.TestCase):
+    def test_gap_categories_distinguish_reading_errors_and_source_limits(
+        self,
+    ) -> None:
+        classify = AIOpsRuntimeService._inspection_gap_category
+
+        self.assertEqual("PRODUCT_CONTRACT", classify({
+            "source_id": "oracle.instance",
+            "code": "OUTPUT_COLUMNS_MISMATCH",
+        }))
+        self.assertEqual("SOURCE_ACCESS", classify({
+            "source_id": "oracle.instance",
+            "code": "PRIVILEGE_MISSING",
+        }))
+        self.assertEqual("SOURCE_CAPABILITY", classify({
+            "source_id": "postgresql.instance",
+            "code": "VERSION_UNSUPPORTED",
+        }))
+        self.assertEqual("MONITORING", classify({
+            "source_id": "monitoring.overview",
+            "code": "SOURCE_NO_DATA",
+        }))
+        self.assertEqual("DATA_SOURCE", classify({
+            "source_id": "mysql.instance",
+            "code": "SOURCE_NO_DATA",
+        }))
+
     def test_session_template_is_limited_to_chat_and_keeps_required_sections(
         self,
     ) -> None:
@@ -342,19 +368,23 @@ class InspectionReportPublishingTest(unittest.TestCase):
             [item["title"] for item in payload["facts"][:2]],
         )
         self.assertTrue(all(
-            "检查已完成" in item["summary"] and "结果正常" not in item["summary"]
+            ("检查已完成" in item["summary"] or "查询成功" in item["summary"])
+            and "结果正常" not in item["summary"]
             for item in payload["facts"][:2]
         ))
         self.assertIn("采集 1 条可验证观测", payload["facts"][0]["summary"])
         self.assertIn(
-            "本期没有需要报告的记录",
+            "未发现达到报告条件的记录",
             payload["facts"][1]["summary"],
         )
-        self.assertIn("2/2", payload["summary"])
+        self.assertIn("共执行 2 项检查", payload["summary"])
         self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
         self.assertEqual(2, payload["scope"]["evidence_covered_count"])
         self.assertEqual(2, payload["scope"]["evidence_total_count"])
-        self.assertEqual([], payload["recommendations"])
+        self.assertEqual(
+            ["继续按既定周期执行该巡检模板并关注趋势变化。"],
+            payload["recommendations"],
+        )
         report = uow.inspections.publish_report.await_args.args[0]
         self.assertEqual("system:inspection.daily", report.template_id)
         self.assertEqual("1", report.template_version)
@@ -438,7 +468,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual([], list(gaps))
         self.assertIn("所有模板检查均已形成完整证据", summary)
         self.assertEqual(
-            "近期告警日志：检查已完成，本期没有需要报告的记录。",
+            "近期告警日志：查询成功，未发现达到报告条件的记录。",
             facts[0]["summary"],
         )
         self.assertEqual(

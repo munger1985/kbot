@@ -1093,12 +1093,10 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             len(plan["actions"]),
             len({item["action_id"] for item in plan["actions"]}),
         )
-        self.assertEqual(
-            "HISTORICAL_AND_FORECAST",
-            task_frame["temporal_analysis_mode"],
-        )
-        self.assertEqual(2_592_000, task_frame["requested_window_seconds"])
-        self.assertEqual(2_592_000, task_frame["forecast_horizon_seconds"])
+        self.assertEqual("HISTORICAL", task_frame["temporal_analysis_mode"])
+        self.assertEqual("最近24小时（日巡检周期）", task_frame["time_scope"])
+        self.assertEqual(86_400, task_frame["requested_window_seconds"])
+        self.assertIsNone(task_frame["forecast_horizon_seconds"])
         self.assertEqual("COMBINED", task_frame["evidence_source_strategy"])
         monitoring_call = monitoring_builder.build.await_args.kwargs
         realtime_profile = monitoring_profiles.overview_for_database(

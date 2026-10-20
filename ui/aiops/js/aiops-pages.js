@@ -710,16 +710,30 @@
 
   function reportMetadataHtml(data, report, target) {
     const scope = data?.report?.scope || {};
+    const healthStatus = String(scope.health_status || "UNKNOWN");
+    const healthStatusLabel = {
+      NORMAL: "正常",
+      INFO: "提示",
+      LOW: "低风险",
+      MEDIUM: "中风险",
+      HIGH: "高风险",
+      CRITICAL: "严重风险",
+      UNKNOWN: "无法判定",
+    }[healthStatus] || healthStatus;
     const rawCoverage = scope.evidence_coverage_percent;
     const hasCoverage = typeof rawCoverage === "number" && Number.isFinite(rawCoverage);
     const coverage = hasCoverage
-      ? `${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项证据` : ""}`
+      ? `${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项业务检查` : ""}`
       : "历史报告未记录覆盖率";
+    const monitoringCoverage = typeof scope.monitoring_sample_coverage_percent === "number"
+      && Number.isFinite(scope.monitoring_sample_coverage_percent)
+      ? `${scope.monitoring_sample_coverage_percent}%${Number.isFinite(Number(scope.monitoring_low_coverage_metric_count)) && Number.isFinite(Number(scope.monitoring_metric_count)) ? ` · 低覆盖 ${Number(scope.monitoring_low_coverage_metric_count)}/${Number(scope.monitoring_metric_count)} 项` : ""}`
+      : "本报告未使用监控时序或未记录采样覆盖率";
     const profile = scope.monitoring_profile?.display_name
       ? `${scope.monitoring_profile.display_name}${scope.monitoring_profile.version ? ` · ${scope.monitoring_profile.version}` : ""}`
       : "";
     const item = (label, value, className = "") => `<div class="${className}"><dt>${shell.escape(label)}</dt><dd>${value}</dd></div>`;
-    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("报告状态", reportStatusBadge(report.status))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("采集与证据覆盖", `<strong>${shell.escape(coverage)}</strong><small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
+    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("健康状态", shell.escape(healthStatusLabel))}${item("证据完整性", reportStatusBadge(report.status))}${item("数据库类型", shell.escape(scope.database_type || target?.db_type || "未记录"))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("数据库检查覆盖率", `<strong>${shell.escape(coverage)}</strong><small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>`, "ops-report-coverage")}${item("监控采样覆盖率", `<strong>${shell.escape(monitoringCoverage)}</strong>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("数据缺口", `${shell.escape(Number.isFinite(Number(scope.evidence_gap_count)) ? Number(scope.evidence_gap_count) : "未记录")} 项`)}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
   }
 
   function reportPresentationHtml(data, report, versions, target) {

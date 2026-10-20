@@ -299,6 +299,32 @@ def _storage_plan_context(
 
 
 class CapacityDecisionTest(unittest.TestCase):
+    def test_discovered_asm_placement_allows_autoextend_without_manual_fact(
+        self,
+    ) -> None:
+        fact = _fact(
+            tool_id="db.storage.capacity",
+            columns=(
+                *_TABLESPACE_COLUMNS,
+                "storage_type",
+                "asm_diskgroups",
+                "datafile_directories",
+            ),
+            rows=((
+                "USERS", 1000.0, 900.0, 100.0, 90.0, 2000.0, 1100.0,
+                2, "ASM", "DATA", None,
+            ),),
+        )
+        compilation = compile_findings((fact,), target_id="tgt-1")
+
+        plan = decide_capacity_actions(
+            findings=compilation.findings,
+            target_facts=(),
+        )
+
+        self.assertEqual("AUTOEXTEND", plan.decisions[0].kind)
+        self.assertIn("已取得存储放置证据", plan.decisions[0].reason)
+
     def test_facts_and_autoextend_headroom_allow_autoextend_only(self) -> None:
         compilation = compile_findings((_tablespace_fact(),), target_id="tgt-1")
         plan = decide_capacity_actions(

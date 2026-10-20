@@ -26,6 +26,7 @@ from aiops_agent.contracts.tool_execution import (
 from aiops_agent.application.diagnosis import (
     compile_findings,
     decide_capacity_actions,
+    has_capacity_placement_evidence,
     is_automatic_entry,
     is_diagnosis_turn,
     summarize_awr_facts,
@@ -458,7 +459,11 @@ class DbaEvidenceAssessmentHandler:
                 )
             )
             reasons.append("历史监控证据不足以形成未来趋势预测")
-        if low_confidence_forecast:
+        if (
+            low_confidence_forecast
+            and task_frame.get("temporal_analysis_mode")
+            == "HISTORICAL_AND_FORECAST"
+        ):
             monitoring_gap_found = True
             gaps.append(
                 TurnEvidenceGap(
@@ -1944,12 +1949,10 @@ class DbaAnswerComposeHandler:
         )
         if not has_tablespace:
             return None
-        present = {
-            str(item.get("fact_type") or "")
-            for item in list(context.plan_snapshot.get("target_facts") or [])
-            if str(item.get("status") or "ACTIVE") == "ACTIVE"
-        }
-        if "ASM_DISKGROUP" in present or "DATAFILE_PATH" in present:
+        if has_capacity_placement_evidence(
+            findings=compilation.findings,
+            target_facts=list(context.plan_snapshot.get("target_facts") or []),
+        ):
             return None
         return TurnAnswerBlock(
             block_type=AnswerBlockType.FACT_CONFIRMATION,
