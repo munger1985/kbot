@@ -251,7 +251,7 @@ class OperationsKnowledgeService:
         knowledge_assistant_version_id: UUID,
         knowledge_assistant_models: dict[str, UUID],
         knowledge_assistant_instruction: str,
-        model_catalog: AIModelConfigClient | None = None,
+        model_catalogs: dict[int, AIModelConfigClient] | None = None,
         structured_model=None,
         prompt_registry=None,
     ) -> None:
@@ -261,7 +261,8 @@ class OperationsKnowledgeService:
         self._knowledge_assistant_version_id = knowledge_assistant_version_id
         self._knowledge_assistant_models = dict(knowledge_assistant_models)
         self._knowledge_assistant_instruction = knowledge_assistant_instruction
-        self._model_catalog = model_catalog
+        self._model_catalogs = dict(model_catalogs or {})
+        self._llm_model_catalog = self._model_catalogs.get(int(ModelCategory.LLM))
         self._structured_model = structured_model
         self._prompt_registry = prompt_registry
 
@@ -677,13 +678,6 @@ class OperationsKnowledgeService:
             "embedding": int(ModelCategory.TXT_EMBEDDING),
             "visual_embedding": int(ModelCategory.IMG_EMBEDDING),
         }
-        if self._model_catalog is None:
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
-                message="模型目录暂时不可用",
-                status_code=503,
-                retryable=True,
-            )
         for role, model_id in models.items():
             if role not in expected:
                 raise AIOpsApplicationError(
@@ -691,8 +685,16 @@ class OperationsKnowledgeService:
                     message=f"不支持的运维知识库模型角色：{role}",
                     status_code=422,
                 )
+            model_catalog = self._model_catalogs.get(expected[role])
+            if model_catalog is None:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_MODEL_UNAVAILABLE",
+                    message=f"模型角色 {role} 的目录服务暂时不可用",
+                    status_code=503,
+                    retryable=True,
+                )
             try:
-                definition = await self._model_catalog.get_model(
+                definition = await model_catalog.get_model(
                     model_id, auth_context=context,
                 )
             except (LookupError, RuntimeError) as exc:
@@ -847,7 +849,7 @@ class OperationsKnowledgeService:
         self, *, domain_id: int, asset_version_id: UUID, context: AuthContext,
     ) -> dict[str, Any]:
         """对待审批手册做有界预分析，并让 LLM 只能从有效词表中选择。"""
-        if self._structured_model is None or self._prompt_registry is None or self._model_catalog is None:
+        if self._structured_model is None or self._prompt_registry is None or self._llm_model_catalog is None:
             return await self._mark_tagging_failed(
                 domain_id=domain_id, asset_version_id=asset_version_id,
                 code="TAG_MODEL_UNAVAILABLE", message="标签识别模型或 Prompt Registry 未初始化",
@@ -908,7 +910,7 @@ class OperationsKnowledgeService:
             model_id = dict(collection.get("models") or {}).get("parser_llm")
             if model_id is None:
                 raise ValueError("运维知识库尚未配置 parser_llm")
-            definition = await self._model_catalog.get_model(UUID(str(model_id)))
+            definition = await self._llm_model_catalog.get_model(UUID(str(model_id)))
             technical_name = str(definition.get("served_model_name") or "").strip()
             if not technical_name:
                 raise ValueError("标签识别模型缺少 served_model_name")

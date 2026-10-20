@@ -444,9 +444,9 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_assistant_version_id=uuid7(),
             knowledge_assistant_models={"composer_llm": uuid7()},
             knowledge_assistant_instruction="",
-            model_catalog=SimpleNamespace(get_model=AsyncMock(
+            model_catalogs={1: SimpleNamespace(get_model=AsyncMock(
                 return_value={"served_model_name": "tag-model"}
-            )),
+            ))},
             structured_model=structured_model,
             prompt_registry=SimpleNamespace(resolve=AsyncMock(return_value=prompt)),
         )
@@ -501,7 +501,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_assistant_version_id=uuid7(),
             knowledge_assistant_models={"composer_llm": uuid7()},
             knowledge_assistant_instruction="",
-            model_catalog=SimpleNamespace(),
+            model_catalogs={1: SimpleNamespace()},
             structured_model=SimpleNamespace(),
             prompt_registry=SimpleNamespace(),
         )
@@ -622,11 +622,14 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             models["retrieval_llm"]: 1,
             models["embedding"]: 2,
         }
-        model_catalog = SimpleNamespace(get_model=AsyncMock(
-            side_effect=lambda model_id, **_kwargs: {
-                "category": categories[model_id], "status": "ACTIVE",
-            }
-        ))
+        model_catalogs = {
+            category: SimpleNamespace(get_model=AsyncMock(
+                side_effect=lambda model_id, **_kwargs: {
+                    "category": categories[model_id], "status": "ACTIVE",
+                }
+            ))
+            for category in set(categories.values())
+        }
         service = OperationsKnowledgeService(
             uow_factory=lambda: _KnowledgeUnitOfWork(repository),
             knowledge_core=knowledge_core,
@@ -634,14 +637,15 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_assistant_version_id=uuid7(),
             knowledge_assistant_models={"composer_llm": uuid7()},
             knowledge_assistant_instruction="",
-            model_catalog=model_catalog,
+            model_catalogs=model_catalogs,
         )
 
+        context = SimpleNamespace()
         result = await service.configure_collections(
             domain_id=42,
             knowledge_base_id=knowledge_base_id,
             models=models,
-            context=SimpleNamespace(),
+            context=context,
         )
 
         self.assertEqual(str(knowledge_base_id), result["knowledge_base_id"])
@@ -651,6 +655,11 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             {role: str(model_id) for role, model_id in models.items()},
             call.kwargs["payload"]["models"],
         )
+        model_catalogs[6].get_model.assert_awaited_once_with(
+            models["parser_ocr"], auth_context=context,
+        )
+        self.assertEqual(2, model_catalogs[1].get_model.await_count)
+        model_catalogs[2].get_model.assert_awaited_once()
 
     async def test_editing_knowledge_base_updates_name_and_models_together(self):
         knowledge_base_id, collection_id = uuid7(), uuid7()
@@ -691,11 +700,11 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_assistant_version_id=uuid7(),
             knowledge_assistant_models={},
             knowledge_assistant_instruction="",
-            model_catalog=SimpleNamespace(get_model=AsyncMock(
+            model_catalogs={category: SimpleNamespace(get_model=AsyncMock(
                 side_effect=lambda model_id, **_kwargs: {
                     "category": categories[model_id], "status": "ACTIVE",
                 }
-            )),
+            )) for category in set(categories.values())},
         )
         service.get_knowledge_base = AsyncMock(return_value={
             "knowledge_base_id": str(knowledge_base_id)

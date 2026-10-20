@@ -82,6 +82,7 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.bootstrap.common import (
     AIOpsProcessRuntime,
     configure_process_logging,
+    create_model_catalog_clients,
     create_process_app,
 )
 from aiops_agent.config import AIOpsSettings, get_aiops_settings
@@ -99,8 +100,8 @@ from aiops_agent.diagnostics import (
 from platform_core.database.oracle import create_database_runtime
 from platform_core.managed_credentials import ManagedCredentialCipher
 from platform_core.prompts import PromptResolver
-from platform_clients.model import AIModelConfigClient
 from platform_clients.knowledge_core import KnowledgeCoreClient
+from platform_core.dictionary import ModelCategory
 from platform_core.security import (
     create_auth_context_codec,
     create_scoped_internal_auth_middleware,
@@ -132,12 +133,10 @@ def create_aiops_api(
         )
         app.state.runtime = runtime
         action_registry = ActionRegistry.load()
-        model_client = AIModelConfigClient(
-            base_url=resolved.clients.model_serving.base_url,
-            timeout=resolved.clients.model_serving.timeout_seconds,
-            caller_service=config.service_name,
-            audience=resolved.clients.model_serving.audience,
+        model_catalogs = create_model_catalog_clients(
+            resolved, caller_service=config.service_name,
         )
+        model_client = model_catalogs[int(ModelCategory.LLM)]
         app.state.agent_service = AIOpsAgentService(
             uow_factory=runtime.uow_factory,
             action_registry=action_registry,
@@ -314,7 +313,7 @@ def create_aiops_api(
             knowledge_assistant_instruction=(
                 resolved.runtime.knowledge_assistant_instruction
             ),
-            model_catalog=model_client,
+            model_catalogs=model_catalogs,
             structured_model=diagnosis_model_client,
             prompt_registry=diagnosis_prompts,
         )

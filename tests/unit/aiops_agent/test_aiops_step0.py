@@ -43,6 +43,7 @@ from platform_core.contracts.aiops.types import (
     ProposalStatus,
 )
 from platform_core.identity import uuid7
+from platform_core.dictionary import ModelCategory
 from platform_core.security import (
     AuthContextJWTCodec,
     ServiceIdentityJWTCodec,
@@ -265,6 +266,22 @@ class AIOpsIdentityTest(unittest.TestCase):
 
 
 class AIOpsConfigAndBootstrapTest(unittest.TestCase):
+    def test_model_catalog_dependencies_cover_knowledge_roles(self) -> None:
+        dependencies = AIOpsSettings().clients.model_catalog_dependencies()
+        self.assertEqual(
+            {
+                int(ModelCategory.LLM),
+                int(ModelCategory.TXT_EMBEDDING),
+                int(ModelCategory.IMG_EMBEDDING),
+                int(ModelCategory.VLM),
+                int(ModelCategory.OCR),
+            },
+            set(dependencies),
+        )
+        self.assertEqual(len(dependencies), len({
+            item.base_url for item in dependencies.values()
+        }))
+
     def test_config_rejects_unsafe_heartbeat(self) -> None:
         with self.assertRaises(ValidationError):
             AIOpsSettings(
