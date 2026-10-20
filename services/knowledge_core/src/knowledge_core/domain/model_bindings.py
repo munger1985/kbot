@@ -26,7 +26,11 @@ _ROLE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 def normalize_collection_models(
     models: Mapping[str, UUID | str],
 ) -> dict[str, str]:
-    """校验可扩展角色映射，并转换为可持久化 JSON。"""
+    """校验可扩展角色映射，并转换为可持久化 JSON。
+
+    KBot4 模型目录保留了 UUIDv7 规范启用前创建的模型，因此外部
+    模型身份只要是合法 UUID 即可，不得重写其版本位。
+    """
     normalized: dict[str, str] = {}
     for raw_role, raw_model_id in models.items():
         role = str(raw_role).strip()
@@ -40,8 +44,6 @@ def normalize_collection_models(
             )
         except (TypeError, ValueError, AttributeError) as exc:
             raise ValueError(f"模型角色 {role} 必须绑定 UUID") from exc
-        if model_id.version != 7:
-            raise ValueError(f"模型角色 {role} 必须绑定 UUIDv7")
         normalized[role] = str(model_id)
     missing = KC_REQUIRED_MODEL_ROLES - set(normalized)
     if missing:

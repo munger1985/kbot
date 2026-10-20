@@ -655,11 +655,69 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             {role: str(model_id) for role, model_id in models.items()},
             call.kwargs["payload"]["models"],
         )
+        self.assertEqual(3, call.kwargs["payload"]["expected_row_version"])
         model_catalogs[6].get_model.assert_awaited_once_with(
             models["parser_ocr"], auth_context=context,
         )
         self.assertEqual(2, model_catalogs[1].get_model.await_count)
         model_catalogs[2].get_model.assert_awaited_once()
+
+    async def test_model_configuration_preserves_kc_business_error(self):
+        knowledge_base_id = uuid7()
+        collection_id = uuid7()
+        repository = SimpleNamespace(get_knowledge_base=AsyncMock(
+            return_value=SimpleNamespace(
+                knowledge_base_id=knowledge_base_id,
+                collection_id=collection_id,
+                status="ACTIVE",
+            )
+        ))
+        knowledge_core = SimpleNamespace(
+            get_collection=AsyncMock(return_value={"row_version": 1}),
+            update_collection_models=AsyncMock(side_effect=KnowledgeCoreClientError(
+                status_code=422,
+                code="INVALID_COLLECTION_MODELS",
+                message="模型角色绑定无效",
+            )),
+        )
+        models = {
+            "parser_ocr": uuid7(),
+            "parser_llm": uuid7(),
+            "retrieval_llm": uuid7(),
+            "embedding": uuid7(),
+        }
+        categories = {
+            models["parser_ocr"]: 6,
+            models["parser_llm"]: 1,
+            models["retrieval_llm"]: 1,
+            models["embedding"]: 2,
+        }
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={},
+            knowledge_assistant_instruction="",
+            model_catalogs={category: SimpleNamespace(get_model=AsyncMock(
+                side_effect=lambda model_id, **_kwargs: {
+                    "category": categories[model_id], "status": "ACTIVE",
+                }
+            )) for category in set(categories.values())},
+        )
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.configure_collections(
+                domain_id=42,
+                knowledge_base_id=knowledge_base_id,
+                models=models,
+                context=SimpleNamespace(),
+            )
+
+        self.assertEqual("INVALID_COLLECTION_MODELS", raised.exception.code)
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual("模型角色绑定无效", raised.exception.message)
 
     async def test_editing_knowledge_base_updates_name_and_models_together(self):
         knowledge_base_id, collection_id = uuid7(), uuid7()

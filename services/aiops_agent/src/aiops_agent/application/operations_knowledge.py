@@ -735,6 +735,12 @@ class OperationsKnowledgeService:
                 auth_context=context,
             )
         except KnowledgeCoreClientError as exc:
+            if exc.status_code in {404, 409, 422}:
+                raise AIOpsApplicationError(
+                    code=exc.code,
+                    message=str(exc),
+                    status_code=exc.status_code,
+                ) from exc
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
                 message="运维知识库模型配置失败，请刷新后重试",
