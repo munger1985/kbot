@@ -629,6 +629,21 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertNotIn("Embedding", page)
         self.assertNotIn("/api/v1/knowledge", script)
 
+    def test_knowledge_base_editor_manages_model_bindings(self):
+        page = (AIOPS_ROOT / "knowledge-bases.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-knowledge-bases.js").read_text(
+            encoding="utf-8"
+        )
+        for role in (
+            "parser_ocr", "parser_vlm", "parser_llm", "retrieval_llm",
+            "embedding", "visual_embedding",
+        ):
+            self.assertIn(f'name="{role}"', page)
+            self.assertIn(role, script)
+        self.assertIn('/api/v1/model-catalog', script)
+        self.assertIn('/models`)', script)
+        self.assertIn('const payload = { display_name:', script)
+
     def test_login_uses_fixed_aiops_domain_contract(self):
         login = (AIOPS_ROOT / "login.html").read_text(encoding="utf-8")
         auth = (AIOPS_ROOT / "js" / "aiops-auth.js").read_text(

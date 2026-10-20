@@ -20,6 +20,15 @@
       <div class="ops-dialog-body ops-form">
         <label class="ops-field span-12"><span>知识库名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 核心库运维手册"></label>
         <label class="ops-field span-12"><span>说明</span><textarea name="description" maxlength="1000" rows="4" placeholder="说明知识范围、适用系统或维护责任"></textarea></label>
+        <div class="ops-field span-12"><span>文档解析模型</span><small>OCR 必选；视觉解析仅在需要识别图片内容时启用。</small></div>
+        <label class="ops-field span-6"><span>OCR 解析模型</span><select name="parser_ocr" required></select></label>
+        <label class="ops-field span-6"><span>视觉解析模型（可选）</span><select name="parser_vlm"></select></label>
+        <div class="ops-field span-12"><span>语义处理模型</span><small>解析 LLM 用于标签预分析，检索规划 LLM 用于理解查询。</small></div>
+        <label class="ops-field span-6"><span>LLM 解析模型</span><select name="parser_llm" required></select></label>
+        <label class="ops-field span-6"><span>检索规划模型</span><select name="retrieval_llm" required></select></label>
+        <div class="ops-field span-12"><span>索引模型</span><small>文本向量模型必选；视觉向量模型按需启用。</small></div>
+        <label class="ops-field span-6"><span>文本向量模型</span><select name="embedding" required></select></label>
+        <label class="ops-field span-6"><span>视觉向量模型（可选）</span><select name="visual_embedding"></select></label>
         <p id="knowledge-base-result" class="ops-connection-result" role="status"></p>
       </div>
       <footer><button type="button" data-close>取消</button><button id="save-knowledge-base" class="primary" type="submit">创建知识库</button></footer>
@@ -35,6 +44,6 @@
       <footer><button type="button" data-close>取消</button><button id="save-knowledge-assistant" class="primary" type="submit">保存绑定</button></footer>
     </form>
   </dialog>
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_2"></script><script src="./js/aiops-knowledge-bases.js?v=20261020_1"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_2"></script><script src="./js/aiops-knowledge-bases.js?v=20261020_2"></script>
 </body>
 </html>

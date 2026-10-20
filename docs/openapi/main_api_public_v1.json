@@ -82,6 +82,16 @@
             ],
             "title": "Instruction"
           },
+          "knowledge_base_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Knowledge Base Ids",
+            "type": "array"
+          },
           "models": {
             "additionalProperties": {
               "format": "uuid",
@@ -112,7 +122,8 @@
         },
         "required": [
           "display_name",
-          "target_ids"
+          "target_ids",
+          "knowledge_base_ids"
         ],
         "title": "AIOpsAgentCreatePayload",
         "type": "object"
@@ -253,6 +264,23 @@
               }
             ],
             "title": "Instruction"
+          },
+          "knowledge_base_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Base Ids"
           },
           "models": {
             "anyOf": [
@@ -10553,6 +10581,87 @@
         "title": "OperationWatchUpdate",
         "type": "object"
       },
+      "OperationsKnowledgeAssistantBindingPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "knowledge_base_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Knowledge Base Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "knowledge_base_ids"
+        ],
+        "title": "OperationsKnowledgeAssistantBindingPayload",
+        "type": "object"
+      },
+      "OperationsKnowledgeBasePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "display_name",
+          "models"
+        ],
+        "title": "OperationsKnowledgeBasePayload",
+        "type": "object"
+      },
       "OperationsKnowledgeCollectionModelsPayload": {
         "additionalProperties": false,
         "properties": {
@@ -10609,6 +10718,16 @@
               }
             ],
             "title": "Database Type"
+          },
+          "knowledge_base_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Knowledge Base Ids",
+            "type": "array"
           },
           "problem_class": {
             "anyOf": [
@@ -25729,6 +25848,23 @@
           },
           {
             "in": "query",
+            "name": "knowledge_base_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -25844,62 +25980,6 @@
           }
         },
         "summary": "Upload Operations Manual Version",
-        "tags": [
-          "AIOps App"
-        ]
-      }
-    },
-    "/api/v1/apps/aiops/operations-knowledge/collection-models": {
-      "get": {
-        "operationId": "get_operations_knowledge_collection_models_api_v1_apps_aiops_operations_knowledge_collection_models_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Operations Knowledge Collection Models",
-        "tags": [
-          "AIOps App"
-        ]
-      },
-      "put": {
-        "operationId": "configure_operations_knowledge_collection_models_api_v1_apps_aiops_operations_knowledge_collection_models_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OperationsKnowledgeCollectionModelsPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Configure Operations Knowledge Collection Models",
         "tags": [
           "AIOps App"
         ]
@@ -26236,6 +26316,370 @@
           }
         },
         "summary": "Create Operations Knowledge Turn",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/knowledge-answering/binding": {
+      "get": {
+        "operationId": "get_operations_knowledge_assistant_binding_api_v1_apps_aiops_operations_knowledge_knowledge_answering_binding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Operations Knowledge Assistant Binding",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "put": {
+        "operationId": "configure_operations_knowledge_assistant_binding_api_v1_apps_aiops_operations_knowledge_knowledge_answering_binding_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeAssistantBindingPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Operations Knowledge Assistant Binding",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/knowledge-bases": {
+      "get": {
+        "operationId": "list_operations_knowledge_bases_api_v1_apps_aiops_operations_knowledge_knowledge_bases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Knowledge Bases",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "post": {
+        "operationId": "create_operations_knowledge_base_api_v1_apps_aiops_operations_knowledge_knowledge_bases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeBasePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Operations Knowledge Base",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}": {
+      "delete": {
+        "operationId": "delete_operations_knowledge_base_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Operations Knowledge Base",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "get": {
+        "operationId": "get_operations_knowledge_base_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Base",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "put": {
+        "operationId": "update_operations_knowledge_base_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeBasePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Operations Knowledge Base",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models": {
+      "get": {
+        "operationId": "get_operations_knowledge_collection_models_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Knowledge Collection Models",
+        "tags": [
+          "AIOps App"
+        ]
+      },
+      "put": {
+        "operationId": "configure_operations_knowledge_collection_models_api_v1_apps_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__models_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeCollectionModelsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Operations Knowledge Collection Models",
         "tags": [
           "AIOps App"
         ]

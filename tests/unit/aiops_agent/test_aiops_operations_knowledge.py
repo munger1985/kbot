@@ -11,7 +11,7 @@ from aiops_agent.application.operations_knowledge import (
     _bundle_source_hash,
 )
 from aiops_agent.application.errors import AIOpsApplicationError
-from aiops_agent.contracts.knowledge import ManualUploadMetadata
+from aiops_agent.contracts.knowledge import KnowledgeBaseWrite, ManualUploadMetadata
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
 from platform_core.identity import uuid7
 from platform_clients.knowledge_core import KnowledgeCoreClientError
@@ -34,6 +34,10 @@ class _OrderedFlushSession:
 
 
 class OperationsKnowledgeContractTest(unittest.TestCase):
+    def test_knowledge_base_write_requires_models(self):
+        with self.assertRaises(ValidationError):
+            KnowledgeBaseWrite(display_name="Oracle 运维库")
+
     def test_upload_metadata_rejects_internal_collection_fields(self):
         with self.assertRaises(ValidationError):
             ManualUploadMetadata.model_validate({
@@ -611,6 +615,76 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             {role: str(model_id) for role, model_id in models.items()},
             call.kwargs["payload"]["models"],
+        )
+
+    async def test_editing_knowledge_base_updates_name_and_models_together(self):
+        knowledge_base_id, collection_id = uuid7(), uuid7()
+        row = SimpleNamespace(
+            knowledge_base_id=knowledge_base_id,
+            collection_id=collection_id,
+            status="ACTIVE",
+            row_version=3,
+            display_name="旧名称",
+            description=None,
+            updated_by=None,
+            updated_at=None,
+        )
+        repository = SimpleNamespace(
+            get_knowledge_base=AsyncMock(return_value=row),
+            find_knowledge_base_name=AsyncMock(return_value=None),
+        )
+        knowledge_core = SimpleNamespace(
+            get_collection=AsyncMock(return_value={"row_version": 8}),
+            update_collection_models=AsyncMock(return_value={"row_version": 9}),
+        )
+        models = {
+            "parser_ocr": uuid7(),
+            "parser_llm": uuid7(),
+            "retrieval_llm": uuid7(),
+            "embedding": uuid7(),
+        }
+        categories = {
+            models["parser_ocr"]: 6,
+            models["parser_llm"]: 1,
+            models["retrieval_llm"]: 1,
+            models["embedding"]: 2,
+        }
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={},
+            knowledge_assistant_instruction="",
+            model_catalog=SimpleNamespace(get_model=AsyncMock(
+                side_effect=lambda model_id, **_kwargs: {
+                    "category": categories[model_id], "status": "ACTIVE",
+                }
+            )),
+        )
+        service.get_knowledge_base = AsyncMock(return_value={
+            "knowledge_base_id": str(knowledge_base_id)
+        })
+
+        await service.update_knowledge_base(
+            domain_id=42,
+            knowledge_base_id=knowledge_base_id,
+            command=KnowledgeBaseWrite(
+                display_name="新名称",
+                description="新说明",
+                models=models,
+                expected_row_version=3,
+            ),
+            context=SimpleNamespace(asserted_user_id="operator", client_id="portal"),
+        )
+
+        self.assertEqual("新名称", row.display_name)
+        self.assertEqual("新说明", row.description)
+        self.assertEqual(4, row.row_version)
+        knowledge_core.update_collection_models.assert_awaited_once()
+        self.assertEqual(
+            {role: str(model_id) for role, model_id in models.items()},
+            knowledge_core.update_collection_models.await_args.kwargs["payload"]["models"],
         )
 
 if __name__ == "__main__":

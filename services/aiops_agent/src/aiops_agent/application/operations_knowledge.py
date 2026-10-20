@@ -376,6 +376,9 @@ class OperationsKnowledgeService:
         actor = self._actor(context)
         display_name = command.display_name.strip()
         normalized_name = " ".join(display_name.casefold().split())
+        await self._validate_knowledge_base_models(
+            models=command.models, context=context,
+        )
         async with self._uow_factory() as uow:
             duplicate = await uow.operations_knowledge.find_knowledge_base_name(
                 domain_id=domain_id, normalized_name=normalized_name,
@@ -505,6 +508,15 @@ class OperationsKnowledgeService:
                     message="当前 Domain 已存在同名运维知识库",
                     status_code=409,
                 )
+            await self._validate_knowledge_base_models(
+                models=command.models, context=context,
+            )
+            await self._update_knowledge_base_models(
+                domain_id=domain_id,
+                base=row,
+                models=command.models,
+                context=context,
+            )
             row.display_name = display_name
             row.description = command.description
             row.updated_by = self._actor(context)
@@ -632,7 +644,22 @@ class OperationsKnowledgeService:
         self, *, domain_id: int, knowledge_base_id: UUID,
         models: dict[str, UUID], context: AuthContext,
     ) -> dict[str, Any]:
-        """显式配置两个固定 KC；不猜选模型，也不借用 Agent 模型。"""
+        """显式配置指定运维知识库；不猜选模型，也不借用 Agent 模型。"""
+        await self._validate_knowledge_base_models(models=models, context=context)
+        base = await self._knowledge_base_collection(
+            domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+        )
+        configured = await self._update_knowledge_base_models(
+            domain_id=domain_id, base=base, models=models, context=context,
+        )
+        return {
+            "knowledge_base_id": str(knowledge_base_id),
+            "collection": configured,
+        }
+
+    async def _validate_knowledge_base_models(
+        self, *, models: dict[str, UUID], context: AuthContext,
+    ) -> None:
         required = {"parser_ocr", "parser_llm", "retrieval_llm", "embedding"}
         missing = required - set(models)
         if missing:
@@ -682,9 +709,11 @@ class OperationsKnowledgeService:
                     message=f"模型角色 {role} 未绑定到已启用的正确类别模型",
                     status_code=409,
                 )
-        base = await self._knowledge_base_collection(
-            domain_id=domain_id, knowledge_base_id=knowledge_base_id,
-        )
+
+    async def _update_knowledge_base_models(
+        self, *, domain_id: int, base: OperationsKnowledgeBaseEntity,
+        models: dict[str, UUID], context: AuthContext,
+    ) -> dict[str, Any]:
         try:
             collection = await self._kc.get_collection(
                 domain_id=domain_id,
@@ -709,10 +738,7 @@ class OperationsKnowledgeService:
                 status_code=503,
                 retryable=True,
             ) from exc
-        return {
-            "knowledge_base_id": str(knowledge_base_id),
-            "collection": configured,
-        }
+        return configured
 
     async def overview(self, *, domain_id: int) -> dict[str, int]:
         async with self._uow_factory() as uow:

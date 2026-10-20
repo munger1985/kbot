@@ -119,7 +119,7 @@ class OperationsKnowledgeCollectionModelsPayload(_Payload):
 class OperationsKnowledgeBasePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
-    models: dict[str, UUID] = Field(default_factory=dict)
+    models: dict[str, UUID]
     expected_row_version: int | None = Field(default=None, ge=1)
 
 

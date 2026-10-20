@@ -6369,6 +6369,100 @@
         "title": "InstanceMappingView",
         "type": "object"
       },
+      "KnowledgeAssistantBindingWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "knowledge_base_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Knowledge Base Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "knowledge_base_ids"
+        ],
+        "title": "KnowledgeAssistantBindingWrite",
+        "type": "object"
+      },
+      "KnowledgeBaseDeletePayload": {
+        "properties": {
+          "expected_row_version": {
+            "title": "Expected Row Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_row_version"
+        ],
+        "title": "KnowledgeBaseDeletePayload",
+        "type": "object"
+      },
+      "KnowledgeBaseWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Row Version"
+          },
+          "models": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "display_name",
+          "models"
+        ],
+        "title": "KnowledgeBaseWrite",
+        "type": "object"
+      },
       "KnowledgeExecutionSpecRequest": {
         "additionalProperties": false,
         "description": "仅供受信 BFF 请求 AIOps 服务端签发知识范围。",
@@ -6470,6 +6564,16 @@
             },
             "maxItems": 16,
             "title": "Error Codes",
+            "type": "array"
+          },
+          "knowledge_base_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Knowledge Base Ids",
             "type": "array"
           },
           "max_results": {
@@ -22663,6 +22767,23 @@
           },
           {
             "in": "query",
+            "name": "knowledge_base_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -22782,9 +22903,9 @@
         ]
       }
     },
-    "/internal/v1/aiops/operations-knowledge/collection-models": {
+    "/internal/v1/aiops/operations-knowledge/knowledge-answering/binding": {
       "get": {
-        "operationId": "get_collection_models_internal_v1_aiops_operations_knowledge_collection_models_get",
+        "operationId": "get_knowledge_assistant_binding_internal_v1_aiops_operations_knowledge_knowledge_answering_binding_get",
         "responses": {
           "200": {
             "content": {
@@ -22795,18 +22916,18 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Get Collection Models",
+        "summary": "Get Knowledge Assistant Binding",
         "tags": [
           "AIOps Operations Knowledge"
         ]
       },
       "put": {
-        "operationId": "configure_collection_models_internal_v1_aiops_operations_knowledge_collection_models_put",
+        "operationId": "configure_knowledge_assistant_binding_internal_v1_aiops_operations_knowledge_knowledge_answering_binding_put",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CollectionModelsPayload"
+                "$ref": "#/components/schemas/KnowledgeAssistantBindingWrite"
               }
             }
           },
@@ -22832,7 +22953,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Configure Collection Models",
+        "summary": "Configure Knowledge Assistant Binding",
         "tags": [
           "AIOps Operations Knowledge"
         ]
@@ -22872,6 +22993,308 @@
           }
         },
         "summary": "Knowledge Answering Execution Spec",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/knowledge-bases": {
+      "get": {
+        "operationId": "list_knowledge_bases_internal_v1_aiops_operations_knowledge_knowledge_bases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Knowledge Bases",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      },
+      "post": {
+        "operationId": "create_knowledge_base_internal_v1_aiops_operations_knowledge_knowledge_bases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Knowledge Base",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}": {
+      "delete": {
+        "operationId": "delete_knowledge_base_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseDeletePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Knowledge Base",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      },
+      "get": {
+        "operationId": "get_knowledge_base_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Base",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      },
+      "put": {
+        "operationId": "update_knowledge_base_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBaseWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Knowledge Base",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models": {
+      "get": {
+        "operationId": "get_collection_models_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Collection Models",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      },
+      "put": {
+        "operationId": "configure_collection_models_internal_v1_aiops_operations_knowledge_knowledge_bases__knowledge_base_id__models_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Base Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionModelsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Collection Models",
         "tags": [
           "AIOps Operations Knowledge"
         ]
