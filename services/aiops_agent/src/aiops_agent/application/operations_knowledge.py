@@ -2869,7 +2869,12 @@ class OperationsKnowledgeService:
                 scope_filters=filters,
                 limit=None,
             )
-        if not candidates:
+            candidate_snapshots = tuple({
+                "asset_version_id": version.asset_version_id,
+                "collection_id": index.collection_id,
+                "bundle_revision_id": index.bundle_revision_id,
+            } for _asset, version, index in candidates)
+        if not candidate_snapshots:
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_SCOPE_EMPTY",
                 message="当前 Domain 没有可用于问答的已发布运维知识",
@@ -2877,11 +2882,11 @@ class OperationsKnowledgeService:
                 retryable=False,
             )
         collection_ids = tuple(sorted(
-            {row[2].collection_id for row in candidates},
+            {row["collection_id"] for row in candidate_snapshots},
             key=lambda item: item.bytes,
         ))
         revision_ids = tuple(sorted(
-            {row[2].bundle_revision_id for row in candidates},
+            {row["bundle_revision_id"] for row in candidate_snapshots},
             key=lambda item: item.bytes,
         ))
         for collection_id in collection_ids:
@@ -2908,9 +2913,9 @@ class OperationsKnowledgeService:
             "business_resource_refs": [
                 {
                     "kind": "OPERATIONS_KNOWLEDGE_VERSION",
-                    "id": str(row[1].asset_version_id),
+                    "id": str(row["asset_version_id"]),
                 }
-                for row in candidates
+                for row in candidate_snapshots
             ],
             "policy_version": "aiops-knowledge-scope.v1",
             "issued_at": _now().isoformat(),

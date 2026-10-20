@@ -451,6 +451,7 @@ class OperationsKnowledgeAssistantBindingTest(unittest.IsolatedAsyncioTestCase):
         collection_id = uuid7()
         revision_id = uuid7()
         asset_version_id = uuid7()
+        state = _SessionState()
         repository = SimpleNamespace(
             get_assistant_binding=AsyncMock(return_value=SimpleNamespace(
                 assistant_id=assistant_id,
@@ -462,15 +463,27 @@ class OperationsKnowledgeAssistantBindingTest(unittest.IsolatedAsyncioTestCase):
             ),
             list_published_candidates=AsyncMock(return_value=[(
                 SimpleNamespace(),
-                SimpleNamespace(asset_version_id=asset_version_id),
-                SimpleNamespace(
+                _SessionBoundEntity(
+                    state,
+                    asset_version_id=asset_version_id,
+                ),
+                _SessionBoundEntity(
+                    state,
                     collection_id=collection_id,
                     bundle_revision_id=revision_id,
                 ),
             )]),
         )
         knowledge_core = SimpleNamespace(bind_collection=AsyncMock())
-        service = self.service(repository, knowledge_core=knowledge_core)
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _DetachingKnowledgeUnitOfWork(
+                repository, state
+            ),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_instruction="仅依据运维知识证据回答",
+        )
         context = SimpleNamespace()
 
         spec = await service.knowledge_execution_spec(
