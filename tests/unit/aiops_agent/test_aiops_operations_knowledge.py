@@ -694,7 +694,10 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_profile_revision_preserves_every_manual_source_member(self):
         asset_id, version_id = uuid7(), uuid7()
-        bundle_id, revision_id, replacement_id = uuid7(), uuid7(), uuid7()
+        bundle_id, current_revision_id, stale_revision_id = (
+            uuid7(), uuid7(), uuid7()
+        )
+        replacement_bundle_id, replacement_revision_id = uuid7(), uuid7()
         collection_id = uuid7()
         document_ids = (uuid7(), uuid7())
         bodies = (b"primary manual", b"supporting appendix")
@@ -711,7 +714,8 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             asset_kind="MANUAL", current_version_id=None, status="PROCESSING"
         )
         index = SimpleNamespace(
-            bundle_revision_id=revision_id,
+            bundle_id=bundle_id,
+            bundle_revision_id=stale_revision_id,
             index_status="PROCESSING",
             last_checked_at=None,
             expected_row_version=None,
@@ -735,39 +739,48 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
         knowledge_core = SimpleNamespace(
             get_bundle_status=AsyncMock(return_value={
-                "current_revision_id": str(revision_id),
+                "source_id": str(version_id),
+                "current_revision_id": str(current_revision_id),
                 "availability_status": "READY",
                 "row_version": 12,
             }),
-            get_revision_status=AsyncMock(return_value={
-                "status": "READY",
-                "source_revision": str(version_id),
-                "members": [
-                    {
-                        "document_role": "CONTENT",
-                        "document_version_id": str(document_ids[0]),
-                        "declared_name": "exadata.pdf",
-                        "declared_mime_type": "application/pdf",
-                        "ordinal": 0,
-                        "required_flag": True,
-                        "member_status": "READY",
-                    },
-                    {
-                        "document_role": "SUPPLEMENT",
-                        "document_version_id": str(document_ids[1]),
-                        "declared_name": "appendix.pdf",
-                        "declared_mime_type": "application/pdf",
-                        "ordinal": 1,
-                        "required_flag": False,
-                        "member_status": "READY",
-                    },
-                ],
-            }),
+            get_revision_status=AsyncMock(side_effect=[
+                KnowledgeCoreClientError(
+                    status_code=404,
+                    code="KNOWLEDGE_REVISION_NOT_FOUND",
+                    message="Revision not found",
+                ),
+                {
+                    "status": "READY",
+                    "source_revision": str(version_id),
+                    "members": [
+                        {
+                            "document_role": "CONTENT",
+                            "document_version_id": str(document_ids[0]),
+                            "declared_name": "exadata.pdf",
+                            "declared_mime_type": "application/pdf",
+                            "ordinal": 0,
+                            "required_flag": True,
+                            "member_status": "READY",
+                        },
+                        {
+                            "document_role": "SUPPLEMENT",
+                            "document_version_id": str(document_ids[1]),
+                            "declared_name": "appendix.pdf",
+                            "declared_mime_type": "application/pdf",
+                            "ordinal": 1,
+                            "required_flag": False,
+                            "member_status": "READY",
+                        },
+                    ],
+                },
+            ]),
             stream_source_file=AsyncMock(side_effect=stream_source_file),
             ingest_user_bundle=AsyncMock(return_value=SimpleNamespace(
                 payload={"items": [{
                     "status": "ACCEPTED",
-                    "bundle_revision_id": str(replacement_id),
+                    "bundle_id": str(replacement_bundle_id),
+                    "bundle_revision_id": str(replacement_revision_id),
                 }]}
             )),
             review_user_intake=AsyncMock(),
@@ -805,7 +818,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             "indexes": [{
                 "collection_id": str(collection_id),
                 "bundle_id": str(bundle_id),
-                "bundle_revision_id": str(revision_id),
+                "bundle_revision_id": str(stale_revision_id),
             }],
         }
         service.get_version = AsyncMock(
@@ -836,7 +849,20 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(digests), [
             item["content_sha256"] for item in documents[:2]
         ])
-        self.assertEqual(replacement_id, index.bundle_revision_id)
+        self.assertEqual(
+            str(version_id),
+            knowledge_core.ingest_user_bundle.await_args.kwargs[
+                "client_bundle_id"
+            ],
+        )
+        self.assertEqual(replacement_bundle_id, index.bundle_id)
+        self.assertEqual(replacement_revision_id, index.bundle_revision_id)
+        self.assertEqual(
+            current_revision_id,
+            knowledge_core.stream_source_file.await_args_list[0].kwargs[
+                "bundle_revision_id"
+            ],
+        )
 
     async def test_explicit_model_configuration_updates_selected_knowledge_base(self):
         knowledge_base_id = uuid7()

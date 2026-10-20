@@ -1840,11 +1840,6 @@ class OperationsKnowledgeService:
             bundle = await self._kc.get_bundle_status(
                 domain_id=domain_id, bundle_id=bundle_id, auth_context=context
             )
-            revision = await self._kc.get_revision_status(
-                domain_id=domain_id, bundle_id=bundle_id,
-                bundle_revision_id=revision_id, include_members=True,
-                auth_context=context,
-            )
         except KnowledgeCoreClientError as exc:
             raise AIOpsApplicationError(
                 code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
@@ -1852,7 +1847,55 @@ class OperationsKnowledgeService:
                 status_code=503,
                 retryable=True,
             ) from exc
-        current_id = str(bundle.get("current_revision_id") or bundle.get("bundle", {}).get("current_revision_id") or "")
+        current_id = str(
+            bundle.get("current_revision_id")
+            or bundle.get("bundle", {}).get("current_revision_id")
+            or ""
+        )
+        resolved_current_revision = False
+        try:
+            revision = await self._kc.get_revision_status(
+                domain_id=domain_id, bundle_id=bundle_id,
+                bundle_revision_id=revision_id, include_members=True,
+                auth_context=context,
+            )
+        except KnowledgeCoreClientError as exc:
+            if (
+                exc.status_code == 404
+                and detail["asset"]["asset_kind"] == "MANUAL"
+                and current_id
+                and current_id != str(revision_id)
+            ):
+                revision_id = UUID(current_id)
+                try:
+                    revision = await self._kc.get_revision_status(
+                        domain_id=domain_id,
+                        bundle_id=bundle_id,
+                        bundle_revision_id=revision_id,
+                        include_members=True,
+                        auth_context=context,
+                    )
+                except KnowledgeCoreClientError as current_exc:
+                    raise AIOpsApplicationError(
+                        code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
+                        message="无法核对知识索引状态",
+                        status_code=503,
+                        retryable=True,
+                    ) from current_exc
+                resolved_current_revision = True
+            elif exc.status_code == 404:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_INDEX_STALE",
+                    message="知识索引引用的 Revision 不存在",
+                    status_code=409,
+                ) from exc
+            else:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
+                    message="无法核对知识索引状态",
+                    status_code=503,
+                    retryable=True,
+                ) from exc
         expected_profile_revision = f"{asset_version_id}:profile-v1"
         adopted_revision = False
         if (
@@ -1945,6 +1988,7 @@ class OperationsKnowledgeService:
                         break
                     page += 1
             revision = {**revision, "extraction_evidence": evidence_items}
+        replacement_bundle_id: UUID | None = None
         replacement_revision_id: UUID | None = None
         if (
             ready
@@ -2065,7 +2109,11 @@ class OperationsKnowledgeService:
             response = await self._kc.ingest_user_bundle(
                 domain_id=domain_id,
                 collection_id=UUID(index_payload["collection_id"]),
-                client_bundle_id=detail["asset"]["asset_id"],
+                client_bundle_id=str(
+                    bundle.get("source_id")
+                    or bundle.get("bundle", {}).get("source_id")
+                    or detail["asset"]["asset_id"]
+                ),
                 source_revision=expected_profile_revision,
                 title=detail["asset"]["display_name"],
                 security_level=int(detail["asset"]["security_level"]),
@@ -2082,13 +2130,19 @@ class OperationsKnowledgeService:
                 auth_context=context,
             )
             replacement = next(iter((response.payload or {}).get("items", [])), None)
-            if not replacement or replacement.get("status") == "REJECTED":
+            if (
+                not replacement
+                or replacement.get("status") == "REJECTED"
+                or not replacement.get("bundle_id")
+                or not replacement.get("bundle_revision_id")
+            ):
                 raise AIOpsApplicationError(
                     code="AIOPS_KNOWLEDGE_EXTRACTION_FAILED",
                     message="手册结构化导航未被索引服务受理",
                     status_code=502,
                     retryable=True,
                 )
+            replacement_bundle_id = UUID(str(replacement["bundle_id"]))
             replacement_revision_id = UUID(str(replacement["bundle_revision_id"]))
             await self._kc.review_user_intake(
                 domain_id=domain_id,
@@ -2116,6 +2170,7 @@ class OperationsKnowledgeService:
             index.expected_row_version = int(bundle.get("row_version") or 0) or None
             processing_only = False
             if replacement_revision_id is not None:
+                index.bundle_id = replacement_bundle_id
                 index.bundle_revision_id = replacement_revision_id
                 index.index_status = "PROCESSING"
                 index.expected_row_version = None
@@ -2125,7 +2180,10 @@ class OperationsKnowledgeService:
                 if asset.current_version_id is None:
                     asset.status = "PROCESSING"
                 processing_only = True
-            if adopted_revision and not processing_only:
+            if (
+                (adopted_revision or resolved_current_revision)
+                and not processing_only
+            ):
                 index.bundle_revision_id = revision_id
             if ready and not processing_only:
                 index.index_status = "READY"
