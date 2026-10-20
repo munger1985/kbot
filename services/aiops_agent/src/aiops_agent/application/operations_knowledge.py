@@ -1881,6 +1881,7 @@ class OperationsKnowledgeService:
         ).upper()
         publication_status = str(revision.get("publication_status") or "").upper()
         members = revision.get("members") or revision.get("items") or []
+        revision_processing = revision_status == "PROCESSING"
         required_content_ready = any(
             str(item.get("document_role") or "").upper() == "CONTENT"
             and bool(item.get("document_version_id"))
@@ -1893,16 +1894,19 @@ class OperationsKnowledgeService:
             or revision_status in {"READY", "COMPLETED"}
         )
         failed = (
-            availability in {"FAILED", "ERROR", "UNAVAILABLE"}
-            or revision_status in {"FAILED", "REJECTED", "ERROR"}
-            or publication_status in {"FAILED", "ERROR"}
-            or any(
-                str(item.get("member_status") or "").upper()
-                in {
-                    "FAILED", "REJECTED", "ERROR",
-                    "SOURCE_UNAVAILABLE", "CANCELLED",
-                }
-                for item in members
+            not revision_processing
+            and (
+                availability in {"FAILED", "ERROR", "UNAVAILABLE"}
+                or revision_status in {"FAILED", "REJECTED", "ERROR"}
+                or publication_status in {"FAILED", "ERROR"}
+                or any(
+                    str(item.get("member_status") or "").upper()
+                    in {
+                        "FAILED", "REJECTED", "ERROR",
+                        "SOURCE_UNAVAILABLE", "CANCELLED",
+                    }
+                    for item in members
+                )
             )
         )
         if (
@@ -2131,6 +2135,11 @@ class OperationsKnowledgeService:
                     asset.status = "FAILED"
             elif not processing_only:
                 index.index_status = "PROCESSING"
+                index.error_code = None
+                index.error_summary = None
+                version.status = "PROCESSING"
+                if asset.current_version_id is None:
+                    asset.status = "PROCESSING"
             await uow.commit()
         return await self.get_version(
             domain_id=domain_id, asset_version_id=asset_version_id

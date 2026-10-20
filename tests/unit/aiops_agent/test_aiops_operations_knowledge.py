@@ -608,6 +608,85 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(version_id, asset.current_version_id)
         self.assertEqual("READY", index.index_status)
 
+    async def test_reprocessing_revision_ignores_previous_publication_failure(self):
+        asset_id, version_id = uuid7(), uuid7()
+        bundle_id, revision_id, collection_id = uuid7(), uuid7(), uuid7()
+        version = SimpleNamespace(
+            asset_id=asset_id,
+            asset_version_id=version_id,
+            status="FAILED",
+            profile_json=None,
+            extraction_warnings_json=[],
+        )
+        asset = SimpleNamespace(
+            asset_kind="MANUAL", current_version_id=None, status="FAILED"
+        )
+        index = SimpleNamespace(
+            bundle_revision_id=revision_id,
+            index_status="FAILED",
+            last_checked_at=None,
+            expected_row_version=None,
+            error_code="PARSER_MODEL_NOT_FOUND",
+            error_summary="上一轮解析失败",
+        )
+        repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=asset),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [index], "scopes": [], "sources": []
+            }),
+        )
+        knowledge_core = SimpleNamespace(
+            get_bundle_status=AsyncMock(return_value={
+                "current_revision_id": str(revision_id),
+                "availability_status": "EMPTY",
+                "row_version": 10,
+            }),
+            get_revision_status=AsyncMock(return_value={
+                "status": "PROCESSING",
+                "publication_status": "FAILED",
+                "publication_failure_code": "PREVIOUS_INDEX_FAILED",
+                "publication_failure_message": "上一轮索引失败",
+                "members": [{
+                    "document_role": "CONTENT",
+                    "document_version_id": str(uuid7()),
+                    "member_status": "RECEIVED",
+                }],
+            }),
+        )
+        service = self.service(repository, knowledge_core)
+        detail = {
+            "asset": {
+                "asset_id": str(asset_id), "asset_kind": "MANUAL",
+                "display_name": "Oracle Exadata 手册", "security_level": 1,
+            },
+            "version": {
+                "status": "FAILED", "profile": None,
+                "source_hash": "a" * 64,
+            },
+            "indexes": [{
+                "collection_id": str(collection_id),
+                "bundle_id": str(bundle_id),
+                "bundle_revision_id": str(revision_id),
+            }],
+        }
+        service.get_version = AsyncMock(
+            side_effect=[detail, {"version": {"status": "PROCESSING"}}]
+        )
+
+        result = await service.reconcile_version(
+            domain_id=42,
+            asset_version_id=version_id,
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual({"version": {"status": "PROCESSING"}}, result)
+        self.assertEqual("PROCESSING", version.status)
+        self.assertEqual("PROCESSING", asset.status)
+        self.assertEqual("PROCESSING", index.index_status)
+        self.assertIsNone(index.error_code)
+        self.assertIsNone(index.error_summary)
+
     async def test_explicit_model_configuration_updates_selected_knowledge_base(self):
         knowledge_base_id = uuid7()
         collection_id = uuid7()
