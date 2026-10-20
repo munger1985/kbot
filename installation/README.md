@@ -3,15 +3,38 @@
 本目录提供从同一 Commit 构建不可变镜像、渲染单机 Docker Compose 以及后续推送
 OCI Container Registry（OCIR）的统一入口。开发机阶段不需要 OCI 账号、仓库或计算实例。
 
+## 正式版本 1.0
+
+`1.0` 是本交付线的首个正式容器版本，于 2026-10-20 从 `kbot4.1` 分支的
+Commit `497be08edc55d458582665482a50c57133ada79e` 构建并发布，平台为
+`linux/amd64`。Registry 前缀为 `nrt.ocir.io/sehubjapacprod/kbot`；生产部署应按
+下表使用不可变 Digest，不依赖可变 Tag。
+
+| 镜像 | `1.0` Digest |
+|---|---|
+| `kbot-model-serving` | `sha256:c041c9691f9c5a1be0eab9ef76669452f00e94223a871b5d5e7e00354668ba9e` |
+| `kbot-knowledge-core` | `sha256:1e7835c5c001e535ec19ead6fed94ba20859b21c7fe09ba285a2c9be3921c66f` |
+| `kbot-knowledge-retrieval-app` | `sha256:b603c29573c0507b5fcc2342a6489f7c9d4dedcaf45def91a0546d090ba29176` |
+| `kbot-media-studio-app` | `sha256:4178127df35ba2903592f18a286a48346ed10f23c71ac6e726d0d069578983a1` |
+| `kbot-agent-runtime` | `sha256:391396c2720f4bc5b263863935af03bdb18a909ad600ae12a5b9df89fcd7181f` |
+| `kbot-data-query` | `sha256:7e8926be856f6ca46a640ae7ce12dc5f6bb6941cfc9d9974627c9bedeca8cacf` |
+| `kbot-aiops-agent` | `sha256:7491a960471948267c0a7b9cd26addfede1077fccf891061db509f5543e25d7c` |
+| `kbot-main-api` | `sha256:7887a86fb5f2570d3b7df1c1a7ffe21dc8cb58dc06bb0ff18e4c40f58f5b7583` |
+| `kbot-installer` | `sha256:1b5a532650a588d0e4742b2694432f13cd4a0d0169954f01e1397301c722774e` |
+| `kbot-ui` | `sha256:700fa1cfe603dc1f15b5a3d696a94446d81771931c424218a539c3b52cab9564` |
+
+上一试发布标签 `4.0.0-e1b511db` 已从上述 10 个镜像仓库删除，不作为回滚版本保留。
+
 ## 交付模型
 
 - `kbot-ui` 是唯一发布宿主端口的容器，默认映射 `8080:8080`，并把 `/api/*`
   同源反向代理到 Main API；
-- 9 个业务镜像对应 9 个 Python 服务包，同一服务的 API、Worker、Scheduler 复用同一镜像；
+- 8 个业务服务镜像对应 8 个 Python 服务包，同一服务的 API、Worker、Scheduler
+  复用同一镜像；另有 `kbot-installer` 工具镜像和 `kbot-ui` 前端镜像；
 - Model Serving、Knowledge Core 和 Installer 显式安装固定版本的 CPU Torch/TorchVision，
   不会从普通 PyPI 意外带入 CUDA 运行时；
 - `deployment.ini` 的 `[apps]` 开关决定实际部署哪些 App，发布器只渲染这些 App
-  及其共享依赖进程；全选时覆盖 `resources/topology.toml` 中全部 25 个进程；
+  及其共享依赖进程；全选时覆盖 `resources/topology.toml` 中全部 23 个进程；
 - 内部 HTTP 端点使用 Compose DNS，不使用 Host 网络，也不发布内部端口；
 - Oracle 是外部受管数据库，不在 Compose 中创建；
 - `kbot-installer` 仅在 `tools` Profile 下按需运行数据库初始化或校验工具；
