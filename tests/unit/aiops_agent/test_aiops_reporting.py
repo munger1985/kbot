@@ -69,6 +69,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         run = SimpleNamespace(
             ops_run_id=uuid7(),
             actor_id="system:inspection-scheduler",
+            domain_id=8,
             target_id=uuid7(),
             inspection_fire_id=uuid7(),
             plan_snapshot_json={
@@ -113,6 +114,11 @@ class InspectionReportPublishingTest(unittest.TestCase):
             return entity
 
         uow = SimpleNamespace(
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(return_value=SimpleNamespace(
+                    display_name="Oracle 核心生产库"
+                ))
+            ),
             inspections=SimpleNamespace(
                 publish_report=AsyncMock(side_effect=publish_report),
                 add_report_sources=AsyncMock(),
@@ -163,6 +169,10 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertIn(
             "数据库整体健康。",
             [item.get("markdown") for item in result.payload_json["facts"]],
+        )
+        self.assertEqual(
+            "Oracle 核心生产库",
+            result.payload_json["scope"]["target"]["display_name"],
         )
 
     def test_scheduled_agent_turn_keeps_long_chinese_summary(self) -> None:

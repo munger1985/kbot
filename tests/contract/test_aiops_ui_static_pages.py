@@ -1776,6 +1776,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("七日趋势 · 小倍数", script)
         self.assertIn("七日趋势与容量明细", script)
         self.assertIn("无数据不等于异常", script)
+        self.assertIn("frozenTargetIsIdentifier", script)
+        self.assertIn('["巡检目标", targetName]', script)
         self.assertIn(".daily-formal-report", css)
         self.assertIn(".daily-report-table", css)
         self.assertIn(".daily-trend-svg", css)

@@ -227,6 +227,23 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+def _human_target_display_name(
+    *candidates: object, target_id: object,
+) -> str:
+    """从候选值中选择可读 Target 名称，拒绝把 UUID 当作名称。"""
+
+    normalized_id = str(target_id or "").strip()
+    for candidate in candidates:
+        normalized = str(candidate or "").strip()
+        if not normalized or (normalized_id and normalized == normalized_id):
+            continue
+        try:
+            UUID(normalized)
+        except (ValueError, AttributeError):
+            return normalized
+    return "目标已删除或无权访问"
+
+
 def report_content_reference_is_complete(
     report: ReportEntity,
     artifact: OpsArtifactEntity | None,
@@ -3256,6 +3273,19 @@ class AIOpsRuntimeService:
         )
         monitoring_quality = self._inspection_monitoring_quality(source)
         target_snapshot = dict(plan.get("target") or {})
+        current_target = None
+        target_repository = getattr(uow, "targets", None)
+        run_domain_id = getattr(run, "domain_id", None)
+        if target_repository is not None and run_domain_id is not None:
+            current_target = await target_repository.get_scoped(
+                target_id=run.target_id,
+                domain_id=run_domain_id,
+            )
+        target_display_name = _human_target_display_name(
+            getattr(current_target, "display_name", None),
+            target_snapshot.get("display_name"),
+            target_id=run.target_id,
+        )
         content = ReportContent(
             report_key=report_key,
             report_type=report_type,
@@ -3296,9 +3326,7 @@ class AIOpsRuntimeService:
                 "evidence_gap_count": len(gaps),
                 "target": {
                     "target_id": str(run.target_id),
-                    "display_name": str(
-                        target_snapshot.get("display_name") or run.target_id
-                    ),
+                    "display_name": target_display_name,
                     "database_type": str(
                         target_snapshot.get("db_type") or "ORACLE"
                     ),
@@ -7858,9 +7886,9 @@ class AIOpsRuntimeService:
             "period_start": period_start, "period_end": period_end,
             "target": target_snapshot,
             "scope_type": "TARGET",
-            "scope_name": str(
-                target_snapshot.get("display_name")
-                or getattr(ordered_runs[0], "target_id", "未记录")
+            "scope_name": _human_target_display_name(
+                target_snapshot.get("display_name"),
+                target_id=getattr(ordered_runs[0], "target_id", None),
             ) if ordered_runs else "未记录",
             "target_count": 1,
             "database_types": tuple(filter(None, (
@@ -7930,6 +7958,17 @@ class AIOpsRuntimeService:
                     ops_run_ids=(ops_run_id,)
                 )
                 findings = parse_finding_payload(payloads.get(ops_run_id))
+            target_display_name = None
+            target_repository = getattr(uow, "targets", None)
+            report_target_id = getattr(report, "target_id", None)
+            if target_repository is not None and report_target_id is not None:
+                current_target = await target_repository.get_scoped(
+                    target_id=report_target_id,
+                    domain_id=domain_id,
+                )
+                target_display_name = getattr(
+                    current_target, "display_name", None
+                )
             return report_presentation(
                 payload=payload,
                 template=template,
@@ -7948,6 +7987,7 @@ class AIOpsRuntimeService:
                         else None
                     ),
                     "domain_id": int(domain_id),
+                    "target_display_name": target_display_name,
                 },
             )
 

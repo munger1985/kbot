@@ -427,6 +427,43 @@ class FormalReportingTest(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF-"))
         self.assertIn(b"/ToUnicode", pdf)
 
+    def test_daily_inspection_replaces_legacy_uuid_target_name(self) -> None:
+        target_id = str(uuid7())
+        payload = {
+            "report_type": "INSPECTION_DAILY",
+            "target_id": target_id,
+            "title": "数据库日常巡检报告",
+            "status": "READY",
+            "scope": {"target": {
+                "target_id": target_id,
+                "display_name": target_id,
+            }},
+            "facts": [],
+            "gaps": [],
+            "evidence_refs": [],
+        }
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            report_context={"target_display_name": "Oracle 核心生产库"},
+            payload=payload,
+        )
+
+        self.assertEqual(
+            "Oracle 核心生产库",
+            presentation["daily_inspection"]["header"]["target_name"],
+        )
+
+        payload["scope"]["target"]["display_name"] = "Oracle 历史名称"
+        preserved = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            report_context={"target_display_name": "Oracle 当前名称"},
+            payload=payload,
+        )
+        self.assertEqual(
+            "Oracle 历史名称",
+            preserved["daily_inspection"]["header"]["target_name"],
+        )
+
     def test_comparison_facts_are_projected_as_findings(self) -> None:
         template = SYSTEM_REPORT_TEMPLATES["system:comparison.standard"]
         presentation = report_presentation(

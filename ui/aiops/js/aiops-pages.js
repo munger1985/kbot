@@ -781,10 +781,18 @@
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
     const sourceLink = report.source_conversation_id ? `<a href="./chat.html?conversation=${encodeURIComponent(report.source_conversation_id)}">查看来源会话</a>` : "";
     const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
+    const frozenTargetName = String(header.target_name || "").trim();
+    const targetId = String(header.target_id || report.target_id || "").trim();
+    const frozenTargetIsIdentifier = !frozenTargetName
+      || frozenTargetName === targetId
+      || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(frozenTargetName);
+    const targetName = frozenTargetIsIdentifier
+      ? (target?.display_name || "目标已删除或无权访问")
+      : frozenTargetName;
     const metadata = [
       ["报告时间", shell.fmt(header.report_time)],
       ["观测范围", `${shell.fmt(header.observation_start)} 至 ${shell.fmt(header.observation_end)}`],
-      ["巡检目标", header.target_name || target?.display_name || "未记录"],
+      ["巡检目标", targetName],
       ["运行环境", header.environment || "未记录"],
       ["数据库类型 / 版本", `${header.database_type || target?.db_type || "未记录"} ${header.database_version || target?.version_code || ""}`.trim()],
       ["报告版本", `v${header.report_version || report.report_version || 1}`],

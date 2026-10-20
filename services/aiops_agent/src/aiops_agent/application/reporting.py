@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from importlib.resources import as_file, files
 from typing import Any
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from reportlab.lib.pagesizes import A4
@@ -75,6 +76,31 @@ _ALLOWED_SECTIONS = frozenset(
 def _report_display_text(value: object) -> str:
     """使用统一 AIOps 展示字典翻译报告文本。"""
     return display_text(value)
+
+
+def _target_name_for_presentation(
+    *, stored_name: object, target_id: object, report_context: dict[str, Any],
+) -> str:
+    """保留有效冻结名称，并为历史 UUID 名称投影当前 Target 名称。"""
+
+    normalized_id = str(target_id or "").strip()
+
+    def is_technical_identifier(value: object) -> bool:
+        normalized = str(value or "").strip()
+        if not normalized or (normalized_id and normalized == normalized_id):
+            return True
+        try:
+            UUID(normalized)
+        except (ValueError, AttributeError):
+            return False
+        return True
+
+    if not is_technical_identifier(stored_name):
+        return str(stored_name).strip()
+    current_name = report_context.get("target_display_name")
+    if not is_technical_identifier(current_name):
+        return str(current_name).strip()
+    return "目标已删除或无权访问"
 
 
 def _report_gap_item(value: object) -> str:
@@ -420,8 +446,10 @@ def _daily_inspection_presentation(
             "observation_end": (
                 metrics[0].get("window_end") if metrics else payload.get("period_end")
             ),
-            "target_name": str(
-                target.get("display_name") or payload.get("target_id") or "未记录"
+            "target_name": _target_name_for_presentation(
+                stored_name=target.get("display_name"),
+                target_id=target.get("target_id") or payload.get("target_id"),
+                report_context=report_context,
             ),
             "target_id": str(target.get("target_id") or payload.get("target_id") or ""),
             "environment": environment,
@@ -774,9 +802,18 @@ def _monthly_inspection_presentation(
         if report_id and report_date else str(payload.get("report_key") or "inspection.monthly")
     )
     scope_type = str(scope.get("scope_type") or "TARGET")
-    scope_name = str(
+    stored_scope_name = (
         scope.get("scope_name") or target.get("display_name")
-        or payload.get("target_id") or "未记录"
+        or payload.get("target_id")
+    )
+    scope_name = (
+        _target_name_for_presentation(
+            stored_name=stored_scope_name,
+            target_id=target.get("target_id") or payload.get("target_id"),
+            report_context=report_context,
+        )
+        if scope_type == "TARGET"
+        else str(stored_scope_name or "未记录")
     )
     conclusion = (
         f"本月覆盖 {coverage.get('completed_run_count', 0)} 次已完成巡检，"
