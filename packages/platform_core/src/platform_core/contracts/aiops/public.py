@@ -518,11 +518,67 @@ class LeadershipBriefing(AIOpsContract):
     recommendations: tuple[str, ...] = ()
 
 
+class DailyInspectionHeader(BaseModel):
+    """日常巡检正式报告头。"""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    report_time: str | None = None
+    observation_start: str | None = None
+    observation_end: str | None = None
+    target_name: str
+    target_id: str
+    environment: str
+    database_type: str
+    database_version: str
+    report_version: int = Field(ge=1)
+    report_number: str
+    responsibility_domain: str
+
+
+class DailyInspectionMetric(BaseModel):
+    """当前值与过去七日同口径基线的结构化对比。"""
+
+    model_config = ConfigDict(extra="allow")
+    metric_code: str
+    semantic_role: str
+    display_name: str
+    dimension_label: str
+    unit: str
+    current: float | None = None
+    current_display: str
+    baseline_average: float | None = None
+    baseline_display: str
+    deviation: float | None = None
+    deviation_display: str
+    deviation_percent: float | None = None
+    baseline_status: Literal["AVAILABLE", "INSUFFICIENT"]
+    coverage_ratio: float | None = None
+    coverage_percent: float | None = None
+    trend_points: tuple[dict[str, Any], ...] = ()
+
+
+class DailyInspectionPresentation(BaseModel):
+    """日常巡检报告的冻结结构化展示投影。"""
+
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["DAILY_INSPECTION_PRESENTATION.v1"]
+    header: DailyInspectionHeader
+    conclusion: dict[str, Any]
+    baseline_metrics: tuple[DailyInspectionMetric, ...] = ()
+    capacity_rows: tuple[DailyInspectionMetric, ...] = ()
+    findings: tuple[dict[str, Any], ...] = ()
+    recommendations: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
+    evidence_boundary: dict[str, Any]
+
+
 class ReportPresentation(BaseModel):
-    """报告预览投影。只约束领导简报，其余章节保持现有冻结结构。"""
+    """报告预览投影；日常巡检使用专用结构化展示合同。"""
 
     model_config = ConfigDict(extra="allow")
     leadership_briefing: LeadershipBriefing
+    daily_inspection: DailyInspectionPresentation | None = None
 
 
 DashboardHealth = Literal[

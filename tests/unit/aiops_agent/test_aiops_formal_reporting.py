@@ -200,6 +200,147 @@ class FormalReportingTest(unittest.TestCase):
             )
         )
 
+    def test_daily_inspection_projects_seven_day_baseline_and_pdf(self) -> None:
+        facts = [
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "db.response.latency",
+                "semantic_role": "RESPONSE_LATENCY",
+                "value_kind": "GAUGE",
+                "dimensions": "instance=oracle-1, job=oracle",
+                "latest": 38.0,
+                "average": 28.0,
+                "unit": "milliseconds",
+                "coverage_ratio": 0.94,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 168,
+                "daily_points": [
+                    {"date": f"2026-10-{day:02d}", "value": value}
+                    for day, value in zip(
+                        range(14, 21),
+                        (25, 27, 26, 29, 28, 30, 38),
+                        strict=True,
+                    )
+                ],
+            },
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "db.storage.used_bytes",
+                "semantic_role": "STORAGE_USED",
+                "value_kind": "GAUGE",
+                "dimensions": "tablespace=SYSTEM, type=PERMANENT",
+                "latest": 82 * 1024**3,
+                "average": 80 * 1024**3,
+                "unit": "bytes",
+                "coverage_ratio": 0.91,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 168,
+                "daily_points": [],
+            },
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "host.cpu.utilization",
+                "semantic_role": "CPU_UTILIZATION",
+                "value_kind": "GAUGE",
+                "dimensions": "instance=oracle-1",
+                "latest": 45.0,
+                "average": 40.0,
+                "unit": "percent",
+                "coverage_ratio": 0.72,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 101,
+                "daily_points": [],
+            },
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "db.availability",
+                "semantic_role": "AVAILABILITY",
+                "value_kind": "STATE",
+                "dimensions": "instance=oracle-1",
+                "latest": 1.0,
+                "average": 1.0,
+                "unit": "state",
+                "coverage_ratio": 1.0,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 168,
+                "daily_points": [],
+            },
+        ]
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            report_context={
+                "report_id": "01a1580c-42e5-72a2-b19b-9c73c77a5fff",
+                "report_version": 2,
+                "created_at": "2026-10-20T08:36:00+00:00",
+            },
+            payload={
+                "report_type": "INSPECTION_DAILY",
+                "report_key": "inspection.daily",
+                "target_id": "target-1",
+                "title": "数据库日常巡检报告",
+                "status": "READY",
+                "summary": "巡检完成。",
+                "period_start": "2026-10-20T00:00:00+00:00",
+                "period_end": "2026-10-20T08:30:00+00:00",
+                "scope": {
+                    "health_status": "MEDIUM",
+                    "evidence_coverage_percent": 100.0,
+                    "monitoring_sample_coverage_percent": 72.0,
+                    "evidence_total_count": 4,
+                    "target": {
+                        "target_id": "target-1",
+                        "display_name": "Oracle 生产库",
+                        "database_type": "ORACLE",
+                        "version_code": "19c",
+                        "environment": "PROD",
+                        "db_role": "PRIMARY",
+                    },
+                },
+                "facts": facts,
+                "gaps": (),
+                "recommendations": ("复核响应延迟偏离。",),
+                "evidence_refs": ({
+                    "artifact_id": "artifact-1",
+                    "content_hash": "a" * 64,
+                },),
+            },
+        )
+
+        daily = presentation["daily_inspection"]
+        metrics = {
+            item["metric_code"]: item
+            for item in daily["baseline_metrics"]
+        }
+        self.assertAlmostEqual(
+            35.71,
+            metrics["db.response.latency"]["deviation_percent"],
+            places=2,
+        )
+        self.assertEqual(
+            "AVAILABLE",
+            metrics["db.response.latency"]["baseline_status"],
+        )
+        self.assertEqual(
+            "INSUFFICIENT",
+            metrics["host.cpu.utilization"]["baseline_status"],
+        )
+        self.assertEqual(
+            "INSUFFICIENT",
+            metrics["db.availability"]["baseline_status"],
+        )
+        self.assertEqual(1, len(daily["capacity_rows"]))
+        self.assertNotIn(
+            "instance=oracle-1",
+            daily["baseline_metrics"][0]["dimension_label"],
+        )
+        pdf = render_pdf(presentation)
+        self.assertTrue(pdf.startswith(b"%PDF-"))
+        self.assertIn(b"/ToUnicode", pdf)
+
     def test_comparison_facts_are_projected_as_findings(self) -> None:
         template = SYSTEM_REPORT_TEMPLATES["system:comparison.standard"]
         presentation = report_presentation(

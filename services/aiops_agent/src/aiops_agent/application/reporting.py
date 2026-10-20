@@ -16,6 +16,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Circle, Drawing, Line, PolyLine
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
@@ -25,8 +26,11 @@ from aiops_agent.application.errors import validation_failed
 from aiops_agent.application.display_dictionary import (
     display_field_name,
     display_field_value,
+    display_metric_dimensions,
+    display_metric_name,
     display_name,
     display_text,
+    format_metric_value,
 )
 from aiops_agent.application.leadership import project_leadership_briefing
 
@@ -218,6 +222,255 @@ def _report_fact_items(facts: list[dict[str, Any]]) -> list[str]:
             summary = f"{summary} 关键观测：{'；'.join(rows)}"
         result.append(summary)
     return result
+
+
+def _number(value: object) -> float | None:
+    """将冻结证据中的数值安全收敛为展示计算可用的浮点数。"""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _window_days(start: object, end: object) -> float | None:
+    """计算监控窗口长度；历史报告缺少窗口字段时不伪造七日基线。"""
+    try:
+        left = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        right = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (right - left).total_seconds() / 86_400)
+
+
+def _daily_metric_projection(fact: dict[str, Any]) -> dict[str, Any]:
+    """把一条监控事实投影为七日基线、偏离和小倍数序列。"""
+    current = _number(fact.get("latest"))
+    baseline = _number(fact.get("average"))
+    coverage = _number(fact.get("coverage_ratio"))
+    window_days = _window_days(
+        fact.get("window_start"), fact.get("window_end")
+    )
+    value_kind = str(fact.get("value_kind") or "")
+    baseline_available = (
+        value_kind != "STATE"
+        and current is not None
+        and baseline is not None
+        and baseline != 0
+        and coverage is not None
+        and coverage >= 0.8
+        and window_days is not None
+        and window_days >= 6.5
+    )
+    deviation = current - baseline if baseline_available else None
+    deviation_percent = (
+        deviation / baseline * 100
+        if deviation is not None and baseline is not None
+        else None
+    )
+    unit = str(fact.get("unit") or "")
+    dimensions = str(fact.get("dimensions") or "-")
+    points = []
+    for item in fact.get("daily_points") or ():
+        if not isinstance(item, dict):
+            continue
+        value = _number(item.get("value"))
+        date = str(item.get("date") or "")
+        if value is None or not date:
+            continue
+        points.append({
+            "date": date,
+            "value": value,
+            "baseline_index": (
+                round(value / baseline * 100, 2)
+                if baseline_available and baseline is not None else None
+            ),
+        })
+    metric_code = str(fact.get("metric_code") or "")
+    dimension_label = display_metric_dimensions(dimensions).strip()
+    return {
+        "metric_code": metric_code,
+        "semantic_role": str(fact.get("semantic_role") or ""),
+        "display_name": display_metric_name(metric_code),
+        "dimension_label": dimension_label,
+        "unit": unit,
+        "current": current,
+        "current_display": format_metric_value(current, unit),
+        "baseline_average": baseline if baseline_available else None,
+        "baseline_display": (
+            format_metric_value(baseline, unit)
+            if baseline_available else "基线不足"
+        ),
+        "deviation": deviation,
+        "deviation_display": (
+            format_metric_value(deviation, unit)
+            if deviation is not None else "基线不足"
+        ),
+        "deviation_percent": (
+            round(deviation_percent, 2)
+            if deviation_percent is not None else None
+        ),
+        "baseline_status": (
+            "AVAILABLE" if baseline_available else "INSUFFICIENT"
+        ),
+        "coverage_ratio": coverage,
+        "coverage_percent": (
+            round(coverage * 100, 2) if coverage is not None else None
+        ),
+        "window_start": fact.get("window_start"),
+        "window_end": fact.get("window_end"),
+        "sample_count": fact.get("sample_count"),
+        "trend_points": points,
+    }
+
+
+def _daily_inspection_presentation(
+    *,
+    payload: dict[str, Any],
+    report_context: dict[str, Any],
+) -> dict[str, Any]:
+    """生成日常巡检专用的正式报告结构，文字编辑不能覆盖指标证据。"""
+    scope = dict(payload.get("scope") or {})
+    target = dict(scope.get("target") or {})
+    overrides = dict(payload.get("presentation_overrides") or {})
+    metrics = [
+        _daily_metric_projection(item)
+        for item in payload.get("facts") or ()
+        if isinstance(item, dict)
+        and item.get("kind") == "inspection_monitoring_metric"
+    ]
+    metrics.sort(key=lambda item: (
+        item["baseline_status"] != "AVAILABLE",
+        -abs(item["deviation_percent"] or 0),
+        item["display_name"],
+    ))
+    capacity_roles = {
+        "STORAGE_UTILIZATION", "STORAGE_USED", "STORAGE_FREE",
+        "STORAGE_MAX", "DATABASE_SIZE", "FILESYSTEM_UTILIZATION",
+    }
+    capacity_rows = [
+        item for item in metrics
+        if item.get("semantic_role") in capacity_roles
+    ]
+    attention_statuses = {"FINDING", "PARTIAL", "GAP", "MISSING", "BREACHED"}
+    finding_rows = []
+    for fact in payload.get("facts") or ():
+        if not isinstance(fact, dict):
+            continue
+        status = str(fact.get("check_status") or "")
+        if status not in attention_statuses:
+            continue
+        severities = [
+            str(item.get("severity") or "")
+            for item in fact.get("findings") or ()
+            if isinstance(item, dict)
+        ]
+        finding_rows.append({
+            "finding_id": f"F{len(finding_rows) + 1:02d}",
+            "title": str(fact.get("title") or "巡检发现"),
+            "status": status,
+            "severity": severities[0] if severities else "INFO",
+            "summary": _report_display_text(
+                fact.get("summary") or "已记录需复核的巡检发现。"
+            ),
+        })
+    gaps = _report_gap_items(list(payload.get("gaps") or ()))
+    available_metrics = [
+        item for item in metrics if item["baseline_status"] == "AVAILABLE"
+    ]
+    top_deviation = available_metrics[0] if available_metrics else None
+    health_status = str(scope.get("health_status") or "UNKNOWN")
+    conclusion = str(payload.get("summary") or "本次日常巡检已完成。")
+    if top_deviation is not None:
+        sign = "+" if float(top_deviation["deviation_percent"]) >= 0 else ""
+        conclusion += (
+            f" 最大可计算偏离为{top_deviation['display_name']}"
+            f"{top_deviation['dimension_label']} {sign}"
+            f"{top_deviation['deviation_percent']:.2f}%，"
+            "该偏离只表示相对七日基线的变化，需结合指标方向和业务时段复核。"
+        )
+    elif metrics:
+        conclusion += " 当前监控证据不足以形成可靠的过去七日基线偏离。"
+    edited_conclusion = overrides.get("EXECUTIVE_SUMMARY")
+    if isinstance(edited_conclusion, (list, tuple)) and edited_conclusion:
+        conclusion = " ".join(str(item) for item in edited_conclusion)
+    environment = _report_display_text(target.get("environment") or "未记录")
+    database_type = str(
+        target.get("database_type") or scope.get("database_type") or "未记录"
+    )
+    database_version = str(target.get("version_code") or "未记录")
+    db_role = _report_display_text(target.get("db_role") or "数据库运维")
+    report_id = str(report_context.get("report_id") or "")
+    report_date = str(payload.get("period_end") or "")[:10].replace("-", "")
+    report_number = (
+        f"AIOPS-DI-{report_date}-{report_id[-8:].upper()}"
+        if report_id and report_date else str(payload.get("report_key") or "inspection.daily")
+    )
+    check_counts = dict(scope.get("check_status_counts") or {})
+    total_checks = int(scope.get("evidence_total_count") or sum(check_counts.values()))
+    return {
+        "schema_version": "DAILY_INSPECTION_PRESENTATION.v1",
+        "header": {
+            "title": str(payload.get("title") or "数据库日常巡检报告"),
+            "report_time": report_context.get("created_at") or payload.get("period_end"),
+            "observation_start": (
+                metrics[0].get("window_start") if metrics else payload.get("period_start")
+            ),
+            "observation_end": (
+                metrics[0].get("window_end") if metrics else payload.get("period_end")
+            ),
+            "target_name": str(
+                target.get("display_name") or payload.get("target_id") or "未记录"
+            ),
+            "target_id": str(target.get("target_id") or payload.get("target_id") or ""),
+            "environment": environment,
+            "database_type": database_type,
+            "database_version": database_version,
+            "report_version": int(report_context.get("report_version") or 1),
+            "report_number": report_number,
+            "responsibility_domain": f"数据库平台 / {db_role} / {environment}运维",
+        },
+        "conclusion": {
+            "text": conclusion,
+            "health_status": health_status,
+            "health_status_display": _report_display_text(health_status),
+            "total_checks": total_checks,
+            "attention_count": len(finding_rows),
+            "gap_count": len(gaps),
+            "evidence_coverage_percent": scope.get("evidence_coverage_percent"),
+            "monitoring_coverage_percent": scope.get(
+                "monitoring_sample_coverage_percent"
+            ),
+        },
+        "baseline_metrics": metrics,
+        "capacity_rows": capacity_rows,
+        "findings": finding_rows,
+        "finding_notes": [
+            _report_display_text(item)
+            for item in overrides.get("FINDINGS") or ()
+        ],
+        "recommendations": [
+            _report_display_text(item)
+            for item in (
+                overrides.get("RECOMMENDATIONS")
+                or payload.get("recommendations")
+                or ()
+            )
+        ],
+        "gaps": gaps,
+        "evidence_boundary": {
+            "methodology": (
+                "当前值取七日监控窗口内最新有效样本；基线取同一窗口、同一维度和同一口径的样本均值。"
+                "采样覆盖率低于 80%、窗口不足 6.5 天、基线为零或状态类指标均不计算偏离。"
+            ),
+            "sources": [
+                f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
+                for item in payload.get("evidence_refs") or ()
+                if isinstance(item, dict)
+            ],
+        },
+    }
 
 
 def closed_period_window(
@@ -600,6 +853,7 @@ def normalize_report_source(
 def report_presentation(
     *, payload: dict[str, Any], template: ReportTemplate,
     findings: tuple[Any, ...] | list[Any] = (),
+    report_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把不可变报告内容投影为前端预览和文档渲染的共同输入。"""
     facts = list(payload.get("facts") or ())
@@ -663,7 +917,7 @@ def report_presentation(
     briefing = project_leadership_briefing(
         payload=payload, findings=findings,
     )
-    return {
+    presentation = {
         "schema_version": "REPORT_PRESENTATION.v1",
         "title": payload.get("title") or template.display_name,
         "status": payload.get("status"),
@@ -675,6 +929,15 @@ def report_presentation(
         "sections": section_data,
         "leadership_briefing": _report_briefing_display(briefing),
     }
+    if (
+        str(payload.get("report_type") or "") == "INSPECTION_DAILY"
+        or template.template_ref == "system:inspection.daily"
+    ):
+        presentation["daily_inspection"] = _daily_inspection_presentation(
+            payload=payload,
+            report_context=dict(report_context or {}),
+        )
+    return presentation
 
 
 def _pdf_text(value: str) -> str:
@@ -716,6 +979,194 @@ def _report_page_chrome(canvas: Canvas, document: SimpleDocTemplate) -> None:
     canvas.restoreState()
 
 
+def _pdf_trend_chart(metric: dict[str, Any]) -> Drawing:
+    """用七日基线指数绘制可缩放、可打印的小倍数趋势。"""
+    width = 31 * mm
+    height = 11 * mm
+    drawing = Drawing(width, height)
+    drawing.add(Line(0, height / 2, width, height / 2, strokeColor=colors.HexColor("#B7C1C8"), strokeWidth=0.5))
+    points = [
+        item for item in metric.get("trend_points") or ()
+        if isinstance(item, dict) and _number(item.get("baseline_index")) is not None
+    ]
+    if len(points) < 2:
+        return drawing
+    values = [float(item["baseline_index"]) for item in points]
+    low = min(min(values), 90.0)
+    high = max(max(values), 110.0)
+    span = max(high - low, 1.0)
+    coordinates = []
+    for index, value in enumerate(values):
+        x = width * index / (len(values) - 1)
+        y = 1.5 * mm + (height - 3 * mm) * (value - low) / span
+        coordinates.extend((x, y))
+    drawing.add(PolyLine(
+        coordinates,
+        strokeColor=colors.HexColor("#244C73"),
+        strokeWidth=1.2,
+    ))
+    drawing.add(Circle(
+        coordinates[-2], coordinates[-1], 1.2 * mm,
+        fillColor=colors.HexColor("#244C73"), strokeColor=None,
+    ))
+    return drawing
+
+
+def _daily_pdf_story(
+    *,
+    presentation: dict[str, Any],
+    font_name: str,
+    body: ParagraphStyle,
+    section: ParagraphStyle,
+    cover_title: ParagraphStyle,
+) -> list[Any]:
+    """按正式日常巡检版式生成表格和图形化 PDF story。"""
+    daily = dict(presentation.get("daily_inspection") or {})
+    header = dict(daily.get("header") or {})
+    conclusion = dict(daily.get("conclusion") or {})
+    story: list[Any] = [
+        Paragraph(_pdf_paragraph(header.get("title") or presentation.get("title")), cover_title),
+        Paragraph("数据库日常巡检 · 正式运维报告", body),
+        Spacer(1, 5 * mm),
+    ]
+    metadata = [
+        ["报告时间", header.get("report_time") or "未记录", "报告编号", header.get("report_number") or "未记录"],
+        ["观测范围", f"{header.get('observation_start') or '未记录'} 至 {header.get('observation_end') or '未记录'}", "报告版本", f"v{header.get('report_version') or 1}"],
+        ["巡检目标", header.get("target_name") or "未记录", "运行环境", header.get("environment") or "未记录"],
+        ["数据库", f"{header.get('database_type') or '未记录'} {header.get('database_version') or ''}".strip(), "责任域", header.get("responsibility_domain") or "数据库运维"],
+    ]
+    metadata_table = Table(
+        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in metadata],
+        colWidths=(23 * mm, 61 * mm, 23 * mm, 63 * mm),
+    )
+    metadata_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF1F2")),
+        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#EEF1F2")),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#52616A")),
+        ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#52616A")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#C6CDD1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.extend((metadata_table, Spacer(1, 7 * mm)))
+    story.append(Paragraph("报告结论", section))
+    story.append(Paragraph(_pdf_paragraph(conclusion.get("text") or "未形成结论"), body))
+    ledger = [
+        ["整体健康", conclusion.get("health_status_display") or "未判定"],
+        ["数据库检查覆盖率", f"{conclusion.get('evidence_coverage_percent') if conclusion.get('evidence_coverage_percent') is not None else '未记录'}%"],
+        ["监控采样覆盖率", f"{conclusion.get('monitoring_coverage_percent') if conclusion.get('monitoring_coverage_percent') is not None else '未记录'}%"],
+        ["需关注 / 数据缺口", f"{conclusion.get('attention_count') or 0} / {conclusion.get('gap_count') or 0}"],
+    ]
+    ledger_table = Table(
+        [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in ledger],
+        colWidths=(48 * mm, 122 * mm),
+        hAlign="LEFT",
+    )
+    ledger_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9BA8AF")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D3D9DC")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7F8F7")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.extend((ledger_table, Spacer(1, 6 * mm)))
+
+    metrics = list(daily.get("baseline_metrics") or ())
+    story.append(Paragraph("关键指标与过去 7 日基线偏离", section))
+    metric_rows: list[list[Any]] = [[
+        "指标", "范围", "当前值", "七日均值", "偏离", "覆盖率", "七日趋势",
+    ]]
+    for metric in metrics:
+        deviation = (
+            f"{float(metric['deviation_percent']):+.2f}%"
+            if metric.get("deviation_percent") is not None else "基线不足"
+        )
+        metric_rows.append([
+            Paragraph(_pdf_paragraph(metric.get("display_name") or "指标"), body),
+            Paragraph(_pdf_paragraph(metric.get("dimension_label") or "全部"), body),
+            Paragraph(_pdf_paragraph(metric.get("current_display") or "无有效值"), body),
+            Paragraph(_pdf_paragraph(metric.get("baseline_display") or "基线不足"), body),
+            Paragraph(_pdf_paragraph(deviation), body),
+            Paragraph(_pdf_paragraph(
+                f"{metric.get('coverage_percent')}%" if metric.get("coverage_percent") is not None else "未记录"
+            ), body),
+            _pdf_trend_chart(metric),
+        ])
+    metric_table = Table(
+        metric_rows,
+        repeatRows=1,
+        colWidths=(29 * mm, 27 * mm, 25 * mm, 25 * mm, 19 * mm, 17 * mm, 31 * mm),
+    )
+    metric_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8ECEE")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.7, colors.HexColor("#415965")),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#D0D5D8")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.extend((metric_table, Spacer(1, 5 * mm)))
+
+    capacity = list(daily.get("capacity_rows") or ())
+    if capacity:
+        story.append(Paragraph("七日趋势与容量明细", section))
+        capacity_rows: list[list[Any]] = [["容量指标", "范围", "当前值", "七日均值", "偏离"]]
+        for metric in capacity:
+            capacity_rows.append([
+                metric.get("display_name") or "容量指标",
+                metric.get("dimension_label") or "全部",
+                metric.get("current_display") or "无有效值",
+                metric.get("baseline_display") or "基线不足",
+                (
+                    f"{float(metric['deviation_percent']):+.2f}%"
+                    if metric.get("deviation_percent") is not None else "基线不足"
+                ),
+            ])
+        capacity_table = Table(
+            [[Paragraph(_pdf_paragraph(cell), body) for cell in row] for row in capacity_rows],
+            repeatRows=1,
+            colWidths=(35 * mm, 46 * mm, 31 * mm, 31 * mm, 27 * mm),
+        )
+        capacity_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), font_name),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8ECEE")),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#C9D0D4")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.extend((capacity_table, Spacer(1, 5 * mm)))
+
+    for title, key, empty in (
+        ("发现问题", "findings", "未发现需要单列的问题。"),
+        ("处置建议", "recommendations", "当前没有新增处置建议。"),
+        ("数据缺口", "gaps", "未发现额外的数据缺口。"),
+    ):
+        story.append(Paragraph(title, section))
+        items = list(daily.get(key) or ())
+        if not items:
+            items = [empty]
+        for item in items:
+            if isinstance(item, dict):
+                value = f"{item.get('finding_id', '')} {item.get('title', '')}：{item.get('summary', '')}".strip()
+            else:
+                value = str(item)
+            story.append(Paragraph(_pdf_paragraph(value), body, bulletText="•"))
+    boundary = dict(daily.get("evidence_boundary") or {})
+    story.append(Paragraph("证据边界", section))
+    story.append(Paragraph(_pdf_paragraph(boundary.get("methodology") or "以冻结证据为准。"), body))
+    for item in boundary.get("sources") or ():
+        story.append(Paragraph(_pdf_paragraph(item), body, bulletText="•"))
+    return story
+
+
 def render_pdf(presentation: dict[str, Any]) -> bytes:
     """以标准 PDF 生成器输出可显示、复制和搜索的中文报告。"""
     font_name = _pdf_report_font_name()
@@ -742,6 +1193,19 @@ def render_pdf(presentation: dict[str, Any]) -> bytes:
         "封面副标题", parent=body, fontSize=10, leading=16,
         textColor=colors.HexColor("#557080"), spaceAfter=20,
     )
+    if presentation.get("daily_inspection"):
+        document.build(
+            _daily_pdf_story(
+                presentation=presentation,
+                font_name=font_name,
+                body=body,
+                section=section,
+                cover_title=cover_title,
+            ),
+            onFirstPage=_report_page_chrome,
+            onLaterPages=_report_page_chrome,
+        )
+        return buffer.getvalue()
     story = [Spacer(1, 38 * mm)]
     story.append(Paragraph(_pdf_paragraph(presentation.get("title") or "AIOps 正式报告"), cover_title))
     template = dict(presentation.get("template") or {})

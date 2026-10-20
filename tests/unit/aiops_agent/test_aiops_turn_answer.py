@@ -1604,6 +1604,14 @@ class DbaTurnAnswerTest(unittest.TestCase):
             7.0,
             used_row[columns["history_elapsed_days"]],
         )
+        self.assertEqual(
+            "STORAGE_USED",
+            used_row[columns["semantic_role"]],
+        )
+        self.assertEqual("GAUGE", used_row[columns["value_kind"]])
+        daily_points = json.loads(used_row[columns["daily_points"]])
+        self.assertEqual(8, len(daily_points))
+        self.assertEqual(points[-1]["observed_at"][:10], daily_points[-1]["date"])
 
         assessment = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(

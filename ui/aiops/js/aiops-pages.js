@@ -736,7 +736,79 @@
     return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("健康状态", shell.escape(healthStatusLabel))}${item("证据完整性", reportStatusBadge(report.status))}${item("数据库类型", shell.escape(scope.database_type || target?.db_type || "未记录"))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("数据库检查覆盖率", `<strong>${shell.escape(coverage)}</strong><small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>`, "ops-report-coverage")}${item("监控采样覆盖率", `<strong>${shell.escape(monitoringCoverage)}</strong>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("数据缺口", `${shell.escape(Number.isFinite(Number(scope.evidence_gap_count)) ? Number(scope.evidence_gap_count) : "未记录")} 项`)}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
   }
 
+  function dailyTrendSvg(metric, compact = false) {
+    const points = (metric.trend_points || [])
+      .map((item) => Number(item.baseline_index))
+      .filter((value) => Number.isFinite(value));
+    if (points.length < 2) return '<span class="daily-no-baseline">基线不足</span>';
+    const low = Math.min(85, ...points);
+    const high = Math.max(115, ...points);
+    const span = Math.max(1, high - low);
+    const width = compact ? 112 : 184;
+    const height = compact ? 30 : 68;
+    const coordinates = points.map((value, index) => {
+      const x = points.length === 1 ? width : index * width / (points.length - 1);
+      const y = height - 5 - ((value - low) / span) * (height - 10);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    const last = coordinates.split(" ").at(-1).split(",");
+    const baselineY = (height - 5 - ((100 - low) / span) * (height - 10)).toFixed(1);
+    return `<svg class="daily-trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${shell.escape(metric.display_name || "指标")}七日趋势"><line x1="0" y1="${baselineY}" x2="${width}" y2="${baselineY}"/><polyline points="${coordinates}"/><circle cx="${last[0]}" cy="${last[1]}" r="2.8"/></svg>`;
+  }
+
+  function dailyDeviationHtml(metric) {
+    const percent = Number(metric.deviation_percent);
+    const available = metric.baseline_status === "AVAILABLE" && Number.isFinite(percent);
+    const bounded = available ? Math.max(-50, Math.min(50, percent)) : 0;
+    const start = bounded < 0 ? 50 + bounded : 50;
+    const width = Math.abs(bounded);
+    const percentLabel = available ? `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}%` : "基线不足";
+    return `<div class="daily-deviation-row"><div class="daily-metric-name"><strong>${shell.escape(metric.display_name || "指标")}</strong><small>${shell.escape(metric.dimension_label || "全部范围")}</small></div><div class="daily-deviation-track" aria-label="${shell.escape(percentLabel)}"><i></i>${available ? `<span class="${percent >= 0 ? "positive" : "negative"}" style="left:${start}%;width:${width}%"></span>` : ""}</div><div class="daily-current"><strong>${shell.escape(metric.current_display || "无有效值")}</strong><small>当前值</small></div><div class="daily-delta ${available && Math.abs(percent) >= 20 ? "attention" : ""}"><strong>${shell.escape(percentLabel)}</strong><small>${available ? `七日均值 ${shell.escape(metric.baseline_display)}` : `覆盖率 ${shell.escape(metric.coverage_percent ?? "未记录")}%`}</small></div></div>`;
+  }
+
+  function dailyInspectionReportHtml(data, report, versions, target) {
+    const daily = data.daily_inspection || {};
+    const header = daily.header || {};
+    const conclusion = daily.conclusion || {};
+    const metrics = Array.isArray(daily.baseline_metrics) ? daily.baseline_metrics : [];
+    const capacity = Array.isArray(daily.capacity_rows) ? daily.capacity_rows : [];
+    const findings = Array.isArray(daily.findings) ? daily.findings : [];
+    const findingNotes = Array.isArray(daily.finding_notes) ? daily.finding_notes : [];
+    const recommendations = Array.isArray(daily.recommendations) ? daily.recommendations : [];
+    const gaps = Array.isArray(daily.gaps) ? daily.gaps : [];
+    const boundary = daily.evidence_boundary || {};
+    const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
+    const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
+    const sourceLink = report.source_conversation_id ? `<a href="./chat.html?conversation=${encodeURIComponent(report.source_conversation_id)}">查看来源会话</a>` : "";
+    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
+    const metadata = [
+      ["报告时间", shell.fmt(header.report_time)],
+      ["观测范围", `${shell.fmt(header.observation_start)} 至 ${shell.fmt(header.observation_end)}`],
+      ["巡检目标", header.target_name || target?.display_name || "未记录"],
+      ["运行环境", header.environment || "未记录"],
+      ["数据库类型 / 版本", `${header.database_type || target?.db_type || "未记录"} ${header.database_version || target?.version_code || ""}`.trim()],
+      ["报告版本", `v${header.report_version || report.report_version || 1}`],
+      ["报告编号", header.report_number || report.report_key || "未记录"],
+      ["责任域", header.responsibility_domain || "数据库运维"],
+    ].map(([label, value]) => `<div><dt>${shell.escape(label)}</dt><dd>${shell.escape(value)}</dd></div>`).join("");
+    const stat = (label, value, className = "") => `<div class="${className}"><span>${shell.escape(label)}</span><strong>${shell.escape(value)}</strong></div>`;
+    const coverage = conclusion.evidence_coverage_percent == null ? "未记录" : `${conclusion.evidence_coverage_percent}%`;
+    const monitoringCoverage = conclusion.monitoring_coverage_percent == null ? "未记录" : `${conclusion.monitoring_coverage_percent}%`;
+    const trendCards = metrics.slice(0, 6).map((metric) => {
+      const delta = metric.deviation_percent == null ? "基线不足" : `${Number(metric.deviation_percent) >= 0 ? "+" : ""}${Number(metric.deviation_percent).toFixed(2)}%`;
+      return `<figure class="daily-trend-card"><figcaption><strong>${shell.escape(metric.display_name || "指标")}</strong><span>${shell.escape(delta)}</span></figcaption>${dailyTrendSvg(metric)}</figure>`;
+    }).join("") || '<p class="daily-empty">当前报告没有可绘制的七日趋势。</p>';
+    const capacityRows = capacity.map((metric) => `<tr><td><strong>${shell.escape(metric.display_name || "容量指标")}</strong><small>${shell.escape(metric.dimension_label || "全部范围")}</small></td><td>${shell.escape(metric.current_display || "无有效值")}</td><td>${shell.escape(metric.baseline_display || "基线不足")}</td><td>${metric.deviation_percent == null ? "基线不足" : `${Number(metric.deviation_percent) >= 0 ? "+" : ""}${shell.escape(Number(metric.deviation_percent).toFixed(2))}%`}</td><td>${shell.escape(metric.coverage_percent ?? "未记录")}%</td><td>${dailyTrendSvg(metric, true)}</td></tr>`).join("");
+    const findingRows = findings.map((item) => `<article class="daily-finding"><span>${shell.escape(item.finding_id || "F")}</span><div><h3>${shell.escape(item.title || "巡检发现")}</h3><p>${shell.escape(reportDisplayText(item.summary || ""))}</p></div><strong>${shell.badge(item.status || item.severity || "INFO")}</strong></article>`).join("");
+    const findingNoteRows = findingNotes.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("");
+    const evidenceSources = (boundary.sources || []).map((item) => `<li>${shell.escape(item)}</li>`).join("");
+    return `<article class="ops-report-presentation daily-formal-report"><header class="daily-report-head"><div class="daily-report-kicker">KBot AIOps · 正式运维报告</div><div class="daily-report-title-row"><div><h1>${shell.escape(header.title || data.title || report.title || "数据库日常巡检报告")}</h1><p>报告以冻结的结构化巡检证据生成；偏离只表示相对七日基线的变化。</p>${sourceLink}</div><div class="ops-actions">${actionButtons}</div></div><dl class="daily-report-metadata">${metadata}</dl></header><section class="daily-conclusion"><div><p class="daily-section-kicker">REPORT CONCLUSION</p><h2>报告结论</h2></div><p class="daily-conclusion-copy">${shell.escape(conclusion.text || "未形成报告结论。")}</p><div class="daily-conclusion-ledger">${stat("整体健康", conclusion.health_status_display || "未判定")}${stat("数据库检查覆盖率", coverage)}${stat("监控采样覆盖率", monitoringCoverage, Number(conclusion.monitoring_coverage_percent) < 80 ? "attention" : "")}${stat("需关注 / 数据缺口", `${conclusion.attention_count || 0} / ${conclusion.gap_count || 0}`)}</div></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">BASELINE DEVIATION</p><h2>关键指标与过去 7 日基线偏离</h2></div><p>偏离百分比 =（当前值 − 七日同口径均值）÷ 七日均值</p></header><div class="daily-deviation-list">${metrics.map(dailyDeviationHtml).join("") || '<p class="daily-empty">当前报告没有监控指标证据。</p>'}</div></section><section class="daily-report-section daily-trends"><header><div><p class="daily-section-kicker">SEVEN-DAY TREND</p><h2>七日趋势 · 小倍数</h2></div><p>各序列换算为七日均值指数 100，共享阅读口径。</p></header><div class="daily-trend-grid">${trendCards}</div></section>${capacityRows ? `<section class="daily-report-section"><header><div><p class="daily-section-kicker">CAPACITY DETAIL</p><h2>七日趋势与容量明细</h2></div><p>同类指标保持一行内可比。</p></header><div class="daily-table-wrap"><table class="daily-report-table"><thead><tr><th>容量指标</th><th>当前值</th><th>七日均值</th><th>偏离</th><th>覆盖率</th><th>七日趋势</th></tr></thead><tbody>${capacityRows}</tbody></table></div></section>` : ""}<section class="daily-report-section"><header><div><p class="daily-section-kicker">VERIFIED FINDINGS</p><h2>发现问题</h2></div><p>仅列经规则或证据边界确认需要关注的项目。</p></header><div class="daily-findings">${findingRows || '<p class="daily-empty">未发现需要单列的问题。</p>'}</div>${findingNoteRows ? `<ul class="daily-notes">${findingNoteRows}</ul>` : ""}</section><section class="daily-report-section"><header><div><p class="daily-section-kicker">RECOMMENDATIONS</p><h2>处置建议</h2></div><p>建议应回指发现或数据缺口，并给出复核条件。</p></header><ol class="daily-notes">${recommendations.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("") || "<li>当前没有新增处置建议。</li>"}</ol></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">DATA GAPS</p><h2>数据缺口</h2></div><p>无数据不等于异常；缺口与业务健康结论分开呈现。</p></header><ol class="daily-notes daily-gaps">${gaps.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("") || "<li>未发现额外的数据缺口。</li>"}</ol></section><section class="daily-evidence"><h2>证据边界</h2><p>${shell.escape(boundary.methodology || "以冻结证据为准。")}</p>${evidenceSources ? `<ol>${evidenceSources}</ol>` : ""}<div class="daily-version-row"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>人工编辑只修改文字章节，结构化指标、七日基线和证据边界保持冻结。</p></div></section><footer class="daily-report-footer"><span>KBot AIOps · 正式运维报告</span><span>${shell.escape(header.report_number || report.report_key || "")} · v${shell.escape(header.report_version || report.report_version || 1)}</span></footer></article>`;
+  }
+
   function reportPresentationHtml(data, report, versions, target) {
+    if (data?.daily_inspection?.schema_version === "DAILY_INSPECTION_PRESENTATION.v1") {
+      return dailyInspectionReportHtml(data, report, versions, target);
+    }
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");

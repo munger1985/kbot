@@ -2730,6 +2730,302 @@
         "title": "CredentialIssueResponse",
         "type": "object"
       },
+      "DailyInspectionHeader": {
+        "additionalProperties": false,
+        "description": "日常巡检正式报告头。",
+        "properties": {
+          "database_type": {
+            "title": "Database Type",
+            "type": "string"
+          },
+          "database_version": {
+            "title": "Database Version",
+            "type": "string"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "observation_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation End"
+          },
+          "observation_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Start"
+          },
+          "report_number": {
+            "title": "Report Number",
+            "type": "string"
+          },
+          "report_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Time"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "responsibility_domain": {
+            "title": "Responsibility Domain",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "target_name",
+          "target_id",
+          "environment",
+          "database_type",
+          "database_version",
+          "report_version",
+          "report_number",
+          "responsibility_domain"
+        ],
+        "title": "DailyInspectionHeader",
+        "type": "object"
+      },
+      "DailyInspectionMetric": {
+        "additionalProperties": true,
+        "description": "当前值与过去七日同口径基线的结构化对比。",
+        "properties": {
+          "baseline_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Average"
+          },
+          "baseline_display": {
+            "title": "Baseline Display",
+            "type": "string"
+          },
+          "baseline_status": {
+            "enum": [
+              "AVAILABLE",
+              "INSUFFICIENT"
+            ],
+            "title": "Baseline Status",
+            "type": "string"
+          },
+          "coverage_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Percent"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "current_display": {
+            "title": "Current Display",
+            "type": "string"
+          },
+          "deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation"
+          },
+          "deviation_display": {
+            "title": "Deviation Display",
+            "type": "string"
+          },
+          "deviation_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation Percent"
+          },
+          "dimension_label": {
+            "title": "Dimension Label",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "semantic_role": {
+            "title": "Semantic Role",
+            "type": "string"
+          },
+          "trend_points": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Trend Points",
+            "type": "array"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_code",
+          "semantic_role",
+          "display_name",
+          "dimension_label",
+          "unit",
+          "current_display",
+          "baseline_display",
+          "deviation_display",
+          "baseline_status"
+        ],
+        "title": "DailyInspectionMetric",
+        "type": "object"
+      },
+      "DailyInspectionPresentation": {
+        "additionalProperties": true,
+        "description": "日常巡检报告的冻结结构化展示投影。",
+        "properties": {
+          "baseline_metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Baseline Metrics",
+            "type": "array"
+          },
+          "capacity_rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Capacity Rows",
+            "type": "array"
+          },
+          "conclusion": {
+            "additionalProperties": true,
+            "title": "Conclusion",
+            "type": "object"
+          },
+          "evidence_boundary": {
+            "additionalProperties": true,
+            "title": "Evidence Boundary",
+            "type": "object"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "gaps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "header": {
+            "$ref": "#/components/schemas/DailyInspectionHeader"
+          },
+          "recommendations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "DAILY_INSPECTION_PRESENTATION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "header",
+          "conclusion",
+          "evidence_boundary"
+        ],
+        "title": "DailyInspectionPresentation",
+        "type": "object"
+      },
       "DashboardActivityItem": {
         "additionalProperties": false,
         "properties": {
@@ -10334,8 +10630,18 @@
       },
       "ReportPresentation": {
         "additionalProperties": true,
-        "description": "报告预览投影。只约束领导简报，其余章节保持现有冻结结构。",
+        "description": "报告预览投影；日常巡检使用专用结构化展示合同。",
         "properties": {
+          "daily_inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyInspectionPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "leadership_briefing": {
             "$ref": "#/components/schemas/LeadershipBriefing"
           }

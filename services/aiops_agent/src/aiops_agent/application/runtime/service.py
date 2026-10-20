@@ -3252,6 +3252,7 @@ class AIOpsRuntimeService:
             dict(plan.get("monitoring") or {}).get("monitoring_profile") or {}
         )
         monitoring_quality = self._inspection_monitoring_quality(source)
+        target_snapshot = dict(plan.get("target") or {})
         content = ReportContent(
             report_key=report_key,
             report_type=report_type,
@@ -3290,6 +3291,18 @@ class AIOpsRuntimeService:
                     "low_coverage_metric_count"
                 ],
                 "evidence_gap_count": len(gaps),
+                "target": {
+                    "target_id": str(run.target_id),
+                    "display_name": str(
+                        target_snapshot.get("display_name") or run.target_id
+                    ),
+                    "database_type": str(
+                        target_snapshot.get("db_type") or "ORACLE"
+                    ),
+                    "version_code": target_snapshot.get("version_code"),
+                    "environment": target_snapshot.get("environment"),
+                    "db_role": target_snapshot.get("db_role"),
+                },
                 **(
                     {"monitoring_profile": monitoring_profile}
                     if monitoring_profile
@@ -3506,6 +3519,25 @@ class AIOpsRuntimeService:
                 average = row[indexes["average"]] if "average" in indexes else None
                 maximum = row[indexes["maximum"]] if "maximum" in indexes else None
                 sample_count = row[indexes["sample_count"]] if "sample_count" in indexes else None
+                coverage_ratio = row[indexes["coverage_ratio"]] if "coverage_ratio" in indexes else None
+                window_start = row[indexes["window_start"]] if "window_start" in indexes else None
+                window_end = row[indexes["window_end"]] if "window_end" in indexes else None
+                history_elapsed_days = row[indexes["history_elapsed_days"]] if "history_elapsed_days" in indexes else None
+                semantic_role = str(row[indexes["semantic_role"]] or "") if "semantic_role" in indexes else ""
+                value_kind = str(row[indexes["value_kind"]] or "") if "value_kind" in indexes else ""
+                daily_points: list[dict[str, Any]] = []
+                if "daily_points" in indexes:
+                    try:
+                        parsed_points = json.loads(
+                            str(row[indexes["daily_points"]] or "[]")
+                        )
+                    except (TypeError, ValueError):
+                        parsed_points = []
+                    if isinstance(parsed_points, list):
+                        daily_points = [
+                            dict(item) for item in parsed_points
+                            if isinstance(item, dict)
+                        ]
                 metric_name = display_metric_name(metric_code)
                 dimension_display = display_metric_dimensions(dimensions)
                 details = [f"当前值 {format_metric_value(latest, unit)}"]
@@ -3528,6 +3560,13 @@ class AIOpsRuntimeService:
                     "maximum": maximum,
                     "unit": unit,
                     "sample_count": sample_count,
+                    "coverage_ratio": coverage_ratio,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "history_elapsed_days": history_elapsed_days,
+                    "semantic_role": semantic_role,
+                    "value_kind": value_kind,
+                    "daily_points": daily_points,
                     "evidence_ref": evidence.evidence_ref,
                 })
         return tuple(facts)
@@ -7743,7 +7782,24 @@ class AIOpsRuntimeService:
                 )
                 findings = parse_finding_payload(payloads.get(ops_run_id))
             return report_presentation(
-                payload=payload, template=template, findings=findings,
+                payload=payload,
+                template=template,
+                findings=findings,
+                report_context={
+                    "report_id": str(report.report_id),
+                    "report_key": str(
+                        getattr(report, "report_key", payload.get("report_key") or "")
+                    ),
+                    "report_version": int(
+                        getattr(report, "report_version", 1)
+                    ),
+                    "created_at": (
+                        getattr(report, "created_at").isoformat()
+                        if getattr(report, "created_at", None) is not None
+                        else None
+                    ),
+                    "domain_id": int(domain_id),
+                },
             )
 
     async def get_report_source_agent_id(

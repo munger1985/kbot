@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
@@ -966,6 +966,21 @@ class DbaEvidenceAssessmentHandler:
                     if isinstance(point.value, (int, float))
                     and not isinstance(point.value, bool)
                 ]
+                daily_values: dict[str, list[float]] = {}
+                for point in points:
+                    if not isinstance(point.value, (int, float)) or isinstance(
+                        point.value, bool
+                    ):
+                        continue
+                    day = point.observed_at.astimezone(UTC).date().isoformat()
+                    daily_values.setdefault(day, []).append(float(point.value))
+                daily_points = [
+                    {
+                        "date": day,
+                        "value": round(sum(values) / len(values), 4),
+                    }
+                    for day, values in sorted(daily_values.items())
+                ]
                 trend = summarize_numeric_trend(
                     tuple(
                         (point.observed_at, float(point.value))
@@ -1139,6 +1154,13 @@ class DbaEvidenceAssessmentHandler:
                             if estimated_days_to_limit is not None
                             else None
                         ),
+                        observation.semantic_role,
+                        observation.value_kind,
+                        json.dumps(
+                            daily_points,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
                     )
                 )
         if not rows:
@@ -1186,6 +1208,9 @@ class DbaEvidenceAssessmentHandler:
                 "name": "estimated_days_to_limit",
                 "logical_type": "DECIMAL",
             },
+            {"name": "semantic_role", "logical_type": "STRING"},
+            {"name": "value_kind", "logical_type": "STRING"},
+            {"name": "daily_points", "logical_type": "STRING"},
         )
         visualizations = AIOpsChartSelectionPolicy.compile(
             profile_id=visualization_profile_id,

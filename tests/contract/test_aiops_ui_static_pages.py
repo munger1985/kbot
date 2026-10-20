@@ -1762,6 +1762,23 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("/targets/${encodeURIComponent(report.target_id)}", script)
         css = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
         self.assertIn(".ops-report-metadata", css)
+
+    def test_daily_inspection_report_uses_structured_formal_layout(self):
+        script = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(
+            encoding="utf-8"
+        )
+        css = (AIOPS_ROOT / "css" / "aiops.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("DAILY_INSPECTION_PRESENTATION.v1", script)
+        self.assertIn("关键指标与过去 7 日基线偏离", script)
+        self.assertIn("七日趋势 · 小倍数", script)
+        self.assertIn("七日趋势与容量明细", script)
+        self.assertIn("无数据不等于异常", script)
+        self.assertIn(".daily-formal-report", css)
+        self.assertIn(".daily-report-table", css)
+        self.assertIn(".daily-trend-svg", css)
         self.assertIn("grid-template-columns:repeat(4,minmax(0,1fr))", css)
 
     def test_report_template_configuration_is_not_a_business_entry(self):

@@ -108,7 +108,7 @@ DEFAULT_MONITORING_LOOKBACK_LABEL = (
     f"最近{DEFAULT_MONITORING_LOOKBACK_SECONDS // 86_400}天"
     "（Prometheus最大保留范围）"
 )
-DAILY_INSPECTION_WINDOW_SECONDS = 86_400
+DAILY_INSPECTION_WINDOW_SECONDS = 7 * 86_400
 WEEKLY_INSPECTION_WINDOW_SECONDS = 7 * 86_400
 
 
@@ -962,7 +962,7 @@ class TurnPlanningService:
             time_scope=(
                 "最近7天（周巡检周期）"
                 if weekly
-                else "最近24小时（日巡检周期）"
+                else "当前状态与过去7日基线（日巡检）"
             ),
             requested_window_seconds=monitoring_window_seconds,
             temporal_analysis_mode=(
