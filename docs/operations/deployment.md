@@ -478,6 +478,7 @@ python3 tests/acceptance/check_oracle_schema.py
 ```bash
 bash start_kbot.sh
 bash stop_kbot.sh
+bash restart_kbot.sh
 ```
 
 开发模式还会启动 `tools/dev_console/` 静态服务器，发布开发日志页和 `ui/`
