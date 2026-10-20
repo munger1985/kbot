@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiops_agent.entities import (
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
+    AIOpsAgentVersionKnowledgeBaseEntity,
     AIOpsAgentVersionTargetEntity,
     InspectionPlanEntity,
     PolicyEntity,
@@ -52,6 +53,32 @@ class AIOpsAgentRepository:
             for target_id in target_ids
         )
         await self._session.flush()
+
+    async def add_version_knowledge_bases(
+        self, *, version_id: UUID, knowledge_base_ids: tuple[UUID, ...],
+    ) -> None:
+        self._write_guard()
+        self._session.add_all(
+            AIOpsAgentVersionKnowledgeBaseEntity(
+                agent_version_id=version_id,
+                knowledge_base_id=knowledge_base_id,
+            )
+            for knowledge_base_id in knowledge_base_ids
+        )
+        await self._session.flush()
+
+    async def version_knowledge_base_ids(
+        self, *, agent_version_id: UUID,
+    ) -> list[UUID]:
+        rows = await self._session.scalars(
+            select(AIOpsAgentVersionKnowledgeBaseEntity.knowledge_base_id)
+            .where(
+                AIOpsAgentVersionKnowledgeBaseEntity.agent_version_id
+                == agent_version_id
+            )
+            .order_by(AIOpsAgentVersionKnowledgeBaseEntity.knowledge_base_id)
+        )
+        return list(rows)
 
     async def version_source_ids(
         self, *, agent_version_id: UUID, target_id: UUID | None = None

@@ -5,6 +5,7 @@
   const shell = globalThis.KBotAIOpsShell;
   let agents = [];
   let targets = [];
+  let knowledgeBases = [];
   let models = [];
   const actionDraftsByTarget = new Map();
   const actionCatalogsByTarget = new Map();
@@ -109,7 +110,7 @@
       return `<tr>
         <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
         <td>${shell.badge(agent.status)}</td>
-        <td><strong>${targetNames.length} 个 Target</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
+        <td><strong>${targetNames.length} 个 Target · ${(agent.knowledge_base_ids || []).length} 个知识库</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td><strong>${access}</strong><small class="agent-row-description">${targetNames.join("、") || "—"}</small></td>
         <td>${agent.auto_alert_enabled ? `<strong>${escape(agent.auto_observe_min_severity)} 起 · Target L${escape(agent.auto_observe_min_target_level)}+</strong><small class="agent-row-description">冷却 ${escape(agent.alert_cooldown_minutes)} 分钟</small>` : "已关闭"}</td>
         <td><div class="ops-actions"><button type="button" data-agent-action="edit" data-agent-id="${escape(agent.agent_id)}">编辑</button><button type="button" class="danger" data-agent-action="delete" data-agent-id="${escape(agent.agent_id)}">删除</button></div></td>
@@ -186,6 +187,9 @@
     document.getElementById("agent-targets").innerHTML = targets.length
       ? targets.map((target) => `<label class="agent-switch-row"><input type="checkbox" name="target_ids" value="${escape(target.target_id)}"><span><strong>${escape(target.display_name)}</strong><small>${escape(target.db_type)} · ${target.readonly_connection_enabled ? "只读直连" : "仅监控"}${target.controlled_change_enabled ? " · 允许受控变更" : ""}</small></span></label>`).join("")
       : '<div class="ops-error">暂无已启用的 Target。请先创建 Target，并完成监控 Label 映射后启用。</div>';
+    document.getElementById("agent-knowledge-bases").innerHTML = knowledgeBases.length
+      ? knowledgeBases.map((item) => `<label class="agent-switch-row"><input type="checkbox" name="knowledge_base_ids" value="${escape(item.knowledge_base_id)}"><span><strong>${escape(item.display_name)}</strong><small>${escape(item.description || "未填写说明")}</small></span></label>`).join("")
+      : '<div class="ops-error">暂无运维知识库。请先到“运维知识库”页面创建。</div>';
     const diagnosisModels = sortedDiagnosisModels();
     document.getElementById("agent-planner-model").innerHTML = diagnosisModels.length
       ? '<option value="">请选择规划模型</option>' + diagnosisModels.map((model) => `<option value="${escape(model.model_id)}">${escape(llmOptionLabel(model))}</option>`).join("")
@@ -328,6 +332,10 @@
     return [...document.querySelectorAll('[name="target_ids"]:checked')].map((input) => input.value);
   }
 
+  function selectedKnowledgeBaseIds() {
+    return [...document.querySelectorAll('[name="knowledge_base_ids"]:checked')].map((input) => input.value);
+  }
+
   function toggleAlertSettings() {
     const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
     document.getElementById("agent-alert-settings").classList.toggle("agent-settings-disabled", !enabled);
@@ -386,6 +394,9 @@
     form.querySelectorAll('[name="target_ids"]').forEach((input) => {
       input.checked = (editing.target_ids || []).includes(input.value);
     });
+    form.querySelectorAll('[name="knowledge_base_ids"]').forEach((input) => {
+      input.checked = (editing.knowledge_base_ids || []).includes(input.value);
+    });
     document.getElementById("agent-status-help").textContent = "启用前会检查每个 Target 均已启用，并至少存在一条引用已启用监控源的有效 Label 映射。";
     toggleTargetFields();
     toggleAlertSettings();
@@ -418,6 +429,8 @@
   function payload(form) {
     const targetIds = selectedTargetIds();
     if (!targetIds.length) throw new Error("至少选择一个 Target。");
+    const knowledgeBaseIds = selectedKnowledgeBaseIds();
+    if (!knowledgeBaseIds.length) throw new Error("至少选择一个运维知识库。");
     const plannerModelId = form.elements.planner_model_id.value.trim();
     const diagnosisModelId = form.elements.diagnosis_model_id.value.trim();
     const ocrModelId = form.elements.ocr_model_id.value.trim();
@@ -474,6 +487,7 @@
       description: form.elements.description.value.trim() || null,
       status: editing ? form.elements.status.value : "DRAFT",
       target_ids: targetIds,
+      knowledge_base_ids: knowledgeBaseIds,
       controlled_action_execution: controlledActionExecution,
       auto_alert_enabled: autoAlertEnabled,
       auto_observe_min_severity: autoAlertEnabled ? form.elements.auto_observe_min_severity.value : (editing?.auto_observe_min_severity || "CRITICAL"),
@@ -516,14 +530,16 @@
   }
 
   async function load() {
-    const [agentRows, targetPage, modelRows] = await Promise.all([
+    const [agentRows, targetPage, modelRows, knowledgeBasePage] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/targets?status=ENABLED&limit=200`),
       KBotAIOpsAuth.request("/api/v1/model-catalog"),
+      KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
     ]);
     agents = Array.isArray(agentRows) ? agentRows : [];
     targets = targetPage.items || [];
     models = Array.isArray(modelRows) ? modelRows : [];
+    knowledgeBases = knowledgeBasePage.items || [];
     renderResources();
     renderRows();
   }

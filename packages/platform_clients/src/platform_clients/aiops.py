@@ -454,21 +454,92 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
-    async def get_operations_knowledge_collection_models(
+    async def list_operations_knowledge_bases(
+        self, *, include_archived: bool, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases"
+            f"?include_archived={str(include_archived).lower()}",
+            auth_context=auth_context,
+        )
+
+    async def get_operations_knowledge_assistant_binding(
         self, *, auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "GET",
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/collection-models",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-answering/binding",
+            auth_context=auth_context,
+        )
+
+    async def configure_operations_knowledge_assistant_binding(
+        self, *, payload: dict[str, Any], auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-answering/binding",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def create_operations_knowledge_base(
+        self, *, payload: dict[str, Any], auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def get_operations_knowledge_base(
+        self, *, knowledge_base_id: UUID, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}",
+            auth_context=auth_context,
+        )
+
+    async def update_operations_knowledge_base(
+        self, *, knowledge_base_id: UUID, payload: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "PUT",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def delete_operations_knowledge_base(
+        self, *, knowledge_base_id: UUID, expected_row_version: int,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}",
+            payload={"expected_row_version": expected_row_version},
+            auth_context=auth_context,
+        )
+
+    async def get_operations_knowledge_collection_models(
+        self, *, knowledge_base_id: UUID, auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models",
             auth_context=auth_context,
         )
 
     async def configure_operations_knowledge_models(
-        self, *, models: dict[str, UUID], auth_context: AuthContext,
+        self, *, knowledge_base_id: UUID, models: dict[str, UUID],
+        auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
             "PUT",
-            f"{INTERNAL_API_V1}/aiops/operations-knowledge/collection-models",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/knowledge-bases/{knowledge_base_id}/models",
             payload={"models": {role: str(model_id) for role, model_id in models.items()}},
             auth_context=auth_context,
         )
@@ -510,6 +581,7 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     async def list_operations_knowledge_assets(
         self, *, asset_kind: str | None, status: str | None, limit: int,
+        knowledge_base_id: UUID | None = None,
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         query = {"limit": str(limit)}
@@ -517,6 +589,8 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             query["asset_kind"] = asset_kind
         if status:
             query["status"] = status
+        if knowledge_base_id is not None:
+            query["knowledge_base_id"] = str(knowledge_base_id)
         return await self._json(
             "GET",
             f"{INTERNAL_API_V1}/aiops/operations-knowledge/assets?{urlencode(query)}",

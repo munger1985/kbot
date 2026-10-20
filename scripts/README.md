@@ -13,8 +13,8 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
 - `scripts/db/initialize_km.py`：幂等创建 `kmadmin`、授予 KM App 全部权限，并创建固定的
   `km_portal/assets` KC Collection；`--check-only` 可只读复查。
 - `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
-  `operations-manuals` KC Collection，并通过 Main API 上传和批准仓库内置数据库运维手册；
-  `--check-only` 可只读复查，`--skip-manual-upload` 仅初始化数据库资源。
+  “默认运维知识库”及其 `operations-manuals` KC Collection，并创建固定诊断案例 Collection；
+  `--check-only` 可只读复查。手册由用户在知识库管理页面上传和审批。
 - `scripts/db/initialize_product_app.py`：按 `knowledge_retrieval` 或 `media_studio`
   幂等创建空白引导 Domain、App 权限和初始管理员；不创建业务
   Agent、模型绑定或模型配置。`--check-only` 可只读复查；初始密码只会在

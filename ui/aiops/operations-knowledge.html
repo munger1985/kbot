@@ -14,10 +14,11 @@
       <header class="knowledge-list-header">
         <div class="knowledge-list-heading"><h2>资料列表</h2><p>查看已上传资料、解析结果与审核状态。</p></div>
         <div class="knowledge-list-tools">
+          <label class="knowledge-status-filter"><span>知识库</span><select id="knowledge-base-filter" aria-label="选择运维知识库"></select></label>
           <label class="knowledge-search"><span aria-hidden="true">⌕</span><input id="knowledge-search" type="search" aria-label="搜索运维资料" placeholder="搜索资料名称或 ID"></label>
           <label class="knowledge-status-filter"><span>状态</span><select id="knowledge-status"><option value="">全部状态</option><option value="TAGGING">标签识别中</option><option value="REVIEW_REQUIRED">待审批</option><option value="PROCESSING">解析中</option><option value="PUBLISHED">已发布</option><option value="TAGGING_FAILED">标签识别失败</option><option value="FAILED">解析失败</option><option value="REJECTED">已拒绝</option><option value="RETIRED">已退役</option></select></label>
           <span id="knowledge-count" class="knowledge-count">0 项</span>
-          <button id="refresh-knowledge" type="button">刷新</button><button id="open-model-config" type="button">解析模型</button><button id="open-upload" class="primary" type="button">上传资料</button>
+          <button id="refresh-knowledge" type="button">刷新</button><a href="./knowledge-bases.html">管理知识库</a><button id="open-model-config" type="button">解析模型</button><button id="open-upload" class="primary" type="button">上传资料</button>
         </div>
       </header>
       <div class="ops-table-wrap"><table class="ops-table knowledge-table"><thead><tr><th>资料</th><th>审批</th><th>解析状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody id="knowledge-assets"><tr><td colspan="5" class="ops-empty">正在读取运维资料…</td></tr></tbody></table></div>
@@ -58,6 +59,6 @@
     </div>
   </dialog>
 
-  <script src="../runtime-config.js"></script><script src="../shared/kbot-sha256.js?v=20261019_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261016_2"></script><script src="./js/aiops-operations-knowledge.js?v=20261019_2"></script>
+  <script src="../runtime-config.js"></script><script src="../shared/kbot-sha256.js?v=20261019_1"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_2"></script><script src="./js/aiops-operations-knowledge.js?v=20261019_2"></script>
 </body>
 </html>

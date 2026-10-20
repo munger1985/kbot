@@ -171,6 +171,7 @@ class CreateAIOpsAgentCommand(_Model):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     controlled_action_execution: tuple[
         TargetControlledActionExecution, ...
     ] = ()
@@ -193,6 +194,8 @@ class CreateAIOpsAgentCommand(_Model):
     def validate_resources(self):
         if len(set(self.target_ids)) != len(self.target_ids):
             raise ValueError("target_ids 不能重复")
+        if len(set(self.knowledge_base_ids)) != len(self.knowledge_base_ids):
+            raise ValueError("knowledge_base_ids 不能重复")
         policy_targets = [item.target_id for item in self.controlled_action_execution]
         if len(set(policy_targets)) != len(policy_targets):
             raise ValueError("每个 Target 只能声明一份受控动作策略")
@@ -208,6 +211,9 @@ class UpdateAIOpsAgentCommand(_Model):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     target_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
+    knowledge_base_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
     controlled_action_execution: tuple[
@@ -234,6 +240,11 @@ class UpdateAIOpsAgentCommand(_Model):
             self.target_ids
         ):
             raise ValueError("target_ids 不能重复")
+        if (
+            self.knowledge_base_ids is not None
+            and len(set(self.knowledge_base_ids)) != len(self.knowledge_base_ids)
+        ):
+            raise ValueError("knowledge_base_ids 不能重复")
         if self.controlled_action_execution is not None:
             policy_targets = [
                 item.target_id for item in self.controlled_action_execution
@@ -319,6 +330,10 @@ class AIOpsAgentService:
                     controlled_action_policies=(
                         self._controlled_action_policies(values)
                     ),
+                )
+                await uow.agents.add_version_knowledge_bases(
+                    version_id=version_id,
+                    knowledge_base_ids=command.knowledge_base_ids,
                 )
                 agent.current_version_id = version_id
                 await uow.commit()
@@ -477,6 +492,9 @@ class AIOpsAgentService:
             current_targets = await uow.agents.version_target_ids(
                 agent_version_id=current.agent_version_id
             )
+            current_knowledge_base_ids = await uow.agents.version_knowledge_base_ids(
+                agent_version_id=current.agent_version_id
+            )
             current_action_policies = await uow.agents.version_target_policies(
                 agent_version_id=current.agent_version_id
             )
@@ -503,6 +521,9 @@ class AIOpsAgentService:
             effective = {
                 "domain_id": command.domain_id,
                 "target_ids": effective_target_ids,
+                "knowledge_base_ids": tuple(changes.get(
+                    "knowledge_base_ids", tuple(current_knowledge_base_ids)
+                )),
                 "controlled_action_execution": changes.get(
                     "controlled_action_execution", current_controlled_actions
                 ),
@@ -537,6 +558,7 @@ class AIOpsAgentService:
             )
             version_fields = {
                 "target_ids",
+                "knowledge_base_ids",
                 "controlled_action_execution",
                 "auto_alert_enabled",
                 "auto_observe_min_severity",
@@ -581,6 +603,10 @@ class AIOpsAgentService:
                         self._controlled_action_policies(effective)
                     ),
                 )
+                await uow.agents.add_version_knowledge_bases(
+                    version_id=version_id,
+                    knowledge_base_ids=effective["knowledge_base_ids"],
+                )
                 agent.current_version_id = version_id
             for field in (
                 "display_name",
@@ -614,6 +640,7 @@ class AIOpsAgentService:
             "resource_context": {
                 "policy_id": row["policy_id"],
                 "target_ids": row["target_ids"],
+                "knowledge_base_ids": row["knowledge_base_ids"],
                 "controlled_action_execution": row[
                     "controlled_action_execution"
                 ],
@@ -709,6 +736,25 @@ class AIOpsAgentService:
             )
         if status == "ACTIVE":
             await self._validate_production_llm_providers(values)
+        knowledge_base_ids = tuple(values.get("knowledge_base_ids") or ())
+        if not knowledge_base_ids:
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_KNOWLEDGE_BASE_REQUIRED",
+                "Agent 至少需要关联一个运维知识库",
+                status_code=422,
+            )
+        knowledge_bases = [
+            await uow.operations_knowledge.get_knowledge_base(
+                domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+            )
+            for knowledge_base_id in knowledge_base_ids
+        ]
+        if any(item is None or item.status != "ACTIVE" for item in knowledge_bases):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_KNOWLEDGE_BASE_UNAVAILABLE",
+                "Agent 引用的运维知识库不存在或未启用",
+                status_code=422,
+            )
         target_ids = tuple(values.get("target_ids") or ())
         if not target_ids:
             raise AIOpsAgentError(
@@ -957,6 +1003,21 @@ class AIOpsAgentService:
         action_policies = await uow.agents.version_target_policies(
             agent_version_id=version.agent_version_id
         )
+        knowledge_base_ids = set(await uow.agents.version_knowledge_base_ids(
+            agent_version_id=version.agent_version_id
+        ))
+        knowledge_bases = []
+        for knowledge_base_id in sorted(knowledge_base_ids, key=str):
+            row = await uow.operations_knowledge.get_knowledge_base(
+                domain_id=int(agent.domain_id),
+                knowledge_base_id=knowledge_base_id,
+            )
+            if row is not None:
+                knowledge_bases.append({
+                    "knowledge_base_id": str(row.knowledge_base_id),
+                    "display_name": row.display_name,
+                    "status": row.status,
+                })
         target_candidates = []
         for target_id in sorted(candidate_ids, key=str):
             target = await uow.targets.get_scoped(
@@ -995,6 +1056,10 @@ class AIOpsAgentService:
             "version_no": int(version.version_no),
             "policy_id": str(version.policy_id),
             "target_ids": [str(item) for item in sorted(candidate_ids, key=str)],
+            "knowledge_base_ids": [
+                str(item) for item in sorted(knowledge_base_ids, key=str)
+            ],
+            "knowledge_bases": knowledge_bases,
             "target_candidates": target_candidates,
             "controlled_action_execution": [
                 {"target_id": str(target_id), **dict(action_policies[target_id])}

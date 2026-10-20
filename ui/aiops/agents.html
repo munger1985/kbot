@@ -133,6 +133,12 @@
               <small>必选，可多选。监控 label 与数据库连接均在 Target 页面维护。</small>
             </div>
 
+            <div class="ops-field agent-target-field">
+              <label>运维知识库</label>
+              <div id="agent-knowledge-bases" class="agent-target-list"></div>
+              <small>必选，可多选。诊断与知识问答只能检索这里绑定的知识库。</small>
+            </div>
+
             <div id="agent-change-field" class="agent-permission-row">
               <div>
                 <strong>Agent–Target 执行策略</strong>
@@ -192,7 +198,7 @@
 
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261016_2"></script>
+  <script src="./js/aiops-shell.js?v=20261020_2"></script>
   <script src="./js/aiops-pages.js"></script>
   <script src="./js/aiops-agents.js?v=20261012-1"></script>
 </body>

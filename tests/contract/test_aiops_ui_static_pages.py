@@ -38,7 +38,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections",
         "business-systems", "business-system-workspace", "targets", "target-detail",
         "recovery-drills", "data-protection",
-        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "operations-knowledge-chat", "knowledge-bases", "knowledge-tags",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -59,9 +59,18 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                     f"{page.name} 缺少资源 {reference}",
                 )
 
+    def test_pages_share_current_interactive_shell(self):
+        expected = "./js/aiops-shell.js?v=20261020_2"
+        pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
+        for path in pages:
+            parser = _Parser()
+            parser.feed(path.read_text(encoding="utf-8"))
+            shell_assets = [asset for asset in parser.assets if "aiops-shell.js" in asset]
+            self.assertEqual([expected], shell_assets, path.name)
+
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(18, len(scripts))
+        self.assertEqual(20, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -480,7 +489,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("workspaces.css?v=20261008_2", page)
-            self.assertIn("aiops-shell.js?v=20261016_1", page)
+            self.assertIn("aiops-shell.js?v=20261020_2", page)
             self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -585,6 +594,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('groupingMode: "EACH_FILE"', script)
         self.assertIn('"SINGLE_BUNDLE"', script)
         self.assertIn('body.set("grouping_mode", state.groupingMode)', script)
+        self.assertIn('body.set("knowledge_base_id", selectedKnowledgeBaseId())', script)
         self.assertIn('body.set("metadata", JSON.stringify(metadata))', script)
         self.assertIn('`${api}/uploads`', script)
         self.assertIn("X-Expected-Asset-Row-Version", script)
@@ -605,6 +615,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('"operations-knowledge": "aiops:knowledge_manage"', shell)
         self.assertIn('["operations-knowledge-chat", "知识问答"]', shell)
         self.assertIn('["operations-knowledge", "运维知识"]', shell)
+        self.assertIn('["knowledge-bases", "运维知识库"]', shell)
         self.assertNotIn("Knowledge Core", page)
         self.assertNotIn("Collection", page)
         self.assertNotIn("Embedding", page)
@@ -1444,6 +1455,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             self.assertIn(item, navigation)
         self.assertNotIn('["api-clients", "API 客户端"]', navigation)
         self.assertIn("bindNavigationGroups", shell)
+        self.assertIn("const shouldOpen = candidate === group && !isOpen", shell)
+        self.assertNotIn("items.querySelector", shell)
         stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
         self.assertIn(".ops-nav-group.is-open", stylesheet)
         self.assertIn(".ops-nav-footer-mark", stylesheet)

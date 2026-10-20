@@ -17,6 +17,8 @@ class AIOpsInitializerTest(unittest.TestCase):
         self.assertIn("aiops_portal", source)
         self.assertIn("aiopsadmin", source)
         self.assertIn("operations-manuals", source)
+        self.assertIn("KBOT_OPS_KNOWLEDGE_BASE", source)
+        self.assertIn("默认运维知识库", source)
         self.assertIn("diagnosis-cases", source)
         self.assertIn("管理 AIOps 运维知识库", source)
         self.assertIn("aiops:knowledge_manage", source)

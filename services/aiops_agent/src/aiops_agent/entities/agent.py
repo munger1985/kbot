@@ -79,3 +79,15 @@ class AIOpsAgentVersionTargetEntity(BaseEntity):
     created_at: Mapped[datetime] = mapped_column(
         UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AIOpsAgentVersionKnowledgeBaseEntity(BaseEntity):
+    """固定一个 Agent 版本可以检索的运维知识库集合。"""
+
+    __tablename__ = "KBOT_OPS_AGENT_VERSION_KNOW_BASE"
+
+    agent_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    knowledge_base_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )

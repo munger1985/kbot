@@ -13,6 +13,7 @@
     tags: [],
     selectedTagIds: [],
     modelCatalog: [],
+    knowledgeBases: [],
   };
 
   const escape = (value) => shell.escape(value == null ? "" : value);
@@ -27,6 +28,7 @@
   const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB` : `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`;
   const totalBytes = () => state.entries.reduce((sum, item) => sum + item.file.size, 0);
   const isBundle = () => !state.uploadAsset && state.groupingMode === "SINGLE_BUNDLE";
+  const selectedKnowledgeBaseId = () => document.getElementById("knowledge-base-filter").value;
 
   const digest = (file) => KBotSha256.file(file);
 
@@ -40,9 +42,10 @@
   }
 
   async function openModelConfiguration() {
+    if (!selectedKnowledgeBaseId()) throw new Error("请先选择运维知识库");
     const [catalog, configured] = await Promise.all([
       KBotAIOpsAuth.request("/api/v1/model-catalog"),
-      KBotAIOpsAuth.request(`${api}/collection-models`),
+      KBotAIOpsAuth.request(`${api}/knowledge-bases/${encodeURIComponent(selectedKnowledgeBaseId())}/models`),
     ]);
     state.modelCatalog = Array.isArray(catalog) ? catalog : [];
     const models = configured.models || {};
@@ -72,7 +75,7 @@
     const button = document.getElementById("save-model-config");
     button.disabled = true;
     try {
-      await KBotAIOpsAuth.request(`${api}/collection-models`, {
+      await KBotAIOpsAuth.request(`${api}/knowledge-bases/${encodeURIComponent(selectedKnowledgeBaseId())}/models`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ models }),
@@ -97,12 +100,28 @@
   }
 
   async function loadAssets() {
+    const knowledgeBaseId = selectedKnowledgeBaseId();
+    if (!knowledgeBaseId) { state.assets = []; renderAssets(); return; }
     const query = new URLSearchParams({ limit: "200" });
+    query.set("knowledge_base_id", knowledgeBaseId);
     const status = document.getElementById("knowledge-status").value;
     if (status) query.set("status", status);
     const result = await KBotAIOpsAuth.request(`${api}/assets?${query}`);
     state.assets = result.items || [];
     renderAssets();
+  }
+
+  async function loadKnowledgeBases() {
+    const result = await KBotAIOpsAuth.request(`${api}/knowledge-bases`);
+    state.knowledgeBases = result.items || [];
+    const preferred = new URLSearchParams(location.search).get("knowledge_base_id");
+    const select = document.getElementById("knowledge-base-filter");
+    select.innerHTML = state.knowledgeBases.length
+      ? state.knowledgeBases.map((item) => `<option value="${escape(item.knowledge_base_id)}">${escape(item.display_name)}</option>`).join("")
+      : '<option value="">请先创建运维知识库</option>';
+    if (preferred && state.knowledgeBases.some((item) => item.knowledge_base_id === preferred)) select.value = preferred;
+    document.getElementById("open-upload").disabled = !select.value;
+    document.getElementById("open-model-config").disabled = !select.value;
   }
 
   async function loadTags() {
@@ -263,6 +282,7 @@
       } else {
         const declarations = await Promise.all(state.entries.map(async (entry, ordinal) => ({ part_name: `file-${ordinal}`, client_file_id: entry.id, display_name: entry.file.name, declared_mime_type: entry.file.type || "application/octet-stream", byte_size: entry.file.size, content_sha256: await digest(entry.file), ordinal, role: isBundle() ? entry.role : "CONTENT", required_flag: isBundle() ? entry.required : false })));
         const body = new FormData();
+        body.set("knowledge_base_id", selectedKnowledgeBaseId());
         body.set("grouping_mode", state.groupingMode);
         body.set("metadata", JSON.stringify(metadata));
         body.set("files", JSON.stringify(declarations));
@@ -310,6 +330,7 @@
     document.getElementById("refresh-knowledge").onclick = () => loadAssets().catch((error) => shell.toast(error.message));
     document.getElementById("knowledge-search").oninput = renderAssets;
     document.getElementById("knowledge-status").onchange = () => loadAssets().catch((error) => shell.toast(error.message));
+    document.getElementById("knowledge-base-filter").onchange = () => loadAssets().catch((error) => shell.toast(error.message));
     document.getElementById("knowledge-assets").onclick = (event) => { const button = event.target.closest("[data-asset-id]"); if (button) openAsset(button.dataset.assetId).catch((error) => shell.toast(error.message)); };
     document.querySelectorAll('[name="grouping-mode"]').forEach((input) => { input.onchange = () => setGroupingMode(input.value); });
     document.getElementById("choose-files").onclick = () => document.getElementById("manual-file").click();
@@ -326,6 +347,6 @@
     document.getElementById("detail-body").onclick = (event) => { if (event.target.closest("[data-download-source]")) runDetailAction("download").catch((error) => shell.toast(error.message)); };
     document.getElementById("detail-body").onchange = (event) => { const input = event.target.closest("[data-tag-id]"); if (!input) return; state.selectedTagIds = input.checked ? [...new Set([...state.selectedTagIds, input.dataset.tagId])] : state.selectedTagIds.filter((value) => value !== input.dataset.tagId); renderDetailActions(state.detail); };
     document.getElementById("detail-actions").onclick = (event) => { const review = event.target.closest("[data-review]"); const upload = event.target.closest("[data-upload-version]"); const download = event.target.closest("[data-download-source]"); const action = review?.dataset.review || (upload ? "upload-version" : download ? "download" : ""); if (action) runDetailAction(action).catch((error) => shell.toast(error.message)); };
-    try { await Promise.all([loadTags(), loadAssets()]); } catch (error) { shell.toast(error.message); }
+    try { await Promise.all([loadTags(), loadKnowledgeBases()]); await loadAssets(); } catch (error) { shell.toast(error.message); }
   });
 })();

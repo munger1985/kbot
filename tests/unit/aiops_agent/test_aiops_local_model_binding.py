@@ -71,6 +71,7 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="开发诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 models={
                     "planner_llm": uuid7(),
                     "diagnosis_llm": uuid7(),
@@ -94,6 +95,7 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="生产草稿",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 models={
                     "planner_llm": uuid7(),
                     "diagnosis_llm": uuid7(),
@@ -118,6 +120,7 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="生产诊断助手",
                     target_ids=(unit_of_work.target.target_id,),
+                    knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                     models={
                         "planner_llm": uuid7(),
                         "diagnosis_llm": uuid7(),
@@ -155,6 +158,7 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="生产诊断助手",
                     target_ids=(unit_of_work.target.target_id,),
+                    knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                     models={
                         "planner_llm": planner_id,
                         "diagnosis_llm": diagnosis_id,
@@ -191,6 +195,7 @@ class LocalModelBindingServiceTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="生产诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 models={
                     "planner_llm": planner_id,
                     "diagnosis_llm": diagnosis_id,

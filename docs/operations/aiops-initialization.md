@@ -4,16 +4,16 @@ AIOps 使用独立的固定业务范围，不复用 KM 的 Domain、账号或产
 
 - Domain：`aiops_portal`
 - 初始管理员：`aiopsadmin`
-- 内部手册索引集合：`operations-manuals`
+- 默认运维知识库：`默认运维知识库`
+- 默认知识库内部索引集合：`operations-manuals`
 - 内部诊断案例索引集合：`diagnosis-cases`
-- 固定手册：`services/aiops_agent/resources/knowledge/database-operations-manual.md`
 
-AIOps 在自身 Schema 中保存运维知识资产、不可变版本、适用范围、来源、索引引用和审核记录。
-两个内部集合只承担 KC 解析和索引，不作为普通用户直接管理的产品对象。详细合同见
+AIOps 在自身 Schema 中保存多个运维知识库、知识资产、不可变版本、适用范围、来源、索引引用和审核记录。
+每个用户知识库拥有独立 KC Collection；`diagnosis-cases` 仍是内部固定集合。详细合同见
 [AIOps 运维知识库详细设计](../proposals/aiops-operations-knowledge-base-detailed-design.md)。
 
-初始化前必须完成平台、模型目录、Knowledge Core、Main API 和 AIOps Agent 的 Schema
-及服务部署，并至少启用一个 `CATEGORY=2` 的文本向量模型。脚本不会伪造数据库目标、
+初始化前必须完成平台、Knowledge Core、Main API 和 AIOps Agent 的 Schema
+及服务部署。脚本不会伪造数据库目标、
 诊断源、Target、巡检计划或 Agent，这些资源必须根据实际环境配置。执行策略不再
 独立创建，而是随 Agent 创建和修改自动生成不可变版本。
 
@@ -36,17 +36,9 @@ KBOT_CONFIG_FILE=configuration/kbot.toml \
 python3 scripts/db/initialize_aiops.py
 ```
 
-脚本先在同一 Oracle 事务范围内幂等补齐 App、Domain、用户、角色、权限和固定
-索引集合，再以 `aiopsadmin` 登录 Main API，通过“运维知识库”业务接口上传内置手册。
-AIOps 先登记资产版本，再驱动 KC 的正式 `user-files` ingestion；KC 批准只允许解析和索引，
-不会把版本自动发布为 Agent 可检索知识。文件不会写入 Main API 本地目录。
-
-如 Main API 地址与 `kbot.toml` 的 `[ui].main_api_base_url` 不同，可显式覆盖：
-
-```bash
-python3 scripts/db/initialize_aiops.py \
-  --main-api-url http://127.0.0.1:18099
-```
+脚本在同一 Oracle 事务范围内幂等补齐 App、Domain、用户、角色、权限、默认运维知识库和
+固定诊断案例集合，不自动上传或批准手册。初始化后，用户在“运维知识库”页面创建知识库，
+在“运维知识”页面选择知识库上传资料、配置解析模型并完成审批发布。
 
 只读复查完整结果：
 
@@ -54,16 +46,11 @@ python3 scripts/db/initialize_aiops.py \
 python3 scripts/db/initialize_aiops.py --check-only
 ```
 
-仅补齐数据库资源、不上传手册：
-
-```bash
-python3 scripts/db/initialize_aiops.py --skip-manual-upload
-```
-
 初始密码由脚本在终端输出。初始化脚本重复执行会恢复固定初始密码，因此生产环境完成
 初始化并修改密码后，不应把它当作日常健康检查使用；日常检查使用 `--check-only`。
 
-当前 AIOps 页面统一使用“运维知识库”，提供手册上传、诊断案例候选、版本审核、发布、退役、
-索引状态和检索测试。普通用户不会看到 Collection、Bundle 或 Embedding；内部索引异常只以
-业务可理解的处理状态呈现。Agent 只通过 `ops.knowledge.search@1.0.0` 检索已发布版本，
+当前 AIOps 提供运维知识库增删改查、手册上传、诊断案例候选、版本审核、发布、退役和索引状态。
+诊断 Agent 与知识问答 Agent 都持久化绑定 1–N 个知识库。普通用户不会看到 Collection、Bundle
+或 Embedding；内部索引异常只以业务可理解的处理状态呈现。Agent 只通过
+`ops.knowledge.search@1.0.0` 检索绑定知识库内的已发布版本，
 未发布、失败、退役或索引失效的版本不会进入诊断上下文。

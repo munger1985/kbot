@@ -195,6 +195,7 @@ class OperationsKnowledgeUploadTest(unittest.IsolatedAsyncioTestCase):
 
         receipt = await service.ingest_upload(
             domain_id=42,
+            knowledge_base_id=uuid7(),
             context=SimpleNamespace(request_id="single-upload-test"),
             grouping_mode="EACH_FILE",
             bundle_title=metadata.display_name,
@@ -553,25 +554,21 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(version_id, asset.current_version_id)
         self.assertEqual("READY", index.index_status)
 
-    async def test_explicit_model_configuration_updates_both_fixed_collections(self):
-        collection_ids = [uuid7(), uuid7()]
+    async def test_explicit_model_configuration_updates_selected_knowledge_base(self):
+        knowledge_base_id = uuid7()
+        collection_id = uuid7()
+        repository = SimpleNamespace(get_knowledge_base=AsyncMock(
+            return_value=SimpleNamespace(
+                knowledge_base_id=knowledge_base_id,
+                collection_id=collection_id,
+                status="ACTIVE",
+            )
+        ))
         knowledge_core = SimpleNamespace(
-            list_collections=AsyncMock(return_value={"collections": [
-                {
-                    "collection_id": str(collection_ids[0]),
-                    "display_name": "operations-manuals",
-                    "metadata": {"owner_app_id": "aiops", "fixed_resource": True},
-                    "status": "ACTIVE",
-                    "row_version": 3,
-                },
-                {
-                    "collection_id": str(collection_ids[1]),
-                    "display_name": "diagnosis-cases",
-                    "metadata": {"owner_app_id": "aiops", "fixed_resource": True},
-                    "status": "ACTIVE",
-                    "row_version": 4,
-                },
-            ]}),
+            get_collection=AsyncMock(return_value={
+                "collection_id": str(collection_id),
+                "row_version": 3,
+            }),
             update_collection_models=AsyncMock(side_effect=lambda **kwargs: kwargs["payload"]),
         )
         models = {
@@ -592,7 +589,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             }
         ))
         service = OperationsKnowledgeService(
-            uow_factory=lambda: None,
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
@@ -602,16 +599,19 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await service.configure_collections(
-            domain_id=42, models=models, context=SimpleNamespace(),
+            domain_id=42,
+            knowledge_base_id=knowledge_base_id,
+            models=models,
+            context=SimpleNamespace(),
         )
 
-        self.assertEqual(2, len(result["collections"]))
-        self.assertEqual(2, knowledge_core.update_collection_models.await_count)
-        for call in knowledge_core.update_collection_models.await_args_list:
-            self.assertEqual(
-                {role: str(model_id) for role, model_id in models.items()},
-                call.kwargs["payload"]["models"],
-            )
+        self.assertEqual(str(knowledge_base_id), result["knowledge_base_id"])
+        knowledge_core.update_collection_models.assert_awaited_once()
+        call = knowledge_core.update_collection_models.await_args
+        self.assertEqual(
+            {role: str(model_id) for role, model_id in models.items()},
+            call.kwargs["payload"]["models"],
+        )
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 46,
-  "contract_version": "aiops-oracle-v46-knowledge-tags",
+  "schema_version": 47,
+  "contract_version": "aiops-oracle-v47-knowledge-bases",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "596c440004b9fbf5083622e7f9f37bcb593bd92d1cd11d13d39a79cda80c57eb"
+      "sha256": "791760a9d84f38eb00f94ea820da72ad58884ffe4584e78855a686fc57333833"
     },
     {
       "name": "007_ops_agents.sql",
@@ -51,8 +51,8 @@
     },
     {
       "name": "010_ops_knowledge.sql",
-      "statements": 22,
-      "sha256": "1bfa6ca3185f35dd16b118429a27619da24f037619b6a36468ddb3489a78aa09"
+      "statements": 29,
+      "sha256": "b8cd4ab0215bd0704490c10c2150ce80a86425e057f69bfbf979378aa7742096"
     },
     {
       "name": "011_ops_recovery.sql",
@@ -125,6 +125,9 @@
     "KBOT_OPS_WORKLOAD_STATEMENT",
     "KBOT_OPS_WORKLOAD_METRIC",
     "KBOT_OPS_ACTIVITY_SAMPLE",
+    "KBOT_OPS_KNOWLEDGE_BASE",
+    "KBOT_OPS_KNOW_ASSISTANT_BIND",
+    "KBOT_OPS_KNOW_ASSISTANT_BASE",
     "KBOT_OPS_KNOWLEDGE_ASSET",
     "KBOT_OPS_KNOWLEDGE_VERSION",
     "KBOT_OPS_KNOWLEDGE_TAG",
@@ -132,6 +135,7 @@
     "KBOT_OPS_KNOWLEDGE_SOURCE",
     "KBOT_OPS_KNOWLEDGE_INDEX",
     "KBOT_OPS_KNOWLEDGE_REVIEW",
+    "KBOT_OPS_AGENT_VERSION_KNOW_BASE",
     "KBOT_OPS_RECOVERY_PROFILE",
     "KBOT_OPS_RECOVERY_DRILL",
     "KBOT_OPS_RESPONSIBILITY_GROUP",

@@ -22,6 +22,7 @@ class _AgentRepository:
         self.current_version_at_agent_insert = "NOT_CAPTURED"
         self.version_targets = {}
         self.controlled_action_policies = {}
+        self.version_knowledge_bases = {}
         self.has_schedulable_plans = False
 
     async def resource_states(self, **kwargs):
@@ -52,6 +53,14 @@ class _AgentRepository:
 
     async def version_target_policies(self, *, agent_version_id):
         return self.controlled_action_policies.get(agent_version_id, {})
+
+    async def add_version_knowledge_bases(
+        self, *, version_id, knowledge_base_ids,
+    ):
+        self.version_knowledge_bases[version_id] = list(knowledge_base_ids)
+
+    async def version_knowledge_base_ids(self, *, agent_version_id):
+        return self.version_knowledge_bases.get(agent_version_id, [])
 
     async def get(self, *, domain_id, agent_id, lock=False):
         del lock
@@ -86,6 +95,10 @@ class _UnitOfWork:
             target_ids_shared_by_sources=self._target_ids_shared_by_sources,
         )
         self.policies = _PolicyRepository()
+        self.knowledge_base_id = uuid7()
+        self.operations_knowledge = SimpleNamespace(
+            get_knowledge_base=self._get_knowledge_base
+        )
         self.source_id = source_id
         self.source_ids = set(source_ids or (source_id,))
         self.bound_source_ids = tuple(
@@ -101,6 +114,15 @@ class _UnitOfWork:
         )
         self.targets.list_source_bindings = self._list_source_bindings
         self.commit_count = 0
+
+    async def _get_knowledge_base(self, *, domain_id, knowledge_base_id):
+        if domain_id != 100 or knowledge_base_id != self.knowledge_base_id:
+            return None
+        return SimpleNamespace(
+            knowledge_base_id=knowledge_base_id,
+            display_name="测试运维知识库",
+            status="ACTIVE",
+        )
 
     async def _get_source(self, *, diagnostic_source_id, domain_id):
         del domain_id
@@ -158,6 +180,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="待删除诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -186,6 +209,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="巡检诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -222,6 +246,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="映射不完整的诊断助手",
                     target_ids=(unit_of_work.target.target_id,),
+                    knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                     models={
                         "planner_llm": uuid7(),
                         "diagnosis_llm": uuid7(),
@@ -354,6 +379,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="非法重要程度 Agent",
                 target_ids=(uuid7(),),
+                knowledge_base_ids=(uuid7(),),
                 auto_observe_min_target_level=0,
                 actor_id="kbotui_dev",
             )
@@ -364,6 +390,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库诊断助手",
                 target_ids=(uuid7(),),
+                knowledge_base_ids=(uuid7(),),
                 controlled_action_execution=(
                     TargetControlledActionExecution(
                         target_id=uuid7(),
@@ -385,6 +412,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -409,6 +437,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 models={
                     "planner_llm": uuid7(),
                     "diagnosis_llm": uuid7(),
@@ -443,6 +472,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="缺少模型的诊断助手",
                     target_ids=(unit_of_work.target.target_id,),
+                    knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                     status="ACTIVE",
                     actor_id="kbotui_dev",
                 )
@@ -462,6 +492,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="待配置模型的诊断助手",
                 target_ids=(unit_of_work.target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -492,6 +523,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="缺少规划模型的诊断助手",
                     target_ids=(unit_of_work.target.target_id,),
+                    knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                     models={"diagnosis_llm": uuid7()},
                     status="ACTIVE",
                     actor_id="kbotui_dev",
@@ -540,6 +572,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库变更助手",
                 target_ids=(target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -580,6 +613,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库变更助手",
                 target_ids=(target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 actor_id="kbotui_dev",
             )
         )
@@ -621,6 +655,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 domain_id=100,
                 display_name="数据库变更助手",
                 target_ids=(target.target_id,),
+                knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                 controlled_action_execution=(
                     TargetControlledActionExecution(
                         target_id=target.target_id,
@@ -671,6 +706,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     domain_id=100,
                     display_name="参数变更助手",
                     target_ids=(target.target_id,),
+                    knowledge_base_ids=(unit_of_work.knowledge_base_id,),
                     controlled_action_execution=(
                         TargetControlledActionExecution(
                             target_id=target.target_id,

@@ -116,6 +116,18 @@ class OperationsKnowledgeCollectionModelsPayload(_Payload):
     models: dict[str, UUID]
 
 
+class OperationsKnowledgeBasePayload(_Payload):
+    display_name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    models: dict[str, UUID] = Field(default_factory=dict)
+    expected_row_version: int | None = Field(default=None, ge=1)
+
+
+class OperationsKnowledgeAssistantBindingPayload(_Payload):
+    knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    expected_row_version: int | None = Field(default=None, ge=1)
+
+
 class OperationsKnowledgeTagPayload(_Payload):
     category: Literal["RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"]
     display_name: str = Field(min_length=1, max_length=128)
@@ -147,6 +159,7 @@ class OperationsKnowledgeSearchPayload(_Payload):
 
 
 class OperationsKnowledgeContextPayload(_Payload):
+    knowledge_base_ids: tuple[UUID, ...] = Field(default=(), max_length=32)
     database_type: str | None = Field(default=None, max_length=32)
     database_major_version: str | None = Field(default=None, max_length=32)
     topology: str | None = Field(default=None, max_length=64)
@@ -211,6 +224,7 @@ class AIOpsAgentCreatePayload(_Payload):
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     target_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
     controlled_action_execution: tuple[
         AIOpsTargetControlledActionExecution, ...
     ] = ()
@@ -232,6 +246,9 @@ class AIOpsAgentUpdatePayload(_Payload):
     display_name: str | None = Field(default=None, min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
     target_ids: tuple[UUID, ...] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
+    knowledge_base_ids: tuple[UUID, ...] | None = Field(
         default=None, min_length=1, max_length=32
     )
     controlled_action_execution: tuple[
@@ -456,21 +473,113 @@ async def operations_knowledge_overview(request: Request):
     )
 
 
-@router.get("/operations-knowledge/collection-models")
-async def get_operations_knowledge_collection_models(request: Request):
+@router.get("/operations-knowledge/knowledge-bases")
+async def list_operations_knowledge_bases(
+    request: Request, include_archived: bool = False,
+):
     await _require(request, "aiops:knowledge_manage")
-    return await _client(request).get_operations_knowledge_collection_models(
+    return await _client(request).list_operations_knowledge_bases(
+        include_archived=include_archived,
         auth_context=request.state.auth_context,
     )
 
 
-@router.put("/operations-knowledge/collection-models")
+@router.get("/operations-knowledge/knowledge-answering/binding")
+async def get_operations_knowledge_assistant_binding(request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).get_operations_knowledge_assistant_binding(
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/operations-knowledge/knowledge-answering/binding")
+async def configure_operations_knowledge_assistant_binding(
+    payload: OperationsKnowledgeAssistantBindingPayload,
+    request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await (
+        _client(request).configure_operations_knowledge_assistant_binding(
+            payload=payload.model_dump(mode="json", exclude_none=True),
+            auth_context=request.state.auth_context,
+        )
+    )
+
+
+@router.post("/operations-knowledge/knowledge-bases", status_code=201)
+async def create_operations_knowledge_base(
+    payload: OperationsKnowledgeBasePayload, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).create_operations_knowledge_base(
+        payload=payload.model_dump(mode="json", exclude_none=True),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/operations-knowledge/knowledge-bases/{knowledge_base_id}")
+async def get_operations_knowledge_base(
+    knowledge_base_id: UUID, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).get_operations_knowledge_base(
+        knowledge_base_id=knowledge_base_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/operations-knowledge/knowledge-bases/{knowledge_base_id}")
+async def update_operations_knowledge_base(
+    knowledge_base_id: UUID,
+    payload: OperationsKnowledgeBasePayload,
+    request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).update_operations_knowledge_base(
+        knowledge_base_id=knowledge_base_id,
+        payload=payload.model_dump(mode="json", exclude_none=True),
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.delete(
+    "/operations-knowledge/knowledge-bases/{knowledge_base_id}",
+    status_code=204,
+)
+async def delete_operations_knowledge_base(
+    knowledge_base_id: UUID,
+    request: Request,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+):
+    await _require(request, "aiops:knowledge_manage")
+    await _client(request).delete_operations_knowledge_base(
+        knowledge_base_id=knowledge_base_id,
+        expected_row_version=_expected_row_version(if_match),
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=204)
+
+
+@router.get("/operations-knowledge/knowledge-bases/{knowledge_base_id}/models")
+async def get_operations_knowledge_collection_models(
+    knowledge_base_id: UUID, request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).get_operations_knowledge_collection_models(
+        knowledge_base_id=knowledge_base_id,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.put("/operations-knowledge/knowledge-bases/{knowledge_base_id}/models")
 async def configure_operations_knowledge_collection_models(
+    knowledge_base_id: UUID,
     payload: OperationsKnowledgeCollectionModelsPayload,
     request: Request,
 ):
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).configure_operations_knowledge_models(
+        knowledge_base_id=knowledge_base_id,
         models=payload.models,
         auth_context=request.state.auth_context,
     )
@@ -523,11 +632,13 @@ async def list_operations_knowledge_assets(
     request: Request,
     asset_kind: str | None = None,
     status_filter: str | None = Query(None, alias="status"),
+    knowledge_base_id: UUID | None = None,
     limit: int = Query(100, ge=1, le=500),
 ):
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).list_operations_knowledge_assets(
         asset_kind=asset_kind, status=status_filter, limit=limit,
+        knowledge_base_id=knowledge_base_id,
         auth_context=request.state.auth_context,
     )
 

@@ -1,6 +1,7 @@
 """运维知识提炼、发布与检索合同。"""
 
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -9,6 +10,20 @@ class KnowledgeScopeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: str = Field(min_length=1, max_length=64)
     value: str = Field(min_length=1, max_length=512)
+
+
+class KnowledgeBaseWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=1000)
+    models: dict[str, UUID] = Field(default_factory=dict)
+    expected_row_version: int | None = Field(default=None, ge=1)
+
+
+class KnowledgeAssistantBindingWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
+    expected_row_version: int | None = Field(default=None, ge=1)
 
 
 class ManualUploadMetadata(BaseModel):
@@ -122,6 +137,7 @@ class KnowledgeSearchRequest(BaseModel):
     database_major_version: str | None = Field(default=None, max_length=32)
     topology: str | None = Field(default=None, max_length=64)
     tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
+    knowledge_base_ids: tuple[UUID, ...] = Field(default=(), max_length=32)
     source_kinds: tuple[Literal["MANUAL", "DIAGNOSIS_CASE"], ...] = (
         "MANUAL", "DIAGNOSIS_CASE"
     )

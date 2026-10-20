@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.entities import (
     OperationsKnowledgeAssetEntity,
+    OperationsKnowledgeAssistantBaseEntity,
+    OperationsKnowledgeAssistantBindingEntity,
+    OperationsKnowledgeBaseEntity,
     OperationsKnowledgeIndexEntity,
     OperationsKnowledgeReviewEntity,
     OperationsKnowledgeScopeEntity,
@@ -26,6 +29,143 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         assert_active: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(session, assert_active)
+
+    async def add_knowledge_base(self, entity: OperationsKnowledgeBaseEntity) -> None:
+        await self._add(entity)
+
+    async def get_assistant_binding(
+        self, *, domain_id: int, for_update: bool = False,
+    ) -> OperationsKnowledgeAssistantBindingEntity | None:
+        self._check_active()
+        statement = select(OperationsKnowledgeAssistantBindingEntity).where(
+            OperationsKnowledgeAssistantBindingEntity.domain_id == domain_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def add_assistant_binding(
+        self, entity: OperationsKnowledgeAssistantBindingEntity,
+    ) -> None:
+        await self._add(entity)
+
+    async def assistant_knowledge_base_ids(self, *, domain_id: int) -> list[UUID]:
+        self._check_active()
+        rows = await self._session.scalars(
+            select(OperationsKnowledgeAssistantBaseEntity.knowledge_base_id)
+            .where(OperationsKnowledgeAssistantBaseEntity.domain_id == domain_id)
+            .order_by(OperationsKnowledgeAssistantBaseEntity.knowledge_base_id)
+        )
+        return list(rows)
+
+    async def replace_assistant_knowledge_bases(
+        self, *, domain_id: int, knowledge_base_ids: tuple[UUID, ...],
+    ) -> None:
+        self._check_active()
+        await self._session.execute(
+            delete(OperationsKnowledgeAssistantBaseEntity).where(
+                OperationsKnowledgeAssistantBaseEntity.domain_id == domain_id
+            )
+        )
+        self._session.add_all(
+            OperationsKnowledgeAssistantBaseEntity(
+                domain_id=domain_id,
+                knowledge_base_id=knowledge_base_id,
+            )
+            for knowledge_base_id in knowledge_base_ids
+        )
+        await self._session.flush()
+
+    async def get_knowledge_base(
+        self, *, domain_id: int, knowledge_base_id: UUID, for_update: bool = False,
+    ) -> OperationsKnowledgeBaseEntity | None:
+        self._check_active()
+        statement = select(OperationsKnowledgeBaseEntity).where(
+            OperationsKnowledgeBaseEntity.domain_id == domain_id,
+            OperationsKnowledgeBaseEntity.knowledge_base_id == knowledge_base_id,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
+    async def list_knowledge_bases(
+        self, *, domain_id: int, include_archived: bool = False,
+    ) -> list[OperationsKnowledgeBaseEntity]:
+        self._check_active()
+        statement = select(OperationsKnowledgeBaseEntity).where(
+            OperationsKnowledgeBaseEntity.domain_id == domain_id
+        )
+        if not include_archived:
+            statement = statement.where(
+                OperationsKnowledgeBaseEntity.status != "ARCHIVED"
+            )
+        statement = statement.order_by(
+            OperationsKnowledgeBaseEntity.display_name,
+            OperationsKnowledgeBaseEntity.knowledge_base_id,
+        )
+        return list((await self._session.execute(statement)).scalars())
+
+    async def find_knowledge_base_name(
+        self, *, domain_id: int, normalized_name: str,
+        exclude_knowledge_base_id: UUID | None = None,
+    ) -> OperationsKnowledgeBaseEntity | None:
+        self._check_active()
+        rows = await self.list_knowledge_bases(
+            domain_id=domain_id, include_archived=True,
+        )
+        return next((
+            row for row in rows
+            if _normalize_name(row.display_name) == normalized_name
+            and row.knowledge_base_id != exclude_knowledge_base_id
+        ), None)
+
+    async def knowledge_base_usage(
+        self, *, knowledge_base_id: UUID,
+    ) -> dict[str, int]:
+        self._check_active()
+        from aiops_agent.entities import (
+            AIOpsAgentEntity,
+            AIOpsAgentVersionKnowledgeBaseEntity,
+        )
+
+        assets = await self._session.scalar(
+            select(func.count()).select_from(OperationsKnowledgeAssetEntity).where(
+                OperationsKnowledgeAssetEntity.knowledge_base_id == knowledge_base_id
+            )
+        )
+        agents = await self._session.scalar(
+            select(func.count())
+            .select_from(AIOpsAgentVersionKnowledgeBaseEntity)
+            .join(
+                AIOpsAgentEntity,
+                AIOpsAgentEntity.current_version_id
+                == AIOpsAgentVersionKnowledgeBaseEntity.agent_version_id,
+            )
+            .where(
+                AIOpsAgentVersionKnowledgeBaseEntity.knowledge_base_id
+                == knowledge_base_id
+            )
+        )
+        assistants = await self._session.scalar(
+            select(func.count()).select_from(
+                OperationsKnowledgeAssistantBaseEntity
+            ).where(
+                OperationsKnowledgeAssistantBaseEntity.knowledge_base_id
+                == knowledge_base_id
+            )
+        )
+        return {
+            "assets": int(assets or 0),
+            "agent_versions": int(agents or 0),
+            "knowledge_assistants": int(assistants or 0),
+        }
+
+    async def delete_knowledge_base(
+        self, entity: OperationsKnowledgeBaseEntity,
+    ) -> None:
+        self._check_active()
+        await self._session.delete(entity)
+        await self._session.flush()
 
     async def add_asset_version(
         self,
@@ -129,7 +269,8 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         await self._session.flush()
 
     async def find_by_source_hash(
-        self, *, domain_id: int, asset_kind: str, source_hash: str
+        self, *, domain_id: int, asset_kind: str, source_hash: str,
+        knowledge_base_id: UUID | None = None,
     ) -> tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity] | None:
         self._check_active()
         statement = (
@@ -146,6 +287,11 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             )
             .order_by(OperationsKnowledgeVersionEntity.version_no.desc())
         )
+        if knowledge_base_id is not None:
+            statement = statement.where(
+                OperationsKnowledgeAssetEntity.knowledge_base_id
+                == knowledge_base_id
+            )
         return (await self._session.execute(statement)).first()
 
     async def get_asset(
@@ -244,6 +390,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         domain_id: int,
         asset_kind: str | None,
         status: str | None,
+        knowledge_base_id: UUID | None = None,
         limit: int | None,
     ) -> list[OperationsKnowledgeAssetEntity]:
         self._check_active()
@@ -256,6 +403,10 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             )
         if status:
             statement = statement.where(OperationsKnowledgeAssetEntity.status == status)
+        if knowledge_base_id is not None:
+            statement = statement.where(
+                OperationsKnowledgeAssetEntity.knowledge_base_id == knowledge_base_id
+            )
         statement = statement.order_by(
             OperationsKnowledgeAssetEntity.updated_at.desc(),
             OperationsKnowledgeAssetEntity.asset_id,
@@ -341,6 +492,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         domain_id: int,
         target_id: UUID | None,
         source_kinds: Sequence[str],
+        knowledge_base_ids: Sequence[UUID] = (),
         max_security_level: int,
         scope_filters: dict[str, Sequence[str]],
         limit: int,
@@ -383,6 +535,15 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         if source_kinds:
             statement = statement.where(
                 OperationsKnowledgeAssetEntity.asset_kind.in_(tuple(source_kinds))
+            )
+        if knowledge_base_ids:
+            statement = statement.where(
+                (
+                    OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE"
+                )
+                | OperationsKnowledgeAssetEntity.knowledge_base_id.in_(
+                    tuple(knowledge_base_ids)
+                )
             )
         statement = statement.order_by(
             OperationsKnowledgeAssetEntity.asset_id,
@@ -519,3 +680,7 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )
         row = (await self._session.execute(statement)).first()
         return (int(row[0]), row[1]) if row else None
+
+
+def _normalize_name(value: str) -> str:
+    return " ".join(value.strip().casefold().split())
