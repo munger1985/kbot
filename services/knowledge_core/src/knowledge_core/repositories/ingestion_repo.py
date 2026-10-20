@@ -517,6 +517,25 @@ class IngestionJobRepository:
         )
         return list(rows)
 
+    async def list_by_document_version(
+        self, *, document_version_id: UUID,
+    ) -> list[KcIngestionJobEntity]:
+        rows = await self.session.scalars(
+            select(KcIngestionJobEntity)
+            .where(
+                KcIngestionJobEntity.document_version_id
+                == document_version_id,
+                KcIngestionJobEntity.job_type.in_((
+                    "PARSE", "VISUAL_ENRICH", "INDEX", "PROFILE",
+                )),
+            )
+            .order_by(
+                KcIngestionJobEntity.created_at.desc(),
+                KcIngestionJobEntity.ingestion_job_id.desc(),
+            )
+        )
+        return list(rows)
+
     async def detach_parse_views(self, *, parse_view_ids: list[UUID]) -> None:
         if parse_view_ids:
             await self.session.execute(
@@ -557,19 +576,6 @@ class ParseViewRepository:
             KcParseViewEntity.view_status == "ACTIVE",
             KcParseViewEntity.parse_view_id != except_parse_view_id,
         ).with_for_update()
-        return list((await self.session.execute(statement)).scalars())
-    async def list_by_document_version(
-        self, *, document_version_id: UUID,
-    ) -> list[KcIngestionJobEntity]:
-        statement = select(KcIngestionJobEntity).where(
-            KcIngestionJobEntity.document_version_id == document_version_id,
-            KcIngestionJobEntity.job_type.in_((
-                "PARSE", "VISUAL_ENRICH", "INDEX", "PROFILE",
-            )),
-        ).order_by(
-            KcIngestionJobEntity.created_at.desc(),
-            KcIngestionJobEntity.ingestion_job_id.desc(),
-        )
         return list((await self.session.execute(statement)).scalars())
     async def delete_by_ids(self, parse_view_ids: list[UUID]) -> None:
         if parse_view_ids:
