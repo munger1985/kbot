@@ -16,6 +16,7 @@ from aiops_agent.application.reporting import (
 from aiops_agent.application.leadership import project_leadership_briefing
 from aiops_agent.application.runtime.service import (
     AIOpsRuntimeService,
+    report_content_reference_is_complete,
     sha256_json,
 )
 from platform_core.contracts.aiops.findings import (
@@ -58,6 +59,17 @@ def _dump(briefing: dict) -> str:
 
 
 class AIOpsLeadershipBriefingTest(unittest.TestCase):
+    def test_report_content_reference_requires_matching_frozen_hash(self) -> None:
+        report = SimpleNamespace(content_hash="a" * 64)
+        artifact = SimpleNamespace(
+            schema_version="REPORT_CONTENT.v1",
+            content_hash="a" * 64,
+        )
+
+        self.assertTrue(report_content_reference_is_complete(report, artifact))
+        artifact.content_hash = "b" * 64
+        self.assertFalse(report_content_reference_is_complete(report, artifact))
+
     def test_lock_findings_omit_sid_and_sql_from_dump(self) -> None:
         briefing = project_leadership_briefing(
             payload={
@@ -188,18 +200,29 @@ class AIOpsLeadershipBriefingTest(unittest.TestCase):
 
     def test_get_report_presentation_projects_findings_from_run(self) -> None:
         report_id, artifact_id, ops_run_id = uuid7(), uuid7(), uuid7()
-        payload = {
+        source_payload = {
             "title": "数据库故障诊断报告",
             "status": "READY",
             "summary": "根因等级：CONFIRMED。锁等待持续升高。",
             "ops_run_id": str(ops_run_id),
-            "scope": {"root_cause_grade": "CONFIRMED"},
+            "scope": {
+                "root_cause_grade": "CONFIRMED",
+                "evidence_coverage_percent": 100.0,
+            },
             "facts": [{"summary": "锁等待持续升高"}],
             "gaps": [],
             "recommendations": ["确认阻塞会话"],
             "provenance": {},
         }
-        content_hash = sha256_json(payload)
+        content_hash = sha256_json(source_payload)
+        payload = {
+            **source_payload,
+            "scope": {
+                **source_payload["scope"],
+                "evidence_coverage_percent": 100,
+            },
+        }
+        self.assertNotEqual(content_hash, sha256_json(payload))
         compilation = FindingCompilation(
             findings=(
                 _finding(
@@ -216,9 +239,11 @@ class AIOpsLeadershipBriefingTest(unittest.TestCase):
             template_version="1.0.0",
             report_type="INCIDENT",
             ops_run_id=ops_run_id,
+            content_hash=content_hash,
         )
         artifact = SimpleNamespace(
             artifact_id=artifact_id,
+            schema_version="REPORT_CONTENT.v1",
             content_hash=content_hash,
             payload_json=payload,
         )

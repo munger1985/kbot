@@ -219,6 +219,19 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+def report_content_reference_is_complete(
+    report: ReportEntity,
+    artifact: OpsArtifactEntity | None,
+) -> bool:
+    """校验报告与冻结产物的持久化引用，不重算数据库读回的 JSON。"""
+    return bool(
+        artifact is not None
+        and artifact.schema_version == "REPORT_CONTENT.v1"
+        and artifact.content_hash
+        and artifact.content_hash == report.content_hash
+    )
+
+
 _LATER_PROPOSAL_BLOCK_TYPES = frozenset(
     {
         "REPORT_ARTIFACT_LINKS",
@@ -6985,11 +6998,7 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if (
-                artifact is None
-                or artifact.schema_version != "REPORT_CONTENT.v1"
-                or artifact.content_hash != report.content_hash
-            ):
+            if not report_content_reference_is_complete(report, artifact):
                 raise state_conflict("Report 内容引用不完整")
             return self._report_view(report, artifact)
 
@@ -7021,11 +7030,7 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if (
-                artifact is None
-                or artifact.schema_version != "REPORT_CONTENT.v1"
-                or artifact.content_hash != report.content_hash
-            ):
+            if not report_content_reference_is_complete(report, artifact):
                 raise state_conflict("Report 内容引用不完整")
             content = ReportContent.model_validate(
                 dict(artifact.payload_json or {})
@@ -7467,11 +7472,9 @@ class AIOpsRuntimeService:
                             ) or {}
                         ).get("conversation") or {}
                     )
-                    if current_artifact is not None
-                    and current_artifact.content_hash
-                    == current_report.content_hash
-                    and current_artifact.content_hash
-                    == sha256_json(dict(current_artifact.payload_json or {}))
+                    if report_content_reference_is_complete(
+                        current_report, current_artifact
+                    )
                     else {}
                 )
                 requested_conversation = dict(
@@ -7694,11 +7697,11 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if artifact is None:
+            if not report_content_reference_is_complete(report, artifact):
                 raise state_conflict("Report 内容引用不完整")
+            # Oracle 原生 JSON 会把 100.0 等价归一为 100；读回后重算哈希
+            # 会误报内容损坏。冻结完整性由 Report 与 Artifact 的双向哈希引用保证。
             payload = dict(artifact.payload_json or {})
-            if artifact.content_hash != sha256_json(payload):
-                raise state_conflict("Report 内容引用不完整")
             snapshot = dict(
                 dict(payload.get("provenance") or {}).get("template") or {}
             )

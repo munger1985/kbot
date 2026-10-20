@@ -680,6 +680,7 @@ class FormalReportingTest(unittest.TestCase):
         )
         current_artifact = SimpleNamespace(
             artifact_id=report_artifact_id,
+            schema_version="REPORT_CONTENT.v1",
             content_hash=report_hash,
             payload_json=report_payload,
         )
@@ -772,9 +773,11 @@ class FormalReportingTest(unittest.TestCase):
                     template_id=stored_template_id,
                     template_version="1.0.0",
                     report_type=report_type,
+                    content_hash=content_hash,
                 )
                 artifact = SimpleNamespace(
                     artifact_id=artifact_id,
+                    schema_version="REPORT_CONTENT.v1",
                     content_hash=content_hash,
                     payload_json=payload,
                 )
