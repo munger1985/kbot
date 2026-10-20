@@ -245,6 +245,15 @@ async def lifespan(app: FastAPI):
             async with kc_uow_factory() as uow:
                 return await uow.evidence.expand_context(anchors=list(anchors), limit=limit)
 
+        async def get_citation_content(
+            self, *, citation_id: UUID, max_security_level: int
+        ):
+            async with kc_uow_factory() as uow:
+                return await uow.evidence.get_citation_content(
+                    citation_id=citation_id,
+                    max_security_level=max_security_level,
+                )
+
     app.state.kc_evidence_service = KnowledgeCoreEvidenceRetrievalService(
         search_port=UowEvidenceSearchPort(),
         query_embedding_provider=app.state.kc_query_embedding_provider,
