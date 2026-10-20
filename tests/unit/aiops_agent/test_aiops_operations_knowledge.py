@@ -266,6 +266,41 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             knowledge_assistant_instruction="",
         )
 
+    async def test_collection_models_snapshot_id_before_transaction_closes(self):
+        knowledge_base_id, collection_id = uuid7(), uuid7()
+        state = _SessionState()
+        repository = SimpleNamespace(get_knowledge_base=AsyncMock(
+            return_value=_SessionBoundEntity(
+                state, status="ACTIVE", collection_id=collection_id,
+            )
+        ))
+        knowledge_core = SimpleNamespace(get_collection=AsyncMock(return_value={
+            "collection_id": str(collection_id),
+            "models": {"embedding": str(uuid7())},
+        }))
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _DetachingKnowledgeUnitOfWork(repository, state),
+            knowledge_core=knowledge_core,
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_models={},
+            knowledge_assistant_instruction="",
+        )
+        context = SimpleNamespace()
+
+        result = await service.get_collection_models(
+            domain_id=42,
+            knowledge_base_id=knowledge_base_id,
+            context=context,
+        )
+
+        self.assertEqual(str(collection_id), result["collection_id"])
+        knowledge_core.get_collection.assert_awaited_once_with(
+            domain_id=42,
+            collection_id=collection_id,
+            auth_context=context,
+        )
+
     async def test_approve_manual_freezes_selected_tags_and_starts_kc_parse(self):
         asset_id, version_id, tag_id = uuid7(), uuid7(), uuid7()
         version = SimpleNamespace(

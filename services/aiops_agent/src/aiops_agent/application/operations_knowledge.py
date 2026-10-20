@@ -513,7 +513,7 @@ class OperationsKnowledgeService:
             )
             await self._update_knowledge_base_models(
                 domain_id=domain_id,
-                base=row,
+                collection_id=UUID(str(row.collection_id)),
                 models=command.models,
                 context=context,
             )
@@ -571,16 +571,16 @@ class OperationsKnowledgeService:
                 retryable=True,
             ) from exc
 
-    async def _knowledge_base_collection(
+    async def _knowledge_base_collection_id(
         self, *, domain_id: int, knowledge_base_id: UUID,
-    ) -> OperationsKnowledgeBaseEntity:
+    ) -> UUID:
         async with self._uow_factory() as uow:
             row = await uow.operations_knowledge.get_knowledge_base(
                 domain_id=domain_id, knowledge_base_id=knowledge_base_id,
             )
             if row is None or row.status != "ACTIVE":
                 raise self._knowledge_base_not_found()
-            return row
+            return UUID(str(row.collection_id))
 
     async def _collection(
         self, *, domain_id: int, name: str, context: AuthContext
@@ -626,12 +626,12 @@ class OperationsKnowledgeService:
         self, *, domain_id: int, knowledge_base_id: UUID, context: AuthContext,
     ) -> dict[str, Any]:
         """读取指定运维知识库的模型绑定。"""
-        base = await self._knowledge_base_collection(
+        collection_id = await self._knowledge_base_collection_id(
             domain_id=domain_id, knowledge_base_id=knowledge_base_id,
         )
         collection = await self._kc.get_collection(
             domain_id=domain_id,
-            collection_id=base.collection_id,
+            collection_id=collection_id,
             auth_context=context,
         )
         return {
@@ -646,11 +646,12 @@ class OperationsKnowledgeService:
     ) -> dict[str, Any]:
         """显式配置指定运维知识库；不猜选模型，也不借用 Agent 模型。"""
         await self._validate_knowledge_base_models(models=models, context=context)
-        base = await self._knowledge_base_collection(
+        collection_id = await self._knowledge_base_collection_id(
             domain_id=domain_id, knowledge_base_id=knowledge_base_id,
         )
         configured = await self._update_knowledge_base_models(
-            domain_id=domain_id, base=base, models=models, context=context,
+            domain_id=domain_id, collection_id=collection_id,
+            models=models, context=context,
         )
         return {
             "knowledge_base_id": str(knowledge_base_id),
@@ -711,18 +712,18 @@ class OperationsKnowledgeService:
                 )
 
     async def _update_knowledge_base_models(
-        self, *, domain_id: int, base: OperationsKnowledgeBaseEntity,
+        self, *, domain_id: int, collection_id: UUID,
         models: dict[str, UUID], context: AuthContext,
     ) -> dict[str, Any]:
         try:
             collection = await self._kc.get_collection(
                 domain_id=domain_id,
-                collection_id=base.collection_id,
+                collection_id=collection_id,
                 auth_context=context,
             )
             configured = await self._kc.update_collection_models(
                 domain_id=domain_id,
-                collection_id=base.collection_id,
+                collection_id=collection_id,
                 payload={
                     "models": {
                         role: str(model_id) for role, model_id in models.items()
@@ -1241,12 +1242,12 @@ class OperationsKnowledgeService:
         actor = self._actor(context)
         asset_id = uuid7()
         version_id = uuid7()
-        knowledge_base = await self._knowledge_base_collection(
+        collection_id = await self._knowledge_base_collection_id(
             domain_id=domain_id, knowledge_base_id=knowledge_base_id,
         )
         response = await self._kc.ingest_user_bundle(
             domain_id=domain_id,
-            collection_id=knowledge_base.collection_id,
+            collection_id=collection_id,
             client_bundle_id=str(version_id),
             source_revision=str(version_id),
             title=title,
@@ -1314,7 +1315,7 @@ class OperationsKnowledgeService:
         ) for document in documents]
         index = OperationsKnowledgeIndexEntity(
             asset_version_id=version_id,
-            collection_id=knowledge_base.collection_id,
+            collection_id=collection_id,
             bundle_id=bundle_id,
             bundle_revision_id=revision_id,
             index_status="PENDING_APPROVAL",
@@ -1370,12 +1371,12 @@ class OperationsKnowledgeService:
         actor = self._actor(context)
         asset_id = uuid7()
         version_id = uuid7()
-        knowledge_base = await self._knowledge_base_collection(
+        collection_id = await self._knowledge_base_collection_id(
             domain_id=domain_id, knowledge_base_id=knowledge_base_id,
         )
         response = await self._kc.ingest_user_file(
             domain_id=domain_id,
-            collection_id=knowledge_base.collection_id,
+            collection_id=collection_id,
             file_name=file_name,
             display_name=metadata.display_name,
             media_type=media_type,
@@ -1417,7 +1418,7 @@ class OperationsKnowledgeService:
         )
         index = OperationsKnowledgeIndexEntity(
             asset_version_id=version_id,
-            collection_id=knowledge_base.collection_id,
+            collection_id=collection_id,
             bundle_id=bundle_id,
             bundle_revision_id=revision_id,
             index_status="PENDING_APPROVAL",
@@ -1484,12 +1485,12 @@ class OperationsKnowledgeService:
         version_id = uuid7()
         if asset.knowledge_base_id is None:
             raise self._knowledge_base_not_found()
-        knowledge_base = await self._knowledge_base_collection(
+        collection_id = await self._knowledge_base_collection_id(
             domain_id=domain_id, knowledge_base_id=asset.knowledge_base_id,
         )
         response = await self._kc.ingest_user_file(
             domain_id=domain_id,
-            collection_id=knowledge_base.collection_id,
+            collection_id=collection_id,
             file_name=file_name,
             display_name=metadata.display_name,
             media_type=media_type,
@@ -1543,7 +1544,7 @@ class OperationsKnowledgeService:
             )
             index = OperationsKnowledgeIndexEntity(
                 asset_version_id=version_id,
-                collection_id=knowledge_base.collection_id,
+                collection_id=collection_id,
                 bundle_id=UUID(str(item["bundle_id"])),
                 bundle_revision_id=revision_id,
                 index_status="PENDING_APPROVAL",
