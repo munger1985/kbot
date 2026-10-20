@@ -615,6 +615,29 @@ class EvidenceRepository:
     async def count_staged(self, *, parse_view_id: UUID) -> int:
         statement = select(func.count()).select_from(KcEvidenceEntity).where(KcEvidenceEntity.parse_view_id == parse_view_id, KcEvidenceEntity.status == "STAGED")
         return int((await self.session.execute(statement)).scalar_one())
+    async def count_indexed_active(self, *, parse_view_id: UUID) -> int:
+        statement = select(func.count()).select_from(KcEvidenceEntity).where(
+            KcEvidenceEntity.parse_view_id == parse_view_id,
+            KcEvidenceEntity.status == "ACTIVE",
+            KcEvidenceEntity.embedding_input_hash.is_not(None),
+        )
+        return int((await self.session.execute(statement)).scalar_one())
+    async def rebind_active_revision(
+        self, *, document_version_id: UUID, bundle_revision_id: UUID,
+        bundle_revision_document_id: UUID,
+    ) -> None:
+        """发布复用文档时，将当前 Evidence 原子切换到新 Revision。"""
+        await self.session.execute(
+            update(KcEvidenceEntity)
+            .where(
+                KcEvidenceEntity.document_version_id == document_version_id,
+                KcEvidenceEntity.status == "ACTIVE",
+            )
+            .values(
+                bundle_revision_id=bundle_revision_id,
+                bundle_revision_document_id=bundle_revision_document_id,
+            )
+        )
     async def list_staged_keys(self, *, parse_view_id: UUID) -> list[str]:
         statement = select(KcEvidenceEntity.evidence_key).where(
             KcEvidenceEntity.parse_view_id == parse_view_id,

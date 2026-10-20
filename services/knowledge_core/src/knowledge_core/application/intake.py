@@ -612,7 +612,8 @@ class KnowledgeCoreIntakeService:
         async with self._uow_factory() as uow:
             if not all((
                 uow.collections, uow.revisions, uow.members,
-                uow.versions, uow.receipts, uow.session,
+                uow.versions, uow.receipts, uow.parse_views,
+                uow.evidence, uow.jobs, uow.session,
             )):
                 raise RuntimeError(
                     "Knowledge Core Unit of Work is not initialized"
@@ -665,13 +666,19 @@ class KnowledgeCoreIntakeService:
                         raise IntakeReviewConflictError(
                             "Revision member version no longer exists"
                         )
-                    await self._enqueue_parse(
+                    parse_required = await self._enqueue_parse(
                         uow,
                         revision.collection_id,
                         revision.bundle_revision_id,
                         version,
                         command.actor_id,
                     )
+                    if not parse_required:
+                        member.member_status = "READY"
+                        member.completed_at = now
+                        member.failure_stage = None
+                        member.failure_code = None
+                        member.failure_message = None
                 await KnowledgeOutboxPublisher().publish(
                     uow=uow,
                     event_type="knowledge.ingestion.started",
@@ -766,6 +773,7 @@ class KnowledgeCoreIntakeService:
         return version
 
     async def _enqueue_parse(self, uow, collection_id, bundle_revision_id, version, actor_id):
+        """创建解析任务；已完成的同输入 Parse View 由新 Revision 直接复用。"""
         parse_activity_exists = (
             await uow.parse_views.has_activity_for_collection(
                 collection_id=collection_id
@@ -785,6 +793,14 @@ class KnowledgeCoreIntakeService:
             overrides=self._parse_policy_overrides,
         )
         view = await uow.parse_views.get_by_input(document_version_id=version.document_version_id, view_kind=plan.view_kind, parse_config_fingerprint=plan.fingerprint)
+        if (
+            view is not None
+            and view.view_status == "ACTIVE"
+            and await uow.evidence.count_indexed_active(
+                parse_view_id=view.parse_view_id
+            ) > 0
+        ):
+            return False
         if view is None:
             view = await uow.parse_views.add(KcParseViewEntity(
                 collection_id=collection_id, document_version_id=version.document_version_id,
@@ -804,3 +820,4 @@ class KnowledgeCoreIntakeService:
             job_status="PENDING",
             created_by=actor_id, updated_by=actor_id,
         ))
+        return True
