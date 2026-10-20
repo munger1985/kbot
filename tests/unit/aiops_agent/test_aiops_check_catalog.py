@@ -20,9 +20,54 @@ from aiops_agent.application.inspections.check_catalog import (
 )
 from aiops_agent.application.report_templates import InspectionTemplateService
 from platform_core.contracts.aiops import InspectionTemplateCreate
+from scripts.db.seed_aiops_inspection_templates import (
+    build_default_template_seeds,
+)
 
 
 class CheckCatalogLoaderTest(unittest.TestCase):
+    def test_deployment_defaults_cover_every_supported_database_type(self) -> None:
+        seeds = build_default_template_seeds()
+
+        self.assertEqual(
+            [("日常巡检", "DAILY"), ("月度巡检", "MONTHLY")],
+            [(seed.display_name, seed.schedule_type) for seed in seeds],
+        )
+        for seed in seeds:
+            self.assertEqual(64, len(seed.content_hash))
+            for database_type in ("ORACLE", "MYSQL", "POSTGRESQL"):
+                self.assertTrue(
+                    inspection_template_steps(
+                        seed.definition,
+                        schedule_type=seed.schedule_type,
+                        database_type=database_type,
+                    ),
+                    f"{seed.display_name} 未覆盖 {database_type}",
+                )
+        monthly_trends = [
+            step
+            for step in seeds[1].definition["evidence_steps"]
+            if step["trend_required"]
+        ]
+        self.assertTrue(monthly_trends)
+        self.assertTrue(all(
+            step["measurement_semantics"] == "HISTORICAL_SAMPLES"
+            for step in monthly_trends
+        ))
+
+    def test_fresh_deployment_runs_inspection_template_initializer(self) -> None:
+        deploy_script = (
+            _CATALOG_PATH.parents[6]
+            / "scripts"
+            / "deployment"
+            / "bootstrap_kbot.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "scripts/db/seed_aiops_inspection_templates.py",
+            deploy_script,
+        )
+
     def test_catalog_loads_ready_and_planned_groups(self) -> None:
         catalog = load_check_catalog()
         payload = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
@@ -45,6 +90,7 @@ class CheckCatalogLoaderTest(unittest.TestCase):
     def test_default_selection_uses_ready_daily_or_weekly(self) -> None:
         daily = default_selected_check_ids("DAILY")
         weekly = default_selected_check_ids("WEEKLY")
+        monthly = default_selected_check_ids("MONTHLY")
         cron = default_selected_check_ids("CRON")
         catalog = load_check_catalog()
         items = [item for group in catalog.groups for item in group.checks]
@@ -70,6 +116,7 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             ),
             weekly,
         )
+        self.assertEqual(weekly, monthly)
         self.assertEqual(daily, cron)
         self.assertTrue(daily)
         self.assertNotIn("oracle.storage.row_chaining", daily)

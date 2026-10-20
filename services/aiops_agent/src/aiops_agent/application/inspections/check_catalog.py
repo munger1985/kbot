@@ -113,7 +113,11 @@ def _is_inspection_executor_tool(tool_id: str | None) -> bool:
 
 
 def default_selected_check_ids(schedule_type: str) -> tuple[str, ...]:
-    wanted = "WEEKLY" if schedule_type == "WEEKLY" else "DAILY"
+    wanted = (
+        "WEEKLY"
+        if schedule_type in {"WEEKLY", "MONTHLY"}
+        else "DAILY"
+    )
     return tuple(
         item.check_id
         for item in _catalog_items(load_check_catalog())
@@ -175,7 +179,7 @@ def compile_selected_check_steps(
     selected = normalize_selected_check_ids(check_ids)
     catalog = load_check_catalog()
     by_id = {item.check_id: item for item in _catalog_items(catalog)}
-    weekly = schedule_type == "WEEKLY"
+    weekly = schedule_type in {"WEEKLY", "MONTHLY"}
     normalized_db_type = str(database_type or "").strip().upper()
     steps: list[dict[str, Any]] = []
     index_by_tool: dict[str, int] = {}
@@ -247,7 +251,7 @@ def inspection_template_steps(
     raw_steps = definition.get("evidence_steps")
     if not isinstance(raw_steps, list) or not raw_steps:
         raise ValueError("巡检模板未冻结取证步骤")
-    weekly = schedule_type == "WEEKLY"
+    weekly = schedule_type in {"WEEKLY", "MONTHLY"}
     normalized_db_type = str(database_type or "").strip().upper()
     steps: list[dict[str, Any]] = []
     index_by_tool: dict[str, int] = {}

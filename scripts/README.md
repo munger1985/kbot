@@ -15,6 +15,9 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
 - `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
   “默认运维知识库”及其 `operations-manuals` KC Collection，并创建固定诊断案例 Collection；
   `--check-only` 可只读复查。手册由用户在知识库管理页面上传和审批。
+- `scripts/db/seed_aiops_inspection_templates.py`：为每个已启用 AIOps Domain 幂等补齐
+  “日常巡检”和“月度巡检”；模板由当前 Check Catalog 编译并覆盖 Oracle、MySQL、
+  PostgreSQL，`--check-only` 可只读复查。
 - `scripts/db/initialize_product_app.py`：按 `knowledge_retrieval` 或 `media_studio`
   幂等创建空白引导 Domain、App 权限和初始管理员；不创建业务
   Agent、模型绑定或模型配置。`--check-only` 可只读复查；初始密码只会在
@@ -55,8 +58,8 @@ bash scripts/deployment/bootstrap_kbot.sh --production
 
 该入口不会清理已有 Schema。它会初始化默认业务域 `default`、App 目录、完整权限与
 角色模板、`ADMIN` 凭据、最高安全等级及平台 `platform_admin` 角色，并写入版本化
-Prompt Catalog；不会把 ADMIN 自动加入业务 App，也不会创建模型、Collection、Agent、
-会话或 AIOps 业务数据。
+Prompt Catalog 和默认数据库巡检模板；不会把 ADMIN 自动加入业务 App，也不会创建模型、
+Collection、Agent、会话或其他 AIOps 业务数据。
 
 普通开发 Schema 优先通过新的空白 Schema 重新初始化。确需保留既有数据的升级使用
 `database/oracle/operations/` 下带预检、回滚和迁移后校验的受控资产；不得把迁移或补种
