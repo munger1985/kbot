@@ -115,6 +115,18 @@ class ReleaseToolingTest(unittest.TestCase):
         endpoints_section = rendered.split("[endpoints]", maxsplit=1)[1]
         self.assertNotIn("127.0.0.1", endpoints_section)
 
+    def test_ui_runtime_config_uses_public_base_url(self) -> None:
+        values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
+        rendered = release.render_ui_runtime_config(values)
+        self.assertIn(
+            '"mainApiBaseUrl":"http://127.0.0.1:8080"',
+            rendered,
+        )
+        self.assertIn(
+            '"enabledApps":["knowledge_retrieval","media_studio","aiops"]',
+            rendered,
+        )
+
     def test_only_ui_publishes_a_host_port(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_compose(

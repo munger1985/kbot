@@ -803,7 +803,7 @@ def render_schema_services(
 
 def render_ui_runtime_config(values: dict[str, Any]) -> str:
     payload = {
-        "mainApiBaseUrl": "",
+        "mainApiBaseUrl": values["public_base_url"],
         "enabledApps": values["enabled_apps"],
     }
     return (
