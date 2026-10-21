@@ -114,6 +114,28 @@ class ReleaseToolingTest(unittest.TestCase):
         self.assertIn('      - "8080:8080"', rendered)
         self.assertNotIn("network_mode: host", rendered)
 
+    def test_dynamic_uid_services_publish_runtime_identity(self) -> None:
+        values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
+        rendered = release.render_compose(
+            self.catalog, self.topology, values
+        )
+        dynamic_user_count = rendered.count(
+            '    user: "${KBOT_UID}:${KBOT_GID}"'
+        )
+        self.assertGreater(dynamic_user_count, 1)
+        self.assertEqual(
+            dynamic_user_count,
+            rendered.count('      HOME: "/var/lib/kbot"'),
+        )
+        self.assertEqual(
+            dynamic_user_count,
+            rendered.count('      LOGNAME: "kbot"'),
+        )
+        self.assertEqual(
+            dynamic_user_count,
+            rendered.count('      USER: "kbot"'),
+        )
+
     def test_ui_root_redirect_preserves_external_port_mapping(self) -> None:
         template = (
             ROOT / "installation/common/docker/nginx.conf.template"
