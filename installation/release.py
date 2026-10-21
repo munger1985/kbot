@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import getpass
+import hashlib
 import importlib.util
 import io
 import json
@@ -17,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import Any
@@ -35,6 +37,7 @@ TOPOLOGY_PATH = ROOT / "resources" / "topology.toml"
 DEFAULT_RELEASE_CONFIG = INSTALLATION_ROOT / "dev" / "release.ini"
 DEFAULT_DEPLOYMENT_CONFIG = INSTALLATION_ROOT / "dev" / "deployment.ini"
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$")
+IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class ReleaseError(RuntimeError):
@@ -299,6 +302,218 @@ def release_values(path: Path) -> dict[str, Any]:
 
 def image_reference(values: dict[str, Any], name: str) -> str:
     return f"{values['registry']}/{name}:{values['version']}"
+
+
+def catalog_image_names(catalog: dict[str, Any]) -> list[str]:
+    """返回业务、Installer 与 UI 的完整发布镜像顺序。"""
+
+    return [
+        *(str(item["name"]) for item in catalog["images"]),
+        str(catalog["installer"]["name"]),
+        str(catalog["ui"]["name"]),
+    ]
+
+
+def image_lock_path(version: str) -> Path:
+    return INSTALLATION_ROOT / "releases" / f"{version}-images.json"
+
+
+def load_image_lock(
+    version: str, catalog: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """读取并校验正式镜像锁，禁止遗漏或混入其他镜像。"""
+
+    if catalog is None:
+        catalog, _ = validate_catalog()
+    path = image_lock_path(version)
+    if not path.is_file():
+        raise ReleaseError(f"正式镜像锁不存在：{path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "kbot-image-lock.v1":
+        raise ReleaseError(f"正式镜像锁 Schema 不受支持：{path}")
+    if payload.get("version") != version:
+        raise ReleaseError(f"正式镜像锁版本与 {version} 不一致：{path}")
+    records = payload.get("images")
+    if not isinstance(records, list):
+        raise ReleaseError(f"正式镜像锁缺少 images：{path}")
+    names = [str(item.get("name") or "") for item in records]
+    expected_names = catalog_image_names(catalog)
+    if names != expected_names:
+        raise ReleaseError("正式镜像锁的镜像顺序或范围与 catalog.toml 不一致")
+    for record in records:
+        digest = str(record.get("digest") or "")
+        if not IMAGE_ID_PATTERN.fullmatch(digest):
+            raise ReleaseError(
+                f"正式镜像锁包含非法 Digest：{record.get('name')}"
+            )
+    source_commit = str(payload.get("source_commit") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+        raise ReleaseError("正式镜像锁缺少完整的源码 Commit")
+    return payload
+
+
+def inspect_images(references: list[str]) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        ["docker", "image", "inspect", *references],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    details = json.loads(result.stdout)
+    if not isinstance(details, list) or len(details) != len(references):
+        raise ReleaseError("Docker 返回的镜像检查结果数量不正确")
+    return details
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_bundle_checksums(root: Path) -> Path:
+    checksum_path = root / "SHA256SUMS"
+    files = sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path != checksum_path
+    )
+    checksum_path.write_text(
+        "".join(
+            f"{sha256_file(path)}  {path.relative_to(root).as_posix()}\n"
+            for path in files
+        ),
+        encoding="utf-8",
+    )
+    return checksum_path
+
+
+def export_offline_bundle(release_config: Path, output: Path) -> Path:
+    """生成不含 Secret、可由 Docker Compose 独立使用的核心离线包。"""
+
+    catalog, _ = validate_catalog()
+    values = release_values(release_config)
+    if str(values["revision"]).endswith("-dirty"):
+        raise ReleaseError("工作区存在未提交修改，禁止制作正式离线包")
+    lock = load_image_lock(str(values["version"]), catalog)
+    if lock.get("registry") != values["registry"]:
+        raise ReleaseError("release.ini Registry 与正式镜像锁不一致")
+    if lock.get("platform") != values["platform"]:
+        raise ReleaseError("release.ini Platform 与正式镜像锁不一致")
+    output = output.expanduser().resolve()
+    if output.exists():
+        raise ReleaseError(f"离线包输出路径已存在，拒绝覆盖：{output}")
+
+    names = catalog_image_names(catalog)
+    references = [image_reference(values, name) for name in names]
+    details = inspect_images(references)
+    locked_by_name = {str(item["name"]): item for item in lock["images"]}
+    image_records: list[dict[str, str]] = []
+    for name, reference, detail in zip(names, references, details, strict=True):
+        image_id = str(detail.get("Id") or "")
+        if not IMAGE_ID_PATTERN.fullmatch(image_id):
+            raise ReleaseError(f"本地镜像缺少合法 Image ID：{reference}")
+        digest = str(locked_by_name[name]["digest"])
+        expected_repo_digest = f"{values['registry']}/{name}@{digest}"
+        repo_digests = set(detail.get("RepoDigests") or [])
+        if expected_repo_digest not in repo_digests:
+            raise ReleaseError(
+                f"本地镜像与正式 Digest 不一致：{reference}"
+            )
+        image_records.append(
+            {
+                "name": name,
+                "reference": reference,
+                "registry_digest": digest,
+                "image_id": image_id,
+            }
+        )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent)
+    )
+    try:
+        tracked_files = {
+            ROOT / "installation/release.py": temporary
+            / "installation/release.py",
+            ROOT / "installation/catalog.toml": temporary
+            / "installation/catalog.toml",
+            image_lock_path(str(values["version"])): temporary
+            / "installation/releases"
+            / f"{values['version']}-images.json",
+            ROOT / "installation/offline/deployment.ini.example": temporary
+            / "installation/offline/deployment.ini.example",
+            ROOT / "installation/offline/kbot-offline": temporary
+            / "kbot-offline",
+            ROOT / "installation/offline/README.md": temporary / "README.md",
+            ROOT / "resources/topology.toml": temporary
+            / "resources/topology.toml",
+        }
+        for source, destination in tracked_files.items():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        (temporary / "kbot-offline").chmod(0o755)
+
+        image_archive = temporary / "images/kbot-images.tar"
+        image_archive.parent.mkdir()
+        subprocess.run(
+            [
+                "docker",
+                "image",
+                "save",
+                "--output",
+                str(image_archive),
+                *references,
+            ],
+            check=True,
+        )
+        manifest = {
+            "schema": "kbot-offline-bundle.v1",
+            "version": values["version"],
+            "platform": values["platform"],
+            "registry": values["registry"],
+            "image_source_commit": lock["source_commit"],
+            "tool_revision": values["revision"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "image_archive": "images/kbot-images.tar",
+            "images": image_records,
+        }
+        (temporary / "bundle-manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        write_bundle_checksums(temporary)
+        temporary.rename(output)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return output
+
+
+def verify_offline_images(manifest_path: Path) -> None:
+    """校验 docker load 后的本地镜像内容，不依赖 Registry。"""
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != "kbot-offline-bundle.v1":
+        raise ReleaseError("离线包清单 Schema 不受支持")
+    images = manifest.get("images")
+    if not isinstance(images, list) or not images:
+        raise ReleaseError("离线包清单没有镜像记录")
+    references = [str(item.get("reference") or "") for item in images]
+    if any(not reference for reference in references):
+        raise ReleaseError("离线包清单包含空镜像引用")
+    details = inspect_images(references)
+    for record, detail in zip(images, details, strict=True):
+        expected = str(record.get("image_id") or "")
+        actual = str(detail.get("Id") or "")
+        if not IMAGE_ID_PATTERN.fullmatch(expected) or actual != expected:
+            raise ReleaseError(
+                f"本地镜像内容与离线包不一致：{record['reference']}"
+            )
+    print(f"离线镜像校验通过：{len(images)} 个")
 
 
 def build_directory() -> Path:
@@ -887,7 +1102,7 @@ def render_deployment(config_path: Path) -> Path:
     return output
 
 
-def deploy(config_path: Path) -> None:
+def deploy(config_path: Path, *, offline: bool = False) -> None:
     """先渲染并校验全部配置，再应用 KBot 与可选观测栈。"""
 
     output = render_deployment(config_path)
@@ -909,9 +1124,10 @@ def deploy(config_path: Path) -> None:
             check=True,
         )
     subprocess.run([*compose, "config", "--quiet"], check=True)
-    subprocess.run(
-        [*compose, "up", "--detach", "--remove-orphans"], check=True
-    )
+    up_command = [*compose, "up", "--detach", "--remove-orphans"]
+    if offline:
+        up_command.extend(["--pull", "never"])
+    subprocess.run(up_command, check=True)
     if observability_config.is_file():
         environment = os.environ.copy()
         environment["KBOT_AIOPS_STACK_CONFIG_FILE"] = str(
@@ -958,6 +1174,24 @@ def parser() -> argparse.ArgumentParser:
     deploy_command.add_argument(
         "--config", type=Path, default=DEFAULT_DEPLOYMENT_CONFIG
     )
+    deploy_command.add_argument(
+        "--offline",
+        action="store_true",
+        help="禁止 Compose 访问 Registry，只使用已校验的本地镜像",
+    )
+    offline_export = commands.add_parser(
+        "export-offline",
+        help="生成包含正式镜像归档和自包含部署工具的离线包",
+    )
+    offline_export.add_argument(
+        "--config", type=Path, default=DEFAULT_RELEASE_CONFIG
+    )
+    offline_export.add_argument("--output", type=Path, required=True)
+    offline_verify = commands.add_parser(
+        "verify-offline-images",
+        help="按离线包清单校验 docker load 后的本地镜像",
+    )
+    offline_verify.add_argument("--manifest", type=Path, required=True)
     secret = commands.add_parser("generate-master-key")
     secret.add_argument("--output", type=Path, required=True)
     prepare = commands.add_parser(
@@ -988,7 +1222,11 @@ def main() -> None:
         elif arguments.command == "render-deployment":
             print(render_deployment(arguments.config))
         elif arguments.command == "deploy":
-            deploy(arguments.config)
+            deploy(arguments.config, offline=arguments.offline)
+        elif arguments.command == "export-offline":
+            print(export_offline_bundle(arguments.config, arguments.output))
+        elif arguments.command == "verify-offline-images":
+            verify_offline_images(arguments.manifest)
         elif arguments.command == "generate-master-key":
             arguments.output.parent.mkdir(parents=True, exist_ok=True)
             arguments.output.write_text(
