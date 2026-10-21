@@ -78,7 +78,17 @@ class ReleaseToolingTest(unittest.TestCase):
         package_data = set(
             pyproject["tool"]["setuptools"]["package-data"]["aiops_agent"]
         )
+        self.assertIn("actions/catalog/**/*.txt", package_data)
         self.assertIn("application/inspections/*.json", package_data)
+
+    def test_model_serving_declares_platform_clients_dependency(self) -> None:
+        pyproject = release.tomllib.loads(
+            (ROOT / "services/model_serving/pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        dependencies = set(pyproject["project"]["dependencies"])
+        self.assertIn("kbot-platform-clients==4.0.0", dependencies)
 
     def test_knowledge_core_declares_tokenizer_dependency(self) -> None:
         pyproject = release.tomllib.loads(
