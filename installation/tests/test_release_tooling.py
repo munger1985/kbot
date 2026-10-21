@@ -69,6 +69,17 @@ class ReleaseToolingTest(unittest.TestCase):
             }.issubset(dependencies)
         )
 
+    def test_aiops_image_packages_inspection_catalog(self) -> None:
+        pyproject = release.tomllib.loads(
+            (ROOT / "services/aiops_agent/pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        package_data = set(
+            pyproject["tool"]["setuptools"]["package-data"]["aiops_agent"]
+        )
+        self.assertIn("application/inspections/*.json", package_data)
+
     def test_runtime_config_uses_compose_dns_for_every_endpoint(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_runtime_toml(self.topology, values)

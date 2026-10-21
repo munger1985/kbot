@@ -35,6 +35,7 @@ aiops_agent = [
   "actions/catalog/**/*.json",
   "actions/catalog/**/*.sql",
   "application/conversation_starters/*.json",
+  "application/inspections/*.json",
   "diagnostics/catalog/**/*.json",
   "diagnostics/catalog/**/*.sql",
   "resources/fonts/**/*",
