@@ -27,7 +27,7 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
   中从当前 Schema 的模型目录生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到
   仓库或非受控位置。
 - `database/oracle/operations/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%`
-  表和视图，仅用于确认不保留数据的开发 Schema。
+  属性图、表和视图，仅用于确认不保留数据的开发 Schema。
 - `tools/db/render_aiops_rebuild_schema.py`：从规范 DDL 生成 AIOps 单文件重建交付物，
   不连接或修改数据库。
 - `scripts/deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。

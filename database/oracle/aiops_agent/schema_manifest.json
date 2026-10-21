@@ -6,13 +6,13 @@
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 53,
-      "sha256": "636456f78423dcc9080ba4a4f351e74b888d0f464caac6921ad26f7d7a3908df"
+      "statements": 54,
+      "sha256": "a125c51e44f1882abefeda2b2a4fde7c431a4e43a4da91a21dba5c1ecf328642"
     },
     {
       "name": "002_ops_runtime.sql",
-      "statements": 35,
-      "sha256": "8fb4113eceb9a8b554e1520195f285e4a0669cdb5ef7d8556b75990258228655"
+      "statements": 38,
+      "sha256": "dfb6c9c93ccc92ff8809bdadc10efa20163c9e07dd569270f2d78a21656ef23a"
     },
     {
       "name": "003_ops_change.sql",
@@ -21,8 +21,8 @@
     },
     {
       "name": "004_ops_inspection.sql",
-      "statements": 34,
-      "sha256": "597f07e33f32bb4c3fcfb278ef6fa4d93110a8ea186c9df1580d0d30789f4b2e"
+      "statements": 35,
+      "sha256": "8effb3cfc01e94984cbb890fde1922ff93d9a53808a908d21946c71311ee8b8b"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -41,8 +41,8 @@
     },
     {
       "name": "008_ops_conversations_reports.sql",
-      "statements": 84,
-      "sha256": "ef30ea32da367f4424e5cbb66f012b658ffc95156b57a78aa903424f45a01e31"
+      "statements": 86,
+      "sha256": "6bded00cebc92d306c616e53e7f3f7abc8a6a0cf1c14532cbcb9ca5416852f20"
     },
     {
       "name": "009_ops_workload.sql",
@@ -51,8 +51,8 @@
     },
     {
       "name": "010_ops_knowledge.sql",
-      "statements": 29,
-      "sha256": "7c4cbfa5d200519170bfe2778ecc9f77d04ff810b5736e7b2b163228ee49daf3"
+      "statements": 32,
+      "sha256": "fade957b590985443d1f3ab11c6d2e28a858d1c96e1f33872cdf5caf0e01e9d9"
     },
     {
       "name": "011_ops_recovery.sql",
@@ -184,6 +184,87 @@
     "UX_OPS_TURN_EVENT_KEY"
   ],
   "foreign_key_indexes": [
+    {
+      "constraint": "FK_OPS_TARGET_FACT_OWNER",
+      "index": "IX_OPS_TARGET_FACT_OWNER",
+      "table": "KBOT_OPS_TARGET_FACT",
+      "columns": [
+        "TARGET_ID",
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_SIG_DOMAIN",
+      "index": "IX_OPS_SIG_DOMAIN",
+      "table": "KBOT_OPS_SIGNAL_EVENT",
+      "columns": [
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_SIG_BINDING",
+      "index": "IX_OPS_SIG_BINDING",
+      "table": "KBOT_OPS_SIGNAL_EVENT",
+      "columns": [
+        "SOURCE_BINDING_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_SITUATION_DOMAIN",
+      "index": "IX_OPS_SITUATION_DOMAIN",
+      "table": "KBOT_OPS_SITUATION",
+      "columns": [
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_REPORT_RUN",
+      "index": "IX_OPS_REPORT_RUN",
+      "table": "KBOT_OPS_REPORT",
+      "columns": [
+        "OPS_RUN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_PLAY_INV_RUN",
+      "index": "IX_OPS_PLAY_INV_RUN",
+      "table": "KBOT_OPS_PLAYBOOK_INVOCATION",
+      "columns": [
+        "OPS_RUN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_TOOL_INV_RUN",
+      "index": "IX_OPS_TOOL_INV_RUN",
+      "table": "KBOT_OPS_TOOL_INVOCATION",
+      "columns": [
+        "OPS_RUN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_KNOW_ASSET_BASE",
+      "index": "IX_OPS_KNOW_ASSET_BASE",
+      "table": "KBOT_OPS_KNOWLEDGE_ASSET",
+      "columns": [
+        "KNOWLEDGE_BASE_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_KNOW_ASSET_CUR_VER",
+      "index": "IX_OPS_KNOW_ASSET_CUR_VER",
+      "table": "KBOT_OPS_KNOWLEDGE_ASSET",
+      "columns": [
+        "CURRENT_VERSION_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_KNOW_SCOPE_TAG",
+      "index": "IX_OPS_KNOW_SCOPE_TAG",
+      "table": "KBOT_OPS_KNOWLEDGE_SCOPE",
+      "columns": [
+        "TAG_ID"
+      ]
+    },
     {
       "constraint": "FK_OPS_TARGET_DIAG_CRED",
       "index": "IX_OPS_TARGET_DIAG_CRED",

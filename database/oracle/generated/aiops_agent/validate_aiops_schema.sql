@@ -381,6 +381,8 @@ BEGIN
             'IX_OPS_INV_REV_ASSESS',
             'IX_OPS_INV_REV_FRAME',
             'IX_OPS_INV_REV_PLAN',
+            'IX_OPS_KNOW_ASSET_BASE',
+            'IX_OPS_KNOW_ASSET_CUR_VER',
             'IX_OPS_KNOW_ASSET_SCOPE',
             'IX_OPS_KNOW_ASSIST_BASE',
             'IX_OPS_KNOW_BASE_SCOPE',
@@ -389,6 +391,7 @@ BEGIN
             'IX_OPS_KNOW_REVIEW_QUEUE',
             'IX_OPS_KNOW_REVIEW_VER',
             'IX_OPS_KNOW_SCOPE_LOOKUP',
+            'IX_OPS_KNOW_SCOPE_TAG',
             'IX_OPS_KNOW_SCOPE_VER',
             'IX_OPS_KNOW_SOURCE_ART',
             'IX_OPS_KNOW_SOURCE_REPORT',
@@ -406,6 +409,7 @@ BEGIN
             'IX_OPS_PLAY_INV_CATALOG',
             'IX_OPS_PLAY_INV_OUTPUT',
             'IX_OPS_PLAY_INV_PARENT',
+            'IX_OPS_PLAY_INV_RUN',
             'IX_OPS_PLAY_INV_TASK',
             'IX_OPS_PLAY_INV_TURN',
             'IX_OPS_POLICY_DOMAIN',
@@ -428,6 +432,7 @@ BEGIN
             'IX_OPS_RELATION_SYSTEM',
             'IX_OPS_REPORT_CONTENT',
             'IX_OPS_REPORT_CONVERSATION',
+            'IX_OPS_REPORT_RUN',
             'IX_OPS_REPORT_STATUS',
             'IX_OPS_REPORT_SUPERSEDES',
             'IX_OPS_REPORT_TARGET',
@@ -455,11 +460,14 @@ BEGIN
             'IX_OPS_RUN_SOURCE_PROPOSAL',
             'IX_OPS_RUN_SOURCE_RESULT',
             'IX_OPS_RUN_TARGET',
+            'IX_OPS_SIG_BINDING',
             'IX_OPS_SIG_CORRELATE',
+            'IX_OPS_SIG_DOMAIN',
             'IX_OPS_SIG_INBOX',
             'IX_OPS_SIG_PROCESSING',
             'IX_OPS_SIG_TARGET_TIME',
             'IX_OPS_SITEVT_SIGNAL',
+            'IX_OPS_SITUATION_DOMAIN',
             'IX_OPS_SITUATION_QUERY',
             'IX_OPS_SOURCE_AUTH_CRED',
             'IX_OPS_SOURCE_CONNECTIVITY',
@@ -475,6 +483,7 @@ BEGIN
             'IX_OPS_TARGET_DOMAIN',
             'IX_OPS_TARGET_EXEC_CRED',
             'IX_OPS_TARGET_FACT_DOMAIN',
+            'IX_OPS_TARGET_FACT_OWNER',
             'IX_OPS_TARGET_FACT_TARGET',
             'IX_OPS_TARGET_RESP_GROUP',
             'IX_OPS_TARGET_SCOPE',
@@ -488,6 +497,7 @@ BEGIN
             'IX_OPS_TOOL_INV_OUTPUT',
             'IX_OPS_TOOL_INV_PLAY',
             'IX_OPS_TOOL_INV_REV',
+            'IX_OPS_TOOL_INV_RUN',
             'IX_OPS_TOOL_INV_TASK',
             'IX_OPS_TOOL_INV_TURN',
             'IX_OPS_TSRC_MONITOR',
@@ -689,6 +699,8 @@ BEGIN
             'IX_OPS_INV_REV_ASSESS',
             'IX_OPS_INV_REV_FRAME',
             'IX_OPS_INV_REV_PLAN',
+            'IX_OPS_KNOW_ASSET_BASE',
+            'IX_OPS_KNOW_ASSET_CUR_VER',
             'IX_OPS_KNOW_ASSET_SCOPE',
             'IX_OPS_KNOW_ASSIST_BASE',
             'IX_OPS_KNOW_BASE_SCOPE',
@@ -697,6 +709,7 @@ BEGIN
             'IX_OPS_KNOW_REVIEW_QUEUE',
             'IX_OPS_KNOW_REVIEW_VER',
             'IX_OPS_KNOW_SCOPE_LOOKUP',
+            'IX_OPS_KNOW_SCOPE_TAG',
             'IX_OPS_KNOW_SCOPE_VER',
             'IX_OPS_KNOW_SOURCE_ART',
             'IX_OPS_KNOW_SOURCE_REPORT',
@@ -714,6 +727,7 @@ BEGIN
             'IX_OPS_PLAY_INV_CATALOG',
             'IX_OPS_PLAY_INV_OUTPUT',
             'IX_OPS_PLAY_INV_PARENT',
+            'IX_OPS_PLAY_INV_RUN',
             'IX_OPS_PLAY_INV_TASK',
             'IX_OPS_PLAY_INV_TURN',
             'IX_OPS_POLICY_DOMAIN',
@@ -736,6 +750,7 @@ BEGIN
             'IX_OPS_RELATION_SYSTEM',
             'IX_OPS_REPORT_CONTENT',
             'IX_OPS_REPORT_CONVERSATION',
+            'IX_OPS_REPORT_RUN',
             'IX_OPS_REPORT_STATUS',
             'IX_OPS_REPORT_SUPERSEDES',
             'IX_OPS_REPORT_TARGET',
@@ -763,11 +778,14 @@ BEGIN
             'IX_OPS_RUN_SOURCE_PROPOSAL',
             'IX_OPS_RUN_SOURCE_RESULT',
             'IX_OPS_RUN_TARGET',
+            'IX_OPS_SIG_BINDING',
             'IX_OPS_SIG_CORRELATE',
+            'IX_OPS_SIG_DOMAIN',
             'IX_OPS_SIG_INBOX',
             'IX_OPS_SIG_PROCESSING',
             'IX_OPS_SIG_TARGET_TIME',
             'IX_OPS_SITEVT_SIGNAL',
+            'IX_OPS_SITUATION_DOMAIN',
             'IX_OPS_SITUATION_QUERY',
             'IX_OPS_SOURCE_AUTH_CRED',
             'IX_OPS_SOURCE_CONNECTIVITY',
@@ -783,6 +801,7 @@ BEGIN
             'IX_OPS_TARGET_DOMAIN',
             'IX_OPS_TARGET_EXEC_CRED',
             'IX_OPS_TARGET_FACT_DOMAIN',
+            'IX_OPS_TARGET_FACT_OWNER',
             'IX_OPS_TARGET_FACT_TARGET',
             'IX_OPS_TARGET_RESP_GROUP',
             'IX_OPS_TARGET_SCOPE',
@@ -796,6 +815,7 @@ BEGIN
             'IX_OPS_TOOL_INV_OUTPUT',
             'IX_OPS_TOOL_INV_PLAY',
             'IX_OPS_TOOL_INV_REV',
+            'IX_OPS_TOOL_INV_RUN',
             'IX_OPS_TOOL_INV_TASK',
             'IX_OPS_TOOL_INV_TURN',
             'IX_OPS_TSRC_MONITOR',
@@ -911,7 +931,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 289 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 299 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -4083,7 +4103,7 @@ BEGIN
     dbms_output.put_line(
         '验证通过：78 张表、10 个视图、'
         || '1 个属性图、'
-        || '289 个命名索引、260 个命名约束、'
+        || '299 个命名索引、260 个命名约束、'
         || '1225 个表列；Schema 与当前规范一致。'
     );
 END;
