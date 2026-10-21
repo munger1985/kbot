@@ -10,7 +10,7 @@
 
 - Registry：`nrt.ocir.io/sehubjapacprod/kbot`；
 - 平台：`linux/amd64`；
-- 镜像源码 Commit：`497be08edc55d458582665482a50c57133ada79e`；
+- 镜像源码 Commit：`7f12335b5a45a3973f212e45183f6a58f3006587`；
 - 正式标签：`1.0`；
 - 10 个正式镜像及 Digest 以
   [`installation/README.md`](../../installation/README.md#正式版本-10) 为准；

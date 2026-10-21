@@ -5,23 +5,23 @@ OCI Container Registry（OCIR）的统一入口。开发机阶段不需要 OCI �
 
 ## 正式版本 1.0
 
-`1.0` 是本交付线的首个正式容器版本，于 2026-10-20 从 `kbot4.1` 分支的
-Commit `497be08edc55d458582665482a50c57133ada79e` 构建并发布，平台为
+`1.0` 是本交付线的首个正式容器版本，最新修正版于 2026-10-21 从 `kbot4.1` 分支的
+Commit `7f12335b5a45a3973f212e45183f6a58f3006587` 构建并发布，平台为
 `linux/amd64`。Registry 前缀为 `nrt.ocir.io/sehubjapacprod/kbot`；生产部署应按
 下表使用不可变 Digest，不依赖可变 Tag。
 
 | 镜像 | `1.0` Digest |
 |---|---|
-| `kbot-model-serving` | `sha256:c041c9691f9c5a1be0eab9ef76669452f00e94223a871b5d5e7e00354668ba9e` |
-| `kbot-knowledge-core` | `sha256:1e7835c5c001e535ec19ead6fed94ba20859b21c7fe09ba285a2c9be3921c66f` |
-| `kbot-knowledge-retrieval-app` | `sha256:b603c29573c0507b5fcc2342a6489f7c9d4dedcaf45def91a0546d090ba29176` |
-| `kbot-media-studio-app` | `sha256:4178127df35ba2903592f18a286a48346ed10f23c71ac6e726d0d069578983a1` |
-| `kbot-agent-runtime` | `sha256:391396c2720f4bc5b263863935af03bdb18a909ad600ae12a5b9df89fcd7181f` |
-| `kbot-data-query` | `sha256:7e8926be856f6ca46a640ae7ce12dc5f6bb6941cfc9d9974627c9bedeca8cacf` |
-| `kbot-aiops-agent` | `sha256:7491a960471948267c0a7b9cd26addfede1077fccf891061db509f5543e25d7c` |
-| `kbot-main-api` | `sha256:7887a86fb5f2570d3b7df1c1a7ffe21dc8cb58dc06bb0ff18e4c40f58f5b7583` |
-| `kbot-installer` | `sha256:1b5a532650a588d0e4742b2694432f13cd4a0d0169954f01e1397301c722774e` |
-| `kbot-ui` | `sha256:700fa1cfe603dc1f15b5a3d696a94446d81771931c424218a539c3b52cab9564` |
+| `kbot-model-serving` | `sha256:25530abad1caf35e35e373a9ea6ce114b99f22eeb80d171f939339a793c3cac5` |
+| `kbot-knowledge-core` | `sha256:773627c770ed084b0bfa5efa5ea402aa5268cd0dbaa20f0b91bca27b6e13fa89` |
+| `kbot-knowledge-retrieval-app` | `sha256:30425624c4fbd49dd1a5c46be0b5dfabd9d543cd8526b48a6cf6115b53c265eb` |
+| `kbot-media-studio-app` | `sha256:627f18a95e1e2728251d522fcebe84289e9324f2368c031a823a121350a4f431` |
+| `kbot-agent-runtime` | `sha256:150592faf4bcd33f7f0cb48de666dde75518a65980c45b6d59f9527e8711e0ac` |
+| `kbot-data-query` | `sha256:47629c582792ac522955af3e4b7cd5600327454efd9d8fd6099700a7f82d6c04` |
+| `kbot-aiops-agent` | `sha256:00947a59c57478af971259c3275011af0dc4b4ded2f89da364f76bf53388819e` |
+| `kbot-main-api` | `sha256:49f00fd77809576659d5c55573ae1bd1d70db3ff2c313c549dabfc08d5cd9514` |
+| `kbot-installer` | `sha256:15265cd5654cbfd4529e7b9e3e1df587e44a79eb5e261788b371b17ffd21b70f` |
+| `kbot-ui` | `sha256:4c251a59ef182e316a0200e2e1e1c8d386eb302e72256ce6ce1d80d8f61c1058` |
 
 上一试发布标签 `4.0.0-e1b511db` 已从上述 10 个镜像仓库删除，不作为回滚版本保留。
 正式环境的 OCI 基础设施、Digest 锁定、空库初始化、验收和恢复顺序见
