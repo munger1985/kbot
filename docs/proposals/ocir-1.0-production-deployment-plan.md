@@ -50,9 +50,10 @@ OEM 只在 AIOps App 内配置，不写入部署 INI 或 Compose。
 installation/releases/1.0-images.json
 ```
 
-该清单已用于核心脱机包制作：制作时核对 Registry Digest，目标机导入后核对 Image ID，
-并以 `--pull never` 启动。在线部署入口的 Compose Digest 引用和拉取门禁仍需按下列要求
-补齐，不能因为已有离线门禁而视为完成：
+该清单与 `installation/releases/1.0-docling-models.json` 共同约束完整脱机包：制作时
+核对 Registry Digest，并打包当前解析路径使用的 Layout、TableFormer、EasyOCR；目标机
+导入后核对 Image ID、逐文件校验模型，并以 `--pull never` 启动。在线部署入口的 Compose
+Digest 引用和拉取门禁仍需按下列要求补齐，不能因为已有离线门禁而视为完成：
 
 锁定能力必须满足：
 

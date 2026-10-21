@@ -1,0 +1,21 @@
+{
+  "schema": "kbot-docling-model-set.v1",
+  "release_version": "1.0",
+  "docling_version": "2.114.0",
+  "profile": "kbot-runtime-required",
+  "source_command": "docling-tools models download layout tableformer easyocr --force --output-dir <directory>",
+  "models": [
+    {
+      "id": "layout",
+      "directory": "docling-project--docling-layout-heron"
+    },
+    {
+      "id": "tableformer",
+      "directory": "docling-project--docling-models"
+    },
+    {
+      "id": "easyocr",
+      "directory": "EasyOcr"
+    }
+  ]
+}

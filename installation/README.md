@@ -53,19 +53,23 @@ KBot 与 AIOps 观测栈保持两个独立 Compose Project，避免混淆业务�
 ## 脱机交付
 
 脱机环境不需要 Git，也不从 OCIR 拉取镜像。联网发布机使用仓库内的正式镜像锁生成一个
-完整目录，其中包含 10 个镜像的 `docker image save` 归档、自包含部署控制器、配置模板、
-镜像 Image ID 清单和 `SHA256SUMS`：
+完整目录，其中包含 10 个镜像的 `docker image save` 归档、Docling 2.114.0 运行所需的
+Layout、TableFormer、EasyOCR 模型、自包含部署控制器、配置模板、逐文件模型清单、镜像
+Image ID 清单和 `SHA256SUMS`：
 
 ```bash
 installation/dev/kbot-release export-offline \
   --config installation/releases/1.0.ini \
+  --docling-models-dir /srv/release-assets/docling_models \
   --output installation/generated/offline/kbot-1.0
 ```
 
 制作前必须选择受版本控制的正式发布描述并在本机拉取全部镜像。制作器会核对每个
-RepoDigest；工作区不干净、锁文件缺失、镜像缺失或 Digest 不符都会拒绝导出。大体积镜像
-归档属于生成制品，不提交 Git；Git 只保存制作器、目标机工具、配置模板、正式镜像锁和
-操作文档。
+RepoDigest，并要求模型源目录完整包含正式模型规格列出的三个目录；工作区不干净、锁文件
+缺失、模型缺失、镜像缺失或 Digest 不符都会拒绝导出。大体积镜像和模型归档属于生成
+制品，不提交 Git；Git 只保存制作器、目标机工具、配置模板、正式镜像锁、模型规格和
+操作文档。其他 Docling VLM、公式、图表和 OCR 模型没有被当前 KBot 解析路径调用，后续
+启用相应能力时必须先扩充正式模型规格并重新验收离线包。
 
 目标机复制整个生成目录后执行：
 
@@ -73,6 +77,9 @@ RepoDigest；工作区不干净、锁文件缺失、镜像缺失或 Digest 不�
 ./kbot-offline verify-package
 ./kbot-offline load-images
 ./kbot-offline prepare
+# 编辑 runtime/deployment.ini 中的 data_dir 后：
+./kbot-offline install-models
+./kbot-offline verify-models --full
 ```
 
 完整配置、Secret、Installer 初始化和启动顺序见

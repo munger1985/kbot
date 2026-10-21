@@ -6,8 +6,9 @@ Linux x86_64、Python 3.11+、Docker Engine 和 Docker Compose v2。
 面向安装人员的完整宿主机、Oracle、初始化、启动、改密、验收和恢复流程见
 [KBot 1.0 完全离线安装手册](../../docs/operations/kbot-1.0-complete-offline-installation.md)。
 
-离线包包含 10 个 KBot 正式镜像、镜像锁定信息、自包含部署工具和 SHA-256 清单；不包含
-Oracle 密码、KBot 主密钥或其他环境 Secret。AIOps App 属于 KBot 核心镜像，可以离线部署；
+离线包包含 10 个 KBot 正式镜像、Docling 2.114.0 的 Layout、TableFormer、EasyOCR 运行
+模型、逐文件模型清单、镜像锁定信息、自包含部署工具和 SHA-256 清单；不包含 Oracle
+密码、KBot 主密钥或其他环境 Secret。AIOps App 属于 KBot 核心镜像，可以离线部署；
 Prometheus、Loki 等第三方观测组件不在该核心包中。
 
 ## 在联网发布机制作
@@ -17,11 +18,13 @@ Prometheus、Loki 等第三方观测组件不在该核心包中。
 ```bash
 installation/dev/kbot-release export-offline \
   --config installation/releases/1.0.ini \
+  --docling-models-dir /srv/release-assets/docling_models \
   --output installation/generated/offline/kbot-1.0
 ```
 
 制作器会逐个确认本地镜像的 RepoDigest 与 `installation/releases/1.0-images.json`
-一致，再执行 `docker image save`。生成目录整体复制到移动介质；不要只复制镜像归档。
+一致，并按 `installation/releases/1.0-docling-models.json` 校验和打包当前运行路径使用的
+三个 Docling 模型。生成目录整体复制到移动介质；不要只复制镜像或模型归档。
 
 ## 在脱机目标机准备
 
@@ -31,6 +34,8 @@ cd kbot-1.0
 ./kbot-offline load-images
 ./kbot-offline prepare
 vi runtime/deployment.ini
+./kbot-offline install-models
+./kbot-offline verify-models --full
 ./kbot-offline prepare-secrets
 ./kbot-offline validate
 ./kbot-offline render
@@ -38,6 +43,10 @@ vi runtime/deployment.ini
 
 `prepare-secrets` 无回显录入 Oracle Schema 密码，并首次生成稳定的 KBot 主密钥。立即对
 `runtime/secrets/master_key` 做受控备份；以后升级必须继续使用同一个文件。
+
+`install-models` 将模型原子安装到 `<data_dir>/models/docling_models`，逐文件校验大小和
+SHA-256，并拒绝覆盖不匹配的现有目录。日常 `deploy` 会执行快速回执校验；介质验收和故障
+排查使用 `verify-models --full` 重新读取全部模型文件。
 
 ## 空白 Schema 初始化
 

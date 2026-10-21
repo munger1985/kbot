@@ -45,6 +45,26 @@ class ReleaseToolingTest(unittest.TestCase):
         self.assertEqual("linux/amd64", lock["platform"])
         self.assertEqual(40, len(lock["source_commit"]))
 
+    def test_docling_model_spec_matches_runtime_pipeline(self) -> None:
+        spec = release.load_docling_model_spec("1.0")
+        self.assertEqual("2.114.0", spec["docling_version"])
+        self.assertEqual(
+            ["layout", "tableformer", "easyocr"],
+            [item["id"] for item in spec["models"]],
+        )
+        self.assertNotIn("--all", spec["source_command"])
+
+    def test_docling_model_validation_rejects_missing_runtime_model(self) -> None:
+        spec = release.load_docling_model_spec("1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            for model in spec["models"][:-1]:
+                directory = source / model["directory"]
+                directory.mkdir(parents=True)
+                (directory / "payload.bin").write_bytes(b"model")
+            with self.assertRaisesRegex(release.ReleaseError, "easyocr"):
+                release.docling_model_files(source, spec)
+
     def test_cpu_torch_is_limited_to_model_and_knowledge_images(self) -> None:
         cpu_images = {
             item["id"]
@@ -473,7 +493,20 @@ alertmanager_retention = 24h
             output.write_bytes(b"docker-image-archive")
 
         with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary) / "kbot-1.0"
+            root = Path(temporary)
+            output = root / "kbot-1.0"
+            model_source = root / "docling-models"
+            spec = release.load_docling_model_spec("1.0")
+            for model in spec["models"]:
+                directory = model_source / model["directory"]
+                directory.mkdir(parents=True)
+                (directory / "payload.bin").write_bytes(b"model")
+
+            def save_model_archive(
+                _: Path, archive: Path, __: list[str]
+            ) -> None:
+                archive.write_bytes(b"docling-model-archive")
+
             with (
                 patch.object(
                     release,
@@ -487,11 +520,22 @@ alertmanager_retention = 24h
                 ),
                 patch.object(release, "inspect_images", return_value=details),
                 patch.object(release.subprocess, "run", side_effect=save_images),
+                patch.object(
+                    release,
+                    "create_docling_model_archive",
+                    side_effect=save_model_archive,
+                ),
             ):
-                release.export_offline_bundle(Path("release.ini"), output)
+                release.export_offline_bundle(
+                    Path("release.ini"), output, model_source
+                )
 
             self.assertTrue((output / "kbot-offline").is_file())
             self.assertTrue((output / "images/kbot-images.tar").is_file())
+            self.assertTrue((output / "models/docling-models.tar").is_file())
+            self.assertTrue(
+                (output / "models/docling-models.manifest.json").is_file()
+            )
             self.assertTrue((output / "SHA256SUMS").is_file())
             self.assertFalse((output / "runtime").exists())
             self.assertFalse(any(output.rglob("*password*")))
@@ -499,6 +543,8 @@ alertmanager_retention = 24h
                 (output / "bundle-manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(names, [item["name"] for item in manifest["images"]])
+            self.assertEqual(release.OFFLINE_BUNDLE_SCHEMA, manifest["schema"])
+            self.assertEqual(3, manifest["docling_models"]["model_count"])
             self.assertTrue(
                 all(item["image_id"] == image_id for item in manifest["images"])
             )
@@ -510,7 +556,7 @@ alertmanager_retention = 24h
             manifest_path.write_text(
                 json.dumps(
                     {
-                        "schema": "kbot-offline-bundle.v1",
+                        "schema": release.OFFLINE_BUNDLE_SCHEMA,
                         "images": [
                             {
                                 "reference": "registry.test/kbot/main:1.0",
@@ -530,6 +576,53 @@ alertmanager_retention = 24h
                 patch("builtins.print"),
             ):
                 release.verify_offline_images(manifest_path)
+
+    def test_install_and_verify_offline_docling_models(self) -> None:
+        spec = release.load_docling_model_spec("1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            for model in spec["models"]:
+                directory = source / model["directory"]
+                directory.mkdir(parents=True)
+                (directory / "payload.bin").write_bytes(
+                    f"model:{model['id']}".encode()
+                )
+            bundle = root / "bundle"
+            record = release.package_docling_models(
+                source, bundle / "models", spec
+            )
+            manifest_path = bundle / "bundle-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema": release.OFFLINE_BUNDLE_SCHEMA,
+                        "docling_models": record,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = root / "deployment.ini"
+            data_dir = root / "data"
+            config.write_text(
+                f"[paths]\ndata_dir = {data_dir}\n", encoding="utf-8"
+            )
+            config.chmod(0o600)
+
+            with patch("builtins.print"):
+                release.install_offline_docling_models(manifest_path, config)
+                release.verify_offline_docling_models(
+                    manifest_path, config, full=False
+                )
+                release.verify_offline_docling_models(
+                    manifest_path, config, full=True
+                )
+
+            target = data_dir / "models/docling_models"
+            self.assertTrue((target / release.DOCLING_INSTALL_RECEIPT).is_file())
+            self.assertTrue(
+                all((target / item["directory"]).is_dir() for item in spec["models"])
+            )
 
     @staticmethod
     def _values(oracle_secret: Path, master_secret: Path) -> dict[str, object]:

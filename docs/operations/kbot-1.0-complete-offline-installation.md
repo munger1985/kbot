@@ -6,11 +6,12 @@
 
 ## 1. 交付物与版本
 
-安装人员只需要取得以下两个文件：
+安装人员只需要取得以下三个文件：
 
 ```text
-kbot-1.0-20cfc006-linux-amd64.tar.zst
-KBot-1.0-Complete-Offline-Installation-20cfc006.md
+kbot-1.0-<tool-revision>-linux-amd64.tar.zst
+kbot-1.0-<tool-revision>-linux-amd64.tar.zst.sha256
+KBot-1.0-Complete-Offline-Installation.md
 ```
 
 离线归档固定信息：
@@ -19,13 +20,15 @@ KBot-1.0-Complete-Offline-Installation-20cfc006.md
 |---|---|
 | 平台 | `linux/amd64` |
 | KBot 镜像 | 10 个正式镜像 |
-| 部署工具修订 | `20cfc006` |
-| 归档字节数 | `3457134020` |
-| 归档 SHA-256 | `8fc009801f4793408ed1c7c0e7b10fa7f0de7aef72f51787f553f51585b7ee27` |
+| 部署工具修订 | 以包内 `bundle-manifest.json` 为准 |
+| 归档字节数 | 以 Object Storage 对象元数据为准 |
+| 归档 SHA-256 | 以同名 `.sha256` 文件为准 |
 
 归档包含 10 个 KBot 镜像、镜像锁、部署工具、Oracle 初始化器、静态 UI、Docling 2.114.0
-模型资产和内部 `SHA256SUMS`。不包含 Oracle 密码、KBot 主密钥、真实模型 Provider
-凭据、用户数据，也不包含 Prometheus、Loki 等第三方观测镜像。
+当前运行路径所需的 Layout、TableFormer、EasyOCR 模型、逐文件模型清单和内部
+`SHA256SUMS`。不包含当前代码未调用的 Docling VLM、公式、图表和其他 OCR 模型，也不
+包含 Oracle 密码、KBot 主密钥、真实模型 Provider 凭据、用户数据或 Prometheus、Loki 等
+第三方观测镜像。以后启用新的 Docling 能力时，必须发布包含对应模型的新离线包。
 
 部署全程不需要 OCIR 用户名或 Auth Token。`load-images` 从包内归档导入镜像，
 `deploy` 固定使用 `--pull never`。
@@ -111,20 +114,19 @@ WHERE OBJECT_NAME LIKE 'KBOT\_%' ESCAPE '\';
 
 ```bash
 cd /opt/kbot/releases
-echo '8fc009801f4793408ed1c7c0e7b10fa7f0de7aef72f51787f553f51585b7ee27  kbot-1.0-20cfc006-linux-amd64.tar.zst' \
-  | sha256sum --check -
+sha256sum --check kbot-1.0-<tool-revision>-linux-amd64.tar.zst.sha256
 ```
 
 必须看到：
 
 ```text
-kbot-1.0-20cfc006-linux-amd64.tar.zst: OK
+kbot-1.0-<tool-revision>-linux-amd64.tar.zst: OK
 ```
 
 解压并校验包内所有受控文件：
 
 ```bash
-tar --zstd -xf kbot-1.0-20cfc006-linux-amd64.tar.zst
+tar --zstd -xf kbot-1.0-<tool-revision>-linux-amd64.tar.zst
 cd kbot-1.0
 chmod +x kbot-offline
 ./kbot-offline verify-package
@@ -213,15 +215,23 @@ chmod 750 /srv/kbot/data /srv/kbot/log
 
 ## 6. 安装离线 Docling 模型资产
 
-Knowledge Core 文档解析需要包内 Docling 2.114.0 模型。按配置的 `data_dir` 安装：
+Knowledge Core 文档解析需要包内 Docling 2.114.0 运行模型。先完成第 5 节配置，工具将按
+`data_dir` 安装到 `<data_dir>/models/docling_models`：
 
 ```bash
-./patches/docling-models-2.114.0/apply-model-assets \
-  /srv/kbot/data/models/docling_models
+./kbot-offline install-models
+./kbot-offline verify-models --full
 ```
 
-脚本会校验模型归档及 15 个模型文件。目标目录已有不同内容时会拒绝覆盖；不要手工混用
-其他 Docling 版本。
+安装器先验证模型归档和逐文件清单，再解压到同文件系统临时目录，完整校验后原子安装。
+目标目录已有不同内容时会拒绝覆盖；不要手工混用其他 Docling 版本。完整校验覆盖：
+
+- Layout：`docling-project--docling-layout-heron`；
+- TableFormer：`docling-project--docling-models`；
+- EasyOCR：`EasyOcr`。
+
+默认 OCR 使用镜像内的 Tesseract `chi_sim`、`eng` 语言包；EasyOCR 模型用于部署时切换
+OCR 引擎。生成图片裁剪不等同于图片分类或图片描述，因此当前包不携带相关 VLM。
 
 ## 7. 交互准备 Secret
 
@@ -538,8 +548,8 @@ AIOps:               /ui/aiops/login.html
 
 ### `mainApiBaseUrl` 为空
 
-说明使用了 `20cfc006` 之前的部署工具或错误归档。重新核对本手册中的外层 SHA-256，执行
-`verify-package`，重新渲染并重建 UI；不要只手工修改容器内文件。
+说明使用了旧部署工具或错误归档。重新核对随包 `.sha256`，执行 `verify-package`，重新
+渲染并重建 UI；不要只手工修改容器内文件。
 
 ### 部署尝试访问 OCIR
 
@@ -571,8 +581,8 @@ GRANT EXECUTE ON SYS.DBMS_ALERT TO <KBOT_SCHEMA>;
 
 ### 文档解析尝试联网下载模型
 
-重新执行第 6 节的 `apply-model-assets`，确认目录为
-`<data_dir>/models/docling_models`，并检查目录权限。
+重新执行第 6 节的 `verify-models --full`。若提示安装回执、目录或文件摘要不匹配，重新
+取得同版本归档；不要允许容器联网补下载，也不要在原目录中混放其他版本模型。
 
 ### AIOps 管理员密码意外恢复
 
@@ -588,7 +598,7 @@ GRANT EXECUTE ON SYS.DBMS_ALERT TO <KBOT_SCHEMA>;
 
 只有同时满足以下条件才能标记部署完成：
 
-- 外层归档、包内文件和 10 个镜像校验全部通过；
+- 外层归档、包内文件、10 个镜像和 Docling 模型完整校验全部通过；
 - Oracle 初始化及平台基础数据校验通过；
 - 所选 App 首次初始化通过；
 - 所有预期容器稳定运行；
