@@ -974,6 +974,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("business-connection-endpoint-row", single_connection)
         self.assertIn("business-connection-access-row", single_connection)
         self.assertIn("business-connection-monitoring-row", single_connection)
+        self.assertIn('<span>TLS</span><select name="tls_enabled">', single_connection)
+        self.assertIn('[["false", "不启用"], ["true", "启用"]]', single_connection)
         self.assertIn('database.oracle_scope === "PDB"', single_connection)
         self.assertIn("<span>PDB 名称</span>", single_connection)
         second_and_third_rows = [
@@ -983,6 +985,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         ]
         self.assertEqual(second_and_third_rows, sorted(second_and_third_rows))
         self.assertIn(".business-connection-endpoint-row.oracle{grid-template-columns:repeat(4,minmax(0,1fr))}", forms)
+        self.assertIn(".business-connection-endpoint-row{grid-template-columns:2fr 1fr 3fr 1.3fr}", forms)
         self.assertIn(".business-connection-access-row.pdb,.business-connection-monitoring-row.discovery{grid-template-columns:repeat(3,minmax(0,1fr))}", forms)
         self.assertNotIn("discover-resources", systems)
         self.assertNotIn("event.target === drawer", systems)
@@ -1040,6 +1043,18 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("（已配置，可复用）", systems)
         self.assertIn("members.forEach((member) => { member.saved = true; })", validation)
         self.assertIn(".business-rac-node-card", forms)
+
+    def test_business_system_workspace_uses_explicit_database_tls_setting(self):
+        systems = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("tls_enabled: database.tls_enabled === true", systems)
+        self.assertIn("tls_enabled: false", systems)
+        self.assertIn('name === "tls_enabled" ? input.value === "true"', systems)
+        self.assertIn("tls_enabled: !oracle && database.tls_enabled === true", systems)
+        self.assertNotIn("tls_enabled: !oracle }", systems)
+        self.assertIn("无法连接数据库，请检查地址、端口和 TLS 设置。", systems)
 
     def test_business_system_workspace_infers_database_relations_and_draws_topology(self):
         systems = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(

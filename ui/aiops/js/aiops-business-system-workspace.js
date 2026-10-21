@@ -243,6 +243,7 @@
     const selectedHostCandidate = (database.host_candidates || []).find((row) => row.candidate_ref === database.host_candidate_ref);
     return {
       ...database,
+      tls_enabled: database.tls_enabled === true,
       oracle_scope: database.db_type === "ORACLE" && database.oracle_scope === "CDB" ? "CDB_ROOT" : database.oracle_scope,
       candidate_locator_key: database.candidate_locator_key || selectedCandidate?.locator_key || "",
       host_candidate_locator_key: database.host_candidate_locator_key || selectedHostCandidate?.locator_key || "",
@@ -264,6 +265,7 @@
         db_type: "ORACLE", version_code: "19c", environment: system.environment,
         deployment_type: "SINGLE_INSTANCE", rac_node_number: null, db_role: "UNKNOWN",
         host: "", port: 1521, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "",
+        tls_enabled: false,
         username: "", password: "", source_id: "", locator_key: "", candidate_ref: "",
         candidate_locator_key: "", host_candidate_ref: "", host_candidate_locator_key: "",
         candidates: [], host_candidates: [], discovering: false, discovery_revision: 0,
@@ -384,7 +386,7 @@
       const discovery = usesDiscovery(item);
       const oracle = database.db_type === "ORACLE";
       const pdb = oracle && database.oracle_scope === "PDB";
-      const endpointFields = `<label><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label><span>${oracle ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${oracle ? `<label><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>` : ""}`;
+      const endpointFields = `<label><span>数据库地址</span><input name="host" value="${esc(database.host)}" placeholder="主机名或 IP"></label><label><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label><span>${oracle ? "Service Name" : "Database"}</span><input name="database" value="${esc(database.database)}"></label>${oracle ? `<label><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>` : `<label><span>TLS</span><select name="tls_enabled">${selectOptions([["false", "不启用"], ["true", "启用"]], String(database.tls_enabled))}</select></label>`}`;
       const accessFields = `${pdb ? `<label><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label><span>诊断用户名</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label><span>诊断密码</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label>`;
       const monitoringFields = `<label><span>监控源（必选）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${!discovery ? `<label><span>监控定位键</span><input name="locator_key" value="${esc(database.locator_key)}" placeholder="与监控 Label 完全一致"></label>` : `<label><span>数据库候选</span><select name="candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label><label><span>承载主机候选</span><select name="host_candidate_ref" ${database.discovering ? "disabled" : ""}><option value="">请选择</option>${database.host_candidates.map((row) => `<option value="${esc(row.candidate_ref)}" ${row.candidate_ref === database.host_candidate_ref ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.locator_key)}</option>`).join("")}</select></label>`}`;
       connection = `<div class="business-connection-layout"><section class="business-connection-field-group"><p>连接端点</p><div class="business-connection-row business-connection-endpoint-row ${oracle ? "oracle" : ""}">${endpointFields}</div></section><section class="business-connection-field-group"><p>数据库访问</p><div class="business-connection-row business-connection-access-row ${pdb ? "pdb" : ""}">${accessFields}</div></section><section class="business-connection-field-group"><p>监控映射</p><div class="business-connection-row business-connection-monitoring-row ${discovery ? "discovery" : ""}">${monitoringFields}</div>${database.discovering ? `<p class="business-inline-note">正在从监控源发现数据库和承载主机…</p>` : ""}${source ? `<p class="business-inline-note">监控映射来自 ${esc(source.display_name)}；承载主机指标随数据库一次接入，无需重复登记服务器。</p>` : ""}</section></div>`;
@@ -508,7 +510,7 @@
     }
     if (!item.database) return;
     const key = name === "db_environment" ? "environment" : name;
-    item.database[key] = ["port", "rac_node_number"].includes(name) ? Number(input.value) : input.value;
+    item.database[key] = name === "tls_enabled" ? input.value === "true" : ["port", "rac_node_number"].includes(name) ? Number(input.value) : input.value;
     if (name === "db_type") {
       item.database.version_code = versions[item.database.db_type][0];
       item.database.port = item.database.db_type === "ORACLE" ? 1521 : item.database.db_type === "MYSQL" ? 3306 : 5432;
@@ -516,6 +518,7 @@
         item.database.deployment_type = "SINGLE_INSTANCE";
         item.database.rac_node_number = null;
       }
+      item.database.tls_enabled = false;
       syncInferredDatabaseRelations();
       item.saved = false; mark(); renderComposition();
       if (item.database.source_id && usesDiscovery(item)) void discover(item);
@@ -643,7 +646,7 @@
   function targetPayload(item) {
     const database = item.database;
     const oracle = database.db_type === "ORACLE";
-    return { display_name: item.display_name.trim(), db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number, db_role: database.db_role, importance_level: Number(system.importance_level), responsibility_group_id: item.owner_group_id, readonly_connection_enabled: true, controlled_change_enabled: false, endpoint: { host: database.host.trim(), port: Number(database.port), service: oracle ? database.database.trim() : null, database: oracle ? null : database.database.trim(), tls_enabled: !oracle }, oracle_container_scope: oracle ? database.oracle_scope : null, oracle_pdb_name: oracle && database.oracle_scope === "PDB" ? database.oracle_pdb_name.trim() : null, diagnostic_credential: { username: database.username, password: database.password }, capabilities: {} };
+    return { display_name: item.display_name.trim(), db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number, db_role: database.db_role, importance_level: Number(system.importance_level), responsibility_group_id: item.owner_group_id, readonly_connection_enabled: true, controlled_change_enabled: false, endpoint: { host: database.host.trim(), port: Number(database.port), service: oracle ? database.database.trim() : null, database: oracle ? null : database.database.trim(), tls_enabled: !oracle && database.tls_enabled === true }, oracle_container_scope: oracle ? database.oracle_scope : null, oracle_pdb_name: oracle && database.oracle_scope === "PDB" ? database.oracle_pdb_name.trim() : null, diagnostic_credential: { username: database.username, password: database.password }, capabilities: {} };
   }
   function monitoringPayload(item) {
     const database = item.database;
@@ -702,7 +705,14 @@
       for (const member of members) {
         const target = targetPayload(member);
         const response = await request("/targets/test-connection", { method: "POST", body: JSON.stringify({ db_type: target.db_type, version_code: target.version_code, endpoint: target.endpoint, oracle_container_scope: target.oracle_container_scope, oracle_pdb_name: target.oracle_pdb_name, diagnostic_credential: target.diagnostic_credential }) });
-        if (!response.ok) throw new Error(`${member.display_name}：${response.error_code || "连接测试失败"}`);
+        if (!response.ok) {
+          const messages = {
+            TARGET_UNREACHABLE: "无法连接数据库，请检查地址、端口和 TLS 设置。",
+            AUTH_FAILED: "数据库认证失败，请检查诊断用户名和密码。",
+            TIMEOUT: "连接数据库超时，请检查网络和防火墙设置。",
+          };
+          throw new Error(`${member.display_name}：${messages[response.error_code] || response.error_code || "连接测试失败"}`);
+        }
       }
       members.forEach((member) => { member.saved = true; });
       connectionTestStates.set(item.draft_resource_id, { status: "SUCCEEDED", message: isRacResource(item) ? `${members.length} 个 RAC 节点连接测试通过；正式提交前不会创建资源。` : "数据库连接测试通过；正式提交前不会创建资源。" });
