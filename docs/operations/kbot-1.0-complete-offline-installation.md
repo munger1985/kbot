@@ -9,8 +9,8 @@
 安装人员只需要取得以下三个文件：
 
 ```text
-kbot-1.0-<tool-revision>-linux-amd64.tar.zst
-kbot-1.0-<tool-revision>-linux-amd64.tar.zst.sha256
+kbot-1.0-405bb362-linux-amd64.tar.zst
+kbot-1.0-405bb362-linux-amd64.tar.zst.sha256
 KBot-1.0-Complete-Offline-Installation.md
 ```
 
@@ -20,9 +20,9 @@ KBot-1.0-Complete-Offline-Installation.md
 |---|---|
 | 平台 | `linux/amd64` |
 | KBot 镜像 | 10 个正式镜像 |
-| 部署工具修订 | 以包内 `bundle-manifest.json` 为准 |
-| 归档字节数 | 以 Object Storage 对象元数据为准 |
-| 归档 SHA-256 | 以同名 `.sha256` 文件为准 |
+| 部署工具修订 | `405bb362` |
+| 归档字节数 | `3838846762` |
+| 归档 SHA-256 | `8d39a72eede562b856e48d25cebe32afb495f8be39dde055914089bd293a531f` |
 
 归档包含 10 个 KBot 镜像、镜像锁、部署工具、Oracle 初始化器、静态 UI、Docling 2.114.0
 当前运行路径所需的 Layout、TableFormer、EasyOCR 模型、逐文件模型清单和内部
@@ -114,19 +114,19 @@ WHERE OBJECT_NAME LIKE 'KBOT\_%' ESCAPE '\';
 
 ```bash
 cd /opt/kbot/releases
-sha256sum --check kbot-1.0-<tool-revision>-linux-amd64.tar.zst.sha256
+sha256sum --check kbot-1.0-405bb362-linux-amd64.tar.zst.sha256
 ```
 
 必须看到：
 
 ```text
-kbot-1.0-<tool-revision>-linux-amd64.tar.zst: OK
+kbot-1.0-405bb362-linux-amd64.tar.zst: OK
 ```
 
 解压并校验包内所有受控文件：
 
 ```bash
-tar --zstd -xf kbot-1.0-<tool-revision>-linux-amd64.tar.zst
+tar --zstd -xf kbot-1.0-405bb362-linux-amd64.tar.zst
 cd kbot-1.0
 chmod +x kbot-offline
 ./kbot-offline verify-package
