@@ -24,6 +24,8 @@ Commit `497be08edc55d458582665482a50c57133ada79e` 构建并发布，平台为
 | `kbot-ui` | `sha256:700fa1cfe603dc1f15b5a3d696a94446d81771931c424218a539c3b52cab9564` |
 
 上一试发布标签 `4.0.0-e1b511db` 已从上述 10 个镜像仓库删除，不作为回滚版本保留。
+正式环境的 OCI 基础设施、Digest 锁定、空库初始化、验收和恢复顺序见
+[KBot 1.0 OCIR 生产部署与初始化方案](../docs/proposals/ocir-1.0-production-deployment-plan.md)。
 
 ## 交付模型
 
