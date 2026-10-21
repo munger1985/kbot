@@ -3,6 +3,9 @@
 离线包由联网发布机生成，目标机不需要 Git、Python 第三方包或 OCIR 凭据，只需要
 Linux x86_64、Python 3.11+、Docker Engine 和 Docker Compose v2。
 
+面向安装人员的完整宿主机、Oracle、初始化、启动、改密、验收和恢复流程见
+[KBot 1.0 完全离线安装手册](../../docs/operations/kbot-1.0-complete-offline-installation.md)。
+
 离线包包含 10 个 KBot 正式镜像、镜像锁定信息、自包含部署工具和 SHA-256 清单；不包含
 Oracle 密码、KBot 主密钥或其他环境 Secret。AIOps App 属于 KBot 核心镜像，可以离线部署；
 Prometheus、Loki 等第三方观测组件不在该核心包中。
