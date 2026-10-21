@@ -36,6 +36,15 @@ class ReleaseToolingTest(unittest.TestCase):
             )
         )
 
+    def test_formal_image_lock_covers_complete_catalog(self) -> None:
+        lock = release.load_image_lock("1.0", self.catalog)
+        self.assertEqual(
+            release.catalog_image_names(self.catalog),
+            [item["name"] for item in lock["images"]],
+        )
+        self.assertEqual("linux/amd64", lock["platform"])
+        self.assertEqual(40, len(lock["source_commit"]))
+
     def test_cpu_torch_is_limited_to_model_and_knowledge_images(self) -> None:
         cpu_images = {
             item["id"]
@@ -363,6 +372,100 @@ alertmanager_retention = 24h
             self.assertEqual(
                 ["up", "--detach", "--remove-orphans"], commands[1][-3:]
             )
+
+    def test_offline_deploy_forbids_registry_pull(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+            with (
+                patch.object(release, "render_deployment", return_value=output),
+                patch.object(release.subprocess, "run") as runner,
+                patch("builtins.print"),
+            ):
+                release.deploy(Path("deployment.ini"), offline=True)
+            command = runner.call_args_list[1].args[0]
+            self.assertEqual(
+                ["up", "--detach", "--remove-orphans", "--pull", "never"],
+                command[-5:],
+            )
+
+    def test_export_offline_bundle_is_self_contained_and_has_no_secrets(self) -> None:
+        lock = release.load_image_lock("1.0", self.catalog)
+        registry = lock["registry"]
+        names = release.catalog_image_names(self.catalog)
+        image_id = "sha256:" + "a" * 64
+        details = [
+            {
+                "Id": image_id,
+                "RepoDigests": [
+                    f"{registry}/{item['name']}@{item['digest']}"
+                ],
+            }
+            for item in lock["images"]
+        ]
+
+        def save_images(command: list[str], **_: object) -> None:
+            output = Path(command[command.index("--output") + 1])
+            output.write_bytes(b"docker-image-archive")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "kbot-1.0"
+            with (
+                patch.object(
+                    release,
+                    "release_values",
+                    return_value={
+                        "version": "1.0",
+                        "registry": registry,
+                        "platform": "linux/amd64",
+                        "revision": "0123456789ab",
+                    },
+                ),
+                patch.object(release, "inspect_images", return_value=details),
+                patch.object(release.subprocess, "run", side_effect=save_images),
+            ):
+                release.export_offline_bundle(Path("release.ini"), output)
+
+            self.assertTrue((output / "kbot-offline").is_file())
+            self.assertTrue((output / "images/kbot-images.tar").is_file())
+            self.assertTrue((output / "SHA256SUMS").is_file())
+            self.assertFalse((output / "runtime").exists())
+            self.assertFalse(any(output.rglob("*password*")))
+            manifest = json.loads(
+                (output / "bundle-manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(names, [item["name"] for item in manifest["images"]])
+            self.assertTrue(
+                all(item["image_id"] == image_id for item in manifest["images"])
+            )
+
+    def test_verify_offline_images_compares_loaded_image_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest_path = Path(temporary) / "bundle-manifest.json"
+            image_id = "sha256:" + "b" * 64
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "kbot-offline-bundle.v1",
+                        "images": [
+                            {
+                                "reference": "registry.test/kbot/main:1.0",
+                                "image_id": image_id,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(
+                    release,
+                    "inspect_images",
+                    return_value=[{"Id": image_id}],
+                ),
+                patch("builtins.print"),
+            ):
+                release.verify_offline_images(manifest_path)
 
     @staticmethod
     def _values(oracle_secret: Path, master_secret: Path) -> dict[str, object]:

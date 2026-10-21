@@ -50,6 +50,36 @@ KBot 与 AIOps 观测栈保持两个独立 Compose Project，避免混淆业务�
 当前镜像平台固定为 `linux/amd64`。在完成 ARM 依赖矩阵验证前，不将 OCI Ampere
 实例作为正式目标。
 
+## 脱机交付
+
+脱机环境不需要 Git，也不从 OCIR 拉取镜像。联网发布机使用仓库内的正式镜像锁生成一个
+完整目录，其中包含 10 个镜像的 `docker image save` 归档、自包含部署控制器、配置模板、
+镜像 Image ID 清单和 `SHA256SUMS`：
+
+```bash
+installation/dev/kbot-release export-offline \
+  --config installation/releases/1.0.ini \
+  --output installation/generated/offline/kbot-1.0
+```
+
+制作前必须选择受版本控制的正式发布描述并在本机拉取全部镜像。制作器会核对每个
+RepoDigest；工作区不干净、锁文件缺失、镜像缺失或 Digest 不符都会拒绝导出。大体积镜像
+归档属于生成制品，不提交 Git；Git 只保存制作器、目标机工具、配置模板、正式镜像锁和
+操作文档。
+
+目标机复制整个生成目录后执行：
+
+```bash
+./kbot-offline verify-package
+./kbot-offline load-images
+./kbot-offline prepare
+```
+
+完整配置、Secret、Installer 初始化和启动顺序见
+[`installation/offline/README.md`](offline/README.md)。离线入口固定使用 `--pull never`。
+核心离线包包含 AIOps App，但不包含 Prometheus、Loki 等第三方观测组件镜像；观测栈需要
+另行制作对应的离线包。
+
 ## 开发机构建
 
 复制配置，不要把实际配置或 Secret 提交到 Git：

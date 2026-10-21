@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_ROOT/installation/release.py" ]]; then
+    BUNDLE_ROOT="$SCRIPT_ROOT"
+else
+    BUNDLE_ROOT="$(cd "$SCRIPT_ROOT/../.." && pwd)"
+fi
+RELEASE_TOOL="$BUNDLE_ROOT/installation/release.py"
+RUNTIME_ROOT="$BUNDLE_ROOT/runtime"
+DEPLOYMENT_CONFIG="$RUNTIME_ROOT/deployment.ini"
+DEPLOYMENT_ROOT="$BUNDLE_ROOT/installation/generated/deployment"
+BUNDLE_MANIFEST="$BUNDLE_ROOT/bundle-manifest.json"
+IMAGE_ARCHIVE="$BUNDLE_ROOT/images/kbot-images.tar"
+
+usage() {
+    cat <<'EOF'
+用法：./kbot-offline <命令> [参数]
+
+  verify-package          校验离线包内所有受控文件
+  load-images             校验离线包并导入镜像
+  verify-images           校验本机镜像 ID 与离线包清单一致
+  prepare                 首次创建 runtime/deployment.ini
+  prepare-secrets         交互录入 Oracle 密码并生成 KBot 主密钥
+  validate                校验部署配置，不启动容器
+  render                  渲染并静态校验 Compose，不启动容器
+  installer <命令...>    通过 kbot-installer 执行显式数据库操作
+  deploy                  禁止拉取镜像并启动所选 KBot 服务
+  status                  显示 KBot Compose 服务状态
+
+数据库初始化必须按 README.md 分步执行，deploy 不会自动执行 DDL。
+EOF
+}
+
+require_config() {
+    [[ -f "$DEPLOYMENT_CONFIG" ]] || {
+        echo "部署配置不存在；请先执行 ./kbot-offline prepare" >&2
+        exit 1
+    }
+}
+
+verify_package() {
+    (
+        cd "$BUNDLE_ROOT"
+        sha256sum --check SHA256SUMS
+    )
+}
+
+verify_images() {
+    python3 "$RELEASE_TOOL" verify-offline-images \
+        --manifest "$BUNDLE_MANIFEST"
+}
+
+render_deployment() {
+    require_config
+    python3 "$RELEASE_TOOL" render-deployment --config "$DEPLOYMENT_CONFIG"
+    docker compose \
+        --project-directory "$DEPLOYMENT_ROOT" \
+        -f "$DEPLOYMENT_ROOT/compose.yaml" config --quiet
+}
+
+command="${1:-}"
+[[ -n "$command" ]] || { usage; exit 2; }
+shift
+
+case "$command" in
+    verify-package)
+        verify_package
+        ;;
+    load-images)
+        verify_package
+        [[ -f "$IMAGE_ARCHIVE" ]] || {
+            echo "镜像归档不存在：$IMAGE_ARCHIVE" >&2
+            exit 1
+        }
+        docker image load --input "$IMAGE_ARCHIVE"
+        verify_images
+        ;;
+    verify-images)
+        verify_images
+        ;;
+    prepare)
+        if [[ -e "$DEPLOYMENT_CONFIG" ]]; then
+            echo "部署配置已存在，拒绝覆盖：$DEPLOYMENT_CONFIG" >&2
+            exit 1
+        fi
+        mkdir -p "$RUNTIME_ROOT"
+        cp "$BUNDLE_ROOT/installation/offline/deployment.ini.example" \
+            "$DEPLOYMENT_CONFIG"
+        chmod 0600 "$DEPLOYMENT_CONFIG"
+        echo "已创建：$DEPLOYMENT_CONFIG"
+        echo "请先修改数据库、入口 URL、App 和数据路径，再准备 Secret。"
+        ;;
+    prepare-secrets)
+        require_config
+        python3 "$RELEASE_TOOL" prepare-secrets --config "$DEPLOYMENT_CONFIG" "$@"
+        ;;
+    validate)
+        require_config
+        python3 "$RELEASE_TOOL" validate \
+            --deployment-config "$DEPLOYMENT_CONFIG"
+        ;;
+    render)
+        verify_images
+        render_deployment
+        ;;
+    installer)
+        [[ "$#" -gt 0 ]] || {
+            echo "installer 后必须给出容器内命令" >&2
+            exit 2
+        }
+        verify_images
+        render_deployment >/dev/null
+        docker compose \
+            --project-directory "$DEPLOYMENT_ROOT" \
+            -f "$DEPLOYMENT_ROOT/compose.yaml" \
+            --profile tools run --rm --pull never installer "$@"
+        ;;
+    deploy)
+        verify_images
+        require_config
+        python3 "$RELEASE_TOOL" deploy \
+            --config "$DEPLOYMENT_CONFIG" --offline
+        ;;
+    status)
+        docker compose \
+            --project-directory "$DEPLOYMENT_ROOT" \
+            -f "$DEPLOYMENT_ROOT/compose.yaml" ps
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        echo "未知命令：$command" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
