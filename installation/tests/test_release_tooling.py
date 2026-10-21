@@ -80,6 +80,15 @@ class ReleaseToolingTest(unittest.TestCase):
         )
         self.assertIn("application/inspections/*.json", package_data)
 
+    def test_knowledge_core_declares_tokenizer_dependency(self) -> None:
+        pyproject = release.tomllib.loads(
+            (ROOT / "services/knowledge_core/pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        dependencies = set(pyproject["project"]["dependencies"])
+        self.assertIn("jieba==0.42.1", dependencies)
+
     def test_runtime_config_uses_compose_dns_for_every_endpoint(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_runtime_toml(self.topology, values)
