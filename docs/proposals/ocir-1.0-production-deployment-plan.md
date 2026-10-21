@@ -55,9 +55,9 @@ installation/releases/1.0-images.json
 导入后核对 Image ID、逐文件校验模型，并以 `--pull never` 启动。在线部署入口的 Compose
 Digest 引用和拉取门禁仍需按下列要求补齐，不能因为已有离线门禁而视为完成：
 
-当前正式离线制品为 `kbot-1.0-405bb362-linux-amd64.tar.zst`，大小 `3838846762`
+当前正式离线制品为 `kbot-1.0-6fa8f3ed-linux-amd64.tar.zst`，大小 `3877469002`
 字节，SHA-256 为
-`8d39a72eede562b856e48d25cebe32afb495f8be39dde055914089bd293a531f`；部署时必须同时取得并
+`197d4fff298924c235143bd57175e0d664a58b77859b65bcf44344a88022af70`；部署时必须同时取得并
 校验同名 `.sha256` 文件。
 
 锁定能力必须满足：

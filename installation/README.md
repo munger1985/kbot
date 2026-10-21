@@ -52,9 +52,9 @@ KBot 与 AIOps 观测栈保持两个独立 Compose Project，避免混淆业务�
 
 ## 脱机交付
 
-KBot 1.0 修正版离线归档为 `kbot-1.0-405bb362-linux-amd64.tar.zst`，大小
-`3838846762` 字节，SHA-256 为
-`8d39a72eede562b856e48d25cebe32afb495f8be39dde055914089bd293a531f`。同名
+KBot 1.0 修正版离线归档为 `kbot-1.0-6fa8f3ed-linux-amd64.tar.zst`，大小
+`3877469002` 字节，SHA-256 为
+`197d4fff298924c235143bd57175e0d664a58b77859b65bcf44344a88022af70`。同名
 `.sha256` 文件与归档一起交付。
 
 脱机环境不需要 Git，也不从 OCIR 拉取镜像。联网发布机使用仓库内的正式镜像锁生成一个
