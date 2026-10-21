@@ -163,6 +163,9 @@ enabled = true
 kbot_webhook_url = https://kbot.example.com
 kbot_webhook_key = whk-acceptance-key-long-enough-for-kbot
 kbot_webhook_secret = actual-webhook-credential-value
+kbot_uat_webhook_url = https://kbot-uat.example.com
+kbot_uat_webhook_key = whk-acceptance-key-long-enough-for-kbot-uat
+kbot_uat_webhook_secret = actual-uat-webhook-credential-value
 ammolite_webhook_url = https://ammolite.example.com
 ammolite_webhook_key = whk-acceptance-key-long-enough-for-ammolite
 ammolite_webhook_secret = actual-ammolite-webhook-credential-value
@@ -257,6 +260,10 @@ password = postgres-secret
     )
     assert "http://kbot-webhook-signer:8080/alertmanager" in alertmanager_config
     assert (
+        "http://kbot-uat-webhook-signer:8080/alertmanager"
+        in alertmanager_config
+    )
+    assert (
         "http://ammolite-webhook-signer:8080/alertmanager"
         in alertmanager_config
     )
@@ -271,6 +278,14 @@ password = postgres-secret
         signer_environment["AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION"]
         == "${AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION}"
     )
+    uat_signer = generated["services"]["kbot-uat-webhook-signer"]
+    assert uat_signer["environment"]["KBOT_WEBHOOK_BASE_URL"] == (
+        "${KBOT_UAT_WEBHOOK_BASE_URL}"
+    )
+    assert {item["target"] for item in uat_signer["secrets"]} == {
+        "kbot_webhook_key",
+        "kbot_webhook_secret",
+    }
     ammolite_signer = generated["services"]["ammolite-webhook-signer"]
     assert ammolite_signer["environment"]["AMMOLITE_WEBHOOK_BASE_URL"] == (
         "${AMMOLITE_WEBHOOK_BASE_URL}"
