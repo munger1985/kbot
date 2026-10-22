@@ -1385,6 +1385,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('id="agent-capabilities"', page)
         self.assertIn('name="capabilities"', script)
         self.assertIn('id="agent-knowledge-policy-fields"', page)
+        self.assertIn(
+            '<label class="agent-switch-row"><input name="knowledge_enabled" '
+            'type="checkbox" checked><span><strong>启用知识问答</strong></span></label>',
+            page,
+        )
+        self.assertNotIn(
+            'class="agent-compact-switch"><input name="knowledge_enabled"', page
+        )
         self.assertIn('name="knowledge_source_kinds"', page)
         self.assertIn('name="knowledge_tag_ids"', script)
         self.assertNotIn('name="allow_change_execution"', page)
