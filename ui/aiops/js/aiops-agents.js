@@ -375,8 +375,8 @@
   }
 
   function imageCapability(form, name) {
-    const modelId = form.elements[`${name}_model_id`].value || null;
-    return { enabled: Boolean(modelId), default_model_id: modelId, allowed_model_ids: modelId ? [modelId] : [] };
+    const modelId = form.elements[`${name}_model_id`].value;
+    return modelId ? { default_model_id: modelId, allowed_model_ids: [modelId] } : null;
   }
 
   function buildPayload(form) {

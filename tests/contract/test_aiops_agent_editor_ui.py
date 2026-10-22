@@ -29,7 +29,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         page = PAGE.read_text(encoding="utf-8")
 
         self.assertIn("aiops-forms.css?v=20261022_2", page)
-        self.assertIn("aiops-agents.js?v=20261022_3", page)
+        self.assertIn("aiops-agents.js?v=20261022_4", page)
 
     def test_models_are_a_dedicated_wizard_step(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
@@ -74,8 +74,10 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            "allowed_model_ids: modelId ? [modelId] : []", script
+            "modelId ? { default_model_id: modelId, allowed_model_ids: [modelId] } : null",
+            script,
         )
+        self.assertNotIn("enabled: Boolean(modelId)", script)
 
     def test_agent_list_exposes_versioned_delete(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
