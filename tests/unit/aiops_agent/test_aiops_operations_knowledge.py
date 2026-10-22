@@ -604,13 +604,19 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             get_version_relations=AsyncMock(return_value={"indexes": [index]}),
             delete_asset=AsyncMock(),
         )
-        knowledge_core = SimpleNamespace(review_user_intake=AsyncMock())
+        knowledge_core = SimpleNamespace(
+            review_user_intake=AsyncMock(),
+            purge_revision_source_objects=AsyncMock(return_value={
+                "purged_count": 1, "retained_count": 0,
+            }),
+        )
         service = self.service(repository, knowledge_core)
 
         await service.delete_asset(
             domain_id=42,
             asset_id=asset_id,
             expected_row_version=2,
+            purge_source_objects=True,
             context=SimpleNamespace(),
         )
 
@@ -620,6 +626,12 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             bundle_revision_id=revision_id,
             decision="REJECT",
             comment="AIOps 用户删除误上传资料",
+            auth_context=ANY,
+        )
+        knowledge_core.purge_revision_source_objects.assert_awaited_once_with(
+            domain_id=42,
+            collection_id=collection_id,
+            bundle_revision_id=revision_id,
             auth_context=ANY,
         )
         repository.delete_asset.assert_awaited_once_with(

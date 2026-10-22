@@ -607,12 +607,16 @@ class AIOpsManagementClient(_BaseAIOpsClient):
 
     async def delete_operations_knowledge_asset(
         self, asset_id: UUID, *, expected_row_version: int,
+        purge_source_objects: bool = False,
         auth_context: AuthContext,
     ) -> None:
         await self._json(
             "DELETE",
             f"{INTERNAL_API_V1}/aiops/operations-knowledge/assets/{asset_id}",
-            payload={"expected_row_version": expected_row_version},
+            payload={
+                "expected_row_version": expected_row_version,
+                "purge_source_objects": purge_source_objects,
+            },
             auth_context=auth_context,
         )
 

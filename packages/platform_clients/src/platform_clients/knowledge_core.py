@@ -536,6 +536,25 @@ class KnowledgeCoreClient:
             auth_context=auth_context,
         )
 
+    async def purge_revision_source_objects(
+        self,
+        *,
+        domain_id: int,
+        collection_id: UUID,
+        bundle_revision_id: UUID,
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            (
+                f"{INTERNAL_API_V1}/knowledge/domains/{domain_id}"
+                f"/collections/{collection_id}/bundle-revisions/"
+                f"{bundle_revision_id}/source-objects:purge"
+            ),
+            payload={},
+            auth_context=auth_context,
+        )
+
     async def ingest_multipart(
         self,
         *,

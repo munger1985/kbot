@@ -119,12 +119,14 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
             AsyncMock(return_value=(42, "aiopsadmin", object())),
         ):
             response = await delete_operations_knowledge_asset(
-                asset_id, _request(client), if_match='"rv-7"'
+                asset_id, _request(client), if_match='"rv-7"',
+                purge_source_objects=True,
             )
 
         self.assertEqual(204, response.status_code)
         self.assertEqual(asset_id, client.deleted["asset_id"])
         self.assertEqual(7, client.deleted["expected_row_version"])
+        self.assertTrue(client.deleted["purge_source_objects"])
 
     async def test_manual_new_version_forwards_asset_optimistic_version(self):
         client = _AIOpsClient()

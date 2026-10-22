@@ -23,7 +23,7 @@
   const statusTone = (value) => ["FAILED", "TAGGING_FAILED", "REJECTED"].includes(value) ? "bad" : ["TAGGING", "PROCESSING", "DRAFT", "REVIEW_REQUIRED"].includes(value) ? "warn" : ["PUBLISHED", "READY"].includes(value) ? "good" : "";
   const badge = (value, label = statusLabel(value)) => `<span class="ops-badge ${statusTone(value)}">${escape(label)}</span>`;
   const reviewLabel = (value) => value === "REVIEW_REQUIRED" ? "待审批" : ["TAGGING", "TAGGING_FAILED", "PROCESSING", "PUBLISHED", "RETIRED"].includes(value) ? "已通过" : value === "REJECTED" ? "已拒绝" : value === "DRAFT" ? "待审核" : "—";
-  const parseLabel = (value) => ["TAGGING", "TAGGING_FAILED", "REVIEW_REQUIRED"].includes(value) ? "未开始" : value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : ["PUBLISHED", "RETIRED"].includes(value) ? "解析完成" : "—";
+  const parseLabel = (value, kind = "MANUAL") => ["TAGGING", "TAGGING_FAILED", "REVIEW_REQUIRED"].includes(value) || (kind === "MANUAL" && ["DRAFT", "REJECTED"].includes(value)) ? "未开始" : value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : ["PUBLISHED", "RETIRED"].includes(value) ? "解析完成" : "—";
   const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB` : `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`;
   const totalBytes = () => state.entries.reduce((sum, item) => sum + item.file.size, 0);
   const isBundle = () => !state.uploadAsset && state.groupingMode === "SINGLE_BUNDLE";
@@ -33,7 +33,7 @@
 
   function assetRow(item) {
     const action = item.status === "REVIEW_REQUIRED" ? "审批资料" : ["TAGGING", "PROCESSING"].includes(item.status) ? "查看进度" : ["FAILED", "TAGGING_FAILED"].includes(item.status) ? "处理异常" : item.status === "DRAFT" ? "审核" : "查看";
-    return `<tr><td><button class="knowledge-primary-link" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small>${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status))}</td><td><time>${escape(shell.fmt(item.created_at))}</time>${item.updated_at !== item.created_at ? `<small>更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
+    return `<tr><td><button class="knowledge-primary-link" type="button" data-asset-id="${escape(item.asset_id)}">${escape(item.display_name)}</button><small>${escape(kindLabel(item.asset_kind))} · L${escape(item.security_level)} · ${escape(item.asset_id)}</small></td><td>${badge(item.status, reviewLabel(item.status))}</td><td>${badge(item.status, parseLabel(item.status, item.asset_kind))}</td><td><time>${escape(shell.fmt(item.created_at))}</time>${item.updated_at !== item.created_at ? `<small>更新于 ${escape(shell.fmt(item.updated_at))}</small>` : ""}</td><td><button type="button" data-asset-id="${escape(item.asset_id)}">${action}</button></td></tr>`;
   }
 
   function renderAssets() {
@@ -138,7 +138,7 @@
     const actions = ['<button type="button" data-download-source>下载正文文件</button>'];
     if (detail.asset.asset_kind === "MANUAL") actions.push('<button type="button" data-upload-version>上传新版本</button>');
     if (["TAGGING", "PROCESSING"].includes(detail.version.status)) actions.push('<button type="button" data-review="reconcile">立即处理</button>');
-    if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
+    if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
     if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-review="reject">拒绝</button>');
     if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") actions.push('<button class="primary" type="button" data-review="approve">批准并开始 AI 识别</button>');
     if (detail.asset.asset_kind === "DIAGNOSIS_CASE" && ["DRAFT", "REVIEW_REQUIRED"].includes(detail.version.status)) actions.push('<button class="primary" type="button" data-review="publish">审核通过并发布</button>');
@@ -206,7 +206,7 @@
     document.getElementById("manual-security").value = String(asset?.security_level || 1);
     document.getElementById("upload-mode-section").hidden = Boolean(asset);
     document.getElementById("upload-title").textContent = asset ? "上传新版本" : "上传资料";
-    document.getElementById("upload-subtitle").textContent = asset ? "新版本完成解析和审核前，当前发布版本仍继续参与检索。" : "可上传单个文件，或将多个相互关联的文件组成同一个 Bundle。";
+    document.getElementById("upload-subtitle").textContent = asset ? "新版本完成人工审批、AI 标签识别与解析前，当前发布版本仍继续参与检索。" : "可上传单个文件，或将多个相互关联的文件组成同一个 Bundle；上传后先等待人工审批。";
     document.getElementById("file-step").textContent = asset ? "01" : "02";
     document.getElementById("metadata-step").textContent = asset ? "02" : "03";
     setGroupingMode("EACH_FILE");
@@ -220,7 +220,7 @@
     const button = document.getElementById("submit-upload");
     const metadata = { display_name: name, security_level: Number(document.getElementById("manual-security").value) };
     button.disabled = true;
-    document.getElementById("manual-result").textContent = "正在登记原文并识别受控标签…";
+    document.getElementById("manual-result").textContent = "正在上传原文，完成后将等待人工审批…";
     try {
       if (state.uploadAsset) {
         const file = state.entries[0].file;
@@ -240,7 +240,7 @@
         if (rejected.length) throw new Error(rejected.map((item) => item.message).filter(Boolean).join("；") || "部分资料未被受理");
       }
       document.getElementById("upload-drawer").close();
-      shell.toast(isBundle() ? "Bundle 已受理，正在识别受控标签" : "资料已受理，正在识别受控标签");
+      shell.toast(isBundle() ? "Bundle 已上传，等待人工审批" : "资料已上传，等待人工审批");
       await loadAssets();
     } finally {
       button.disabled = false;
@@ -250,6 +250,17 @@
   async function downloadSource() {
     if (!state.detail) return;
     await KBotAIOpsAuth.download(`${api}/versions/${encodeURIComponent(state.detail.version.asset_version_id)}/source`, state.detail.asset.display_name, "*/*");
+  }
+
+  async function confirmAssetDeletion(displayName) {
+    const dialog = document.getElementById("delete-asset-dialog");
+    const purge = document.getElementById("purge-source-objects");
+    document.getElementById("delete-asset-message").textContent = `“${displayName}”及其尚未发布的 AIOps 版本记录将被删除，此操作不可撤销。KC 审计记录会保留。`;
+    purge.checked = false;
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+    return { confirmed: dialog.returnValue === "confirm", purgeSourceObjects: purge.checked };
   }
 
   async function runDetailAction(action) {
@@ -262,9 +273,11 @@
       return;
     }
     if (action === "delete") {
-      if (!confirm(`确认删除运维资料“${state.detail.asset.display_name}”？尚未发布的版本记录将一并删除，此操作不可撤销。`)) return;
-      await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(state.detail.asset.asset_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${state.detail.asset.row_version}"` } });
-      shell.toast("资料已删除");
+      const confirmation = await confirmAssetDeletion(state.detail.asset.display_name);
+      if (!confirmation.confirmed) return;
+      const purgeQuery = confirmation.purgeSourceObjects ? "?purge_source_objects=true" : "";
+      await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(state.detail.asset.asset_id)}${purgeQuery}`, { method: "DELETE", headers: { "If-Match": `"rv-${state.detail.asset.row_version}"` } });
+      shell.toast(confirmation.purgeSourceObjects ? "资料已删除，可安全清理的源文件已物理删除" : "资料已删除，KC 源文件已保留");
       document.getElementById("detail-drawer").close();
       state.detail = null;
       await loadAssets();

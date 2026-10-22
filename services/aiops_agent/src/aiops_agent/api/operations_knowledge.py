@@ -43,6 +43,7 @@ class KnowledgeBaseDeletePayload(BaseModel):
 
 class KnowledgeAssetDeletePayload(BaseModel):
     expected_row_version: int
+    purge_source_objects: bool = False
 
 
 @router.get("/knowledge-answering/binding")
@@ -282,6 +283,7 @@ async def delete_asset(
         domain_id=domain_id,
         asset_id=asset_id,
         expected_row_version=payload.expected_row_version,
+        purge_source_objects=payload.purge_source_objects,
         context=context,
     )
 

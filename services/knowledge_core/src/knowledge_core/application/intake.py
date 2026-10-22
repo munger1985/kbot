@@ -770,6 +770,13 @@ class KnowledgeCoreIntakeService:
                 detected_mime_type=detected_mime_type, security_level=security_level,
                 content_metadata_json={}, created_by=actor_id, updated_by=actor_id,
             ))
+        elif version.storage_state in {"PURGED", "PURGE_PENDING"}:
+            version.storage_uri = storage_uri
+            version.storage_state = "AVAILABLE"
+            version.byte_size = byte_size
+            version.detected_mime_type = detected_mime_type
+            version.security_level = security_level
+            version.updated_by = actor_id
         return version
 
     async def _enqueue_parse(self, uow, collection_id, bundle_revision_id, version, actor_id):

@@ -50,6 +50,7 @@ from knowledge_core.api.projection_task_router import (
     router as projection_task_router,
 )
 from knowledge_core.application.intake import KnowledgeCoreIntakeService
+from knowledge_core.application.source_purge import KnowledgeCoreSourcePurgeService
 from knowledge_core.application.multipart import KnowledgeCoreMultipartOrchestrator
 from knowledge_core.application.parse_tasks import KnowledgeCoreParseTaskService
 from knowledge_core.application.indexing import KnowledgeCoreEvidenceIndexService
@@ -132,6 +133,10 @@ async def lifespan(app: FastAPI):
     app.state.kc_intake_service = intake_service
     app.state.kc_object_store = LocalKnowledgeObjectStore(
         Path(settings.storage.local_object_storage_path)
+    )
+    app.state.kc_source_purge_service = KnowledgeCoreSourcePurgeService(
+        uow_factory=kc_uow_factory,
+        object_store=app.state.kc_object_store,
     )
     app.state.kc_multipart_orchestrator = KnowledgeCoreMultipartOrchestrator(
         intake_service=intake_service,

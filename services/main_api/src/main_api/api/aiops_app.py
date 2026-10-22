@@ -659,11 +659,13 @@ async def delete_operations_knowledge_asset(
     asset_id: UUID,
     request: Request,
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+    purge_source_objects: bool = False,
 ):
     await _require(request, "aiops:knowledge_manage")
     await _client(request).delete_operations_knowledge_asset(
         asset_id,
         expected_row_version=_expected_row_version(if_match),
+        purge_source_objects=purge_source_objects,
         auth_context=request.state.auth_context,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

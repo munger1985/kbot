@@ -53,6 +53,10 @@ TAG_CATEGORIES = frozenset({"RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"})
 DELETABLE_MANUAL_STATUSES = frozenset({
     "DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED", "FAILED", "REJECTED",
 })
+STOPPABLE_MANUAL_STATUSES = frozenset({"TAGGING", "PROCESSING"})
+REQUESTABLE_MANUAL_DELETE_STATUSES = (
+    DELETABLE_MANUAL_STATUSES | STOPPABLE_MANUAL_STATUSES
+)
 
 
 def _now() -> datetime:
@@ -1166,9 +1170,10 @@ class OperationsKnowledgeService:
 
     async def delete_asset(
         self, *, domain_id: int, asset_id: UUID,
-        expected_row_version: int, context: AuthContext,
+        expected_row_version: int, purge_source_objects: bool = False,
+        context: AuthContext,
     ) -> None:
-        """删除从未发布且未在处理中的上传资料。"""
+        """删除从未发布的上传资料；活动状态必须先成功撤销 KC Intake。"""
         async with self._uow_factory() as uow:
             asset = await uow.operations_knowledge.get_asset(
                 domain_id=domain_id, asset_id=asset_id
@@ -1187,37 +1192,87 @@ class OperationsKnowledgeService:
                 domain_id=domain_id, asset_id=asset_id
             )
             if not versions or any(
-                version.status not in DELETABLE_MANUAL_STATUSES
+                version.status not in REQUESTABLE_MANUAL_DELETE_STATUSES
                 for version in versions
             ):
                 raise self._state_conflict(
-                    "处理中或已发布的资料不能删除；已发布资料请先退役"
+                    "已发布或已退役的资料不能直接删除"
                 )
-            pending_indexes = []
+            stoppable_intakes: list[tuple[UUID, UUID]] = []
+            all_intakes: list[tuple[UUID, UUID]] = []
             for version in versions:
                 relations = await uow.operations_knowledge.get_version_relations(
                     asset_version_id=version.asset_version_id
                 )
-                pending_indexes.extend(
-                    item for item in relations["indexes"]
-                    if item.index_status == "PENDING_APPROVAL"
+                indexes = relations["indexes"]
+                if version.status in STOPPABLE_MANUAL_STATUSES and not indexes:
+                    raise self._state_conflict(
+                        "处理中资料缺少 KC 索引引用，无法安全停止后删除"
+                    )
+                all_intakes.extend(
+                    (
+                        UUID(str(item.collection_id)),
+                        UUID(str(item.bundle_revision_id)),
+                    )
+                    for item in indexes
+                )
+                stoppable_intakes.extend(
+                    (
+                        UUID(str(item.collection_id)),
+                        UUID(str(item.bundle_revision_id)),
+                    )
+                    for item in indexes
+                    if (
+                        item.index_status == "PENDING_APPROVAL"
+                        or version.status in STOPPABLE_MANUAL_STATUSES
+                    )
                 )
 
-        for index in pending_indexes:
+        stoppable_intakes = list(dict.fromkeys(stoppable_intakes))
+        all_intakes = list(dict.fromkeys(all_intakes))
+        if purge_source_objects and not all_intakes:
+            raise self._state_conflict(
+                "资料缺少 KC 源文件定位信息，不能执行物理删除"
+            )
+        for collection_id, bundle_revision_id in stoppable_intakes:
             try:
                 await self._kc.review_user_intake(
                     domain_id=domain_id,
-                    collection_id=index.collection_id,
-                    bundle_revision_id=index.bundle_revision_id,
+                    collection_id=collection_id,
+                    bundle_revision_id=bundle_revision_id,
                     decision="REJECT",
                     comment="AIOps 用户删除误上传资料",
                     auth_context=context,
                 )
             except KnowledgeCoreClientError as exc:
-                if exc.status_code != 409:
+                if exc.status_code == 409:
+                    raise self._state_conflict(
+                        "资料已进入正式解析，当前不能安全删除；请等待解析结束后重试"
+                    ) from exc
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
+                    message="KC 未能停止待删除资料的处理",
+                    status_code=503,
+                    retryable=True,
+                ) from exc
+
+        if purge_source_objects:
+            for collection_id, bundle_revision_id in all_intakes:
+                try:
+                    await self._kc.purge_revision_source_objects(
+                        domain_id=domain_id,
+                        collection_id=collection_id,
+                        bundle_revision_id=bundle_revision_id,
+                        auth_context=context,
+                    )
+                except KnowledgeCoreClientError as exc:
+                    if exc.status_code == 409:
+                        raise self._state_conflict(
+                            "该资料的 KC 源文件仍处于受保护状态，未执行删除"
+                        ) from exc
                     raise AIOpsApplicationError(
-                        code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
-                        message="KC 未能停止待删除资料的处理",
+                        code="AIOPS_KNOWLEDGE_SOURCE_PURGE_FAILED",
+                        message="KC 未能完成源文件物理删除，请稍后重试",
                         status_code=503,
                         retryable=True,
                     ) from exc
@@ -1238,7 +1293,7 @@ class OperationsKnowledgeService:
                 domain_id=domain_id, asset_id=asset_id
             )
             if asset.asset_kind != "MANUAL" or not versions or any(
-                version.status not in DELETABLE_MANUAL_STATUSES
+                version.status not in REQUESTABLE_MANUAL_DELETE_STATUSES
                 for version in versions
             ):
                 raise self._state_conflict("资料状态已变化，当前不能删除")
