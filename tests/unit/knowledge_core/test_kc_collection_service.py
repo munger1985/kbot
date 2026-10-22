@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 from platform_core.identity import uuid7
 
@@ -289,6 +290,37 @@ class KnowledgeCoreCollectionServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             str(next_embedding), updated.models_json["embedding"]
+        )
+        uow.commit.assert_awaited_once()
+
+    async def test_accepts_existing_catalog_model_uuid_without_version_rewrite(self):
+        legacy_llm_id = UUID("00000000-0000-4000-8000-000000000001")
+        embedding_id = uuid7()
+        collection = collection_fixture(
+            models_json={"embedding": str(embedding_id)},
+        )
+        service, uow = self._service(
+            FakeCollectionRepository(existing=collection)
+        )
+
+        updated = await service.update_models(
+            UpdateCollectionModelsCommand(
+                domain_id=8,
+                collection_id=COLLECTION_ID,
+                models={
+                    "embedding": embedding_id,
+                    "parser_llm": legacy_llm_id,
+                    "retrieval_llm": legacy_llm_id,
+                },
+                expected_row_version=1,
+            )
+        )
+
+        self.assertEqual(
+            str(legacy_llm_id), updated.models_json["parser_llm"]
+        )
+        self.assertEqual(
+            str(legacy_llm_id), updated.models_json["retrieval_llm"]
         )
         uow.commit.assert_awaited_once()
 

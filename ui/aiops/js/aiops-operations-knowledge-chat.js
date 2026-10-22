@@ -126,6 +126,7 @@
     if (state.sending) return;
     const input = document.getElementById("knowledge-chat-input").value.trim();
     if (!input) return;
+    if (!document.getElementById("knowledge-context-bases").options.length) { shell.toast("请先在运维知识库管理页为知识问答 Agent 绑定知识库"); return; }
     if (!state.active) await createConversation();
     state.sending = true;
     const button = document.getElementById("knowledge-chat-send");
@@ -208,6 +209,11 @@
       const button = event.target.closest("[data-citation-run]");
       if (button) openCitation(button.dataset.citationRun, button.dataset.citationLabel).catch((error) => shell.toast(error.message));
     };
-    try { await loadConversations("", true); } catch (error) { shell.toast(error.message); }
+    try {
+      const binding = await KBotAIOpsAuth.request(`${api}/knowledge-answering/binding`);
+      const bases = binding.knowledge_bases || [];
+      document.getElementById("knowledge-context-bases").innerHTML = bases.map((item) => `<option value="${shell.escape(item.knowledge_base_id)}" selected>${shell.escape(item.display_name)}</option>`).join("");
+      await loadConversations("", true);
+    } catch (error) { shell.toast(error.message); }
   });
 })();

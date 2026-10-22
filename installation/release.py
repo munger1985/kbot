@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import getpass
+import hashlib
 import importlib.util
 import io
 import json
@@ -17,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import Any
@@ -35,6 +37,10 @@ TOPOLOGY_PATH = ROOT / "resources" / "topology.toml"
 DEFAULT_RELEASE_CONFIG = INSTALLATION_ROOT / "dev" / "release.ini"
 DEFAULT_DEPLOYMENT_CONFIG = INSTALLATION_ROOT / "dev" / "deployment.ini"
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$")
+IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+OFFLINE_BUNDLE_SCHEMA = "kbot-offline-bundle.v2"
+DOCLING_MODEL_MANIFEST_SCHEMA = "kbot-docling-model-manifest.v1"
+DOCLING_INSTALL_RECEIPT = ".kbot-docling-models.json"
 
 
 class ReleaseError(RuntimeError):
@@ -299,6 +305,574 @@ def release_values(path: Path) -> dict[str, Any]:
 
 def image_reference(values: dict[str, Any], name: str) -> str:
     return f"{values['registry']}/{name}:{values['version']}"
+
+
+def catalog_image_names(catalog: dict[str, Any]) -> list[str]:
+    """返回业务、Installer 与 UI 的完整发布镜像顺序。"""
+
+    return [
+        *(str(item["name"]) for item in catalog["images"]),
+        str(catalog["installer"]["name"]),
+        str(catalog["ui"]["name"]),
+    ]
+
+
+def image_lock_path(version: str) -> Path:
+    return INSTALLATION_ROOT / "releases" / f"{version}-images.json"
+
+
+def load_image_lock(
+    version: str, catalog: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """读取并校验正式镜像锁，禁止遗漏或混入其他镜像。"""
+
+    if catalog is None:
+        catalog, _ = validate_catalog()
+    path = image_lock_path(version)
+    if not path.is_file():
+        raise ReleaseError(f"正式镜像锁不存在：{path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "kbot-image-lock.v1":
+        raise ReleaseError(f"正式镜像锁 Schema 不受支持：{path}")
+    if payload.get("version") != version:
+        raise ReleaseError(f"正式镜像锁版本与 {version} 不一致：{path}")
+    records = payload.get("images")
+    if not isinstance(records, list):
+        raise ReleaseError(f"正式镜像锁缺少 images：{path}")
+    names = [str(item.get("name") or "") for item in records]
+    expected_names = catalog_image_names(catalog)
+    if names != expected_names:
+        raise ReleaseError("正式镜像锁的镜像顺序或范围与 catalog.toml 不一致")
+    for record in records:
+        digest = str(record.get("digest") or "")
+        if not IMAGE_ID_PATTERN.fullmatch(digest):
+            raise ReleaseError(
+                f"正式镜像锁包含非法 Digest：{record.get('name')}"
+            )
+    source_commit = str(payload.get("source_commit") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+        raise ReleaseError("正式镜像锁缺少完整的源码 Commit")
+    return payload
+
+
+def inspect_images(references: list[str]) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        ["docker", "image", "inspect", *references],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    details = json.loads(result.stdout)
+    if not isinstance(details, list) or len(details) != len(references):
+        raise ReleaseError("Docker 返回的镜像检查结果数量不正确")
+    return details
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_bundle_checksums(root: Path) -> Path:
+    checksum_path = root / "SHA256SUMS"
+    files = sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path != checksum_path
+    )
+    checksum_path.write_text(
+        "".join(
+            f"{sha256_file(path)}  {path.relative_to(root).as_posix()}\n"
+            for path in files
+        ),
+        encoding="utf-8",
+    )
+    return checksum_path
+
+
+def docling_model_spec_path(version: str) -> Path:
+    return INSTALLATION_ROOT / "releases" / f"{version}-docling-models.json"
+
+
+def load_docling_model_spec(version: str) -> dict[str, Any]:
+    path = docling_model_spec_path(version)
+    if not path.is_file():
+        raise ReleaseError(f"正式 Docling 模型规格不存在：{path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "kbot-docling-model-set.v1":
+        raise ReleaseError(f"正式 Docling 模型规格 schema 不正确：{path}")
+    if payload.get("release_version") != version:
+        raise ReleaseError(f"正式 Docling 模型规格版本不匹配：{path}")
+    if not re.fullmatch(
+        r"[0-9]+(?:\.[0-9]+)+",
+        str(payload.get("docling_version") or ""),
+    ):
+        raise ReleaseError(f"正式 Docling 模型规格缺少 Docling 版本：{path}")
+    models = payload.get("models")
+    if not isinstance(models, list) or not models:
+        raise ReleaseError(f"正式 Docling 模型规格缺少 models：{path}")
+    identifiers = [str(item.get("id") or "") for item in models]
+    directories = [str(item.get("directory") or "") for item in models]
+    if "" in identifiers or len(identifiers) != len(set(identifiers)):
+        raise ReleaseError(f"正式 Docling 模型规格包含无效模型 ID：{path}")
+    if "" in directories or len(directories) != len(set(directories)):
+        raise ReleaseError(f"正式 Docling 模型规格包含无效模型目录：{path}")
+    if any(Path(item).name != item for item in directories):
+        raise ReleaseError(f"正式 Docling 模型规格包含不安全目录：{path}")
+    return payload
+
+
+def docling_model_files(
+    source: Path, spec: dict[str, Any]
+) -> list[Path]:
+    source = source.expanduser().resolve()
+    if not source.is_dir():
+        raise ReleaseError(f"Docling 模型源目录不存在：{source}")
+    missing = []
+    for model in spec["models"]:
+        directory = source / str(model["directory"])
+        payload_files = [
+            path
+            for path in directory.rglob("*")
+            if path.is_file() and ".cache" not in path.relative_to(directory).parts
+        ] if directory.is_dir() else []
+        if not payload_files or not any(path.stat().st_size for path in payload_files):
+            missing.append(f"{model['id']} ({model['directory']})")
+    if missing:
+        raise ReleaseError(
+            "Docling 运行模型目录不完整，缺少：" + "、".join(missing)
+        )
+    files = []
+    for model in spec["models"]:
+        directory = source / str(model["directory"])
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink():
+                raise ReleaseError(f"Docling 模型目录不能包含符号链接：{path}")
+            if path.is_file():
+                files.append(path)
+            elif not path.is_dir():
+                raise ReleaseError(
+                    f"Docling 模型目录包含不支持的文件类型：{path}"
+                )
+    if not files:
+        raise ReleaseError(f"Docling 运行模型目录为空：{source}")
+    return files
+
+
+def create_docling_model_archive(
+    source: Path, archive: Path, directories: list[str]
+) -> None:
+    subprocess.run(
+        [
+            "tar",
+            "--sort=name",
+            "--mtime=@0",
+            "--owner=0",
+            "--group=0",
+            "--numeric-owner",
+            "--format=posix",
+            "-cf",
+            str(archive),
+            "-C",
+            str(source),
+            *directories,
+        ],
+        check=True,
+    )
+
+
+def package_docling_models(
+    source: Path, destination: Path, spec: dict[str, Any]
+) -> dict[str, Any]:
+    source = source.expanduser().resolve()
+    files = docling_model_files(source, spec)
+    records = []
+    total_bytes = 0
+    for path in files:
+        size = path.stat().st_size
+        total_bytes += size
+        records.append(
+            {
+                "path": path.relative_to(source).as_posix(),
+                "size": size,
+                "sha256": sha256_file(path),
+            }
+        )
+    destination.mkdir(parents=True, exist_ok=True)
+    model_manifest = {
+        "schema": DOCLING_MODEL_MANIFEST_SCHEMA,
+        "docling_version": spec["docling_version"],
+        "source_command": spec["source_command"],
+        "models": spec["models"],
+        "file_count": len(records),
+        "uncompressed_bytes": total_bytes,
+        "files": records,
+    }
+    manifest_path = destination / "docling-models.manifest.json"
+    manifest_path.write_text(
+        json.dumps(model_manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    archive_path = destination / "docling-models.tar"
+    create_docling_model_archive(
+        source,
+        archive_path,
+        [str(model["directory"]) for model in spec["models"]],
+    )
+    return {
+        "docling_version": spec["docling_version"],
+        "source_command": spec["source_command"],
+        "archive": "models/docling-models.tar",
+        "archive_sha256": sha256_file(archive_path),
+        "manifest": "models/docling-models.manifest.json",
+        "manifest_sha256": sha256_file(manifest_path),
+        "model_count": len(spec["models"]),
+        "file_count": len(records),
+        "uncompressed_bytes": total_bytes,
+    }
+
+
+def export_offline_bundle(
+    release_config: Path, output: Path, docling_models_dir: Path
+) -> Path:
+    """生成包含正式镜像与当前运行所需 Docling 模型的完整离线包。"""
+
+    catalog, _ = validate_catalog()
+    values = release_values(release_config)
+    if str(values["revision"]).endswith("-dirty"):
+        raise ReleaseError("工作区存在未提交修改，禁止制作正式离线包")
+    lock = load_image_lock(str(values["version"]), catalog)
+    model_spec = load_docling_model_spec(str(values["version"]))
+    if lock.get("registry") != values["registry"]:
+        raise ReleaseError("release.ini Registry 与正式镜像锁不一致")
+    if lock.get("platform") != values["platform"]:
+        raise ReleaseError("release.ini Platform 与正式镜像锁不一致")
+    output = output.expanduser().resolve()
+    if output.exists():
+        raise ReleaseError(f"离线包输出路径已存在，拒绝覆盖：{output}")
+
+    names = catalog_image_names(catalog)
+    references = [image_reference(values, name) for name in names]
+    details = inspect_images(references)
+    locked_by_name = {str(item["name"]): item for item in lock["images"]}
+    image_records: list[dict[str, str]] = []
+    for name, reference, detail in zip(names, references, details, strict=True):
+        image_id = str(detail.get("Id") or "")
+        if not IMAGE_ID_PATTERN.fullmatch(image_id):
+            raise ReleaseError(f"本地镜像缺少合法 Image ID：{reference}")
+        digest = str(locked_by_name[name]["digest"])
+        expected_repo_digest = f"{values['registry']}/{name}@{digest}"
+        repo_digests = set(detail.get("RepoDigests") or [])
+        if expected_repo_digest not in repo_digests:
+            raise ReleaseError(
+                f"本地镜像与正式 Digest 不一致：{reference}"
+            )
+        image_records.append(
+            {
+                "name": name,
+                "reference": reference,
+                "registry_digest": digest,
+                "image_id": image_id,
+            }
+        )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent)
+    )
+    try:
+        tracked_files = {
+            ROOT / "installation/release.py": temporary
+            / "installation/release.py",
+            ROOT / "installation/catalog.toml": temporary
+            / "installation/catalog.toml",
+            image_lock_path(str(values["version"])): temporary
+            / "installation/releases"
+            / f"{values['version']}-images.json",
+            ROOT / "installation/offline/deployment.ini.example": temporary
+            / "installation/offline/deployment.ini.example",
+            ROOT / "installation/offline/kbot-offline": temporary
+            / "kbot-offline",
+            ROOT / "installation/offline/README.md": temporary / "README.md",
+            ROOT / "resources/topology.toml": temporary
+            / "resources/topology.toml",
+            docling_model_spec_path(str(values["version"])): temporary
+            / "installation/releases"
+            / f"{values['version']}-docling-models.json",
+        }
+        for source, destination in tracked_files.items():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        (temporary / "kbot-offline").chmod(0o755)
+
+        image_archive = temporary / "images/kbot-images.tar"
+        image_archive.parent.mkdir()
+        subprocess.run(
+            [
+                "docker",
+                "image",
+                "save",
+                "--output",
+                str(image_archive),
+                *references,
+            ],
+            check=True,
+        )
+        docling_models = package_docling_models(
+            docling_models_dir, temporary / "models", model_spec
+        )
+        manifest = {
+            "schema": OFFLINE_BUNDLE_SCHEMA,
+            "version": values["version"],
+            "platform": values["platform"],
+            "registry": values["registry"],
+            "image_source_commit": lock["source_commit"],
+            "tool_revision": values["revision"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "image_archive": "images/kbot-images.tar",
+            "images": image_records,
+            "docling_models": docling_models,
+        }
+        (temporary / "bundle-manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        write_bundle_checksums(temporary)
+        temporary.rename(output)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return output
+
+
+def verify_offline_images(manifest_path: Path) -> None:
+    """校验 docker load 后的本地镜像内容，不依赖 Registry。"""
+
+    manifest = load_offline_bundle_manifest(manifest_path)
+    if manifest.get("schema") != OFFLINE_BUNDLE_SCHEMA:
+        raise ReleaseError("离线包清单 Schema 不受支持")
+    images = manifest.get("images")
+    if not isinstance(images, list) or not images:
+        raise ReleaseError("离线包清单没有镜像记录")
+    references = [str(item.get("reference") or "") for item in images]
+    if any(not reference for reference in references):
+        raise ReleaseError("离线包清单包含空镜像引用")
+    details = inspect_images(references)
+    for record, detail in zip(images, details, strict=True):
+        expected = str(record.get("image_id") or "")
+        actual = str(detail.get("Id") or "")
+        if not IMAGE_ID_PATTERN.fullmatch(expected) or actual != expected:
+            raise ReleaseError(
+                f"本地镜像内容与离线包不一致：{record['reference']}"
+            )
+    print(f"离线镜像校验通过：{len(images)} 个")
+
+
+def load_offline_bundle_manifest(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise ReleaseError(f"离线包清单不存在：{path}")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != OFFLINE_BUNDLE_SCHEMA:
+        raise ReleaseError("离线包清单 Schema 不受支持")
+    return manifest
+
+
+def safe_bundle_member(bundle_root: Path, relative: str) -> Path:
+    if not relative:
+        raise ReleaseError("离线包清单包含空文件路径")
+    path = (bundle_root / relative).resolve()
+    if not path.is_relative_to(bundle_root.resolve()):
+        raise ReleaseError(f"离线包清单包含不安全路径：{relative}")
+    if not path.is_file():
+        raise ReleaseError(f"离线包文件不存在：{relative}")
+    return path
+
+
+def load_offline_docling_models(
+    manifest_path: Path,
+) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    bundle = load_offline_bundle_manifest(manifest_path)
+    record = bundle.get("docling_models")
+    if not isinstance(record, dict):
+        raise ReleaseError("离线包没有 Docling 模型记录")
+    bundle_root = manifest_path.resolve().parent
+    archive = safe_bundle_member(bundle_root, str(record.get("archive") or ""))
+    model_manifest_path = safe_bundle_member(
+        bundle_root, str(record.get("manifest") or "")
+    )
+    if sha256_file(archive) != record.get("archive_sha256"):
+        raise ReleaseError("Docling 模型归档 SHA-256 不匹配")
+    if sha256_file(model_manifest_path) != record.get("manifest_sha256"):
+        raise ReleaseError("Docling 模型清单 SHA-256 不匹配")
+    model_manifest = json.loads(model_manifest_path.read_text(encoding="utf-8"))
+    if model_manifest.get("schema") != DOCLING_MODEL_MANIFEST_SCHEMA:
+        raise ReleaseError("Docling 模型清单 Schema 不受支持")
+    files = model_manifest.get("files")
+    models = model_manifest.get("models")
+    if not isinstance(files, list) or not files or not isinstance(models, list):
+        raise ReleaseError("Docling 模型清单内容不完整")
+    if model_manifest.get("file_count") != len(files):
+        raise ReleaseError("Docling 模型清单文件数量不一致")
+    if model_manifest.get("docling_version") != record.get("docling_version"):
+        raise ReleaseError("Docling 模型版本记录不一致")
+    if record.get("model_count") != len(models):
+        raise ReleaseError("Docling 模型数量记录不一致")
+    if record.get("file_count") != model_manifest.get("file_count"):
+        raise ReleaseError("Docling 模型文件数量记录不一致")
+    if record.get("uncompressed_bytes") != model_manifest.get(
+        "uncompressed_bytes"
+    ):
+        raise ReleaseError("Docling 模型字节数记录不一致")
+    return record, model_manifest, archive
+
+
+def deployment_docling_target(config_path: Path) -> Path:
+    if config_path.stat().st_mode & 0o077:
+        raise ReleaseError(f"部署配置权限必须为 0600：chmod 600 {config_path}")
+    parser = load_ini(config_path)
+    data_dir = resolved_path(
+        required(parser, "paths", "data_dir"), relative_to=config_path.parent
+    )
+    return data_dir / "models" / "docling_models"
+
+
+def verify_docling_model_tree(
+    target: Path,
+    model_manifest: dict[str, Any],
+    *,
+    full: bool,
+    receipt_sha256: str | None = None,
+) -> None:
+    if not target.is_dir():
+        raise ReleaseError(f"Docling 模型尚未安装：{target}")
+    for model in model_manifest["models"]:
+        directory = target / str(model.get("directory") or "")
+        if not directory.is_dir():
+            raise ReleaseError(f"Docling 模型目录缺失：{directory}")
+        if not any(
+            path.is_file() and path.stat().st_size
+            for path in directory.rglob("*")
+        ):
+            raise ReleaseError(f"Docling 模型目录没有有效文件：{directory}")
+    if receipt_sha256 is not None:
+        receipt_path = target / DOCLING_INSTALL_RECEIPT
+        if not receipt_path.is_file():
+            raise ReleaseError(f"Docling 模型安装回执缺失：{receipt_path}")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if receipt.get("manifest_sha256") != receipt_sha256:
+            raise ReleaseError("Docling 模型安装回执与当前离线包不匹配")
+    if not full:
+        return
+    for record in model_manifest["files"]:
+        relative = str(record.get("path") or "")
+        unresolved = target / relative
+        path = unresolved.resolve()
+        if not relative or not path.is_relative_to(target.resolve()):
+            raise ReleaseError(f"Docling 模型清单包含不安全路径：{relative}")
+        parents = unresolved.relative_to(target).parents
+        if (
+            unresolved.is_symlink()
+            or any((target / parent).is_symlink() for parent in parents)
+            or not path.is_file()
+        ):
+            raise ReleaseError(f"Docling 模型文件缺失：{relative}")
+        if path.stat().st_size != record.get("size"):
+            raise ReleaseError(f"Docling 模型文件大小不匹配：{relative}")
+        if sha256_file(path) != record.get("sha256"):
+            raise ReleaseError(f"Docling 模型文件 SHA-256 不匹配：{relative}")
+
+
+def verify_offline_docling_models(
+    manifest_path: Path, config_path: Path, *, full: bool
+) -> None:
+    record, model_manifest, _ = load_offline_docling_models(manifest_path)
+    target = deployment_docling_target(config_path)
+    verify_docling_model_tree(
+        target,
+        model_manifest,
+        full=full,
+        receipt_sha256=str(record["manifest_sha256"]),
+    )
+    mode = "完整" if full else "快速"
+    print(
+        f"Docling {record['docling_version']} 模型{mode}校验通过："
+        f"{record['model_count']} 个模型，{target}"
+    )
+
+
+def validate_tar_members(archive: Path) -> None:
+    result = subprocess.run(
+        ["tar", "-tf", str(archive)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for member in result.stdout.splitlines():
+        path = Path(member)
+        if path.is_absolute() or ".." in path.parts:
+            raise ReleaseError(f"Docling 模型归档包含不安全路径：{member}")
+
+
+def write_docling_receipt(
+    target: Path, record: dict[str, Any], model_manifest: dict[str, Any]
+) -> None:
+    receipt = {
+        "schema": "kbot-docling-install-receipt.v1",
+        "docling_version": record["docling_version"],
+        "manifest_sha256": record["manifest_sha256"],
+        "file_count": model_manifest["file_count"],
+        "uncompressed_bytes": model_manifest["uncompressed_bytes"],
+        "installed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path = target / DOCLING_INSTALL_RECEIPT
+    path.write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o644)
+
+
+def install_offline_docling_models(
+    manifest_path: Path, config_path: Path
+) -> None:
+    record, model_manifest, archive = load_offline_docling_models(manifest_path)
+    target = deployment_docling_target(config_path)
+    if target.exists():
+        try:
+            verify_docling_model_tree(target, model_manifest, full=True)
+        except ReleaseError as error:
+            raise ReleaseError(
+                f"Docling 模型目标已存在且内容不匹配，拒绝覆盖：{target}；{error}"
+            ) from error
+        write_docling_receipt(target, record, model_manifest)
+        print(f"Docling 模型已存在并完成校验：{target}")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{target.name}.", dir=target.parent)
+    )
+    try:
+        validate_tar_members(archive)
+        subprocess.run(
+            ["tar", "--no-same-owner", "-xf", str(archive), "-C", str(temporary)],
+            check=True,
+        )
+        verify_docling_model_tree(temporary, model_manifest, full=True)
+        for path in temporary.rglob("*"):
+            mode = path.stat().st_mode
+            path.chmod(mode | (0o555 if path.is_dir() else 0o444))
+        write_docling_receipt(temporary, record, model_manifest)
+        temporary.replace(target)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    print(
+        f"Docling {record['docling_version']} 模型安装完成："
+        f"{record['model_count']} 个模型，{target}"
+    )
 
 
 def build_directory() -> Path:
@@ -588,7 +1162,7 @@ def render_schema_services(
 
 def render_ui_runtime_config(values: dict[str, Any]) -> str:
     payload = {
-        "mainApiBaseUrl": "",
+        "mainApiBaseUrl": values["public_base_url"],
         "enabledApps": values["enabled_apps"],
     }
     return (
@@ -661,8 +1235,11 @@ def render_compose(
                 '      - "-m"',
                 f"      - {yaml_string(process['module'])}",
                 "    environment:",
+                '      HOME: "/var/lib/kbot"',
                 '      KBOT_CONFIG_FILE: "/etc/kbot/kbot.toml"',
                 '      KBOT_RESOURCE_DIR: "/opt/kbot/resources"',
+                '      LOGNAME: "kbot"',
+                '      USER: "kbot"',
                 "    volumes:",
                 '      - "./config/kbot.toml:/etc/kbot/kbot.toml:ro"',
                 f"      - {yaml_string(str(values['data_dir']) + ':/var/lib/kbot')}",
@@ -707,8 +1284,11 @@ def render_compose(
             '      - "/opt/kbot/scripts/db/apply_oracle_schema.py"',
             '      - "--help"',
             "    environment:",
+            '      HOME: "/var/lib/kbot"',
             '      KBOT_CONFIG_FILE: "/etc/kbot/kbot.toml"',
             '      KBOT_RESOURCE_DIR: "/opt/kbot/resources"',
+            '      LOGNAME: "kbot"',
+            '      USER: "kbot"',
             "    volumes:",
             '      - "./config/kbot.toml:/etc/kbot/kbot.toml:ro"',
             '      - "./config/oracle_schema_services.ini:'
@@ -887,7 +1467,7 @@ def render_deployment(config_path: Path) -> Path:
     return output
 
 
-def deploy(config_path: Path) -> None:
+def deploy(config_path: Path, *, offline: bool = False) -> None:
     """先渲染并校验全部配置，再应用 KBot 与可选观测栈。"""
 
     output = render_deployment(config_path)
@@ -909,9 +1489,10 @@ def deploy(config_path: Path) -> None:
             check=True,
         )
     subprocess.run([*compose, "config", "--quiet"], check=True)
-    subprocess.run(
-        [*compose, "up", "--detach", "--remove-orphans"], check=True
-    )
+    up_command = [*compose, "up", "--detach", "--remove-orphans"]
+    if offline:
+        up_command.extend(["--pull", "never"])
+    subprocess.run(up_command, check=True)
     if observability_config.is_file():
         environment = os.environ.copy()
         environment["KBOT_AIOPS_STACK_CONFIG_FILE"] = str(
@@ -958,6 +1539,47 @@ def parser() -> argparse.ArgumentParser:
     deploy_command.add_argument(
         "--config", type=Path, default=DEFAULT_DEPLOYMENT_CONFIG
     )
+    deploy_command.add_argument(
+        "--offline",
+        action="store_true",
+        help="禁止 Compose 访问 Registry，只使用已校验的本地镜像",
+    )
+    offline_export = commands.add_parser(
+        "export-offline",
+        help="生成包含正式镜像归档和自包含部署工具的离线包",
+    )
+    offline_export.add_argument(
+        "--config", type=Path, default=DEFAULT_RELEASE_CONFIG
+    )
+    offline_export.add_argument(
+        "--docling-models-dir",
+        type=Path,
+        required=True,
+        help="由正式模型规格列出的 Docling 运行模型源目录",
+    )
+    offline_export.add_argument("--output", type=Path, required=True)
+    offline_verify = commands.add_parser(
+        "verify-offline-images",
+        help="按离线包清单校验 docker load 后的本地镜像",
+    )
+    offline_verify.add_argument("--manifest", type=Path, required=True)
+    model_install = commands.add_parser(
+        "install-offline-models",
+        help="校验并原子安装离线包内的 Docling 运行模型",
+    )
+    model_install.add_argument("--manifest", type=Path, required=True)
+    model_install.add_argument("--config", type=Path, required=True)
+    model_verify = commands.add_parser(
+        "verify-offline-models",
+        help="校验已安装的 Docling 运行模型",
+    )
+    model_verify.add_argument("--manifest", type=Path, required=True)
+    model_verify.add_argument("--config", type=Path, required=True)
+    model_verify.add_argument(
+        "--full",
+        action="store_true",
+        help="逐文件重新计算 SHA-256；默认只校验安装回执与目录",
+    )
     secret = commands.add_parser("generate-master-key")
     secret.add_argument("--output", type=Path, required=True)
     prepare = commands.add_parser(
@@ -988,7 +1610,25 @@ def main() -> None:
         elif arguments.command == "render-deployment":
             print(render_deployment(arguments.config))
         elif arguments.command == "deploy":
-            deploy(arguments.config)
+            deploy(arguments.config, offline=arguments.offline)
+        elif arguments.command == "export-offline":
+            print(
+                export_offline_bundle(
+                    arguments.config,
+                    arguments.output,
+                    arguments.docling_models_dir,
+                )
+            )
+        elif arguments.command == "verify-offline-images":
+            verify_offline_images(arguments.manifest)
+        elif arguments.command == "install-offline-models":
+            install_offline_docling_models(arguments.manifest, arguments.config)
+        elif arguments.command == "verify-offline-models":
+            verify_offline_docling_models(
+                arguments.manifest,
+                arguments.config,
+                full=arguments.full,
+            )
         elif arguments.command == "generate-master-key":
             arguments.output.parent.mkdir(parents=True, exist_ok=True)
             arguments.output.write_text(

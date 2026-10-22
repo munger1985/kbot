@@ -478,6 +478,7 @@ python3 tests/acceptance/check_oracle_schema.py
 ```bash
 bash start_kbot.sh
 bash stop_kbot.sh
+bash restart_kbot.sh
 ```
 
 开发模式还会启动 `tools/dev_console/` 静态服务器，发布开发日志页和 `ui/`
@@ -523,8 +524,15 @@ PostgreSQL/MySQL 的主机、端口、数据库、账号和 Schema 可通过同�
 Agent SSE 与引用、AIOps 受控执行和 Domain 隔离。公开调用方只使用 `/api/v1`；
 `/internal/v1` 不进入外部网关。
 
-## 下载docling模型
+## 下载 Knowledge Core 使用的 Docling 模型
 
 ```bash
-docling-tools models download --all -o models
+docling-tools models download layout tableformer easyocr \
+  --force --output-dir models
 ```
+
+当前 `KcDoclingConverter` 固定使用 Layout，默认启用 TableFormer，并支持从默认 Tesseract
+切换到 EasyOCR。它没有启用 Docling 的 VLM、公式、图片分类、图表抽取、RapidOCR 或
+Nemotron OCR，因此正式 1.0 离线包只携带上述三个模型目录。以后启用新的 Docling 能力
+时，先更新 `installation/releases/1.0-docling-models.json`、重新制作离线包并完成断网
+解析验收，不能让生产容器运行时自行下载模型。

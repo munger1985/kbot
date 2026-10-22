@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
 
+from platform_core.identity import uuid7
 from knowledge_core.persistence.uow import KnowledgeCoreUnitOfWork
 from knowledge_core.ports.job_wakeup import (
     PARSE_WAKEUP_CHANNEL,
@@ -41,6 +42,16 @@ class _Listener:
 
     async def close(self):
         self.closed = True
+
+
+class _ScalarSession:
+    def __init__(self, rows):
+        self.rows = rows
+        self.statements = []
+
+    async def scalars(self, statement):
+        self.statements.append(statement)
+        return self.rows
 
 
 class _NestedTransaction:
@@ -89,6 +100,26 @@ class KcJobWakeupTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(entity, result)
         self.assertEqual(["INDEX"], seen)
         self.assertEqual([entity], session.added)
+
+    async def test_job_repository_lists_document_jobs_for_evidence_status(self):
+        document_version_id = uuid7()
+        jobs = [SimpleNamespace(ingestion_job_id=uuid7())]
+        session = _ScalarSession(jobs)
+
+        result = await IngestionJobRepository(
+            session
+        ).list_by_document_version(
+            document_version_id=document_version_id
+        )
+
+        self.assertEqual(jobs, result)
+        self.assertEqual(1, len(session.statements))
+        statement = str(session.statements[0]).upper()
+        self.assertIn(
+            '"KBOT_KC_INGESTION_JOB".DOCUMENT_VERSION_ID', statement
+        )
+        self.assertIn('"KBOT_KC_INGESTION_JOB".JOB_TYPE IN', statement)
+        self.assertIn('"KBOT_KC_INGESTION_JOB".CREATED_AT DESC', statement)
 
     async def test_notification_wait_returns_without_polling_delay(self):
         listener = _Listener()

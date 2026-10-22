@@ -1,6 +1,6 @@
 -- 由 scripts/db/initialize_aiops.py 调用的 AIOps 首次使用数据资产。
 -- 本资产只写基础数据，不创建或修改 Schema 对象。
--- 固定资源：aiops_portal Domain、operations-manuals 与 diagnosis-cases KC Collection、aiopsadmin。
+-- 固定资源：aiops_portal Domain、默认运维知识库、diagnosis-cases KC Collection、aiopsadmin。
 -- 初始密码：AIOpsAdmin@2026!；重复执行会恢复该密码。
 
 SET SERVEROUTPUT ON
@@ -14,9 +14,9 @@ BEGIN
         'KBOT_PLATFORM_USER_CREDENTIAL', 'KBOT_AI_MODEL', 'KBOT_KC_COLLECTION',
         'KBOT_PERMISSION', 'KBOT_APP_ROLE', 'KBOT_APP_ROLE_PERMISSION',
         'KBOT_APP_DOMAIN', 'KBOT_APP_MEMBER', 'KBOT_APP_MEMBER_ROLE',
-        'KBOT_APP_MEMBER_ROLE_SCOPE'
+        'KBOT_APP_MEMBER_ROLE_SCOPE', 'KBOT_OPS_KNOWLEDGE_BASE'
     );
-    IF l_table_count <> 13 THEN
+    IF l_table_count <> 14 THEN
         raise_application_error(-20001, 'AIOps Domain、模型、KC 或权限基础表不完整。');
     END IF;
 END;
@@ -45,8 +45,6 @@ WHEN NOT MATCHED THEN INSERT (
 
 DECLARE
     l_domain_id NUMBER(38);
-    l_embedding_model_id RAW(16);
-    l_embedding_uuid VARCHAR2(36 CHAR);
     PROCEDURE ensure_collection(
         p_collection_id VARCHAR2,
         p_display_name VARCHAR2,
@@ -68,8 +66,8 @@ DECLARE
             ) VALUES (
                 HEXTORAW(REPLACE(p_collection_id, '-', '')),
                 l_domain_id, p_display_name, p_description,
-                '{"embedding":"' || l_embedding_uuid || '"}',
-                '{"parse_strategy":"AUTO","do_ocr":true,"ocr_engine":"tesseract","image_scale":2.0,"extract_page_images":true,"extract_picture_images":true,"detect_table_structure":true}',
+                '{}',
+                '{"parse_strategy":"AUTO","image_scale":2.0,"detect_table_structure":true}',
                 'ACTIVE', 1,
                 '{"owner_app_id":"aiops","fixed_resource":true,"content_kind":"' || p_content_kind || '"}',
                 1, 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
@@ -86,22 +84,6 @@ DECLARE
 BEGIN
     SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
      WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE';
-    BEGIN
-        SELECT MODEL_ID INTO l_embedding_model_id FROM (
-            SELECT MODEL_ID FROM KBOT_AI_MODEL
-             WHERE CATEGORY = 2 AND STATUS = 1
-             ORDER BY UPDATED_AT DESC, CREATED_AT DESC
-        ) WHERE ROWNUM = 1;
-    EXCEPTION WHEN NO_DATA_FOUND THEN
-        raise_application_error(-20003, '缺少启用的文本 Embedding 模型。');
-    END;
-    l_embedding_uuid := LOWER(
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 1, 8) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 9, 4) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 13, 4) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 17, 4) || '-' ||
-        SUBSTR(RAWTOHEX(l_embedding_model_id), 21, 12)
-    );
     ensure_collection(
         '019ffff0-0000-7000-8000-000000000001',
         'operations-manuals',
@@ -113,6 +95,39 @@ BEGIN
         'diagnosis-cases',
         'AIOps 固定历史诊断案例 Collection',
         'diagnosis_case'
+    );
+END;
+/
+
+DECLARE
+    l_domain_id NUMBER(38);
+BEGIN
+    SELECT DOMAIN_ID INTO l_domain_id FROM KBOT_PLATFORM_DOMAIN
+     WHERE NAME = 'aiops_portal' AND STATUS = 'ACTIVE';
+    MERGE INTO KBOT_OPS_KNOWLEDGE_BASE target
+    USING (
+        SELECT HEXTORAW('019FFFF0000070008000000000001001') KNOWLEDGE_BASE_ID,
+               l_domain_id DOMAIN_ID,
+               HEXTORAW('019FFFF0000070008000000000000001') COLLECTION_ID
+          FROM DUAL
+    ) source
+    ON (target.KNOWLEDGE_BASE_ID = source.KNOWLEDGE_BASE_ID)
+    WHEN MATCHED THEN UPDATE SET
+        target.DOMAIN_ID = source.DOMAIN_ID,
+        target.DISPLAY_NAME = '默认运维知识库',
+        target.DESCRIPTION = 'KBot AIOps 初始化的数据库运维手册知识库',
+        target.COLLECTION_ID = source.COLLECTION_ID,
+        target.STATUS = 'ACTIVE',
+        target.UPDATED_BY = 'bootstrap:aiops_initial_admin',
+        target.UPDATED_AT = SYSTIMESTAMP
+    WHEN NOT MATCHED THEN INSERT (
+        KNOWLEDGE_BASE_ID, DOMAIN_ID, DISPLAY_NAME, DESCRIPTION, COLLECTION_ID,
+        STATUS, CREATED_BY, UPDATED_BY, ROW_VERSION, CREATED_AT, UPDATED_AT
+    ) VALUES (
+        source.KNOWLEDGE_BASE_ID, source.DOMAIN_ID, '默认运维知识库',
+        'KBot AIOps 初始化的数据库运维手册知识库', source.COLLECTION_ID,
+        'ACTIVE', 'bootstrap:aiops_initial_admin', 'bootstrap:aiops_initial_admin',
+        1, SYSTIMESTAMP, SYSTIMESTAMP
     );
 END;
 /
@@ -261,6 +276,6 @@ BEGIN
     dbms_output.put_line('AIOps 初始化完成。');
     dbms_output.put_line('登录用户：aiopsadmin');
     dbms_output.put_line('固定 Domain：aiops_portal（ID=' || l_domain_id || '）');
-    dbms_output.put_line('固定 Collection：operations-manuals（ID=' || l_collection_id || '）');
+    dbms_output.put_line('默认运维知识库 Collection：operations-manuals（ID=' || l_collection_id || '）');
 END;
 /

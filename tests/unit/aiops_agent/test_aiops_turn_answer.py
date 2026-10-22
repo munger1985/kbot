@@ -1604,6 +1604,14 @@ class DbaTurnAnswerTest(unittest.TestCase):
             7.0,
             used_row[columns["history_elapsed_days"]],
         )
+        self.assertEqual(
+            "STORAGE_USED",
+            used_row[columns["semantic_role"]],
+        )
+        self.assertEqual("GAUGE", used_row[columns["value_kind"]])
+        daily_points = json.loads(used_row[columns["daily_points"]])
+        self.assertEqual(8, len(daily_points))
+        self.assertEqual(points[-1]["observed_at"][:10], daily_points[-1]["date"])
 
         assessment = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(
@@ -1624,6 +1632,25 @@ class DbaTurnAnswerTest(unittest.TestCase):
         gap_codes = {gap.code for gap in assessment.gaps}
         self.assertIn("MONITORING_FORECAST_LOW_CONFIDENCE", gap_codes)
         self.assertNotIn("MONITORING_FORECAST_INSUFFICIENT", gap_codes)
+
+        daily_assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(artifact,),
+                    task_frame_overrides={
+                        "requested_window_seconds": 86_400,
+                        "temporal_analysis_mode": "HISTORICAL",
+                        "forecast_scope": None,
+                        "forecast_horizon_seconds": None,
+                        "evidence_source_strategy": "MONITORING_FIRST",
+                    },
+                )
+            )
+        )
+        self.assertNotIn(
+            "MONITORING_FORECAST_LOW_CONFIDENCE",
+            {gap.code for gap in daily_assessment.gaps},
+        )
 
     def test_waiting_user_includes_exact_readonly_sql_and_gap_reason(self) -> None:
         assessment = DbaSufficiencyAssessment(

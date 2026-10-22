@@ -4,7 +4,7 @@ from time import perf_counter
 from uuid import UUID
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, Sequence
+from typing import Any, Literal, Protocol, Sequence, runtime_checkable
 
 from loguru import logger
 
@@ -91,6 +91,7 @@ class CitationGroup:
     items: list[EvidenceGroupItem]
 
 
+@runtime_checkable
 class EvidenceSearchPort(Protocol):
     async def search_text(self, *, scope: EvidenceScope, query: str, limit: int, max_security_level: int) -> Sequence[EvidenceHit]: ...
     async def search_vector(self, *, scope: EvidenceScope, vector: Sequence[float], limit: int, max_security_level: int) -> Sequence[EvidenceHit]: ...
@@ -181,6 +182,8 @@ class KnowledgeCoreEvidenceRetrievalService:
         query_embedding_provider: QueryEmbeddingProvider | None = None,
         max_scope_concurrency: int = 8,
     ):
+        if not isinstance(search_port, EvidenceSearchPort):
+            raise TypeError("EvidenceSearchPort 实现不完整")
         self._search_port = search_port
         self._query_embedding_provider = query_embedding_provider
         self._max_scope_concurrency = max(1, max_scope_concurrency)

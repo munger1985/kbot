@@ -168,6 +168,9 @@ class UpdateCollectionParsingSettingsCommand:
     domain_id: int
     collection_id: UUID
     parse_policy: dict[str, Any]
+    parser_ocr_model_id: UUID | str | None = None
+    parser_vlm_model_id: UUID | str | None = None
+    parser_llm_model_id: UUID | str | None = None
     actor_id: str = "svc:knowledge-core"
     expected_row_version: int = 1
 
@@ -410,6 +413,22 @@ class KnowledgeCoreCollectionService:
                 raise CollectionVersionConflictError(
                     "Collection 已被其他请求修改"
                 )
+            models = dict(collection.models_json or {})
+            for role, model_id in (
+                ("parser_ocr", command.parser_ocr_model_id),
+                ("parser_vlm", command.parser_vlm_model_id),
+                ("parser_llm", command.parser_llm_model_id),
+            ):
+                if model_id is None:
+                    models.pop(role, None)
+                else:
+                    models[role] = model_id
+            models = normalize_collection_models(models)
+            if policy["parse_strategy"] == "AUTO" and not models.get("parser_ocr"):
+                raise ValueError("自动解析必须选择 OCR 解析模型")
+            if policy["parse_strategy"] == "VISUAL" and not models.get("parser_vlm"):
+                raise ValueError("视觉增强解析必须选择视觉解析模型")
+            collection.models_json = models
             collection.parse_policy_json = policy
             collection.updated_by = command.actor_id
             collection.row_version = int(collection.row_version) + 1

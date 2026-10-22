@@ -130,6 +130,86 @@ class DiscoveryReindexStatusTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["PROFILE", "INDEX"], [item["job_type"] for item in result.jobs])
 
 
+class RevisionMemberStatusTest(unittest.IsolatedAsyncioTestCase):
+    async def test_member_status_exposes_source_rebuild_semantics(self):
+        collection_id = uuid7()
+        bundle_id = uuid7()
+        revision_id = uuid7()
+        document_version_id = uuid7()
+        bundle = SimpleNamespace(
+            bundle_id=bundle_id,
+            collection_id=collection_id,
+            current_revision_id=revision_id,
+            availability_status="READY",
+        )
+        revision = SimpleNamespace(
+            bundle_revision_id=revision_id,
+            bundle_id=bundle_id,
+            revision_no=1,
+            source_revision="source-1",
+            status="READY",
+            approval_status="APPROVED",
+            reviewed_by=None,
+            reviewed_at=None,
+            review_comment=None,
+            accepted_at=None,
+            completed_at=None,
+        )
+        source_member = SimpleNamespace(
+            external_document_id="appendix.pdf",
+            document_version_id=document_version_id,
+            declared_name="appendix.pdf",
+            declared_mime_type="application/pdf",
+            document_role="SUPPLEMENT",
+            ordinal=1,
+            required_flag=0,
+            member_status="READY",
+            failure_stage=None,
+            failure_code=None,
+            failure_message=None,
+            received_at=None,
+            completed_at=None,
+        )
+        uow = SimpleNamespace(
+            collections=SimpleNamespace(
+                get_by_id_scope=AsyncMock(return_value=SimpleNamespace())
+            ),
+            bundles=SimpleNamespace(get_by_id=AsyncMock(return_value=bundle)),
+            revisions=SimpleNamespace(
+                get_by_id=AsyncMock(return_value=revision),
+                list_by_bundle=AsyncMock(return_value=[revision]),
+            ),
+            members=SimpleNamespace(
+                list_by_revision=AsyncMock(return_value=[source_member])
+            ),
+            jobs=SimpleNamespace(
+                list_by_revisions=AsyncMock(return_value=[])
+            ),
+        )
+
+        class Uow:
+            async def __aenter__(self):
+                return uow
+
+            async def __aexit__(self, *_):
+                return None
+
+        result = await KnowledgeCoreStatusService(
+            uow_factory=Uow
+        ).get_revision(
+            domain_id=43,
+            bundle_id=bundle_id,
+            bundle_revision_id=revision_id,
+            include_members=True,
+        )
+
+        self.assertEqual(1, len(result.members or []))
+        member_status = result.members[0]
+        self.assertEqual("application/pdf", member_status.declared_mime_type)
+        self.assertEqual(1, member_status.ordinal)
+        self.assertFalse(member_status.required_flag)
+
+
 class RevisionPublicationStatusTest(unittest.TestCase):
     def test_failed_discovery_job_exposes_terminal_publication_failure(self):
         revision_id = uuid7()

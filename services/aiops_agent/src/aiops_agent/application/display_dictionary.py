@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -73,12 +75,14 @@ _DISPLAY_NAMES = {
     "INVALID_OBJECT": "无效对象",
     "ARCHIVE_HEADROOM": "归档恢复区余量不足",
     "BACKUP_FAILED": "备份失败",
+    "BACKUP_MISSING": "缺少备份记录",
     "LONG_TRANSACTION": "长事务",
     "TOP_SQL": "高负载 SQL",
     "CHECKPOINT_PRESSURE": "检查点压力",
     "FREEZE_HEADROOM": "事务冻结余量不足",
     "BLOAT_CANDIDATE": "表膨胀候选",
     "ARCHIVER_FAILURE": "归档进程故障",
+    "RECOVERY_CONFIGURATION": "恢复链配置风险",
     "REPLICATION_SLOT": "复制槽异常",
     "DATA_QUALITY": "数据质量",
     "ANALYZE_STALE": "统计信息需重新分析",
@@ -341,6 +345,9 @@ _DISPLAY_NAMES = {
     "FIRING": "告警持续触发",
     "INFORMATIONAL": "信息事件",
     "WARNING": "警告",
+    "PERMANENT": "永久表空间",
+    "TEMPORARY": "临时表空间",
+    "UNDO": "撤销表空间",
     # 证据缺口与诊断链路错误
     "MISSING_ASH": "缺少 ASH 历史会话数据",
     "MISSING_PRIMARY_RUN": "缺少主诊断运行记录",
@@ -423,6 +430,134 @@ _DISPLAY_NAMES = {
 }
 
 AIOPS_DISPLAY_NAMES = MappingProxyType(_DISPLAY_NAMES)
+
+
+def _load_metric_display_names() -> dict[str, str]:
+    """从 Metric Catalog 读取全部指标展示名，避免另建易漂移的硬编码清单。"""
+    catalog_path = (
+        Path(__file__).resolve().parents[1]
+        / "resources"
+        / "metrics"
+        / "baseline.v1.json"
+    )
+    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    return {
+        str(item["metric_code"]): str(item["name"])
+        for item in payload.get("metrics", ())
+    }
+
+
+AIOPS_METRIC_DISPLAY_NAMES = MappingProxyType(_load_metric_display_names())
+
+_DIMENSION_DISPLAY_NAMES = {
+    "application_name": "应用名称",
+    "cluster": "集群",
+    "command": "命令类型",
+    "container": "容器",
+    "database": "数据库",
+    "database_name": "数据库",
+    "datname": "数据库",
+    "device": "设备",
+    "fstype": "文件系统类型",
+    "host": "主机",
+    "mountpoint": "挂载点",
+    "namespace": "命名空间",
+    "pod": "Pod",
+    "role": "角色",
+    "schema": "Schema",
+    "schema_name": "Schema",
+    "slot_name": "复制槽",
+    "tablespace": "表空间",
+    "tablespace_name": "表空间",
+    "type": "表空间类型",
+}
+_HIDDEN_REPORT_DIMENSIONS = {
+    "binding_id", "instance", "job", "source_id", "target_key",
+}
+_METRIC_FIELD_DISPLAY_NAMES = {
+    "average": "平均值",
+    "change": "期间变化量",
+    "change_per_day": "日均变化量",
+    "coverage_ratio": "采样覆盖率",
+    "estimated_days_to_limit": "预计达到容量上限的剩余天数",
+    "first": "期初值",
+    "forecast_confidence": "预测置信度",
+    "forecast_horizon_days": "预测周期（天）",
+    "forecast_utilization_percent": "预测使用率",
+    "forecast_value": "预测值",
+    "history_elapsed_days": "历史覆盖天数",
+    "last": "最新值",
+    "latest": "当前值",
+    "maximum": "最大值",
+    "minimum": "最小值",
+    "sample_count": "有效样本数",
+    "trend_slope_per_day": "每日趋势斜率",
+}
+_FIELD_TOKEN_DISPLAY_NAMES = {
+    "active": "活动", "age": "年龄", "allocated": "已分配", "analyze": "分析",
+    "applier": "应用线程", "archive": "归档", "archived": "已归档", "at": "时间",
+    "autoanalyze": "自动分析", "autovacuum": "自动清理", "average": "平均",
+    "backend": "后端进程", "backends": "后端进程数", "bin": "二进制",
+    "binlog": "二进制日志", "blks": "数据块", "blocking": "阻塞方",
+    "blocks": "块数", "buffers": "缓冲区", "bytes": "字节", "cardinality": "基数",
+    "catalog": "系统目录", "chain": "链路", "channel": "通道",
+    "checkpoint": "检查点", "checkpoints": "检查点", "checksum": "校验和",
+    "class": "类别", "command": "命令", "commit": "提交", "configured": "已配置",
+    "context": "上下文", "count": "数量", "current": "当前", "database": "数据库",
+    "dead": "无效", "deadlocks": "死锁数", "default": "默认", "depth": "深度",
+    "dest": "目标位置", "device": "设备", "digest": "语句摘要", "disk": "磁盘",
+    "elapsed": "耗时", "end": "结束", "error": "错误", "estimated": "估算",
+    "event": "事件", "examined": "扫描", "execution": "执行", "executions": "执行次数",
+    "expire": "过期", "expired": "已过期", "failed": "失败", "failures": "失败数",
+    "fg": "前台", "file": "文件", "files": "文件数", "flashback": "闪回",
+    "force": "强制", "foreground": "前台", "format": "格式", "fpi": "全页镜像",
+    "fra": "快速恢复区", "free": "可用", "full": "已满", "gtid": "GTID",
+    "headroom": "余量", "hit": "命中", "host": "主机", "id": "标识",
+    "idle": "空闲", "index": "索引", "indexes": "索引数", "input": "输入",
+    "instance": "实例", "io": "I/O", "is": "是否", "job": "任务", "lag": "延迟",
+    "last": "最近", "latency": "延迟", "limit": "上限", "live": "有效",
+    "locked": "锁定", "log": "日志", "logging": "日志记录", "logs": "日志",
+    "max": "最大", "maximum": "最大", "mb": "MB", "member": "成员",
+    "metric": "指标", "mod": "修改", "mode": "模式", "modifiable": "可动态修改",
+    "modification": "修改", "modified": "已修改", "ms": "毫秒", "multipasses": "多次通过",
+    "multixact": "多事务", "n": "数量", "name": "名称", "number": "编号",
+    "object": "对象", "on": "启用", "onepass": "单次通过", "open": "打开",
+    "output": "输出", "owner": "属主", "parameter": "参数", "per": "每",
+    "percent": "百分比", "picoseconds": "皮秒", "port": "端口", "processed": "已处理",
+    "query": "查询", "questions": "查询数", "read": "读取", "reads": "读取次数",
+    "receiver": "接收线程", "reclaimable": "可回收", "records": "记录数",
+    "recovery": "恢复", "requested": "请求触发", "reset": "重置", "resource": "资源",
+    "retained": "保留", "role": "角色", "rollback": "回滚", "rows": "行数",
+    "running": "运行中", "runtime": "运行时", "schema": "Schema", "second": "秒",
+    "seconds": "秒", "sent": "返回", "service": "服务", "session": "会话",
+    "since": "自", "slot": "复制槽", "source": "来源", "space": "空间",
+    "sql": "SQL", "start": "开始", "started": "开始", "state": "状态",
+    "stats": "统计信息", "status": "状态", "storage": "存储", "successful": "成功",
+    "sync": "同步", "table": "表", "tables": "表数", "tablespace": "表空间",
+    "temp": "临时空间", "threads": "线程数", "time": "时间", "timed": "定时触发",
+    "total": "总计", "transaction": "事务", "tup": "元组", "tuple": "元组",
+    "type": "类型", "undo": "撤销", "unexpired": "未过期", "unit": "单位",
+    "update": "更新时间", "uptime": "运行时长", "used": "已使用", "username": "用户名",
+    "utilization": "使用率", "vacuum": "清理", "value": "值", "version": "版本",
+    "wait": "等待", "waited": "等待耗时", "waiting": "等待方", "waits": "等待次数",
+    "wal": "WAL", "window": "时间窗口", "without": "缺少", "write": "写入",
+    "writes": "写入次数", "written": "已写入", "xact": "事务", "xid": "事务 ID",
+    "xmin": "xmin",
+}
+
+_METRIC_WITH_DIMENSIONS_PATTERN = re.compile(
+    rf"(?P<code>{'|'.join(re.escape(code) for code in sorted(AIOPS_METRIC_DISPLAY_NAMES, key=len, reverse=True))})"
+    r"\[(?P<dimensions>[^\]\n]*)\]"
+)
+_METRIC_CODE_PATTERN = re.compile(
+    rf"(?<![A-Za-z0-9_.-])({'|'.join(re.escape(code) for code in sorted(AIOPS_METRIC_DISPLAY_NAMES, key=len, reverse=True))})(?![A-Za-z0-9_.-])"
+)
+_METRIC_FIELD_PATTERN = re.compile(
+    rf"(?<![A-Za-z0-9_])({'|'.join(re.escape(code) for code in sorted(_METRIC_FIELD_DISPLAY_NAMES, key=len, reverse=True))})\s*="
+)
+_FIELD_ASSIGNMENT_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])([a-z][a-z0-9_]{1,})\s*="
+)
 _DISPLAY_CODE_PATTERN = re.compile(r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?![A-Za-z0-9_])")
 _MARKDOWN_CODE_PATTERN = re.compile(
     r"(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)"
@@ -435,18 +570,137 @@ def display_name(value: object, *, default: str | None = None) -> str:
     return AIOPS_DISPLAY_NAMES.get(text, default if default is not None else text)
 
 
+def display_metric_name(metric_code: object) -> str:
+    """返回 Metric Catalog 中的中文名称，未知代码不泄露到正式报告。"""
+    return AIOPS_METRIC_DISPLAY_NAMES.get(str(metric_code), "监控指标")
+
+
+def display_field_name(field_name: object) -> str:
+    """把证据字段名转换为面向 DBA 的展示标签。"""
+    text = str(field_name)
+    if text in _METRIC_FIELD_DISPLAY_NAMES:
+        return _METRIC_FIELD_DISPLAY_NAMES[text]
+    if text in _DIMENSION_DISPLAY_NAMES:
+        return _DIMENSION_DISPLAY_NAMES[text]
+    tokens = text.lower().split("_")
+    translated = [_FIELD_TOKEN_DISPLAY_NAMES.get(token) for token in tokens]
+    if all(translated):
+        return "".join(translated)
+    return "观测字段"
+
+
+def _display_dimension_value(value: object) -> str:
+    text = str(value)
+    return AIOPS_DISPLAY_NAMES.get(text.upper(), text)
+
+
+def display_metric_dimensions(value: object) -> str:
+    """隐藏采集器内部 Label，只保留能帮助 DBA 理解对象的业务维度。"""
+    if isinstance(value, dict):
+        pairs = [(str(key), item) for key, item in value.items()]
+    else:
+        text = str(value or "").strip().strip("[]{}")
+        if not text or text == "-":
+            return ""
+        pairs = []
+        for part in text.split(","):
+            key, separator, item = part.strip().partition("=")
+            if separator:
+                pairs.append((key.strip(), item.strip()))
+    visible = [
+        f"{_DIMENSION_DISPLAY_NAMES.get(key, display_field_name(key))}："
+        f"{_display_dimension_value(item)}"
+        for key, item in pairs
+        if key not in _HIDDEN_REPORT_DIMENSIONS and not key.startswith("__")
+    ]
+    return f"（{'，'.join(visible)}）" if visible else ""
+
+
+def format_metric_value(value: object, unit: object = "") -> str:
+    """按 Metric Catalog 单位生成可直接进入正式报告的值。"""
+    normalized_unit = str(unit or "")
+    if value is None or value == "":
+        return "无有效值"
+    if normalized_unit == "state":
+        return _display_dimension_value(value)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return str(value)
+    numeric = float(value)
+    if normalized_unit in {"bytes", "bytes_per_second"}:
+        suffix = "/秒" if normalized_unit == "bytes_per_second" else ""
+        units = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
+        index = 0
+        magnitude = abs(numeric)
+        while magnitude >= 1024 and index < len(units) - 1:
+            numeric /= 1024
+            magnitude /= 1024
+            index += 1
+        return f"{numeric:,.2f} {units[index]}{suffix}"
+    rendered = f"{numeric:,.2f}".rstrip("0").rstrip(".")
+    suffixes = {
+        "count": "",
+        "errors_per_second": " 次错误/秒",
+        "milliseconds": " 毫秒",
+        "percent": "%",
+        "queries_per_second": " 次查询/秒",
+        "transactions_per_second": " 个事务/秒",
+        "waits_per_second": " 次等待/秒",
+    }
+    return f"{rendered}{suffixes.get(normalized_unit, f' {normalized_unit}' if normalized_unit else '')}"
+
+
+def display_field_value(field_name: object, value: object) -> str:
+    """为结构化关键观测补充单位并翻译枚举值。"""
+    field = str(field_name)
+    if value is None or value == "":
+        return "—"
+    if field.endswith("_bytes"):
+        return format_metric_value(value, "bytes")
+    if field.endswith("_percent"):
+        return format_metric_value(value, "percent")
+    if field.endswith("_seconds"):
+        return f"{format_metric_value(value)} 秒"
+    if field.endswith("_ms"):
+        return format_metric_value(value, "milliseconds")
+    if field.endswith("_mb"):
+        return f"{format_metric_value(value)} MB"
+    if isinstance(value, str):
+        return _display_dimension_value(value)
+    return str(value)
+
+
 def display_text(value: object) -> str:
     """翻译自然语言中的已登记稳定代码，不改写 SQL 与普通技术名词。"""
     parts = _MARKDOWN_CODE_PATTERN.split(str(value))
-    return "".join(
-        part
-        if index % 2
-        else _DISPLAY_CODE_PATTERN.sub(
+
+    def translate(part: str) -> str:
+        part = _METRIC_WITH_DIMENSIONS_PATTERN.sub(
+            lambda match: (
+                f"{display_metric_name(match.group('code'))}"
+                f"{display_metric_dimensions(match.group('dimensions'))}"
+            ),
+            part,
+        )
+        part = _METRIC_CODE_PATTERN.sub(
+            lambda match: display_metric_name(match.group(1)), part
+        )
+        part = _METRIC_FIELD_PATTERN.sub(
+            lambda match: f"{_METRIC_FIELD_DISPLAY_NAMES[match.group(1)]}：", part
+        )
+        part = _FIELD_ASSIGNMENT_PATTERN.sub(
+            lambda match: f"{display_field_name(match.group(1))}：", part
+        )
+        return _DISPLAY_CODE_PATTERN.sub(
             lambda match: AIOPS_DISPLAY_NAMES.get(
                 match.group(1), match.group(1)
             ),
             part,
         )
+
+    return "".join(
+        part
+        if index % 2
+        else translate(part)
         for index, part in enumerate(parts)
     )
 

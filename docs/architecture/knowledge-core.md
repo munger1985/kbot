@@ -40,16 +40,21 @@ Docling 是底层转换引擎，其后由 KC 自有流水线完成：
 
 1. Docling 文本、结构和图片对象提取；
 2. `TEXT/AUTO/VISUAL` 路径选择；
-3. 可选位图区域 OCR 或独立 DeepSeek OCR；
+3. 按 Collection 的 `parser_ocr` 绑定调用 Model Serving OCR；
 4. AUTO 图片对象理解，或 VISUAL 异步整页增强；
 5. Atom IR、Structure IR 与标题层级修复；
 6. 表格、子表、短块合并和上下文补全；
 7. 质量评分与 Evidence 规划；
 8. 可选视觉 Embedding 生成。
 
-VLM 和视觉 Embedding 均为可选能力。缺少 VLM 时跳过视觉转文字；缺少视觉模型
+Collection 的解析角色统一为 `parser_ocr`、`parser_vlm`、`parser_llm`。`AUTO` 必须配置
+`parser_ocr`，`VISUAL` 必须配置 `parser_vlm`；`parser_llm` 只供解析期结构化提炼或 App
+预分析使用，不承担最终问答。VLM 和视觉 Embedding 均为可选能力。缺少 VLM 时跳过视觉转文字；缺少视觉模型
 时跳过以图搜图，不影响纯文本 Evidence。Collection 的文本 Embedding 模型唯一，
 解析索引与查询必须使用同一模型身份，不能只因维度相同而混用。
+
+模型绑定在创建解析任务时冻结到 Parse View，后续改绑只影响新任务；旧资料必须显式重解析。
+Worker 记录实际模型 revision、失败页和 OCR Artifact，不保存 API Key、Token 或其他凭据。
 
 ## Projection 与索引
 

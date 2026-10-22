@@ -57,6 +57,29 @@ def retrieval_input_hash(text: str) -> str:
     return sha256(text.encode("utf-8")).hexdigest()
 
 
+async def _rebind_revision_content(uow, *, bundle_revision_id: UUID) -> None:
+    """在发布事务内将复用文档的检索内容切换到新 Revision。"""
+    members = await uow.members.list_by_revision(
+        bundle_revision_id=bundle_revision_id
+    )
+    for member in members:
+        if (
+            member.member_status != "READY"
+            or member.document_version_id is None
+        ):
+            continue
+        await uow.evidence.rebind_active_revision(
+            document_version_id=member.document_version_id,
+            bundle_revision_id=bundle_revision_id,
+            bundle_revision_document_id=member.bundle_revision_document_id,
+        )
+        if uow.visual_assets is not None:
+            await uow.visual_assets.rebind_active_revision(
+                document_version_id=member.document_version_id,
+                bundle_revision_id=bundle_revision_id,
+            )
+
+
 def validate_embedding_batch(
     *, batch: EmbeddingBatch, model: EmbeddingModelSnapshot, expected_count: int,
 ) -> None:
@@ -213,7 +236,10 @@ class KnowledgeCoreEvidenceIndexService:
     async def _run_discovery_job(self, *, job_id: UUID, worker_id: str, input_fingerprint: str, model: EmbeddingModelSnapshot) -> str:
         model.validate()
         async with self._uow_factory() as uow:
-            if not all((uow.jobs, uow.discovery, uow.collections, uow.revisions, uow.bundles, uow.session)):
+            if not all((
+                uow.jobs, uow.discovery, uow.collections, uow.revisions,
+                uow.bundles, uow.members, uow.evidence, uow.session,
+            )):
                 raise RuntimeError("Knowledge Core Unit of Work is not initialized")
             job = await uow.jobs.get_by_id(ingestion_job_id=job_id, lock=True)
             if job is None or job.job_type != "INDEX" or job.bundle_revision_id is None:
@@ -270,6 +296,9 @@ class KnowledgeCoreEvidenceIndexService:
             now = datetime.now(timezone.utc)
             for obj in objects:
                 obj.discovery_status = "ACTIVE"
+            await _rebind_revision_content(
+                uow, bundle_revision_id=revision.bundle_revision_id
+            )
             await uow.discovery.retire_other_revisions(bundle_id=revision.bundle_id, except_revision_id=revision.bundle_revision_id)
             bundle = await uow.bundles.get_by_id(bundle_id=revision.bundle_id, lock=True)
             if bundle is not None:

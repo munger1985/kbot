@@ -20,6 +20,32 @@ from platform_core.identity import uuid7
 
 
 class InspectionReportPublishingTest(unittest.TestCase):
+    def test_gap_categories_distinguish_reading_errors_and_source_limits(
+        self,
+    ) -> None:
+        classify = AIOpsRuntimeService._inspection_gap_category
+
+        self.assertEqual("PRODUCT_CONTRACT", classify({
+            "source_id": "oracle.instance",
+            "code": "OUTPUT_COLUMNS_MISMATCH",
+        }))
+        self.assertEqual("SOURCE_ACCESS", classify({
+            "source_id": "oracle.instance",
+            "code": "PRIVILEGE_MISSING",
+        }))
+        self.assertEqual("SOURCE_CAPABILITY", classify({
+            "source_id": "postgresql.instance",
+            "code": "VERSION_UNSUPPORTED",
+        }))
+        self.assertEqual("MONITORING", classify({
+            "source_id": "monitoring.overview",
+            "code": "SOURCE_NO_DATA",
+        }))
+        self.assertEqual("DATA_SOURCE", classify({
+            "source_id": "mysql.instance",
+            "code": "SOURCE_NO_DATA",
+        }))
+
     def test_session_template_is_limited_to_chat_and_keeps_required_sections(
         self,
     ) -> None:
@@ -43,6 +69,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         run = SimpleNamespace(
             ops_run_id=uuid7(),
             actor_id="system:inspection-scheduler",
+            domain_id=8,
             target_id=uuid7(),
             inspection_fire_id=uuid7(),
             plan_snapshot_json={
@@ -87,6 +114,11 @@ class InspectionReportPublishingTest(unittest.TestCase):
             return entity
 
         uow = SimpleNamespace(
+            targets=SimpleNamespace(
+                get_scoped=AsyncMock(return_value=SimpleNamespace(
+                    display_name="Oracle 核心生产库"
+                ))
+            ),
             inspections=SimpleNamespace(
                 publish_report=AsyncMock(side_effect=publish_report),
                 add_report_sources=AsyncMock(),
@@ -137,6 +169,10 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertIn(
             "数据库整体健康。",
             [item.get("markdown") for item in result.payload_json["facts"]],
+        )
+        self.assertEqual(
+            "Oracle 核心生产库",
+            result.payload_json["scope"]["target"]["display_name"],
         )
 
     def test_scheduled_agent_turn_keeps_long_chinese_summary(self) -> None:
@@ -342,21 +378,23 @@ class InspectionReportPublishingTest(unittest.TestCase):
             [item["title"] for item in payload["facts"][:2]],
         )
         self.assertTrue(all(
-            "检查已完成" in item["summary"] and "结果正常" not in item["summary"]
+            ("检查已完成" in item["summary"] or "查询成功" in item["summary"])
+            and "结果正常" not in item["summary"]
             for item in payload["facts"][:2]
         ))
         self.assertIn("采集 1 条可验证观测", payload["facts"][0]["summary"])
         self.assertIn(
-            "本期没有需要报告的记录",
+            "未发现达到报告条件的记录",
             payload["facts"][1]["summary"],
         )
-        self.assertIn("2/2", payload["summary"])
+        self.assertIn("共执行 2 项检查", payload["summary"])
         self.assertEqual(100.0, payload["scope"]["evidence_coverage_percent"])
         self.assertEqual(2, payload["scope"]["evidence_covered_count"])
         self.assertEqual(2, payload["scope"]["evidence_total_count"])
-        self.assertEqual(100.0, payload["scope"]["tool_execution_coverage_percent"])
-        self.assertEqual(0, payload["scope"]["evidence_gap_count"])
-        self.assertEqual([], payload["recommendations"])
+        self.assertEqual(
+            ["继续按既定周期执行该巡检模板并关注趋势变化。"],
+            payload["recommendations"],
+        )
         report = uow.inspections.publish_report.await_args.args[0]
         self.assertEqual("system:inspection.daily", report.template_id)
         self.assertEqual("1", report.template_version)
@@ -440,7 +478,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual([], list(gaps))
         self.assertIn("所有模板检查均已形成完整证据", summary)
         self.assertEqual(
-            "近期告警日志：检查已完成，本期没有需要报告的记录。",
+            "近期告警日志：查询成功，未发现达到报告条件的记录。",
             facts[0]["summary"],
         )
         self.assertEqual(
@@ -639,6 +677,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                         for name in (
                             "metric_code",
                             "dimensions",
+                            "unit",
                             "first",
                             "latest",
                             "change",
@@ -651,6 +690,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
                         (
                             "db.storage.used_bytes",
                             "tablespace=USERS",
+                            "bytes",
                             80.0,
                             120.0,
                             40.0,
@@ -706,8 +746,11 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertEqual(80.0, trend["first"])
         self.assertEqual(120.0, trend["latest"])
         self.assertEqual(5.7143, trend["change_per_day"])
-        self.assertIn("first=80.0", trend["summary"])
-        self.assertIn("change_per_day=5.7143", trend["summary"])
+        self.assertIn("存储已使用容量（表空间：USERS）", trend["summary"])
+        self.assertIn("期初值 80.00 B", trend["summary"])
+        self.assertIn("日均变化量 5.71 B", trend["summary"])
+        self.assertNotIn("db.storage.used_bytes", trend["summary"])
+        self.assertNotIn("change_per_day", trend["summary"])
         self.assertTrue(
             all(item["kind"] != "inspection_trend" for item in daily_facts)
         )
@@ -717,7 +760,8 @@ class InspectionReportPublishingTest(unittest.TestCase):
             if item["kind"] == "inspection_monitoring_metric"
         )
         self.assertEqual("db.storage.used_bytes", monitoring_fact["metric_code"])
-        self.assertIn("最新值 120.0", monitoring_fact["summary"])
+        self.assertIn("当前值 120.00 B", monitoring_fact["summary"])
+        self.assertNotIn("db.storage.used_bytes", monitoring_fact["summary"])
         self.assertEqual("artifact:test#trend", monitoring_fact["evidence_ref"])
 
     def test_inspection_capacity_recommendation_uses_forecast(self) -> None:
@@ -807,23 +851,6 @@ class InspectionReportPublishingTest(unittest.TestCase):
         self.assertIn("低置信度预测未来30天", recommendations[0])
         self.assertIn("使用率约为96.50%", recommendations[0])
         self.assertIn("约8.17天历史数据", recommendations[0])
-
-    def test_monitoring_sample_coverage_is_reported_separately(self) -> None:
-        source = SimpleNamespace(
-            evidence=(
-                SimpleNamespace(
-                    tool_id="metric.query_range",
-                    columns=({"name": "coverage_ratio"},),
-                    rows=((0.8,), (0.2417,), (1.0,)),
-                ),
-            )
-        )
-
-        quality = AIOpsRuntimeService._inspection_monitoring_quality(source)
-
-        self.assertEqual(24.17, quality["coverage_percent"])
-        self.assertEqual(3, quality["metric_count"])
-        self.assertEqual(1, quality["low_coverage_metric_count"])
 
     def test_scheduled_agent_turn_projects_evidence_gaps_and_recommendation(
         self,

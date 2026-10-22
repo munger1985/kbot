@@ -77,7 +77,7 @@ local_access = false
 
 [metrics]
 # enabled = true
-# prometheus_retention = 30d
+# prometheus_retention = 60d
 # alertmanager_retention = 120h
 # prometheus_port = 9090
 # alertmanager_port = 9093
@@ -86,6 +86,10 @@ local_access = false
 # kbot_webhook_url = https://kbot.example.com
 # kbot_webhook_key = CHANGE_ME
 # kbot_webhook_secret = CHANGE_ME
+# 可选：共享同一Alertmanager时，配置第二套KBot环境并双发全部KBot告警。
+# kbot_uat_webhook_url = https://kbot-uat.example.com
+# kbot_uat_webhook_key = CHANGE_ME
+# kbot_uat_webhook_secret = CHANGE_ME
 # 可选：共享同一Alertmanager时，三项同时配置后另外推送到Ammolite。
 # ammolite_webhook_url = https://ammolite.example.com
 # ammolite_webhook_key = CHANGE_ME
@@ -493,7 +497,11 @@ def _validate_module_settings(settings: DeploymentSettings) -> None:
                 raise ValueError(f"采集端Exporter监听地址重复：{bind_address}:{exporter_port}")
             seen_ports.add(endpoint)
     if "metrics" in settings.profiles:
-        for product, display_name in (("kbot", "KBot"), ("ammolite", "Ammolite")):
+        for product, display_name in (
+            ("kbot", "KBot"),
+            ("kbot_uat", "KBot UAT"),
+            ("ammolite", "Ammolite"),
+        ):
             webhook_url = parser.get(
                 "metrics", f"{product}_webhook_url", fallback=""
             ).strip()
@@ -1084,10 +1092,12 @@ def _prometheus_query_overrides() -> str:
 def _alertmanager_config(
     *,
     kbot_webhook_enabled: bool,
+    kbot_uat_webhook_enabled: bool,
     ammolite_webhook_enabled: bool,
     ammolite_target_keys: tuple[str, ...] = (),
 ) -> str:
-    receiver = "kbot" if kbot_webhook_enabled else "discard"
+    kbot_enabled = kbot_webhook_enabled or kbot_uat_webhook_enabled
+    receiver = "kbot" if kbot_enabled else "discard"
     lines = [
         "route:",
         f"  receiver: {receiver}",
@@ -1098,7 +1108,7 @@ def _alertmanager_config(
     ]
     if ammolite_webhook_enabled:
         matcher = "|".join(re.escape(key) for key in ammolite_target_keys)
-        routed_receiver = "aiops" if kbot_webhook_enabled else "ammolite"
+        routed_receiver = "aiops" if kbot_enabled else "ammolite"
         lines.extend(
             [
                 "  routes:",
@@ -1108,19 +1118,29 @@ def _alertmanager_config(
             ]
         )
     lines.extend(["receivers:", "  - name: discard"])
-    if kbot_webhook_enabled:
+    if kbot_enabled:
         lines.extend(
             [
                 "  - name: kbot",
                 "    webhook_configs:",
-                '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
-                "        send_resolved: true",
             ]
         )
+        if kbot_webhook_enabled:
+            lines.extend(
+                [
+                    '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
+                    "        send_resolved: true",
+                ]
+            )
+        if kbot_uat_webhook_enabled:
+            lines.extend(
+                [
+                    '      - url: "http://kbot-uat-webhook-signer:8080/alertmanager"',
+                    "        send_resolved: true",
+                ]
+            )
     if ammolite_webhook_enabled:
-        ammolite_receiver = (
-            "aiops" if kbot_webhook_enabled else "ammolite"
-        )
+        ammolite_receiver = "aiops" if kbot_enabled else "ammolite"
         lines.extend(
             [
                 f"  - name: {ammolite_receiver}",
@@ -1131,6 +1151,13 @@ def _alertmanager_config(
             lines.extend(
                 [
                     '      - url: "http://kbot-webhook-signer:8080/alertmanager"',
+                    "        send_resolved: true",
+                ]
+            )
+        if kbot_uat_webhook_enabled:
+            lines.extend(
+                [
+                    '      - url: "http://kbot-uat-webhook-signer:8080/alertmanager"',
                     "        send_resolved: true",
                 ]
             )
@@ -1662,6 +1689,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
     )
     targets: list[dict[str, object]] = []
     webhook_url = ""
+    kbot_uat_webhook_url = ""
     ammolite_webhook_url = ""
 
     if "metrics" in settings.profiles:
@@ -1669,6 +1697,9 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             (_prometheus_config() + _prometheus_rules()).encode("utf-8")
         ).hexdigest()
         webhook_url = parser.get("metrics", "kbot_webhook_url", fallback="").strip()
+        kbot_uat_webhook_url = parser.get(
+            "metrics", "kbot_uat_webhook_url", fallback=""
+        ).strip()
         ammolite_webhook_url = parser.get(
             "metrics", "ammolite_webhook_url", fallback=""
         ).strip()
@@ -1681,6 +1712,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
         )
         alertmanager_config = _alertmanager_config(
             kbot_webhook_enabled=bool(webhook_url),
+            kbot_uat_webhook_enabled=bool(kbot_uat_webhook_url),
             ammolite_webhook_enabled=bool(ammolite_webhook_url),
             ammolite_target_keys=ammolite_target_keys,
         )
@@ -1692,7 +1724,7 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
                 f"AIOPS_PROMETHEUS_CONFIG_REVISION={prometheus_revision}",
                 f"AIOPS_ALERTMANAGER_CONFIG_REVISION={alertmanager_revision}",
                 "PROMETHEUS_RETENTION="
-                + _optional(parser, "metrics", "prometheus_retention", "30d"),
+                + _optional(parser, "metrics", "prometheus_retention", "60d"),
                 "ALERTMANAGER_RETENTION="
                 + _optional(parser, "metrics", "alertmanager_retention", "120h"),
                 "PROMETHEUS_PORT="
@@ -1724,6 +1756,33 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             )
             _write_secret(secrets / "kbot_webhook_key", webhook_key)
             _write_secret(secrets / "kbot_webhook_secret", webhook_secret)
+        kbot_uat_webhook_key = parser.get(
+            "metrics", "kbot_uat_webhook_key", fallback=""
+        ).strip()
+        kbot_uat_webhook_secret = parser.get(
+            "metrics", "kbot_uat_webhook_secret", fallback=""
+        ).strip()
+        if kbot_uat_webhook_url:
+            kbot_uat_signer_revision = hashlib.sha256(
+                (
+                    f"{kbot_uat_webhook_url.rstrip('/')}\0"
+                    f"{kbot_uat_webhook_key}\0{kbot_uat_webhook_secret}"
+                ).encode("utf-8")
+            ).hexdigest()
+            env_lines.extend(
+                [
+                    "KBOT_UAT_WEBHOOK_BASE_URL="
+                    + kbot_uat_webhook_url.rstrip("/"),
+                    "AIOPS_KBOT_UAT_WEBHOOK_SIGNER_CONFIG_REVISION="
+                    + kbot_uat_signer_revision,
+                ]
+            )
+            _write_secret(
+                secrets / "kbot_uat_webhook_key", kbot_uat_webhook_key
+            )
+            _write_secret(
+                secrets / "kbot_uat_webhook_secret", kbot_uat_webhook_secret
+            )
         ammolite_webhook_key = parser.get(
             "metrics", "ammolite_webhook_key", fallback=""
         ).strip()
@@ -1885,6 +1944,49 @@ def _prepare_runtime(settings: DeploymentSettings) -> None:
             }
         )
 
+    if kbot_uat_webhook_url:
+        generated_compose.setdefault("services", {})["kbot-uat-webhook-signer"] = {
+            "restart": "unless-stopped",
+            "security_opt": ["no-new-privileges:true"],
+            "image": "${KBOT_WEBHOOK_SIGNER_IMAGE}",
+            "build": {"context": str(STACK_ROOT / "webhook_signer")},
+            "environment": {
+                "KBOT_WEBHOOK_BASE_URL": "${KBOT_UAT_WEBHOOK_BASE_URL}",
+                "AIOPS_WEBHOOK_SIGNER_CONFIG_REVISION": (
+                    "${AIOPS_KBOT_UAT_WEBHOOK_SIGNER_CONFIG_REVISION}"
+                ),
+            },
+            "secrets": [
+                {
+                    "source": "kbot-uat-webhook-key",
+                    "target": "kbot_webhook_key",
+                },
+                {
+                    "source": "kbot-uat-webhook-secret",
+                    "target": "kbot_webhook_secret",
+                },
+            ],
+            "group_add": ["${AIOPS_SECRET_GID}"],
+            "networks": ["observability", "outbound"],
+            "expose": ["8080"],
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/healthcheck.py"],
+                "interval": "15s",
+                "timeout": "5s",
+                "retries": 12,
+            },
+        }
+        generated_compose.setdefault("secrets", {}).update(
+            {
+                "kbot-uat-webhook-key": {
+                    "file": str(secrets / "kbot_uat_webhook_key")
+                },
+                "kbot-uat-webhook-secret": {
+                    "file": str(secrets / "kbot_uat_webhook_secret")
+                },
+            }
+        )
+
     if ammolite_webhook_url:
         generated_compose.setdefault("services", {})["ammolite-webhook-signer"] = {
             "restart": "unless-stopped",
@@ -1989,6 +2091,13 @@ def _selected_services(settings: DeploymentSettings) -> list[str]:
         and settings.values.get("metrics", "kbot_webhook_url", fallback="").strip()
     ):
         selected.add("kbot-webhook-signer")
+    if (
+        settings.role != "collector"
+        and settings.values.get(
+            "metrics", "kbot_uat_webhook_url", fallback=""
+        ).strip()
+    ):
+        selected.add("kbot-uat-webhook-signer")
     if (
         settings.role != "collector"
         and settings.values.get(

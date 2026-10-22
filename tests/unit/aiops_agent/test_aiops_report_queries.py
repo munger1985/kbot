@@ -244,6 +244,8 @@ class InspectionFireQueryTest(unittest.TestCase):
             target_count=2,
             completed_count=1,
             failed_count=1,
+            error_code=None,
+            error_message=None,
             created_at=now,
             completed_at=now + timedelta(minutes=3),
         )

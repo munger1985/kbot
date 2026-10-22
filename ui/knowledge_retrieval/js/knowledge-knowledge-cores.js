@@ -243,6 +243,24 @@
     document.getElementById("kc-domain").value = currentDomainLabel();
     const textEmbeddings = modelsByCategory(KBotKnowledgeApi.ModelCategory.TXT_EMBEDDING);
     fillSelect(
+      document.getElementById("kc-parser-ocr"),
+      modelsByCategory(KBotKnowledgeApi.ModelCategory.OCR),
+      "",
+      "选择 OCR 解析模型",
+    );
+    fillSelect(
+      document.getElementById("kc-parser-vlm"),
+      modelsByCategory(KBotKnowledgeApi.ModelCategory.VLM),
+      "",
+      "不绑定",
+    );
+    fillSelect(
+      document.getElementById("kc-parser-llm"),
+      modelsByCategory(KBotKnowledgeApi.ModelCategory.LLM),
+      "",
+      "不绑定",
+    );
+    fillSelect(
       document.getElementById("kc-embedding"),
       textEmbeddings,
       "",
@@ -267,6 +285,24 @@
     document.getElementById("kc-name").value = row.display_name || "";
     document.getElementById("kc-description").value = row.description || "";
     document.getElementById("kc-security").value = String(row.default_security_level ?? 1);
+    fillSelect(
+      document.getElementById("kc-parser-ocr"),
+      modelsByCategory(KBotKnowledgeApi.ModelCategory.OCR),
+      models.parser_ocr,
+      "选择 OCR 解析模型",
+    );
+    fillSelect(
+      document.getElementById("kc-parser-vlm"),
+      modelsByCategory(KBotKnowledgeApi.ModelCategory.VLM),
+      models.parser_vlm,
+      "不绑定",
+    );
+    fillSelect(
+      document.getElementById("kc-parser-llm"),
+      modelsByCategory(KBotKnowledgeApi.ModelCategory.LLM),
+      models.parser_llm,
+      "不绑定",
+    );
     fillSelect(
       document.getElementById("kc-embedding"),
       modelsByCategory(KBotKnowledgeApi.ModelCategory.TXT_EMBEDDING),
@@ -387,13 +423,19 @@
 
   function createPayload() {
     const embedding = document.getElementById("kc-embedding").value;
+    const parserOcr = document.getElementById("kc-parser-ocr").value;
+    const parserVlm = document.getElementById("kc-parser-vlm").value;
+    const parserLlm = document.getElementById("kc-parser-llm").value;
     const visual = document.getElementById("kc-visual-embedding").value;
     const payload = {
       display_name: String(document.getElementById("kc-name").value || "").trim(),
       description: String(document.getElementById("kc-description").value || "").trim() || null,
       default_security_level: Number(document.getElementById("kc-security").value || 1),
       embedding,
+      parser_ocr: parserOcr,
     };
+    if (parserVlm) payload.parser_vlm = parserVlm;
+    if (parserLlm) payload.parser_llm = parserLlm;
     if (visual) payload.visual_embedding = visual;
     return payload;
   }
@@ -407,6 +449,10 @@
     }
     if (!payload.embedding) {
       toast("请选择已启用的文本 Embedding 模型。", "error");
+      return;
+    }
+    if (!payload.parser_ocr) {
+      toast("请选择已启用的 OCR 解析模型。", "error");
       return;
     }
     try {
@@ -427,6 +473,11 @@
         default_security_level: payload.default_security_level,
       };
       if (payload.embedding !== String(models.embedding || "")) update.embedding = payload.embedding;
+      if (payload.parser_ocr !== String(models.parser_ocr || "")) update.parser_ocr = payload.parser_ocr;
+      const currentParserVlm = models.parser_vlm ? String(models.parser_vlm) : "";
+      if (String(payload.parser_vlm || "") !== currentParserVlm) update.parser_vlm = payload.parser_vlm || null;
+      const currentParserLlm = models.parser_llm ? String(models.parser_llm) : "";
+      if (String(payload.parser_llm || "") !== currentParserLlm) update.parser_llm = payload.parser_llm || null;
       const currentVisual = models.visual_embedding ? String(models.visual_embedding) : "";
       const nextVisual = payload.visual_embedding ? String(payload.visual_embedding) : "";
       if (nextVisual !== currentVisual) update.visual_embedding = payload.visual_embedding || null;

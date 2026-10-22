@@ -34,7 +34,9 @@ include = ["aiops_agent*"]
 aiops_agent = [
   "actions/catalog/**/*.json",
   "actions/catalog/**/*.sql",
+  "actions/catalog/**/*.txt",
   "application/conversation_starters/*.json",
+  "application/inspections/*.json",
   "diagnostics/catalog/**/*.json",
   "diagnostics/catalog/**/*.sql",
   "resources/fonts/**/*",

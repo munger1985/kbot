@@ -14,6 +14,7 @@ dependencies = [
   "fastapi==0.128.0",
   "fastapi-offline==1.7.6",
   "imagehash==4.3.2",
+  "jieba==0.42.1",
   "kbot-platform-clients==4.0.0",
   "kbot-platform-core==4.0.0",
   "oracledb==3.4.2",

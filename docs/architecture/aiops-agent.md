@@ -98,8 +98,9 @@ AIOps Agent 是独立领域服务，当前面向 Oracle、MySQL 和 PostgreSQL �
 索引引用；Knowledge Core 不拥有“是否可以作为运维知识发布”的业务决定。Main API 只承担
 认证、权限和流式转发，不直接编排 KC 与 AIOps 表之间的生命周期。
 
-逻辑上向用户提供一个运维知识库，内部使用 `operations-manuals` 和 `diagnosis-cases` 两个
-固定 Collection。结构化候选发现由 AIOps Repository 完成，KC 只在候选 Bundle 内执行全文、
+每个 Domain 可以创建多个运维知识库，每个知识库拥有独立 KC Collection；`diagnosis-cases`
+保留为固定内部 Collection。诊断 Agent 与知识问答 Agent 均持久化绑定 1–N 个知识库。
+结构化候选发现由 AIOps Repository 完成，KC 只在绑定知识库的候选 Bundle 内执行全文、
 向量和上下文证据检索。当前 Turn 附件继续由 `artifact.search` 查询，正式知识使用独立的
 `ops.knowledge.search`，二者不能混用。
 

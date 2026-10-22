@@ -1212,6 +1212,302 @@
         "title": "BusinessSystemResourceView",
         "type": "object"
       },
+      "DailyInspectionHeader": {
+        "additionalProperties": false,
+        "description": "日常巡检正式报告头。",
+        "properties": {
+          "database_type": {
+            "title": "Database Type",
+            "type": "string"
+          },
+          "database_version": {
+            "title": "Database Version",
+            "type": "string"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "observation_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation End"
+          },
+          "observation_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Start"
+          },
+          "report_number": {
+            "title": "Report Number",
+            "type": "string"
+          },
+          "report_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Time"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "responsibility_domain": {
+            "title": "Responsibility Domain",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "target_name",
+          "target_id",
+          "environment",
+          "database_type",
+          "database_version",
+          "report_version",
+          "report_number",
+          "responsibility_domain"
+        ],
+        "title": "DailyInspectionHeader",
+        "type": "object"
+      },
+      "DailyInspectionMetric": {
+        "additionalProperties": true,
+        "description": "当前值与过去七日同口径基线的结构化对比。",
+        "properties": {
+          "baseline_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Average"
+          },
+          "baseline_display": {
+            "title": "Baseline Display",
+            "type": "string"
+          },
+          "baseline_status": {
+            "enum": [
+              "AVAILABLE",
+              "INSUFFICIENT"
+            ],
+            "title": "Baseline Status",
+            "type": "string"
+          },
+          "coverage_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Percent"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "current_display": {
+            "title": "Current Display",
+            "type": "string"
+          },
+          "deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation"
+          },
+          "deviation_display": {
+            "title": "Deviation Display",
+            "type": "string"
+          },
+          "deviation_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation Percent"
+          },
+          "dimension_label": {
+            "title": "Dimension Label",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "semantic_role": {
+            "title": "Semantic Role",
+            "type": "string"
+          },
+          "trend_points": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Trend Points",
+            "type": "array"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_code",
+          "semantic_role",
+          "display_name",
+          "dimension_label",
+          "unit",
+          "current_display",
+          "baseline_display",
+          "deviation_display",
+          "baseline_status"
+        ],
+        "title": "DailyInspectionMetric",
+        "type": "object"
+      },
+      "DailyInspectionPresentation": {
+        "additionalProperties": true,
+        "description": "日常巡检报告的冻结结构化展示投影。",
+        "properties": {
+          "baseline_metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Baseline Metrics",
+            "type": "array"
+          },
+          "capacity_rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DailyInspectionMetric"
+            },
+            "title": "Capacity Rows",
+            "type": "array"
+          },
+          "conclusion": {
+            "additionalProperties": true,
+            "title": "Conclusion",
+            "type": "object"
+          },
+          "evidence_boundary": {
+            "additionalProperties": true,
+            "title": "Evidence Boundary",
+            "type": "object"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "gaps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "header": {
+            "$ref": "#/components/schemas/DailyInspectionHeader"
+          },
+          "recommendations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "DAILY_INSPECTION_PRESENTATION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "header",
+          "conclusion",
+          "evidence_boundary"
+        ],
+        "title": "DailyInspectionPresentation",
+        "type": "object"
+      },
       "DashboardActivityItem": {
         "additionalProperties": false,
         "properties": {
@@ -2078,6 +2374,28 @@
             "title": "Deployment Type",
             "type": "string"
           },
+          "diagnostic_username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Username"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment": {
             "title": "Environment",
             "type": "string"
@@ -2085,6 +2403,28 @@
           "monitoring_ready": {
             "title": "Monitoring Ready",
             "type": "boolean"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           },
           "rac_node_number": {
             "anyOf": [
@@ -2099,12 +2439,18 @@
             ],
             "title": "Rac Node Number"
           },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
           "version_code": {
             "title": "Version Code",
             "type": "string"
           }
         },
         "required": [
+          "target_id",
           "db_type",
           "version_code",
           "environment",
@@ -2888,6 +3234,8 @@
           "TOP_SQL",
           "REPLICATION_SLOT",
           "ARCHIVER_FAILURE",
+          "RECOVERY_CONFIGURATION",
+          "BACKUP_MISSING",
           "CHECKPOINT_PRESSURE",
           "ANALYZE_STALE",
           "FREEZE_HEADROOM",
@@ -3178,6 +3526,14 @@
             ],
             "title": "Playbook Id"
           },
+          "report_columns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Report Columns",
+            "type": "array"
+          },
           "supported_db_types": {
             "default": [
               "ORACLE"
@@ -3204,6 +3560,17 @@
           "trend_required": {
             "title": "Trend Required",
             "type": "boolean"
+          },
+          "zero_row_status": {
+            "default": "CLEAR",
+            "enum": [
+              "CLEAR",
+              "OBSERVED",
+              "NOT_APPLICABLE",
+              "GAP"
+            ],
+            "title": "Zero Row Status",
+            "type": "string"
           }
         },
         "required": [
@@ -3302,6 +3669,28 @@
             "title": "Completed Count",
             "type": "integer"
           },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
           "failed_count": {
             "minimum": 0.0,
             "title": "Failed Count",
@@ -3380,6 +3769,28 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
           },
           "failed_count": {
             "minimum": 0.0,
@@ -5613,6 +6024,331 @@
         "title": "MonitoringWindow",
         "type": "object"
       },
+      "MonthlyInspectionHeader": {
+        "additionalProperties": false,
+        "description": "月度巡检正式报告头，兼容单 Target 和业务系统范围。",
+        "properties": {
+          "database_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Database Types",
+            "type": "array"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "report_number": {
+            "title": "Report Number",
+            "type": "string"
+          },
+          "report_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Time"
+          },
+          "report_version": {
+            "minimum": 1.0,
+            "title": "Report Version",
+            "type": "integer"
+          },
+          "responsibility_domain": {
+            "title": "Responsibility Domain",
+            "type": "string"
+          },
+          "scope_name": {
+            "title": "Scope Name",
+            "type": "string"
+          },
+          "scope_type": {
+            "enum": [
+              "TARGET",
+              "BUSINESS_SYSTEM"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "target_count": {
+            "minimum": 1.0,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "scope_type",
+          "scope_name",
+          "target_count",
+          "environment",
+          "report_version",
+          "report_number",
+          "responsibility_domain"
+        ],
+        "title": "MonthlyInspectionHeader",
+        "type": "object"
+      },
+      "MonthlyInspectionMetric": {
+        "additionalProperties": true,
+        "description": "自然月日点聚合后的指标统计。",
+        "properties": {
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "coverage_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Percent"
+          },
+          "daily_points": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Daily Points",
+            "type": "array"
+          },
+          "dimension_label": {
+            "title": "Dimension Label",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "effective_days": {
+            "minimum": 0.0,
+            "title": "Effective Days",
+            "type": "integer"
+          },
+          "expected_days": {
+            "minimum": 0.0,
+            "title": "Expected Days",
+            "type": "integer"
+          },
+          "first": {
+            "title": "First",
+            "type": "number"
+          },
+          "last": {
+            "title": "Last",
+            "type": "number"
+          },
+          "maximum": {
+            "title": "Maximum",
+            "type": "number"
+          },
+          "metric_code": {
+            "title": "Metric Code",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "minimum": {
+            "title": "Minimum",
+            "type": "number"
+          },
+          "monthly_average": {
+            "title": "Monthly Average",
+            "type": "number"
+          },
+          "monthly_average_display": {
+            "title": "Monthly Average Display",
+            "type": "string"
+          },
+          "net_change": {
+            "title": "Net Change",
+            "type": "number"
+          },
+          "p95": {
+            "title": "P95",
+            "type": "number"
+          },
+          "p95_display": {
+            "title": "P95 Display",
+            "type": "string"
+          },
+          "semantic_role": {
+            "title": "Semantic Role",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_key",
+          "metric_code",
+          "semantic_role",
+          "display_name",
+          "dimension_label",
+          "unit",
+          "monthly_average",
+          "monthly_average_display",
+          "p95",
+          "p95_display",
+          "minimum",
+          "maximum",
+          "first",
+          "last",
+          "net_change",
+          "effective_days",
+          "expected_days"
+        ],
+        "title": "MonthlyInspectionMetric",
+        "type": "object"
+      },
+      "MonthlyInspectionPresentation": {
+        "additionalProperties": true,
+        "description": "月报冻结结构化展示投影。",
+        "properties": {
+          "capacity_rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonthlyInspectionMetric"
+            },
+            "title": "Capacity Rows",
+            "type": "array"
+          },
+          "conclusion": {
+            "additionalProperties": true,
+            "title": "Conclusion",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "database_checks": {
+            "additionalProperties": true,
+            "title": "Database Checks",
+            "type": "object"
+          },
+          "evidence_boundary": {
+            "additionalProperties": true,
+            "title": "Evidence Boundary",
+            "type": "object"
+          },
+          "extensions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Extensions",
+            "type": "array"
+          },
+          "gaps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "header": {
+            "$ref": "#/components/schemas/MonthlyInspectionHeader"
+          },
+          "issues": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MonthlyInspectionMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "period_comparison": {
+            "additionalProperties": true,
+            "title": "Period Comparison",
+            "type": "object"
+          },
+          "recommendations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "MONTHLY_INSPECTION_PRESENTATION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "header",
+          "conclusion",
+          "period_comparison",
+          "coverage",
+          "database_checks",
+          "evidence_boundary"
+        ],
+        "title": "MonthlyInspectionPresentation",
+        "type": "object"
+      },
       "MySQLRecoveryMarker": {
         "additionalProperties": false,
         "properties": {
@@ -7723,10 +8459,30 @@
       },
       "ReportPresentation": {
         "additionalProperties": true,
-        "description": "报告预览投影。只约束领导简报，其余章节保持现有冻结结构。",
+        "description": "报告预览投影；日常巡检使用专用结构化展示合同。",
         "properties": {
+          "daily_inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyInspectionPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "leadership_briefing": {
             "$ref": "#/components/schemas/LeadershipBriefing"
+          },
+          "monthly_inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonthlyInspectionPresentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

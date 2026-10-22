@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>模板管理</title><link rel="stylesheet" href="./css/aiops.css"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>模板管理</title><link rel="stylesheet" href="./css/aiops.css?v=20261020_3"><link rel="stylesheet" href="./css/aiops-forms.css"></head>
 <body data-page="report-templates">
   <main class="ops-main">
     <header class="ops-head"><div><h1>模板管理</h1><p>巡检模板决定执行哪些检查；会话报告模板只决定 Session 正式报告的展示章节。</p></div></header>
@@ -20,5 +20,5 @@
 
   <dialog id="session-report-template-dialog" class="ops-dialog"><form id="session-report-template-form"><header><h2>新建会话报告模板</h2><p>勾选并按页面顺序生成章节；执行摘要和证据边界（必选）由系统固定保留。</p></header><div class="ops-dialog-body"><label class="ops-field">模板名称<input name="display_name" maxlength="256" required></label><fieldset><legend>展示章节</legend><label><input type="checkbox" name="section" value="EXECUTIVE_SUMMARY" checked disabled> 执行摘要（必选）</label><label><input type="checkbox" name="section" value="SCOPE" checked> 会话范围</label><label><input type="checkbox" name="section" value="RISK_OVERVIEW" checked> 风险概览</label><label><input type="checkbox" name="section" value="FINDINGS" checked> 核验发现</label><label><input type="checkbox" name="section" value="ROOT_CAUSE" checked> 根因分析</label><label><input type="checkbox" name="section" value="RECOMMENDATIONS" checked> 处置建议</label><label><input type="checkbox" name="section" value="ACTIONS"> 处置与验证</label><label><input type="checkbox" name="section" value="EVIDENCE_APPENDIX"> 证据附录</label><label><input type="checkbox" name="section" value="EVIDENCE_BOUNDARY" checked disabled> 证据边界（必选）</label></fieldset><p id="session-report-template-result" class="ops-connection-result" role="status"></p></div><footer><button type="button" data-close-session-report-template>取消</button><button class="primary" type="submit">创建模板</button></footer></form></dialog>
 
-  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261016_2"></script><script src="./js/aiops-report-templates.js"></script>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_3"></script><script src="./js/aiops-report-templates.js"></script>
 </body></html>

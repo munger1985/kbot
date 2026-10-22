@@ -17,11 +17,14 @@ class AIOpsInitializerTest(unittest.TestCase):
         self.assertIn("aiops_portal", source)
         self.assertIn("aiopsadmin", source)
         self.assertIn("operations-manuals", source)
+        self.assertIn("KBOT_OPS_KNOWLEDGE_BASE", source)
+        self.assertIn("默认运维知识库", source)
         self.assertIn("diagnosis-cases", source)
         self.assertIn("管理 AIOps 运维知识库", source)
         self.assertIn("aiops:knowledge_manage", source)
         self.assertIn("aiops:api_key_manage", source)
-        self.assertIn("CATEGORY = 2", source)
+        self.assertNotIn("CATEGORY = 2", source)
+        self.assertIn("'{}'", source)
         self.assertIn("INSERT INTO KBOT_KC_COLLECTION", source)
 
     def test_unclosed_plsql_block_is_rejected(self):

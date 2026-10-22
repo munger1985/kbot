@@ -10,6 +10,7 @@ from scripts.db.apply_oracle_schema import (
     PLATFORM_FOUNDATION_PERMISSIONS,
     FoundationValidationError,
     _apply_platform_foundation,
+    _assert_views_queryable,
     load_schema_statements,
     load_service_selection,
     main,
@@ -97,6 +98,30 @@ class OracleSchemaRunnerTest(unittest.TestCase):
         self.assertNotIn("CREATE TABLE KBOT_AGENT_DEFINITION", sql)
         self.assertNotIn("CREATE TABLE KBOT_OPS_TARGET", sql)
 
+    def test_aiops_foreign_keys_have_required_leading_indexes(self) -> None:
+        sql = "\n".join(
+            statement.sql for statement in load_schema_statements()
+        )
+        expected = {
+            "IX_OPS_TARGET_FACT_OWNER": "TARGET_ID, DOMAIN_ID",
+            "IX_OPS_SIG_DOMAIN": "DOMAIN_ID",
+            "IX_OPS_SIG_BINDING": "SOURCE_BINDING_ID",
+            "IX_OPS_SITUATION_DOMAIN": "DOMAIN_ID",
+            "IX_OPS_REPORT_RUN": "OPS_RUN_ID",
+            "IX_OPS_PLAY_INV_RUN": "OPS_RUN_ID",
+            "IX_OPS_TOOL_INV_RUN": "OPS_RUN_ID",
+            "IX_OPS_KNOW_ASSET_BASE": "KNOWLEDGE_BASE_ID",
+            "IX_OPS_KNOW_ASSET_CUR_VER": "CURRENT_VERSION_ID",
+            "IX_OPS_KNOW_SCOPE_TAG": "TAG_ID",
+        }
+        for index_name, columns in expected.items():
+            with self.subTest(index_name=index_name):
+                self.assertRegex(
+                    sql,
+                    rf"CREATE INDEX {index_name}\s+ON [A-Z0-9_]+\s*"
+                    rf"\(\s*{columns.replace(', ', r'\s*,\s*')}\s*\)",
+                )
+
     def test_config_rejects_required_service_selection(self) -> None:
         with TemporaryDirectory() as directory:
             config_path = Path(directory) / "init.ini"
@@ -142,6 +167,38 @@ class _DictionaryResult:
 
     def all(self):
         return self._row or []
+
+
+class _ViewConnection:
+    def __init__(self):
+        self.statements: list[str] = []
+
+    async def exec_driver_sql(self, statement):
+        self.statements.append(statement)
+
+
+class OracleViewValidationTest(unittest.IsolatedAsyncioTestCase):
+    async def test_views_are_queried_to_trigger_lazy_compilation(self):
+        connection = _ViewConnection()
+
+        await _assert_views_queryable(
+            connection,
+            {"KBOT_V_OPS_RUN", "KBOT_V_OPS_REPORT"},
+        )
+
+        self.assertEqual(
+            [
+                'SELECT * FROM "KBOT_V_OPS_REPORT" WHERE 1 = 0',
+                'SELECT * FROM "KBOT_V_OPS_RUN" WHERE 1 = 0',
+            ],
+            connection.statements,
+        )
+
+    async def test_illegal_view_name_is_rejected(self):
+        connection = _ViewConnection()
+
+        with self.assertRaisesRegex(RuntimeError, "规范视图名称非法"):
+            await _assert_views_queryable(connection, {'KBOT_V"BAD'})
 
 
 class _FoundationConnection:

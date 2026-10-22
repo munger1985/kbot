@@ -119,6 +119,42 @@
             "additionalProperties": true,
             "title": "Parse Policy",
             "type": "object"
+          },
+          "parser_llm_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Llm Model Id"
+          },
+          "parser_ocr_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Ocr Model Id"
+          },
+          "parser_vlm_model_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Vlm Model Id"
           }
         },
         "required": [
@@ -3213,6 +3249,66 @@
           }
         },
         "summary": "Review User Intake",
+        "tags": [
+          "Knowledge Core"
+        ]
+      }
+    },
+    "/internal/v1/knowledge/domains/{domain_id}/collections/{collection_id}/bundle-revisions/{bundle_revision_id}/source-objects:purge": {
+      "post": {
+        "operationId": "purge_revision_source_objects_internal_v1_knowledge_domains__domain_id__collections__collection_id__bundle_revisions__bundle_revision_id__source_objects_purge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "title": "Domain Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Collection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "bundle_revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Revision Source Objects",
         "tags": [
           "Knowledge Core"
         ]

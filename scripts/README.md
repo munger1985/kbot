@@ -13,8 +13,11 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
 - `scripts/db/initialize_km.py`：幂等创建 `kmadmin`、授予 KM App 全部权限，并创建固定的
   `km_portal/assets` KC Collection；`--check-only` 可只读复查。
 - `scripts/db/initialize_aiops.py`：幂等创建 `aiopsadmin`、固定 `aiops_portal` Domain、
-  `operations-manuals` KC Collection，并通过 Main API 上传和批准仓库内置数据库运维手册；
-  `--check-only` 可只读复查，`--skip-manual-upload` 仅初始化数据库资源。
+  “默认运维知识库”及其 `operations-manuals` KC Collection，并创建固定诊断案例 Collection；
+  `--check-only` 可只读复查。手册由用户在知识库管理页面上传和审批。
+- `scripts/db/seed_aiops_inspection_templates.py`：为每个已启用 AIOps Domain 幂等补齐
+  “日常巡检”和“月度巡检”；模板由当前 Check Catalog 编译并覆盖 Oracle、MySQL、
+  PostgreSQL，`--check-only` 可只读复查。
 - `scripts/db/initialize_product_app.py`：按 `knowledge_retrieval` 或 `media_studio`
   幂等创建空白引导 Domain、App 权限和初始管理员；不创建业务
   Agent、模型绑定或模型配置。`--check-only` 可只读复查；初始密码只会在
@@ -24,7 +27,7 @@ Bootstrap 和 DBA 操作 SQL 位于 `database/oracle/`；开发期生成器位�
   中从当前 Schema 的模型目录生成可复制的跨环境 INSERT；输出包含 Secret，不得保存到
   仓库或非受控位置。
 - `database/oracle/operations/reset_kbot_schema.sql`：显式删除当前用户下的 `KBOT_%`
-  表和视图，仅用于确认不保留数据的开发 Schema。
+  属性图、表和视图，仅用于确认不保留数据的开发 Schema。
 - `tools/db/render_aiops_rebuild_schema.py`：从规范 DDL 生成 AIOps 单文件重建交付物，
   不连接或修改数据库。
 - `scripts/deployment/check_deployment.py`：启动前检查部署配置与生产 Secret。
@@ -55,8 +58,8 @@ bash scripts/deployment/bootstrap_kbot.sh --production
 
 该入口不会清理已有 Schema。它会初始化默认业务域 `default`、App 目录、完整权限与
 角色模板、`ADMIN` 凭据、最高安全等级及平台 `platform_admin` 角色，并写入版本化
-Prompt Catalog；不会把 ADMIN 自动加入业务 App，也不会创建模型、Collection、Agent、
-会话或 AIOps 业务数据。
+Prompt Catalog 和默认数据库巡检模板；不会把 ADMIN 自动加入业务 App，也不会创建模型、
+Collection、Agent、会话或其他 AIOps 业务数据。
 
 普通开发 Schema 优先通过新的空白 Schema 重新初始化。确需保留既有数据的升级使用
 `database/oracle/operations/` 下带预检、回滚和迁移后校验的受控资产；不得把迁移或补种

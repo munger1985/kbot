@@ -71,6 +71,32 @@ class _Uow:
         return None
 
 
+class _ObjectStore:
+    async def stream(self, _storage_uri):
+        yield b"document-bytes"
+
+
+class _Document:
+    def __init__(self, content):
+        self._content = content
+
+    def export_to_markdown(self):
+        return self._content
+
+
+class _Converter:
+    def __init__(self, outputs):
+        self._outputs = iter(outputs)
+        self.calls = []
+
+    async def convert(self, **kwargs):
+        self.calls.append(kwargs)
+        output = next(self._outputs)
+        if isinstance(output, Exception):
+            raise output
+        return _Document(output)
+
+
 class KnowledgePreviewServiceTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.domain_id = 20
@@ -117,7 +143,7 @@ class KnowledgePreviewServiceTest(unittest.IsolatedAsyncioTestCase):
             byte_size=4096,
         )
 
-    def service(self):
+    def service(self, *, object_store=None, converter=None):
         uow = _Uow()
         uow.collections = _Collections(self.domain_id, self.collection_id)
         uow.bundles = _Repository("bundle_id", [self.bundle])
@@ -128,7 +154,11 @@ class KnowledgePreviewServiceTest(unittest.IsolatedAsyncioTestCase):
         uow.versions = _Repository(
             "document_version_id", [self.version]
         )
-        return KnowledgeCorePreviewService(uow_factory=lambda: uow)
+        return KnowledgeCorePreviewService(
+            uow_factory=lambda: uow,
+            object_store=object_store,
+            converter=converter,
+        )
 
     async def test_bundle_preview_returns_ordered_source_file_metadata(self):
         result = await self.service().get_bundle_revision(
@@ -171,6 +201,44 @@ class KnowledgePreviewServiceTest(unittest.IsolatedAsyncioTestCase):
                 bundle_id=self.bundle_id,
                 bundle_revision_id=self.revision_id,
             )
+
+    async def test_review_text_uses_detected_mime_and_skips_ocr_when_text_exists(self):
+        self.revision.approval_status = "PENDING"
+        self.member.declared_name = "Oracle Exadata 手册"
+        converter = _Converter(["Exadata 正文"])
+
+        result = await self.service(
+            object_store=_ObjectStore(), converter=converter
+        ).extract_review_text(
+            domain_id=self.domain_id,
+            collection_id=self.collection_id,
+            bundle_id=self.bundle_id,
+            bundle_revision_id=self.revision_id,
+        )
+
+        self.assertEqual("Exadata 正文", result.excerpts[0].content)
+        self.assertEqual(".pdf", converter.calls[0]["source_path"].suffix)
+        self.assertFalse(converter.calls[0]["do_ocr"])
+        self.assertEqual([], result.warnings)
+
+    async def test_review_text_retries_with_ocr_after_empty_plain_parse(self):
+        self.revision.approval_status = "PENDING"
+        converter = _Converter(["", "扫描件正文"])
+
+        result = await self.service(
+            object_store=_ObjectStore(), converter=converter
+        ).extract_review_text(
+            domain_id=self.domain_id,
+            collection_id=self.collection_id,
+            bundle_id=self.bundle_id,
+            bundle_revision_id=self.revision_id,
+        )
+
+        self.assertEqual("扫描件正文", result.excerpts[0].content)
+        self.assertEqual([False, True], [
+            call["do_ocr"] for call in converter.calls
+        ])
+        self.assertEqual([], result.warnings)
 
 
 if __name__ == "__main__":

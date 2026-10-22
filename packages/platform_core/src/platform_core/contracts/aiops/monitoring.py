@@ -115,8 +115,8 @@ class MonitoringWindow(_Contract):
             raise ValueError("监控时间必须包含时区")
         if self.start >= self.end:
             raise ValueError("监控时间窗无效")
-        if (self.end - self.start).total_seconds() > 2_592_000:
-            raise ValueError("监控时间窗不能超过 30 天")
+        if (self.end - self.start).total_seconds() > 5_184_000:
+            raise ValueError("监控时间窗不能超过 60 天")
         return self
 
 

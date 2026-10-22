@@ -7,10 +7,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.contracts.knowledge import (
+    KnowledgeAssistantBindingWrite,
+    KnowledgeBaseWrite,
     KnowledgeExecutionSpecRequest,
     KnowledgeReviewCommand,
     KnowledgeSearchRequest,
@@ -28,6 +31,116 @@ router = APIRouter(
 
 _MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 _MAX_UPLOAD_FILES = 20
+
+
+class CollectionModelsPayload(BaseModel):
+    models: dict[str, UUID]
+
+
+class KnowledgeBaseDeletePayload(BaseModel):
+    expected_row_version: int
+
+
+class KnowledgeAssetDeletePayload(BaseModel):
+    expected_row_version: int
+    purge_source_objects: bool = False
+
+
+@router.get("/knowledge-answering/binding")
+async def get_knowledge_assistant_binding(
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _use_scope(request, context)
+    return await (
+        request.app.state.operations_knowledge_service
+        .get_knowledge_assistant_binding(domain_id=domain_id)
+    )
+
+
+@router.put("/knowledge-answering/binding")
+async def configure_knowledge_assistant_binding(
+    payload: KnowledgeAssistantBindingWrite,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await (
+        request.app.state.operations_knowledge_service
+        .configure_knowledge_assistant_binding(
+            domain_id=domain_id,
+            command=payload,
+            context=context,
+        )
+    )
+
+
+@router.get("/knowledge-bases")
+async def list_knowledge_bases(
+    request: Request,
+    include_archived: bool = False,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return {"items": await request.app.state.operations_knowledge_service.list_knowledge_bases(
+        domain_id=domain_id, include_archived=include_archived,
+    )}
+
+
+@router.post("/knowledge-bases", status_code=201)
+async def create_knowledge_base(
+    payload: KnowledgeBaseWrite,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.create_knowledge_base(
+        domain_id=domain_id, command=payload, context=context,
+    )
+
+
+@router.get("/knowledge-bases/{knowledge_base_id}")
+async def get_knowledge_base(
+    knowledge_base_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.get_knowledge_base(
+        domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+    )
+
+
+@router.put("/knowledge-bases/{knowledge_base_id}")
+async def update_knowledge_base(
+    knowledge_base_id: UUID,
+    payload: KnowledgeBaseWrite,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.update_knowledge_base(
+        domain_id=domain_id,
+        knowledge_base_id=knowledge_base_id,
+        command=payload,
+        context=context,
+    )
+
+
+@router.delete("/knowledge-bases/{knowledge_base_id}", status_code=204)
+async def delete_knowledge_base(
+    knowledge_base_id: UUID,
+    payload: KnowledgeBaseDeletePayload,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    await request.app.state.operations_knowledge_service.delete_knowledge_base(
+        domain_id=domain_id,
+        knowledge_base_id=knowledge_base_id,
+        expected_row_version=payload.expected_row_version,
+        context=context,
+    )
 
 
 def _scope(request: Request, context: AuthContext) -> tuple[int, str]:
@@ -54,6 +167,32 @@ async def overview(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.overview(
         domain_id=domain_id
+    )
+
+
+@router.get("/knowledge-bases/{knowledge_base_id}/models")
+async def get_collection_models(
+    knowledge_base_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.get_collection_models(
+        domain_id=domain_id, knowledge_base_id=knowledge_base_id, context=context,
+    )
+
+
+@router.put("/knowledge-bases/{knowledge_base_id}/models")
+async def configure_collection_models(
+    knowledge_base_id: UUID,
+    payload: CollectionModelsPayload,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.configure_collections(
+        domain_id=domain_id, knowledge_base_id=knowledge_base_id,
+        models=payload.models, context=context,
     )
 
 
@@ -109,12 +248,14 @@ async def list_assets(
     request: Request,
     asset_kind: str | None = None,
     status: str | None = None,
+    knowledge_base_id: UUID | None = None,
     limit: int = Query(100, ge=1, le=500),
     context: AuthContext = Depends(get_aiops_auth_context),
 ):
     domain_id, _ = _scope(request, context)
     return {"items": await request.app.state.operations_knowledge_service.list_assets(
-        domain_id=domain_id, asset_kind=asset_kind, status=status, limit=limit
+        domain_id=domain_id, asset_kind=asset_kind, status=status,
+        knowledge_base_id=knowledge_base_id, limit=limit,
     )}
 
 
@@ -127,6 +268,23 @@ async def get_asset(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.get_asset(
         domain_id=domain_id, asset_id=asset_id
+    )
+
+
+@router.delete("/assets/{asset_id}", status_code=204)
+async def delete_asset(
+    asset_id: UUID,
+    payload: KnowledgeAssetDeletePayload,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    await request.app.state.operations_knowledge_service.delete_asset(
+        domain_id=domain_id,
+        asset_id=asset_id,
+        expected_row_version=payload.expected_row_version,
+        purge_source_objects=payload.purge_source_objects,
+        context=context,
     )
 
 
@@ -185,6 +343,7 @@ async def ingest_upload(
         )
     form = await request.form()
     try:
+        knowledge_base_id = UUID(str(form.get("knowledge_base_id", "")))
         grouping_mode = str(form.get("grouping_mode", "EACH_FILE")).upper()
         if grouping_mode not in {"EACH_FILE", "SINGLE_BUNDLE"}:
             raise ValueError("grouping_mode must be EACH_FILE or SINGLE_BUNDLE")
@@ -266,6 +425,7 @@ async def ingest_upload(
         await form.close()
     return await request.app.state.operations_knowledge_service.ingest_upload(
         domain_id=domain_id,
+        knowledge_base_id=knowledge_base_id,
         context=context,
         grouping_mode=grouping_mode,
         bundle_title=bundle_title,
@@ -363,7 +523,6 @@ async def approve_version(asset_version_id: UUID, payload: KnowledgeReviewComman
         domain_id=domain_id,
         asset_version_id=asset_version_id,
         expected_row_version=payload.expected_row_version,
-        tag_ids=payload.tag_ids,
         comment=payload.comment,
         context=context,
     )

@@ -18,6 +18,8 @@ from aiops_agent.scheduling import (
     resolve_due_schedule,
 )
 from aiops_agent.application.turns import ConversationTurnService
+from aiops_agent.application.errors import AIOpsApplicationError
+from aiops_agent.application.runtime.service import AIOpsRuntimeService
 from aiops_agent.workers.outbox_dispatcher import AIOpsDomainOutboxSink
 from platform_core.identity import uuid7
 from sqlalchemy.dialects import oracle
@@ -154,6 +156,18 @@ class InspectionSchedulerTest(unittest.TestCase):
         agent_id = uuid7()
         version_id = uuid7()
         target_ids = [uuid7(), uuid7()]
+        targets = {
+            target_ids[0]: SimpleNamespace(
+                target_id=target_ids[0],
+                display_name="Oracle 生产库",
+                db_type="ORACLE",
+            ),
+            target_ids[1]: SimpleNamespace(
+                target_id=target_ids[1],
+                display_name="MySQL 订单库",
+                db_type="MYSQL",
+            ),
+        }
         fire = SimpleNamespace(
             plan_snapshot_json={"agent_version_id": None},
             target_count=0,
@@ -207,7 +221,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         context.__aenter__.return_value = uow
         service = ConversationTurnService(uow_factory=lambda: context)
         service._require_existing_target = AsyncMock(
-            return_value=SimpleNamespace(db_type="ORACLE")
+            side_effect=lambda *, target_id, **_: targets[target_id]
         )
         service._create_turn = AsyncMock(
             return_value={"status": "QUEUED"}
@@ -247,6 +261,7 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertEqual(service._create_turn.await_count, 2)
         for call in service._create_turn.await_args_list:
             execution = call.kwargs["execution_context"]
+            database_type = execution["inspection"]["database_type"]
             self.assertEqual(execution["trigger_type"], "SCHEDULE")
             self.assertEqual(execution["inspection_fire_id"], str(fire_id))
             self.assertEqual(
@@ -259,7 +274,7 @@ class InspectionSchedulerTest(unittest.TestCase):
                     item["tool_id"]
                     for item in compile_selected_check_steps(
                         default_selected_check_ids("DAILY"),
-                        database_type="ORACLE",
+                        database_type=database_type,
                     )
                 ],
             )
@@ -274,6 +289,97 @@ class InspectionSchedulerTest(unittest.TestCase):
                 )
             )
         uow.commit.assert_awaited_once()
+
+    def test_agent_scope_change_is_rejected_before_any_turn_is_created(
+        self,
+    ) -> None:
+        fire_id = uuid7()
+        agent_id = uuid7()
+        version_id = uuid7()
+        oracle_target_id = uuid7()
+        mysql_target_id = uuid7()
+        fire = SimpleNamespace(
+            plan_snapshot_json={"agent_version_id": None},
+            target_count=0,
+            updated_at=None,
+        )
+        conversations = SimpleNamespace(
+            list_for_inspection_fire=AsyncMock(return_value=[]),
+            add_conversation=AsyncMock(),
+        )
+        uow = SimpleNamespace(
+            inspections=SimpleNamespace(get_fire=AsyncMock(return_value=fire)),
+            conversations=conversations,
+            agents=SimpleNamespace(
+                get=AsyncMock(
+                    return_value=SimpleNamespace(
+                        agent_id=agent_id,
+                        status="ACTIVE",
+                        current_version_id=version_id,
+                    )
+                ),
+                version=AsyncMock(
+                    return_value=SimpleNamespace(agent_version_id=version_id)
+                ),
+                active_version_target_ids=AsyncMock(
+                    return_value=[oracle_target_id, mysql_target_id]
+                ),
+            ),
+            commit=AsyncMock(),
+        )
+        targets = {
+            oracle_target_id: SimpleNamespace(
+                target_id=oracle_target_id,
+                display_name="Oracle 生产库",
+                db_type="ORACLE",
+            ),
+            mysql_target_id: SimpleNamespace(
+                target_id=mysql_target_id,
+                display_name="MySQL 订单库",
+                db_type="MYSQL",
+            ),
+        }
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        service = ConversationTurnService(uow_factory=lambda: context)
+        service._require_existing_target = AsyncMock(
+            side_effect=lambda *, target_id, **_: targets[target_id]
+        )
+        service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
+        payload = {
+            "inspection_fire_id": str(fire_id),
+            "domain_id": 200,
+            "actor_id": "system:inspection-scheduler",
+            "agent_id": str(agent_id),
+            "plan_display_name": "数据库日报",
+            "inspection_template_id": str(uuid7()),
+            "inspection_template_version_id": str(uuid7()),
+            "inspection_template_name": "仅 Oracle 巡检",
+            "inspection_template_version": 1,
+            "inspection_template_hash": "a" * 64,
+            "inspection_template_definition": self._template_definition(
+                ["oracle.session.count"]
+            ),
+            "schedule_resolver_version": "1.0.0",
+            "schedule_type": "DAILY",
+            "timezone": "Asia/Shanghai",
+            "period_start": "2026-07-22T16:00:00+00:00",
+            "period_end": "2026-07-23T16:00:00+00:00",
+            "timeout_seconds": 3600,
+            "trace_id": "trace-inspection-scope-change",
+        }
+
+        with self.assertRaises(AIOpsApplicationError) as caught:
+            asyncio.run(service.start_scheduled_inspection(payload))
+
+        self.assertEqual(
+            "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED",
+            caught.exception.code,
+        )
+        self.assertIn("MySQL 订单库（MYSQL）", caught.exception.message)
+        conversations.add_conversation.assert_not_awaited()
+        service._create_turn.assert_not_awaited()
+        uow.commit.assert_not_awaited()
 
     def test_weekly_scheduled_inspection_compiles_historical_trend_steps(
         self,
@@ -322,7 +428,11 @@ class InspectionSchedulerTest(unittest.TestCase):
         context.__aenter__.return_value = uow
         service = ConversationTurnService(uow_factory=lambda: context)
         service._require_existing_target = AsyncMock(
-            return_value=SimpleNamespace(db_type="ORACLE")
+            return_value=SimpleNamespace(
+                target_id=target_ids[0],
+                display_name="Oracle 生产库",
+                db_type="ORACLE",
+            )
         )
         service._create_turn = AsyncMock(return_value={"status": "QUEUED"})
         selected = [
@@ -533,6 +643,66 @@ class InspectionSchedulerTest(unittest.TestCase):
         self.assertEqual(fire.failed_count, 0)
         self.assertEqual(fire.target_count, 2)
         self.assertEqual(fire.run_count, 2)
+
+    def test_failed_agent_request_reason_is_preserved_in_fire_summary(self) -> None:
+        now = datetime(2026, 7, 24, 2, 0, tzinfo=UTC)
+        fire = SimpleNamespace(
+            inspection_fire_id=uuid7(),
+            inspection_plan_id=uuid7(),
+            plan_snapshot_json={"display_name": "跨库日常巡检"},
+            scheduled_for=now - timedelta(minutes=1),
+            status="RUNNING",
+            target_count=0,
+            run_count=0,
+            completed_count=0,
+            failed_count=0,
+            error_code=None,
+            error_message=None,
+            completed_at=None,
+            updated_at=now,
+        )
+        request_error_code = "AIOPS_INSPECTION_TARGET_COVERAGE_REQUIRED"
+        request_error_message = "巡检模板没有覆盖 MySQL 订单库（MYSQL）"
+        inspections = SimpleNamespace(
+            claim_due_plan=AsyncMock(return_value=None),
+            find_reconcilable_fire=AsyncMock(return_value=fire),
+            get_fire=AsyncMock(return_value=fire),
+            list_runs_for_fire=AsyncMock(return_value=[]),
+            list_agent_request_events_for_fire=AsyncMock(
+                return_value=[
+                    SimpleNamespace(
+                        status="FAILED",
+                        error_code=request_error_code,
+                        error_message=request_error_message,
+                    )
+                ]
+            ),
+            list_turns_for_fire=AsyncMock(return_value=[]),
+        )
+        uow = SimpleNamespace(
+            runs=SimpleNamespace(database_now=AsyncMock(return_value=now)),
+            inspections=inspections,
+            commit=AsyncMock(),
+        )
+        context = AsyncMock()
+        context.__aenter__.return_value = uow
+        scheduler = AIOpsInspectionScheduler(
+            uow_factory=lambda: context,
+            scheduler_id="scheduler-test",
+            lease_seconds=120,
+            interval_seconds=30,
+            misfire_grace_seconds=60,
+        )
+
+        worked = asyncio.run(scheduler.run_once())
+        summary = AIOpsRuntimeService._fire_summary(fire)
+
+        self.assertTrue(worked)
+        self.assertEqual("FAILED", fire.status)
+        self.assertEqual(request_error_code, summary.error_code)
+        self.assertEqual(request_error_message, summary.error_message)
+        self.assertEqual(now, summary.completed_at)
+        uow.commit.assert_awaited_once()
 
     def test_agent_request_reuses_standard_turn_entry(self) -> None:
         runtime = AsyncMock()

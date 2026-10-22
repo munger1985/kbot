@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from loguru import logger
@@ -26,6 +26,7 @@ from aiops_agent.contracts.tool_execution import (
 from aiops_agent.application.diagnosis import (
     compile_findings,
     decide_capacity_actions,
+    has_capacity_placement_evidence,
     is_automatic_entry,
     is_diagnosis_turn,
     summarize_awr_facts,
@@ -458,7 +459,11 @@ class DbaEvidenceAssessmentHandler:
                 )
             )
             reasons.append("历史监控证据不足以形成未来趋势预测")
-        if low_confidence_forecast:
+        if (
+            low_confidence_forecast
+            and task_frame.get("temporal_analysis_mode")
+            == "HISTORICAL_AND_FORECAST"
+        ):
             monitoring_gap_found = True
             gaps.append(
                 TurnEvidenceGap(
@@ -961,6 +966,21 @@ class DbaEvidenceAssessmentHandler:
                     if isinstance(point.value, (int, float))
                     and not isinstance(point.value, bool)
                 ]
+                daily_values: dict[str, list[float]] = {}
+                for point in points:
+                    if not isinstance(point.value, (int, float)) or isinstance(
+                        point.value, bool
+                    ):
+                        continue
+                    day = point.observed_at.astimezone(UTC).date().isoformat()
+                    daily_values.setdefault(day, []).append(float(point.value))
+                daily_points = [
+                    {
+                        "date": day,
+                        "value": round(sum(values) / len(values), 4),
+                    }
+                    for day, values in sorted(daily_values.items())
+                ]
                 trend = summarize_numeric_trend(
                     tuple(
                         (point.observed_at, float(point.value))
@@ -1134,6 +1154,13 @@ class DbaEvidenceAssessmentHandler:
                             if estimated_days_to_limit is not None
                             else None
                         ),
+                        observation.semantic_role,
+                        observation.value_kind,
+                        json.dumps(
+                            daily_points,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
                     )
                 )
         if not rows:
@@ -1181,6 +1208,9 @@ class DbaEvidenceAssessmentHandler:
                 "name": "estimated_days_to_limit",
                 "logical_type": "DECIMAL",
             },
+            {"name": "semantic_role", "logical_type": "STRING"},
+            {"name": "value_kind", "logical_type": "STRING"},
+            {"name": "daily_points", "logical_type": "STRING"},
         )
         visualizations = AIOpsChartSelectionPolicy.compile(
             profile_id=visualization_profile_id,
@@ -1944,12 +1974,10 @@ class DbaAnswerComposeHandler:
         )
         if not has_tablespace:
             return None
-        present = {
-            str(item.get("fact_type") or "")
-            for item in list(context.plan_snapshot.get("target_facts") or [])
-            if str(item.get("status") or "ACTIVE") == "ACTIVE"
-        }
-        if "ASM_DISKGROUP" in present or "DATAFILE_PATH" in present:
+        if has_capacity_placement_evidence(
+            findings=compilation.findings,
+            target_facts=list(context.plan_snapshot.get("target_facts") or []),
+        ):
             return None
         return TurnAnswerBlock(
             block_type=AnswerBlockType.FACT_CONFIRMATION,

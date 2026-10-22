@@ -20,6 +20,9 @@ from .messaging import InboxEntity, OutboxEntity
 from .notification import NotificationSubscriptionEntity
 from .knowledge import (
     OperationsKnowledgeAssetEntity,
+    OperationsKnowledgeAssistantBaseEntity,
+    OperationsKnowledgeAssistantBindingEntity,
+    OperationsKnowledgeBaseEntity,
     OperationsKnowledgeIndexEntity,
     OperationsKnowledgeReviewEntity,
     OperationsKnowledgeScopeEntity,
@@ -97,6 +100,7 @@ __all__ = [
     "AIOpsAgentVersionEntity",
     "AIOpsAgentVersionBusinessSystemEntity",
     "AIOpsAgentVersionResourceActionPolicyEntity",
+    "AIOpsAgentVersionKnowledgeBaseEntity",
     "ApprovalTokenEntity",
     "ChangeProposalEntity",
     "ExecutionEntity",
@@ -117,6 +121,9 @@ __all__ = [
     "OutboxEntity",
     "NotificationSubscriptionEntity",
     "OperationsKnowledgeAssetEntity",
+    "OperationsKnowledgeAssistantBaseEntity",
+    "OperationsKnowledgeAssistantBindingEntity",
+    "OperationsKnowledgeBaseEntity",
     "OperationsKnowledgeIndexEntity",
     "OperationsKnowledgeReviewEntity",
     "OperationsKnowledgeScopeEntity",
@@ -160,4 +167,5 @@ from .agent import (
     AIOpsAgentVersionEntity,
     AIOpsAgentVersionBusinessSystemEntity,
     AIOpsAgentVersionResourceActionPolicyEntity,
+    AIOpsAgentVersionKnowledgeBaseEntity,
 )

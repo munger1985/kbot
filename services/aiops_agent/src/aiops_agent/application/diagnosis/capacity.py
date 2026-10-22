@@ -1,4 +1,4 @@
-"""根据 Finding 与已确认 Target Fact 决定容量方案，不自动加文件。"""
+"""根据自动放置证据或已确认 Target Fact 决定容量方案，不自动加文件。"""
 
 from __future__ import annotations
 
@@ -70,14 +70,19 @@ def decide_capacity_actions(
     | None,
 ) -> CapacityPlan:
     """容量 Finding 只能观察 / AUTOEXTEND / RESIZE，永不 ADD DATAFILE。"""
-    has_placement = _has_active_placement_fact(target_facts)
     decisions: list[CapacityDecision] = []
     allowed: list[str] = []
     seen_allowed: set[str] = set()
     for card in findings:
         if card.finding_type != FindingType.TABLESPACE:
             continue
-        decision = _decide_tablespace(card, has_placement=has_placement)
+        decision = _decide_tablespace(
+            card,
+            has_placement=(
+                _has_discovered_placement(card.fields)
+                or _has_active_placement_fact(target_facts)
+            ),
+        )
         decisions.append(decision)
         for action_id in decision.allowed_action_ids:
             if (
@@ -102,6 +107,24 @@ def allows_capacity_action(plan: CapacityPlan, action_template_id: str) -> bool:
     return action_template_id in plan.allowed_action_ids
 
 
+def has_capacity_placement_evidence(
+    *,
+    findings: Sequence[FindingCard] | Iterable[FindingCard],
+    target_facts: Sequence[Mapping[str, Any]]
+    | Iterable[Mapping[str, Any]]
+    | None,
+) -> bool:
+    """判断容量 Finding 是否均有自动发现或人工确认的放置证据。"""
+    tablespaces = [
+        card for card in findings if card.finding_type == FindingType.TABLESPACE
+    ]
+    if not tablespaces:
+        return True
+    if _has_active_placement_fact(target_facts):
+        return True
+    return all(_has_discovered_placement(card.fields) for card in tablespaces)
+
+
 def _has_active_placement_fact(
     target_facts: Sequence[Mapping[str, Any]]
     | Iterable[Mapping[str, Any]]
@@ -112,6 +135,19 @@ def _has_active_placement_fact(
         status = str(item.get("status") or "ACTIVE")
         if fact_type in _PLACEMENT_FACT_TYPES and status == "ACTIVE":
             return True
+    return False
+
+
+def _has_discovered_placement(fields: Mapping[str, Any]) -> bool:
+    storage_type = str(fields.get("storage_type") or "").strip().upper()
+    asm_diskgroups = str(fields.get("asm_diskgroups") or "").strip()
+    datafile_directories = str(fields.get("datafile_directories") or "").strip()
+    if storage_type == "ASM":
+        return bool(asm_diskgroups)
+    if storage_type == "FILESYSTEM":
+        return bool(datafile_directories)
+    if storage_type == "MIXED":
+        return bool(asm_diskgroups and datafile_directories)
     return False
 
 
@@ -134,7 +170,7 @@ def _decide_tablespace(
             autoextend_headroom_mb=headroom,
             allowed_action_ids=(),
             reason=(
-                "缺少已确认的 ASM 磁盘组或数据文件路径事实，"
+                "缺少自动发现或已确认补证的存储放置事实，"
                 "容量方案只能观察，不加文件。"
             ),
         )
@@ -144,12 +180,12 @@ def _decide_tablespace(
             kind="AUTOEXTEND",
             autoextend_headroom_mb=headroom,
             allowed_action_ids=CAPACITY_AUTOEXTEND_ACTION_IDS,
-            reason="已确认放置事实，且自动扩展仍有余量，方案为 AUTOEXTEND。",
+            reason="已取得存储放置证据，且自动扩展仍有余量，方案为 AUTOEXTEND。",
         )
     if headroom is None:
-        reason = "已确认放置事实，但无法确认自动扩展余量，方案为 RESIZE。"
+        reason = "已取得存储放置证据，但无法确认自动扩展余量，方案为 RESIZE。"
     else:
-        reason = "已确认放置事实，但自动扩展没有余量，方案为 RESIZE。"
+        reason = "已取得存储放置证据，但自动扩展没有余量，方案为 RESIZE。"
     return CapacityDecision(
         tablespace_name=tablespace_name,
         kind="RESIZE",

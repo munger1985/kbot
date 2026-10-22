@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from aiops_agent.application.configuration.common import ConfigurationScope, add_configuration_event
 from aiops_agent.application.errors import resource_not_found, state_conflict, validation_failed
+from aiops_agent.application.managed_credentials import AIOpsManagedCredentialError
 from aiops_agent.entities import (
     BusinessSystemDraftEntity,
     BusinessSystemEntity,
@@ -273,7 +274,14 @@ class BusinessSystemConfigurationMixin:
         if group is None or group.status != "ACTIVE":
             raise validation_failed(f"{label}责任组不存在或已停用")
 
-    async def _system_detail(self, *, uow: AIOpsUnitOfWork, scope: ConfigurationScope, system: BusinessSystemEntity) -> BusinessSystemResourceGraphDetail:
+    async def _system_detail(
+        self,
+        *,
+        uow: AIOpsUnitOfWork,
+        scope: ConfigurationScope,
+        system: BusinessSystemEntity,
+        include_connection_metadata: bool = True,
+    ) -> BusinessSystemResourceGraphDetail:
         assert uow.business_systems is not None and uow.targets is not None
         rows = await uow.business_systems.list_system_resource_rows(system.business_system_id)
         resource_views: list[BusinessSystemResourceView] = []
@@ -286,7 +294,23 @@ class BusinessSystemConfigurationMixin:
                     issues.append(_issue("BLOCKING", "DATABASE_TARGET_MISSING", "数据库资源缺少内部连接端点", resource_id=resource.resource_id))
                 else:
                     bindings = await uow.targets.list_source_bindings(target_id=target.target_id, domain_id=scope.domain_id)
+                    diagnostic_username = None
+                    if include_connection_metadata and target.diagnostic_credential_id is not None:
+                        try:
+                            credential = await self._managed_credentials.read(
+                                uow=uow,
+                                domain_id=scope.domain_id,
+                                credential_id=target.diagnostic_credential_id,
+                                credential_kind="target_diagnostic",
+                                external_key=target.target_id,
+                            )
+                            username = credential.get("username")
+                            if isinstance(username, str):
+                                diagnostic_username = username
+                        except AIOpsManagedCredentialError:
+                            pass
                     database_view = DatabaseResourceView(
+                        target_id=target.target_id,
                         db_type=target.db_type,
                         version_code=target.version_code or "UNKNOWN",
                         environment=target.environment,
@@ -295,6 +319,10 @@ class BusinessSystemConfigurationMixin:
                         db_role=target.db_role,
                         connectivity_status=target.connectivity_status,
                         monitoring_ready=bool(bindings),
+                        endpoint=(dict(target.endpoint_json) if include_connection_metadata and target.endpoint_json else None),
+                        oracle_container_scope=(target.oracle_container_scope if include_connection_metadata else None),
+                        oracle_pdb_name=(target.oracle_pdb_name if include_connection_metadata else None),
+                        diagnostic_username=diagnostic_username,
                     )
                     if target.connectivity_status != "CONNECTED":
                         issues.append(_issue("BLOCKING", "DATABASE_NOT_CONNECTED", "数据库连接验证尚未通过", resource_id=resource.resource_id))
@@ -568,6 +596,7 @@ class BusinessSystemConfigurationMixin:
                     uow=uow,
                     scope=scope,
                     system=row,
+                    include_connection_metadata=False,
                 )
                 items.append(_summary(detail))
             return BusinessSystemResourceGraphPage(items=tuple(items))
@@ -734,6 +763,7 @@ class BusinessSystemConfigurationMixin:
                 for key, value in database_changes.items():
                     setattr(target, key, value)
                 database_view = DatabaseResourceView(
+                    target_id=target.target_id,
                     db_type=target.db_type,
                     version_code=target.version_code,
                     environment=target.environment,

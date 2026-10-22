@@ -15,6 +15,7 @@ from platform_core.config import (
     Settings,
     load_settings,
 )
+from platform_core.dictionary import ModelCategory
 
 
 class AIOpsApiConfig(ServiceConfig):
@@ -32,7 +33,6 @@ class AIOpsRuntimeConfig(BaseModel):
     knowledge_assistant_version_id: UUID = UUID(
         "019d2a10-0000-7000-8000-000000000002"
     )
-    knowledge_assistant_models: dict[str, UUID] = Field(default_factory=dict)
     knowledge_assistant_instruction: str = Field(
         default=(
             "只依据已发布的运维知识原文回答，保留前置条件、停止条件、"
@@ -113,6 +113,13 @@ class AIOpsExecutorConfig(ServiceConfig):
 
 
 class AIOpsDependencyEndpoints(BaseModel):
+    model_embedding: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18091",
+            audience="kbot-model-embedding",
+            timeout_seconds=300,
+        )
+    )
     model_serving: ServiceDependencyConfig = Field(
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18092",
@@ -131,6 +138,13 @@ class AIOpsDependencyEndpoints(BaseModel):
         default_factory=lambda: ServiceDependencyConfig(
             base_url="http://127.0.0.1:18096",
             audience="kbot-model-ocr",
+            timeout_seconds=300,
+        )
+    )
+    model_visual: ServiceDependencyConfig = Field(
+        default_factory=lambda: ServiceDependencyConfig(
+            base_url="http://127.0.0.1:18093",
+            audience="kbot-model-visual",
             timeout_seconds=300,
         )
     )
@@ -155,6 +169,16 @@ class AIOpsDependencyEndpoints(BaseModel):
             timeout_seconds=120,
         )
     )
+
+    def model_catalog_dependencies(self) -> dict[int, ServiceDependencyConfig]:
+        """按模型类别返回唯一目录归属服务。"""
+        return {
+            int(ModelCategory.LLM): self.model_serving,
+            int(ModelCategory.TXT_EMBEDDING): self.model_embedding,
+            int(ModelCategory.IMG_EMBEDDING): self.model_visual,
+            int(ModelCategory.VLM): self.model_vlm,
+            int(ModelCategory.OCR): self.model_ocr,
+        }
 
 
 class AIOpsLimitsConfig(BaseModel):

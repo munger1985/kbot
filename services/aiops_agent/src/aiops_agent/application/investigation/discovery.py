@@ -56,7 +56,7 @@ def available_tools(
             ),
             "input": {
                 "query": "带 Target 占位符的 PromQL",
-                "window_seconds": "60 到 2592000 秒",
+                "window_seconds": "60 到 5184000 秒",
             },
         }
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:

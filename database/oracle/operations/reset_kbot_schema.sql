@@ -1,5 +1,5 @@
 -- KBot 4.0 开发环境 Schema 重置脚本。
--- 本脚本会永久删除当前用户下全部 KBOT_% 表、视图及其数据。
+-- 本脚本会永久删除当前用户下全部 KBOT_% 属性图、表、视图及其数据。
 -- 仅在确认当前连接用户为 KBot 专用 Schema 后执行。
 -- 失败后不能依赖事务回滚；应修复原因后再次清理，并从备份恢复数据或重新初始化空 Schema。
 
@@ -7,6 +7,7 @@ SET SERVEROUTPUT ON
 
 DECLARE
     l_schema_name VARCHAR2(128);
+    l_graph_count PLS_INTEGER := 0;
     l_view_count PLS_INTEGER := 0;
     l_table_count PLS_INTEGER := 0;
 BEGIN
@@ -15,6 +16,19 @@ BEGIN
       FROM dual;
 
     dbms_output.put_line('正在清理 KBot Schema：' || l_schema_name);
+
+    FOR graph_row IN (
+        SELECT graph_name
+        FROM user_property_graphs
+        WHERE graph_name LIKE 'KBOT\_%' ESCAPE '\'
+        ORDER BY graph_name
+    ) LOOP
+        EXECUTE IMMEDIATE
+            'DROP PROPERTY GRAPH '
+            || dbms_assert.enquote_name(graph_row.graph_name, FALSE);
+        l_graph_count := l_graph_count + 1;
+        dbms_output.put_line('已删除属性图 ' || graph_row.graph_name);
+    END LOOP;
 
     FOR view_row IN (
         SELECT view_name
@@ -44,13 +58,19 @@ BEGIN
     END LOOP;
 
     dbms_output.put_line(
-        'KBot Schema 清理完成：视图 ' || l_view_count
+        'KBot Schema 清理完成：属性图 ' || l_graph_count
+        || ' 个，视图 ' || l_view_count
         || ' 个，表 ' || l_table_count || ' 张。'
     );
 END;
 /
 
 -- 验证：执行后应返回 0 行。
+SELECT graph_name
+FROM user_property_graphs
+WHERE graph_name LIKE 'KBOT\_%' ESCAPE '\'
+ORDER BY graph_name;
+
 SELECT object_name, object_type
 FROM user_objects
 WHERE object_name LIKE 'KBOT\_%' ESCAPE '\'

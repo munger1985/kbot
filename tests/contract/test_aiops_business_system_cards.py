@@ -76,9 +76,46 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261019_4",
+            "aiops-business-system-workspace.js?v=20261022_4",
             WORKSPACE_PAGE,
         )
+
+    def test_running_workspace_is_read_only_but_all_tabs_remain_available(self):
+        self.assertIn("aiops-business-systems.js?v=20261022_1", PAGE)
+        self.assertIn(
+            'workspaceReadOnly = !creating && value.status === "ENABLED"',
+            WORKSPACE_SCRIPT,
+        )
+        self.assertIn('searchParams.get("view") === "readonly"', WORKSPACE_SCRIPT)
+        self.assertIn('document.querySelector(".business-workspace-actions").hidden = loading', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("save-draft").hidden = !editable', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("previous").hidden = !editable', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("next").hidden = !editable', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("commit").hidden = !editable', WORKSPACE_SCRIPT)
+        self.assertIn('button.disabled = !isPublishedView() && index > furthest', WORKSPACE_SCRIPT)
+        self.assertIn('draftId && isPublishedView()', WORKSPACE_SCRIPT)
+        self.assertIn('运行中的业务系统仅支持查看。', WORKSPACE_SCRIPT)
+        self.assertIn('&view=readonly', SCRIPT)
+        self.assertIn('enabledSystemIds', SCRIPT)
+
+    def test_running_workspace_shows_instance_connection_metadata_without_password(self):
+        self.assertIn('isPublishedView() ? "查看 →" : "编辑 →"', WORKSPACE_SCRIPT)
+        self.assertIn('["IP / 主机", database.host || "—", true]', WORKSPACE_SCRIPT)
+        self.assertIn('["端口", database.port || "—", true]', WORKSPACE_SCRIPT)
+        self.assertIn('["登录用户", database.username || "—", true]', WORKSPACE_SCRIPT)
+        readonly_detail = WORKSPACE_SCRIPT.split(
+            "function readonlyResourceHtml(item)", 1
+        )[1].split("function resourceEditorHtml(item)", 1)[0]
+        self.assertNotIn("database.password", readonly_detail)
+        self.assertIn("aiops-forms.css?v=20261022_4", WORKSPACE_PAGE)
+
+    def test_new_target_cards_can_be_deleted_without_affecting_published_cards(self):
+        self.assertIn('class="business-resource-card-shell"', WORKSPACE_SCRIPT)
+        self.assertIn('!isPublishedView() && !item.system_resource_id', WORKSPACE_SCRIPT)
+        self.assertIn('data-delete-resource=', WORKSPACE_SCRIPT)
+        self.assertIn('function removeResource(item)', WORKSPACE_SCRIPT)
+        self.assertIn('relations = relations.filter', WORKSPACE_SCRIPT)
+        self.assertIn('.business-resource-card-delete{', STYLES)
 
     def test_workspace_uses_the_public_oracle_container_scope_contract(self):
         self.assertIn(
@@ -110,6 +147,12 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn('status: "SUCCEEDED"', validation)
         self.assertIn('status: "FAILED"', validation)
         self.assertNotIn("shell.toast", validation)
+
+    def test_workspace_groups_resource_drawer_actions_as_buttons(self):
+        self.assertIn('class="business-resource-drawer-actions"', WORKSPACE_SCRIPT)
+        self.assertIn('id="remove-resource" class="business-danger-button"', WORKSPACE_SCRIPT)
+        self.assertNotIn('id="remove-resource" class="business-danger"', WORKSPACE_SCRIPT)
+        self.assertIn('.business-resource-drawer-actions{display:flex', STYLES)
 
 
 if __name__ == "__main__":

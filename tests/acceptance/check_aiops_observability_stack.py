@@ -178,6 +178,9 @@ enabled = true
 kbot_webhook_url = https://kbot.example.com
 kbot_webhook_key = whk-acceptance-key-long-enough-for-kbot
 kbot_webhook_secret = acceptance-webhook-secret
+kbot_uat_webhook_url = https://kbot-uat.example.com
+kbot_uat_webhook_key = whk-acceptance-key-long-enough-for-kbot-uat
+kbot_uat_webhook_secret = acceptance-uat-webhook-secret
 ammolite_webhook_url = https://ammolite.example.com
 ammolite_webhook_key = whk-acceptance-key-long-enough-for-ammolite
 ammolite_webhook_secret = acceptance-ammolite-webhook-secret
@@ -217,12 +220,18 @@ environment = production
         )
         if "kbot-webhook-signer" not in central_compose["services"]:
             raise RuntimeError("KBot Webhook签名桥没有生成")
+        if "kbot-uat-webhook-signer" not in central_compose["services"]:
+            raise RuntimeError("KBot UAT Webhook签名桥没有生成")
         if "ammolite-webhook-signer" not in central_compose["services"]:
             raise RuntimeError("Ammolite Webhook签名桥没有生成")
         alertmanager_config = (
             central.runtime_dir / "alertmanager/alertmanager.yml"
         ).read_text(encoding="utf-8")
-        for signer in ("kbot-webhook-signer", "ammolite-webhook-signer"):
+        for signer in (
+            "kbot-webhook-signer",
+            "kbot-uat-webhook-signer",
+            "ammolite-webhook-signer",
+        ):
             if f"http://{signer}:8080/alertmanager" not in alertmanager_config:
                 raise RuntimeError(f"Alertmanager缺少{signer}双发配置")
         signer_environment = central_compose["services"][

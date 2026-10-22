@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AIOps 运维知识库</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
+  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261020_1">
+</head>
+<body data-page="knowledge-bases">
+  <main class="ops-main">
+    <header class="ops-head"><div><h1>运维知识库</h1><p>在当前 Domain 内创建和管理独立知识边界，Agent 可同时绑定多个知识库。</p></div><a class="ops-related-link" href="./operations-knowledge.html"><span><small>关联页面</small><strong>查看运维知识</strong></span><b aria-hidden="true">→</b></a></header>
+    <section class="ops-panel">
+      <header class="ops-panel-head"><div><h2>知识库目录</h2><p>维护知识库及其 KC Collection 解析与索引模型。</p></div><div class="ops-actions"><button id="create-knowledge-base" class="primary" type="button">新建知识库</button></div></header>
+      <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>知识库</th><th>状态</th><th>资料</th><th>Agent 引用</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="knowledge-base-rows"><tr><td colspan="6" class="ops-empty">正在读取运维知识库…</td></tr></tbody></table></div>
+    </section>
+  </main>
+  <dialog id="knowledge-base-dialog" class="ops-dialog">
+    <form id="knowledge-base-form">
+      <header><div><h2 id="knowledge-base-dialog-title">新建运维知识库</h2><p>知识库名称在当前 Domain 内不可重复。</p></div><button type="button" data-close>关闭</button></header>
+      <div class="ops-dialog-body ops-form">
+        <label class="ops-field span-12"><span>知识库名称</span><input name="display_name" maxlength="256" required placeholder="例如：Oracle 核心库运维手册"></label>
+        <label class="ops-field span-12"><span>说明</span><textarea name="description" maxlength="1000" rows="4" placeholder="说明知识范围、适用系统或维护责任"></textarea></label>
+        <div class="ops-field span-12"><span>文档解析模型</span><small>OCR 必选；视觉解析仅在需要识别图片内容时启用。</small></div>
+        <label class="ops-field span-6"><span>OCR 解析模型</span><select name="parser_ocr" required></select></label>
+        <label class="ops-field span-6"><span>视觉解析模型（可选）</span><select name="parser_vlm"></select></label>
+        <div class="ops-field span-12"><span>语义处理模型</span><small>解析 LLM 用于标签预分析，检索规划 LLM 用于理解查询。</small></div>
+        <label class="ops-field span-6"><span>LLM 解析模型</span><select name="parser_llm" required></select></label>
+        <label class="ops-field span-6"><span>检索规划模型</span><select name="retrieval_llm" required></select></label>
+        <div class="ops-field span-12"><span>索引模型</span><small>文本向量模型必选；视觉向量模型按需启用。</small></div>
+        <label class="ops-field span-6"><span>文本向量模型</span><select name="embedding" required></select></label>
+        <label class="ops-field span-6"><span>视觉向量模型（可选）</span><select name="visual_embedding"></select></label>
+        <p id="knowledge-base-result" class="ops-connection-result" role="status"></p>
+      </div>
+      <footer><button type="button" data-close>取消</button><button id="save-knowledge-base" class="primary" type="submit">创建知识库</button></footer>
+    </form>
+  </dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261020_3"></script><script src="./js/aiops-knowledge-bases.js?v=20261020_2"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AIOps 知识问答</title>
-  <link rel="stylesheet" href="./css/aiops.css">
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
   <link rel="stylesheet" href="./css/workspaces.css">
   <link rel="stylesheet" href="./css/aiops-knowledge.css">
   <link rel="stylesheet" href="./css/aiops-knowledge-answering.css">
@@ -23,13 +23,15 @@
         <div id="knowledge-chat-rail-content" class="ops-special-rail-content">
           <div class="ops-workspace-list-head">
             <h2>问答会话</h2>
+            <label for="knowledge-context-bases">Agent 已绑定知识库</label>
+            <select id="knowledge-context-bases" multiple size="4" aria-label="知识问答 Agent 已绑定知识库" disabled></select>
             <label for="knowledge-context-db">数据库类型</label>
             <select id="knowledge-context-db" aria-label="数据库类型"><option value="">全部数据库类型</option><option>ORACLE</option><option>MYSQL</option><option>POSTGRESQL</option></select>
             <label for="knowledge-context-version">数据库主版本</label>
             <input id="knowledge-context-version" maxlength="32" placeholder="例如 19c">
             <label for="knowledge-context-topology">数据库拓扑</label>
             <input id="knowledge-context-topology" maxlength="64" placeholder="例如 RAC / Exadata">
-            <p class="ops-composer-hint">环境信息用于缩小已发布知识的适用范围。</p>
+            <p class="ops-composer-hint">知识问答只检索管理页为 Agent 绑定的知识库；环境信息继续缩小适用范围。</p>
           </div>
           <div id="knowledge-conversation-list" class="ops-workspace-items"><p class="ops-empty">正在读取会话…</p></div>
         </div>
@@ -56,7 +58,7 @@
   <script src="../vendor/purify.min.js"></script>
   <script src="../shared/kbot-markdown.js?v=20260827_1"></script>
   <script src="./js/aiops-auth.js"></script>
-  <script src="./js/aiops-shell.js?v=20261016_2"></script>
+  <script src="./js/aiops-shell.js?v=20261020_3"></script>
   <script src="./js/aiops-operations-knowledge-chat.js"></script>
 </body>
 </html>

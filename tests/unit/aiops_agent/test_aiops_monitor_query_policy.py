@@ -308,11 +308,11 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            2_592_000,
+            5_184_000,
             normalized.task_frame.requested_window_seconds,
         )
         self.assertEqual(
-            "最近30天（Prometheus最大保留范围）",
+            "最近60天（Prometheus最大保留范围）",
             normalized.task_frame.time_scope,
         )
         self.assertEqual(
@@ -324,7 +324,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             normalized.task_frame.forecast_horizon_seconds,
         )
         self.assertEqual(
-            2_592_000,
+            5_184_000,
             normalized.plan.actions[0].input["window_seconds"],
         )
 
@@ -380,7 +380,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             normalized_beyond_retention.task_frame.requested_window_seconds,
         )
         self.assertEqual(
-            2_592_000,
+            5_184_000,
             normalized_beyond_retention.plan.actions[0].input[
                 "window_seconds"
             ],

@@ -21,6 +21,7 @@ from platform_core.contracts.aiops import (
     BusinessSystemLifecycleCommand,
     BusinessSystemResourceGraphCommit,
     BusinessSystemResourceGraphDetail,
+    DatabaseResourceView,
     ManagedResourcePatch,
 )
 from platform_core.identity import uuid7
@@ -43,6 +44,34 @@ def _resource(draft_id, resource_id, group_id, name):
 
 
 class BusinessSystemResourceGraphContractTest(unittest.TestCase):
+    def test_database_detail_exposes_connection_metadata_without_password(self) -> None:
+        target_id = uuid7()
+        view = DatabaseResourceView(
+            target_id=target_id,
+            db_type="ORACLE",
+            version_code="19c",
+            environment="PROD",
+            deployment_type="SINGLE_INSTANCE",
+            db_role="PRIMARY",
+            connectivity_status="CONNECTED",
+            monitoring_ready=True,
+            endpoint={
+                "host": "10.0.0.8",
+                "port": 1521,
+                "service": "ORCLPDB1",
+                "tls_enabled": False,
+            },
+            oracle_container_scope="PDB",
+            oracle_pdb_name="ORCLPDB1",
+            diagnostic_username="aiops_reader",
+        )
+
+        payload = view.model_dump(mode="json")
+        self.assertEqual(str(target_id), payload["target_id"])
+        self.assertEqual("10.0.0.8", payload["endpoint"]["host"])
+        self.assertEqual("aiops_reader", payload["diagnostic_username"])
+        self.assertNotIn("password", json.dumps(payload).lower())
+
     def test_draft_contract_accepts_incomplete_workspace(self) -> None:
         created = BusinessSystemDraftCreate(
             current_step="SYSTEM_COMPOSITION",
@@ -140,6 +169,96 @@ class BusinessSystemResourceGraphContractTest(unittest.TestCase):
 
 
 class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_system_detail_projects_non_secret_connection_metadata(self) -> None:
+        now = datetime.now(UTC)
+        group_id = uuid7()
+        system_id = uuid7()
+        resource_id = uuid7()
+        target_id = uuid7()
+        credential_id = uuid7()
+        link = SimpleNamespace(
+            system_resource_id=uuid7(),
+            business_system_id=system_id,
+            architecture_layer_key="DATA",
+            responsibility_group_id=None,
+            display_order=0,
+            status="ACTIVE",
+            row_version=1,
+        )
+        resource = SimpleNamespace(
+            resource_id=resource_id,
+            resource_code="DB-000001",
+            resource_type_key="DATABASE",
+            display_name="ERP 主库",
+            identity_kind="STABLE",
+            lifecycle_status="ACTIVE",
+            owner_group_id=group_id,
+            location_name="上海机房",
+            row_version=1,
+        )
+        target = SimpleNamespace(
+            target_id=target_id,
+            db_type="ORACLE",
+            version_code="19c",
+            environment="PROD",
+            deployment_type="SINGLE_INSTANCE",
+            rac_node_number=None,
+            db_role="PRIMARY",
+            connectivity_status="CONNECTED",
+            endpoint_json={
+                "host": "10.0.0.8",
+                "port": 1521,
+                "service": "ORCLPDB1",
+                "tls_enabled": False,
+            },
+            oracle_container_scope="PDB",
+            oracle_pdb_name="ORCLPDB1",
+            diagnostic_credential_id=credential_id,
+        )
+        system = SimpleNamespace(
+            business_system_id=system_id,
+            system_code="SYS-000001",
+            display_name="ERP 生产系统",
+            environment="PROD",
+            importance_level=4,
+            responsibility_group_id=group_id,
+            description=None,
+            status="ENABLED",
+            row_version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        business_systems = SimpleNamespace(
+            list_system_resource_rows=AsyncMock(return_value=[(link, resource, SimpleNamespace(), target)]),
+            list_relations=AsyncMock(return_value=[]),
+            list_participants=AsyncMock(return_value=[]),
+        )
+        targets = SimpleNamespace(list_source_bindings=AsyncMock(return_value=[SimpleNamespace()]))
+        credential_reader = AsyncMock(return_value={"username": "aiops_reader", "password": "not-returned"})
+        service = object.__new__(AIOpsConfigurationService)
+        service._managed_credentials = SimpleNamespace(read=credential_reader)
+        scope = self.scope()
+        uow = SimpleNamespace(business_systems=business_systems, targets=targets)
+
+        detail = await service._system_detail(
+            uow=uow,
+            scope=scope,
+            system=system,
+        )
+
+        database = detail.resources[0].resource.database
+        self.assertIsNotNone(database)
+        self.assertEqual("10.0.0.8", database.endpoint.host)
+        self.assertEqual("aiops_reader", database.diagnostic_username)
+        self.assertNotIn("password", json.dumps(database.model_dump(mode="json")).lower())
+        credential_reader.assert_awaited_once_with(
+            uow=uow,
+            domain_id=scope.domain_id,
+            credential_id=credential_id,
+            credential_kind="target_diagnostic",
+            external_key=target_id,
+        )
+
     def scope(self) -> ConfigurationScope:
         return ConfigurationScope(
             domain_id=100,
@@ -459,6 +578,10 @@ class BusinessSystemResourceGraphServiceTest(unittest.IsolatedAsyncioTestCase):
             tuple(item.display_name for item in result.items),
         )
         self.assertEqual(3, service._system_detail.await_count)
+        self.assertTrue(all(
+            call.kwargs["include_connection_metadata"] is False
+            for call in service._system_detail.await_args_list
+        ))
         repository.list_scoped.assert_awaited_once_with(
             status=None,
             limit=200,

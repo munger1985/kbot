@@ -57,6 +57,9 @@ class CollectionModelPolicyResponse(BaseModel):
 
 class CollectionParsingSettingsRequest(BaseModel):
     parse_policy: dict
+    parser_ocr_model_id: UUID | None = None
+    parser_vlm_model_id: UUID | None = None
+    parser_llm_model_id: UUID | None = None
     expected_row_version: int = Field(ge=1)
 
 
@@ -254,6 +257,9 @@ async def update_collection_parsing_settings(
                 domain_id=domain_id,
                 collection_id=collection_id,
                 parse_policy=payload.parse_policy,
+                parser_ocr_model_id=payload.parser_ocr_model_id,
+                parser_vlm_model_id=payload.parser_vlm_model_id,
+                parser_llm_model_id=payload.parser_llm_model_id,
                 expected_row_version=payload.expected_row_version,
                 actor_id=get_actor_id(request),
             )

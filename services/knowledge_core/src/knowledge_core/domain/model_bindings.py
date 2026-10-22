@@ -9,13 +9,28 @@ KC_REQUIRED_MODEL_ROLES = frozenset({"embedding"})
 KC_IMMUTABLE_MODEL_ROLES = frozenset(
     {"embedding", "visual_embedding"}
 )
+KC_PARSER_MODEL_ROLES = frozenset(
+    {"parser_ocr", "parser_vlm", "parser_llm"}
+)
+KC_MODEL_ROLE_CATEGORIES = {
+    "parser_ocr": 6,
+    "parser_vlm": 5,
+    "parser_llm": 1,
+    "retrieval_llm": 1,
+    "embedding": 2,
+    "visual_embedding": 3,
+}
 _ROLE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 def normalize_collection_models(
     models: Mapping[str, UUID | str],
 ) -> dict[str, str]:
-    """校验可扩展角色映射，并转换为可持久化 JSON。"""
+    """校验可扩展角色映射，并转换为可持久化 JSON。
+
+    KBot4 模型目录保留了 UUIDv7 规范启用前创建的模型，因此外部
+    模型身份只要是合法 UUID 即可，不得重写其版本位。
+    """
     normalized: dict[str, str] = {}
     for raw_role, raw_model_id in models.items():
         role = str(raw_role).strip()
@@ -29,8 +44,6 @@ def normalize_collection_models(
             )
         except (TypeError, ValueError, AttributeError) as exc:
             raise ValueError(f"模型角色 {role} 必须绑定 UUID") from exc
-        if model_id.version != 7:
-            raise ValueError(f"模型角色 {role} 必须绑定 UUIDv7")
         normalized[role] = str(model_id)
     missing = KC_REQUIRED_MODEL_ROLES - set(normalized)
     if missing:
@@ -44,3 +57,13 @@ def collection_model_id(collection, role: str) -> UUID | None:
     """从 Collection Entity 或 Snapshot 获取指定角色的模型 UUID。"""
     raw = dict(collection.models_json or {}).get(role)
     return UUID(str(raw)) if raw else None
+
+
+def parser_model_snapshot(collection) -> dict[str, str]:
+    """只冻结解析 Worker 能使用的模型，避免混入检索和回答模型。"""
+    models = dict(collection.models_json or {})
+    return {
+        role: str(models[role])
+        for role in sorted(KC_PARSER_MODEL_ROLES)
+        if models.get(role)
+    }

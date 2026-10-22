@@ -417,8 +417,8 @@ DRILL_SCENARIO、DG_CONFIG_NAME、PRIMARY_DB_UNIQUE_NAME、STANDBY_DB_UNIQUE_NAM
 预测窗口均为空。询问过去的趋势、增长、变化速度或持续性，但没有要求未来外推时为HISTORICAL。
 只有明确询问容量耗尽时间、未来变化或是否需要扩容时才为HISTORICAL_AND_FORECAST：先分析历史
 真实采样，再基于历史趋势预测未来，不能用预测值替代历史事实。
-用户明确的过去范围写入time_scope并换算为requested_window_seconds；未明确时使用最近30天和
-2592000。用户明确的未来范围写入forecast_scope和forecast_horizon_seconds；未明确时使用未来
+用户明确的过去范围写入time_scope并换算为requested_window_seconds；未明确时使用最近60天和
+5184000。用户明确的未来范围写入forecast_scope和forecast_horizon_seconds；未明确时使用未来
 30天和2592000。严禁把未来预测周期当成历史查询周期，也不得自行猜测90天等其他范围。
 
 证据来源遵循“监控优先、数据库补证”：当问题询问指标现状、时间窗口、趋势、变化量、速度、
@@ -492,7 +492,7 @@ CURRENT 等缩写或自行创造新值。
 变化速度或持续性且不做未来外推时为HISTORICAL；只有明确询问容量耗尽时间、未来变化或是否需要
 扩容时才为HISTORICAL_AND_FORECAST，并且先分析历史真实采样，再预测未来并给出建议。
 用户明确的过去范围写入time_scope和requested_window_seconds；未明确时使用最近30天
-（Prometheus最大保留范围）和2592000。用户明确的未来范围写入forecast_scope和
+（Prometheus最大保留范围）和5184000。用户明确的未来范围写入forecast_scope和
 forecast_horizon_seconds；未明确时使用未来30天和2592000。历史窗口与预测窗口是两个独立
 概念，严禁拿“下个月”作为历史查询范围，也不得自行猜测90天等用户未要求的范围。
 指标现状、历史窗口、趋势、变化量、变化速度、持续性、容量和资源使用调查统一遵循监控优先：

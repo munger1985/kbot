@@ -78,6 +78,20 @@ class _EvidencePort:
     async def expand_context(self, **kwargs):
         return [hit(3, rank=3)]
 
+    async def get_citation_content(self, **kwargs):
+        return hit(1)
+
+
+class _IncompleteEvidencePort:
+    async def search_text(self, **kwargs):
+        return []
+
+    async def search_vector(self, **kwargs):
+        return []
+
+    async def expand_context(self, **kwargs):
+        return []
+
 
 class _FailingTextEvidencePort(_EvidencePort):
     async def search_text(self, **kwargs):
@@ -104,6 +118,12 @@ class _ConcurrentEvidencePort(_EvidencePort):
 
 
 class EvidenceDiagnosticsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_incomplete_search_port_is_rejected_during_wiring(self):
+        with self.assertRaisesRegex(TypeError, "EvidenceSearchPort"):
+            KnowledgeCoreEvidenceRetrievalService(
+                search_port=_IncompleteEvidencePort()
+            )
+
     async def test_scopes_use_configured_bounded_concurrency(self):
         collection_id = UUID(
             "019f8eae-2c25-7d48-b044-350ec3f5a001"

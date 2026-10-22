@@ -8,7 +8,10 @@ from typing import Protocol
 
 from loguru import logger
 
-from aiops_agent.application.errors import is_schema_or_integrity_error
+from aiops_agent.application.errors import (
+    AIOpsApplicationError,
+    is_schema_or_integrity_error,
+)
 from aiops_agent.application.investigation import InvestigationPlanValidationError
 from aiops_agent.tools import InvestigationCatalogChangedError
 from platform_core.contracts.aiops import CreateOpsRunCommand
@@ -430,7 +433,8 @@ class AIOpsOutboxDispatcher:
                     ),
                     error_message=(
                         str(exc)[:1000]
-                        if getattr(exc, "code", None)
+                        if isinstance(exc, AIOpsApplicationError)
+                        or getattr(exc, "code", None)
                         == "AIOPS_INVESTIGATION_PLAN_INTERNAL_ERROR"
                         else type(exc).__name__
                     ),

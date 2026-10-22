@@ -75,7 +75,7 @@ sequenceDiagram
     P->>DB: SKIP LOCKED 领取任务和有限租约
     P->>KC: 获取只读源文件 URL
     P->>P: 校验 SHA-256，执行统一解析流水线
-    P->>M: 可选 VLM；DeepSeek OCR 走独立端点
+    P->>M: 按 Collection 绑定调用 OCR/VLM
     P->>KC: 上传 IR/质量产物，分批提交 Evidence
     KC->>DB: 原子发布 Parse View 和 Evidence
     KC->>DB: 创建 INDEX Job
@@ -97,7 +97,7 @@ Worker 崩溃后可以重新领取；过期 Worker 不能用旧租约覆盖新�
 ```text
 源文件与 Hash 校验
   → Docling 转换、页面渲染和基础布局
-  → 可选 DeepSeek OCR 精确文字增强
+  → Collection parser_ocr 调用 Model Serving OCR
   → 可选页面级 VLM / Figure 描述
   → Atom IR 统一归一化
   → Reading Order 重建
@@ -111,23 +111,23 @@ Worker 崩溃后可以重新领取；过期 Worker 不能用旧租约覆盖新�
 
 | 能力 | 配置方式 | 未配置时 |
 | --- | --- | --- |
-| Docling 内置 OCR | 默认路径 | 正常进行文本解析 |
-| DeepSeek OCR | KC Parser 独立 OpenAI 兼容端点 | 使用 Docling OCR |
-| Parser VLM | Collection 绑定的可选模型 | 跳过页面视觉增强 |
+| Parser OCR | Collection 的 `parser_ocr` 绑定 | `AUTO` 不允许提交新解析任务 |
+| Parser VLM | Collection 的 `parser_vlm` 绑定 | 跳过页面视觉增强；`VISUAL` 不允许提交 |
+| Parser LLM | Collection 的 `parser_llm` 绑定 | 不执行需要 LLM 的解析期提炼或 App 预分析 |
 | Visual Embedding | Collection 绑定的可选模型 | 不生成图像向量 |
 
-启用 DeepSeek OCR 后关闭 Docling 内置 OCR，但继续使用 Docling 的布局转换和
-局部图片提取。DeepSeek OCR 不进入 Model Serving。VLM 与 Visual Embedding 相互
-独立，缺少任意一项都不会阻断文本解析。
+OCR Provider、模型路径和推理端点由 Model Serving 管理；KC 只保存模型 ID、任务快照和
+实际推理 revision，不读取部署级 OCR 参数。`parser_llm` 与 Agent 的 `composer_llm` 是两个
+独立角色：前者只参与解析期处理，后者只生成最终回答。VLM 与 Visual Embedding 相互独立。
 
 ### `TEXT / AUTO / VISUAL`
 
 - `TEXT`：只提取原生文本和结构，关闭 OCR 及所有图片生成；
-- `AUTO`：开启区域 OCR，只生成实际图片对象，并仅对有信息的图片对象调用 VLM；
+- `AUTO`：按需渲染低文本页面供 OCR 使用，只把实际图片对象交给 VLM；
 - `VISUAL`：第一阶段发布结构化文本，第二阶段由持久化任务异步生成全部页面图像并逐页调用 VLM。
 
-AUTO 永不生成普通页面全图，也不按页面文字量、乱码率或缺失置信度触发整页
-VLM；扫描页只有在被识别为整页图片对象时才按图片处理。VISUAL 的基础结果在
+AUTO 的页面图像只作为解析期 OCR 临时输入，不形成可检索图片，也不触发整页 VLM；
+VLM 只处理实际图片对象。VISUAL 的基础结果在
 视觉任务执行期间始终可检索，页面结果使用内容寻址缓存并支持失败重试。
 
 ## 为什么需要 Atom IR、Structure IR 和 Evidence
@@ -159,7 +159,7 @@ Parser 保存以下不可变产物：
 | `evidence_manifest` | Evidence Key、内容和定位 Hash |
 | `spreadsheet_artifact` | Excel Sheet、表格和结构信息 |
 | `visual_analysis` | VLM 页面选择、替换和失败记录 |
-| `deepseek_ocr_analysis` | OCR 模型、页级结果和失败记录 |
+| `ocr_analysis` | OCR 模型 ID、实际 revision、页级结果和失败记录 |
 | `quality_report` | 质量指标、警告和硬失败 |
 
 输出指纹同时覆盖 Artifact Hash 和 Evidence Key。KC 只有在租约、输入 Hash、
@@ -250,7 +250,7 @@ KC 不设置独立重排阶段。混合检索与 RRF 负责产生候选 Bundle�
 2. Domain → Collection → Bundle → Document → Evidence；
 3. 单文件与多文件 Bundle 两种产品场景；
 4. 上传到可检索的完整时序；
-5. Docling + DeepSeek OCR + VLM 的统一解析路线；
+5. Docling + Model Serving OCR + VLM 的统一解析路线；
 6. 标题、短片段、表格和阅读顺序如何修复；
 7. Parse View、质量门和不可变产物；
 8. Collection 唯一 Embedding 模型；

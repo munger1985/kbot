@@ -13,6 +13,8 @@ from aiops_agent.application.reporting import (
     REPORT_TYPE_SYSTEM_TEMPLATES,
     SYSTEM_REPORT_TEMPLATES,
     closed_period_window,
+    compare_monthly_inspection_summaries,
+    monthly_inspection_summary,
     render_pdf,
     report_presentation,
     normalize_report_source,
@@ -28,6 +30,90 @@ from platform_core.identity import uuid7
 
 
 class FormalReportingTest(unittest.TestCase):
+    def test_monthly_presentation_uses_frozen_summary_and_pdf(self) -> None:
+        summary = {
+            "schema_version": "MONTHLY_INSPECTION_SUMMARY.v1",
+            "metrics": [{
+                "metric_key": "db.availability|-|AVAILABILITY|percent",
+                "metric_code": "db.availability", "semantic_role": "AVAILABILITY",
+                "display_name": "数据库可用率", "dimension_label": "全部",
+                "unit": "percent", "monthly_average": 99.9,
+                "monthly_average_display": "99.90%", "p95": 100.0,
+                "p95_display": "100.00%", "minimum": 99.0,
+                "minimum_display": "99.00%", "maximum": 100.0,
+                "maximum_display": "100.00%", "first": 100.0,
+                "first_display": "100.00%", "last": 99.9,
+                "last_display": "99.90%", "net_change": -0.1,
+                "net_change_display": "-0.10%", "change_percent": -0.1,
+                "effective_days": 28, "expected_days": 28,
+                "coverage_percent": 100.0, "daily_points": [],
+                "is_capacity": False,
+            }],
+            "issues": [], "database_checks": {"status_counts": {"CLEAR": 8}},
+            "coverage": {"completed_run_count": 28, "metric_day_coverage_percent": 100.0},
+        }
+        payload = {
+            "report_key": "inspection.monthly", "report_type": "INSPECTION_MONTHLY",
+            "target_id": str(uuid7()), "title": "数据库月度巡检报告",
+            "status": "READY", "summary": "月度巡检完成。",
+            "period_start": "2026-02-01T00:00:00+00:00",
+            "period_end": "2026-03-01T00:00:00+00:00",
+            "scope": {
+                "monthly_summary": summary,
+                "previous_month_comparison": {"status": "NO_PREVIOUS_REPORT", "status_display": "无上月报告"},
+                "scope_type": "TARGET", "scope_name": "Oracle 生产库", "target_count": 1,
+                "database_types": ["ORACLE"],
+            },
+            "facts": [], "gaps": [], "evidence_refs": [], "recommendations": [],
+        }
+        presentation = report_presentation(
+            payload=payload,
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.monthly"],
+            report_context={"report_id": str(uuid7()), "report_version": 1},
+        )
+        self.assertEqual("MONTHLY_INSPECTION_PRESENTATION.v1", presentation["monthly_inspection"]["schema_version"])
+        self.assertNotIn("current", presentation["monthly_inspection"]["metrics"][0])
+        self.assertGreater(len(render_pdf(presentation)), 1_000)
+
+    def test_monthly_summary_deduplicates_days_and_excludes_backup(self) -> None:
+        start = datetime(2026, 1, 31, 16, tzinfo=UTC)
+        end = datetime(2026, 2, 28, 16, tzinfo=UTC)
+        base = {
+            "kind": "inspection_monitoring_metric",
+            "metric_code": "db.storage.used_bytes",
+            "semantic_role": "STORAGE_USED",
+            "dimensions": "tablespace=USERS",
+            "unit": "bytes",
+        }
+        facts = [
+            {**base, "_source_observed_at": "2026-02-03T00:00:00+00:00", "daily_points": [
+                {"date": "2026-02-01", "value": 10}, {"date": "2026-02-02", "value": 20},
+            ]},
+            {**base, "_source_observed_at": "2026-02-04T00:00:00+00:00", "daily_points": [
+                {"date": "2026-02-02", "value": 30}, {"date": "2026-02-03", "value": 50},
+            ]},
+            {"kind": "inspection_check", "tool_id": "db.oracle.tablespace", "title": "表空间检查", "check_status": "FINDING", "_source_observed_at": "2026-02-03T00:00:00+00:00", "findings": [
+                {"finding_id": "TABLESPACE_GROWTH", "severity": "MEDIUM", "summary": "增长较快"},
+            ]},
+            {"kind": "inspection_check", "tool_id": "db.oracle.rman_backup", "check_status": "FINDING", "findings": [
+                {"finding_id": "BACKUP", "finding_type": "BACKUP_FAILED", "severity": "HIGH"},
+            ]},
+        ]
+        summary = monthly_inspection_summary(
+            facts=facts, period_start=start, period_end=end,
+            timezone="Asia/Shanghai", run_summary={"completed_run_count": 2},
+        )
+        metric = summary["metrics"][0]
+        self.assertEqual(30, metric["monthly_average"])
+        self.assertEqual(3, metric["effective_days"])
+        self.assertEqual(28, metric["expected_days"])
+        self.assertEqual(40, metric["net_change"])
+        self.assertEqual(["TABLESPACE_GROWTH"], [item["finding_id"] for item in summary["issues"]])
+        self.assertEqual(
+            "NO_PREVIOUS_REPORT",
+            compare_monthly_inspection_summaries(summary, None)["status"],
+        )
+
     def test_system_templates_cover_requested_periods(self) -> None:
         self.assertEqual(
             {
@@ -166,6 +252,217 @@ class FormalReportingTest(unittest.TestCase):
         self.assertIn(b"/FontFile2", pdf)
         self.assertNotIn(b"FEFF", pdf)
         self.assertIn(b"/ToUnicode", pdf)
+
+    def test_inspection_presentation_keeps_key_observations_and_gap_category(
+        self,
+    ) -> None:
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            payload={
+                "title": "数据库日常巡检报告",
+                "status": "PARTIAL",
+                "summary": "检查已完成。",
+                "facts": [{
+                    "kind": "inspection_check",
+                    "summary": "归档配置存在恢复风险。",
+                    "observations": [{"log_mode": "NOARCHIVELOG"}],
+                }],
+                "gaps": [{
+                    "code": "PRIVILEGE_MISSING",
+                    "detail": "缺少最小只读权限",
+                    "category": "SOURCE_ACCESS",
+                }],
+            },
+        )
+        sections = {item["kind"]: item for item in presentation["sections"]}
+
+        self.assertIn(
+            "关键观测：日志模式：NOARCHIVELOG",
+            sections["FINDINGS"]["items"][0],
+        )
+        self.assertTrue(
+            sections["EVIDENCE_BOUNDARY"]["items"][0].startswith(
+                "[数据库访问]"
+            )
+        )
+
+    def test_daily_inspection_projects_seven_day_baseline_and_pdf(self) -> None:
+        facts = [
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "db.response.latency",
+                "semantic_role": "RESPONSE_LATENCY",
+                "value_kind": "GAUGE",
+                "dimensions": "instance=oracle-1, job=oracle",
+                "latest": 38.0,
+                "average": 28.0,
+                "unit": "milliseconds",
+                "coverage_ratio": 0.94,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 168,
+                "daily_points": [
+                    {"date": f"2026-10-{day:02d}", "value": value}
+                    for day, value in zip(
+                        range(14, 21),
+                        (25, 27, 26, 29, 28, 30, 38),
+                        strict=True,
+                    )
+                ],
+            },
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "db.storage.used_bytes",
+                "semantic_role": "STORAGE_USED",
+                "value_kind": "GAUGE",
+                "dimensions": "tablespace=SYSTEM, type=PERMANENT",
+                "latest": 82 * 1024**3,
+                "average": 80 * 1024**3,
+                "unit": "bytes",
+                "coverage_ratio": 0.91,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 168,
+                "daily_points": [],
+            },
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "host.cpu.utilization",
+                "semantic_role": "CPU_UTILIZATION",
+                "value_kind": "GAUGE",
+                "dimensions": "instance=oracle-1",
+                "latest": 45.0,
+                "average": 40.0,
+                "unit": "percent",
+                "coverage_ratio": 0.72,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 101,
+                "daily_points": [],
+            },
+            {
+                "kind": "inspection_monitoring_metric",
+                "metric_code": "db.availability",
+                "semantic_role": "AVAILABILITY",
+                "value_kind": "STATE",
+                "dimensions": "instance=oracle-1",
+                "latest": 1.0,
+                "average": 1.0,
+                "unit": "state",
+                "coverage_ratio": 1.0,
+                "window_start": "2026-10-13T08:30:00+00:00",
+                "window_end": "2026-10-20T08:30:00+00:00",
+                "sample_count": 168,
+                "daily_points": [],
+            },
+        ]
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            report_context={
+                "report_id": "01a1580c-42e5-72a2-b19b-9c73c77a5fff",
+                "report_version": 2,
+                "created_at": "2026-10-20T08:36:00+00:00",
+            },
+            payload={
+                "report_type": "INSPECTION_DAILY",
+                "report_key": "inspection.daily",
+                "target_id": "target-1",
+                "title": "数据库日常巡检报告",
+                "status": "READY",
+                "summary": "巡检完成。",
+                "period_start": "2026-10-20T00:00:00+00:00",
+                "period_end": "2026-10-20T08:30:00+00:00",
+                "scope": {
+                    "health_status": "MEDIUM",
+                    "evidence_coverage_percent": 100.0,
+                    "monitoring_sample_coverage_percent": 72.0,
+                    "evidence_total_count": 4,
+                    "target": {
+                        "target_id": "target-1",
+                        "display_name": "Oracle 生产库",
+                        "database_type": "ORACLE",
+                        "version_code": "19c",
+                        "environment": "PROD",
+                        "db_role": "PRIMARY",
+                    },
+                },
+                "facts": facts,
+                "gaps": (),
+                "recommendations": ("复核响应延迟偏离。",),
+                "evidence_refs": ({
+                    "artifact_id": "artifact-1",
+                    "content_hash": "a" * 64,
+                },),
+            },
+        )
+
+        daily = presentation["daily_inspection"]
+        metrics = {
+            item["metric_code"]: item
+            for item in daily["baseline_metrics"]
+        }
+        self.assertAlmostEqual(
+            35.71,
+            metrics["db.response.latency"]["deviation_percent"],
+            places=2,
+        )
+        self.assertEqual(
+            "AVAILABLE",
+            metrics["db.response.latency"]["baseline_status"],
+        )
+        self.assertEqual(
+            "INSUFFICIENT",
+            metrics["host.cpu.utilization"]["baseline_status"],
+        )
+        self.assertEqual(
+            "INSUFFICIENT",
+            metrics["db.availability"]["baseline_status"],
+        )
+        self.assertEqual(1, len(daily["capacity_rows"]))
+        self.assertNotIn(
+            "instance=oracle-1",
+            daily["baseline_metrics"][0]["dimension_label"],
+        )
+        pdf = render_pdf(presentation)
+        self.assertTrue(pdf.startswith(b"%PDF-"))
+        self.assertIn(b"/ToUnicode", pdf)
+
+    def test_daily_inspection_replaces_legacy_uuid_target_name(self) -> None:
+        target_id = str(uuid7())
+        payload = {
+            "report_type": "INSPECTION_DAILY",
+            "target_id": target_id,
+            "title": "数据库日常巡检报告",
+            "status": "READY",
+            "scope": {"target": {
+                "target_id": target_id,
+                "display_name": target_id,
+            }},
+            "facts": [],
+            "gaps": [],
+            "evidence_refs": [],
+        }
+        presentation = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            report_context={"target_display_name": "Oracle 核心生产库"},
+            payload=payload,
+        )
+
+        self.assertEqual(
+            "Oracle 核心生产库",
+            presentation["daily_inspection"]["header"]["target_name"],
+        )
+
+        payload["scope"]["target"]["display_name"] = "Oracle 历史名称"
+        preserved = report_presentation(
+            template=SYSTEM_REPORT_TEMPLATES["system:inspection.daily"],
+            report_context={"target_display_name": "Oracle 当前名称"},
+            payload=payload,
+        )
+        self.assertEqual(
+            "Oracle 历史名称",
+            preserved["daily_inspection"]["header"]["target_name"],
+        )
 
     def test_comparison_facts_are_projected_as_findings(self) -> None:
         template = SYSTEM_REPORT_TEMPLATES["system:comparison.standard"]
@@ -647,6 +944,7 @@ class FormalReportingTest(unittest.TestCase):
         )
         current_artifact = SimpleNamespace(
             artifact_id=report_artifact_id,
+            schema_version="REPORT_CONTENT.v1",
             content_hash=report_hash,
             payload_json=report_payload,
         )
@@ -739,9 +1037,11 @@ class FormalReportingTest(unittest.TestCase):
                     template_id=stored_template_id,
                     template_version="1.0.0",
                     report_type=report_type,
+                    content_hash=content_hash,
                 )
                 artifact = SimpleNamespace(
                     artifact_id=artifact_id,
+                    schema_version="REPORT_CONTENT.v1",
                     content_hash=content_hash,
                     payload_json=payload,
                 )

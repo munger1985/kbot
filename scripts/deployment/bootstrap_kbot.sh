@@ -142,25 +142,25 @@ python_bin="$(resolve_python)"
 export KBOT_PYTHON="$python_bin"
 export KBOT_CONFIG_FILE="$config_file"
 
-echo "[1/7] 目标解释器：$python_bin"
+echo "[1/8] 目标解释器：$python_bin"
 if [[ "$skip_install" -eq 0 ]]; then
-    echo "[2/7] 安装第三方依赖和 KBot 内部包"
+    echo "[2/8] 安装第三方依赖和 KBot 内部包"
     if [[ "$deployment_mode" == "production" ]]; then
         bash scripts/deployment/install_workspace.sh --production
     else
         bash scripts/deployment/install_workspace.sh
     fi
 else
-    echo "[2/7] 已按参数跳过依赖安装"
+    echo "[2/8] 已按参数跳过依赖安装"
 fi
 
-echo "[3/7] 校验配置、进程拓扑和规范 Oracle DDL"
+echo "[3/8] 校验配置、进程拓扑和规范 Oracle DDL"
 "$python_bin" tests/acceptance/check_configuration_contract.py
 "$python_bin" tests/acceptance/check_process_topology.py
 "$python_bin" tests/acceptance/check_oracle_schema.py
 "$python_bin" scripts/deployment/check_deployment.py
 
-echo "[4/7] 解析建表计划"
+echo "[4/8] 解析建表计划"
 "$python_bin" scripts/db/apply_oracle_schema.py \
     --config "$services_config" \
     --dry-run
@@ -170,16 +170,19 @@ if [[ "$schema_dry_run" -eq 1 ]]; then
     exit 0
 fi
 
-echo "[5/7] 初始化空白 Oracle Schema 与首次登录基础数据"
+echo "[5/8] 初始化空白 Oracle Schema 与首次登录基础数据"
 "$python_bin" scripts/db/apply_oracle_schema.py \
     --config "$services_config"
 
-echo "[6/7] 校验默认 Domain、ADMIN、权限目录和成员授权"
+echo "[6/8] 写入默认数据库巡检模板"
+"$python_bin" scripts/db/seed_aiops_inspection_templates.py
+
+echo "[7/8] 校验默认 Domain、ADMIN、权限目录和成员授权"
 "$python_bin" scripts/db/apply_oracle_schema.py --check-foundation
 
-echo "[7/7] 完成部署初始化"
-echo "已创建规范结构、Prompt Catalog、默认 Domain、ADMIN 及完整系统管理员授权。"
-echo "模型、Collection、Agent、会话和 AIOps 等业务数据保持为空。"
+echo "[8/8] 完成部署初始化"
+echo "已创建规范结构、Prompt Catalog、默认 Domain、ADMIN、完整系统管理员授权及默认巡检模板。"
+echo "模型、Collection、Agent、会话及其他 AIOps 业务数据保持为空。"
 
 if [[ "$start_after_install" -eq 1 ]]; then
     bash start_kbot.sh

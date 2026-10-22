@@ -54,6 +54,7 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "aiops-observability-manual-deployment.md",
                 "aiops-observability-production-deployment.md",
                 "deployment.md",
+                "kbot-1.0-complete-offline-installation.md",
                 "oracle-linux-nginx-http-apex-ords.md",
                 "oracle-linux-nginx-https-gateway.md",
             },

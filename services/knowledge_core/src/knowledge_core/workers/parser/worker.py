@@ -16,30 +16,13 @@ from loguru import logger
 from knowledge_core.parsing import canonical_json_hash
 from knowledge_core.parsing.converter import KcDoclingConverter
 from knowledge_core.parsing.pipeline import KcParsingPipeline
+from knowledge_core.parsing.source_format import source_suffix
 from knowledge_core.workers.job_wait import AdaptiveJobWait
 from knowledge_core.workers.parser.visual_evidence import (
     build_visual_page_evidence,
 )
+from platform_core.dictionary import ModelCategory
 from .client import KcParseClient, KcParserProtocolError, ParseTask
-
-
-_MIME_SUFFIX = {
-    "application/pdf": ".pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-    "application/msword": ".doc",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
-    "application/vnd.ms-powerpoint": ".ppt",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-    "application/vnd.ms-excel": ".xls",
-    "text/markdown": ".md",
-    "text/plain": ".md",
-    "text/csv": ".csv",
-    "text/html": ".html",
-    "application/xhtml+xml": ".html",
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/tiff": ".tiff",
-}
 
 
 class KcParserWorker:
@@ -48,7 +31,7 @@ class KcParserWorker:
         pipeline: KcParsingPipeline, worker_id: str, lease_seconds: int,
         job_wait: AdaptiveJobWait,
         evidence_batch_size: int, visual_enricher=None,
-        deepseek_ocr_enricher=None, model_config_client=None,
+        model_ocr_enricher=None, model_config_clients=None,
     ):
         self._client = client
         self._converter = converter
@@ -58,8 +41,8 @@ class KcParserWorker:
         self._job_wait = job_wait
         self._evidence_batch_size = evidence_batch_size
         self._visual_enricher = visual_enricher
-        self._deepseek_ocr_enricher = deepseek_ocr_enricher
-        self._model_config_client = model_config_client
+        self._model_ocr_enricher = model_ocr_enricher
+        self._model_config_clients = dict(model_config_clients or {})
         self._stop = asyncio.Event()
         self._run_task: asyncio.Task | None = None
 
@@ -108,10 +91,10 @@ class KcParserWorker:
                 strategy = str(policy.get("parse_strategy", "AUTO")).upper()
                 document = await self._converter.convert(
                     source_path=source_path,
-                    do_ocr=bool(policy.get("do_ocr", True)),
-                    ocr_engine=str(policy.get("ocr_engine", "tesseract")),
+                    do_ocr=False,
+                    ocr_engine="tesseract",
                     image_scale=float(policy.get("image_scale", 2.0)),
-                    generate_page_images=False,
+                    generate_page_images=strategy != "TEXT",
                     generate_picture_images=strategy != "TEXT",
                     generate_table_images=False,
                     detect_table_structure=bool(
@@ -119,16 +102,10 @@ class KcParserWorker:
                     ),
                 )
                 ocr_enrichment = None
-                if (
-                    self._deepseek_ocr_enricher is not None
-                    and strategy != "TEXT"
-                    and policy.get("ocr_model")
-                ):
-                    ocr_enrichment = (
-                        await self._deepseek_ocr_enricher.enrich(
-                            document,
-                            served_model_name=policy.get("ocr_model"),
-                        )
+                if self._model_ocr_enricher is not None and strategy != "TEXT":
+                    ocr_model_id = await self._resolve_ocr_model(policy)
+                    ocr_enrichment = await self._model_ocr_enricher.enrich(
+                        document, model_id=ocr_model_id,
                     )
                 visual_enrichment = None
                 if self._visual_enricher is not None and strategy == "AUTO":
@@ -226,7 +203,7 @@ class KcParserWorker:
         document = await self._converter.convert(
             source_path=source_path,
             do_ocr=False,
-            ocr_engine=str(policy.get("ocr_engine", "tesseract")),
+            ocr_engine="tesseract",
             image_scale=float(policy.get("image_scale", 2.0)),
             generate_page_images=True,
             generate_picture_images=False,
@@ -282,10 +259,12 @@ class KcParserWorker:
         model_id = policy.get("models", {}).get("parser_vlm")
         if not model_id:
             return None
-        if self._model_config_client is None:
-            raise RuntimeError("KC Parser 未配置模型目录客户端")
-        model = await self._model_config_client.get_model(UUID(str(model_id)))
-        if int(model.get("category") or 0) != 5:
+        expected_category = int(ModelCategory.VLM)
+        model_config_client = self._model_config_clients.get(expected_category)
+        if model_config_client is None:
+            raise RuntimeError("KC Parser 未配置 VLM 模型目录客户端")
+        model = await model_config_client.get_model(UUID(str(model_id)))
+        if int(model.get("category") or 0) != expected_category:
             raise RuntimeError("Collection models.parser_vlm 不是 VLM")
         if model.get("status") != "ACTIVE":
             raise RuntimeError("Collection 绑定的 Parser VLM 不可用")
@@ -294,13 +273,30 @@ class KcParserWorker:
             raise RuntimeError("Collection Parser VLM 缺少 served_model_name")
         return served_name
 
+    async def _resolve_ocr_model(self, policy: dict) -> UUID | None:
+        """解析并校验任务快照中的 OCR 模型。"""
+        model_id = policy.get("models", {}).get("parser_ocr")
+        if not model_id:
+            return None
+        expected_category = int(ModelCategory.OCR)
+        model_config_client = self._model_config_clients.get(expected_category)
+        if model_config_client is None:
+            raise RuntimeError("KC Parser 未配置 OCR 模型目录客户端")
+        resolved_model_id = UUID(str(model_id))
+        model = await model_config_client.get_model(resolved_model_id)
+        if int(model.get("category") or 0) != expected_category:
+            raise RuntimeError("Collection models.parser_ocr 不是 OCR 模型")
+        if model.get("status") != "ACTIVE":
+            raise RuntimeError("Collection 绑定的 Parser OCR 不可用")
+        return resolved_model_id
+
     async def _heartbeat(self, task: ParseTask) -> None:
         while True:
             await asyncio.sleep(max(10, self._lease_seconds / 3))
             await self._client.heartbeat(task, lease_seconds=self._lease_seconds)
 
     async def _materialize_source(self, task: ParseTask, directory: Path) -> Path:
-        suffix = _MIME_SUFFIX.get(task.detected_mime_type.lower())
+        suffix = source_suffix(detected_mime_type=task.detected_mime_type)
         if suffix is None:
             raise ValueError(f"unsupported MIME type: {task.detected_mime_type}")
         target = directory / f"source{suffix}"

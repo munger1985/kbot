@@ -41,8 +41,7 @@
         : (!item.readonly_connection_enabled || ["CONNECTED", "DEGRADED"].includes(item.connectivity_status))
           ? ['<button type="button" class="primary" data-target-action="enable">启用</button>']
           : [];
-      const deleteButton = `<button type="button" data-target-action="delete" title="${item.status === "DISABLED" ? "删除运维目标" : "请先停用运维目标"}">删除</button>`;
-      return `<div class="ops-actions">${detailButton}${editButton}${checkButton}${buttons.join("")}${deleteButton}</div>`;
+      return `<div class="ops-actions">${detailButton}${editButton}${checkButton}${buttons.join("")}</div>`;
     }
     if (type === "target-access") {
       const mode = item.controlled_change_enabled
@@ -67,7 +66,7 @@
     if (type === "latest-inspection") {
       const latest = item._latest_fire;
       return latest
-        ? `${shell.badge(latest.status)}<small>${shell.escape(shell.fmt(latest.scheduled_at))}</small>`
+        ? `${shell.badge(latest.status)}<small>${shell.escape(latest.error_message || shell.fmt(latest.scheduled_at))}</small>`
         : '<span class="ops-badge">尚未执行</span>';
     }
     if (key === "connectivity_status" && item.connectivity_check_pending) {
@@ -232,34 +231,6 @@
     }
     if (action === "edit") {
       globalThis.KBotAIOpsTargets?.openEdit(item.target_id);
-      return;
-    }
-    if (action === "delete") {
-      if (item.status !== "DISABLED") {
-        shell.toast("请先停用运维目标，再执行删除");
-        return;
-      }
-      const confirmed = confirm(
-        `确认删除运维目标“${item.display_name || item.target_id}”吗？\n\n`
-        + "删除会一并清理该 Target 的监控映射、数据库凭据、运行、会话、报告、告警、工作项、恢复与负载历史，且不可恢复。"
-        + "共享的监控源、Agent、策略、巡检定义和知识资产不会删除。仍有运行中任务时系统会拒绝删除。",
-      );
-      if (!confirmed) return;
-      button.disabled = true;
-      try {
-        await KBotAIOpsAuth.request(`${appApi}/targets/${targetId}`, {
-          method: "DELETE",
-          headers: {
-            "If-Match": `"rv-${item.row_version}"`,
-            "Idempotency-Key": KBotAIOpsAuth.uuid(),
-          },
-        });
-        shell.toast("运维目标已删除");
-        await renderList("targets");
-      } catch (error) {
-        shell.toast(error.message);
-        button.disabled = false;
-      }
       return;
     }
     const path = action === "connectivity"
@@ -712,24 +683,160 @@
 
   function reportMetadataHtml(data, report, target) {
     const scope = data?.report?.scope || {};
+    const healthStatus = String(scope.health_status || "UNKNOWN");
+    const healthStatusLabel = {
+      NORMAL: "正常",
+      INFO: "提示",
+      LOW: "低风险",
+      MEDIUM: "中风险",
+      HIGH: "高风险",
+      CRITICAL: "严重风险",
+      UNKNOWN: "无法判定",
+    }[healthStatus] || healthStatus;
     const rawCoverage = scope.evidence_coverage_percent;
     const hasCoverage = typeof rawCoverage === "number" && Number.isFinite(rawCoverage);
     const coverage = hasCoverage
-      ? `业务检查语义满足率 ${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项` : ""}`
+      ? `${rawCoverage}%${Number.isFinite(Number(scope.evidence_covered_count)) && Number.isFinite(Number(scope.evidence_total_count)) ? ` · ${Number(scope.evidence_covered_count)}/${Number(scope.evidence_total_count)} 项业务检查` : ""}`
       : "历史报告未记录覆盖率";
-    const quality = [
-      hasNumber(scope.tool_execution_coverage_percent) ? `固定工具执行率 ${Number(scope.tool_execution_coverage_percent)}%` : "",
-      hasNumber(scope.monitoring_sample_coverage_percent) ? `监控采样覆盖率 ${Number(scope.monitoring_sample_coverage_percent)}%` : "",
-      hasNumber(scope.evidence_gap_count) ? `数据缺口 ${Number(scope.evidence_gap_count)} 项` : "",
-    ].filter(Boolean).join(" · ");
+    const monitoringCoverage = typeof scope.monitoring_sample_coverage_percent === "number"
+      && Number.isFinite(scope.monitoring_sample_coverage_percent)
+      ? `${scope.monitoring_sample_coverage_percent}%${Number.isFinite(Number(scope.monitoring_low_coverage_metric_count)) && Number.isFinite(Number(scope.monitoring_metric_count)) ? ` · 低覆盖 ${Number(scope.monitoring_low_coverage_metric_count)}/${Number(scope.monitoring_metric_count)} 项` : ""}`
+      : "本报告未使用监控时序或未记录采样覆盖率";
     const profile = scope.monitoring_profile?.display_name
       ? `${scope.monitoring_profile.display_name}${scope.monitoring_profile.version ? ` · ${scope.monitoring_profile.version}` : ""}`
       : "";
     const item = (label, value, className = "") => `<div class="${className}"><dt>${shell.escape(label)}</dt><dd>${value}</dd></div>`;
-    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("报告状态", reportStatusBadge(report.status))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("证据质量", `<strong>${shell.escape(coverage)}</strong>${quality ? `<small>${shell.escape(quality)}</small>` : ""}<small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
+    return `<section class="ops-report-metadata" aria-label="报告信息"><dl>${item("报告类型", shell.escape(reportTypeLabel(report.report_type)))}${item("健康状态", shell.escape(healthStatusLabel))}${item("证据完整性", reportStatusBadge(report.status))}${item("数据库类型", shell.escape(scope.database_type || target?.db_type || "未记录"))}${item("报告版本", `第 ${shell.escape(report.report_version)} 版`)}${item("发布时间", shell.escape(shell.fmt(report.published_at)))}${item("报告周期", `${shell.escape(shell.fmt(report.period_start))} 至 ${shell.escape(shell.fmt(report.period_end))}`)}${item("数据库检查覆盖率", `<strong>${shell.escape(coverage)}</strong><small>${shell.escape(scope.inspection_coverage || "以证据边界章节为准")}</small>`, "ops-report-coverage")}${item("监控采样覆盖率", `<strong>${shell.escape(monitoringCoverage)}</strong>${profile ? `<small>监控口径：${shell.escape(profile)}</small>` : ""}`, "ops-report-coverage")}${item("数据缺口", `${shell.escape(Number.isFinite(Number(scope.evidence_gap_count)) ? Number(scope.evidence_gap_count) : "未记录")} 项`)}${item("关联目标", shell.escape(target?.display_name || "目标已删除或无权访问"))}${item("报告编号", `<code>${shell.escape(report.report_key)}</code>`)}</dl></section>`;
+  }
+
+  function dailyTrendSvg(metric, compact = false) {
+    const points = (metric.trend_points || [])
+      .map((item) => Number(item.baseline_index))
+      .filter((value) => Number.isFinite(value));
+    if (points.length < 2) return '<span class="daily-no-baseline">基线不足</span>';
+    const low = Math.min(85, ...points);
+    const high = Math.max(115, ...points);
+    const span = Math.max(1, high - low);
+    const width = compact ? 112 : 184;
+    const height = compact ? 30 : 68;
+    const coordinates = points.map((value, index) => {
+      const x = points.length === 1 ? width : index * width / (points.length - 1);
+      const y = height - 5 - ((value - low) / span) * (height - 10);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    const last = coordinates.split(" ").at(-1).split(",");
+    const baselineY = (height - 5 - ((100 - low) / span) * (height - 10)).toFixed(1);
+    return `<svg class="daily-trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${shell.escape(metric.display_name || "指标")}七日趋势"><line x1="0" y1="${baselineY}" x2="${width}" y2="${baselineY}"/><polyline points="${coordinates}"/><circle cx="${last[0]}" cy="${last[1]}" r="2.8"/></svg>`;
+  }
+
+  function dailyDeviationHtml(metric) {
+    const percent = Number(metric.deviation_percent);
+    const available = metric.baseline_status === "AVAILABLE" && Number.isFinite(percent);
+    const bounded = available ? Math.max(-50, Math.min(50, percent)) : 0;
+    const start = bounded < 0 ? 50 + bounded : 50;
+    const width = Math.abs(bounded);
+    const percentLabel = available ? `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}%` : "基线不足";
+    return `<div class="daily-deviation-row"><div class="daily-metric-name"><strong>${shell.escape(metric.display_name || "指标")}</strong><small>${shell.escape(metric.dimension_label || "全部范围")}</small></div><div class="daily-deviation-track" aria-label="${shell.escape(percentLabel)}"><i></i>${available ? `<span class="${percent >= 0 ? "positive" : "negative"}" style="left:${start}%;width:${width}%"></span>` : ""}</div><div class="daily-current"><strong>${shell.escape(metric.current_display || "无有效值")}</strong><small>当前值</small></div><div class="daily-delta ${available && Math.abs(percent) >= 20 ? "attention" : ""}"><strong>${shell.escape(percentLabel)}</strong><small>${available ? `七日均值 ${shell.escape(metric.baseline_display)}` : `覆盖率 ${shell.escape(metric.coverage_percent ?? "未记录")}%`}</small></div></div>`;
+  }
+
+  function dailyInspectionReportHtml(data, report, versions, target) {
+    const daily = data.daily_inspection || {};
+    const header = daily.header || {};
+    const conclusion = daily.conclusion || {};
+    const metrics = Array.isArray(daily.baseline_metrics) ? daily.baseline_metrics : [];
+    const capacity = Array.isArray(daily.capacity_rows) ? daily.capacity_rows : [];
+    const findings = Array.isArray(daily.findings) ? daily.findings : [];
+    const findingNotes = Array.isArray(daily.finding_notes) ? daily.finding_notes : [];
+    const recommendations = Array.isArray(daily.recommendations) ? daily.recommendations : [];
+    const gaps = Array.isArray(daily.gaps) ? daily.gaps : [];
+    const boundary = daily.evidence_boundary || {};
+    const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
+    const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
+    const sourceLink = report.source_conversation_id ? `<a href="./chat.html?conversation=${encodeURIComponent(report.source_conversation_id)}">查看来源会话</a>` : "";
+    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
+    const frozenTargetName = String(header.target_name || "").trim();
+    const targetId = String(header.target_id || report.target_id || "").trim();
+    const frozenTargetIsIdentifier = !frozenTargetName
+      || frozenTargetName === targetId
+      || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(frozenTargetName);
+    const targetName = frozenTargetIsIdentifier
+      ? (target?.display_name || "目标已删除或无权访问")
+      : frozenTargetName;
+    const metadata = [
+      ["报告时间", shell.fmt(header.report_time)],
+      ["观测范围", `${shell.fmt(header.observation_start)} 至 ${shell.fmt(header.observation_end)}`],
+      ["巡检目标", targetName],
+      ["运行环境", header.environment || "未记录"],
+      ["数据库类型 / 版本", `${header.database_type || target?.db_type || "未记录"} ${header.database_version || target?.version_code || ""}`.trim()],
+      ["报告版本", `v${header.report_version || report.report_version || 1}`],
+      ["报告编号", header.report_number || report.report_key || "未记录"],
+      ["责任域", header.responsibility_domain || "数据库运维"],
+    ].map(([label, value]) => `<div><dt>${shell.escape(label)}</dt><dd>${shell.escape(value)}</dd></div>`).join("");
+    const stat = (label, value, className = "") => `<div class="${className}"><span>${shell.escape(label)}</span><strong>${shell.escape(value)}</strong></div>`;
+    const coverage = conclusion.evidence_coverage_percent == null ? "未记录" : `${conclusion.evidence_coverage_percent}%`;
+    const monitoringCoverage = conclusion.monitoring_coverage_percent == null ? "未记录" : `${conclusion.monitoring_coverage_percent}%`;
+    const trendCards = metrics.slice(0, 6).map((metric) => {
+      const delta = metric.deviation_percent == null ? "基线不足" : `${Number(metric.deviation_percent) >= 0 ? "+" : ""}${Number(metric.deviation_percent).toFixed(2)}%`;
+      return `<figure class="daily-trend-card"><figcaption><strong>${shell.escape(metric.display_name || "指标")}</strong><span>${shell.escape(delta)}</span></figcaption>${dailyTrendSvg(metric)}</figure>`;
+    }).join("") || '<p class="daily-empty">当前报告没有可绘制的七日趋势。</p>';
+    const capacityRows = capacity.map((metric) => `<tr><td><strong>${shell.escape(metric.display_name || "容量指标")}</strong><small>${shell.escape(metric.dimension_label || "全部范围")}</small></td><td>${shell.escape(metric.current_display || "无有效值")}</td><td>${shell.escape(metric.baseline_display || "基线不足")}</td><td>${metric.deviation_percent == null ? "基线不足" : `${Number(metric.deviation_percent) >= 0 ? "+" : ""}${shell.escape(Number(metric.deviation_percent).toFixed(2))}%`}</td><td>${shell.escape(metric.coverage_percent ?? "未记录")}%</td><td>${dailyTrendSvg(metric, true)}</td></tr>`).join("");
+    const findingRows = findings.map((item) => `<article class="daily-finding"><span>${shell.escape(item.finding_id || "F")}</span><div><h3>${shell.escape(item.title || "巡检发现")}</h3><p>${shell.escape(reportDisplayText(item.summary || ""))}</p></div><strong>${shell.badge(item.status || item.severity || "INFO")}</strong></article>`).join("");
+    const findingNoteRows = findingNotes.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("");
+    const evidenceSources = (boundary.sources || []).map((item) => `<li>${shell.escape(item)}</li>`).join("");
+    return `<article class="ops-report-presentation daily-formal-report"><header class="daily-report-head"><div class="daily-report-kicker">KBot AIOps · 正式运维报告</div><div class="daily-report-title-row"><div><h1>${shell.escape(header.title || data.title || report.title || "数据库日常巡检报告")}</h1><p>报告以冻结的结构化巡检证据生成；偏离只表示相对七日基线的变化。</p>${sourceLink}</div><div class="ops-actions">${actionButtons}</div></div><dl class="daily-report-metadata">${metadata}</dl></header><section class="daily-conclusion"><div><p class="daily-section-kicker">REPORT CONCLUSION</p><h2>报告结论</h2></div><p class="daily-conclusion-copy">${shell.escape(conclusion.text || "未形成报告结论。")}</p><div class="daily-conclusion-ledger">${stat("整体健康", conclusion.health_status_display || "未判定")}${stat("数据库检查覆盖率", coverage)}${stat("监控采样覆盖率", monitoringCoverage, Number(conclusion.monitoring_coverage_percent) < 80 ? "attention" : "")}${stat("需关注 / 数据缺口", `${conclusion.attention_count || 0} / ${conclusion.gap_count || 0}`)}</div></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">BASELINE DEVIATION</p><h2>关键指标与过去 7 日基线偏离</h2></div><p>偏离百分比 =（当前值 − 七日同口径均值）÷ 七日均值</p></header><div class="daily-deviation-list">${metrics.map(dailyDeviationHtml).join("") || '<p class="daily-empty">当前报告没有监控指标证据。</p>'}</div></section><section class="daily-report-section daily-trends"><header><div><p class="daily-section-kicker">SEVEN-DAY TREND</p><h2>七日趋势 · 小倍数</h2></div><p>各序列换算为七日均值指数 100，共享阅读口径。</p></header><div class="daily-trend-grid">${trendCards}</div></section>${capacityRows ? `<section class="daily-report-section"><header><div><p class="daily-section-kicker">CAPACITY DETAIL</p><h2>七日趋势与容量明细</h2></div><p>同类指标保持一行内可比。</p></header><div class="daily-table-wrap"><table class="daily-report-table"><thead><tr><th>容量指标</th><th>当前值</th><th>七日均值</th><th>偏离</th><th>覆盖率</th><th>七日趋势</th></tr></thead><tbody>${capacityRows}</tbody></table></div></section>` : ""}<section class="daily-report-section"><header><div><p class="daily-section-kicker">VERIFIED FINDINGS</p><h2>发现问题</h2></div><p>仅列经规则或证据边界确认需要关注的项目。</p></header><div class="daily-findings">${findingRows || '<p class="daily-empty">未发现需要单列的问题。</p>'}</div>${findingNoteRows ? `<ul class="daily-notes">${findingNoteRows}</ul>` : ""}</section><section class="daily-report-section"><header><div><p class="daily-section-kicker">RECOMMENDATIONS</p><h2>处置建议</h2></div><p>建议应回指发现或数据缺口，并给出复核条件。</p></header><ol class="daily-notes">${recommendations.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("") || "<li>当前没有新增处置建议。</li>"}</ol></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">DATA GAPS</p><h2>数据缺口</h2></div><p>无数据不等于异常；缺口与业务健康结论分开呈现。</p></header><ol class="daily-notes daily-gaps">${gaps.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("") || "<li>未发现额外的数据缺口。</li>"}</ol></section><section class="daily-evidence"><h2>证据边界</h2><p>${shell.escape(boundary.methodology || "以冻结证据为准。")}</p>${evidenceSources ? `<ol>${evidenceSources}</ol>` : ""}<div class="daily-version-row"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>人工编辑只修改文字章节，结构化指标、七日基线和证据边界保持冻结。</p></div></section><footer class="daily-report-footer"><span>KBot AIOps · 正式运维报告</span><span>${shell.escape(header.report_number || report.report_key || "")} · v${shell.escape(header.report_version || report.report_version || 1)}</span></footer></article>`;
+  }
+
+  function monthlyTrendSvg(metric) {
+    const values = (metric.daily_points || []).map((item) => Number(item.value)).filter(Number.isFinite);
+    if (values.length < 2) return '<span class="daily-no-baseline">有效天数不足</span>';
+    const low = Math.min(...values);
+    const high = Math.max(...values);
+    const span = Math.max(high - low, 1e-9);
+    const width = 150;
+    const height = 42;
+    const points = values.map((value, index) => `${(index * width / (values.length - 1)).toFixed(1)},${(height - 4 - ((value - low) / span) * (height - 8)).toFixed(1)}`).join(" ");
+    return `<svg class="daily-trend-svg monthly-trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${shell.escape(metric.display_name || "指标")}月度趋势"><polyline points="${points}"/></svg>`;
+  }
+
+  function monthlyInspectionReportHtml(data, report, versions) {
+    const monthly = data.monthly_inspection || {};
+    const header = monthly.header || {};
+    const conclusion = monthly.conclusion || {};
+    const comparison = monthly.period_comparison || {};
+    const coverage = monthly.coverage || {};
+    const metrics = Array.isArray(monthly.metrics) ? monthly.metrics : [];
+    const capacity = Array.isArray(monthly.capacity_rows) ? monthly.capacity_rows : [];
+    const issues = Array.isArray(monthly.issues) ? monthly.issues : [];
+    const recommendations = Array.isArray(monthly.recommendations) ? monthly.recommendations : [];
+    const gaps = Array.isArray(monthly.gaps) ? monthly.gaps : [];
+    const extensions = Array.isArray(monthly.extensions) ? monthly.extensions : [];
+    const boundary = monthly.evidence_boundary || {};
+    const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
+    const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
+    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${canManageOperationsKnowledge ? '<button type="button" data-write-ready data-extract-case>提炼为诊断案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
+    const metadata = [
+      ["报告时间", shell.fmt(header.report_time)], ["统计周期", `${shell.fmt(header.period_start)} 至 ${shell.fmt(header.period_end)}`],
+      ["运维范围", header.scope_name || "未记录"], ["范围类型", header.scope_type === "BUSINESS_SYSTEM" ? "业务系统" : "运维目标"],
+      ["目标数量", `${header.target_count || 1} 个`], ["数据库类型", (header.database_types || []).join("、") || "未记录"],
+      ["报告版本", `v${header.report_version || 1}`], ["报告编号", header.report_number || "未记录"],
+    ].map(([label, value]) => `<div><dt>${shell.escape(label)}</dt><dd>${shell.escape(value)}</dd></div>`).join("");
+    const comparisonText = comparison.status === "AVAILABLE"
+      ? `新增 ${comparison.new_issues?.length || 0} 项 · 持续 ${comparison.persistent_issues?.length || 0} 项 · 已解决 ${comparison.resolved_issues?.length || 0} 项`
+      : (comparison.status_display || "无上月报告");
+    const metricRows = metrics.map((metric) => `<tr><td><strong>${shell.escape(metric.display_name || "指标")}</strong><small>${shell.escape(metric.dimension_label || "全部范围")}</small></td><td>${shell.escape(metric.monthly_average_display || "无有效值")}</td><td>${shell.escape(metric.p95_display || "无有效值")}</td><td>${shell.escape(metric.minimum_display || "-")} / ${shell.escape(metric.maximum_display || "-")}</td><td>${metric.change_percent == null ? "不可计算" : `${Number(metric.change_percent) >= 0 ? "+" : ""}${shell.escape(Number(metric.change_percent).toFixed(2))}%`}</td><td>${shell.escape(metric.effective_days || 0)} / ${shell.escape(metric.expected_days || 0)}</td><td>${monthlyTrendSvg(metric)}</td></tr>`).join("");
+    const capacityRows = capacity.map((metric) => `<tr><td><strong>${shell.escape(metric.display_name || "容量指标")}</strong><small>${shell.escape(metric.dimension_label || "全部范围")}</small></td><td>${shell.escape(metric.first_display || "-")}</td><td>${shell.escape(metric.last_display || "-")}</td><td>${shell.escape(metric.net_change_display || "-")}</td><td>${metric.change_percent == null ? "不可计算" : `${Number(metric.change_percent) >= 0 ? "+" : ""}${shell.escape(Number(metric.change_percent).toFixed(2))}%`}</td><td>${shell.escape(metric.coverage_percent ?? "未记录")}%</td></tr>`).join("");
+    const issueRows = issues.map((item) => `<article class="daily-finding"><span>${shell.escape(item.finding_id || "F")}</span><div><h3>${shell.escape(item.title || "巡检发现")}</h3><p>${shell.escape(reportDisplayText(item.summary || ""))}</p><small>${shell.escape(item.first_seen || "未记录")} 至 ${shell.escape(item.last_seen || "未记录")} · 影响 ${shell.escape(item.affected_days || 0)} 天 · 出现 ${shell.escape(item.occurrence_count || 0)} 次</small></div><strong>${shell.badge(item.severity || "INFO")}</strong></article>`).join("");
+    const extensionRows = extensions.map((item) => `<li><strong>${shell.escape(item.extension_key || "扩展")}</strong> · ${shell.escape(item.status === "RESERVED" ? "接口已预留，等待后续模块接入" : item.status || "未配置")}</li>`).join("");
+    return `<article class="ops-report-presentation daily-formal-report monthly-formal-report"><header class="daily-report-head"><div class="daily-report-kicker">KBot AIOps · 正式月度运维报告</div><div class="daily-report-title-row"><div><h1>${shell.escape(header.title || "数据库月度巡检报告")}</h1><p>按完整自然月汇总；生成日瞬时值不进入月度结论。</p></div><div class="ops-actions">${actionButtons}</div></div><dl class="daily-report-metadata">${metadata}</dl></header><section class="daily-conclusion"><div><p class="daily-section-kicker">MONTHLY CONCLUSION</p><h2>月度结论</h2></div><p class="daily-conclusion-copy">${shell.escape(conclusion.text || "未形成月度结论。")}</p><div class="daily-conclusion-ledger"><div><span>完成巡检</span><strong>${shell.escape(coverage.completed_run_count || 0)} 次</strong></div><div><span>指标日覆盖率</span><strong>${shell.escape(coverage.metric_day_coverage_percent ?? "未记录")}%</strong></div><div><span>问题总数</span><strong>${shell.escape(conclusion.issue_count || 0)} 项</strong></div><div><span>上月对比</span><strong>${shell.escape(comparison.status_display || "无上月报告")}</strong></div></div></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">MONTH-OVER-MONTH</p><h2>上月对比</h2></div><p>仅比较相同指标、维度和单位；对比结果随本报告冻结。</p></header><p class="monthly-comparison-copy">${shell.escape(comparisonText)}</p></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">MONTHLY METRICS</p><h2>月度关键指标</h2></div><p>月均、P95、峰谷、月内变化与有效天数共同呈现。</p></header><div class="daily-table-wrap"><table class="daily-report-table monthly-report-table"><thead><tr><th>指标</th><th>月均值</th><th>P95</th><th>最小 / 最大</th><th>月内变化</th><th>有效天数</th><th>月度趋势</th></tr></thead><tbody>${metricRows || '<tr><td colspan="7">当前自然月没有可统计的指标日点。</td></tr>'}</tbody></table></div></section>${capacityRows ? `<section class="daily-report-section"><header><div><p class="daily-section-kicker">CAPACITY & GROWTH</p><h2>容量与增长</h2></div><p>容量结论以月初、月末和月内变化为主，不使用生成日当前值。</p></header><div class="daily-table-wrap"><table class="daily-report-table"><thead><tr><th>容量指标</th><th>月初</th><th>月末</th><th>净变化</th><th>变化率</th><th>覆盖率</th></tr></thead><tbody>${capacityRows}</tbody></table></div></section>` : ""}<section class="daily-report-section"><header><div><p class="daily-section-kicker">DATABASE CHECKS</p><h2>数据库专项健康</h2></div><p>汇总本月结构化数据库检查，不把无数据直接判定为异常。</p></header><p>${shell.escape(Object.entries(monthly.database_checks?.status_counts || {}).map(([key, value]) => `${reportDisplayText(key)} ${value} 项`).join(" · ") || "本月没有可汇总的数据库专项检查。")}</p></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">ISSUE LEDGER</p><h2>问题台账</h2></div><p>按稳定指纹归并出现次数、影响天数和生命周期。</p></header><div class="daily-findings">${issueRows || '<p class="daily-empty">本月未形成需跟踪的问题。</p>'}</div></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">NEXT ACTIONS</p><h2>处置建议与下月重点</h2></div></header><ol class="daily-notes">${recommendations.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("") || "<li>当前没有新增处置建议。</li>"}</ol></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">DATA GAPS</p><h2>数据缺口</h2></div></header><ol class="daily-notes daily-gaps">${gaps.map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("") || "<li>未发现额外的数据缺口。</li>"}</ol></section><section class="daily-report-section"><header><div><p class="daily-section-kicker">EXTENSIONS</p><h2>扩展接口状态</h2></div></header><ul class="daily-notes">${extensionRows || "<li>没有扩展模块。</li>"}</ul></section><section class="daily-evidence"><h2>证据边界</h2><p>${shell.escape(boundary.methodology || "以冻结证据为准。")}</p><div class="daily-version-row"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>结构化月度统计和上月对比随报告冻结。</p></div></section><footer class="daily-report-footer"><span>KBot AIOps · 正式月度运维报告</span><span>${shell.escape(header.report_number || "")} · v${shell.escape(header.report_version || 1)}</span></footer></article>`;
   }
 
   function reportPresentationHtml(data, report, versions, target) {
+    if (data?.monthly_inspection?.schema_version === "MONTHLY_INSPECTION_PRESENTATION.v1") {
+      return monthlyInspectionReportHtml(data, report, versions, target);
+    }
+    if (data?.daily_inspection?.schema_version === "DAILY_INSPECTION_PRESENTATION.v1") {
+      return dailyInspectionReportHtml(data, report, versions, target);
+    }
     const sections = Array.isArray(data.sections) ? data.sections : [];
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");

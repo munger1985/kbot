@@ -941,6 +941,10 @@ class InspectionCheckCatalogItem(AIOpsContract):
     default_for: tuple[Literal["DAILY", "WEEKLY"], ...] = Field(min_length=1)
     trend_required: bool
     supported_db_types: tuple[DatabaseType, ...] = ("ORACLE",)
+    zero_row_status: Literal[
+        "CLEAR", "OBSERVED", "NOT_APPLICABLE", "GAP"
+    ] = "CLEAR"
+    report_columns: tuple[str, ...] = ()
 
 
 class InspectionCheckCatalogGroup(AIOpsContract):

@@ -24,7 +24,7 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertEqual([], check_process_topology())
         processes = load_processes()
 
-        self.assertEqual(22, len(processes))
+        self.assertEqual(23, len(processes))
         self.assertEqual(
             5,
             sum(item["kind"] == "worker" for item in processes),
@@ -78,6 +78,21 @@ class ProcessTopologyTest(unittest.TestCase):
         self.assertIn("get_ui_pid()", stop)
         self.assertIn("tools/dev_console/server\\\\.py", stop)
         self.assertIn("http\\\\.server", stop)
+
+    def test_restart_script_stops_before_starting_all_services(self):
+        root = Path(__file__).resolve().parents[2]
+        restart_path = root / "restart_kbot.sh"
+        restart = restart_path.read_text(encoding="utf-8")
+
+        self.assertTrue(restart_path.stat().st_mode & 0o111)
+        self.assertIn('STOP_SCRIPT="${SERVICE_ROOT}/stop_kbot.sh"', restart)
+        self.assertIn('START_SCRIPT="${SERVICE_ROOT}/start_kbot.sh"', restart)
+        self.assertLess(
+            restart.index('"$STOP_SCRIPT"'),
+            restart.index('"$START_SCRIPT"'),
+        )
+        self.assertIn("停止 KBot 服务失败，已取消后续启动", restart)
+        self.assertIn("KBot 当前启动与停止脚本仅支持全部服务", restart)
 
 
 if __name__ == "__main__":

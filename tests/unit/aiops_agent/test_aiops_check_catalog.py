@@ -20,9 +20,54 @@ from aiops_agent.application.inspections.check_catalog import (
 )
 from aiops_agent.application.report_templates import InspectionTemplateService
 from platform_core.contracts.aiops import InspectionTemplateCreate
+from scripts.db.seed_aiops_inspection_templates import (
+    build_default_template_seeds,
+)
 
 
 class CheckCatalogLoaderTest(unittest.TestCase):
+    def test_deployment_defaults_cover_every_supported_database_type(self) -> None:
+        seeds = build_default_template_seeds()
+
+        self.assertEqual(
+            [("日常巡检", "DAILY"), ("月度巡检", "MONTHLY")],
+            [(seed.display_name, seed.schedule_type) for seed in seeds],
+        )
+        for seed in seeds:
+            self.assertEqual(64, len(seed.content_hash))
+            for database_type in ("ORACLE", "MYSQL", "POSTGRESQL"):
+                self.assertTrue(
+                    inspection_template_steps(
+                        seed.definition,
+                        schedule_type=seed.schedule_type,
+                        database_type=database_type,
+                    ),
+                    f"{seed.display_name} 未覆盖 {database_type}",
+                )
+        monthly_trends = [
+            step
+            for step in seeds[1].definition["evidence_steps"]
+            if step["trend_required"]
+        ]
+        self.assertTrue(monthly_trends)
+        self.assertTrue(all(
+            step["measurement_semantics"] == "HISTORICAL_SAMPLES"
+            for step in monthly_trends
+        ))
+
+    def test_fresh_deployment_runs_inspection_template_initializer(self) -> None:
+        deploy_script = (
+            _CATALOG_PATH.parents[6]
+            / "scripts"
+            / "deployment"
+            / "bootstrap_kbot.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "scripts/db/seed_aiops_inspection_templates.py",
+            deploy_script,
+        )
+
     def test_catalog_loads_ready_and_planned_groups(self) -> None:
         catalog = load_check_catalog()
         payload = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
@@ -30,10 +75,10 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         ready = [item for item in items if item.availability == "READY"]
         planned = [item for item in items if item.availability == "PLANNED"]
 
-        self.assertEqual(8, len(catalog.groups))
-        self.assertEqual(36, len(items))
-        self.assertEqual(31, len(ready))
-        self.assertEqual(5, len(planned))
+        self.assertEqual(9, len(catalog.groups))
+        self.assertEqual(54, len(items))
+        self.assertEqual(48, len(ready))
+        self.assertEqual(6, len(planned))
         self.assertEqual(
             hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest(),
             catalog.catalog_hash,
@@ -42,9 +87,49 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             self.assertTrue(item.tool_id or item.playbook_id)
             self.assertTrue(item.supported_db_types)
 
+    def test_ready_checks_reference_real_tools_playbooks_and_columns(self) -> None:
+        """目录不能把读取错误伪装成数据库缺少指标。"""
+        package_root = _CATALOG_PATH.parents[2]
+        playbook_ids = {
+            json.loads(path.read_text(encoding="utf-8"))["playbook_id"]
+            for path in (package_root / "playbooks" / "catalog").rglob(
+                "manifest.json"
+            )
+        }
+        tools_by_database: dict[str, dict[str, set[str]]] = {}
+        for database_type in ("oracle", "postgresql", "mysql"):
+            manifest = json.loads((
+                package_root / "diagnostics" / "catalog"
+                / database_type / "manifest.json"
+            ).read_text(encoding="utf-8"))
+            tools: dict[str, set[str]] = {}
+            for tool in manifest["tools"]:
+                tools.setdefault(tool["tool_id"], set()).update(
+                    column["name"] for column in tool["output_columns"]
+                )
+            tools_by_database[database_type.upper()] = tools
+
+        for group in load_check_catalog().groups:
+            for item in group.checks:
+                if item.availability != "READY":
+                    continue
+                if item.playbook_id:
+                    self.assertIn(item.playbook_id, playbook_ids, item.check_id)
+                if not item.tool_id or item.tool_id.startswith("user."):
+                    continue
+                for database_type in item.supported_db_types:
+                    tools = tools_by_database[database_type]
+                    self.assertIn(item.tool_id, tools, item.check_id)
+                    self.assertLessEqual(
+                        set(item.report_columns),
+                        tools[item.tool_id],
+                        item.check_id,
+                    )
+
     def test_default_selection_uses_ready_daily_or_weekly(self) -> None:
         daily = default_selected_check_ids("DAILY")
         weekly = default_selected_check_ids("WEEKLY")
+        monthly = default_selected_check_ids("MONTHLY")
         cron = default_selected_check_ids("CRON")
         catalog = load_check_catalog()
         items = [item for group in catalog.groups for item in group.checks]
@@ -70,6 +155,7 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             ),
             weekly,
         )
+        self.assertEqual(weekly, monthly)
         self.assertEqual(daily, cron)
         self.assertTrue(daily)
         self.assertNotIn("oracle.storage.row_chaining", daily)
@@ -85,6 +171,8 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             normalize_selected_check_ids(["oracle.not.a.check"])
         with self.assertRaisesRegex(ValueError, "检查项尚未开放"):
             normalize_selected_check_ids(["oracle.storage.row_chaining"])
+        with self.assertRaisesRegex(ValueError, "检查项尚未开放"):
+            normalize_selected_check_ids(["oracle.object.sparse_index"])
         with self.assertRaisesRegex(ValueError, "检查项必须是 ID 列表"):
             normalize_selected_check_ids("oracle.backup.rman_volume")
 
@@ -126,20 +214,21 @@ class CheckCatalogLoaderTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "勾选检查项没有可执行的取证工具"):
             compile_selected_check_steps(["oracle.exadata.health_report"])
 
-    def test_compile_selected_check_steps_dedupes_tools(self) -> None:
+    def test_compile_selected_check_steps_preserves_semantic_tools(self) -> None:
         daily = default_selected_check_ids("DAILY")
-        steps = compile_selected_check_steps(daily)
+        steps = compile_selected_check_steps(daily, database_type="ORACLE")
         tool_ids = [item["tool_id"] for item in steps]
         self.assertEqual(len(tool_ids), len(set(tool_ids)))
         self.assertIn("db.session.blocking_chain", tool_ids)
         self.assertIn("db.storage.capacity", tool_ids)
         self.assertNotIn("db.alert.recent", tool_ids)
         self.assertNotIn("db.scheduler.failed_jobs", tool_ids)
-        backup = next(
-            item for item in steps if item["tool_id"] == "db.backup.recent_jobs"
-        )
-        self.assertGreaterEqual(len(backup["check_ids"]), 2)
-        self.assertIn("、", backup["title"])
+        self.assertIn("db.oracle.backup.volume_summary", tool_ids)
+        self.assertIn("db.oracle.backup.space_usage", tool_ids)
+        self.assertIn("db.backup.recent_jobs", tool_ids)
+        self.assertIn("db.oracle.session.long_running", tool_ids)
+        self.assertIn("db.oracle.performance.heavy_sort_sql", tool_ids)
+        self.assertNotIn("db.index.health", tool_ids)
         subset = compile_selected_check_steps(
             ["oracle.session.lock_wait", "oracle.storage.tablespace_headroom"]
         )
@@ -152,12 +241,29 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             item["measurement_semantics"] == "CURRENT_ACTIVITY"
             for item in steps
         ))
+        postgres_steps = compile_selected_check_steps(
+            daily, database_type="POSTGRESQL"
+        )
+        mysql_steps = compile_selected_check_steps(
+            daily, database_type="MYSQL"
+        )
+        self.assertEqual(
+            len(postgres_steps),
+            len({item["tool_id"] for item in postgres_steps}),
+        )
+        self.assertEqual(
+            len(mysql_steps),
+            len({item["tool_id"] for item in mysql_steps}),
+        )
+        self.assertTrue(all(
+            "xmin" not in item["title"].lower() for item in steps
+        ))
 
     def test_compile_and_frozen_steps_reject_cross_dialect_selection(self) -> None:
         selected = (
             "oracle.session.lock_wait",
             "postgresql.session.blocking",
-            "mysql.backup.binlog_chain",
+            "mysql.binlog.status",
         )
         postgres_steps = compile_selected_check_steps(
             selected, database_type="POSTGRESQL"
@@ -244,6 +350,19 @@ class CheckCatalogLoaderTest(unittest.TestCase):
             cron_by_tool["db.storage.capacity"]["measurement_semantics"],
             daily_by_tool["db.storage.capacity"]["measurement_semantics"],
         )
+
+    def test_oracle_checks_use_semantically_specific_tools(self) -> None:
+        steps = compile_selected_check_steps(
+            default_selected_check_ids("DAILY"),
+            database_type="ORACLE",
+        )
+        tool_ids = {item["tool_id"] for item in steps}
+        self.assertIn("db.oracle.backup.volume_summary", tool_ids)
+        self.assertIn("db.oracle.backup.space_usage", tool_ids)
+        self.assertIn("db.backup.recent_jobs", tool_ids)
+        self.assertIn("db.oracle.session.long_running", tool_ids)
+        self.assertIn("db.oracle.performance.heavy_sort_sql", tool_ids)
+        self.assertNotIn("db.index.health", tool_ids)
 
     def test_template_definition_freezes_catalog_and_evidence_steps(self) -> None:
         selected = default_selected_check_ids("DAILY")

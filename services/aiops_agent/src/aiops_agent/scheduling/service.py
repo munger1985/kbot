@@ -255,9 +255,18 @@ class AIOpsInspectionScheduler:
             if not turns:
                 if not all(item.status == "FAILED" for item in request_events):
                     return False
+                failed_request = next(
+                    item for item in request_events if item.status == "FAILED"
+                )
                 fire.status = "FAILED"
-                fire.error_code = "AIOPS_INSPECTION_AGENT_DISPATCH_FAILED"
-                fire.error_message = "巡检任务未能提交给所选 Agent"
+                fire.error_code = (
+                    failed_request.error_code
+                    or "AIOPS_INSPECTION_AGENT_DISPATCH_FAILED"
+                )
+                fire.error_message = (
+                    failed_request.error_message
+                    or "巡检任务未能提交给所选 Agent"
+                )
                 fire.completed_at = now
                 fire.updated_at = now
                 await uow.commit()

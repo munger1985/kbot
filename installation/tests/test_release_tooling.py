@@ -28,13 +28,42 @@ class ReleaseToolingTest(unittest.TestCase):
     def test_catalog_covers_every_topology_process(self) -> None:
         image_ids = {item["id"] for item in self.catalog["images"]}
         self.assertEqual(8, len(image_ids))
-        self.assertEqual(22, len(self.topology["processes"]))
+        self.assertEqual(23, len(self.topology["processes"]))
         self.assertTrue(
             all(
                 process["service_config"] in image_ids
                 for process in self.topology["processes"]
             )
         )
+
+    def test_formal_image_lock_covers_complete_catalog(self) -> None:
+        lock = release.load_image_lock("1.0", self.catalog)
+        self.assertEqual(
+            release.catalog_image_names(self.catalog),
+            [item["name"] for item in lock["images"]],
+        )
+        self.assertEqual("linux/amd64", lock["platform"])
+        self.assertEqual(40, len(lock["source_commit"]))
+
+    def test_docling_model_spec_matches_runtime_pipeline(self) -> None:
+        spec = release.load_docling_model_spec("1.0")
+        self.assertEqual("2.114.0", spec["docling_version"])
+        self.assertEqual(
+            ["layout", "tableformer", "easyocr"],
+            [item["id"] for item in spec["models"]],
+        )
+        self.assertNotIn("--all", spec["source_command"])
+
+    def test_docling_model_validation_rejects_missing_runtime_model(self) -> None:
+        spec = release.load_docling_model_spec("1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            for model in spec["models"][:-1]:
+                directory = source / model["directory"]
+                directory.mkdir(parents=True)
+                (directory / "payload.bin").write_bytes(b"model")
+            with self.assertRaisesRegex(release.ReleaseError, "easyocr"):
+                release.docling_model_files(source, spec)
 
     def test_cpu_torch_is_limited_to_model_and_knowledge_images(self) -> None:
         cpu_images = {
@@ -60,6 +89,36 @@ class ReleaseToolingTest(unittest.TestCase):
             }.issubset(dependencies)
         )
 
+    def test_aiops_image_packages_inspection_catalog(self) -> None:
+        pyproject = release.tomllib.loads(
+            (ROOT / "services/aiops_agent/pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        package_data = set(
+            pyproject["tool"]["setuptools"]["package-data"]["aiops_agent"]
+        )
+        self.assertIn("actions/catalog/**/*.txt", package_data)
+        self.assertIn("application/inspections/*.json", package_data)
+
+    def test_model_serving_declares_platform_clients_dependency(self) -> None:
+        pyproject = release.tomllib.loads(
+            (ROOT / "services/model_serving/pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        dependencies = set(pyproject["project"]["dependencies"])
+        self.assertIn("kbot-platform-clients==4.0.0", dependencies)
+
+    def test_knowledge_core_declares_tokenizer_dependency(self) -> None:
+        pyproject = release.tomllib.loads(
+            (ROOT / "services/knowledge_core/pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        dependencies = set(pyproject["project"]["dependencies"])
+        self.assertIn("jieba==0.42.1", dependencies)
+
     def test_runtime_config_uses_compose_dns_for_every_endpoint(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_runtime_toml(self.topology, values)
@@ -76,6 +135,18 @@ class ReleaseToolingTest(unittest.TestCase):
         endpoints_section = rendered.split("[endpoints]", maxsplit=1)[1]
         self.assertNotIn("127.0.0.1", endpoints_section)
 
+    def test_ui_runtime_config_uses_public_base_url(self) -> None:
+        values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
+        rendered = release.render_ui_runtime_config(values)
+        self.assertIn(
+            '"mainApiBaseUrl":"http://127.0.0.1:8080"',
+            rendered,
+        )
+        self.assertIn(
+            '"enabledApps":["knowledge_retrieval","media_studio","aiops"]',
+            rendered,
+        )
+
     def test_only_ui_publishes_a_host_port(self) -> None:
         values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
         rendered = release.render_compose(
@@ -84,6 +155,28 @@ class ReleaseToolingTest(unittest.TestCase):
         self.assertEqual(1, rendered.count("    ports:\n"))
         self.assertIn('      - "8080:8080"', rendered)
         self.assertNotIn("network_mode: host", rendered)
+
+    def test_dynamic_uid_services_publish_runtime_identity(self) -> None:
+        values = self._values(Path("/tmp/oracle"), Path("/tmp/master"))
+        rendered = release.render_compose(
+            self.catalog, self.topology, values
+        )
+        dynamic_user_count = rendered.count(
+            '    user: "${KBOT_UID}:${KBOT_GID}"'
+        )
+        self.assertGreater(dynamic_user_count, 1)
+        self.assertEqual(
+            dynamic_user_count,
+            rendered.count('      HOME: "/var/lib/kbot"'),
+        )
+        self.assertEqual(
+            dynamic_user_count,
+            rendered.count('      LOGNAME: "kbot"'),
+        )
+        self.assertEqual(
+            dynamic_user_count,
+            rendered.count('      USER: "kbot"'),
+        )
 
     def test_ui_root_redirect_preserves_external_port_mapping(self) -> None:
         template = (
@@ -362,6 +455,173 @@ alertmanager_retention = 24h
             self.assertEqual(["config", "--quiet"], commands[0][-2:])
             self.assertEqual(
                 ["up", "--detach", "--remove-orphans"], commands[1][-3:]
+            )
+
+    def test_offline_deploy_forbids_registry_pull(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+            with (
+                patch.object(release, "render_deployment", return_value=output),
+                patch.object(release.subprocess, "run") as runner,
+                patch("builtins.print"),
+            ):
+                release.deploy(Path("deployment.ini"), offline=True)
+            command = runner.call_args_list[1].args[0]
+            self.assertEqual(
+                ["up", "--detach", "--remove-orphans", "--pull", "never"],
+                command[-5:],
+            )
+
+    def test_export_offline_bundle_is_self_contained_and_has_no_secrets(self) -> None:
+        lock = release.load_image_lock("1.0", self.catalog)
+        registry = lock["registry"]
+        names = release.catalog_image_names(self.catalog)
+        image_id = "sha256:" + "a" * 64
+        details = [
+            {
+                "Id": image_id,
+                "RepoDigests": [
+                    f"{registry}/{item['name']}@{item['digest']}"
+                ],
+            }
+            for item in lock["images"]
+        ]
+
+        def save_images(command: list[str], **_: object) -> None:
+            output = Path(command[command.index("--output") + 1])
+            output.write_bytes(b"docker-image-archive")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "kbot-1.0"
+            model_source = root / "docling-models"
+            spec = release.load_docling_model_spec("1.0")
+            for model in spec["models"]:
+                directory = model_source / model["directory"]
+                directory.mkdir(parents=True)
+                (directory / "payload.bin").write_bytes(b"model")
+
+            def save_model_archive(
+                _: Path, archive: Path, __: list[str]
+            ) -> None:
+                archive.write_bytes(b"docling-model-archive")
+
+            with (
+                patch.object(
+                    release,
+                    "release_values",
+                    return_value={
+                        "version": "1.0",
+                        "registry": registry,
+                        "platform": "linux/amd64",
+                        "revision": "0123456789ab",
+                    },
+                ),
+                patch.object(release, "inspect_images", return_value=details),
+                patch.object(release.subprocess, "run", side_effect=save_images),
+                patch.object(
+                    release,
+                    "create_docling_model_archive",
+                    side_effect=save_model_archive,
+                ),
+            ):
+                release.export_offline_bundle(
+                    Path("release.ini"), output, model_source
+                )
+
+            self.assertTrue((output / "kbot-offline").is_file())
+            self.assertTrue((output / "images/kbot-images.tar").is_file())
+            self.assertTrue((output / "models/docling-models.tar").is_file())
+            self.assertTrue(
+                (output / "models/docling-models.manifest.json").is_file()
+            )
+            self.assertTrue((output / "SHA256SUMS").is_file())
+            self.assertFalse((output / "runtime").exists())
+            self.assertFalse(any(output.rglob("*password*")))
+            manifest = json.loads(
+                (output / "bundle-manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(names, [item["name"] for item in manifest["images"]])
+            self.assertEqual(release.OFFLINE_BUNDLE_SCHEMA, manifest["schema"])
+            self.assertEqual(3, manifest["docling_models"]["model_count"])
+            self.assertTrue(
+                all(item["image_id"] == image_id for item in manifest["images"])
+            )
+
+    def test_verify_offline_images_compares_loaded_image_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest_path = Path(temporary) / "bundle-manifest.json"
+            image_id = "sha256:" + "b" * 64
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema": release.OFFLINE_BUNDLE_SCHEMA,
+                        "images": [
+                            {
+                                "reference": "registry.test/kbot/main:1.0",
+                                "image_id": image_id,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(
+                    release,
+                    "inspect_images",
+                    return_value=[{"Id": image_id}],
+                ),
+                patch("builtins.print"),
+            ):
+                release.verify_offline_images(manifest_path)
+
+    def test_install_and_verify_offline_docling_models(self) -> None:
+        spec = release.load_docling_model_spec("1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            for model in spec["models"]:
+                directory = source / model["directory"]
+                directory.mkdir(parents=True)
+                (directory / "payload.bin").write_bytes(
+                    f"model:{model['id']}".encode()
+                )
+            bundle = root / "bundle"
+            record = release.package_docling_models(
+                source, bundle / "models", spec
+            )
+            manifest_path = bundle / "bundle-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema": release.OFFLINE_BUNDLE_SCHEMA,
+                        "docling_models": record,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = root / "deployment.ini"
+            data_dir = root / "data"
+            config.write_text(
+                f"[paths]\ndata_dir = {data_dir}\n", encoding="utf-8"
+            )
+            config.chmod(0o600)
+
+            with patch("builtins.print"):
+                release.install_offline_docling_models(manifest_path, config)
+                release.verify_offline_docling_models(
+                    manifest_path, config, full=False
+                )
+                release.verify_offline_docling_models(
+                    manifest_path, config, full=True
+                )
+
+            target = data_dir / "models/docling_models"
+            self.assertTrue((target / release.DOCLING_INSTALL_RECEIPT).is_file())
+            self.assertTrue(
+                all((target / item["directory"]).is_dir() for item in spec["models"])
             )
 
     @staticmethod

@@ -72,7 +72,7 @@
         : `<button type="button" data-enable-system="${shell.escape(item.business_system_id)}">重新上线</button>`;
     const workspaceHref = item.draft_id
       ? `./business-system-workspace.html?id=${encodeURIComponent(item.draft_mode === "EDIT" && item.business_system_id ? item.business_system_id : "new")}&draft=${encodeURIComponent(item.draft_id)}`
-      : `./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}`;
+      : `./business-system-workspace.html?id=${encodeURIComponent(item.business_system_id)}${item.status === "ENABLED" ? "&view=readonly" : ""}`;
     return `<article class="business-system-directory-card importance-level-${importanceLevel} ${item.draft_id ? "unpublished-draft-card" : ""}">
       <header><div><small>${shell.escape(item.system_code)}</small><h3>${shell.escape(item.display_name)}</h3></div>${shell.badge(item.status, item.draft_id ? "未发布草稿" : statusLabel(item.status))}</header>
       <div class="business-architecture-tags">${labels}</div>
@@ -101,7 +101,9 @@
       request("/business-system-drafts?limit=200"),
       request("/responsibility-groups"),
     ]);
-    const drafts = (draftPage.items || []).map((item) => ({
+    const systems = page.items || [];
+    const enabledSystemIds = new Set(systems.filter((item) => item.status === "ENABLED").map((item) => String(item.business_system_id)));
+    const drafts = (draftPage.items || []).filter((item) => !item.business_system_id || !enabledSystemIds.has(String(item.business_system_id))).map((item) => ({
       business_system_id: item.business_system_id || `draft:${item.draft_id}`,
       system_code: "未发布草稿", display_name: item.display_name,
       environment: item.environment || "PROD", importance_level: item.importance_level || 3,
@@ -110,7 +112,7 @@
       resource_type_summary: [], architecture_labels: [], row_version: item.revision, updated_at: item.updated_at,
       draft_id: item.draft_id, draft_mode: item.mode, current_step: item.current_step,
     }));
-    state.items = [...drafts, ...(page.items || [])];
+    state.items = [...drafts, ...systems];
     state.groupsById = new Map((groupPage.items || []).map((item) => [String(item.responsibility_group_id), item]));
     render();
   }

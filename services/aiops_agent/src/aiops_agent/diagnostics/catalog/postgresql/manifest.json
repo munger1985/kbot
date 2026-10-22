@@ -777,6 +777,8 @@
       "required_privileges": ["pg_read_all_stats"],
       "parameters": [],
       "output_columns": [
+        {"name": "archive_mode", "logical_type": "STRING", "nullable": false},
+        {"name": "archive_command_configured", "logical_type": "STRING", "nullable": false},
         {"name": "archived_count", "logical_type": "INTEGER", "nullable": false},
         {"name": "last_archived_wal", "logical_type": "STRING"},
         {"name": "last_archived_time", "logical_type": "DATETIME"},
@@ -786,7 +788,7 @@
         {"name": "stats_reset", "logical_type": "DATETIME"}
       ],
       "template_ref": "sql/archiver_status.sql",
-      "template_sha256": "ac4e05e9a3104cc1495142d2a0a62d52af4c86aae3adcb896d18294ce0237be6",
+      "template_sha256": "15a1ac3cbebeb8be03b0cbce388401151b6179548d53f8040c12803510d55344",
       "timeout_seconds": 20,
       "max_rows": 1,
       "max_bytes": 65536,

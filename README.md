@@ -79,11 +79,12 @@ python3 -m model_serving.entrypoints.vlm
 python3 -m model_serving.entrypoints.ocr
 ```
 
-本地同时启动或停止当前服务：
+本地同时启动、停止或重启当前服务：
 
 ```bash
 bash start_kbot.sh
 bash stop_kbot.sh
+bash restart_kbot.sh
 ```
 
 ## 开发检查

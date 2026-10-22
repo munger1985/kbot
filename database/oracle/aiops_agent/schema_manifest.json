@@ -1,18 +1,18 @@
 {
   "component": "aiops_agent",
-  "schema_version": 47,
-  "contract_version": "aiops-oracle-v47-unified-assistant",
+  "schema_version": 49,
+  "contract_version": "aiops-oracle-v49-unified-assistant",
   "oracle_baseline": "26ai",
   "scripts": [
     {
       "name": "001_ops_roots.sql",
-      "statements": 53,
-      "sha256": "636456f78423dcc9080ba4a4f351e74b888d0f464caac6921ad26f7d7a3908df"
+      "statements": 54,
+      "sha256": "a125c51e44f1882abefeda2b2a4fde7c431a4e43a4da91a21dba5c1ecf328642"
     },
     {
       "name": "002_ops_runtime.sql",
-      "statements": 35,
-      "sha256": "bc288d44f411aaeeeff4dd89d68978def3e401ea349f7617e21ffb7766b8306b"
+      "statements": 38,
+      "sha256": "243326981219b0ea5adb66b5cdccf6ae5530fbfa4a739d6d841cca7711b41d2b"
     },
     {
       "name": "003_ops_change.sql",
@@ -21,8 +21,8 @@
     },
     {
       "name": "004_ops_inspection.sql",
-      "statements": 34,
-      "sha256": "597f07e33f32bb4c3fcfb278ef6fa4d93110a8ea186c9df1580d0d30789f4b2e"
+      "statements": 35,
+      "sha256": "8effb3cfc01e94984cbb890fde1922ff93d9a53808a908d21946c71311ee8b8b"
     },
     {
       "name": "005_ops_messaging.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "49da8068a374fc3c55b622ae4d953cc5a4bb63ec9e97ab0c7edf475948a9ed90"
+      "sha256": "a8e5d30d02734d8e485547031c52bc140792ec14b3ff7f3b323ce2c1a57cd4ef"
     },
     {
       "name": "007_ops_agents.sql",
@@ -41,8 +41,8 @@
     },
     {
       "name": "008_ops_conversations_reports.sql",
-      "statements": 83,
-      "sha256": "7ff834602c4b79641a567980200069449708df2ea753257f681eff39973b67ae"
+      "statements": 85,
+      "sha256": "c3d7c92d622f7fe1dfabac753b916886a2ed914119f83365d9d0c175b9f6347d"
     },
     {
       "name": "009_ops_workload.sql",
@@ -51,8 +51,8 @@
     },
     {
       "name": "010_ops_knowledge.sql",
-      "statements": 22,
-      "sha256": "1bfa6ca3185f35dd16b118429a27619da24f037619b6a36468ddb3489a78aa09"
+      "statements": 32,
+      "sha256": "fade957b590985443d1f3ab11c6d2e28a858d1c96e1f33872cdf5caf0e01e9d9"
     },
     {
       "name": "011_ops_recovery.sql",
@@ -126,6 +126,9 @@
     "KBOT_OPS_WORKLOAD_STATEMENT",
     "KBOT_OPS_WORKLOAD_METRIC",
     "KBOT_OPS_ACTIVITY_SAMPLE",
+    "KBOT_OPS_KNOWLEDGE_BASE",
+    "KBOT_OPS_KNOW_ASSISTANT_BIND",
+    "KBOT_OPS_KNOW_ASSISTANT_BASE",
     "KBOT_OPS_KNOWLEDGE_ASSET",
     "KBOT_OPS_KNOWLEDGE_VERSION",
     "KBOT_OPS_KNOWLEDGE_TAG",
@@ -133,6 +136,7 @@
     "KBOT_OPS_KNOWLEDGE_SOURCE",
     "KBOT_OPS_KNOWLEDGE_INDEX",
     "KBOT_OPS_KNOWLEDGE_REVIEW",
+    "KBOT_OPS_AGENT_VERSION_KNOW_BASE",
     "KBOT_OPS_RECOVERY_PROFILE",
     "KBOT_OPS_RECOVERY_DRILL",
     "KBOT_OPS_RESPONSIBILITY_GROUP",
@@ -181,6 +185,87 @@
     "UX_OPS_TURN_EVENT_KEY"
   ],
   "foreign_key_indexes": [
+    {
+      "constraint": "FK_OPS_TARGET_FACT_OWNER",
+      "index": "IX_OPS_TARGET_FACT_OWNER",
+      "table": "KBOT_OPS_TARGET_FACT",
+      "columns": [
+        "TARGET_ID",
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_SIG_DOMAIN",
+      "index": "IX_OPS_SIG_DOMAIN",
+      "table": "KBOT_OPS_SIGNAL_EVENT",
+      "columns": [
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_SIG_BINDING",
+      "index": "IX_OPS_SIG_BINDING",
+      "table": "KBOT_OPS_SIGNAL_EVENT",
+      "columns": [
+        "SOURCE_BINDING_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_SITUATION_DOMAIN",
+      "index": "IX_OPS_SITUATION_DOMAIN",
+      "table": "KBOT_OPS_SITUATION",
+      "columns": [
+        "DOMAIN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_REPORT_RUN",
+      "index": "IX_OPS_REPORT_RUN",
+      "table": "KBOT_OPS_REPORT",
+      "columns": [
+        "OPS_RUN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_PLAY_INV_RUN",
+      "index": "IX_OPS_PLAY_INV_RUN",
+      "table": "KBOT_OPS_PLAYBOOK_INVOCATION",
+      "columns": [
+        "OPS_RUN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_TOOL_INV_RUN",
+      "index": "IX_OPS_TOOL_INV_RUN",
+      "table": "KBOT_OPS_TOOL_INVOCATION",
+      "columns": [
+        "OPS_RUN_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_KNOW_ASSET_BASE",
+      "index": "IX_OPS_KNOW_ASSET_BASE",
+      "table": "KBOT_OPS_KNOWLEDGE_ASSET",
+      "columns": [
+        "KNOWLEDGE_BASE_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_KNOW_ASSET_CUR_VER",
+      "index": "IX_OPS_KNOW_ASSET_CUR_VER",
+      "table": "KBOT_OPS_KNOWLEDGE_ASSET",
+      "columns": [
+        "CURRENT_VERSION_ID"
+      ]
+    },
+    {
+      "constraint": "FK_OPS_KNOW_SCOPE_TAG",
+      "index": "IX_OPS_KNOW_SCOPE_TAG",
+      "table": "KBOT_OPS_KNOWLEDGE_SCOPE",
+      "columns": [
+        "TAG_ID"
+      ]
+    },
     {
       "constraint": "FK_OPS_TARGET_DIAG_CRED",
       "index": "IX_OPS_TARGET_DIAG_CRED",

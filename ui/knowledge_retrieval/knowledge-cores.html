@@ -85,10 +85,13 @@
         <div class="knowledge-field"><label for="kc-name">名称</label><input id="kc-name" required maxlength="120" placeholder="例如：销售知识库"></div>
         <div class="knowledge-field full"><label for="kc-description">说明</label><textarea id="kc-description" maxlength="1000" placeholder="说明此 Knowledge Core 覆盖的资料范围。"></textarea></div>
         <div class="knowledge-field"><label for="kc-security">默认安全级别</label><select id="kc-security"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+        <div class="knowledge-field"><label for="kc-parser-ocr">OCR 解析模型</label><select id="kc-parser-ocr" required><option value="">等待模型目录接入</option></select></div>
+        <div class="knowledge-field"><label for="kc-parser-vlm">视觉解析模型（可选）</label><select id="kc-parser-vlm"><option value="">不绑定</option></select></div>
+        <div class="knowledge-field"><label for="kc-parser-llm">LLM 解析模型（可选）</label><select id="kc-parser-llm"><option value="">不绑定</option></select></div>
         <div class="knowledge-field"><label for="kc-embedding">文本 Embedding</label><select id="kc-embedding" required><option value="">等待模型目录接入</option></select></div>
         <div class="knowledge-field full"><label for="kc-visual-embedding">视觉 Embedding（可选）</label><select id="kc-visual-embedding"><option value="">不绑定</option></select></div>
       </div>
-      <div class="knowledge-notice">Knowledge Core 归属当前 Token 中的 Domain，不在浏览器填写隔离标识。文本 Embedding 必须选择已启用模型。</div>
+      <div class="knowledge-notice">Knowledge Core 归属当前 Token 中的 Domain。自动解析必须绑定 OCR；LLM 解析模型用于结构修复和 App 预分析，不用于生成问答。</div>
     </div>
     <div class="knowledge-dialog-foot"><button type="button" data-close-dialog="kc-dialog">取消</button><button class="primary" id="kc-submit" type="submit">创建</button></div>
   </form>

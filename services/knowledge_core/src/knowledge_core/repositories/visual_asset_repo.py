@@ -74,6 +74,20 @@ class VisualAssetRepository:
             .values(status="ACTIVE")
         )
 
+    async def rebind_active_revision(
+        self, *, document_version_id: UUID, bundle_revision_id: UUID,
+    ) -> None:
+        """发布复用文档时，将当前视觉资产原子切换到新 Revision。"""
+        await self.session.execute(
+            update(KcVisualAssetEntity)
+            .where(
+                KcVisualAssetEntity.document_version_id
+                == document_version_id,
+                KcVisualAssetEntity.status == "ACTIVE",
+            )
+            .values(bundle_revision_id=bundle_revision_id)
+        )
+
     async def delete_by_view_ids(self, parse_view_ids: list[UUID]) -> None:
         if parse_view_ids:
             await self.session.execute(

@@ -50,6 +50,7 @@ from knowledge_core.api.projection_task_router import (
     router as projection_task_router,
 )
 from knowledge_core.application.intake import KnowledgeCoreIntakeService
+from knowledge_core.application.source_purge import KnowledgeCoreSourcePurgeService
 from knowledge_core.application.multipart import KnowledgeCoreMultipartOrchestrator
 from knowledge_core.application.parse_tasks import KnowledgeCoreParseTaskService
 from knowledge_core.application.indexing import KnowledgeCoreEvidenceIndexService
@@ -117,7 +118,6 @@ async def lifespan(app: FastAPI):
         receipt_ttl_seconds=config.receipt_ttl_seconds,
         uow_factory=kc_uow_factory,
         parse_policy_overrides={
-            "ocr_model": settings.parse_policy.ocr_model or None,
             "parse_strategy": settings.parse_policy.parse_strategy,
             "visual_description_prompt": (
                 settings.parse_policy.visual_description_prompt
@@ -133,6 +133,10 @@ async def lifespan(app: FastAPI):
     app.state.kc_intake_service = intake_service
     app.state.kc_object_store = LocalKnowledgeObjectStore(
         Path(settings.storage.local_object_storage_path)
+    )
+    app.state.kc_source_purge_service = KnowledgeCoreSourcePurgeService(
+        uow_factory=kc_uow_factory,
+        object_store=app.state.kc_object_store,
     )
     app.state.kc_multipart_orchestrator = KnowledgeCoreMultipartOrchestrator(
         intake_service=intake_service,
@@ -246,6 +250,15 @@ async def lifespan(app: FastAPI):
             async with kc_uow_factory() as uow:
                 return await uow.evidence.expand_context(anchors=list(anchors), limit=limit)
 
+        async def get_citation_content(
+            self, *, citation_id: UUID, max_security_level: int
+        ):
+            async with kc_uow_factory() as uow:
+                return await uow.evidence.get_citation_content(
+                    citation_id=citation_id,
+                    max_security_level=max_security_level,
+                )
+
     app.state.kc_evidence_service = KnowledgeCoreEvidenceRetrievalService(
         search_port=UowEvidenceSearchPort(),
         query_embedding_provider=app.state.kc_query_embedding_provider,
@@ -277,7 +290,6 @@ async def lifespan(app: FastAPI):
         uow_factory=kc_uow_factory,
         artifact_store=parser_artifact_store,
         parse_policy_overrides={
-            "ocr_model": settings.parse_policy.ocr_model,
             "visual_max_concurrency": settings.parse_policy.visual_max_concurrency,
         },
     )

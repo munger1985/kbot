@@ -166,6 +166,9 @@ class KnowledgeRetrievalKnowledgeCoreCreatePayload(_Payload):
     description: str | None = Field(default=None, max_length=1000)
     default_security_level: int = Field(default=1, ge=0, le=999)
     embedding: UUID
+    parser_ocr: UUID
+    parser_vlm: UUID | None = None
+    parser_llm: UUID | None = None
     visual_embedding: UUID | None = None
 
 
@@ -176,6 +179,9 @@ class KnowledgeRetrievalKnowledgeCoreUpdatePayload(_Payload):
     default_security_level: int | None = Field(default=None, ge=0, le=999)
     status: Literal["ACTIVE", "DISABLED"] | None = None
     embedding: UUID | None = None
+    parser_ocr: UUID | None = None
+    parser_vlm: UUID | None = None
+    parser_llm: UUID | None = None
     visual_embedding: UUID | None = None
 
 
@@ -332,11 +338,19 @@ async def _knowledge_collection_models(
     request: Request,
     *,
     embedding: UUID,
+    parser_ocr: UUID,
+    parser_vlm: UUID | None,
+    parser_llm: UUID | None,
     visual_embedding: UUID | None,
 ) -> dict[str, str]:
     catalog = await load_model_catalog(request)
     by_id = {str(item.get("model_id")): item for item in catalog}
     requested = {"embedding": (embedding, ModelCategory.TXT_EMBEDDING)}
+    requested["parser_ocr"] = (parser_ocr, ModelCategory.OCR)
+    if parser_vlm is not None:
+        requested["parser_vlm"] = (parser_vlm, ModelCategory.VLM)
+    if parser_llm is not None:
+        requested["parser_llm"] = (parser_llm, ModelCategory.LLM)
     if visual_embedding is not None:
         requested["visual_embedding"] = (visual_embedding, ModelCategory.IMG_EMBEDDING)
     models: dict[str, str] = {}
@@ -900,6 +914,9 @@ async def create_knowledge_core(
     models = await _knowledge_collection_models(
         request,
         embedding=payload.embedding,
+        parser_ocr=payload.parser_ocr,
+        parser_vlm=payload.parser_vlm,
+        parser_llm=payload.parser_llm,
         visual_embedding=payload.visual_embedding,
     )
     return await _knowledge(request).create_collection(
@@ -1049,18 +1066,36 @@ async def update_knowledge_core(
             auth_context=auth_context,
         )
         row_version = int(current.get("row_version") or row_version)
-    if "embedding" in changes or "visual_embedding" in changes:
+    model_fields = {
+        "embedding", "visual_embedding", "parser_ocr", "parser_vlm", "parser_llm",
+    }
+    if model_fields.intersection(changes):
         current_models = dict(current.get("models") or current.get("models_json") or {})
         embedding = payload.embedding or UUID(str(current_models["embedding"]))
+        parser_ocr = payload.parser_ocr or UUID(str(current_models["parser_ocr"]))
+        parser_vlm = (
+            payload.parser_vlm
+            if "parser_vlm" in changes
+            else (UUID(str(current_models["parser_vlm"])) if current_models.get("parser_vlm") else None)
+        )
+        parser_llm = (
+            payload.parser_llm
+            if "parser_llm" in changes
+            else (UUID(str(current_models["parser_llm"])) if current_models.get("parser_llm") else None)
+        )
         visual_embedding = (
             payload.visual_embedding
             if "visual_embedding" in changes
             else (UUID(str(current_models["visual_embedding"])) if current_models.get("visual_embedding") else None)
         )
         models = await _knowledge_collection_models(
-            request, embedding=embedding, visual_embedding=visual_embedding
+            request, embedding=embedding, parser_ocr=parser_ocr,
+            parser_vlm=parser_vlm, parser_llm=parser_llm,
+            visual_embedding=visual_embedding
         )
         for role, model_id in current_models.items():
+            if role in changes and changes[role] is None:
+                continue
             models.setdefault(role, str(model_id))
         current = await knowledge.update_collection_models(
             domain_id=domain_id,

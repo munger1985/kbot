@@ -843,14 +843,74 @@ class FindingCompilerTest(unittest.TestCase):
             (
                 _fact(
                     tool_id="db.archive.status",
-                    columns=("fra_used_mb", "fra_limit_mb", "recovery_file_dest"),
-                    rows=((80, 0, "/u01/fra"),),
+                    columns=(
+                        "database_role", "open_mode", "log_mode",
+                        "fra_used_mb", "fra_limit_mb", "recovery_file_dest",
+                    ),
+                    rows=(("PRIMARY", "READ WRITE", "ARCHIVELOG", 80, 0, "/u01/fra"),),
                 ),
             )
         )
         self.assertEqual((), compilation.findings)
         self.assertTrue(compilation.empty_reasons)
         self.assertEqual({"fra_limit_mb"}, {item.column for item in compilation.gaps})
+
+    def test_recovery_configuration_and_missing_backup_are_findings(self) -> None:
+        oracle = compile_findings((
+            _fact(
+                tool_id="db.archive.status",
+                columns=(
+                    "database_role", "open_mode", "log_mode",
+                    "force_logging", "flashback_on", "fra_used_mb",
+                    "fra_limit_mb",
+                ),
+                rows=(("PRIMARY", "READ WRITE", "NOARCHIVELOG", "NO", "NO", None, None),),
+            ),
+            _fact(
+                tool_id="db.oracle.backup.volume_summary",
+                columns=(
+                    "job_count", "successful_job_count", "failed_job_count",
+                    "input_mb", "output_mb", "first_start_time", "last_end_time",
+                ),
+                rows=((0, 0, 0, 0, 0, None, None),),
+            ),
+        ))
+        self.assertEqual(
+            {FindingType.RECOVERY_CONFIGURATION, FindingType.BACKUP_MISSING},
+            {item.finding_type for item in oracle.findings},
+        )
+
+        postgres = compile_findings((
+            _fact(
+                tool_id="db.postgresql.archiver.status",
+                columns=(
+                    "archive_mode", "archive_command_configured",
+                    "archived_count", "last_archived_wal", "last_archived_time",
+                    "failed_count", "last_failed_wal", "last_failed_time",
+                    "stats_reset",
+                ),
+                rows=(("off", "NO", 0, None, None, 0, None, None, None),),
+            ),
+        ), database_type="POSTGRESQL")
+        self.assertIn(
+            FindingType.RECOVERY_CONFIGURATION,
+            {item.finding_type for item in postgres.findings},
+        )
+
+        mysql = compile_findings((
+            _fact(
+                tool_id="db.mysql.binlog.status",
+                columns=(
+                    "log_bin", "binlog_format", "gtid_mode",
+                    "binlog_expire_logs_seconds", "sync_binlog",
+                ),
+                rows=(("OFF", "ROW", "OFF", 0, 0),),
+            ),
+        ), database_type="MYSQL")
+        self.assertIn(
+            FindingType.RECOVERY_CONFIGURATION,
+            {item.finding_type for item in mysql.findings},
+        )
 
     def test_backup_failed_matches_warning_and_error_status(self) -> None:
         compilation = compile_findings(

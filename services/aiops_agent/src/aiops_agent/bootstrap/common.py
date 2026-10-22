@@ -16,9 +16,28 @@ from aiops_agent.persistence import AIOpsUnitOfWork
 from platform_core.database.oracle import DatabaseRuntime
 from platform_core.logger import LogConfig, LogManager
 from platform_core.middleware.log_middleware import log_requests
+from platform_clients.model import AIModelConfigClient
 
 
 ReadyCheck = Callable[[], Awaitable[dict[str, str]]]
+
+
+def create_model_catalog_clients(
+    settings: AIOpsSettings, *, caller_service: str,
+) -> dict[int, AIModelConfigClient]:
+    """按类别构造模型目录客户端，避免跨模型进程查询。"""
+    return {
+        category: AIModelConfigClient(
+            base_url=dependency.base_url,
+            timeout=dependency.timeout_seconds,
+            caller_service=caller_service,
+            audience=dependency.audience,
+            category=category,
+        )
+        for category, dependency in (
+            settings.clients.model_catalog_dependencies().items()
+        )
+    }
 
 
 @dataclass

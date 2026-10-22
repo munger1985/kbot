@@ -183,6 +183,8 @@ class InspectionFireSummary(AIOpsContract):
     target_count: int = Field(ge=0)
     completed_count: int = Field(ge=0)
     failed_count: int = Field(ge=0)
+    error_code: str | None = None
+    error_message: str | None = None
     completed_at: UtcDatetime | None = None
 
 
@@ -529,11 +531,131 @@ class LeadershipBriefing(AIOpsContract):
     recommendations: tuple[str, ...] = ()
 
 
+class DailyInspectionHeader(BaseModel):
+    """日常巡检正式报告头。"""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    report_time: str | None = None
+    observation_start: str | None = None
+    observation_end: str | None = None
+    target_name: str
+    target_id: str
+    environment: str
+    database_type: str
+    database_version: str
+    report_version: int = Field(ge=1)
+    report_number: str
+    responsibility_domain: str
+
+
+class DailyInspectionMetric(BaseModel):
+    """当前值与过去七日同口径基线的结构化对比。"""
+
+    model_config = ConfigDict(extra="allow")
+    metric_code: str
+    semantic_role: str
+    display_name: str
+    dimension_label: str
+    unit: str
+    current: float | None = None
+    current_display: str
+    baseline_average: float | None = None
+    baseline_display: str
+    deviation: float | None = None
+    deviation_display: str
+    deviation_percent: float | None = None
+    baseline_status: Literal["AVAILABLE", "INSUFFICIENT"]
+    coverage_ratio: float | None = None
+    coverage_percent: float | None = None
+    trend_points: tuple[dict[str, Any], ...] = ()
+
+
+class DailyInspectionPresentation(BaseModel):
+    """日常巡检报告的冻结结构化展示投影。"""
+
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["DAILY_INSPECTION_PRESENTATION.v1"]
+    header: DailyInspectionHeader
+    conclusion: dict[str, Any]
+    baseline_metrics: tuple[DailyInspectionMetric, ...] = ()
+    capacity_rows: tuple[DailyInspectionMetric, ...] = ()
+    findings: tuple[dict[str, Any], ...] = ()
+    recommendations: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
+    evidence_boundary: dict[str, Any]
+
+
+class MonthlyInspectionHeader(BaseModel):
+    """月度巡检正式报告头，兼容单 Target 和业务系统范围。"""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    report_time: str | None = None
+    period_start: str | None = None
+    period_end: str | None = None
+    scope_type: Literal["TARGET", "BUSINESS_SYSTEM"]
+    scope_name: str
+    target_count: int = Field(ge=1)
+    database_types: tuple[str, ...] = ()
+    environment: str
+    report_version: int = Field(ge=1)
+    report_number: str
+    responsibility_domain: str
+
+
+class MonthlyInspectionMetric(BaseModel):
+    """自然月日点聚合后的指标统计。"""
+
+    model_config = ConfigDict(extra="allow")
+    metric_key: str
+    metric_code: str
+    semantic_role: str
+    display_name: str
+    dimension_label: str
+    unit: str
+    monthly_average: float
+    monthly_average_display: str
+    p95: float
+    p95_display: str
+    minimum: float
+    maximum: float
+    first: float
+    last: float
+    net_change: float
+    change_percent: float | None = None
+    effective_days: int = Field(ge=0)
+    expected_days: int = Field(ge=0)
+    coverage_percent: float | None = None
+    daily_points: tuple[dict[str, Any], ...] = ()
+
+
+class MonthlyInspectionPresentation(BaseModel):
+    """月报冻结结构化展示投影。"""
+
+    model_config = ConfigDict(extra="allow")
+    schema_version: Literal["MONTHLY_INSPECTION_PRESENTATION.v1"]
+    header: MonthlyInspectionHeader
+    conclusion: dict[str, Any]
+    period_comparison: dict[str, Any]
+    coverage: dict[str, Any]
+    metrics: tuple[MonthlyInspectionMetric, ...] = ()
+    capacity_rows: tuple[MonthlyInspectionMetric, ...] = ()
+    issues: tuple[dict[str, Any], ...] = ()
+    database_checks: dict[str, Any]
+    recommendations: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
+    extensions: tuple[dict[str, Any], ...] = ()
+    evidence_boundary: dict[str, Any]
+
+
 class ReportPresentation(BaseModel):
-    """报告预览投影。只约束领导简报，其余章节保持现有冻结结构。"""
+    """报告预览投影；日常巡检使用专用结构化展示合同。"""
 
     model_config = ConfigDict(extra="allow")
     leadership_briefing: LeadershipBriefing
+    daily_inspection: DailyInspectionPresentation | None = None
+    monthly_inspection: MonthlyInspectionPresentation | None = None
 
 
 DashboardHealth = Literal[

@@ -21,6 +21,7 @@ class RepositoryScriptLayoutTest(unittest.TestCase):
                 "db/apply_oracle_schema.py",
                 "db/initialize_product_app.py",
                 "db/initialize_aiops.py",
+                "db/seed_aiops_inspection_templates.py",
                 "db/audit_app_authorization.py",
                 "db/sync_prompt_catalog.py",
                 "deployment/aiops_observability/oracle_alert_collector/collector.py",

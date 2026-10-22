@@ -12,7 +12,7 @@
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
     "operations-knowledge-chat": "aiops:use",
-    "operations-knowledge": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
+    "operations-knowledge": "aiops:knowledge_manage", "knowledge-bases": "aiops:knowledge_manage", "knowledge-answering-agent": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
     "inspection-plans": "aiops:plan_manage",
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
@@ -32,7 +32,7 @@
       ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["data-protection", "数据保护"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
-      ["responsibility-groups", "责任组"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
+      ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["knowledge-answering-agent", "知识问答 Agent"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
     ]],
   ];
   const iconPaths = {
@@ -119,10 +119,8 @@
     const groups = [...document.querySelectorAll(".ops-nav-group")];
     groups.forEach((group) => {
       const button = group.querySelector(".ops-nav-group-toggle");
-      const items = group.querySelector(".ops-nav-items");
       button.addEventListener("click", () => {
         const isOpen = button.getAttribute("aria-expanded") === "true";
-        if (isOpen && items.querySelector('[aria-current="page"]')) return;
         groups.forEach((candidate) => {
           const candidateButton = candidate.querySelector(".ops-nav-group-toggle");
           const candidateItems = candidate.querySelector(".ops-nav-items");

@@ -7,6 +7,7 @@ from .capacity import (
     CapacityPlan,
     allows_capacity_action,
     decide_capacity_actions,
+    has_capacity_placement_evidence,
 )
 from .findings import compile_findings
 from .policy import (
@@ -22,6 +23,7 @@ __all__ = [
     "allows_capacity_action",
     "compile_findings",
     "decide_capacity_actions",
+    "has_capacity_placement_evidence",
     "summarize_awr_facts",
     "freeze_automatic_entry_intent",
     "is_automatic_entry",

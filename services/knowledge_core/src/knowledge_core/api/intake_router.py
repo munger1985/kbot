@@ -20,6 +20,11 @@ from knowledge_core.application.intake import (
     ReviewIntakeCommand,
 )
 from knowledge_core.application.multipart import IntakeInProgressError, MultipartIntakeCommand
+from knowledge_core.application.source_purge import (
+    RevisionSourcePurgeConflictError,
+    RevisionSourcePurgeNotFoundError,
+    RevisionSourcePurgeStorageError,
+)
 from knowledge_core.domain.intake import BundleIntakeManifest, IntakeValidationError
 
 
@@ -312,3 +317,43 @@ async def review_user_intake(
             detail={"code": "INGESTION_REVIEW_CONFLICT", "message": str(exc)},
         ) from exc
     return _review_payload(review)
+
+
+@router.post(
+    f"{INTERNAL_API_V1}/knowledge/domains/{{domain_id}}"
+    "/collections/{collection_id}/bundle-revisions/"
+    "{bundle_revision_id}/source-objects:purge",
+)
+async def purge_revision_source_objects(
+    domain_id: int,
+    collection_id: UUID,
+    bundle_revision_id: UUID,
+    request: Request,
+):
+    require_domain_match(request, domain_id)
+    try:
+        result = await request.app.state.kc_source_purge_service.purge_revision_sources(
+            domain_id=domain_id,
+            collection_id=collection_id,
+            bundle_revision_id=bundle_revision_id,
+        )
+    except RevisionSourcePurgeNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "REVISION_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except RevisionSourcePurgeConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "REVISION_SOURCE_PURGE_CONFLICT", "message": str(exc)},
+        ) from exc
+    except RevisionSourcePurgeStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "REVISION_SOURCE_PURGE_FAILED", "message": str(exc)},
+        ) from exc
+    return {
+        "purged_count": result.purged_count,
+        "retained_count": result.retained_count,
+        "already_purged_count": result.already_purged_count,
+    }

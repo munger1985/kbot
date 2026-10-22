@@ -783,12 +783,29 @@ async def _assert_kc_runtime_privileges(
         ) from exc
 
 
+async def _assert_views_queryable(
+    connection: AsyncConnection,
+    expected_views: set[str],
+) -> None:
+    """触发 Oracle 延迟编译，并确认所有规范视图均可解析。"""
+    for view_name in sorted(expected_views):
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", view_name):
+            raise RuntimeError(f"规范视图名称非法：{view_name}")
+        try:
+            await connection.exec_driver_sql(
+                f'SELECT * FROM "{view_name}" WHERE 1 = 0'
+            )
+        except Exception as exc:
+            raise RuntimeError(f"规范视图无法编译：{view_name}") from exc
+
+
 async def _validate_schema(
     connection: AsyncConnection,
     expected_tables: set[str],
     expected_views: set[str],
     aiops_manifest: dict | None = None,
 ) -> None:
+    await _assert_views_queryable(connection, expected_views)
     rows = (
         await connection.execute(
             text(

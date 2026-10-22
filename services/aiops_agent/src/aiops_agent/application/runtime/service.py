@@ -12,7 +12,12 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
-from aiops_agent.application.display_dictionary import dictionary_for_payload
+from aiops_agent.application.display_dictionary import (
+    dictionary_for_payload,
+    display_metric_dimensions,
+    display_metric_name,
+    format_metric_value,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     dependency_unavailable,
@@ -100,6 +105,9 @@ from aiops_agent.contracts.report import (
 from aiops_agent.application.reporting import (
     ReportTemplate,
     closed_period_window,
+    compare_monthly_inspection_summaries,
+    is_monthly_backup_recovery_item,
+    monthly_inspection_summary,
     normalize_report_source,
     render_pdf,
     report_presentation,
@@ -218,6 +226,36 @@ def canonical_bytes(value: Any) -> bytes:
 
 def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def _human_target_display_name(
+    *candidates: object, target_id: object,
+) -> str:
+    """从候选值中选择可读 Target 名称，拒绝把 UUID 当作名称。"""
+
+    normalized_id = str(target_id or "").strip()
+    for candidate in candidates:
+        normalized = str(candidate or "").strip()
+        if not normalized or (normalized_id and normalized == normalized_id):
+            continue
+        try:
+            UUID(normalized)
+        except (ValueError, AttributeError):
+            return normalized
+    return "目标已删除或无权访问"
+
+
+def report_content_reference_is_complete(
+    report: ReportEntity,
+    artifact: OpsArtifactEntity | None,
+) -> bool:
+    """校验报告与冻结产物的持久化引用，不重算数据库读回的 JSON。"""
+    return bool(
+        artifact is not None
+        and artifact.schema_version == "REPORT_CONTENT.v1"
+        and artifact.content_hash
+        and artifact.content_hash == report.content_hash
+    )
 
 
 _LATER_PROPOSAL_BLOCK_TYPES = frozenset(
@@ -3157,6 +3195,12 @@ class AIOpsRuntimeService:
             item for item in facts
             if str(item.get("kind") or "") == "inspection_check"
         )
+        check_status_counts: dict[str, int] = {}
+        for item in inspection_checks:
+            check_status = str(item.get("check_status") or "UNKNOWN")
+            check_status_counts[check_status] = (
+                check_status_counts.get(check_status, 0) + 1
+            )
         tool_execution_covered_count = sum(
             bool(item.get("evidence_refs"))
             for item in inspection_checks
@@ -3193,22 +3237,83 @@ class AIOpsRuntimeService:
             2,
         ) if evidence_total_count else 0.0
         monitoring_quality = self._inspection_monitoring_quality(source)
+        incomplete_statuses = {"PARTIAL", "GAP", "MISSING"}
+        incomplete_check_count = sum(
+            count for check_status, count in check_status_counts.items()
+            if check_status in incomplete_statuses
+        )
         status = (
             "READY"
             if (
-                source.status == "COMPLETED"
-                and evidence_coverage_percent == 100
+                incomplete_check_count == 0
                 and not gaps
             )
             else "PARTIAL"
         )
-        summary = coverage_summary
-        recommendations = self._inspection_capacity_recommendations(source)
-        if source.evidence_gaps:
+        severity_order = {
+            "CRITICAL": 5, "HIGH": 4, "MEDIUM": 3,
+            "LOW": 2, "INFO": 1,
+        }
+        finding_severities = [
+            str(finding.get("severity") or "")
+            for item in inspection_checks
+            for finding in item.get("findings") or ()
+        ]
+        health_status = (
+            max(
+                finding_severities,
+                key=lambda value: severity_order.get(value, 0),
+            )
+            if finding_severities
+            else ("UNKNOWN" if status == "PARTIAL" else "NORMAL")
+        )
+        summary = (
+            f"共执行 {len(inspection_checks)} 项检查："
+            f"正常 {check_status_counts.get('CLEAR', 0)} 项，"
+            f"需关注 {check_status_counts.get('FINDING', 0)} 项，"
+            f"仅观测 {check_status_counts.get('OBSERVED', 0)} 项，"
+            f"不适用 {check_status_counts.get('NOT_APPLICABLE', 0)} 项，"
+            f"不完整 {incomplete_check_count} 项；"
+            f"数据缺口 {len(gaps)} 项。"
+        )
+        recommendations = (
+            self._inspection_capacity_recommendations(source)
+            if schedule_type == "WEEKLY"
+            else ()
+        )
+        if not gaps and not recommendations:
+            recommendations = (
+                "继续按既定周期执行该巡检模板并关注趋势变化。",
+            )
+        gap_categories = {
+            str(item.get("category") or "DATA_SOURCE") for item in gaps
+        }
+        if "PRODUCT_CONTRACT" in gap_categories:
             recommendations = (
                 *recommendations,
-                "请先处理本报告列出的数据缺口，再重新执行同一巡检模板。",
+                "报告证据契约存在字段不一致，应由产品修复 Tool 输出与规则目录后重跑，不能由用户补值。",
             )
+        if "MONITORING" in gap_categories:
+            recommendations = (
+                *recommendations,
+                "监控时序覆盖不足时应检查采集目标、抓取间隔和保留期；修复采集后等待形成完整巡检窗口。",
+            )
+        if "SOURCE_ACCESS" in gap_categories:
+            recommendations = (
+                *recommendations,
+                "数据库只读访问失败时，仅核对报告中列明的连接或最小查询权限，不应扩大账号授权范围。",
+            )
+        if "SOURCE_CAPABILITY" in gap_categories:
+            recommendations = (
+                *recommendations,
+                "目标版本或数据库能力不支持该检查时，应调整模板适用范围或选用对应版本的固定查询。",
+            )
+        if gap_categories & {"DATA_SOURCE", "REPORT_CONTRACT"}:
+            recommendations = (
+                *recommendations,
+                "数据库查询无数据时，应先核对查询窗口、数据库角色和功能是否实际启用；确认读取方式正确后再判定为真实缺失。",
+            )
+        recommendations = tuple(dict.fromkeys(recommendations))
         security_level = await self._report_security_level(
             uow=uow,
             run=run,
@@ -3216,6 +3321,21 @@ class AIOpsRuntimeService:
         )
         monitoring_profile = dict(
             dict(plan.get("monitoring") or {}).get("monitoring_profile") or {}
+        )
+        monitoring_quality = self._inspection_monitoring_quality(source)
+        target_snapshot = dict(plan.get("target") or {})
+        current_target = None
+        target_repository = getattr(uow, "targets", None)
+        run_domain_id = getattr(run, "domain_id", None)
+        if target_repository is not None and run_domain_id is not None:
+            current_target = await target_repository.get_scoped(
+                target_id=run.target_id,
+                domain_id=run_domain_id,
+            )
+        target_display_name = _human_target_display_name(
+            getattr(current_target, "display_name", None),
+            target_snapshot.get("display_name"),
+            target_id=run.target_id,
         )
         content = ReportContent(
             report_key=report_key,
@@ -3234,6 +3354,11 @@ class AIOpsRuntimeService:
                 "schedule_type": schedule_type,
                 "timezone": inspection["timezone"],
                 "inspection_coverage": coverage_summary,
+                "database_type": str(
+                    dict(plan.get("target") or {}).get("db_type") or "ORACLE"
+                ),
+                "health_status": health_status,
+                "check_status_counts": check_status_counts,
                 "evidence_coverage_percent": evidence_coverage_percent,
                 "evidence_covered_count": evidence_covered_count,
                 "evidence_total_count": evidence_total_count,
@@ -3252,6 +3377,16 @@ class AIOpsRuntimeService:
                     "low_coverage_metric_count"
                 ],
                 "evidence_gap_count": len(gaps),
+                "target": {
+                    "target_id": str(run.target_id),
+                    "display_name": target_display_name,
+                    "database_type": str(
+                        target_snapshot.get("db_type") or "ORACLE"
+                    ),
+                    "version_code": target_snapshot.get("version_code"),
+                    "environment": target_snapshot.get("environment"),
+                    "db_role": target_snapshot.get("db_role"),
+                },
                 **(
                     {"monitoring_profile": monitoring_profile}
                     if monitoring_profile
@@ -3468,17 +3603,38 @@ class AIOpsRuntimeService:
                 average = row[indexes["average"]] if "average" in indexes else None
                 maximum = row[indexes["maximum"]] if "maximum" in indexes else None
                 sample_count = row[indexes["sample_count"]] if "sample_count" in indexes else None
-                details = [f"最新值 {latest}{unit}"]
+                coverage_ratio = row[indexes["coverage_ratio"]] if "coverage_ratio" in indexes else None
+                window_start = row[indexes["window_start"]] if "window_start" in indexes else None
+                window_end = row[indexes["window_end"]] if "window_end" in indexes else None
+                history_elapsed_days = row[indexes["history_elapsed_days"]] if "history_elapsed_days" in indexes else None
+                semantic_role = str(row[indexes["semantic_role"]] or "") if "semantic_role" in indexes else ""
+                value_kind = str(row[indexes["value_kind"]] or "") if "value_kind" in indexes else ""
+                daily_points: list[dict[str, Any]] = []
+                if "daily_points" in indexes:
+                    try:
+                        parsed_points = json.loads(
+                            str(row[indexes["daily_points"]] or "[]")
+                        )
+                    except (TypeError, ValueError):
+                        parsed_points = []
+                    if isinstance(parsed_points, list):
+                        daily_points = [
+                            dict(item) for item in parsed_points
+                            if isinstance(item, dict)
+                        ]
+                metric_name = display_metric_name(metric_code)
+                dimension_display = display_metric_dimensions(dimensions)
+                details = [f"当前值 {format_metric_value(latest, unit)}"]
                 if average is not None:
-                    details.append(f"平均值 {average}{unit}")
+                    details.append(f"平均值 {format_metric_value(average, unit)}")
                 if maximum is not None:
-                    details.append(f"最大值 {maximum}{unit}")
+                    details.append(f"最大值 {format_metric_value(maximum, unit)}")
                 if sample_count is not None:
                     details.append(f"{sample_count} 个样本")
                 facts.append({
                     "kind": "inspection_monitoring_metric",
-                    "title": metric_code,
-                    "summary": f"{metric_code}[{dimensions}]：" + "，".join(details) + "。",
+                    "title": metric_name,
+                    "summary": f"{metric_name}{dimension_display}：" + "，".join(details) + "。",
                     "check_status": "OBSERVED",
                     "tool_id": "metric.query_range",
                     "metric_code": metric_code,
@@ -3488,15 +3644,92 @@ class AIOpsRuntimeService:
                     "maximum": maximum,
                     "unit": unit,
                     "sample_count": sample_count,
+                    "coverage_ratio": coverage_ratio,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "history_elapsed_days": history_elapsed_days,
+                    "semantic_role": semantic_role,
+                    "value_kind": value_kind,
+                    "daily_points": daily_points,
                     "evidence_ref": evidence.evidence_ref,
                 })
         return tuple(facts)
 
     @staticmethod
+    def _inspection_observation_rows(
+        observations: list[Any],
+        *,
+        report_columns: tuple[str, ...],
+        limit: int = 5,
+    ) -> tuple[dict[str, Any], ...]:
+        """只按检查目录白名单冻结少量可审计观测，不泄露 SQL 文本等字段。"""
+        if not report_columns:
+            return ()
+        rows: list[dict[str, Any]] = []
+        for observation in observations:
+            indexes = {
+                str(column.get("name") or ""): index
+                for index, column in enumerate(observation.columns)
+            }
+            selected = [
+                column for column in report_columns if column in indexes
+            ]
+            for raw_row in observation.rows:
+                rows.append({
+                    column: raw_row[indexes[column]] for column in selected
+                })
+                if len(rows) >= limit:
+                    return tuple(rows)
+        return tuple(rows)
+
+    @staticmethod
+    def _inspection_gap_category(gap: dict[str, Any]) -> str:
+        """区分读取错误、访问限制、能力不支持与真实数据缺口。"""
+        source_id = str(gap.get("source_id") or "")
+        code = str(gap.get("code") or "").upper()
+        product_contract_codes = {
+            "FINDING_COLUMN_MISSING",
+            "FINDING_VALUE_UNPARSEABLE",
+            "OUTPUT_COLUMNS_MISMATCH",
+            "OUTPUT_COLUMN_LIMIT_EXCEEDED",
+            "OUTPUT_VALUE_TYPE_UNSUPPORTED",
+            "OUTPUT_COLUMN_TYPE_MISMATCH",
+            "OUTPUT_SCHEMA_INVALID",
+            "QUERY_COLUMN_INVALID",
+            "QUERY_COLUMN_AMBIGUOUS",
+            "QUERY_SYNTAX_INVALID",
+        }
+        source_access_codes = {
+            "AUTH_FAILED",
+            "PRIVILEGE_MISSING",
+            "CONNECTION_FAILED",
+            "SOURCE_UNREACHABLE",
+            "TIMEOUT",
+        }
+        source_capability_codes = {
+            "VERSION_UNSUPPORTED",
+            "QUERY_INCOMPATIBLE",
+            "QUERY_OBJECT_UNAVAILABLE",
+            "SOURCE_QUERY_UNSUPPORTED",
+            "INSPECTION_FIXED_TOOL_UNAVAILABLE",
+        }
+        if source_id == "finding.compiler" or code in product_contract_codes:
+            return "PRODUCT_CONTRACT"
+        if source_id.startswith("monitoring."):
+            return "MONITORING"
+        if code in source_access_codes:
+            return "SOURCE_ACCESS"
+        if code in source_capability_codes:
+            return "SOURCE_CAPABILITY"
+        if source_id.startswith("inspection.report"):
+            return "REPORT_CONTRACT"
+        return "DATA_SOURCE"
+
+    @staticmethod
     def _inspection_monitoring_quality(
         source: AIOpsTurnResult,
-    ) -> dict[str, float | int | None]:
-        """独立汇总监控采样质量，避免与固定数据库检查覆盖率混算。"""
+    ) -> dict[str, Any]:
+        """把数据库检查覆盖和监控采样覆盖分开统计。"""
         coverage_values: list[float] = []
         for evidence in source.evidence:
             if evidence.tool_id != "metric.query_range":
@@ -3533,9 +3766,12 @@ class AIOpsRuntimeService:
         inspection: dict[str, Any],
         source: AIOpsTurnResult,
         action_tool_ids: dict[str, str],
-        database_type: str = "ORACLE",
+        database_type: str | None = None,
     ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...], str]:
         """把冻结模板的每项检查投影为报告条目，不能因正常零行而省略。"""
+        database_type = str(
+            database_type or inspection.get("database_type") or "ORACLE"
+        ).upper()
         steps = tuple(
             item
             for item in inspection.get("evidence_steps", ())
@@ -3548,7 +3784,15 @@ class AIOpsRuntimeService:
             str(item["tool_id"]): str(item.get("title") or item["tool_id"])
             for item in steps
         }
-        gaps = [item.model_dump(mode="json") for item in source.evidence_gaps]
+        gaps = []
+        for evidence_gap in source.evidence_gaps:
+            item = evidence_gap.model_dump(mode="json")
+            if item.get("source_id") == "investigation.assessment":
+                continue
+            item["category"] = AIOpsRuntimeService._inspection_gap_category(
+                item
+            )
+            gaps.append(item)
         gaps_by_step: dict[str, list[dict[str, Any]]] = {}
         for item in gaps:
             step_id = str(item.get("step_id") or "")
@@ -3561,6 +3805,25 @@ class AIOpsRuntimeService:
             gaps_by_step.setdefault(tool_id, []).append(item)
 
         facts: list[dict[str, Any]] = []
+        for identity in evidence_by_tool.get("db.instance.identity", ()):
+            identity_rows = AIOpsRuntimeService._inspection_observation_rows(
+                [identity],
+                report_columns=(
+                    "product", "version", "instance_name",
+                    "database_role", "server_time",
+                ),
+                limit=1,
+            )
+            if identity_rows:
+                facts.append({
+                    "kind": "inspection_identity",
+                    "title": "巡检目标",
+                    "summary": "已确认数据库实例身份和服务端时间。",
+                    "check_status": "OBSERVED",
+                    "tool_id": "db.instance.identity",
+                    "observations": identity_rows,
+                    "evidence_refs": [identity.evidence_ref],
+                })
         covered_count = 0
         for step in steps:
             tool_id = str(step["tool_id"])
@@ -3571,6 +3834,10 @@ class AIOpsRuntimeService:
                 covered_count += 1
                 row_count = sum(item.row_count for item in observations)
                 truncated = any(item.truncated for item in observations)
+                report_rows = AIOpsRuntimeService._inspection_observation_rows(
+                    observations,
+                    report_columns=tuple(step.get("report_columns") or ()),
+                )
                 compilation = compile_findings(
                     tuple(observations),
                     database_type=database_type,
@@ -3582,6 +3849,7 @@ class AIOpsRuntimeService:
                         "code": finding_gap.code,
                         "detail": finding_gap.detail,
                         "retryable": False,
+                        "category": "PRODUCT_CONTRACT",
                     }
                     gap["summary"] = (
                         AIOpsRuntimeService._inspection_gap_summary(
@@ -3597,6 +3865,20 @@ class AIOpsRuntimeService:
                     ):
                         gaps.append(gap)
                         step_gaps.append(gap)
+                zero_row_status = str(
+                    step.get("zero_row_status") or "CLEAR"
+                )
+                if row_count == 0 and zero_row_status == "GAP":
+                    zero_gap = {
+                        "source_id": "inspection.report",
+                        "step_id": tool_id,
+                        "code": "INSPECTION_EXPECTED_ROWS_MISSING",
+                        "detail": f"{title} 查询成功但未返回预期状态行",
+                        "retryable": True,
+                        "category": "DATA_SOURCE",
+                    }
+                    gaps.append(zero_gap)
+                    step_gaps.append(zero_gap)
                 if step_gaps:
                     gap_summary = str(step_gaps[0]["summary"])
                     if gap_summary.startswith(f"{title}："):
@@ -3612,8 +3894,17 @@ class AIOpsRuntimeService:
                         findings=compilation.findings,
                     )
                     check_status = "FINDING"
+                elif row_count == 0 and zero_row_status == "NOT_APPLICABLE":
+                    summary = f"{title}：查询成功，当前未配置或不适用。"
+                    check_status = "NOT_APPLICABLE"
+                elif row_count == 0 and zero_row_status == "OBSERVED":
+                    summary = f"{title}：查询成功，本期返回 0 条记录。"
+                    check_status = "OBSERVED"
                 elif compilation.empty_reasons:
                     summary = f"{title}：{compilation.empty_reasons[0]}"
+                    check_status = "CLEAR"
+                elif row_count == 0 and zero_row_status == "CLEAR":
+                    summary = f"{title}：查询成功，未发现达到报告条件的记录。"
                     check_status = "CLEAR"
                 else:
                     summary = AIOpsRuntimeService._inspection_observed_summary(
@@ -3636,6 +3927,9 @@ class AIOpsRuntimeService:
                         "evidence_refs": [
                             item.evidence_ref for item in observations
                         ],
+                        "observation_count": row_count,
+                        "observations": report_rows,
+                        "truncated": truncated,
                         "findings": [
                             item.model_dump(mode="json")
                             for item in compilation.findings
@@ -3666,6 +3960,7 @@ class AIOpsRuntimeService:
                 "code": "INSPECTION_OBSERVATION_MISSING",
                 "detail": f"模板检查项未形成可验证观测：{title}",
                 "retryable": False,
+                "category": "REPORT_CONTRACT",
             }
             missing_gap["summary"] = missing_gap["detail"]
             gaps.append(missing_gap)
@@ -3749,6 +4044,7 @@ class AIOpsRuntimeService:
                         "code": "BACKUP_SUCCESS_NOT_FOUND",
                         "detail": "RMAN 观测中没有可解析的成功备份记录",
                         "retryable": False,
+                        "category": "DATA_SOURCE",
                     })
             else:
                 facts.append({
@@ -3765,18 +4061,23 @@ class AIOpsRuntimeService:
                     "code": "BACKUP_SUCCESS_NOT_OBSERVABLE",
                     "detail": "归档链观测不能替代备份平台成功记录，需要接入对应备份来源证据",
                     "retryable": False,
+                    "category": "DATA_SOURCE",
                 })
 
         if str(inspection.get("schedule_type") or "") == "WEEKLY":
             for trend in extract_metric_trend_rows(source.evidence):
+                metric_name = display_metric_name(trend["metric_code"])
+                dimension_display = display_metric_dimensions(trend["dimensions"])
+                unit = trend.get("unit", "")
                 facts.append(
                     {
                         "kind": "inspection_trend",
-                        "title": f"指标 {trend['metric_code']} 趋势",
+                        "title": f"{metric_name}趋势",
                         "summary": (
-                            f"{trend['metric_code']}[{trend['dimensions']}]："
-                            f"first={trend['first']}，latest={trend['latest']}，"
-                            f"change_per_day={trend['change_per_day']}"
+                            f"{metric_name}{dimension_display}："
+                            f"期初值 {format_metric_value(trend['first'], unit)}，"
+                            f"当前值 {format_metric_value(trend['latest'], unit)}，"
+                            f"日均变化量 {format_metric_value(trend['change_per_day'], unit)}。"
                         ),
                         "check_status": "OBSERVED",
                         "tool_id": "metric.query_range",
@@ -3801,6 +4102,7 @@ class AIOpsRuntimeService:
                     "code": "INSPECTION_TEMPLATE_STEPS_MISSING",
                     "detail": "巡检 Run 未保存冻结的勾选检查项",
                     "retryable": False,
+                    "category": "REPORT_CONTRACT",
                 }
             )
         coverage_summary = f"本期按模板取得 {covered_count}/{len(steps)} 个取证步骤的观测"
@@ -4209,7 +4511,10 @@ class AIOpsRuntimeService:
                 else "当前证据不足，尚未确认根因"
             )
         )
-        summary = f"根因等级：{grade}。{rationale}"[:2000]
+        summary = (
+            rationale if source_kind == "INSPECTION"
+            else f"根因等级：{grade}。{rationale}"
+        )[:2000]
         solution = dict(source.get("solution") or {})
         recommendations = tuple(
             dict.fromkeys(
@@ -4265,15 +4570,26 @@ class AIOpsRuntimeService:
                     rationale if source_kind == "INSPECTION" else None,
                 ),
                 "report_period_kind": period_kind,
+                **({
+                    key: source.get(key)
+                    for key in (
+                        "target", "scope_type", "scope_name", "target_count",
+                        "database_types", "monthly_summary",
+                        "previous_month_summary", "previous_month_comparison",
+                        "monthly_report_extensions", "business_system_id",
+                        "member_targets",
+                    )
+                    if source.get(key) is not None
+                } if source_kind == "INSPECTION" else {}),
             },
             facts=tuple(
-                {
+                dict(item) if source_kind == "INSPECTION" else {
                     "fact_id": item.get("fact_id"),
-                    "summary": item.get("fact_summary")
-                    or item.get("summary"),
+                    "summary": item.get("fact_summary") or item.get("summary"),
                     "trust_level": item.get("trust_level"),
                 }
                 for item in source.get("facts", ())
+                if isinstance(item, dict)
             ),
             gaps=tuple(
                 dict(item) if isinstance(item, dict) else {"code": str(item)}
@@ -6875,11 +7191,7 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if (
-                artifact is None
-                or artifact.schema_version != "REPORT_CONTENT.v1"
-                or artifact.content_hash != report.content_hash
-            ):
+            if not report_content_reference_is_complete(report, artifact):
                 raise state_conflict("Report 内容引用不完整")
             return self._report_view(report, artifact)
 
@@ -6911,11 +7223,7 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if (
-                artifact is None
-                or artifact.schema_version != "REPORT_CONTENT.v1"
-                or artifact.content_hash != report.content_hash
-            ):
+            if not report_content_reference_is_complete(report, artifact):
                 raise state_conflict("Report 内容引用不完整")
             content = ReportContent.model_validate(
                 dict(artifact.payload_json or {})
@@ -7357,11 +7665,9 @@ class AIOpsRuntimeService:
                             ) or {}
                         ).get("conversation") or {}
                     )
-                    if current_artifact is not None
-                    and current_artifact.content_hash
-                    == current_report.content_hash
-                    and current_artifact.content_hash
-                    == sha256_json(dict(current_artifact.payload_json or {}))
+                    if report_content_reference_is_complete(
+                        current_report, current_artifact
+                    )
                     else {}
                 )
                 requested_conversation = dict(
@@ -7511,24 +7817,46 @@ class AIOpsRuntimeService:
         self, *, uow, runs, period_kind: str, period_start: datetime,
         period_end: datetime,
     ) -> dict[str, Any]:
-        """以同一 Target 的终态巡检产物构建可复现的周期 ReportContext。"""
-        facts, gaps, evidence_refs = [], [], []
+        """优先汇总已发布巡检报告，并冻结自然周期统计。"""
+        facts, gaps, evidence_refs, recommendations = [], [], [], []
         partial_count = 0
         failed_count = 0
-        for item in runs:
+        completed_count = 0
+        target_snapshot: dict[str, Any] = {}
+        inspection_repository = getattr(uow, "inspections", None)
+        get_run_report = getattr(
+            inspection_repository, "get_current_report_for_run_template", None
+        )
+        ordered_runs = sorted(
+            runs,
+            key=lambda item: getattr(item, "completed_at", None)
+            or getattr(item, "created_at", period_start),
+        )
+        for item in ordered_runs:
             failed_count += getattr(item, "status", "COMPLETED") in {
                 "FAILED", "CANCELLED"
             }
-            if item.final_artifact_id is None:
-                partial_count += 1
-                gaps.append({
-                    "code": "MISSING_FINAL_ARTIFACT",
-                    "source_run_id": str(item.ops_run_id),
-                })
-                continue
-            artifact = await uow.runs.get_artifact(
-                artifact_id=item.final_artifact_id
-            )
+            artifact = None
+            if get_run_report is not None:
+                for template_id in (
+                    "system:inspection.daily",
+                    "system:inspection.weekly",
+                    "system:inspection.custom",
+                ):
+                    source_report = await get_run_report(
+                        ops_run_id=item.ops_run_id,
+                        template_id=template_id,
+                    )
+                    if source_report is not None and source_report.content_artifact_id:
+                        artifact = await uow.runs.get_artifact(
+                            artifact_id=source_report.content_artifact_id
+                        )
+                        if artifact is not None:
+                            break
+            if artifact is None and item.final_artifact_id is not None:
+                artifact = await uow.runs.get_artifact(
+                    artifact_id=item.final_artifact_id
+                )
             if artifact is None:
                 partial_count += 1
                 gaps.append({
@@ -7536,36 +7864,146 @@ class AIOpsRuntimeService:
                     "source_run_id": str(item.ops_run_id),
                 })
                 continue
+            completed_count += 1
+            payload = dict(artifact.payload_json or {})
+            artifact_scope = dict(payload.get("scope") or {})
+            if not target_snapshot and isinstance(artifact_scope.get("target"), dict):
+                target_snapshot = dict(artifact_scope["target"])
             source = normalize_report_source(
                 schema_version=artifact.schema_version,
-                payload=dict(artifact.payload_json or {}),
+                payload=payload,
                 source_kind="INSPECTION",
             )
             partial_count += source["status"] != "READY"
-            facts.extend(source.get("facts") or ())
-            gaps.extend(source.get("gaps") or ())
+            observed_at = (
+                getattr(item, "completed_at", None)
+                or getattr(item, "created_at", period_end)
+            )
+            for fact in source.get("facts") or ():
+                if isinstance(fact, dict):
+                    if period_kind == "MONTHLY" and is_monthly_backup_recovery_item(fact):
+                        continue
+                    facts.append({
+                        **fact,
+                        "_source_run_id": str(item.ops_run_id),
+                        "_source_observed_at": observed_at.isoformat(),
+                        "_source_target_id": str(getattr(item, "target_id", "")),
+                        "_source_target_name": str(
+                            dict(artifact_scope.get("target") or {}).get(
+                                "display_name"
+                            ) or ""
+                        ),
+                    })
+            gaps.extend(
+                value for value in source.get("gaps") or ()
+                if period_kind != "MONTHLY"
+                or not is_monthly_backup_recovery_item(value)
+            )
+            recommendations.extend(
+                str(value)
+                for value in dict(source.get("solution") or {}).get(
+                    "long_term_remediations", ()
+                )
+                if value and (
+                    period_kind != "MONTHLY"
+                    or not is_monthly_backup_recovery_item(value)
+                )
+            )
             evidence_refs.append({
                 "artifact_id": str(artifact.artifact_id),
                 "content_hash": artifact.content_hash,
                 "schema_version": artifact.schema_version,
                 "source_run_id": str(item.ops_run_id),
-                "observed_at": item.completed_at.isoformat(),
+                "source_kind": "INSPECTION",
+                "observed_at": observed_at.isoformat(),
             })
-        return {
+        run_summary = {
+            "scheduled_run_count": len(ordered_runs),
+            "completed_run_count": completed_count,
+            "partial_run_count": partial_count,
+            "failed_run_count": failed_count,
+        }
+        monthly_summary = None
+        previous_summary = None
+        previous_comparison = None
+        if period_kind == "MONTHLY":
+            timezone = "UTC"
+            if ordered_runs:
+                inspection = dict(
+                    dict(getattr(ordered_runs[-1], "plan_snapshot_json", {}) or {})
+                    .get("client_metadata", {}).get("inspection", {})
+                )
+                timezone = str(inspection.get("timezone") or "UTC")
+            monthly_summary = monthly_inspection_summary(
+                facts=facts,
+                period_start=period_start,
+                period_end=period_end,
+                timezone=timezone,
+                run_summary=run_summary,
+            )
+            previous_getter = getattr(
+                inspection_repository, "get_previous_current_period_report", None
+            )
+            target_id = getattr(ordered_runs[0], "target_id", None) if ordered_runs else None
+            if previous_getter is not None and target_id is not None:
+                previous_report = await previous_getter(
+                    target_id=target_id,
+                    report_type="INSPECTION_MONTHLY",
+                    before_period_start=period_start,
+                )
+                if previous_report is not None and previous_report.content_artifact_id:
+                    previous_artifact = await uow.runs.get_artifact(
+                        artifact_id=previous_report.content_artifact_id
+                    )
+                    if previous_artifact is not None:
+                        previous_payload = dict(previous_artifact.payload_json or {})
+                        previous_summary = dict(
+                            dict(previous_payload.get("scope") or {}).get(
+                                "monthly_summary"
+                            ) or {}
+                        ) or None
+            previous_comparison = compare_monthly_inspection_summaries(
+                monthly_summary, previous_summary
+            )
+        result = {
             "status": "PARTIAL" if partial_count or gaps else "READY",
             "root_cause": {"effective_level": "INCONCLUSIVE"},
             "diagnosis_rationale": (
                 f"{period_kind} 周期覆盖 {len(runs)} 次巡检，"
                 f"其中 {partial_count} 次结果不完整，{failed_count} 次执行失败。"
             ),
-            "facts": tuple(facts), "gaps": tuple(gaps), "solution": {},
+            "facts": tuple(facts), "gaps": tuple(gaps),
+            "solution": {
+                "long_term_remediations": tuple(dict.fromkeys(recommendations)),
+            },
             "evidence_refs": tuple(evidence_refs),
             "inspection_coverage": (
                 f"报告时间窗内完成 {len(runs)} 次巡检，"
                 f"不完整结果 {partial_count} 次，执行失败 {failed_count} 次。"
             ),
             "period_start": period_start, "period_end": period_end,
+            "target": target_snapshot,
+            "scope_type": "TARGET",
+            "scope_name": _human_target_display_name(
+                target_snapshot.get("display_name"),
+                target_id=getattr(ordered_runs[0], "target_id", None),
+            ) if ordered_runs else "未记录",
+            "target_count": 1,
+            "database_types": tuple(filter(None, (
+                target_snapshot.get("database_type"),
+            ))),
+            "monthly_report_extensions": ({
+                "schema_version": "MONTHLY_REPORT_EXTENSION.v1",
+                "extension_key": "backup_recovery",
+                "status": "RESERVED",
+                "items": [],
+            },),
         }
+        if monthly_summary is not None:
+            result["monthly_summary"] = monthly_summary
+            result["previous_month_summary"] = previous_summary
+            result["previous_month_comparison"] = previous_comparison
+        return result
 
     async def get_report_presentation(
         self,
@@ -7584,11 +8022,11 @@ class AIOpsRuntimeService:
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
             )
-            if artifact is None:
+            if not report_content_reference_is_complete(report, artifact):
                 raise state_conflict("Report 内容引用不完整")
+            # Oracle 原生 JSON 会把 100.0 等价归一为 100；读回后重算哈希
+            # 会误报内容损坏。冻结完整性由 Report 与 Artifact 的双向哈希引用保证。
             payload = dict(artifact.payload_json or {})
-            if artifact.content_hash != sha256_json(payload):
-                raise state_conflict("Report 内容引用不完整")
             snapshot = dict(
                 dict(payload.get("provenance") or {}).get("template") or {}
             )
@@ -7618,8 +8056,37 @@ class AIOpsRuntimeService:
                     ops_run_ids=(ops_run_id,)
                 )
                 findings = parse_finding_payload(payloads.get(ops_run_id))
+            target_display_name = None
+            target_repository = getattr(uow, "targets", None)
+            report_target_id = getattr(report, "target_id", None)
+            if target_repository is not None and report_target_id is not None:
+                current_target = await target_repository.get_scoped(
+                    target_id=report_target_id,
+                    domain_id=domain_id,
+                )
+                target_display_name = getattr(
+                    current_target, "display_name", None
+                )
             return report_presentation(
-                payload=payload, template=template, findings=findings,
+                payload=payload,
+                template=template,
+                findings=findings,
+                report_context={
+                    "report_id": str(report.report_id),
+                    "report_key": str(
+                        getattr(report, "report_key", payload.get("report_key") or "")
+                    ),
+                    "report_version": int(
+                        getattr(report, "report_version", 1)
+                    ),
+                    "created_at": (
+                        getattr(report, "created_at").isoformat()
+                        if getattr(report, "created_at", None) is not None
+                        else None
+                    ),
+                    "domain_id": int(domain_id),
+                    "target_display_name": target_display_name,
+                },
             )
 
     async def get_report_source_agent_id(
@@ -7855,6 +8322,8 @@ class AIOpsRuntimeService:
             target_count=int(fire.target_count),
             completed_count=int(fire.completed_count),
             failed_count=int(fire.failed_count),
+            error_code=fire.error_code,
+            error_message=fire.error_message,
             completed_at=fire.completed_at,
         )
 

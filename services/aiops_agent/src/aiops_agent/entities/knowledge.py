@@ -16,6 +16,69 @@ from platform_core.persistence.orm import (
 )
 
 
+class OperationsKnowledgeBaseEntity(BaseEntity):
+    """Domain 内由用户管理的运维手册知识库。"""
+
+    __tablename__ = "KBOT_OPS_KNOWLEDGE_BASE"
+    __table_args__ = (
+        Index("IX_OPS_KNOW_BASE_SCOPE", "domain_id", "status", "updated_at"),
+    )
+
+    knowledge_base_id: Mapped[UUID] = mapped_column(
+        UUIDv7Type(), primary_key=True, default=uuid7
+    )
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    collection_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False,
+    )
+    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": row_version}
+
+
+class OperationsKnowledgeAssistantBindingEntity(BaseEntity):
+    """Domain 内固定知识问答 Agent 的可检索知识库绑定。"""
+
+    __tablename__ = "KBOT_OPS_KNOW_ASSISTANT_BIND"
+
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
+    assistant_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    assistant_version_id: Mapped[UUID] = mapped_column(UUIDv7Type(), nullable=False)
+    composer_model_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False,
+    )
+    row_version: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": row_version}
+
+
+class OperationsKnowledgeAssistantBaseEntity(BaseEntity):
+    """固定知识问答 Agent 与运维知识库的多对多关系。"""
+
+    __tablename__ = "KBOT_OPS_KNOW_ASSISTANT_BASE"
+
+    domain_id: Mapped[int] = mapped_column(Numeric(38, 0), primary_key=True)
+    knowledge_base_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UniversalTimestamp(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OperationsKnowledgeAssetEntity(BaseEntity):
     __tablename__ = "KBOT_OPS_KNOWLEDGE_ASSET"
     __table_args__ = (
@@ -27,6 +90,7 @@ class OperationsKnowledgeAssetEntity(BaseEntity):
 
     asset_id: Mapped[UUID] = mapped_column(UUIDv7Type(), primary_key=True, default=uuid7)
     domain_id: Mapped[int] = mapped_column(Numeric(38, 0), nullable=False)
+    knowledge_base_id: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     asset_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)

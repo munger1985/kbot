@@ -1,27 +1,16 @@
-"""幂等初始化 AIOps 管理员、固定 Domain、内部知识集合和运维手册。"""
+"""幂等初始化 AIOps 管理员、固定 Domain、默认知识库和诊断案例集合。"""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 from dataclasses import dataclass
-import hashlib
-import json
-import os
 from pathlib import Path
 import sys
-from urllib.parse import quote
-
-import aiohttp
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
 
 from sqlalchemy import text
 
@@ -38,12 +27,9 @@ BOOTSTRAP_SQL = (
     / "aiops"
     / "initial_admin.sql"
 )
-MANUAL_PATH = (
-    ROOT / "services" / "aiops_agent" / "resources" / "knowledge"
-    / "database-operations-manual.md"
-)
 DOMAIN_NAME = "aiops_portal"
 COLLECTION_NAME = "operations-manuals"
+DEFAULT_KNOWLEDGE_BASE_ID = "019ffff0-0000-7000-8000-000000001001"
 CASE_COLLECTION_NAME = "diagnosis-cases"
 ADMIN_USER = "aiopsadmin"
 INITIAL_PASSWORD = "AIOpsAdmin@2026!"
@@ -56,10 +42,10 @@ class AIOpsInitializationResult:
     pdb_name: str
     schema_name: str
     domain_id: int
+    knowledge_base_id: str
     collection_id: str
     case_collection_id: str
     permission_count: int
-    manual_status: str | None
 
 
 def load_aiops_bootstrap_statements(path: Path = BOOTSTRAP_SQL) -> list[str]:
@@ -131,12 +117,19 @@ async def _validate(connection) -> AIOpsInitializationResult:
              AND member_role.ROLE_CODE='app_admin'
              AND member_role.STATUS='ACTIVE'
              AND member_role.SCOPE_MODE='ALL_APP_DOMAINS'
+          JOIN KBOT_OPS_KNOWLEDGE_BASE knowledge_base
+            ON knowledge_base.DOMAIN_ID=domain.DOMAIN_ID
+           AND knowledge_base.COLLECTION_ID=collection.COLLECTION_ID
+           AND knowledge_base.KNOWLEDGE_BASE_ID=HEXTORAW(REPLACE(
+               '019ffff0-0000-7000-8000-000000001001','-',''
+           ))
+           AND knowledge_base.STATUS='ACTIVE'
          WHERE domain.NAME='aiops_portal' AND domain.STATUS='ACTIVE'
            AND collection.DISPLAY_NAME='operations-manuals'
            AND collection.STATUS='ACTIVE' AND collection.MODELS_JSON IS NOT NULL
     """))).one_or_none()
     if resource is None:
-        raise RuntimeError("aiopsadmin、aiops_portal 或固定运维手册集合初始化不完整")
+        raise RuntimeError("aiopsadmin、aiops_portal 或默认运维知识库初始化不完整")
     case_collection_id = (await connection.execute(text("""
         SELECT LOWER(SUBSTR(RAWTOHEX(collection.COLLECTION_ID),1,8)||'-'||
                      SUBSTR(RAWTOHEX(collection.COLLECTION_ID),9,4)||'-'||
@@ -163,82 +156,18 @@ async def _validate(connection) -> AIOpsInitializationResult:
     permission_count = int((await connection.execute(text(
         "SELECT COUNT(*) FROM KBOT_PERMISSION WHERE APP_ID='aiops'"
     ))).scalar_one())
-    manual_status = (await connection.execute(text("""
-        SELECT revision.APPROVAL_STATUS
-          FROM KBOT_KC_BUNDLE bundle
-          JOIN KBOT_KC_BUNDLE_REVISION revision
-            ON revision.BUNDLE_ID=bundle.BUNDLE_ID
-         WHERE bundle.COLLECTION_ID=HEXTORAW(REPLACE(:collection_id,'-',''))
-           AND bundle.SOURCE_SYSTEM='kbot'
-           AND bundle.SOURCE_TYPE='USER_UPLOAD'
-         ORDER BY revision.REVISION_NO DESC
-         FETCH FIRST 1 ROWS ONLY
-    """), {
-        "collection_id": str(resource[1]),
-    })).scalar_one_or_none()
     return AIOpsInitializationResult(
         pdb_name=str(target[0]), schema_name=str(target[1]),
-        domain_id=int(resource[0]), collection_id=str(resource[1]),
+        domain_id=int(resource[0]),
+        knowledge_base_id=DEFAULT_KNOWLEDGE_BASE_ID,
+        collection_id=str(resource[1]),
         case_collection_id=str(case_collection_id),
         permission_count=permission_count,
-        manual_status=str(manual_status) if manual_status else None,
     )
 
 
-def _configured_main_api_url() -> str:
-    configured = Path(os.getenv("KBOT_CONFIG_FILE") or ROOT / "configuration" / "kbot.toml")
-    if not configured.is_absolute():
-        configured = (ROOT / configured).resolve()
-    with configured.open("rb") as stream:
-        value = str((tomllib.load(stream).get("ui") or {}).get("main_api_base_url") or "")
-    if not value.startswith(("http://", "https://")):
-        raise RuntimeError("kbot.toml 缺少合法的 [ui].main_api_base_url")
-    return value.rstrip("/")
-
-
-async def _upload_manual(*, base_url: str) -> None:
-    content = MANUAL_PATH.read_bytes()
-    digest = hashlib.sha256(content).hexdigest()
-    idempotency_key = f"aiops-manual:{digest}"
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as session:
-        async with session.post(
-            f"{base_url}/api/v1/apps/aiops/auth/login",
-            json={"user_id": ADMIN_USER, "password": INITIAL_PASSWORD},
-        ) as response:
-            login = await response.json()
-            if response.status != 200:
-                raise RuntimeError(f"AIOps 初始化用户登录失败：HTTP {response.status} {login}")
-        token = str(login["access_token"])
-        metadata = {
-            "display_name": "KBot AIOps 数据库运维手册",
-            "publisher": "KBot",
-            "document_version": "4.0",
-            "security_level": 1,
-            "scopes": [],
-        }
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Idempotency-Key": idempotency_key,
-            "Content-Type": "text/markdown",
-            "X-File-Name": MANUAL_PATH.name,
-            "X-Content-SHA256": digest,
-            "X-Upload-Metadata": quote(
-                json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
-                safe="",
-            ),
-        }
-        async with session.post(
-            f"{base_url}/api/v1/apps/aiops/operations-knowledge/manuals",
-            data=content, headers=headers,
-        ) as response:
-            payload = await response.json()
-            if response.status != 202:
-                raise RuntimeError(f"AIOps 运维手册入库失败：HTTP {response.status} {payload}")
-
-
 async def initialize_aiops(
-    *, check_only: bool = False, skip_manual_upload: bool = False,
-    main_api_url: str | None = None,
+    *, check_only: bool = False,
 ) -> AIOpsInitializationResult:
     settings = get_settings()
     runtime = create_database_runtime(settings)
@@ -256,12 +185,6 @@ async def initialize_aiops(
                     await connection.rollback()
                     raise
             result = await _validate(connection)
-        if not check_only and not skip_manual_upload and result.manual_status != "APPROVED":
-            await _upload_manual(base_url=main_api_url or _configured_main_api_url())
-            async with runtime.engine.connect() as connection:
-                result = await _validate(connection)
-        if not skip_manual_upload and result.manual_status != "APPROVED":
-            raise RuntimeError("固定运维手册尚未在 KC 中批准")
         return result
     finally:
         await runtime.close()
@@ -270,14 +193,10 @@ async def initialize_aiops(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check-only", action="store_true", help="只读校验初始化结果")
-    parser.add_argument("--skip-manual-upload", action="store_true", help="仅初始化数据库资源，不调用 KC")
-    parser.add_argument("--main-api-url", help="覆盖 kbot.toml 中的 Main API URL")
     args = parser.parse_args()
     try:
         result = asyncio.run(initialize_aiops(
             check_only=args.check_only,
-            skip_manual_upload=args.skip_manual_upload,
-            main_api_url=args.main_api_url,
         ))
     except Exception as exc:
         print(f"AIOps 初始化失败：{exc}")
@@ -286,10 +205,10 @@ def main() -> int:
     print(
         f"AIOps {action}：PDB={result.pdb_name}，Schema={result.schema_name}，"
         f"Domain={DOMAIN_NAME}({result.domain_id})，"
+        f"KnowledgeBase=默认运维知识库({result.knowledge_base_id})，"
         f"Collection={COLLECTION_NAME}({result.collection_id})，"
         f"CaseCollection={CASE_COLLECTION_NAME}({result.case_collection_id})，"
-        f"权限={result.permission_count}，用户={ADMIN_USER}，"
-        f"运维手册={result.manual_status or '未上传'}"
+        f"权限={result.permission_count}，用户={ADMIN_USER}"
     )
     if not args.check_only:
         print(f"初始密码：{INITIAL_PASSWORD}；首次登录后请立即修改")

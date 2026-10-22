@@ -37,6 +37,9 @@ class Repository:
     async def has_activity_for_collection(self, **kwargs):
         del kwargs
         return self.values.get("parse_view") is not None
+    async def count_indexed_active(self, **kwargs):
+        del kwargs
+        return int(self.values.get("indexed_active_count") or 0)
     async def next_revision_no(self, **kwargs): return 1
     async def next_version_no(self, **kwargs): return 1
     async def add(self, entity):
@@ -55,7 +58,7 @@ class Uow:
         self.collections = Repository(values); self.receipts = Repository(values); self.bundles = Repository(values)
         self.revisions = Repository(values); self.documents = Repository(values); self.versions = Repository(values)
         self.members = Repository(values); self.jobs = Repository(values); self.commit = AsyncMock()
-        self.parse_views = Repository(values)
+        self.parse_views = Repository(values); self.evidence = Repository(values)
         self.notification_outbox = SimpleNamespace(add=AsyncMock())
         self.session = SimpleNamespace(flush=AsyncMock())
     async def __aenter__(self): return self
@@ -66,6 +69,7 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _collection(*, parser_vlm_model_id=None):
         models = {
+            "parser_ocr": str(uuid7()),
             "embedding": str(uuid7()),
         }
         if parser_vlm_model_id:
@@ -214,6 +218,96 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("user:reviewer", revision.reviewed_by)
         uow.commit.assert_awaited_once()
 
+    async def test_approval_reuses_indexed_source_and_only_queues_new_member(self):
+        revision_id = uuid7()
+        collection = self._collection()
+        revision = SimpleNamespace(
+            collection_id=collection.collection_id,
+            bundle_id=uuid7(),
+            bundle_revision_id=revision_id,
+            source_revision="r2",
+            title="User Upload",
+            created_by="user:owner",
+            approval_status="PENDING",
+            status="PENDING_REVIEW",
+            reviewed_by=None,
+            reviewed_at=None,
+            review_comment=None,
+            updated_by=None,
+            completed_at=None,
+        )
+        source_version = SimpleNamespace(
+            document_version_id=uuid7(),
+            detected_mime_type="application/pdf",
+            content_hash="a" * 64,
+        )
+        profile_version = SimpleNamespace(
+            document_version_id=uuid7(),
+            detected_mime_type="text/markdown",
+            content_hash="b" * 64,
+        )
+        members = [
+            SimpleNamespace(
+                member_status="RECEIVED",
+                document_version_id=source_version.document_version_id,
+                document_role="CONTENT",
+                declared_name="manual.pdf",
+                external_document_id="manual",
+                completed_at=None,
+                failure_stage=None,
+                failure_code=None,
+                failure_message=None,
+            ),
+            SimpleNamespace(
+                member_status="RECEIVED",
+                document_version_id=profile_version.document_version_id,
+                document_role="SUPPLEMENT",
+                declared_name="profile.md",
+                external_document_id="profile",
+                completed_at=None,
+                failure_stage=None,
+                failure_code=None,
+                failure_message=None,
+            ),
+        ]
+        receipt = SimpleNamespace(
+            receipt_status="PENDING_REVIEW", updated_by=None
+        )
+        values = {"collection": collection, "indexed_active_count": 3}
+        uow = Uow(values)
+        uow.revisions.get_by_id = AsyncMock(return_value=revision)
+        uow.collections.get_by_id_scope = AsyncMock(return_value=collection)
+        uow.members.list_by_revision = AsyncMock(return_value=members)
+        uow.versions.get_by_id = AsyncMock(
+            side_effect=[source_version, profile_version]
+        )
+        uow.parse_views.get_by_input = AsyncMock(side_effect=[
+            SimpleNamespace(parse_view_id=uuid7(), view_status="ACTIVE"),
+            None,
+        ])
+        uow.receipts.list_by_revision = AsyncMock(return_value=[receipt])
+        service = KnowledgeCoreIntakeService(
+            receipt_ttl_seconds=60, uow_factory=lambda: uow
+        )
+
+        result = await service.review(ReviewIntakeCommand(
+            domain_id=1,
+            collection_id=collection.collection_id,
+            bundle_revision_id=revision_id,
+            decision="APPROVE",
+            actor_id="user:reviewer",
+            comment=None,
+        ))
+
+        self.assertEqual("PROCESSING", result.revision_status)
+        self.assertEqual("READY", members[0].member_status)
+        self.assertIsNotNone(members[0].completed_at)
+        self.assertEqual(1, len(uow.jobs.added))
+        self.assertEqual(
+            profile_version.document_version_id,
+            uow.jobs.added[0].document_version_id,
+        )
+
     async def test_pdf_with_auto_vlm_uses_hybrid_parse_view(self):
         values = {
             "collection": self._collection(
@@ -246,15 +340,12 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
             uow.parse_views.added[0].parser_name,
         )
 
-    async def test_deepseek_ocr_disables_docling_builtin_ocr(self):
+    async def test_collection_ocr_model_selects_model_ocr_pipeline(self):
         values = {"collection": self._collection()}
         uow = Uow(values)
         service = KnowledgeCoreIntakeService(
             receipt_ttl_seconds=60,
             uow_factory=lambda: uow,
-            parse_policy_overrides={
-                "ocr_model": "deepseek-ocr-2",
-            },
         )
         version = SimpleNamespace(
             document_version_id=40,
@@ -271,12 +362,46 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         policy = uow.parse_views.added[0].parse_config_json
-        self.assertFalse(policy["do_ocr"])
-        self.assertEqual("DEEPSEEK_OCR", policy["ocr_provider"])
+        self.assertTrue(policy["do_ocr"])
         self.assertEqual(
-            "kc-deepseek-ocr-pipeline",
+            values["collection"].models_json["parser_ocr"],
+            policy["models"]["parser_ocr"],
+        )
+        self.assertEqual(
+            "kc-model-ocr-pipeline",
             uow.parse_views.added[0].parser_name,
         )
+
+    async def test_indexed_parse_view_is_reused_without_duplicate_job(self):
+        parse_view = SimpleNamespace(
+            parse_view_id=uuid7(), view_status="ACTIVE"
+        )
+        values = {
+            "collection": self._collection(),
+            "parse_view": parse_view,
+            "indexed_active_count": 3,
+        }
+        uow = Uow(values)
+        service = KnowledgeCoreIntakeService(
+            receipt_ttl_seconds=60,
+            uow_factory=lambda: uow,
+        )
+        version = SimpleNamespace(
+            document_version_id=uuid7(),
+            detected_mime_type="application/pdf",
+            content_hash="a" * 64,
+        )
+
+        parse_required = await service._enqueue_parse(
+            uow,
+            collection_id=values["collection"].collection_id,
+            bundle_revision_id=uuid7(),
+            version=version,
+            actor_id="svc:test",
+        )
+
+        self.assertFalse(parse_required)
+        self.assertEqual([], uow.jobs.added)
 
     async def test_parse_snapshot_only_contains_runtime_parser_models(self):
         collection = self._collection(parser_vlm_model_id=uuid7())
@@ -303,7 +428,10 @@ class IntakeServiceTest(unittest.IsolatedAsyncioTestCase):
 
         policy_models = uow.parse_views.added[0].parse_config_json["models"]
         self.assertEqual(
-            {"parser_vlm": collection.models_json["parser_vlm"]},
+            {
+                "parser_ocr": collection.models_json["parser_ocr"],
+                "parser_vlm": collection.models_json["parser_vlm"],
+            },
             policy_models,
         )
 

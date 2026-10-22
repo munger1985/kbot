@@ -221,9 +221,21 @@ class DocumentVersionRepository:
     async def get_by_content_hash(self, *, document_id: UUID, content_hash: str) -> KcDocumentVersionEntity | None:
         statement: Select = select(KcDocumentVersionEntity).where(KcDocumentVersionEntity.document_id == document_id, KcDocumentVersionEntity.content_hash == content_hash)
         return (await self.session.execute(statement)).scalar_one_or_none()
-    async def get_by_id(self, *, document_version_id: UUID) -> KcDocumentVersionEntity | None:
+    async def get_by_id(self, *, document_version_id: UUID, lock: bool = False) -> KcDocumentVersionEntity | None:
         statement: Select = select(KcDocumentVersionEntity).where(KcDocumentVersionEntity.document_version_id == document_version_id)
+        if lock: statement = statement.with_for_update()
         return (await self.session.execute(statement)).scalar_one_or_none()
+    async def count_other_storage_users(
+        self, *, storage_uri: str, excluding_version_id: UUID,
+    ) -> int:
+        statement = select(func.count()).select_from(
+            KcDocumentVersionEntity
+        ).where(
+            KcDocumentVersionEntity.storage_uri == storage_uri,
+            KcDocumentVersionEntity.document_version_id != excluding_version_id,
+            KcDocumentVersionEntity.storage_state != "PURGED",
+        )
+        return int((await self.session.execute(statement)).scalar_one())
     async def next_version_no(self, *, document_id: UUID) -> int:
         statement = select(func.coalesce(func.max(KcDocumentVersionEntity.version_no), 0)).where(KcDocumentVersionEntity.document_id == document_id)
         return int((await self.session.execute(statement)).scalar_one()) + 1
@@ -242,6 +254,19 @@ class BundleRevisionDocumentRepository:
     async def list_by_revision(self, *, bundle_revision_id: UUID) -> list[KcBundleRevisionDocumentEntity]:
         statement: Select = select(KcBundleRevisionDocumentEntity).where(KcBundleRevisionDocumentEntity.bundle_revision_id == bundle_revision_id)
         return list((await self.session.execute(statement)).scalars())
+
+    async def count_other_references(
+        self, *, document_version_id: UUID, excluding_revision_id: UUID,
+    ) -> int:
+        statement = select(func.count()).select_from(
+            KcBundleRevisionDocumentEntity
+        ).where(
+            KcBundleRevisionDocumentEntity.document_version_id
+            == document_version_id,
+            KcBundleRevisionDocumentEntity.bundle_revision_id
+            != excluding_revision_id,
+        )
+        return int((await self.session.execute(statement)).scalar_one())
 
     async def list_by_revisions(
         self, *, bundle_revision_ids: list[UUID]
@@ -517,6 +542,25 @@ class IngestionJobRepository:
         )
         return list(rows)
 
+    async def list_by_document_version(
+        self, *, document_version_id: UUID,
+    ) -> list[KcIngestionJobEntity]:
+        rows = await self.session.scalars(
+            select(KcIngestionJobEntity)
+            .where(
+                KcIngestionJobEntity.document_version_id
+                == document_version_id,
+                KcIngestionJobEntity.job_type.in_((
+                    "PARSE", "VISUAL_ENRICH", "INDEX", "PROFILE",
+                )),
+            )
+            .order_by(
+                KcIngestionJobEntity.created_at.desc(),
+                KcIngestionJobEntity.ingestion_job_id.desc(),
+            )
+        )
+        return list(rows)
+
     async def detach_parse_views(self, *, parse_view_ids: list[UUID]) -> None:
         if parse_view_ids:
             await self.session.execute(
@@ -558,19 +602,6 @@ class ParseViewRepository:
             KcParseViewEntity.parse_view_id != except_parse_view_id,
         ).with_for_update()
         return list((await self.session.execute(statement)).scalars())
-    async def list_by_document_version(
-        self, *, document_version_id: UUID,
-    ) -> list[KcIngestionJobEntity]:
-        statement = select(KcIngestionJobEntity).where(
-            KcIngestionJobEntity.document_version_id == document_version_id,
-            KcIngestionJobEntity.job_type.in_((
-                "PARSE", "VISUAL_ENRICH", "INDEX", "PROFILE",
-            )),
-        ).order_by(
-            KcIngestionJobEntity.created_at.desc(),
-            KcIngestionJobEntity.ingestion_job_id.desc(),
-        )
-        return list((await self.session.execute(statement)).scalars())
     async def delete_by_ids(self, parse_view_ids: list[UUID]) -> None:
         if parse_view_ids:
             await self.session.execute(delete(KcParseViewEntity).where(KcParseViewEntity.parse_view_id.in_(parse_view_ids)))
@@ -609,6 +640,29 @@ class EvidenceRepository:
     async def count_staged(self, *, parse_view_id: UUID) -> int:
         statement = select(func.count()).select_from(KcEvidenceEntity).where(KcEvidenceEntity.parse_view_id == parse_view_id, KcEvidenceEntity.status == "STAGED")
         return int((await self.session.execute(statement)).scalar_one())
+    async def count_indexed_active(self, *, parse_view_id: UUID) -> int:
+        statement = select(func.count()).select_from(KcEvidenceEntity).where(
+            KcEvidenceEntity.parse_view_id == parse_view_id,
+            KcEvidenceEntity.status == "ACTIVE",
+            KcEvidenceEntity.embedding_input_hash.is_not(None),
+        )
+        return int((await self.session.execute(statement)).scalar_one())
+    async def rebind_active_revision(
+        self, *, document_version_id: UUID, bundle_revision_id: UUID,
+        bundle_revision_document_id: UUID,
+    ) -> None:
+        """发布复用文档时，将当前 Evidence 原子切换到新 Revision。"""
+        await self.session.execute(
+            update(KcEvidenceEntity)
+            .where(
+                KcEvidenceEntity.document_version_id == document_version_id,
+                KcEvidenceEntity.status == "ACTIVE",
+            )
+            .values(
+                bundle_revision_id=bundle_revision_id,
+                bundle_revision_document_id=bundle_revision_document_id,
+            )
+        )
     async def list_staged_keys(self, *, parse_view_id: UUID) -> list[str]:
         statement = select(KcEvidenceEntity.evidence_key).where(
             KcEvidenceEntity.parse_view_id == parse_view_id,
