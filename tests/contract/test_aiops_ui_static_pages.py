@@ -1276,12 +1276,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         )[0]
         self.assertNotIn("detail:", target_config)
         self.assertIn('data-target-action="enable"', pages_script)
-        self.assertIn('data-target-action="delete"', pages_script)
-        self.assertIn('shell.toast("请先停用运维目标，再执行删除")', pages_script)
-        self.assertIn("删除会一并清理该 Target 的监控映射、数据库凭据", pages_script)
-        self.assertIn("运行、会话、报告、告警、工作项、恢复与负载历史", pages_script)
-        self.assertIn("共享的监控源、Agent、策略、巡检定义和知识资产不会删除", pages_script)
-        self.assertIn(
+        self.assertNotIn('data-target-action="delete"', pages_script)
+        self.assertNotIn('shell.toast("请先停用运维目标，再执行删除")', pages_script)
+        self.assertNotIn("删除会一并清理该 Target 的监控映射、数据库凭据", pages_script)
+        self.assertNotIn(
             "KBotAIOpsAuth.request(`${appApi}/targets/${targetId}`",
             pages_script,
         )
