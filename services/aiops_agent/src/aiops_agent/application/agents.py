@@ -329,6 +329,10 @@ class AIOpsAgentService:
                     version_id=version_id,
                     business_system_ids=command.allowed_business_system_ids,
                 )
+                await uow.agents.add_version_knowledge_bases(
+                    version_id=version_id,
+                    knowledge_base_ids=command.knowledge_policy.knowledge_base_ids,
+                )
                 await uow.agents.add_version_resource_policies(
                     version_id=version_id,
                     controlled_action_policies=self._controlled_action_policies(values),
@@ -607,6 +611,13 @@ class AIOpsAgentService:
                 await uow.agents.add_version_business_systems(
                     version_id=version_id,
                     business_system_ids=effective["allowed_business_system_ids"],
+                )
+                knowledge_policy = AgentKnowledgePolicy.model_validate(
+                    effective.get("knowledge_policy") or {}
+                )
+                await uow.agents.add_version_knowledge_bases(
+                    version_id=version_id,
+                    knowledge_base_ids=knowledge_policy.knowledge_base_ids,
                 )
                 await uow.agents.add_version_resource_policies(
                     version_id=version_id,
@@ -905,6 +916,39 @@ class AIOpsAgentService:
                 raise AIOpsAgentError(
                     "AIOPS_AGENT_ACTION_SCOPE_REQUIRED",
                     f"已选受控动作必须明确选择{missing}",
+                    status_code=422,
+                )
+        knowledge_policy = AgentKnowledgePolicy.model_validate(
+            values.get("knowledge_policy") or {}
+        )
+        if knowledge_policy.enabled != (
+            AIOpsCapability.KNOWLEDGE_QA in capabilities
+        ):
+            raise AIOpsAgentError(
+                "AIOPS_AGENT_KNOWLEDGE_CAPABILITY_REQUIRED",
+                "knowledge_policy.enabled 必须与 KNOWLEDGE_QA 能力一致",
+                status_code=422,
+            )
+        for knowledge_base_id in knowledge_policy.knowledge_base_ids:
+            knowledge_base = await uow.operations_knowledge.get_knowledge_base(
+                domain_id=domain_id,
+                knowledge_base_id=knowledge_base_id,
+            )
+            if knowledge_base is None or knowledge_base.status != "ACTIVE":
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_KNOWLEDGE_BASE_INVALID",
+                    "Agent 引用的运维知识库不存在或未启用",
+                    status_code=422,
+                )
+        for tag_id in knowledge_policy.tag_ids:
+            tag = await uow.operations_knowledge.get_tag(
+                domain_id=domain_id,
+                tag_id=tag_id,
+            )
+            if tag is None or tag.status != "ACTIVE":
+                raise AIOpsAgentError(
+                    "AIOPS_AGENT_KNOWLEDGE_TAG_INVALID",
+                    "Agent 引用的运维知识标签不存在或未启用",
                     status_code=422,
                 )
         return targets

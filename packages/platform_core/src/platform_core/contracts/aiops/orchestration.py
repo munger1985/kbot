@@ -143,6 +143,7 @@ class AgentKnowledgePolicy(AIOpsContract):
 
     enabled: bool = True
     source_kinds: tuple[str, ...] = ("MANUAL", "DIAGNOSIS_CASE")
+    knowledge_base_ids: tuple[UUIDv7, ...] = ()
     tag_ids: tuple[UUIDv7, ...] = ()
     max_security_level: int = Field(default=3, ge=1, le=5)
     maximum_references: int = Field(default=8, ge=1, le=20)
@@ -156,6 +157,10 @@ class AgentKnowledgePolicy(AIOpsContract):
             raise ValueError("知识来源不能重复")
         if len(set(self.tag_ids)) != len(self.tag_ids):
             raise ValueError("知识标签不能重复")
+        if self.enabled and not self.knowledge_base_ids:
+            raise ValueError("启用知识能力时至少需要绑定一个运维知识库")
+        if len(set(self.knowledge_base_ids)) != len(self.knowledge_base_ids):
+            raise ValueError("运维知识库不能重复")
         return self
 
 

@@ -27,6 +27,7 @@ def _internal(*target_ids, **overrides):
         "knowledge_policy": {
             "enabled": True,
             "source_kinds": ["MANUAL", "DIAGNOSIS_CASE"],
+            "knowledge_base_ids": [str(uuid7())],
             "tag_ids": [],
             "max_security_level": 2,
             "maximum_references": 4,
@@ -133,6 +134,10 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("### 引用", result.markdown)
         self.assertEqual(2, knowledge.calls[0]["request"].max_security_level)
         self.assertEqual(4, knowledge.calls[0]["request"].max_results)
+        self.assertEqual(
+            tuple(internal["runtime_context"]["knowledge_policy"]["knowledge_base_ids"]),
+            tuple(str(item) for item in knowledge.calls[0]["request"].knowledge_base_ids),
+        )
         self.assertEqual(
             internal["runtime_context"]["models"]["composer_llm"],
             str(resolved[0]),

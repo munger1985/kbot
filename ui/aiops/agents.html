@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AIOps Agent</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261011-1">
+  <link rel="stylesheet" href="./css/aiops-forms.css?v=20261022_1">
 </head>
 <body data-page="agents">
   <main class="ops-main agent-page">
@@ -39,180 +39,35 @@
 
   <dialog id="agent-dialog" class="ops-dialog agent-dialog">
     <form id="agent-form">
-      <header class="agent-dialog-head">
-        <div>
-          <p class="agent-step-label">AGENT PROFILE</p>
-          <h2 id="agent-dialog-title">新增 Agent</h2>
+      <header class="agent-dialog-head"><div><p class="agent-step-label">AGENT PROFILE</p><h2 id="agent-dialog-title">新增 Agent</h2><small>按业务决策完成配置，模型与图片能力使用平台推荐值。</small></div><button data-close-dialog type="button">关闭</button></header>
+      <div class="agent-dialog-workspace">
+        <nav class="agent-wizard-rail" aria-label="Agent 配置步骤"><button type="button" data-agent-step-button="1" class="active"><b>01</b><span><strong>角色信息</strong><small>名称、职责与状态</small></span></button><button type="button" data-agent-step-button="2"><b>02</b><span><strong>工作范围</strong><small>系统、能力与知识</small></span></button><button type="button" data-agent-step-button="3"><b>03</b><span><strong>自动化</strong><small>告警触发边界</small></span></button><button type="button" data-agent-step-button="4"><b>04</b><span><strong>确认配置</strong><small>高级设置与保存</small></span></button><p><strong>分步配置</strong>先确定业务边界，再按需覆盖技术模型。</p></nav>
+        <div class="agent-dialog-main">
+          <div class="ops-dialog-body agent-dialog-body">
+            <p id="agent-result" class="ops-connection-result agent-result" role="status"></p>
+            <section class="agent-step-panel" data-agent-step="1"><header><p>STEP 01</p><h3>角色信息</h3><span>说明这个 Agent 面向谁、负责什么。</span></header><div class="ops-form"><div class="ops-field span-7"><label for="agent-display-name">Agent 名称</label><input id="agent-display-name" name="display_name" maxlength="256" required placeholder="例如 Oracle 生产诊断 Agent"></div><div class="ops-field span-5"><label for="agent-status">运行状态</label><select id="agent-status" name="status"><option value="DRAFT">草稿</option><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select></div><div class="ops-field span-12"><label for="agent-description">简短说明</label><input id="agent-description" name="description" maxlength="1000" placeholder="说明职责与适用范围"></div></div><p id="agent-status-help" class="agent-inline-note">新增 Agent 固定保存为草稿；确认资源后再启用。</p></section>
+
+            <section class="agent-step-panel" data-agent-step="2" hidden><header><p>STEP 02</p><h3>工作范围</h3><span>决定 Agent 可以查看哪些系统、完成哪些任务、使用哪些知识。</span></header><article class="agent-decision-card"><header><div><strong>允许访问的业务系统</strong><small>必选，最多 32 个；只显示已上线系统。</small></div><button id="open-agent-system-picker" type="button">选择业务系统</button></header><div id="agent-business-system-summary" class="agent-selection-summary"></div></article>
+              <article class="agent-decision-card"><header><div><strong>开放能力</strong><small>一次提问可以组合多项能力。</small></div></header><div id="agent-capabilities" class="agent-capability-grid"></div></article>
+              <article class="agent-decision-card"><header><div><strong>运维知识</strong><small>只检索已审批版本，并在回答中保留原文引用。</small></div><label class="agent-policy-switch"><input name="knowledge_enabled" type="checkbox" checked><span>已启用</span></label></header><input name="capabilities" value="KNOWLEDGE_QA" type="checkbox" hidden checked><div id="agent-knowledge-policy-fields" class="agent-knowledge-policy"><div class="agent-source-list"><label class="agent-switch-row"><input type="checkbox" name="knowledge_source_kinds" value="MANUAL" checked><span><strong>运维手册</strong><small>已审批并发布的原始资料</small></span></label><label class="agent-switch-row"><input type="checkbox" name="knowledge_source_kinds" value="DIAGNOSIS_CASE" checked><span><strong>诊断案例</strong><small>由正式会话报告沉淀的历史案例</small></span></label></div><div class="agent-scope-row"><div><strong>绑定运维知识库</strong><small>至少一个，最多 32 个；选择器支持搜索和分页。</small></div><button id="open-agent-knowledge-base-picker" type="button">选择知识库</button></div><div id="agent-knowledge-base-summary" class="agent-selection-summary"></div><div class="ops-form"><div class="ops-field span-6"><label>最高安全级别</label><select name="max_security_level"><option value="1">L1</option><option value="2">L2</option><option value="3" selected>L3</option><option value="4">L4</option><option value="5">L5</option></select></div><div class="ops-field span-6"><label>最多引用</label><input name="maximum_references" type="number" min="1" max="20" value="8"></div></div><div class="agent-scope-row"><div><strong>知识标签范围</strong><small id="agent-knowledge-tag-help">不限制标签，使用所选知识库中的全部已审批知识。</small></div><button id="open-agent-tag-picker" type="button">限制标签</button></div><div id="agent-knowledge-tag-summary" class="agent-selection-summary"></div></div></article>
+            </section>
+
+            <section class="agent-step-panel" data-agent-step="3" hidden><header><p>STEP 03</p><h3>自动化</h3><span>自动触发不影响聊天、知识问答和报告查询。</span></header><article class="agent-decision-card"><header><div><strong>自动告警诊断</strong><small>按告警级别、资源重要程度和冷却时间触发。</small></div><label class="agent-policy-switch"><input name="auto_alert_enabled" type="checkbox" checked><span>已启用</span></label></header><div id="agent-alert-settings" class="ops-form"><div class="ops-field span-4"><label for="agent-min-severity">最低告警级别</label><select id="agent-min-severity" name="auto_observe_min_severity"><option>INFO</option><option>WARNING</option><option>HIGH</option><option selected>CRITICAL</option></select></div><div class="ops-field span-4"><label for="agent-min-target-level">最低资源重要程度</label><select id="agent-min-target-level" name="auto_observe_min_target_level"><option value="1" selected>1 · 全部资源</option><option value="2">2 及以上</option><option value="3">3 及以上</option><option value="4">4 及以上</option><option value="5">仅 5</option></select></div><div class="ops-field span-4"><label for="agent-cooldown">冷却时间（分钟）</label><input id="agent-cooldown" name="alert_cooldown_minutes" type="number" min="0" max="1440" value="15" required></div></div></article></section>
+
+            <section class="agent-step-panel" data-agent-step="4" hidden><header><p>STEP 04</p><h3>确认配置</h3><span>先核对业务结果；仅平台工程师需要展开高级设置。</span></header><div id="agent-review" class="agent-review-grid"></div><details class="agent-advanced"><summary><span><strong>模型与高级设置</strong><small>可覆盖平台推荐模型、图片能力和专业指令。</small></span></summary><div class="ops-form"><div class="ops-field span-6"><label for="agent-planner-model">规划模型</label><select id="agent-planner-model" name="planner_model_id" required><option value="">请选择 LLM</option></select></div><div class="ops-field span-6"><label for="agent-model">诊断模型</label><select id="agent-model" name="diagnosis_model_id" required><option value="">请选择 LLM</option></select></div><div class="ops-field span-6"><label for="agent-composer-model">回答组织模型</label><select id="agent-composer-model" name="composer_model_id" required><option value="">请选择 LLM</option></select></div><div class="ops-field span-6"><label for="agent-memory-model">会话摘要模型</label><select id="agent-memory-model" name="memory_model_id"><option value="">复用回答模型</option></select></div><div class="ops-field span-6"><label for="agent-ocr-model">OCR 模型</label><select id="agent-ocr-model" name="ocr_model_id"><option value="">不启用 OCR</option></select></div><div class="ops-field span-6"><label for="agent-vlm-model">VLM 模型</label><select id="agent-vlm-model" name="vlm_model_id"><option value="">不启用 VLM</option></select></div><div class="ops-field span-12"><label for="agent-instruction">专业指令</label><textarea id="agent-instruction" name="instruction" maxlength="32000" placeholder="补充诊断边界、关注重点或输出要求"></textarea></div></div></details></section>
+          </div>
+          <footer class="agent-wizard-footer"><button data-close-dialog type="button">取消</button><span></span><button id="agent-previous-step" type="button" hidden>上一步</button><button id="agent-next-step" class="primary" type="button">下一步</button><button id="save-agent" class="primary" type="submit" hidden>创建 Agent</button></footer>
         </div>
-        <button data-close-dialog type="button">关闭</button>
-      </header>
-
-      <div class="ops-dialog-body agent-dialog-body">
-        <section class="agent-form-section" aria-labelledby="agent-section-basic">
-          <div class="agent-section-index">01</div>
-          <div class="agent-section-content">
-            <div class="agent-section-heading">
-              <div><h3 id="agent-section-basic">基本信息</h3><p>定义这个 Agent 的职责以及是否允许系统调度。</p></div>
-              <div class="ops-field agent-status-field">
-                <label for="agent-status">运行状态</label>
-                <select id="agent-status" name="status">
-                  <option value="DRAFT">草稿</option>
-                  <option value="ACTIVE">启用</option>
-                  <option value="DISABLED">停用</option>
-                </select>
-              </div>
-            </div>
-            <div class="ops-form">
-              <div class="ops-field span-7">
-                <label for="agent-display-name">Agent 名称</label>
-                <input id="agent-display-name" name="display_name" maxlength="256" required placeholder="例如 Oracle 生产诊断 Agent">
-              </div>
-              <div class="ops-field span-5">
-                <label for="agent-description">简短说明</label>
-                <input id="agent-description" name="description" maxlength="1000" placeholder="这个 Agent 负责什么">
-              </div>
-              <div class="ops-field span-6">
-                <label for="agent-planner-model">规划模型</label>
-                <select id="agent-planner-model" name="planner_model_id" required>
-                  <option value="">正在加载已启用的 LLM…</option>
-                </select>
-                <small>必选。负责问题路由、调查计划生成和证据驱动的重规划。</small>
-              </div>
-              <div class="ops-field span-6">
-                <label for="agent-model">诊断模型</label>
-                <select id="agent-model" name="diagnosis_model_id" required>
-                  <option value="">正在加载已启用的 LLM…</option>
-                </select>
-                <small>主动诊断能力启用时必选，负责证据评估与根因推理。</small>
-              </div>
-              <div class="ops-field span-6">
-                <label for="agent-composer-model">回答组织模型</label>
-                <select id="agent-composer-model" name="composer_model_id" required><option value="">正在加载已启用的 LLM…</option></select>
-                <small>必选。组合知识、监控、告警、报告与诊断证据。</small>
-              </div>
-              <div class="ops-field span-6">
-                <label for="agent-memory-model">会话摘要模型</label>
-                <select id="agent-memory-model" name="memory_model_id"><option value="">复用回答模型</option></select>
-                <small>可选。用于连续会话摘要；未选择时复用回答组织模型。</small>
-              </div>
-            </div>
-            <p id="agent-status-help" class="agent-inline-note">新增 Agent 固定保存为草稿；确认资源后再启用。</p>
-          </div>
-        </section>
-
-        <section class="agent-form-section" aria-labelledby="agent-section-image">
-          <div class="agent-section-index">02</div>
-          <div class="agent-section-content">
-            <div class="agent-section-heading">
-              <div>
-                <h3 id="agent-section-image">图片诊断能力</h3>
-                <p>可选。未配置时，图片仅作为原始证据保存，不会被模型解读；同时配置时优先使用 VLM。</p>
-              </div>
-            </div>
-            <div class="ops-form">
-              <div class="ops-field span-6">
-                <label for="agent-ocr-model">OCR 模型</label>
-                <select id="agent-ocr-model" name="ocr_model_id">
-                  <option value="">不启用 OCR</option>
-                </select>
-                <small>提取截图中的文字、数值和错误码。</small>
-              </div>
-              <div class="ops-field span-6">
-                <label for="agent-vlm-model">VLM 模型</label>
-                <select id="agent-vlm-model" name="vlm_model_id">
-                  <option value="">不启用 VLM</option>
-                </select>
-                <small>理解告警截图、图表、界面状态和可见上下文；配置后优先于 OCR。</small>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="agent-form-section" aria-labelledby="agent-section-evidence">
-          <div class="agent-section-index">03</div>
-          <div class="agent-section-content">
-            <div class="agent-section-heading">
-              <div>
-                <h3 id="agent-section-evidence">业务系统、能力与知识范围</h3>
-                <p>用户只需选择 Agent 并自然语言描述系统或资源；每轮在这里授权的业务系统内解析实际执行范围。</p>
-              </div>
-            </div>
-            <div class="ops-field agent-target-field">
-              <label>允许访问的业务系统</label>
-              <div id="agent-business-systems" class="agent-target-list"></div>
-              <small>必选，可多选。系统内当前有效资源会进入受控候选范围；凭据与内部 Target 不向用户暴露。</small>
-            </div>
-            <div class="ops-field agent-target-field">
-              <label>开放能力</label>
-              <div id="agent-capabilities" class="agent-target-list"></div>
-              <small>一次提问可组合多项能力；受控变更仍需资源级白名单与逐条审批。</small>
-            </div>
-            <div class="agent-permission-row">
-              <div class="agent-section-heading">
-                <div><strong>运维知识策略</strong><small>知识只使用已审批版本，并在回答中保留原文引用。</small></div>
-                <label class="agent-switch-row"><input name="knowledge_enabled" type="checkbox" checked><span><strong>启用知识问答</strong></span></label>
-              </div>
-              <div id="agent-knowledge-policy-fields" class="ops-form">
-                <div class="ops-field span-6"><label>知识来源</label><div class="agent-source-list"><label class="agent-switch-row"><input type="checkbox" name="knowledge_source_kinds" value="MANUAL" checked><span><strong>运维手册</strong><small>已审批并发布的原始资料</small></span></label><label class="agent-switch-row"><input type="checkbox" name="knowledge_source_kinds" value="DIAGNOSIS_CASE" checked><span><strong>诊断案例</strong><small>由正式会话报告沉淀的历史案例</small></span></label></div></div>
-                <div class="ops-field span-3"><label>最高安全级别</label><select name="max_security_level"><option value="1">L1</option><option value="2">L2</option><option value="3" selected>L3</option><option value="4">L4</option><option value="5">L5</option></select></div>
-                <div class="ops-field span-3"><label>最多引用</label><input name="maximum_references" type="number" min="1" max="20" value="8"></div>
-                <div class="ops-field span-12"><label>知识标签（可选）</label><div id="agent-knowledge-tags" class="agent-scope-options"></div><small>不选择标签表示使用安全级别内全部已审批知识。</small></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="agent-form-section" aria-labelledby="agent-section-automation">
-          <div class="agent-section-index">04</div>
-          <div class="agent-section-content">
-            <div class="agent-section-heading">
-              <div><h3 id="agent-section-automation">自动告警诊断</h3><p>告警级别、资源重要程度和冷却时间只适用于自动触发，不影响聊天、知识问答和报告查询。</p></div>
-              <label class="agent-compact-switch"><input name="auto_alert_enabled" type="checkbox" checked><span>允许自动触发</span></label>
-            </div>
-            <div id="agent-alert-settings" class="ops-form">
-              <div class="ops-field span-4">
-                <label for="agent-min-severity">最低告警级别</label>
-                <select id="agent-min-severity" name="auto_observe_min_severity">
-                  <option>INFO</option><option>WARNING</option><option>HIGH</option><option selected>CRITICAL</option>
-                </select>
-              </div>
-              <div class="ops-field span-4">
-                <label for="agent-min-target-level">最低资源重要程度</label>
-                <select id="agent-min-target-level" name="auto_observe_min_target_level">
-                  <option value="1" selected>1 · 全部资源</option><option value="2">2 及以上</option><option value="3">3 及以上</option><option value="4">4 及以上</option><option value="5">仅 5</option>
-                </select>
-              </div>
-              <div class="ops-field span-4">
-                <label for="agent-cooldown">同一告警冷却时间（分钟）</label>
-                <input id="agent-cooldown" name="alert_cooldown_minutes" type="number" min="0" max="1440" value="15" required>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <details class="agent-advanced">
-          <summary>高级设置</summary>
-          <div class="ops-form">
-            <div class="ops-field span-12">
-              <label for="agent-instruction">专业指令</label>
-              <textarea id="agent-instruction" name="instruction" maxlength="32000" placeholder="补充该 Agent 的诊断边界、关注重点或输出要求"></textarea>
-            </div>
-          </div>
-        </details>
-        <p id="agent-result" class="ops-connection-result agent-result" role="status"></p>
       </div>
-
-      <footer>
-        <button data-close-dialog type="button">取消</button>
-        <button id="save-agent" class="primary" type="submit">创建 Agent</button>
-      </footer>
     </form>
   </dialog>
+
+  <dialog id="agent-picker-dialog" class="agent-picker-dialog"><div class="agent-picker-shell"><header><div><p>SELECT SCOPE</p><h2 id="agent-picker-title">选择业务系统</h2><span id="agent-picker-count">已选择 0 / 32</span></div><button id="close-agent-picker" type="button">关闭</button></header><div class="agent-picker-tools"><input id="agent-picker-search" type="search" placeholder="搜索名称、编码或说明"><select id="agent-picker-environment"><option value="">全部环境</option></select></div><div id="agent-picker-list" class="agent-picker-list"></div><footer><span id="agent-picker-page-summary">共 0 项 · 第 1/1 页</span><div><button id="agent-picker-previous" type="button">上一页</button><button id="agent-picker-next" type="button">下一页</button><button id="apply-agent-picker" class="primary" type="button">完成</button></div></footer></div></dialog>
 
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261020_3"></script>
   <script src="./js/aiops-pages.js"></script>
-  <script src="./js/aiops-agents.js?v=20261019_1"></script>
+  <script src="./js/aiops-agents.js?v=20261022_1"></script>
 </body>
 </html>

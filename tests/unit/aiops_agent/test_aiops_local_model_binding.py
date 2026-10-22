@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 from platform_core.identity import uuid7
-from platform_core.contracts.aiops import AIOpsCapability
+from platform_core.contracts.aiops import AIOpsCapability, AgentKnowledgePolicy
 
 from aiops_agent.adapters.agent_catalog import AIOpsAgentValidator
 from aiops_agent.application.agents import (
@@ -34,6 +34,7 @@ def _active_command(unit_of_work, *, display_name, models, status="ACTIVE"):
             unit_of_work.system.business_system_id,
         ),
         capabilities=(AIOpsCapability.ACTIVE_DIAGNOSIS,),
+        knowledge_policy=AgentKnowledgePolicy(enabled=False),
         models=models,
         status=status,
         actor_id="kbotui_dev",

@@ -17,7 +17,9 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         script = SCRIPT.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn('name="allowed_business_system_ids"', script)
+        self.assertIn("selectionSets.systems", script)
+        self.assertIn('openPicker("systems")', script)
+        self.assertIn("pickerPageSize = 12", script)
         self.assertIn("至少选择一个业务系统", script)
         self.assertNotIn('name="target_ids"', script)
         self.assertNotIn("diagnostic_source_ids", script)
@@ -26,7 +28,8 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-agents.js?v=20261019_1", page)
+        self.assertIn("aiops-forms.css?v=20261022_1", page)
+        self.assertIn("aiops-agents.js?v=20261022_1", page)
 
     def test_agent_does_not_maintain_monitor_mappings(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")

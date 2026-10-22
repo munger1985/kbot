@@ -641,7 +641,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('value="KNOWLEDGE_QA"', script)
-        self.assertIn("运维知识策略", page)
+        self.assertIn("绑定运维知识库", page)
+        self.assertIn("只检索已审批版本", page)
         self.assertNotIn("knowledge-answering-agent", shell)
         self.assertFalse((AIOPS_ROOT / "knowledge-answering-agent.html").exists())
         self.assertFalse((AIOPS_ROOT / "js" / "aiops-knowledge-answering-agent.js").exists())
@@ -1379,22 +1380,21 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="diagnostic_source_ids"', script)
         self.assertNotIn('name="target_ids"', script)
         self.assertNotIn('id="agent-targets"', page)
-        self.assertIn('name="allowed_business_system_ids"', script)
-        self.assertIn('id="agent-business-systems"', page)
+        self.assertIn("selectionSets.systems", script)
+        self.assertIn('id="agent-business-system-summary"', page)
+        self.assertIn('id="open-agent-system-picker"', page)
         self.assertIn("请至少选择一个业务系统", script)
         self.assertIn('id="agent-capabilities"', page)
         self.assertIn('name="capabilities"', script)
         self.assertIn('id="agent-knowledge-policy-fields"', page)
-        self.assertIn(
-            '<label class="agent-switch-row"><input name="knowledge_enabled" '
-            'type="checkbox" checked><span><strong>启用知识问答</strong></span></label>',
-            page,
-        )
+        self.assertIn('name="knowledge_enabled" type="checkbox" checked', page)
+        self.assertIn("绑定运维知识库", page)
+        self.assertIn('id="open-agent-knowledge-base-picker"', page)
         self.assertNotIn(
             'class="agent-compact-switch"><input name="knowledge_enabled"', page
         )
         self.assertIn('name="knowledge_source_kinds"', page)
-        self.assertIn('name="knowledge_tag_ids"', script)
+        self.assertIn("selectionSets.tags", script)
         self.assertNotIn('name="allow_change_execution"', page)
         self.assertIn("controlled_action_execution:", script)
         self.assertNotIn('/action-catalog/', script)
@@ -1407,9 +1407,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('diagnosis_llm: form.elements.diagnosis_model_id.value', script)
         self.assertIn('`${api}/agent-model-catalog`', script)
         self.assertNotIn('models: modelId ? { diagnosis:', script)
-        self.assertIn("只适用于自动触发", page)
+        self.assertIn("自动触发不影响聊天、知识问答和报告查询", page)
         self.assertNotIn('id="agent-binding-summary"', page)
-        self.assertIn('class="agent-form-section"', page)
+        self.assertIn('class="agent-step-panel"', page)
+        self.assertIn('class="agent-picker-dialog"', page)
         self.assertNotIn("/source-bindings", script)
         self.assertNotIn("assertExistingBindings", script)
         self.assertNotIn("ensureSourceBindings", script)

@@ -28,7 +28,17 @@
   let systems = [];
   let models = [];
   let knowledgeTags = [];
+  let knowledgeBases = [];
   let editing = null;
+  let currentStep = 1;
+  let pickerKind = null;
+  let pickerPage = 1;
+  const pickerPageSize = 12;
+  const selectionSets = {
+    systems: new Set(),
+    knowledgeBases: new Set(),
+    tags: new Set(),
+  };
 
   const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || shell.short(id);
   const selected = (name) => [...document.querySelectorAll(`[name="${name}"]:checked`)].map((input) => input.value);
@@ -62,16 +72,41 @@
   }
 
   function renderResources() {
-    document.getElementById("agent-business-systems").innerHTML = systems.length
-      ? systems.map((item) => `<label class="agent-switch-row"><input type="checkbox" name="allowed_business_system_ids" value="${escape(item.business_system_id)}"><span><strong>${escape(item.display_name)}</strong><small>${escape(item.system_code)} · ${escape(item.environment)} · ${Number(item.resource_count || 0)} 个资源 · ${item.status === "ENABLED" ? "已上线" : "未上线"}</small></span></label>`).join("")
-      : '<div class="ops-error">暂无业务系统。请先建立业务系统与资源拓扑。</div>';
-    document.getElementById("agent-capabilities").innerHTML = capabilityCatalog.map(([key, label, help]) => `<label class="agent-switch-row"><input type="checkbox" name="capabilities" value="${key}" ${key === "CONTROLLED_CHANGE" ? "disabled" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
-    document.getElementById("agent-knowledge-tags").innerHTML = knowledgeTags.length
-      ? knowledgeTags.filter((item) => item.status === "ACTIVE").map((item) => `<label class="agent-scope-option"><input type="checkbox" name="knowledge_tag_ids" value="${escape(item.tag_id)}"><span>${escape(item.display_name)}</span></label>`).join("")
-      : '<p class="agent-scope-empty">未配置知识标签时，将在安全级别内使用全部已审批运维知识。</p>';
+    document.getElementById("agent-capabilities").innerHTML = capabilityCatalog
+      .filter(([key]) => key !== "KNOWLEDGE_QA")
+      .map(([key, label, help]) => `<label class="agent-switch-row"><input type="checkbox" name="capabilities" value="${key}" ${key === "CONTROLLED_CHANGE" ? "disabled" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
     ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答模型" : "请选择 LLM"));
     renderModelOptions("agent-ocr-model", 6, "不启用 OCR");
     renderModelOptions("agent-vlm-model", 5, "不启用 VLM");
+    renderSelectionSummaries();
+  }
+
+  function selectionRows(kind) {
+    if (kind === "systems") return systems.filter((item) => selectionSets.systems.has(String(item.business_system_id))).map((item) => ({ id: String(item.business_system_id), title: item.display_name }));
+    if (kind === "knowledgeBases") return knowledgeBases.filter((item) => selectionSets.knowledgeBases.has(String(item.knowledge_base_id))).map((item) => ({ id: String(item.knowledge_base_id), title: item.display_name }));
+    return knowledgeTags.filter((item) => selectionSets.tags.has(String(item.tag_id))).map((item) => ({ id: String(item.tag_id), title: item.display_name }));
+  }
+
+  function renderSelectionSummary(kind, elementId) {
+    const rows = selectionRows(kind);
+    const element = document.getElementById(elementId);
+    element.innerHTML = rows.map((item) => `<span class="agent-selection-chip">${escape(item.title)}<button type="button" data-remove-selection="${kind}" data-selection-id="${escape(item.id)}" aria-label="移除 ${escape(item.title)}">×</button></span>`).join("");
+    element.querySelectorAll("[data-remove-selection]").forEach((button) => {
+      button.onclick = () => {
+        selectionSets[button.dataset.removeSelection].delete(button.dataset.selectionId);
+        renderSelectionSummaries();
+      };
+    });
+  }
+
+  function renderSelectionSummaries() {
+    renderSelectionSummary("systems", "agent-business-system-summary");
+    renderSelectionSummary("knowledgeBases", "agent-knowledge-base-summary");
+    renderSelectionSummary("tags", "agent-knowledge-tag-summary");
+    const count = selectionSets.tags.size;
+    document.getElementById("agent-knowledge-tag-help").textContent = count
+      ? `仅检索 ${count} 个标签。`
+      : "不限制标签，使用所选知识库中的全部已审批知识。";
   }
 
   function renderSummary() {
@@ -114,10 +149,27 @@
 
   function resetChecks() {
     document.querySelectorAll('#agent-form input[type="checkbox"]').forEach((input) => { input.checked = false; });
+    Object.values(selectionSets).forEach((selection) => selection.clear());
+    renderSelectionSummaries();
   }
 
   function setChecked(name, selectedValues) {
     const chosen = new Set(values(selectedValues).map(String));
+    if (name === "allowed_business_system_ids") {
+      selectionSets.systems = chosen;
+      renderSelectionSummaries();
+      return;
+    }
+    if (name === "knowledge_base_ids") {
+      selectionSets.knowledgeBases = chosen;
+      renderSelectionSummaries();
+      return;
+    }
+    if (name === "knowledge_tag_ids") {
+      selectionSets.tags = chosen;
+      renderSelectionSummaries();
+      return;
+    }
     document.querySelectorAll(`[name="${name}"]`).forEach((input) => { input.checked = chosen.has(String(input.value)); });
   }
 
@@ -126,12 +178,122 @@
     document.getElementById("agent-knowledge-policy-fields").hidden = !enabled;
     const knowledgeCapability = document.querySelector('[name="capabilities"][value="KNOWLEDGE_QA"]');
     if (knowledgeCapability) knowledgeCapability.checked = enabled;
+    document.querySelector('[name="knowledge_enabled"] + span').textContent = enabled ? "已启用" : "未启用";
   }
 
   function toggleAlertSettings() {
     const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
     document.getElementById("agent-alert-settings").hidden = !enabled;
     document.getElementById("agent-alert-settings").querySelectorAll("select,input").forEach((input) => { input.disabled = !enabled; });
+    document.querySelector('[name="auto_alert_enabled"] + span').textContent = enabled ? "已启用" : "未启用";
+  }
+
+  function validateStep(step) {
+    const form = document.getElementById("agent-form");
+    showResult();
+    if (step === 1 && !form.elements.display_name.value.trim()) {
+      showResult("请填写 Agent 名称。", "bad");
+      return false;
+    }
+    if (step === 2 && !selectionSets.systems.size) {
+      showResult("请至少选择一个业务系统。", "bad");
+      return false;
+    }
+    if (step === 2 && !selected("capabilities").length) {
+      showResult("请至少启用一项能力。", "bad");
+      return false;
+    }
+    if (step === 2 && form.elements.knowledge_enabled.checked && !selected("knowledge_source_kinds").length) {
+      showResult("请至少选择一种知识来源。", "bad");
+      return false;
+    }
+    if (step === 2 && form.elements.knowledge_enabled.checked && !selectionSets.knowledgeBases.size) {
+      showResult("请至少绑定一个运维知识库。", "bad");
+      return false;
+    }
+    return true;
+  }
+
+  function renderReview() {
+    const capabilities = selected("capabilities").map((item) => capabilityLabels[item] || item);
+    const knowledgeEnabled = document.getElementById("agent-form").elements.knowledge_enabled.checked;
+    document.getElementById("agent-review").innerHTML = [
+      `<article><span>业务系统</span><strong>${selectionSets.systems.size} 个</strong><small>${escape(selectionRows("systems").map((item) => item.title).join("、") || "未选择")}</small></article>`,
+      `<article><span>能力范围</span><strong>${capabilities.length} 项</strong><small>${escape(capabilities.join("、") || "未启用")}</small></article>`,
+      `<article><span>运维知识</span><strong>${knowledgeEnabled ? `${selectionSets.knowledgeBases.size} 个知识库` : "未启用"}</strong><small>${knowledgeEnabled ? `${selectionSets.tags.size ? `${selectionSets.tags.size} 个标签` : "全部标签"}` : "不检索知识"}</small></article>`,
+    ].join("");
+  }
+
+  function setStep(step) {
+    currentStep = Math.max(1, Math.min(4, Number(step) || 1));
+    document.querySelectorAll("[data-agent-step]").forEach((panel) => { panel.hidden = Number(panel.dataset.agentStep) !== currentStep; });
+    document.querySelectorAll("[data-agent-step-button]").forEach((button) => {
+      const buttonStep = Number(button.dataset.agentStepButton);
+      button.classList.toggle("active", buttonStep === currentStep);
+      button.classList.toggle("complete", buttonStep < currentStep);
+      button.disabled = buttonStep > currentStep;
+      button.querySelector("b").textContent = buttonStep < currentStep ? "✓" : `0${buttonStep}`;
+    });
+    document.getElementById("agent-previous-step").hidden = currentStep === 1;
+    document.getElementById("agent-next-step").hidden = currentStep === 4;
+    document.getElementById("save-agent").hidden = currentStep !== 4;
+    if (currentStep === 4) renderReview();
+  }
+
+  function nextStep() {
+    if (!validateStep(currentStep)) return;
+    setStep(currentStep + 1);
+  }
+
+  function pickerState() {
+    if (pickerKind === "systems") return { selection: selectionSets.systems, limit: 32 };
+    if (pickerKind === "knowledgeBases") return { selection: selectionSets.knowledgeBases, limit: 32 };
+    return { selection: selectionSets.tags, limit: null };
+  }
+
+  function pickerCandidates() {
+    if (pickerKind === "systems") return systems.filter((item) => item.status === "ENABLED").map((item) => ({ id: String(item.business_system_id), title: item.display_name, meta: `${item.system_code} · ${item.environment} · ${Number(item.resource_count || 0)} 个资源`, environment: item.environment }));
+    if (pickerKind === "knowledgeBases") return knowledgeBases.filter((item) => item.status === "ACTIVE").map((item) => ({ id: String(item.knowledge_base_id), title: item.display_name, meta: item.description || "独立运维知识索引空间" }));
+    return knowledgeTags.filter((item) => item.status === "ACTIVE").map((item) => ({ id: String(item.tag_id), title: item.display_name, meta: "已启用知识标签" }));
+  }
+
+  function renderPicker() {
+    const query = document.getElementById("agent-picker-search").value.trim().toLocaleLowerCase();
+    const environment = document.getElementById("agent-picker-environment").value;
+    const { selection, limit } = pickerState();
+    const filtered = pickerCandidates().filter((item) => (!environment || item.environment === environment) && (!query || `${item.title} ${item.meta}`.toLocaleLowerCase().includes(query)));
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pickerPageSize));
+    pickerPage = Math.min(pickerPage, pageCount);
+    const pageRows = filtered.slice((pickerPage - 1) * pickerPageSize, pickerPage * pickerPageSize);
+    const list = document.getElementById("agent-picker-list");
+    list.innerHTML = pageRows.length ? pageRows.map((item) => {
+      const checked = selection.has(item.id);
+      const disabled = !checked && limit !== null && selection.size >= limit;
+      return `<button class="agent-picker-row ${checked ? "selected" : ""}" type="button" data-picker-id="${escape(item.id)}" ${disabled ? "disabled" : ""}><span class="agent-picker-check">${checked ? "✓" : ""}</span><span><strong>${escape(item.title)}</strong><small>${escape(item.meta)}</small></span></button>`;
+    }).join("") : '<p class="agent-picker-empty">没有匹配的可选项。</p>';
+    list.querySelectorAll("[data-picker-id]").forEach((button) => {
+      button.onclick = () => {
+        if (selection.has(button.dataset.pickerId)) selection.delete(button.dataset.pickerId);
+        else if (limit === null || selection.size < limit) selection.add(button.dataset.pickerId);
+        renderPicker();
+        renderSelectionSummaries();
+      };
+    });
+    document.getElementById("agent-picker-count").textContent = `已选择 ${selection.size}${limit === null ? "" : ` / ${limit}`}`;
+    document.getElementById("agent-picker-page-summary").textContent = `共 ${filtered.length} 项 · 第 ${pickerPage}/${pageCount} 页`;
+    document.getElementById("agent-picker-previous").disabled = pickerPage <= 1;
+    document.getElementById("agent-picker-next").disabled = pickerPage >= pageCount;
+  }
+
+  function openPicker(kind) {
+    pickerKind = kind;
+    pickerPage = 1;
+    document.getElementById("agent-picker-search").value = "";
+    document.getElementById("agent-picker-environment").value = "";
+    document.getElementById("agent-picker-environment").hidden = kind !== "systems";
+    document.getElementById("agent-picker-title").textContent = kind === "systems" ? "选择业务系统" : kind === "knowledgeBases" ? "选择运维知识库" : "限制知识标签范围";
+    renderPicker();
+    document.getElementById("agent-picker-dialog").showModal();
   }
 
   function openCreate() {
@@ -153,8 +315,11 @@
     form.elements.auto_alert_enabled.checked = true;
     form.elements.max_security_level.value = "3";
     form.elements.maximum_references.value = "8";
+    const activeBases = knowledgeBases.filter((item) => item.status === "ACTIVE");
+    if (activeBases.length === 1) setChecked("knowledge_base_ids", [activeBases[0].knowledge_base_id]);
     toggleKnowledgePolicy();
     toggleAlertSettings();
+    setStep(1);
     showResult();
     document.getElementById("agent-dialog").showModal();
   }
@@ -187,11 +352,13 @@
     setChecked("allowed_business_system_ids", editing.allowed_business_system_ids);
     setChecked("capabilities", editing.capabilities);
     setChecked("knowledge_source_kinds", policy.source_kinds || ["MANUAL", "DIAGNOSIS_CASE"]);
+    setChecked("knowledge_base_ids", policy.knowledge_base_ids);
     setChecked("knowledge_tag_ids", policy.tag_ids);
     const controlled = document.querySelector('[name="capabilities"][value="CONTROLLED_CHANGE"]');
     if (controlled && values(editing.capabilities).includes("CONTROLLED_CHANGE")) controlled.checked = true;
     toggleKnowledgePolicy();
     toggleAlertSettings();
+    setStep(1);
     showResult();
     document.getElementById("agent-dialog").showModal();
   }
@@ -214,12 +381,13 @@
     return {
       display_name: form.elements.display_name.value.trim(),
       description: form.elements.description.value.trim() || null,
-      allowed_business_system_ids: selected("allowed_business_system_ids"),
+      allowed_business_system_ids: [...selectionSets.systems],
       capabilities: [...new Set(capabilityValues)],
       knowledge_policy: {
         enabled: knowledgeEnabled,
         source_kinds: knowledgeEnabled ? selected("knowledge_source_kinds") : ["MANUAL", "DIAGNOSIS_CASE"],
-        tag_ids: knowledgeEnabled ? selected("knowledge_tag_ids") : [],
+        knowledge_base_ids: knowledgeEnabled ? [...selectionSets.knowledgeBases] : [],
+        tag_ids: knowledgeEnabled ? [...selectionSets.tags] : [],
         max_security_level: Number(form.elements.max_security_level.value || 3),
         maximum_references: Number(form.elements.maximum_references.value || 8),
       },
@@ -238,11 +406,16 @@
 
   async function save(event) {
     event.preventDefault();
+    if (currentStep < 4) {
+      nextStep();
+      return;
+    }
     const form = event.currentTarget;
     const body = buildPayload(form);
     if (!body.allowed_business_system_ids.length) return showResult("请至少选择一个业务系统。", "bad");
     if (!body.capabilities.length) return showResult("请至少启用一项能力。", "bad");
     if (body.knowledge_policy.enabled && !body.knowledge_policy.source_kinds.length) return showResult("请至少选择一种知识来源。", "bad");
+    if (body.knowledge_policy.enabled && !body.knowledge_policy.knowledge_base_ids.length) return showResult("请至少绑定一个运维知识库。", "bad");
     const button = document.getElementById("save-agent");
     const buttonLabel = button.textContent;
     const wasEditing = Boolean(editing);
@@ -278,17 +451,21 @@
   }
 
   async function load() {
-    const [agentRows, systemPage, modelRows, tagPage] = await Promise.all([
+    const [agentRows, systemPage, modelRows, tagPage, knowledgeBasePage] = await Promise.all([
       KBotAIOpsAuth.request(`${api}/agents`),
       KBotAIOpsAuth.request(`${api}/business-systems?limit=200`),
       KBotAIOpsAuth.request(`${api}/agent-model-catalog`),
       KBotAIOpsAuth.request(`${api}/operations-knowledge/tags?limit=200`),
+      KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
     ]);
     agents = values(agentRows);
     systems = values(systemPage?.items);
     models = values(modelRows);
     knowledgeTags = values(tagPage?.items || tagPage);
+    knowledgeBases = values(knowledgeBasePage?.items || knowledgeBasePage);
     renderResources();
+    const environments = [...new Set(systems.filter((item) => item.status === "ENABLED").map((item) => item.environment).filter(Boolean))].sort((left, right) => String(left).localeCompare(String(right), "zh"));
+    document.getElementById("agent-picker-environment").innerHTML = '<option value="">全部环境</option>' + environments.map((item) => `<option value="${escape(item)}">${escape(item)}</option>`).join("");
     renderRows();
   }
 
@@ -300,6 +477,18 @@
     document.querySelector('[name="knowledge_enabled"]').onchange = toggleKnowledgePolicy;
     document.querySelector('[name="auto_alert_enabled"]').onchange = toggleAlertSettings;
     document.getElementById("agent-form").onsubmit = save;
+    document.querySelectorAll("[data-agent-step-button]").forEach((button) => { button.onclick = () => { if (Number(button.dataset.agentStepButton) <= currentStep) setStep(button.dataset.agentStepButton); }; });
+    document.getElementById("agent-previous-step").onclick = () => setStep(currentStep - 1);
+    document.getElementById("agent-next-step").onclick = nextStep;
+    document.getElementById("open-agent-system-picker").onclick = () => openPicker("systems");
+    document.getElementById("open-agent-knowledge-base-picker").onclick = () => openPicker("knowledgeBases");
+    document.getElementById("open-agent-tag-picker").onclick = () => openPicker("tags");
+    document.getElementById("close-agent-picker").onclick = () => document.getElementById("agent-picker-dialog").close();
+    document.getElementById("apply-agent-picker").onclick = () => document.getElementById("agent-picker-dialog").close();
+    document.getElementById("agent-picker-search").oninput = () => { pickerPage = 1; renderPicker(); };
+    document.getElementById("agent-picker-environment").onchange = () => { pickerPage = 1; renderPicker(); };
+    document.getElementById("agent-picker-previous").onclick = () => { pickerPage -= 1; renderPicker(); };
+    document.getElementById("agent-picker-next").onclick = () => { pickerPage += 1; renderPicker(); };
     await load();
   }, { once: true });
 })();

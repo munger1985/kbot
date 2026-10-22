@@ -147,6 +147,7 @@ class KnowledgeQuestionAdapter:
                 request=KnowledgeSearchRequest(
                     query=str(runtime["question"])[:4000],
                     purpose="EXPLAIN",
+                    knowledge_base_ids=policy.knowledge_base_ids,
                     tag_ids=tuple(str(item) for item in policy.tag_ids),
                     source_kinds=policy.source_kinds,
                     max_results=policy.maximum_references,
@@ -448,6 +449,7 @@ class RuntimeQueryAdapter:
                             query=str(runtime["question"])[:4000],
                             purpose="EXPLAIN",
                             source_kinds=("DIAGNOSIS_CASE",),
+                            knowledge_base_ids=policy.knowledge_base_ids,
                             tag_ids=tuple(str(item) for item in policy.tag_ids),
                             max_results=policy.maximum_references,
                             max_security_level=policy.max_security_level,

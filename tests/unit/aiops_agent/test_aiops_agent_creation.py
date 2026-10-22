@@ -11,7 +11,7 @@ from aiops_agent.application.agents import (
     CreateAIOpsAgentCommand,
     ResourceControlledActionExecution,
 )
-from platform_core.contracts.aiops import AIOpsCapability
+from platform_core.contracts.aiops import AIOpsCapability, AgentKnowledgePolicy
 from platform_core.identity import uuid7
 
 
@@ -20,6 +20,7 @@ class _AgentRepository:
         self.agents = {}
         self.versions = {}
         self.version_systems = {}
+        self.version_knowledge_bases = {}
         self.resource_policies = {}
 
     async def add_agent(self, row):
@@ -35,6 +36,11 @@ class _AgentRepository:
         self, *, version_id, business_system_ids
     ):
         self.version_systems[version_id] = list(business_system_ids)
+
+    async def add_version_knowledge_bases(
+        self, *, version_id, knowledge_base_ids
+    ):
+        self.version_knowledge_bases[version_id] = list(knowledge_base_ids)
 
     async def add_version_resource_policies(
         self, *, version_id, controlled_action_policies
@@ -113,6 +119,11 @@ class _UnitOfWork:
             status="ENABLED",
         )
         self.business_systems = _BusinessSystemRepository(self.system, rows)
+        self.knowledge_base_id = uuid7()
+        self.operations_knowledge = SimpleNamespace(
+            get_knowledge_base=self._get_knowledge_base,
+            get_tag=self._get_tag,
+        )
         self.targets = SimpleNamespace(get_scoped=self._get_target)
         self.rows = tuple(rows)
         self.commit_count = 0
@@ -121,6 +132,15 @@ class _UnitOfWork:
         for _link, _resource, database, target in self.rows:
             if database is not None and database.target_id == target_id:
                 return target if target.domain_id == domain_id else None
+        return None
+
+    async def _get_knowledge_base(self, *, domain_id, knowledge_base_id):
+        if domain_id == 100 and knowledge_base_id == self.knowledge_base_id:
+            return SimpleNamespace(status="ACTIVE")
+        return None
+
+    async def _get_tag(self, **kwargs):
+        del kwargs
         return None
 
     async def __aenter__(self):
@@ -173,6 +193,9 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                 display_name="统一运维助手",
                 allowed_business_system_ids=(uow.system.business_system_id,),
                 capabilities=(AIOpsCapability.KNOWLEDGE_QA,),
+                knowledge_policy=AgentKnowledgePolicy(
+                    knowledge_base_ids=(uow.knowledge_base_id,)
+                ),
                 actor_id="tester",
             )
         )
@@ -182,6 +205,10 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             result["allowed_business_system_ids"],
         )
         self.assertEqual(["KNOWLEDGE_QA"], result["capabilities"])
+        self.assertEqual(
+            [uow.knowledge_base_id],
+            next(iter(uow.agents.version_knowledge_bases.values())),
+        )
         self.assertNotIn("target_ids", result)
         self.assertEqual(1, uow.commit_count)
 
@@ -195,6 +222,9 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     display_name="统一运维助手",
                     allowed_business_system_ids=(uow.system.business_system_id,),
                     capabilities=(AIOpsCapability.KNOWLEDGE_QA,),
+                    knowledge_policy=AgentKnowledgePolicy(
+                        knowledge_base_ids=(uow.knowledge_base_id,)
+                    ),
                     status="ACTIVE",
                     actor_id="tester",
                 )
@@ -214,6 +244,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     display_name="诊断助手",
                     allowed_business_system_ids=(uow.system.business_system_id,),
                     capabilities=(AIOpsCapability.ACTIVE_DIAGNOSIS,),
+                    knowledge_policy=AgentKnowledgePolicy(enabled=False),
                     models={"planner_llm": uuid7(), "composer_llm": uuid7()},
                     status="ACTIVE",
                     actor_id="tester",
@@ -233,6 +264,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
                     display_name="变更助手",
                     allowed_business_system_ids=(uow.system.business_system_id,),
                     capabilities=(AIOpsCapability.CONTROLLED_CHANGE,),
+                    knowledge_policy=AgentKnowledgePolicy(enabled=False),
                     controlled_action_execution=(
                         ResourceControlledActionExecution(
                             resource_id=uuid7(),
