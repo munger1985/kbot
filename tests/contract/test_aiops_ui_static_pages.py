@@ -877,7 +877,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("data-topology-relation", systems)
         self.assertIn("function renderTopology()", systems)
         self.assertIn('business-system-workspace.html?id=', targets)
-        self.assertIn('new URLSearchParams(location.search).get("id")', systems)
+        self.assertIn('const searchParams = new URLSearchParams(location.search)', systems)
+        self.assertIn('searchParams.get("id")', systems)
 
     def test_business_system_workspace_uses_compact_header_and_flow_actions(self):
         systems = (AIOPS_ROOT / "js" / "aiops-business-system-workspace.js").read_text(

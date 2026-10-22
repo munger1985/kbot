@@ -6,8 +6,10 @@
   const request = (path, options) => KBotAIOpsAuth.request(`${api}${path}`, options);
   const esc = shell.escape;
   const panel = document.getElementById("workspace-panel");
-  const systemId = new URLSearchParams(location.search).get("id") || "new";
+  const searchParams = new URLSearchParams(location.search);
+  const systemId = searchParams.get("id") || "new";
   const creating = systemId === "new";
+  let workspaceReadOnly = !creating && searchParams.get("view") === "readonly";
 
   const steps = ["BUSINESS_INFO", "SYSTEM_COMPOSITION", "TOPOLOGY_CONFIRMATION"];
   const layers = [
@@ -58,9 +60,8 @@
   let loading = true;
   let saving = false;
   let dirty = false;
-  let draftId = new URLSearchParams(location.search).get("draft") || "";
+  let draftId = searchParams.get("draft") || "";
   let draftRevision = 0;
-  let draftLoaded = false;
   let resourceDrawerOpen = false;
   let resourceDrawerMode = "CATALOG";
   let detail = null;
@@ -101,7 +102,7 @@
   }
 
   function mark() { dirty = true; updateFooter(); }
-  function isPublishedView() { return !creating && detail?.status === "ENABLED" && !draftLoaded; }
+  function isPublishedView() { return !creating && workspaceReadOnly; }
   function currentResource() { return resources.find((item) => item.draft_resource_id === activeResourceId); }
   function currentRelation() { return relations.find((item) => item.draft_relation_id === activeRelationId); }
   function groupName(value) { return groups.find((item) => item.responsibility_group_id === value)?.name || "继承业务责任组"; }
@@ -890,12 +891,12 @@
   function clearStaleDraftReference() {
     draftId = "";
     draftRevision = 0;
-    draftLoaded = false;
     const currentUrl = new URL(location.href);
     currentUrl.searchParams.delete("draft");
     history.replaceState(null, "", currentUrl);
   }
   async function persistDraft(showToast = true) {
+    if (isPublishedView()) throw new Error("运行中的业务系统仅支持查看。");
     const payload = draftPayload();
     const canUpdateDraft = Boolean(draftId) && Number.isInteger(draftRevision) && draftRevision >= 1;
     const saved = canUpdateDraft
@@ -913,6 +914,7 @@
   }
 
   async function updateSystem() {
+    if (isPublishedView()) throw new Error("运行中的业务系统仅支持查看。");
     await request(`/business-systems/${encodeURIComponent(systemId)}`, { method: "PATCH", headers: { "If-Match": `"rv-${detail.row_version}"` }, body: JSON.stringify(systemPayload()) });
     const originalResources = new Map(detail.resources.map((item) => [item.system_resource_id, item]));
     const retainedSystemIds = new Set(resources.map((item) => item.system_resource_id).filter(Boolean));
@@ -941,6 +943,7 @@
   }
 
   async function commit() {
+    if (isPublishedView()) return;
     if (syncInferredDatabaseRelations()) mark();
     const errors = publicationErrors();
     if (errors.length) { shell.toast(errors.join("；")); return; }
@@ -957,7 +960,6 @@
       }
       draftId = "";
       draftRevision = 0;
-      draftLoaded = false;
       dirty = false; shell.toast(creating ? "业务系统资源已发布并上线。" : "业务系统资源已发布。");
       if (creating) location.replace(`./business-system-workspace.html?id=${encodeURIComponent(saved.business_system_id)}`);
       else { hydrate(saved); notifyValidationIssues(saved); render(); }
@@ -965,14 +967,15 @@
     finally { saving = false; updateFooter(); }
   }
   async function saveDraft() {
+    if (isPublishedView()) return;
     saving = true; updateFooter();
     try { await persistDraft(); }
     catch (error) { shell.toast(error.message); }
     finally { saving = false; updateFooter(); }
   }
   function hydrateDraft(value) {
+    if (isPublishedView()) return;
     const payload = value.payload || {};
-    draftLoaded = true;
     draftId = value.draft_id;
     draftRevision = Number(value.revision);
     system = { ...system, ...(payload.system || {}) };
@@ -987,6 +990,7 @@
 
   function hydrate(value) {
     detail = value;
+    workspaceReadOnly = !creating && value.status === "ENABLED";
     system = { display_name: value.display_name, environment: value.environment, importance_level: value.importance_level, responsibility_group_id: value.responsibility_group_id, description: value.description || "" };
     const draftBySystem = new Map();
     resources = value.resources.filter((item) => item.status === "ACTIVE").map((item, index) => {
@@ -1012,11 +1016,13 @@
 
   function updateFooter() {
     const published = isPublishedView();
+    const editable = !loading && !published;
+    document.querySelector(".business-workspace-actions").hidden = loading;
     document.getElementById("step-copy").textContent = published ? `业务系统运行中，当前为只读查看 · 第 ${step + 1} 页，共 3 页` : `${dirty ? "有未保存修改 · " : draftId ? "草稿已保存到服务器 · " : "尚未保存草稿 · "}第 ${step + 1} 步，共 3 步`;
-    document.getElementById("save-draft").hidden = published;
-    document.getElementById("previous").hidden = published || step === 0;
-    document.getElementById("next").hidden = published || step === 2;
-    document.getElementById("commit").hidden = published || step !== 2;
+    document.getElementById("save-draft").hidden = !editable;
+    document.getElementById("previous").hidden = !editable || step === 0;
+    document.getElementById("next").hidden = !editable || step === 2;
+    document.getElementById("commit").hidden = !editable || step !== 2;
     document.getElementById("commit").disabled = saving;
     document.getElementById("commit").textContent = saving ? "正在发布…" : "发布资源";
   }
@@ -1038,7 +1044,10 @@
       groups = (groupPage.items || []).filter((item) => item.status === "ACTIVE");
       sources = (sourcePage.items || []).filter((item) => item.status === "ENABLED");
       if (loadedDetail) { hydrate(loadedDetail); notifyValidationIssues(loadedDetail); }
-      if (draftId) {
+      if (draftId && isPublishedView()) {
+        clearStaleDraftReference();
+        shell.toast("业务系统正在运行，已切换为只读查看。");
+      } else if (draftId) {
         try {
           hydrateDraft(await request(`/business-system-drafts/${encodeURIComponent(draftId)}`));
         } catch (error) {
