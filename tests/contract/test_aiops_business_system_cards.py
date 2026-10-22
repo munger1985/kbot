@@ -76,9 +76,39 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261021_1",
+            "aiops-business-system-workspace.js?v=20261022_2",
             WORKSPACE_PAGE,
         )
+
+    def test_running_workspace_is_read_only_but_all_tabs_remain_available(self):
+        self.assertIn(
+            'detail?.status === "ENABLED" && !draftLoaded',
+            WORKSPACE_SCRIPT,
+        )
+        self.assertIn('document.getElementById("save-draft").hidden = published', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("previous").hidden = published', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("next").hidden = published', WORKSPACE_SCRIPT)
+        self.assertIn('document.getElementById("commit").hidden = published', WORKSPACE_SCRIPT)
+        self.assertIn('button.disabled = !isPublishedView() && index > furthest', WORKSPACE_SCRIPT)
+
+    def test_running_workspace_shows_instance_connection_metadata_without_password(self):
+        self.assertIn('isPublishedView() ? "查看 →" : "编辑 →"', WORKSPACE_SCRIPT)
+        self.assertIn('["IP / 主机", database.host || "—", true]', WORKSPACE_SCRIPT)
+        self.assertIn('["端口", database.port || "—", true]', WORKSPACE_SCRIPT)
+        self.assertIn('["登录用户", database.username || "—", true]', WORKSPACE_SCRIPT)
+        readonly_detail = WORKSPACE_SCRIPT.split(
+            "function readonlyResourceHtml(item)", 1
+        )[1].split("function resourceEditorHtml(item)", 1)[0]
+        self.assertNotIn("database.password", readonly_detail)
+        self.assertIn("aiops-forms.css?v=20261022_2", WORKSPACE_PAGE)
+
+    def test_new_target_cards_can_be_deleted_without_affecting_published_cards(self):
+        self.assertIn('class="business-resource-card-shell"', WORKSPACE_SCRIPT)
+        self.assertIn('!isPublishedView() && !item.system_resource_id', WORKSPACE_SCRIPT)
+        self.assertIn('data-delete-resource=', WORKSPACE_SCRIPT)
+        self.assertIn('function removeResource(item)', WORKSPACE_SCRIPT)
+        self.assertIn('relations = relations.filter', WORKSPACE_SCRIPT)
+        self.assertIn('.business-resource-card-delete{', STYLES)
 
     def test_workspace_uses_the_public_oracle_container_scope_contract(self):
         self.assertIn(

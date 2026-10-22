@@ -3892,6 +3892,28 @@
             "title": "Deployment Type",
             "type": "string"
           },
+          "diagnostic_username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Username"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TargetEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment": {
             "title": "Environment",
             "type": "string"
@@ -3899,6 +3921,28 @@
           "monitoring_ready": {
             "title": "Monitoring Ready",
             "type": "boolean"
+          },
+          "oracle_container_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Container Scope"
+          },
+          "oracle_pdb_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oracle Pdb Name"
           },
           "rac_node_number": {
             "anyOf": [
@@ -3913,12 +3957,18 @@
             ],
             "title": "Rac Node Number"
           },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
           "version_code": {
             "title": "Version Code",
             "type": "string"
           }
         },
         "required": [
+          "target_id",
           "db_type",
           "version_code",
           "environment",

@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .configuration import SourceBindingCreate, TargetCreate
+from .configuration import SourceBindingCreate, TargetCreate, TargetEndpoint
 from .types import AIOpsContract, CursorPage, DatabaseType, JsonObject, PUBLIC_SCHEMA_VERSION, UUIDv7, UtcDatetime
 
 
@@ -291,6 +291,7 @@ class ResourceDiscoveryJobView(AIOpsContract):
 
 
 class DatabaseResourceView(AIOpsContract):
+    target_id: UUIDv7
     db_type: DatabaseType
     version_code: str
     environment: str
@@ -299,6 +300,10 @@ class DatabaseResourceView(AIOpsContract):
     db_role: str
     connectivity_status: str
     monitoring_ready: bool
+    endpoint: TargetEndpoint | None = None
+    oracle_container_scope: str | None = None
+    oracle_pdb_name: str | None = None
+    diagnostic_username: str | None = Field(default=None, max_length=256)
 
 
 class ManagedResourceView(AIOpsContract):

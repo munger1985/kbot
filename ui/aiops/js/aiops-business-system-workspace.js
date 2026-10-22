@@ -60,6 +60,7 @@
   let dirty = false;
   let draftId = new URLSearchParams(location.search).get("draft") || "";
   let draftRevision = 0;
+  let draftLoaded = false;
   let resourceDrawerOpen = false;
   let resourceDrawerMode = "CATALOG";
   let detail = null;
@@ -100,12 +101,18 @@
   }
 
   function mark() { dirty = true; updateFooter(); }
+  function isPublishedView() { return !creating && detail?.status === "ENABLED" && !draftLoaded; }
   function currentResource() { return resources.find((item) => item.draft_resource_id === activeResourceId); }
   function currentRelation() { return relations.find((item) => item.draft_relation_id === activeRelationId); }
   function groupName(value) { return groups.find((item) => item.responsibility_group_id === value)?.name || "继承业务责任组"; }
   function layerName(value) { return layers.find((item) => item[0] === value)?.[1] || value; }
   function typeName(value) { return resourceCatalog.find((item) => item[0] === value)?.[1] || value; }
   function relationName(value) { return relationTypes.find((item) => item[0] === value)?.[1] || value; }
+  function environmentName(value) { return { PROD: "生产", STG: "预发布", DEV: "开发" }[value] || value || "—"; }
+  function deploymentName(value) { return value === "RAC" ? "Oracle RAC" : "单实例"; }
+  function databaseRoleName(value) { return { PRIMARY: "主库", STANDBY: "备库 / 从库", UNKNOWN: "角色待识别" }[value] || value || "—"; }
+  function connectivityName(value) { return { CONNECTED: "连接正常", CHECKING: "检查中", DEGRADED: "连接降级", MISCONFIGURED: "配置异常", UNREACHABLE: "无法连接", UNKNOWN: "尚未检查" }[value] || value || "—"; }
+  function oracleScopeName(value) { return { CDB_ROOT: "CDB Root", CDB: "CDB Root", PDB: "PDB", NON_CDB: "非 CDB" }[value] || "—"; }
   function notifyValidationIssues(value) {
     if (!value?.validation_issues?.length) return;
     shell.toast(value.validation_issues.map((item) => item.message).join("；"));
@@ -330,6 +337,16 @@
     if (drawer?.open) drawer.close();
   }
 
+  function removeResource(item) {
+    const removed = new Set(racMembers(item).map((member) => member.draft_resource_id));
+    removed.forEach((resourceId) => connectionTestStates.delete(resourceId));
+    resources = resources.filter((row) => !removed.has(row.draft_resource_id));
+    relations = relations.filter((relation) => relation.draft_relation_id !== item.rac_group_id && !relation.participants.some((participant) => removed.has(participant.draft_resource_id)));
+    syncInferredDatabaseRelations();
+    activeResourceId = resources.find((row) => row.architecture_layer_key === activeLayer)?.draft_resource_id || resources[0]?.draft_resource_id || "";
+    closeResourceDrawer(); mark(); renderComposition();
+  }
+
   function openResourceCatalog() {
     const layerCatalog = resourceCatalog.filter((item) => catalogTypesByLayer[activeLayer].includes(item[0]));
     catalogType = layerCatalog.find((item) => item[3])?.[0] || layerCatalog[0]?.[0] || "";
@@ -346,12 +363,14 @@
   }
 
   function renderBusiness() {
+    const disabled = isPublishedView() ? "disabled" : "";
     panel.innerHTML = `<section class="business-step-surface">
       <header><div><p class="business-eyebrow">STEP 1</p><h2>业务信息</h2></div></header>
-      <div class="business-form-section"><div><h3>基本信息</h3><p>名称面向业务人员和运维人员共同识别。</p></div><div class="business-form-grid"><label class="span-8"><span>业务系统名称</span><input name="display_name" value="${esc(system.display_name)}" placeholder="例如：MES 生产系统"></label><label class="span-4"><span>运行环境</span><select name="environment">${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], system.environment)}</select></label></div></div>
-      <div class="business-form-section"><div><h3>责任与影响</h3><p>业务责任组处理整体影响，资源可在下一步指定技术责任组。</p></div><div class="business-form-grid"><label class="span-6"><span>业务责任组</span><select name="responsibility_group_id">${groupOptions(system.responsibility_group_id, "请选择")}</select></label><label class="span-6"><span>重要级</span><select name="importance_level">${selectOptions([["1", "L1 低"], ["2", "L2 一般"], ["3", "L3 重要"], ["4", "L4 关键"], ["5", "L5 核心"]], String(system.importance_level))}</select></label></div></div>
-      <div class="business-form-section"><div><h3>运维说明</h3><p>记录服务范围、影响窗口或跨团队协作背景。</p></div><label class="business-description"><span>说明（可选）</span><textarea name="description" rows="5" maxlength="1000">${esc(system.description)}</textarea></label></div>
+      <div class="business-form-section"><div><h3>基本信息</h3><p>名称面向业务人员和运维人员共同识别。</p></div><div class="business-form-grid"><label class="span-8"><span>业务系统名称</span><input name="display_name" value="${esc(system.display_name)}" placeholder="例如：MES 生产系统" ${disabled}></label><label class="span-4"><span>运行环境</span><select name="environment" ${disabled}>${selectOptions([["PROD", "生产"], ["STG", "预发布"], ["DEV", "开发"]], system.environment)}</select></label></div></div>
+      <div class="business-form-section"><div><h3>责任与影响</h3><p>业务责任组处理整体影响，资源可在下一步指定技术责任组。</p></div><div class="business-form-grid"><label class="span-6"><span>业务责任组</span><select name="responsibility_group_id" ${disabled}>${groupOptions(system.responsibility_group_id, "请选择")}</select></label><label class="span-6"><span>重要级</span><select name="importance_level" ${disabled}>${selectOptions([["1", "L1 低"], ["2", "L2 一般"], ["3", "L3 重要"], ["4", "L4 关键"], ["5", "L5 核心"]], String(system.importance_level))}</select></label></div></div>
+      <div class="business-form-section"><div><h3>运维说明</h3><p>记录服务范围、影响窗口或跨团队协作背景。</p></div><label class="business-description"><span>说明（可选）</span><textarea name="description" rows="5" maxlength="1000" ${disabled}>${esc(system.description)}</textarea></label></div>
     </section>`;
+    if (isPublishedView()) return;
     panel.querySelectorAll("[name]").forEach((input) => {
       input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => {
         system[input.name] = input.name === "importance_level" ? Number(input.value) : input.value;
@@ -367,6 +386,37 @@
     const options = [...groupsByName.entries()].map(([name, items]) => `<optgroup label="${esc(name)}">${items.map((item) => `<option value="${esc(item[0])}" ${catalogType === item[0] ? "selected" : ""}>${esc(item[1])}${item[3] ? "" : "（后续开放）"}</option>`).join("")}</optgroup>`).join("");
     const enabled = layerCatalog.find((item) => item[0] === catalogType)?.[3];
     return `<div class="business-resource-drawer-shell"><header><div><span>${esc(layerName(activeLayer))}</span><h2>添加资源</h2><p>选择要接入当前架构层的运维资源类型。</p></div><button id="close-resource-drawer" type="button" aria-label="关闭添加资源">关闭</button></header><div class="business-resource-drawer-body"><label class="business-resource-type-field"><span>资源类型</span><select id="catalog-type">${options}</select></label><article class="business-resource-type-summary"><span class="business-resource-icon">${catalogType === "DATABASE" ? "DB" : "R"}</span><div><strong>${esc(typeName(catalogType))}</strong><p>${enabled ? "接入新数据库，并从监控源自动发现数据库和承载主机。" : "该资源类型将在后续版本开放。"}</p></div></article></div><footer><button id="cancel-resource-drawer" type="button">取消</button><button id="confirm-add-resource" class="primary" type="button">配置${esc(typeName(catalogType))}</button></footer></div>`;
+  }
+
+  function readonlyResourceHtml(item) {
+    if (!item) return `<aside class="business-resource-guidance"><h3>选择资源查看详情</h3><p>点击实例卡片查看运行配置。</p></aside>`;
+    const database = item.database || {};
+    const serviceLabel = database.db_type === "ORACLE" ? "Service Name" : "Database";
+    const details = (rows) => rows.map(([label, value, technical = false]) => `<div><dt>${esc(label)}</dt><dd class="${technical ? "technical" : ""}">${esc(value ?? "—")}</dd></div>`).join("");
+    const instanceRows = [
+      ["数据库名称", item.display_name || "—"],
+      ["数据库引擎", `${database.db_type || "—"} ${database.version_code || ""}`.trim()],
+      ["运行环境", environmentName(database.environment)],
+      ["部署形态", `${deploymentName(database.deployment_type)}${database.rac_node_number ? ` · 节点 ${database.rac_node_number}` : ""}`],
+      ["数据库角色", databaseRoleName(database.db_role)],
+      ["技术责任组", groupName(item.owner_group_id)],
+      ["位置", item.location_name || "—"],
+      ["资源状态", "已接入"],
+    ];
+    const connectionRows = [
+      ["IP / 主机", database.host || "—", true],
+      ["端口", database.port || "—", true],
+      [serviceLabel, database.database || "—", true],
+      ["登录用户", database.username || "—", true],
+    ];
+    if (database.db_type === "ORACLE") connectionRows.push(["容器范围", oracleScopeName(database.oracle_scope)]);
+    if (database.db_type === "ORACLE" && database.oracle_scope === "PDB") connectionRows.push(["PDB 名称", database.oracle_pdb_name || "—", true]);
+    const statusRows = [
+      ["数据库连接", connectivityName(database.connectivity_status)],
+      ["监控映射", database.monitoring_ready ? "已就绪" : "未就绪"],
+    ];
+    const section = (number, title, hint, rows) => `<section class="business-readonly-detail-section"><header><span>${number}</span><div><strong>${esc(title)}</strong><small>${esc(hint)}</small></div></header><dl>${details(rows)}</dl></section>`;
+    return `<div class="business-resource-drawer-shell business-readonly-resource-detail"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "数据库实例")}</h2><p>查看运行中业务系统的数据库实例与连接配置。</p></div><button id="close-resource-drawer" type="button" aria-label="关闭实例详情">关闭</button></header><div class="business-resource-drawer-body">${section("01", "实例信息", "数据库身份、部署形态与责任归属。", instanceRows)}${section("02", "连接信息", "只展示连接所需的非敏感元数据，不展示密码。", connectionRows)}${section("03", "运行状态", "连接检查与监控映射的当前结果。", statusRows)}</div><footer><button id="finish-resource-drawer" class="primary" type="button">关闭</button></footer></div>`;
   }
 
   function resourceEditorHtml(item) {
@@ -408,8 +458,9 @@
 
   function renderComposition() {
     const visible = resources.filter((item) => item.architecture_layer_key === activeLayer);
-    const cards = visible.map((item) => `<button type="button" data-resource="${esc(item.draft_resource_id)}" class="business-resource-card"><header><span class="business-resource-icon">${item.resource_type_key === "DATABASE" ? "DB" : "R"}</span><em class="${item.saved ? "ready" : ""}">${item.saved ? "连接已测试" : "连接未测试"}</em></header><div><small>${esc(typeName(item.resource_type_key))}</small><h3>${esc(item.display_name || "未命名数据库")}</h3><p>${item.database ? `${esc(item.database.db_type)} ${esc(item.database.version_code)} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${esc(item.database.rac_node_number)}` : "单实例"} · ${item.database.db_role === "PRIMARY" ? "主库" : item.database.db_role === "STANDBY" ? "备库" : "角色待识别"}` : ""}</p></div><dl><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(item.location_name || "未填写")}</dd></div></dl><footer><span>${item.system_resource_id ? "已接入资源" : "新接入资源"}</span><strong>编辑 →</strong></footer></button>`).join("");
-    const content = activeLayer === "DATA" ? `<div class="business-resource-card-grid">${cards}<button id="add-resource-card" class="business-resource-add-card" type="button" aria-label="＋ 添加资源"><span>＋</span><strong>添加资源</strong><small>接入当前架构层</small></button></div>` : `<div class="business-layer-coming-soon"><span aria-hidden="true">◇</span><h3>功能未完成</h3><p>敬请期待</p></div>`;
+    const cards = visible.map((item) => `<article class="business-resource-card-shell"><button type="button" data-resource="${esc(item.draft_resource_id)}" class="business-resource-card"><header><span class="business-resource-icon">${item.resource_type_key === "DATABASE" ? "DB" : "R"}</span><em class="${item.saved ? "ready" : ""}">${item.saved ? "连接已测试" : "连接未测试"}</em></header><div><small>${esc(typeName(item.resource_type_key))}</small><h3>${esc(item.display_name || "未命名数据库")}</h3><p>${item.database ? `${esc(item.database.db_type)} ${esc(item.database.version_code)} · ${item.database.deployment_type === "RAC" ? `RAC 节点 ${esc(item.database.rac_node_number)}` : "单实例"} · ${item.database.db_role === "PRIMARY" ? "主库" : item.database.db_role === "STANDBY" ? "备库" : "角色待识别"}` : ""}</p></div><dl><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div><div><dt>位置</dt><dd>${esc(item.location_name || "未填写")}</dd></div></dl><footer><span>${item.system_resource_id ? "已接入资源" : ""}</span><strong>${isPublishedView() ? "查看 →" : "编辑 →"}</strong></footer></button>${!isPublishedView() && !item.system_resource_id ? `<button type="button" data-delete-resource="${esc(item.draft_resource_id)}" class="business-resource-card-delete" aria-label="删除 ${esc(item.display_name || "未命名数据库")}">删除</button>` : ""}</article>`).join("");
+    const addCard = isPublishedView() ? "" : `<button id="add-resource-card" class="business-resource-add-card" type="button" aria-label="＋ 添加资源"><span>＋</span><strong>添加资源</strong><small>接入当前架构层</small></button>`;
+    const content = activeLayer === "DATA" ? `<div class="business-resource-card-grid">${cards}${addCard}</div>` : `<div class="business-layer-coming-soon"><span aria-hidden="true">◇</span><h3>功能未完成</h3><p>敬请期待</p></div>`;
     panel.innerHTML = `<section class="business-composition-layout"><aside class="business-layer-nav" role="tablist" aria-label="系统构成"><header><p class="business-eyebrow">STEP 2</p><h2>系统构成</h2></header>${layers.map((layer) => `<button type="button" role="tab" aria-selected="${activeLayer === layer[0]}" data-layer="${layer[0]}" class="${activeLayer === layer[0] ? "active" : ""}"><span><strong>${layer[1]}</strong><small>${layer[2]}</small></span><em>${resources.filter((item) => item.architecture_layer_key === layer[0]).length}</em></button>`).join("")}</aside><section class="business-resource-panel" role="tabpanel"><header><div><p class="business-eyebrow">${esc(activeLayer)}</p><h2>${esc(layerName(activeLayer))}</h2><p>${activeLayer === "DATA" ? `已配置 ${visible.length} 个运维资源` : "功能未完成，敬请期待"}</p></div></header>${content}</section></section>`;
     renderResourceDrawer();
     bindComposition();
@@ -422,13 +473,17 @@
       drawer.innerHTML = "";
       return;
     }
-    drawer.innerHTML = resourceDrawerMode === "CATALOG" ? catalogHtml() : resourceEditorHtml(currentResource());
+    drawer.innerHTML = resourceDrawerMode === "CATALOG" ? catalogHtml() : isPublishedView() ? readonlyResourceHtml(currentResource()) : resourceEditorHtml(currentResource());
     if (!drawer.open) drawer.showModal();
   }
 
   function bindComposition() {
     panel.querySelectorAll("[data-layer]").forEach((button) => button.onclick = () => { closeResourceDrawer(); activeLayer = button.dataset.layer; activeResourceId = ""; renderComposition(); });
     panel.querySelectorAll("[data-resource]").forEach((button) => button.onclick = () => openResourceEditor(button.dataset.resource));
+    panel.querySelectorAll("[data-delete-resource]").forEach((button) => button.onclick = () => {
+      const item = resources.find((row) => row.draft_resource_id === button.dataset.deleteResource);
+      if (item && !item.system_resource_id && !isPublishedView()) removeResource(item);
+    });
     const addResource = document.getElementById("add-resource-card");
     if (addResource) addResource.onclick = openResourceCatalog;
     bindResourceDrawer();
@@ -477,15 +532,7 @@
       removeRacNode(item, node);
       renderComposition();
     });
-    document.getElementById("remove-resource").onclick = () => {
-      const removed = new Set(racMembers(item).map((member) => member.draft_resource_id));
-      removed.forEach((resourceId) => connectionTestStates.delete(resourceId));
-      resources = resources.filter((row) => !removed.has(row.draft_resource_id));
-      relations = relations.filter((relation) => relation.draft_relation_id !== item.rac_group_id && !relation.participants.some((participant) => removed.has(participant.draft_resource_id)));
-      syncInferredDatabaseRelations();
-      activeResourceId = resources.find((row) => row.architecture_layer_key === activeLayer)?.draft_resource_id || resources[0]?.draft_resource_id || "";
-      closeResourceDrawer(); mark(); renderComposition();
-    };
+    document.getElementById("remove-resource").onclick = () => removeResource(item);
     editor.onsubmit = (event) => { event.preventDefault(); void validateResource(item); };
   }
 
@@ -748,18 +795,22 @@
   }
 
   function relationEditorHtml(relation) {
+    if (isPublishedView()) {
+      const participantNames = relation.participants.map((participant) => resources.find((item) => item.draft_resource_id === participant.draft_resource_id)?.display_name || "未命名资源");
+      return `<header><div><p class="business-eyebrow">RELATION</p><h3>${esc(relation.display_name || relationName(relation.relation_type_key))}</h3></div></header><p class="business-inferred-relation-note">当前业务系统正在运行，关系配置仅供查看。</p><dl><div><dt>关系类型</dt><dd>${esc(relationName(relation.relation_type_key))}</dd></div><div><dt>参与资源</dt><dd>${esc(participantNames.join(" → "))}</dd></div><div><dt>来源</dt><dd>${isInferredRelation(relation) || relation.origin === "DISCOVERY" ? "系统自动推导" : "人工配置"}</dd></div></dl>`;
+    }
     const roles = roleOptions[relation.relation_type_key] || ["MEMBER"];
     const managed = isManagedRelation(relation);
     return `<header><div><p class="business-eyebrow">RELATION</p><h3>${esc(relation.display_name || relationName(relation.relation_type_key))}</h3></div>${managed ? "" : `<button id="remove-relation" class="business-danger" type="button">删除</button>`}</header>${managed ? `<p class="business-inferred-relation-note">自动推导关系。请返回“系统构成”修改部署形态或数据库角色。</p>` : ""}<label><span>关系类型</span><select name="relation_type" ${managed ? "disabled" : ""}>${selectOptions(relationTypes, relation.relation_type_key)}</select></label><label><span>关系名称（可选）</span><input name="relation_name" value="${esc(relation.display_name)}" ${managed ? "disabled" : ""}></label><label><span>关系责任组</span><select name="relation_group" ${managed ? "disabled" : ""}>${groupOptions(relation.responsibility_group_id, "继承参与资源")}</select></label><div class="business-participant-list">${relation.participants.map((participant, index) => `<div><select data-participant-resource="${index}" ${managed ? "disabled" : ""}>${resources.map((item) => `<option value="${esc(item.draft_resource_id)}" ${item.draft_resource_id === participant.draft_resource_id ? "selected" : ""}>${esc(item.display_name || "未命名资源")}</option>`).join("")}</select><select data-participant-role="${index}" ${managed ? "disabled" : ""}>${selectOptions(roles, participant.participant_role, roleLabels)}</select>${managed ? "" : `<button type="button" data-remove-participant="${index}" aria-label="移除参与者">×</button>`}</div>`).join("")}${managed ? "" : `<button id="add-participant" type="button" ${relation.participants.length >= resources.length ? "disabled" : ""}>添加参与资源</button>`}</div>`;
   }
   function resourceSummaryHtml(item) {
-    if (!item) return `<div class="business-topology-empty"><h3>选择节点或关系</h3><p>点击画布中的资源或关系，在这里查看和编辑属性。</p></div>`;
-    return `<header><div><p class="business-eyebrow">RESOURCE</p><h3>${esc(item.display_name || "未命名资源")}</h3></div></header><dl><div><dt>资源类型</dt><dd>${esc(typeName(item.resource_type_key))}</dd></div><div><dt>架构层</dt><dd>${esc(layerName(item.architecture_layer_key))}</dd></div><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div>${item.database ? `<div><dt>数据库</dt><dd>${esc(`${item.database.db_type} ${item.database.version_code} · ${item.database.db_role}`)}</dd></div>` : ""}</dl><button id="open-resource" type="button">打开完整配置</button>`;
+    if (!item) return `<div class="business-topology-empty"><h3>选择节点或关系</h3><p>点击画布中的资源或关系，在这里${isPublishedView() ? "查看详情" : "查看和编辑属性"}。</p></div>`;
+    return `<header><div><p class="business-eyebrow">RESOURCE</p><h3>${esc(item.display_name || "未命名资源")}</h3></div></header><dl><div><dt>资源类型</dt><dd>${esc(typeName(item.resource_type_key))}</dd></div><div><dt>架构层</dt><dd>${esc(layerName(item.architecture_layer_key))}</dd></div><div><dt>技术责任组</dt><dd>${esc(groupName(item.owner_group_id))}</dd></div>${item.database ? `<div><dt>数据库</dt><dd>${esc(`${item.database.db_type} ${item.database.version_code} · ${databaseRoleName(item.database.db_role)}`)}</dd></div>` : ""}</dl><button id="open-resource" type="button">${isPublishedView() ? "查看完整信息" : "打开完整配置"}</button>`;
   }
 
   function renderTopology() {
     const relation = currentRelation();
-    panel.innerHTML = `<section class="business-topology-step"><header><div><p class="business-eyebrow">STEP 3</p><h2>拓扑确认</h2><p>部署形态与数据库角色能够唯一判断时，系统自动生成关系并绘制拓扑；其余关系可手工补充。</p></div><button id="add-relation" class="primary" type="button">＋ 补充关系</button></header><div class="business-topology-layout">${topologyBoardHtml()}<aside class="business-topology-property">${relation ? relationEditorHtml(relation) : resourceSummaryHtml(currentResource())}</aside></div></section>`;
+    panel.innerHTML = `<section class="business-topology-step"><header><div><p class="business-eyebrow">STEP 3</p><h2>拓扑确认</h2><p>部署形态与数据库角色能够唯一判断时，系统自动生成关系并绘制拓扑；其余关系可手工补充。</p></div>${isPublishedView() ? "" : `<button id="add-relation" class="primary" type="button">＋ 补充关系</button>`}</header><div class="business-topology-layout">${topologyBoardHtml()}<aside class="business-topology-property">${relation ? relationEditorHtml(relation) : resourceSummaryHtml(currentResource())}</aside></div></section>`;
     bindTopology();
   }
   function defaultParticipants(type) {
@@ -768,13 +819,17 @@
   }
 
   function bindTopology() {
-    document.getElementById("add-relation").onclick = () => {
+    const addRelation = document.getElementById("add-relation");
+    if (addRelation) addRelation.onclick = () => {
       if (resources.length < 2) { shell.toast("至少有两个资源后才能建立关系。"); return; }
       const relation = { draft_relation_id: uuid7(), origin: "MANUAL", relation_type_key: "DEPENDS_ON", display_name: "", responsibility_group_id: "", participants: defaultParticipants("DEPENDS_ON"), attributes: {} };
       relations.push(relation); activeRelationId = relation.draft_relation_id; activeResourceId = ""; mark(); renderTopology();
     };
     panel.querySelectorAll("[data-topology-resource]").forEach((button) => button.onclick = () => { activeResourceId = button.dataset.topologyResource; activeRelationId = ""; renderTopology(); });
     panel.querySelectorAll("[data-topology-relation]").forEach((button) => button.onclick = () => { activeRelationId = button.dataset.topologyRelation; activeResourceId = ""; renderTopology(); });
+    const open = document.getElementById("open-resource");
+    if (open) open.onclick = () => { const item = currentResource(); step = 1; activeLayer = item.architecture_layer_key; resourceDrawerMode = "EDITOR"; resourceDrawerOpen = true; render(); };
+    if (isPublishedView()) return;
     const relation = currentRelation();
     if (relation) {
       const type = panel.querySelector('[name="relation_type"]');
@@ -793,8 +848,6 @@
       const removeRelation = document.getElementById("remove-relation");
       if (removeRelation) removeRelation.onclick = () => { relations = relations.filter((row) => row !== relation); activeRelationId = ""; mark(); renderTopology(); };
     }
-    const open = document.getElementById("open-resource");
-    if (open) open.onclick = () => { const item = currentResource(); step = 1; activeLayer = item.architecture_layer_key; resourceDrawerMode = "EDITOR"; resourceDrawerOpen = true; render(); };
   }
 
   function publicationErrors() {
@@ -837,6 +890,7 @@
   function clearStaleDraftReference() {
     draftId = "";
     draftRevision = 0;
+    draftLoaded = false;
     const currentUrl = new URL(location.href);
     currentUrl.searchParams.delete("draft");
     history.replaceState(null, "", currentUrl);
@@ -901,6 +955,9 @@
         saved = await updateSystem();
         if (draftId) await request(`/business-system-drafts/${encodeURIComponent(draftId)}`, { method: "DELETE", headers: { "If-Match": `"rv-${draftRevision}"` } });
       }
+      draftId = "";
+      draftRevision = 0;
+      draftLoaded = false;
       dirty = false; shell.toast(creating ? "业务系统资源已发布并上线。" : "业务系统资源已发布。");
       if (creating) location.replace(`./business-system-workspace.html?id=${encodeURIComponent(saved.business_system_id)}`);
       else { hydrate(saved); notifyValidationIssues(saved); render(); }
@@ -915,6 +972,7 @@
   }
   function hydrateDraft(value) {
     const payload = value.payload || {};
+    draftLoaded = true;
     draftId = value.draft_id;
     draftRevision = Number(value.revision);
     system = { ...system, ...(payload.system || {}) };
@@ -934,7 +992,7 @@
     resources = value.resources.filter((item) => item.status === "ACTIVE").map((item, index) => {
       const draftId = uuid7(); draftBySystem.set(item.system_resource_id, draftId);
       const database = item.resource.database;
-      return { draft_resource_id: draftId, mode: "EXISTING", resource_id: item.resource.resource_id, system_resource_id: item.system_resource_id, resource_row_version: item.resource.row_version, system_row_version: item.row_version, resource_type_key: item.resource.resource_type_key, display_name: item.resource.display_name, owner_group_id: item.resource.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || "", location_name: item.resource.location_name || "", display_order: item.display_order ?? index, saved: true, database: database ? { db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number ?? null, db_role: database.db_role, host: "", port: 0, database: "", oracle_scope: "NON_CDB", oracle_pdb_name: "", username: "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0 } : undefined };
+      return { draft_resource_id: draftId, mode: "EXISTING", resource_id: item.resource.resource_id, system_resource_id: item.system_resource_id, resource_row_version: item.resource.row_version, system_row_version: item.row_version, resource_type_key: item.resource.resource_type_key, display_name: item.resource.display_name, owner_group_id: item.resource.owner_group_id, architecture_layer_key: item.architecture_layer_key, responsibility_group_id: item.responsibility_group_id || "", location_name: item.resource.location_name || "", display_order: item.display_order ?? index, saved: true, database: database ? { db_type: database.db_type, version_code: database.version_code, environment: database.environment, deployment_type: database.deployment_type, rac_node_number: database.rac_node_number ?? null, db_role: database.db_role, host: database.endpoint?.host || "", port: database.endpoint?.port || 0, database: database.endpoint?.service || database.endpoint?.database || "", oracle_scope: database.oracle_container_scope || "NON_CDB", oracle_pdb_name: database.oracle_pdb_name || "", username: database.diagnostic_username || "", password: "", source_id: "", locator_key: "", candidate_ref: "", host_candidate_ref: "", candidates: [], host_candidates: [], discovering: false, discovery_revision: 0, connectivity_status: database.connectivity_status, monitoring_ready: database.monitoring_ready } : undefined };
     });
     relations = value.relations.map((item) => ({ draft_relation_id: uuid7(), relation_id: item.relation_id, row_version: item.row_version, origin: item.origin || "MANUAL", relation_type_key: item.relation_type_key, display_name: item.display_name || "", responsibility_group_id: item.responsibility_group_id || "", attributes: item.attributes || {}, participants: item.participants.map((participant) => ({ draft_resource_id: draftBySystem.get(participant.system_resource_id) || "", participant_role: participant.participant_role, display_order: participant.display_order })) }));
     relations.filter((item) => item.relation_type_key === "ORACLE_RAC").forEach((relation) => {
@@ -953,15 +1011,17 @@
   }
 
   function updateFooter() {
-    document.getElementById("step-copy").textContent = `${dirty ? "有未保存修改 · " : draftId ? "草稿已保存到服务器 · " : "尚未保存草稿 · "}第 ${step + 1} 步，共 3 步`;
-    document.getElementById("previous").hidden = step === 0;
-    document.getElementById("next").hidden = step === 2;
-    document.getElementById("commit").hidden = step !== 2;
+    const published = isPublishedView();
+    document.getElementById("step-copy").textContent = published ? `业务系统运行中，当前为只读查看 · 第 ${step + 1} 页，共 3 页` : `${dirty ? "有未保存修改 · " : draftId ? "草稿已保存到服务器 · " : "尚未保存草稿 · "}第 ${step + 1} 步，共 3 步`;
+    document.getElementById("save-draft").hidden = published;
+    document.getElementById("previous").hidden = published || step === 0;
+    document.getElementById("next").hidden = published || step === 2;
+    document.getElementById("commit").hidden = published || step !== 2;
     document.getElementById("commit").disabled = saving;
     document.getElementById("commit").textContent = saving ? "正在发布…" : "发布资源";
   }
   function render() {
-    document.querySelectorAll("#wizard-steps [data-step]").forEach((button, index) => { button.classList.toggle("active", index === step); button.classList.toggle("done", index < step); button.disabled = index > furthest; });
+    document.querySelectorAll("#wizard-steps [data-step]").forEach((button, index) => { button.classList.toggle("active", index === step); button.classList.toggle("done", index < step); button.disabled = !isPublishedView() && index > furthest; });
     if (loading) panel.innerHTML = `<div class="ops-empty">正在加载业务系统工作区…</div>`;
     else if (step === 0) renderBusiness();
     else if (step === 1) renderComposition();
@@ -996,7 +1056,7 @@
   document.getElementById("next").onclick = () => { if (step < 2) { if (step === 1 && syncInferredDatabaseRelations()) mark(); step += 1; furthest = Math.max(furthest, step); render(); } };
   document.getElementById("commit").onclick = () => void commit();
   document.getElementById("save-draft").onclick = () => void saveDraft();
-  document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (next <= furthest) { if (next === 2 && syncInferredDatabaseRelations()) mark(); step = next; render(); } });
+  document.querySelectorAll("#wizard-steps [data-step]").forEach((button) => button.onclick = () => { const next = Number(button.dataset.step); if (isPublishedView() || next <= furthest) { if (!isPublishedView() && next === 2 && syncInferredDatabaseRelations()) mark(); step = next; render(); } });
   document.addEventListener("click", (event) => {
     const anchor = event.target.closest?.("a[href]");
     if (!dirty || !anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
