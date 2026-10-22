@@ -28,8 +28,21 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-forms.css?v=20261022_1", page)
-        self.assertIn("aiops-agents.js?v=20261022_2", page)
+        self.assertIn("aiops-forms.css?v=20261022_2", page)
+        self.assertIn("aiops-agents.js?v=20261022_3", page)
+
+    def test_models_are_a_dedicated_wizard_step(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        script = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('data-agent-step-button="4"', page)
+        self.assertIn('<strong>模型与指令</strong>', page)
+        self.assertIn('data-agent-step="5"', page)
+        self.assertIn("规划模型（运行必选）", page)
+        self.assertIn("回答组织模型（运行必选）", page)
+        self.assertNotIn('class="agent-advanced"', page)
+        self.assertIn("Math.min(5", script)
+        self.assertIn("if (currentStep === 5) renderReview()", script)
 
     def test_wizard_step_tabs_support_direct_navigation(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")

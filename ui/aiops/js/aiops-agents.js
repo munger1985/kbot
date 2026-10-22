@@ -211,6 +211,16 @@
       showResult("请至少绑定一个运维知识库。", "bad");
       return false;
     }
+    if (step === 4 && form.elements.status.value === "ACTIVE") {
+      const missing = [];
+      if (!form.elements.planner_model_id.value) missing.push("规划模型");
+      if (!form.elements.composer_model_id.value) missing.push("回答组织模型");
+      if (selected("capabilities").includes("ACTIVE_DIAGNOSIS") && !form.elements.diagnosis_model_id.value) missing.push("诊断模型");
+      if (missing.length) {
+        showResult(`运行中的 Agent 必须配置${missing.join("、")}。`, "bad");
+        return false;
+      }
+    }
     return true;
   }
 
@@ -221,11 +231,12 @@
       `<article><span>业务系统</span><strong>${selectionSets.systems.size} 个</strong><small>${escape(selectionRows("systems").map((item) => item.title).join("、") || "未选择")}</small></article>`,
       `<article><span>能力范围</span><strong>${capabilities.length} 项</strong><small>${escape(capabilities.join("、") || "未启用")}</small></article>`,
       `<article><span>运维知识</span><strong>${knowledgeEnabled ? `${selectionSets.knowledgeBases.size} 个知识库` : "未启用"}</strong><small>${knowledgeEnabled ? `${selectionSets.tags.size ? `${selectionSets.tags.size} 个标签` : "全部标签"}` : "不检索知识"}</small></article>`,
+      `<article><span>模型角色</span><strong>${["planner_model_id", "composer_model_id", "diagnosis_model_id"].filter((name) => document.getElementById("agent-form").elements[name].value).length} 个已配置</strong><small>规划、回答组织与诊断模型</small></article>`,
     ].join("");
   }
 
   function setStep(step) {
-    currentStep = Math.max(1, Math.min(4, Number(step) || 1));
+    currentStep = Math.max(1, Math.min(5, Number(step) || 1));
     document.querySelectorAll("[data-agent-step]").forEach((panel) => { panel.hidden = Number(panel.dataset.agentStep) !== currentStep; });
     document.querySelectorAll("[data-agent-step-button]").forEach((button) => {
       const buttonStep = Number(button.dataset.agentStepButton);
@@ -235,9 +246,9 @@
       button.querySelector("b").textContent = buttonStep < currentStep ? "✓" : `0${buttonStep}`;
     });
     document.getElementById("agent-previous-step").hidden = currentStep === 1;
-    document.getElementById("agent-next-step").hidden = currentStep === 4;
-    document.getElementById("save-agent").hidden = currentStep !== 4;
-    if (currentStep === 4) renderReview();
+    document.getElementById("agent-next-step").hidden = currentStep === 5;
+    document.getElementById("save-agent").hidden = currentStep !== 5;
+    if (currentStep === 5) renderReview();
   }
 
   function nextStep() {
@@ -406,7 +417,7 @@
 
   async function save(event) {
     event.preventDefault();
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       nextStep();
       return;
     }
@@ -422,8 +433,8 @@
       if (!body.models.composer_llm) missing.push("回答组织模型");
       if (body.capabilities.includes("ACTIVE_DIAGNOSIS") && !body.models.diagnosis_llm) missing.push("诊断模型");
       if (missing.length) {
-        document.querySelector(".agent-advanced").open = true;
-        return showResult(`运行中的 Agent 必须配置${missing.join("、")}，请在“模型与高级设置”中选择。`, "bad");
+        setStep(4);
+        return showResult(`运行中的 Agent 必须配置${missing.join("、")}，请在“模型与指令”中选择。`, "bad");
       }
     }
     const button = document.getElementById("save-agent");
