@@ -50,6 +50,9 @@ from platform_clients.model import AIModelConfigClient
 CASE_COLLECTION = "diagnosis-cases"
 PUBLISHABLE_STATUSES = frozenset({"DRAFT", "REVIEW_REQUIRED"})
 TAG_CATEGORIES = frozenset({"RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"})
+DELETABLE_MANUAL_STATUSES = frozenset({
+    "DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED", "FAILED", "REJECTED",
+})
 
 
 def _now() -> datetime:
@@ -1160,6 +1163,89 @@ class OperationsKnowledgeService:
                 domain_id=domain_id, asset_id=asset_id
             )
             return {"asset": _asset_view(asset), "versions": [_version_view(v) for v in versions]}
+
+    async def delete_asset(
+        self, *, domain_id: int, asset_id: UUID,
+        expected_row_version: int, context: AuthContext,
+    ) -> None:
+        """删除从未发布且未在处理中的上传资料。"""
+        async with self._uow_factory() as uow:
+            asset = await uow.operations_knowledge.get_asset(
+                domain_id=domain_id, asset_id=asset_id
+            )
+            if asset is None:
+                raise self._not_found()
+            if int(asset.row_version) != expected_row_version:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_ASSET_CONFLICT",
+                    message="资料已被其他请求更新，请刷新后重试",
+                    status_code=412,
+                )
+            if asset.asset_kind != "MANUAL":
+                raise self._state_conflict("只有用户上传的运维资料可以删除")
+            versions = await uow.operations_knowledge.list_versions(
+                domain_id=domain_id, asset_id=asset_id
+            )
+            if not versions or any(
+                version.status not in DELETABLE_MANUAL_STATUSES
+                for version in versions
+            ):
+                raise self._state_conflict(
+                    "处理中或已发布的资料不能删除；已发布资料请先退役"
+                )
+            pending_indexes = []
+            for version in versions:
+                relations = await uow.operations_knowledge.get_version_relations(
+                    asset_version_id=version.asset_version_id
+                )
+                pending_indexes.extend(
+                    item for item in relations["indexes"]
+                    if item.index_status == "PENDING_APPROVAL"
+                )
+
+        for index in pending_indexes:
+            try:
+                await self._kc.review_user_intake(
+                    domain_id=domain_id,
+                    collection_id=index.collection_id,
+                    bundle_revision_id=index.bundle_revision_id,
+                    decision="REJECT",
+                    comment="AIOps 用户删除误上传资料",
+                    auth_context=context,
+                )
+            except KnowledgeCoreClientError as exc:
+                if exc.status_code != 409:
+                    raise AIOpsApplicationError(
+                        code="AIOPS_KNOWLEDGE_KC_UNAVAILABLE",
+                        message="KC 未能停止待删除资料的处理",
+                        status_code=503,
+                        retryable=True,
+                    ) from exc
+
+        async with self._uow_factory() as uow:
+            asset = await uow.operations_knowledge.get_asset(
+                domain_id=domain_id, asset_id=asset_id, for_update=True
+            )
+            if asset is None:
+                raise self._not_found()
+            if int(asset.row_version) != expected_row_version:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_ASSET_CONFLICT",
+                    message="资料已被其他请求更新，请刷新后重试",
+                    status_code=412,
+                )
+            versions = await uow.operations_knowledge.list_versions(
+                domain_id=domain_id, asset_id=asset_id
+            )
+            if asset.asset_kind != "MANUAL" or not versions or any(
+                version.status not in DELETABLE_MANUAL_STATUSES
+                for version in versions
+            ):
+                raise self._state_conflict("资料状态已变化，当前不能删除")
+            await uow.operations_knowledge.delete_asset(
+                asset=asset, versions=versions
+            )
+            await uow.commit()
 
     async def get_version(
         self, *, domain_id: int, asset_version_id: UUID

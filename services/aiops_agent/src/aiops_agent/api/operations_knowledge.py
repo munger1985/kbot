@@ -41,6 +41,10 @@ class KnowledgeBaseDeletePayload(BaseModel):
     expected_row_version: int
 
 
+class KnowledgeAssetDeletePayload(BaseModel):
+    expected_row_version: int
+
+
 @router.get("/knowledge-answering/binding")
 async def get_knowledge_assistant_binding(
     request: Request,
@@ -263,6 +267,22 @@ async def get_asset(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.get_asset(
         domain_id=domain_id, asset_id=asset_id
+    )
+
+
+@router.delete("/assets/{asset_id}", status_code=204)
+async def delete_asset(
+    asset_id: UUID,
+    payload: KnowledgeAssetDeletePayload,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    await request.app.state.operations_knowledge_service.delete_asset(
+        domain_id=domain_id,
+        asset_id=asset_id,
+        expected_row_version=payload.expected_row_version,
+        context=context,
     )
 
 

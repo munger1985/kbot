@@ -3,7 +3,7 @@
 import hashlib
 from types import SimpleNamespace
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 from pydantic import ValidationError
 
@@ -580,6 +580,82 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             collection_id=collection_id,
             auth_context=context,
         )
+
+    async def test_pending_manual_can_be_deleted_after_kc_intake_is_rejected(self):
+        asset_id, version_id = uuid7(), uuid7()
+        collection_id, revision_id = uuid7(), uuid7()
+        asset = SimpleNamespace(
+            asset_id=asset_id,
+            row_version=2,
+            asset_kind="MANUAL",
+        )
+        version = SimpleNamespace(
+            asset_version_id=version_id,
+            status="REVIEW_REQUIRED",
+        )
+        index = SimpleNamespace(
+            collection_id=collection_id,
+            bundle_revision_id=revision_id,
+            index_status="PENDING_APPROVAL",
+        )
+        repository = SimpleNamespace(
+            get_asset=AsyncMock(return_value=asset),
+            list_versions=AsyncMock(return_value=[version]),
+            get_version_relations=AsyncMock(return_value={"indexes": [index]}),
+            delete_asset=AsyncMock(),
+        )
+        knowledge_core = SimpleNamespace(review_user_intake=AsyncMock())
+        service = self.service(repository, knowledge_core)
+
+        await service.delete_asset(
+            domain_id=42,
+            asset_id=asset_id,
+            expected_row_version=2,
+            context=SimpleNamespace(),
+        )
+
+        knowledge_core.review_user_intake.assert_awaited_once_with(
+            domain_id=42,
+            collection_id=collection_id,
+            bundle_revision_id=revision_id,
+            decision="REJECT",
+            comment="AIOps 用户删除误上传资料",
+            auth_context=ANY,
+        )
+        repository.delete_asset.assert_awaited_once_with(
+            asset=asset, versions=[version]
+        )
+
+    async def test_published_manual_cannot_be_deleted(self):
+        asset_id, version_id = uuid7(), uuid7()
+        asset = SimpleNamespace(
+            asset_id=asset_id,
+            row_version=1,
+            asset_kind="MANUAL",
+        )
+        repository = SimpleNamespace(
+            get_asset=AsyncMock(return_value=asset),
+            list_versions=AsyncMock(return_value=[SimpleNamespace(
+                asset_version_id=version_id,
+                status="PUBLISHED",
+            )]),
+            get_version_relations=AsyncMock(),
+            delete_asset=AsyncMock(),
+        )
+        knowledge_core = SimpleNamespace(review_user_intake=AsyncMock())
+        service = self.service(repository, knowledge_core)
+
+        with self.assertRaises(AIOpsApplicationError) as raised:
+            await service.delete_asset(
+                domain_id=42,
+                asset_id=asset_id,
+                expected_row_version=1,
+                context=SimpleNamespace(),
+            )
+
+        self.assertEqual(409, raised.exception.status_code)
+        knowledge_core.review_user_intake.assert_not_awaited()
+        repository.delete_asset.assert_not_awaited()
 
     async def test_approve_manual_starts_tagging_without_calling_kc_or_llm(self):
         asset_id, version_id = uuid7(), uuid7()

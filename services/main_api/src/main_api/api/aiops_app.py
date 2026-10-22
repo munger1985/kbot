@@ -651,6 +651,24 @@ async def get_operations_knowledge_asset(asset_id: UUID, request: Request):
     )
 
 
+@router.delete(
+    "/operations-knowledge/assets/{asset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_operations_knowledge_asset(
+    asset_id: UUID,
+    request: Request,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+):
+    await _require(request, "aiops:knowledge_manage")
+    await _client(request).delete_operations_knowledge_asset(
+        asset_id,
+        expected_row_version=_expected_row_version(if_match),
+        auth_context=request.state.auth_context,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/operations-knowledge/versions/{asset_version_id}")
 async def get_operations_knowledge_version(asset_version_id: UUID, request: Request):
     await _require(request, "aiops:knowledge_manage")

@@ -433,6 +433,33 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def delete_asset(
+        self, *, asset: OperationsKnowledgeAssetEntity,
+        versions: Sequence[OperationsKnowledgeVersionEntity],
+    ) -> None:
+        """物理删除一个从未发布的资料及其 Registry 关联。"""
+        self._check_active()
+        version_ids = tuple(item.asset_version_id for item in versions)
+        asset.current_version_id = None
+        await self._session.flush()
+        if version_ids:
+            for entity in (
+                OperationsKnowledgeReviewEntity,
+                OperationsKnowledgeIndexEntity,
+                OperationsKnowledgeScopeEntity,
+                OperationsKnowledgeSourceEntity,
+            ):
+                await self._session.execute(delete(entity).where(
+                    entity.asset_version_id.in_(version_ids)
+                ))
+            await self._session.execute(delete(OperationsKnowledgeVersionEntity).where(
+                OperationsKnowledgeVersionEntity.asset_version_id.in_(version_ids)
+            ))
+        await self._session.execute(delete(OperationsKnowledgeAssetEntity).where(
+            OperationsKnowledgeAssetEntity.asset_id == asset.asset_id
+        ))
+        await self._session.flush()
+
     async def get_version_relations(
         self, *, asset_version_id: UUID
     ) -> dict[str, list]:

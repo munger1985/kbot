@@ -138,6 +138,7 @@
     const actions = ['<button type="button" data-download-source>下载正文文件</button>'];
     if (detail.asset.asset_kind === "MANUAL") actions.push('<button type="button" data-upload-version>上传新版本</button>');
     if (["TAGGING", "PROCESSING"].includes(detail.version.status)) actions.push('<button type="button" data-review="reconcile">立即处理</button>');
+    if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
     if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-review="reject">拒绝</button>');
     if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") actions.push('<button class="primary" type="button" data-review="approve">批准并开始 AI 识别</button>');
     if (detail.asset.asset_kind === "DIAGNOSIS_CASE" && ["DRAFT", "REVIEW_REQUIRED"].includes(detail.version.status)) actions.push('<button class="primary" type="button" data-review="publish">审核通过并发布</button>');
@@ -260,6 +261,15 @@
       document.getElementById("upload-drawer").showModal();
       return;
     }
+    if (action === "delete") {
+      if (!confirm(`确认删除运维资料“${state.detail.asset.display_name}”？尚未发布的版本记录将一并删除，此操作不可撤销。`)) return;
+      await KBotAIOpsAuth.request(`${api}/assets/${encodeURIComponent(state.detail.asset.asset_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${state.detail.asset.row_version}"` } });
+      shell.toast("资料已删除");
+      document.getElementById("detail-drawer").close();
+      state.detail = null;
+      await loadAssets();
+      return;
+    }
     const version = state.detail.version;
     const options = action === "reconcile" ? { method: "POST" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_row_version: Number(version.row_version), comment: null }) };
     state.detail = await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
@@ -289,7 +299,7 @@
     document.getElementById("manual-form").onsubmit = (event) => submitUpload(event).catch((error) => { document.getElementById("manual-result").textContent = error.message; shell.toast(error.message); });
     document.getElementById("detail-tabs").onclick = (event) => { const button = event.target.closest("[data-tab]"); if (!button) return; state.detailTab = button.dataset.tab; renderDetailBody(); };
     document.getElementById("detail-body").onclick = (event) => { if (event.target.closest("[data-download-source]")) runDetailAction("download").catch((error) => shell.toast(error.message)); };
-    document.getElementById("detail-actions").onclick = (event) => { const review = event.target.closest("[data-review]"); const upload = event.target.closest("[data-upload-version]"); const download = event.target.closest("[data-download-source]"); const action = review?.dataset.review || (upload ? "upload-version" : download ? "download" : ""); if (action) runDetailAction(action).catch((error) => shell.toast(error.message)); };
+    document.getElementById("detail-actions").onclick = (event) => { const review = event.target.closest("[data-review]"); const upload = event.target.closest("[data-upload-version]"); const download = event.target.closest("[data-download-source]"); const remove = event.target.closest("[data-delete-asset]"); const action = review?.dataset.review || (upload ? "upload-version" : download ? "download" : remove ? "delete" : ""); if (action) runDetailAction(action).catch((error) => shell.toast(error.message)); };
     try { await Promise.all([loadTags(), loadKnowledgeBases()]); await loadAssets(); } catch (error) { shell.toast(error.message); }
   });
 })();

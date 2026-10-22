@@ -10,6 +10,7 @@ from urllib.parse import quote
 from main_api.api.aiops_app import (
     OperationsKnowledgeConversationCreatePayload,
     create_operations_knowledge_conversation,
+    delete_operations_knowledge_asset,
     operations_knowledge_overview,
     upload_operations_knowledge,
     upload_operations_manual_version,
@@ -38,6 +39,9 @@ class _AIOpsClient:
             "consumer_agent_id": str(uuid7()),
             "owner_app_id": "aiops",
         }
+
+    async def delete_operations_knowledge_asset(self, asset_id, **kwargs):
+        self.deleted = {"asset_id": asset_id, **kwargs}
 
 
 def _context():
@@ -106,6 +110,21 @@ class AIOpsOperationsKnowledgeBffTest(unittest.IsolatedAsyncioTestCase):
         ):
             result = await operations_knowledge_overview(_request(client))
         self.assertEqual(2, result["published_manuals"])
+
+    async def test_delete_asset_forwards_optimistic_row_version(self):
+        client = _AIOpsClient()
+        asset_id = uuid7()
+        with patch(
+            "main_api.api.aiops_app._require",
+            AsyncMock(return_value=(42, "aiopsadmin", object())),
+        ):
+            response = await delete_operations_knowledge_asset(
+                asset_id, _request(client), if_match='"rv-7"'
+            )
+
+        self.assertEqual(204, response.status_code)
+        self.assertEqual(asset_id, client.deleted["asset_id"])
+        self.assertEqual(7, client.deleted["expected_row_version"])
 
     async def test_manual_new_version_forwards_asset_optimistic_version(self):
         client = _AIOpsClient()

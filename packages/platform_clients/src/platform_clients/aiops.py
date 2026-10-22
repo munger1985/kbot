@@ -605,6 +605,17 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def delete_operations_knowledge_asset(
+        self, asset_id: UUID, *, expected_row_version: int,
+        auth_context: AuthContext,
+    ) -> None:
+        await self._json(
+            "DELETE",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/assets/{asset_id}",
+            payload={"expected_row_version": expected_row_version},
+            auth_context=auth_context,
+        )
+
     async def get_operations_knowledge_version(
         self, asset_version_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any]:
