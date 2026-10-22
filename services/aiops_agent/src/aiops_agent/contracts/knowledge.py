@@ -159,7 +159,6 @@ class KnowledgeReviewCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
-    tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
 
 
 class KnowledgeExecutionSpecRequest(BaseModel):

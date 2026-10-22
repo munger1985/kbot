@@ -501,7 +501,6 @@ async def approve_version(asset_version_id: UUID, payload: KnowledgeReviewComman
         domain_id=domain_id,
         asset_version_id=asset_version_id,
         expected_row_version=payload.expected_row_version,
-        tag_ids=payload.tag_ids,
         comment=payload.comment,
         context=context,
     )

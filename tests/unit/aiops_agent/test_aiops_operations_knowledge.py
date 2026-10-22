@@ -581,14 +581,12 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             auth_context=context,
         )
 
-    async def test_approve_manual_freezes_selected_tags_and_starts_kc_parse(self):
-        asset_id, version_id, tag_id = uuid7(), uuid7(), uuid7()
-        state = _SessionState()
+    async def test_approve_manual_starts_tagging_without_calling_kc_or_llm(self):
+        asset_id, version_id = uuid7(), uuid7()
         version = SimpleNamespace(
             asset_id=asset_id,
             status="REVIEW_REQUIRED",
             row_version=3,
-            tag_analysis_json={"status": "READY", "suggestions": []},
         )
         asset = SimpleNamespace(
             current_version_id=None, status="REVIEW_REQUIRED", updated_by=None
@@ -596,25 +594,14 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         index = SimpleNamespace(
             index_status="PENDING_APPROVAL", error_code=None, error_summary=None
         )
-        tag = _SessionBoundEntity(
-            state,
-            tag_id=tag_id, category="VENDOR", display_name="Oracle"
-        )
         repository = SimpleNamespace(
-            list_tags=AsyncMock(return_value=[tag]),
             get_version=AsyncMock(return_value=version),
             get_asset=AsyncMock(return_value=asset),
-            get_version_relations=AsyncMock(return_value={"indexes": [index]}),
-            replace_tag_scopes=AsyncMock(),
             add_review=AsyncMock(),
         )
         knowledge_core = SimpleNamespace(review_user_intake=AsyncMock())
-        units = iter([
-            _DetachingKnowledgeUnitOfWork(repository, state),
-            _KnowledgeUnitOfWork(repository),
-        ])
         service = OperationsKnowledgeService(
-            uow_factory=lambda: next(units),
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
             knowledge_core=knowledge_core,
             knowledge_assistant_id=uuid7(),
             knowledge_assistant_version_id=uuid7(),
@@ -635,20 +622,20 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             domain_id=42,
             asset_version_id=version_id,
             expected_row_version=3,
-            tag_ids=(str(tag_id),),
-            comment="证据已核对",
+            comment="资料已核对",
             context=SimpleNamespace(asserted_user_id="reviewer", client_id="portal"),
         )
 
-        knowledge_core.review_user_intake.assert_awaited_once()
-        repository.replace_tag_scopes.assert_awaited_once()
-        tag_snapshot = repository.replace_tag_scopes.await_args.kwargs["tags"][0]
-        self.assertEqual(tag_id, tag_snapshot.tag_id)
-        self.assertEqual("VENDOR", tag_snapshot.category)
-        self.assertEqual("Oracle", tag_snapshot.display_name)
-        self.assertEqual("PROCESSING", version.status)
-        self.assertEqual("PROCESSING", index.index_status)
-        self.assertEqual([str(tag_id)], version.tag_analysis_json["approved_tag_ids"])
+        knowledge_core.review_user_intake.assert_not_awaited()
+        self.assertEqual("TAGGING", version.status)
+        self.assertEqual("TAGGING", asset.status)
+        self.assertEqual(
+            "APPROVED", version.tag_analysis_json["approval"]["status"]
+        )
+        self.assertEqual("PENDING_APPROVAL", index.index_status)
+        self.assertEqual(
+            "TAGGING", repository.add_review.await_args.args[0].after_status
+        )
 
     async def test_tag_analysis_snapshots_entities_before_read_transaction_closes(self):
         asset_id, version_id, tag_id = uuid7(), uuid7(), uuid7()
@@ -657,7 +644,10 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         state = _SessionState()
         first_repository = SimpleNamespace(
             get_version=AsyncMock(return_value=_SessionBoundEntity(
-                state, asset_id=asset_id, status="TAGGING"
+                state,
+                asset_id=asset_id,
+                status="TAGGING",
+                tag_analysis_json={"approval": {"status": "APPROVED"}},
             )),
             get_asset=AsyncMock(return_value=_SessionBoundEntity(
                 state, asset_kind="MANUAL"
@@ -687,6 +677,14 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         second_repository = SimpleNamespace(
             get_version=AsyncMock(return_value=locked),
             get_asset=AsyncMock(return_value=locked_asset),
+            get_version_relations=AsyncMock(return_value={
+                "indexes": [SimpleNamespace(
+                    index_status="PENDING_APPROVAL",
+                    error_code=None,
+                    error_summary=None,
+                )]
+            }),
+            replace_tag_scopes=AsyncMock(),
         )
         units = iter([
             _DetachingKnowledgeUnitOfWork(first_repository, state),
@@ -706,6 +704,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
                 }],
                 "warnings": [],
             }),
+            review_user_intake=AsyncMock(),
         )
         structured_model = SimpleNamespace(generate_structured=AsyncMock(
             return_value=SimpleNamespace(
@@ -743,7 +742,7 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             structured_model=structured_model,
             prompt_registry=SimpleNamespace(resolve=AsyncMock(return_value=prompt)),
         )
-        service.get_version = AsyncMock(return_value={"status": "REVIEW_REQUIRED"})
+        service.get_version = AsyncMock(return_value={"status": "PROCESSING"})
 
         result = await service.analyze_tags(
             domain_id=42,
@@ -751,16 +750,66 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             context=SimpleNamespace(),
         )
 
-        self.assertEqual({"status": "REVIEW_REQUIRED"}, result)
-        self.assertEqual("REVIEW_REQUIRED", locked.status, locked.tag_analysis_json)
-        self.assertEqual("REVIEW_REQUIRED", locked_asset.status)
+        self.assertEqual({"status": "PROCESSING"}, result)
+        self.assertEqual("PROCESSING", locked.status, locked.tag_analysis_json)
+        self.assertEqual("PROCESSING", locked_asset.status)
         self.assertEqual("Oracle", locked.tag_analysis_json["suggestions"][0]["display_name"])
         knowledge_core.extract_review_text.assert_awaited_once()
+        knowledge_core.review_user_intake.assert_awaited_once()
+        tag_snapshot = second_repository.replace_tag_scopes.await_args.kwargs[
+            "tags"
+        ][0]
+        self.assertEqual(tag_id, tag_snapshot.tag_id)
+        self.assertEqual("VENDOR", tag_snapshot.category)
+        self.assertEqual("Oracle", tag_snapshot.display_name)
         structured_model.generate_structured.assert_awaited_once()
+
+    async def test_unapproved_legacy_tagging_state_returns_to_review(self):
+        version_id, asset_id = uuid7(), uuid7()
+        version = SimpleNamespace(
+            asset_id=asset_id, status="TAGGING", tag_analysis_json=None
+        )
+        asset = SimpleNamespace(
+            asset_kind="MANUAL", current_version_id=None, status="TAGGING"
+        )
+        repository = SimpleNamespace(
+            get_version=AsyncMock(return_value=version),
+            get_asset=AsyncMock(return_value=asset),
+            get_version_relations=AsyncMock(return_value={"indexes": []}),
+            list_tags=AsyncMock(return_value=[]),
+        )
+        structured_model = SimpleNamespace(generate_structured=AsyncMock())
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _KnowledgeUnitOfWork(repository),
+            knowledge_core=SimpleNamespace(),
+            knowledge_assistant_id=uuid7(),
+            knowledge_assistant_version_id=uuid7(),
+            knowledge_assistant_instruction="",
+            model_catalogs={1: SimpleNamespace()},
+            structured_model=structured_model,
+            prompt_registry=SimpleNamespace(),
+        )
+        service.get_version = AsyncMock(return_value={
+            "version": {"status": "REVIEW_REQUIRED"}
+        })
+
+        await service.analyze_tags(
+            domain_id=1,
+            asset_version_id=version_id,
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual("REVIEW_REQUIRED", version.status)
+        self.assertEqual("REVIEW_REQUIRED", asset.status)
+        structured_model.generate_structured.assert_not_awaited()
 
     async def test_tag_analysis_retries_when_knowledge_core_is_temporarily_unavailable(self):
         asset_id, version_id = uuid7(), uuid7()
-        version = SimpleNamespace(asset_id=asset_id, status="TAGGING")
+        version = SimpleNamespace(
+            asset_id=asset_id,
+            status="TAGGING",
+            tag_analysis_json={"approval": {"status": "APPROVED"}},
+        )
         repository = SimpleNamespace(
             get_version=AsyncMock(return_value=version),
             get_asset=AsyncMock(return_value=SimpleNamespace(
@@ -813,7 +862,9 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
     async def test_tag_analysis_preserves_preview_warning_when_text_is_empty(self):
         asset_id, version_id = uuid7(), uuid7()
         version = SimpleNamespace(
-            asset_id=asset_id, status="TAGGING", tag_analysis_json=None
+            asset_id=asset_id,
+            status="TAGGING",
+            tag_analysis_json={"approval": {"status": "APPROVED"}},
         )
         asset = SimpleNamespace(
             asset_kind="MANUAL", current_version_id=None, status="TAGGING"

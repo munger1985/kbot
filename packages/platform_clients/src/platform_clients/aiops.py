@@ -682,7 +682,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def review_operations_knowledge_version(
         self, asset_version_id: UUID, *, decision: str,
         expected_row_version: int, comment: str | None,
-        tag_ids: tuple[str, ...] = (),
         auth_context: AuthContext,
     ) -> dict[str, Any]:
         return await self._json(
@@ -691,7 +690,6 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             payload={
                 "expected_row_version": expected_row_version,
                 "comment": comment,
-                "tag_ids": list(tag_ids),
             },
             auth_context=auth_context,
         )

@@ -109,7 +109,6 @@ class AIOpsPasswordChangePayload(_Payload):
 class OperationsKnowledgeReviewPayload(_Payload):
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
-    tag_ids: tuple[str, ...] = Field(default=(), max_length=64)
 
 
 class OperationsKnowledgeCollectionModelsPayload(_Payload):
@@ -766,7 +765,6 @@ async def _review_operations_knowledge(
         asset_version_id, decision=decision,
         expected_row_version=payload.expected_row_version,
         comment=payload.comment,
-        tag_ids=payload.tag_ids,
         auth_context=request.state.auth_context,
     )
 
