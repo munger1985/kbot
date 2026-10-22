@@ -79,12 +79,3 @@ App 1000（含支持对象）
 | 1004 | AIOps | 面向智能运维的 App Agent，提供运维工作台、业务系统、监控、诊断、巡检、运维知识库等能力。 | 可选 |
 | 1005 | 知识资产 | 面向知识资产管理与使用的 App Agent。 | 可选 |
 
-## 五、当前目录文件
-
-当前目录已包含：
-
-- `f1000.sql`：App 1000 导出文件，包含 Supporting Objects；
-- `f1002.sql`：App 1002 导出文件，不包含 Supporting Objects；
-- `f1004.sql`：App 1004（AIOps）导出文件，不包含 Supporting Objects。
-
-如需安装 App 1003 或 App 1005，请将对应版本的应用导出文件放入本目录，并核对导出文件中的 Application ID 与本说明一致后再安装。
