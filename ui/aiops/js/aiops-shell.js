@@ -8,11 +8,9 @@
     "business-system-workspace": "aiops:target_manage",
     "target-detail": "aiops:target_manage",
     "recovery-drills": "aiops:work_item_handle",
-    "data-protection": "aiops:target_manage",
     "diagnostic-sources": "aiops:diagnostic_source_manage",
     "diagnostic-source-detail": "aiops:diagnostic_source_manage",
-    "operations-knowledge-chat": "aiops:use",
-    "operations-knowledge": "aiops:knowledge_manage", "knowledge-bases": "aiops:knowledge_manage", "knowledge-answering-agent": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
+    "operations-knowledge": "aiops:knowledge_manage", "knowledge-bases": "aiops:knowledge_manage", "knowledge-tags": "aiops:knowledge_manage", agents: "aiops:agent_manage",
     "inspection-plans": "aiops:plan_manage",
     "inspection-plan-detail": "aiops:plan_manage",
     "report-templates": "aiops:plan_manage",
@@ -26,13 +24,10 @@
     ]],
     ["operations-assurance", "运维保障", "audit", [
       ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "运维报告"],
-      ["operations-knowledge-chat", "知识问答"], ["operations-knowledge", "运维知识"],
-    ]],
-    ["resource-management", "资源管理", "models", [
-      ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["data-protection", "数据保护"],
+      ["operations-knowledge", "运维知识"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
-      ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["knowledge-answering-agent", "知识问答 Agent"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
+      ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
     ]],
   ];
   const iconPaths = {
