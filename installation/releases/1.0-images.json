@@ -3,47 +3,47 @@
   "version": "1.0",
   "registry": "nrt.ocir.io/sehubjapacprod/kbot",
   "platform": "linux/amd64",
-  "source_commit": "7f12335b5a45a3973f212e45183f6a58f3006587",
+  "source_commit": "3b60f5342ac02e1d23b535ef7b8a69bac526feab",
   "images": [
     {
       "name": "kbot-model-serving",
-      "digest": "sha256:25530abad1caf35e35e373a9ea6ce114b99f22eeb80d171f939339a793c3cac5"
+      "digest": "sha256:0e15a89dffefebb41f19e0fd52f66e595a5f9dae02bc40ac9310adb72e6b7b1a"
     },
     {
       "name": "kbot-knowledge-core",
-      "digest": "sha256:773627c770ed084b0bfa5efa5ea402aa5268cd0dbaa20f0b91bca27b6e13fa89"
+      "digest": "sha256:525ffbb2f9d2ea2b3d64b869c05d9065b2a994b6eb37dda73aa5846c769b7d9c"
     },
     {
       "name": "kbot-knowledge-retrieval-app",
-      "digest": "sha256:30425624c4fbd49dd1a5c46be0b5dfabd9d543cd8526b48a6cf6115b53c265eb"
+      "digest": "sha256:2c6903f9ba7f83ab01268fba7b4412fdd26f6b02f9b8c57acee556913f96f02b"
     },
     {
       "name": "kbot-media-studio-app",
-      "digest": "sha256:627f18a95e1e2728251d522fcebe84289e9324f2368c031a823a121350a4f431"
+      "digest": "sha256:6d4d9974ff2c8011f297f87ba18b033e1d3e5c14fab07520a9db799828d41ba9"
     },
     {
       "name": "kbot-agent-runtime",
-      "digest": "sha256:150592faf4bcd33f7f0cb48de666dde75518a65980c45b6d59f9527e8711e0ac"
+      "digest": "sha256:d013ae14c9e2aa2807921d7a206c203e3980a674d0bfbac70d48c7e12af3b0a3"
     },
     {
       "name": "kbot-data-query",
-      "digest": "sha256:47629c582792ac522955af3e4b7cd5600327454efd9d8fd6099700a7f82d6c04"
+      "digest": "sha256:b993d61320f0cbafcfad3815f1fe406f1b5fa986eeb28c420bf7b31c84f2bc01"
     },
     {
       "name": "kbot-aiops-agent",
-      "digest": "sha256:00947a59c57478af971259c3275011af0dc4b4ded2f89da364f76bf53388819e"
+      "digest": "sha256:220989053f5601fcce3d2680389c968f95e41b7e03438df6788e4814852eb0e4"
     },
     {
       "name": "kbot-main-api",
-      "digest": "sha256:49f00fd77809576659d5c55573ae1bd1d70db3ff2c313c549dabfc08d5cd9514"
+      "digest": "sha256:c0bf0da6a7bf5da732a09840513e8f3d7ddf78fb4b42487f6f38eab0f023b288"
     },
     {
       "name": "kbot-installer",
-      "digest": "sha256:15265cd5654cbfd4529e7b9e3e1df587e44a79eb5e261788b371b17ffd21b70f"
+      "digest": "sha256:def3b14698592917dbc17aac04fc97da39fc0e060e4431f1626019543a876ab5"
     },
     {
       "name": "kbot-ui",
-      "digest": "sha256:4c251a59ef182e316a0200e2e1e1c8d386eb302e72256ce6ce1d80d8f61c1058"
+      "digest": "sha256:0ef51fbd2d3ee761a8650756e64bd2dcc73d38e7f133778cb506b36a29c6feb5"
     }
   ]
 }
