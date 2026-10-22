@@ -29,7 +29,14 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         page = PAGE.read_text(encoding="utf-8")
 
         self.assertIn("aiops-forms.css?v=20261022_1", page)
-        self.assertIn("aiops-agents.js?v=20261022_1", page)
+        self.assertIn("aiops-agents.js?v=20261022_2", page)
+
+    def test_wizard_step_tabs_support_direct_navigation(self) -> None:
+        script = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("button.onclick = () => setStep(button.dataset.agentStepButton)", script)
+        self.assertIn("button.disabled = false", script)
+        self.assertNotIn("buttonStep > currentStep", script)
 
     def test_agent_does_not_maintain_monitor_mappings(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")

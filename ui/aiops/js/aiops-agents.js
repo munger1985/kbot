@@ -231,7 +231,7 @@
       const buttonStep = Number(button.dataset.agentStepButton);
       button.classList.toggle("active", buttonStep === currentStep);
       button.classList.toggle("complete", buttonStep < currentStep);
-      button.disabled = buttonStep > currentStep;
+      button.disabled = false;
       button.querySelector("b").textContent = buttonStep < currentStep ? "✓" : `0${buttonStep}`;
     });
     document.getElementById("agent-previous-step").hidden = currentStep === 1;
@@ -416,6 +416,16 @@
     if (!body.capabilities.length) return showResult("请至少启用一项能力。", "bad");
     if (body.knowledge_policy.enabled && !body.knowledge_policy.source_kinds.length) return showResult("请至少选择一种知识来源。", "bad");
     if (body.knowledge_policy.enabled && !body.knowledge_policy.knowledge_base_ids.length) return showResult("请至少绑定一个运维知识库。", "bad");
+    if (body.status === "ACTIVE") {
+      const missing = [];
+      if (!body.models.planner_llm) missing.push("规划模型");
+      if (!body.models.composer_llm) missing.push("回答组织模型");
+      if (body.capabilities.includes("ACTIVE_DIAGNOSIS") && !body.models.diagnosis_llm) missing.push("诊断模型");
+      if (missing.length) {
+        document.querySelector(".agent-advanced").open = true;
+        return showResult(`运行中的 Agent 必须配置${missing.join("、")}，请在“模型与高级设置”中选择。`, "bad");
+      }
+    }
     const button = document.getElementById("save-agent");
     const buttonLabel = button.textContent;
     const wasEditing = Boolean(editing);
@@ -477,7 +487,7 @@
     document.querySelector('[name="knowledge_enabled"]').onchange = toggleKnowledgePolicy;
     document.querySelector('[name="auto_alert_enabled"]').onchange = toggleAlertSettings;
     document.getElementById("agent-form").onsubmit = save;
-    document.querySelectorAll("[data-agent-step-button]").forEach((button) => { button.onclick = () => { if (Number(button.dataset.agentStepButton) <= currentStep) setStep(button.dataset.agentStepButton); }; });
+    document.querySelectorAll("[data-agent-step-button]").forEach((button) => { button.onclick = () => setStep(button.dataset.agentStepButton); });
     document.getElementById("agent-previous-step").onclick = () => setStep(currentStep - 1);
     document.getElementById("agent-next-step").onclick = nextStep;
     document.getElementById("open-agent-system-picker").onclick = () => openPicker("systems");
