@@ -23,7 +23,7 @@
   const statusTone = (value) => ["FAILED", "TAGGING_FAILED", "REJECTED"].includes(value) ? "bad" : ["TAGGING", "PROCESSING", "DRAFT", "REVIEW_REQUIRED"].includes(value) ? "warn" : ["PUBLISHED", "READY"].includes(value) ? "good" : "";
   const badge = (value, label = statusLabel(value)) => `<span class="ops-badge ${statusTone(value)}">${escape(label)}</span>`;
   const reviewLabel = (value) => value === "REVIEW_REQUIRED" ? "待审批" : ["TAGGING", "TAGGING_FAILED", "PROCESSING", "PUBLISHED", "RETIRED"].includes(value) ? "已通过" : value === "REJECTED" ? "已拒绝" : value === "DRAFT" ? "待审核" : "—";
-  const parseLabel = (value, kind = "MANUAL") => ["TAGGING", "TAGGING_FAILED", "REVIEW_REQUIRED"].includes(value) || (kind === "MANUAL" && ["DRAFT", "REJECTED"].includes(value)) ? "未开始" : value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : ["PUBLISHED", "RETIRED"].includes(value) ? "解析完成" : "—";
+  const parseLabel = (value, kind = "MANUAL") => value === "TAGGING" ? "AI 识别中" : value === "TAGGING_FAILED" ? "AI 识别失败" : value === "REVIEW_REQUIRED" || (kind === "MANUAL" && ["DRAFT", "REJECTED"].includes(value)) ? "未开始" : value === "PROCESSING" ? "解析中" : value === "FAILED" ? "解析失败" : ["PUBLISHED", "RETIRED"].includes(value) ? "解析完成" : "—";
   const formatBytes = (bytes) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB` : `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 1 : 0)} MB`;
   const totalBytes = () => state.entries.reduce((sum, item) => sum + item.file.size, 0);
   const isBundle = () => !state.uploadAsset && state.groupingMode === "SINGLE_BUNDLE";

@@ -10,6 +10,20 @@ UPLOAD_SCRIPT = ROOT / "ui" / "aiops" / "js" / "aiops-operations-knowledge.js"
 
 
 class AIOpsUploadDigestContractTest(unittest.TestCase):
+    def test_processing_status_distinguishes_ai_tagging_from_parsing(self) -> None:
+        script = (ROOT / "ui/aiops/js/aiops-operations-knowledge.js").read_text(
+            encoding="utf-8"
+        )
+        page = (ROOT / "ui/aiops/operations-knowledge.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('value === "TAGGING" ? "AI 识别中"', script)
+        self.assertIn(
+            'value === "TAGGING_FAILED" ? "AI 识别失败"', script
+        )
+        self.assertIn("<th>处理状态</th>", page)
+
     def test_http_context_uses_sha256_fallback(self) -> None:
         program = r"""
 const fs = require("node:fs");
@@ -35,7 +49,7 @@ Promise.all(samples.map(async ([input, expected]) => {
     def test_upload_page_loads_digest_utility_before_upload_logic(self) -> None:
         page = UPLOAD_PAGE.read_text(encoding="utf-8")
         utility = "../shared/kbot-sha256.js?v=20261019_1"
-        upload = "./js/aiops-operations-knowledge.js?v=20261022_1"
+        upload = "./js/aiops-operations-knowledge.js?v=20261022_2"
         self.assertIn(utility, page)
         self.assertLess(page.index(utility), page.index(upload))
         self.assertIn(
