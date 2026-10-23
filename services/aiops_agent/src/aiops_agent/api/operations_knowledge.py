@@ -12,9 +12,7 @@ from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.contracts.knowledge import (
-    KnowledgeAssistantBindingWrite,
     KnowledgeBaseWrite,
-    KnowledgeExecutionSpecRequest,
     KnowledgeReviewCommand,
     KnowledgeSearchRequest,
     KnowledgeTagStatusCommand,
@@ -46,35 +44,6 @@ class KnowledgeAssetDeletePayload(BaseModel):
     purge_source_objects: bool = False
 
 
-@router.get("/knowledge-answering/binding")
-async def get_knowledge_assistant_binding(
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, _ = _use_scope(request, context)
-    return await (
-        request.app.state.operations_knowledge_service
-        .get_knowledge_assistant_binding(domain_id=domain_id)
-    )
-
-
-@router.put("/knowledge-answering/binding")
-async def configure_knowledge_assistant_binding(
-    payload: KnowledgeAssistantBindingWrite,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, _ = _scope(request, context)
-    return await (
-        request.app.state.operations_knowledge_service
-        .configure_knowledge_assistant_binding(
-            domain_id=domain_id,
-            command=payload,
-            context=context,
-        )
-    )
-
-
 @router.get("/knowledge-bases")
 async def list_knowledge_bases(
     request: Request,
@@ -97,7 +66,6 @@ async def create_knowledge_base(
     return await request.app.state.operations_knowledge_service.create_knowledge_base(
         domain_id=domain_id, command=payload, context=context,
     )
-
 
 @router.get("/knowledge-bases/{knowledge_base_id}")
 async def get_knowledge_base(
@@ -570,19 +538,4 @@ async def search(
     domain_id, actor = _scope(request, context)
     return await request.app.state.operations_knowledge_service.search(
         domain_id=domain_id, agent_id=actor, request=payload, context=context
-    )
-
-
-@router.post("/knowledge-answering:execution-spec")
-async def knowledge_answering_execution_spec(
-    payload: KnowledgeExecutionSpecRequest,
-    request: Request,
-    context: AuthContext = Depends(get_aiops_auth_context),
-):
-    domain_id, _ = _use_scope(request, context)
-    return await request.app.state.operations_knowledge_service.knowledge_execution_spec(
-        domain_id=domain_id,
-        max_security_level=payload.max_security_level,
-        business_context=payload.business_context,
-        context=context,
     )

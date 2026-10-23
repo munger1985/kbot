@@ -9,8 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aiops_agent.contracts.knowledge import KnowledgeTagScopeSnapshot
 from aiops_agent.entities import (
     OperationsKnowledgeAssetEntity,
-    OperationsKnowledgeAssistantBaseEntity,
-    OperationsKnowledgeAssistantBindingEntity,
     OperationsKnowledgeBaseEntity,
     OperationsKnowledgeIndexEntity,
     OperationsKnowledgeReviewEntity,
@@ -33,49 +31,6 @@ class OperationsKnowledgeRepository(AIOpsRepository):
 
     async def add_knowledge_base(self, entity: OperationsKnowledgeBaseEntity) -> None:
         await self._add(entity)
-
-    async def get_assistant_binding(
-        self, *, domain_id: int, for_update: bool = False,
-    ) -> OperationsKnowledgeAssistantBindingEntity | None:
-        self._check_active()
-        statement = select(OperationsKnowledgeAssistantBindingEntity).where(
-            OperationsKnowledgeAssistantBindingEntity.domain_id == domain_id
-        )
-        if for_update:
-            statement = statement.with_for_update()
-        return (await self._session.execute(statement)).scalar_one_or_none()
-
-    async def add_assistant_binding(
-        self, entity: OperationsKnowledgeAssistantBindingEntity,
-    ) -> None:
-        await self._add(entity)
-
-    async def assistant_knowledge_base_ids(self, *, domain_id: int) -> list[UUID]:
-        self._check_active()
-        rows = await self._session.scalars(
-            select(OperationsKnowledgeAssistantBaseEntity.knowledge_base_id)
-            .where(OperationsKnowledgeAssistantBaseEntity.domain_id == domain_id)
-            .order_by(OperationsKnowledgeAssistantBaseEntity.knowledge_base_id)
-        )
-        return list(rows)
-
-    async def replace_assistant_knowledge_bases(
-        self, *, domain_id: int, knowledge_base_ids: tuple[UUID, ...],
-    ) -> None:
-        self._check_active()
-        await self._session.execute(
-            delete(OperationsKnowledgeAssistantBaseEntity).where(
-                OperationsKnowledgeAssistantBaseEntity.domain_id == domain_id
-            )
-        )
-        self._session.add_all(
-            OperationsKnowledgeAssistantBaseEntity(
-                domain_id=domain_id,
-                knowledge_base_id=knowledge_base_id,
-            )
-            for knowledge_base_id in knowledge_base_ids
-        )
-        await self._session.flush()
 
     async def get_knowledge_base(
         self, *, domain_id: int, knowledge_base_id: UUID, for_update: bool = False,
@@ -147,18 +102,9 @@ class OperationsKnowledgeRepository(AIOpsRepository):
                 == knowledge_base_id
             )
         )
-        assistants = await self._session.scalar(
-            select(func.count()).select_from(
-                OperationsKnowledgeAssistantBaseEntity
-            ).where(
-                OperationsKnowledgeAssistantBaseEntity.knowledge_base_id
-                == knowledge_base_id
-            )
-        )
         return {
             "assets": int(assets or 0),
             "agent_versions": int(agents or 0),
-            "knowledge_assistants": int(assistants or 0),
         }
 
     async def delete_knowledge_base(

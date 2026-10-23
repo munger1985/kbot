@@ -622,6 +622,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         script = (AIOPS_ROOT / "js" / "aiops-knowledge-bases.js").read_text(
             encoding="utf-8"
         )
+        self.assertNotIn("知识问答 Agent 绑定", page)
+        self.assertNotIn("knowledge-answering/binding", script)
         for role in (
             "parser_ocr", "parser_vlm", "parser_llm", "retrieval_llm",
             "embedding", "visual_embedding",

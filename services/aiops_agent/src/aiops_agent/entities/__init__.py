@@ -20,8 +20,6 @@ from .messaging import InboxEntity, OutboxEntity
 from .notification import NotificationSubscriptionEntity
 from .knowledge import (
     OperationsKnowledgeAssetEntity,
-    OperationsKnowledgeAssistantBaseEntity,
-    OperationsKnowledgeAssistantBindingEntity,
     OperationsKnowledgeBaseEntity,
     OperationsKnowledgeIndexEntity,
     OperationsKnowledgeReviewEntity,
@@ -121,8 +119,6 @@ __all__ = [
     "OutboxEntity",
     "NotificationSubscriptionEntity",
     "OperationsKnowledgeAssetEntity",
-    "OperationsKnowledgeAssistantBaseEntity",
-    "OperationsKnowledgeAssistantBindingEntity",
     "OperationsKnowledgeBaseEntity",
     "OperationsKnowledgeIndexEntity",
     "OperationsKnowledgeReviewEntity",

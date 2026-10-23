@@ -27,28 +27,10 @@ class AIOpsRuntimeConfig(BaseModel):
     system_aiops_agent_id: UUID = UUID(
         "019c03b5-4b88-7ab2-8c19-7b6ea34f2a11"
     )
-    knowledge_assistant_id: UUID = UUID(
-        "019d2a10-0000-7000-8000-000000000001"
-    )
-    knowledge_assistant_version_id: UUID = UUID(
-        "019d2a10-0000-7000-8000-000000000002"
-    )
-    knowledge_assistant_instruction: str = Field(
-        default=(
-            "只依据已发布的运维知识原文回答，保留前置条件、停止条件、"
-            "风险、验证和回退步骤；证据不足时明确拒答。"
-        ),
-        min_length=1,
-        max_length=32000,
-    )
 
     @model_validator(mode="after")
     def validate_agent_id(self) -> "AIOpsRuntimeConfig":
-        for field_name in (
-            "system_aiops_agent_id",
-            "knowledge_assistant_id",
-            "knowledge_assistant_version_id",
-        ):
+        for field_name in ("system_aiops_agent_id",):
             if getattr(self, field_name).version != 7:
                 raise ValueError(f"{field_name} 必须是 UUIDv7")
         return self

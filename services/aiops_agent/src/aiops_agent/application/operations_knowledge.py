@@ -13,7 +13,6 @@ from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.knowledge import (
     DiagnosisCaseProfile,
-    KnowledgeAssistantBindingWrite,
     KnowledgeBaseWrite,
     KnowledgeSearchRequest,
     KnowledgeTagAnalysisOutput,
@@ -26,7 +25,6 @@ from aiops_agent.contracts.knowledge import (
 )
 from aiops_agent.entities import (
     OperationsKnowledgeAssetEntity,
-    OperationsKnowledgeAssistantBindingEntity,
     OperationsKnowledgeBaseEntity,
     OperationsKnowledgeIndexEntity,
     OperationsKnowledgeReviewEntity,
@@ -35,11 +33,7 @@ from aiops_agent.entities import (
     OperationsKnowledgeTagEntity,
     OperationsKnowledgeVersionEntity,
 )
-from platform_core.contracts import (
-    AgentExecutionSpec,
-    AuthContext,
-    KnowledgeScopeSnapshotV1,
-)
+from platform_core.contracts import AuthContext
 from platform_core.dictionary import ModelCategory
 from platform_core.identity import uuid7
 from platform_core.security import create_service_auth_context
@@ -255,18 +249,12 @@ class OperationsKnowledgeService:
         *,
         uow_factory: Callable,
         knowledge_core: KnowledgeCoreClient,
-        knowledge_assistant_id: UUID,
-        knowledge_assistant_version_id: UUID,
-        knowledge_assistant_instruction: str,
         model_catalogs: dict[int, AIModelConfigClient] | None = None,
         structured_model=None,
         prompt_registry=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._kc = knowledge_core
-        self._knowledge_assistant_id = knowledge_assistant_id
-        self._knowledge_assistant_version_id = knowledge_assistant_version_id
-        self._knowledge_assistant_instruction = knowledge_assistant_instruction
         self._model_catalogs = dict(model_catalogs or {})
         self._llm_model_catalog = self._model_catalogs.get(int(ModelCategory.LLM))
         self._structured_model = structured_model
@@ -275,154 +263,6 @@ class OperationsKnowledgeService:
     @staticmethod
     def _actor(context: AuthContext) -> str:
         return context.asserted_user_id or context.client_id
-
-    async def get_knowledge_assistant_binding(
-        self, *, domain_id: int,
-    ) -> dict[str, Any]:
-        async with self._uow_factory() as uow:
-            binding = await uow.operations_knowledge.get_assistant_binding(
-                domain_id=domain_id
-            )
-            knowledge_base_ids = await (
-                uow.operations_knowledge.assistant_knowledge_base_ids(
-                    domain_id=domain_id
-                )
-            )
-            bases = []
-            for knowledge_base_id in knowledge_base_ids:
-                row = await uow.operations_knowledge.get_knowledge_base(
-                    domain_id=domain_id,
-                    knowledge_base_id=knowledge_base_id,
-                )
-                if row is not None and row.status == "ACTIVE":
-                    bases.append(_knowledge_base_view(row))
-            return {
-                "assistant_id": str(
-                    binding.assistant_id if binding else self._knowledge_assistant_id
-                ),
-                "assistant_version_id": str(
-                    binding.assistant_version_id
-                    if binding else self._knowledge_assistant_version_id
-                ),
-                "composer_model_id": (
-                    str(binding.composer_model_id)
-                    if binding and binding.composer_model_id else None
-                ),
-                "knowledge_base_ids": [
-                    item["knowledge_base_id"] for item in bases
-                ],
-                "knowledge_bases": bases,
-                "configured": bool(
-                    binding is not None
-                    and binding.composer_model_id is not None
-                    and bases
-                ),
-                "row_version": int(binding.row_version) if binding else None,
-                "updated_at": binding.updated_at if binding else None,
-            }
-
-    async def configure_knowledge_assistant_binding(
-        self, *, domain_id: int, command: KnowledgeAssistantBindingWrite,
-        context: AuthContext,
-    ) -> dict[str, Any]:
-        await self._validate_knowledge_assistant_model(
-            model_id=command.composer_model_id, context=context,
-        )
-        knowledge_base_ids = tuple(command.knowledge_base_ids)
-        if len(set(knowledge_base_ids)) != len(knowledge_base_ids):
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_BASE_SELECTION_INVALID",
-                message="知识问答 Agent 不能重复绑定同一知识库",
-                status_code=422,
-            )
-        async with self._uow_factory() as uow:
-            rows = [
-                await uow.operations_knowledge.get_knowledge_base(
-                    domain_id=domain_id,
-                    knowledge_base_id=knowledge_base_id,
-                )
-                for knowledge_base_id in knowledge_base_ids
-            ]
-            if any(row is None or row.status != "ACTIVE" for row in rows):
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_BASE_SELECTION_INVALID",
-                    message="知识问答 Agent 只能绑定当前 Domain 已启用的知识库",
-                    status_code=422,
-                )
-            binding = await uow.operations_knowledge.get_assistant_binding(
-                domain_id=domain_id, for_update=True,
-            )
-            if binding is None:
-                if command.expected_row_version is not None:
-                    raise AIOpsApplicationError(
-                        code="STATE_VERSION_CONFLICT",
-                        message="知识问答 Agent 绑定状态已变化，请刷新后重试",
-                        status_code=412,
-                    )
-                binding = OperationsKnowledgeAssistantBindingEntity(
-                    domain_id=domain_id,
-                    assistant_id=self._knowledge_assistant_id,
-                    assistant_version_id=self._knowledge_assistant_version_id,
-                    composer_model_id=command.composer_model_id,
-                    created_by=self._actor(context),
-                    updated_by=self._actor(context),
-                )
-                await uow.operations_knowledge.add_assistant_binding(binding)
-            else:
-                if command.expected_row_version is None:
-                    raise AIOpsApplicationError(
-                        code="PRECONDITION_REQUIRED",
-                        message="修改知识问答 Agent 绑定必须提供当前版本",
-                        status_code=428,
-                    )
-                if int(binding.row_version) != command.expected_row_version:
-                    raise AIOpsApplicationError(
-                        code="STATE_VERSION_CONFLICT",
-                        message="知识问答 Agent 绑定已被其他请求修改，请刷新后重试",
-                        status_code=412,
-                    )
-                binding.assistant_id = self._knowledge_assistant_id
-                binding.assistant_version_id = uuid7()
-                binding.composer_model_id = command.composer_model_id
-                binding.updated_by = self._actor(context)
-                binding.updated_at = _now()
-                binding.row_version = int(binding.row_version) + 1
-            await uow.operations_knowledge.replace_assistant_knowledge_bases(
-                domain_id=domain_id,
-                knowledge_base_ids=knowledge_base_ids,
-            )
-            await uow.commit()
-        return await self.get_knowledge_assistant_binding(domain_id=domain_id)
-
-    async def _validate_knowledge_assistant_model(
-        self, *, model_id: UUID, context: AuthContext,
-    ) -> None:
-        if self._llm_model_catalog is None:
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_ASSISTANT_MODEL_UNAVAILABLE",
-                message="知识问答 Agent 的模型目录暂时不可用",
-                status_code=503,
-                retryable=True,
-            )
-        try:
-            definition = await self._llm_model_catalog.get_model(
-                model_id, auth_context=context,
-            )
-        except (LookupError, RuntimeError) as exc:
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_ASSISTANT_MODEL_UNAVAILABLE",
-                message="知识问答 Agent 的回答模型当前不可用",
-                status_code=409,
-            ) from exc
-        if (
-            int(definition.get("category") or 0) != int(ModelCategory.LLM)
-            or definition.get("status") != "ACTIVE"
-        ):
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_ASSISTANT_MODEL_UNAVAILABLE",
-                message="知识问答 Agent 必须绑定已启用的 LLM",
-                status_code=409,
-            )
 
     async def create_knowledge_base(
         self, *, domain_id: int, command: KnowledgeBaseWrite,
@@ -2968,148 +2808,6 @@ class OperationsKnowledgeService:
             "results": results,
             "warnings": [] if results else ["有适用候选，但 KC 正文没有形成可引用命中"],
         }
-
-    async def knowledge_execution_spec(
-        self,
-        *,
-        domain_id: int,
-        max_security_level: int,
-        business_context: dict[str, Any],
-        context: AuthContext,
-    ) -> dict[str, Any]:
-        """签发 AIOps 内部知识助手的 Execution Spec 与精确发布范围。"""
-        mappings = {
-            "database_type": "DATABASE_TYPE",
-            "database_major_version": "DATABASE_VERSION",
-            "topology": "TOPOLOGY",
-            "problem_class": "PROBLEM_CLASS",
-            "component": "COMPONENT",
-        }
-        filters = {
-            scope_kind: (_normalize(str(business_context[key])),)
-            for key, scope_kind in mappings.items()
-            if business_context.get(key) is not None
-            and str(business_context[key]).strip()
-        }
-        tag_ids = business_context.get("tag_ids") or ()
-        if isinstance(tag_ids, (list, tuple)):
-            normalized_tag_ids = tuple(
-                str(value).strip().upper() for value in tag_ids if str(value).strip()
-            )
-            if normalized_tag_ids:
-                filters["TAG_ID"] = normalized_tag_ids
-        async with self._uow_factory() as uow:
-            binding = await uow.operations_knowledge.get_assistant_binding(
-                domain_id=domain_id
-            )
-            knowledge_base_ids = tuple(
-                await uow.operations_knowledge.assistant_knowledge_base_ids(
-                    domain_id=domain_id
-                )
-            )
-            if binding is None or not knowledge_base_ids:
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_BASE_REQUIRED",
-                    message="知识问答 Agent 尚未绑定运维知识库",
-                    status_code=422,
-                )
-            if binding.composer_model_id is None:
-                raise AIOpsApplicationError(
-                    code="AIOPS_KNOWLEDGE_ASSISTANT_MODEL_REQUIRED",
-                    message="请先在知识问答 Agent 管理页配置回答模型",
-                    status_code=422,
-                    retryable=False,
-                )
-            assistant_id = binding.assistant_id
-            assistant_version_id = binding.assistant_version_id
-            assistant_models = {"composer_llm": binding.composer_model_id}
-            candidates = await uow.operations_knowledge.list_published_candidates(
-                domain_id=domain_id,
-                target_id=None,
-                source_kinds=("MANUAL", "DIAGNOSIS_CASE"),
-                knowledge_base_ids=knowledge_base_ids,
-                max_security_level=max_security_level,
-                scope_filters=filters,
-                limit=None,
-            )
-            candidate_snapshots = tuple({
-                "asset_version_id": version.asset_version_id,
-                "collection_id": index.collection_id,
-                "bundle_revision_id": index.bundle_revision_id,
-            } for _asset, version, index in candidates)
-        if not candidate_snapshots:
-            raise AIOpsApplicationError(
-                code="AIOPS_KNOWLEDGE_SCOPE_EMPTY",
-                message="当前 Domain 没有可用于问答的已发布运维知识",
-                status_code=422,
-                retryable=False,
-            )
-        collection_ids = tuple(sorted(
-            {row["collection_id"] for row in candidate_snapshots},
-            key=lambda item: item.bytes,
-        ))
-        revision_ids = tuple(sorted(
-            {row["bundle_revision_id"] for row in candidate_snapshots},
-            key=lambda item: item.bytes,
-        ))
-        for collection_id in collection_ids:
-            await self._kc.bind_collection(
-                domain_id=domain_id,
-                agent_id=assistant_id,
-                collection_id=collection_id,
-                note="AIOps 内部运维知识助手检索授权",
-                auth_context=context,
-            )
-        scope_payload = {
-            "schema_version": "1.0",
-            "owner_app_id": "aiops",
-            "domain_id": domain_id,
-            "consumer_agent_id": str(assistant_id),
-            "consumer_agent_version_id": str(assistant_version_id),
-            "collection_ids": [str(item) for item in collection_ids],
-            "bundle_revision_ids": [str(item) for item in revision_ids],
-            "security_level": max_security_level,
-            "business_context": {
-                **dict(business_context),
-                "knowledge_base_ids": [str(item) for item in knowledge_base_ids],
-            },
-            "business_resource_refs": [
-                {
-                    "kind": "OPERATIONS_KNOWLEDGE_VERSION",
-                    "id": str(row["asset_version_id"]),
-                }
-                for row in candidate_snapshots
-            ],
-            "policy_version": "aiops-knowledge-scope.v1",
-            "issued_at": _now().isoformat(),
-        }
-        scope_payload["scope_hash"] = KnowledgeScopeSnapshotV1.calculate_hash(
-            scope_payload
-        )
-        scope = KnowledgeScopeSnapshotV1.model_validate(scope_payload)
-        spec = AgentExecutionSpec(
-            schema_version="1.0",
-            owner_app_id="aiops",
-            domain_id=domain_id,
-            consumer_agent_id=assistant_id,
-            consumer_agent_version_id=assistant_version_id,
-            agent_kind="KNOWLEDGE_RETRIEVAL",
-            display_name="AIOps 运维知识助手",
-            enabled_capabilities=("document",),
-            models=assistant_models,
-            instruction=self._knowledge_assistant_instruction,
-            resource_context={
-                "resource_mode": "managed_resources",
-                "default_route": "DOCUMENT",
-                "collection_ids": [str(item) for item in collection_ids],
-            },
-            runtime_policy={
-                "routing": "document_only",
-                "allow_general_conversation": False,
-            },
-            knowledge_scope=scope,
-        )
-        return spec.model_dump(mode="json")
 
     async def list_reviews(self, *, domain_id: int, limit: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:

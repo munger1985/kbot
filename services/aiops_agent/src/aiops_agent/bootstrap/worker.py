@@ -214,13 +214,6 @@ def create_aiops_worker_probe(
         operations_knowledge_service = OperationsKnowledgeService(
             uow_factory=runtime.uow_factory,
             knowledge_core=knowledge_core_client,
-            knowledge_assistant_id=resolved.runtime.knowledge_assistant_id,
-            knowledge_assistant_version_id=(
-                resolved.runtime.knowledge_assistant_version_id
-            ),
-            knowledge_assistant_instruction=(
-                resolved.runtime.knowledge_assistant_instruction
-            ),
             model_catalogs=model_catalogs,
             structured_model=diagnosis_model_client,
             prompt_registry=diagnosis_prompts,

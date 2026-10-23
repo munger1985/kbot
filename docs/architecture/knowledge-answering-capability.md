@@ -174,15 +174,18 @@ POST /internal/v1/agent-runtime/runs/{run_id}:cancel
 GET  /internal/v1/knowledge/citations/{citation_id}/content
 ```
 
-AIOps BFF 公开业务合同：
+AIOps 统一 Agent 公开业务合同：
 
 ```text
-POST /api/v1/apps/aiops/operations-knowledge/conversations
-GET  /api/v1/apps/aiops/operations-knowledge/conversations
-POST /api/v1/apps/aiops/operations-knowledge/conversations/{id}/turns
-GET  /api/v1/apps/aiops/operations-knowledge/runs/{run_id}/events
-GET  /api/v1/apps/aiops/operations-knowledge/references/{citation_id}/content
+GET  /api/v1/apps/aiops/agents
+GET  /api/v1/apps/aiops/conversations
+POST /api/v1/apps/aiops/conversations
+POST /api/v1/apps/aiops/conversations/{conversation_id}/turns
+GET  /api/v1/apps/aiops/conversations/{conversation_id}/turns/{turn_id}/events
 ```
+
+运维知识库路径只提供资产、标签、审核和检索治理，不再提供固定知识问答 Agent 的绑定、
+独立 Conversation、Run 或引用读取入口。知识库范围只从 Agent 版本绑定读取。
 
 请求体不出现内部范围字段。BFF 用用户 Token/App API Key 形成可信 Domain 和权限，再以内网 Service
 Credential 与 audience-bound AuthContext 调用服务。安全级只能服务端计算；日志不得保存正文、Prompt、凭据、
@@ -200,9 +203,9 @@ Credential 与 audience-bound AuthContext 调用服务。安全级只能服务�
 | `services/knowledge_core` | Revision Scope、Binding/归属、稳定评分、引用内容授权 |
 | `services/agent_runtime` | 通用 Document/Composer、AppScopedSkill、Scope 冻结、引用闭包、SSE |
 | `services/knowledge_retrieval_app` | 作为消费者签发 Scope/Spec，保持自身产品治理 |
-| `services/aiops_agent` | 内部知识助手、Scope Provider、适用性与 Presenter；修复时间预截断和 Citation DTO |
-| `services/main_api` | AIOps BFF、权限、会话/Turn/SSE/预览；删除 KM BFF、登录与 Slack 路由 |
-| `tools/dev_console` / `ui` | AIOps 正式问答 UI；删除 `ui/km` 及共享导航/认证引用 |
+| `services/aiops_agent` | 统一 Agent 的知识范围、适用性与 Presenter；修复时间预截断和 Citation DTO |
+| `services/main_api` | 统一 Agent BFF、权限、会话/Turn/SSE/预览；删除 KM BFF、登录与 Slack 路由 |
+| `tools/dev_console` / `ui` | AIOps 统一 Agent UI；删除 `ui/km` 及共享导航/认证引用 |
 | KM 删除面 | 删除 `km_asset_app`、Runtime/KC/Data Query 特例、客户端、合同、配置、部署与文档 |
 | Oracle/OpenAPI/tests | canonical DDL/manifest、契约、权限、集成、旧路由与 KM 不存在性检查 |
 

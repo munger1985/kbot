@@ -1,6 +1,6 @@
 # AIOps Agent Oracle Schema
 
-本目录当前拥有 AIOps 服务的 78 张表和 10 个只读视图，按以下顺序在空 Schema
+本目录当前拥有 AIOps 服务的 76 张表和 10 个只读视图，按以下顺序在空 Schema
 一次性执行：
 
 1. `001_ops_roots.sql`：Target、Policy、Agent Binding、Monitor Source；
@@ -27,17 +27,17 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 全部十二份规范 DDL，不依赖 SQL Developer 的工作目录或其他 SQL 文件。脚本会先确认
 共享的 `KBOT_PLATFORM_DOMAIN(DOMAIN_ID)` 与
 `KBOT_MANAGED_CREDENTIAL(CREDENTIAL_ID, DOMAIN_ID)` 父键可用，再删除旧 AIOps
-对象；结束时会按 Manifest 精确核对对象名称和 Schema 49 关键完整性合同。
+对象；结束时会按 Manifest 精确核对对象名称和 Schema 50 关键完整性合同。
 
 此前由 `initialize_aiops.py` 创建的 `aiopsadmin`、`aiops_portal` Domain、AIOps
 权限/角色/成员关系以及 `diagnosis-cases` 固定 KC Collection 位于共享平台/KC 表；用户创建的运维知识库各自拥有独立 KC Collection，
 不会被本脚本删除，重建后无需再次初始化。不要无意中重复执行初始化脚本，因为它
 会把 `aiopsadmin` 恢复成代码内置的初始密码。重建成功后确认
-`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 49 / aiops-oracle-v49-unified-assistant`，再启动 AIOps
+`KBOT_V_OPS_SCHEMA_VERSION` 返回 `AIOPS / 50 / aiops-oracle-v50-unified-agent-only`，再启动 AIOps
 服务并检查 `/ready`。
 
 `schema_manifest.json` 是部署与步骤 2 Entity 对齐的机器可读契约。应用就绪检查会同时
-校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 49 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
+校验 `KBOT_V_OPS_SCHEMA_VERSION`、Schema 50 关键列以及业务 `CHECK` 已清零，不得执行 DDL、补列或调用
 `create_all()`。APEX 只能读取 `KBOT_V_OPS_*`，所有状态迁移仍通过 API Command 完成。
 
 从 Schema 45 升级时执行 `../operations/apply_aiops_schema_46.sql`。该脚本创建受控标签表，
@@ -49,6 +49,11 @@ Run Script（F5）执行。不要使用 Run Statement（Ctrl+Enter）。重建�
 
 从 Schema 47 升级时执行 `../operations/apply_aiops_schema_48.sql`。该脚本增加知识问答 Agent
 回答模型绑定列；升级后需要在管理页完成模型配置。
+
+从 Schema 48 升级时先执行 `../operations/apply_aiops_schema_49.sql`，再执行
+`../operations/apply_aiops_schema_50.sql`。已处于 Schema 49 的环境只执行后者。Schema 50
+仅删除旧固定知识问答 Agent 的 Domain 绑定与知识库关联表，不读取、迁移或覆盖
+`KBOT_OPS_AGENT_VERSION_KNOW_BASE` 中统一 Agent 版本的知识库绑定。
 
 升级失败但必须保留已配置的监控源和运维目标时，改用
 `../generated/aiops_agent/rebuild_aiops_preserve_sources_targets.sql`。该文件同样在

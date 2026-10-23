@@ -765,15 +765,11 @@ POST   /api/v1/apps/aiops/operations-knowledge/versions/{version_id}:retire
 POST   /api/v1/apps/aiops/operations-knowledge/versions/{version_id}:retry
 GET    /api/v1/apps/aiops/operations-knowledge/reviews
 POST   /api/v1/apps/aiops/operations-knowledge/search-preview
-POST   /api/v1/apps/aiops/operations-knowledge/conversations
-GET    /api/v1/apps/aiops/operations-knowledge/conversations
-POST   /api/v1/apps/aiops/operations-knowledge/conversations/{conversation_id}/turns
-GET    /api/v1/apps/aiops/operations-knowledge/runs/{run_id}/events
-GET    /api/v1/apps/aiops/operations-knowledge/references/{citation_id}/content
 ```
 
 上传使用 multipart 流式转发、`Idempotency-Key` 和文件摘要，不把文件写入 Main API 本地目录。
 发布、拒绝、退役和重试使用 `expected_row_version`，冲突返回稳定的并发错误。
+问答、会话、运行事件和引用读取统一使用 AIOps Agent 公共路径；本命名空间不再提供固定助手入口。
 
 ### 13.2 AIOps 内部 API
 

@@ -20,13 +20,6 @@ class KnowledgeBaseWrite(BaseModel):
     expected_row_version: int | None = Field(default=None, ge=1)
 
 
-class KnowledgeAssistantBindingWrite(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    composer_model_id: UUID
-    knowledge_base_ids: tuple[UUID, ...] = Field(min_length=1, max_length=32)
-    expected_row_version: int | None = Field(default=None, ge=1)
-
-
 class ManualUploadMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str = Field(min_length=1, max_length=256)
@@ -159,11 +152,3 @@ class KnowledgeReviewCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_row_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=2000)
-
-
-class KnowledgeExecutionSpecRequest(BaseModel):
-    """仅供受信 BFF 请求 AIOps 服务端签发知识范围。"""
-
-    model_config = ConfigDict(extra="forbid")
-    max_security_level: int = Field(ge=0, le=999)
-    business_context: dict[str, Any] = Field(default_factory=dict)

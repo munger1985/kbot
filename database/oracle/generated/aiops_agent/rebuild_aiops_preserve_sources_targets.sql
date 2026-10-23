@@ -30,12 +30,12 @@ BEGIN
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 49
-       OR l_contract_version <> 'aiops-oracle-v49-unified-assistant' THEN
+       OR l_schema_version <> 50
+       OR l_contract_version <> 'aiops-oracle-v50-unified-agent-only' THEN
         raise_application_error(
             -20100,
-            '仅支持 AIOPS/49/'
-            || 'aiops-oracle-v49-unified-assistant，当前为 '
+            '仅支持 AIOPS/50/'
+            || 'aiops-oracle-v50-unified-agent-only，当前为 '
             || l_component || '/' || l_schema_version || '/' || l_contract_version
         );
     END IF;
@@ -2290,8 +2290,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    49 AS SCHEMA_VERSION,
-    'aiops-oracle-v49-unified-assistant' AS CONTRACT_VERSION
+    50 AS SCHEMA_VERSION,
+    'aiops-oracle-v50-unified-agent-only' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3166,35 +3166,6 @@ CREATE TABLE KBOT_OPS_KNOWLEDGE_BASE (
 
 CREATE INDEX IX_OPS_KNOW_BASE_SCOPE ON KBOT_OPS_KNOWLEDGE_BASE
     (DOMAIN_ID, STATUS, UPDATED_AT);
-
-CREATE TABLE KBOT_OPS_KNOW_ASSISTANT_BIND (
-    DOMAIN_ID NUMBER(38) PRIMARY KEY,
-    ASSISTANT_ID RAW(16) NOT NULL,
-    ASSISTANT_VERSION_ID RAW(16) NOT NULL,
-    COMPOSER_MODEL_ID RAW(16),
-    CREATED_BY VARCHAR2(256 CHAR) NOT NULL,
-    UPDATED_BY VARCHAR2(256 CHAR) NOT NULL,
-    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
-    UPDATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
-    ROW_VERSION NUMBER(19) DEFAULT 1 NOT NULL,
-    CONSTRAINT FK_OPS_KNOW_ASSIST_DOMAIN FOREIGN KEY (DOMAIN_ID)
-        REFERENCES KBOT_PLATFORM_DOMAIN (DOMAIN_ID)
-);
-
-CREATE TABLE KBOT_OPS_KNOW_ASSISTANT_BASE (
-    DOMAIN_ID NUMBER(38) NOT NULL,
-    KNOWLEDGE_BASE_ID RAW(16) NOT NULL,
-    CREATED_AT TIMESTAMP(6) WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
-    CONSTRAINT PK_OPS_KNOW_ASSIST_BASE
-        PRIMARY KEY (DOMAIN_ID, KNOWLEDGE_BASE_ID),
-    CONSTRAINT FK_OPS_KNOW_ASSIST_BIND FOREIGN KEY (DOMAIN_ID)
-        REFERENCES KBOT_OPS_KNOW_ASSISTANT_BIND (DOMAIN_ID) ON DELETE CASCADE,
-    CONSTRAINT FK_OPS_KNOW_ASSIST_BASE FOREIGN KEY (KNOWLEDGE_BASE_ID)
-        REFERENCES KBOT_OPS_KNOWLEDGE_BASE (KNOWLEDGE_BASE_ID)
-);
-
-CREATE INDEX IX_OPS_KNOW_ASSIST_BASE
-    ON KBOT_OPS_KNOW_ASSISTANT_BASE (KNOWLEDGE_BASE_ID);
 
 CREATE TABLE KBOT_OPS_KNOWLEDGE_ASSET (
     ASSET_ID RAW(16) PRIMARY KEY,
@@ -4399,8 +4370,6 @@ BEGIN
           'KBOT_OPS_WORKLOAD_METRIC',
           'KBOT_OPS_ACTIVITY_SAMPLE',
           'KBOT_OPS_KNOWLEDGE_BASE',
-          'KBOT_OPS_KNOW_ASSISTANT_BIND',
-          'KBOT_OPS_KNOW_ASSISTANT_BASE',
           'KBOT_OPS_KNOWLEDGE_ASSET',
           'KBOT_OPS_KNOWLEDGE_VERSION',
           'KBOT_OPS_KNOWLEDGE_TAG',
@@ -4566,7 +4535,7 @@ BEGIN
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-    IF l_table_count <> 79 OR l_view_count <> 10 THEN
+    IF l_table_count <> 77 OR l_view_count <> 10 THEN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
@@ -4592,7 +4561,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 49 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 50 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -4605,8 +4574,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 49
-       OR l_contract_version <> 'aiops-oracle-v49-unified-assistant' THEN
+       OR l_schema_version <> 50
+       OR l_contract_version <> 'aiops-oracle-v50-unified-agent-only' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -4615,8 +4584,8 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：79 张表、10 个视图，Schema Version '
-        || '49，合同 aiops-oracle-v49-unified-assistant。'
+        '验证通过：77 张表、10 个视图，Schema Version '
+        || '50，合同 aiops-oracle-v50-unified-agent-only。'
     );
 END;
 /

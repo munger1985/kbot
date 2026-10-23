@@ -35,7 +35,7 @@
     const body = document.getElementById("knowledge-base-rows");
     body.innerHTML = rows.length ? rows.map((item) => `<tr>
       <td><strong>${shell.escape(item.display_name)}</strong><small>${shell.escape(item.description || "未填写说明")}</small></td>
-      <td>${shell.badge(item.status)}</td><td>${Number(item.usage?.assets || 0)}</td><td>诊断 ${Number(item.usage?.agent_versions || 0)} · 问答 ${Number(item.usage?.knowledge_assistants || 0)}</td><td>${shell.escape(shell.fmt(item.updated_at))}</td>
+      <td>${shell.badge(item.status)}</td><td>${Number(item.usage?.assets || 0)}</td><td>${Number(item.usage?.agent_versions || 0)} 个当前 Agent 版本</td><td>${shell.escape(shell.fmt(item.updated_at))}</td>
       <td><div class="ops-actions"><a href="./operations-knowledge.html?knowledge_base_id=${encodeURIComponent(item.knowledge_base_id)}">管理资料</a><button type="button" data-edit="${shell.escape(item.knowledge_base_id)}">编辑</button><button class="danger" type="button" data-delete="${shell.escape(item.knowledge_base_id)}">删除</button></div></td>
     </tr>`).join("") : '<tr><td colspan="6" class="ops-empty">当前 Domain 还没有运维知识库。</td></tr>';
   }

@@ -7222,44 +7222,6 @@
         "title": "KnowledgeAssetDeletePayload",
         "type": "object"
       },
-      "KnowledgeAssistantBindingWrite": {
-        "additionalProperties": false,
-        "properties": {
-          "composer_model_id": {
-            "format": "uuid",
-            "title": "Composer Model Id",
-            "type": "string"
-          },
-          "expected_row_version": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Row Version"
-          },
-          "knowledge_base_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "maxItems": 32,
-            "minItems": 1,
-            "title": "Knowledge Base Ids",
-            "type": "array"
-          }
-        },
-        "required": [
-          "composer_model_id",
-          "knowledge_base_ids"
-        ],
-        "title": "KnowledgeAssistantBindingWrite",
-        "type": "object"
-      },
       "KnowledgeBaseDeletePayload": {
         "properties": {
           "expected_row_version": {
@@ -7320,28 +7282,6 @@
           "models"
         ],
         "title": "KnowledgeBaseWrite",
-        "type": "object"
-      },
-      "KnowledgeExecutionSpecRequest": {
-        "additionalProperties": false,
-        "description": "仅供受信 BFF 请求 AIOps 服务端签发知识范围。",
-        "properties": {
-          "business_context": {
-            "additionalProperties": true,
-            "title": "Business Context",
-            "type": "object"
-          },
-          "max_security_level": {
-            "maximum": 999.0,
-            "minimum": 0.0,
-            "title": "Max Security Level",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "max_security_level"
-        ],
-        "title": "KnowledgeExecutionSpecRequest",
         "type": "object"
       },
       "KnowledgeReviewCommand": {
@@ -24727,101 +24667,6 @@
           }
         },
         "summary": "Ingest Manual Version",
-        "tags": [
-          "AIOps Operations Knowledge"
-        ]
-      }
-    },
-    "/internal/v1/aiops/operations-knowledge/knowledge-answering/binding": {
-      "get": {
-        "operationId": "get_knowledge_assistant_binding_internal_v1_aiops_operations_knowledge_knowledge_answering_binding_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Knowledge Assistant Binding",
-        "tags": [
-          "AIOps Operations Knowledge"
-        ]
-      },
-      "put": {
-        "operationId": "configure_knowledge_assistant_binding_internal_v1_aiops_operations_knowledge_knowledge_answering_binding_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeAssistantBindingWrite"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Configure Knowledge Assistant Binding",
-        "tags": [
-          "AIOps Operations Knowledge"
-        ]
-      }
-    },
-    "/internal/v1/aiops/operations-knowledge/knowledge-answering:execution-spec": {
-      "post": {
-        "operationId": "knowledge_answering_execution_spec_internal_v1_aiops_operations_knowledge_knowledge_answering_execution_spec_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeExecutionSpecRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Knowledge Answering Execution Spec",
         "tags": [
           "AIOps Operations Knowledge"
         ]
