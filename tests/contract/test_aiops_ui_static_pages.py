@@ -482,7 +482,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('capability: "MONITORING_QUERY", title: "查看监控"', workspace)
         self.assertIn('capability: "ALERT_QUERY", title: "查看告警"', workspace)
         self.assertIn('capability: "INSPECTION_QUERY", title: "查询巡检"', workspace)
-        self.assertIn('capability: "REPORT_CASE_QUERY", title: "查询报告案例"', workspace)
+        self.assertIn('capability: "REPORT_CASE_QUERY", title: "查询历史案例"', workspace)
         self.assertIn('capability: "KNOWLEDGE_QA", title: "查询运维知识"', workspace)
         self.assertIn("form.requestSubmit()", workspace)
         self.assertIn("datetime-local", workspace)

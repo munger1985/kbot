@@ -131,7 +131,9 @@ class DiagnosisCaseProfile(BaseModel):
 class KnowledgeSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=4000)
-    purpose: Literal["DIAGNOSE", "EXPLAIN", "PLAN", "CHANGE", "VERIFY"] = "DIAGNOSE"
+    purpose: Literal[
+        "DIAGNOSE", "EXPLAIN", "PLAN", "CHANGE", "VERIFY", "CATALOG"
+    ] = "DIAGNOSE"
     problem_class: str | None = Field(default=None, max_length=128)
     components: tuple[str, ...] = Field(default=(), max_length=16)
     error_codes: tuple[str, ...] = Field(default=(), max_length=16)

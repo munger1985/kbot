@@ -339,6 +339,92 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Oracle 运维手册", result["results"][0]["title"])
         self.assertFalse(state.active)
 
+    async def test_catalog_search_lists_published_topics_without_calling_kc(self):
+        domain_id = 42
+        asset_id, version_id = uuid7(), uuid7()
+        collection_id, revision_id = uuid7(), uuid7()
+        repository = SimpleNamespace(
+            list_published_candidates=AsyncMock(return_value=[(
+                SimpleNamespace(
+                    asset_id=asset_id,
+                    asset_kind="MANUAL",
+                    display_name="Oracle 运维手册",
+                ),
+                SimpleNamespace(
+                    asset_version_id=version_id,
+                    version_no=3,
+                    profile_json={
+                        "schema_version": "OPS_MANUAL_PROFILE.v1",
+                        "scope": {},
+                        "topics": ["连接管理", "故障切换"],
+                        "procedures": [],
+                    },
+                ),
+                SimpleNamespace(
+                    collection_id=collection_id,
+                    bundle_revision_id=revision_id,
+                ),
+            )]),
+        )
+        knowledge_core = SimpleNamespace(
+            discover=AsyncMock(), retrieve_evidence=AsyncMock()
+        )
+
+        result = await self.service(repository, knowledge_core).search(
+            domain_id=domain_id,
+            agent_id=str(uuid7()),
+            request=KnowledgeSearchRequest(
+                query="列出已发布运维知识",
+                purpose="CATALOG",
+                knowledge_base_ids=(uuid7(),),
+                source_kinds=("MANUAL",),
+            ),
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual("READY", result["status"])
+        self.assertEqual(["连接管理", "故障切换"], result["results"][0]["topics"])
+        knowledge_core.discover.assert_not_awaited()
+        knowledge_core.retrieve_evidence.assert_not_awaited()
+
+    async def test_search_does_not_retrieve_evidence_without_discovery_hits(self):
+        repository = SimpleNamespace(
+            list_published_candidates=AsyncMock(return_value=[(
+                SimpleNamespace(
+                    asset_id=uuid7(),
+                    asset_kind="MANUAL",
+                    display_name="Oracle 运维手册",
+                ),
+                SimpleNamespace(
+                    asset_version_id=uuid7(),
+                    version_no=1,
+                    profile_json={"schema_version": "OPS_MANUAL_PROFILE.v1"},
+                ),
+                SimpleNamespace(
+                    collection_id=uuid7(),
+                    bundle_revision_id=uuid7(),
+                ),
+            )]),
+        )
+        knowledge_core = SimpleNamespace(
+            discover=AsyncMock(return_value={"candidates": []}),
+            retrieve_evidence=AsyncMock(),
+        )
+
+        result = await self.service(repository, knowledge_core).search(
+            domain_id=42,
+            agent_id=str(uuid7()),
+            request=KnowledgeSearchRequest(
+                query="不存在的正文",
+                purpose="EXPLAIN",
+                knowledge_base_ids=(uuid7(),),
+            ),
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual("NO_EVIDENCE_MATCH", result["status"])
+        knowledge_core.retrieve_evidence.assert_not_awaited()
+
     async def test_collection_models_snapshot_id_before_transaction_closes(self):
         knowledge_base_id, collection_id = uuid7(), uuid7()
         state = _SessionState()

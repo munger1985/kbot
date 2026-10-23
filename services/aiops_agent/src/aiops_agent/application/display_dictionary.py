@@ -421,7 +421,7 @@ _DISPLAY_NAMES = {
     "SOURCE_NO_DATA": "监控源未返回有效数据",
     "ACTIVE_DIAGNOSIS": "主动诊断",
     "KNOWLEDGE_QA": "运维知识问答",
-    "REPORT_CASE_QUERY": "报告与历史案例查询",
+    "REPORT_CASE_QUERY": "历史诊断案例查询",
     "INSPECTION_QUERY": "巡检查询",
     "ALERT_QUERY": "告警查询",
     "MONITORING_QUERY": "当前监控查询",

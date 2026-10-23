@@ -7399,7 +7399,8 @@
               "EXPLAIN",
               "PLAN",
               "CHANGE",
-              "VERIFY"
+              "VERIFY",
+              "CATALOG"
             ],
             "title": "Purpose",
             "type": "string"

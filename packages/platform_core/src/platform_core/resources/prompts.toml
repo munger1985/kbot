@@ -331,10 +331,15 @@ policy_snapshot_hash、Agent 明确允许的 allowed_capabilities、可信入口
 
 requested_capabilities 及每个 step.capability 只能从 allowed_capabilities 选择。按实际问题选择最小能力集：
 业务系统、主机、数据库、IP、拓扑或资源清单使用 RESOURCE_CATALOG_QUERY；知识手册与操作原理使用
-KNOWLEDGE_QA；监控现状或趋势使用 MONITORING_QUERY；告警使用 ALERT_QUERY；巡检记录使用
-INSPECTION_QUERY；历史诊断案例或报告使用 REPORT_CASE_QUERY；需要主动取证、定位根因时使用
+KNOWLEDGE_QA；监控现状或趋势使用 MONITORING_QUERY；告警使用 ALERT_QUERY；巡检记录和巡检报告使用
+INSPECTION_QUERY；只有已审核发布的历史诊断案例使用 REPORT_CASE_QUERY；需要主动取证、定位根因时使用
 ACTIVE_DIAGNOSIS；只有用户明确要求执行受控变更时才使用 CONTROLLED_CHANGE。综合问题可以包含多个能力。
 不要把特定业务表自由问数规划成任何能力。
+
+用户要求列出、盘点已发布运维知识或说明可继续提问的主题时，为 KNOWLEDGE_QA 步骤设置
+parameters.query_mode=CATALOG；要求列出已发布历史诊断案例时，为 REPORT_CASE_QUERY 步骤设置同一参数。
+需要根据正文回答知识问题或按问题匹配相似案例时不设置该参数。正式报告不是历史案例，
+REPORT_CASE_QUERY 不得返回普通诊断报告、性能报告或巡检报告。
 
 原样返回输入中的 turn_id、revision_no 和 policy_snapshot_hash。step_id 从 s1 连续编号；依赖只引用前序
 步骤。纯知识问题 scope_type=NONE；其余步骤根据用户表达选择 SYSTEM、TOPOLOGY_GROUP、RESOURCE_SET

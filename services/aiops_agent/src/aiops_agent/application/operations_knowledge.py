@@ -242,6 +242,26 @@ def _profile_dimensions_from_profile(
     return dimensions
 
 
+def _catalog_topics_from_profile(profile: dict[str, Any]) -> tuple[str, ...]:
+    """从已发布 Registry 提炼结果中读取可展示的提问主题。"""
+    topics: list[str] = []
+    if profile.get("schema_version") == "OPS_MANUAL_PROFILE.v1":
+        topics.extend(str(item) for item in profile.get("topics") or ())
+        topics.extend(
+            str(item.get("title"))
+            for item in profile.get("procedures") or ()
+            if isinstance(item, dict) and item.get("title")
+        )
+    else:
+        signature = dict(profile.get("problem_signature") or {})
+        for key in ("problem_class", "component"):
+            if signature.get(key):
+                topics.append(str(signature[key]))
+        for key in ("error_codes", "normalized_symptoms", "signal_names"):
+            topics.extend(str(item) for item in signature.get(key) or ())
+    return tuple(dict.fromkeys(item.strip() for item in topics if item.strip()))[:8]
+
+
 def _profile_dimensions(
     version: OperationsKnowledgeVersionEntity,
 ) -> dict[str, set[str]]:
@@ -2755,6 +2775,34 @@ class OperationsKnowledgeService:
             ]
         if not candidate_snapshots:
             return {"status": "NO_APPLICABLE_KNOWLEDGE", "results": [], "warnings": []}
+        if request.purpose == "CATALOG":
+            return {
+                "status": "READY",
+                "results": [
+                    {
+                        "asset_id": row["asset_id"],
+                        "asset_version_id": row["asset_version_id"],
+                        "asset_kind": row["asset_kind"],
+                        "title": row["title"],
+                        "version": row["version"],
+                        "authority": (
+                            "APPROVED_MANUAL"
+                            if row["asset_kind"] == "MANUAL"
+                            else str(
+                                row["profile"].get("case_kind")
+                                or "DIAGNOSTIC_REFERENCE"
+                            )
+                        ),
+                        "applicability": "CATALOG",
+                        "topics": list(
+                            _catalog_topics_from_profile(row["profile"])
+                        ),
+                        "citation_pack": [],
+                    }
+                    for row in candidate_snapshots
+                ],
+                "warnings": [],
+            }
         collection_ids = sorted(
             {row["collection_id"] for row in candidate_snapshots}, key=str
         )
@@ -2773,6 +2821,12 @@ class OperationsKnowledgeService:
                 per_collection_limit=request.max_results,
             )
             discovered = discovery.get("candidates") or discovery.get("items") or []
+            if not discovered:
+                return {
+                    "status": "NO_EVIDENCE_MATCH",
+                    "results": [],
+                    "warnings": ["适用候选的当前发布版本没有形成正文命中"],
+                }
             evidence = await self._kc.retrieve_evidence(
                 query=request.query,
                 candidates=discovered,

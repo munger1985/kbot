@@ -64,7 +64,7 @@ Turn Router
 | `MONITORING_QUERY` | 当前状态、固定指标和趋势 | 已配置监控源的固定 Profile/View |
 | `ALERT_QUERY` | 当前及历史告警情境 | 已冻结资源范围内的 Situation |
 | `INSPECTION_QUERY` | 巡检执行和结果 | 已存在的 Inspection Fire/报告，不触发新巡检 |
-| `REPORT_CASE_QUERY` | 正式报告和历史诊断案例 | 报告服务及已发布 `DIAGNOSIS_CASE` |
+| `REPORT_CASE_QUERY` | 已审核发布的历史诊断案例 | 已发布 `DIAGNOSIS_CASE` |
 | `ACTIVE_DIAGNOSIS` | 主动取证、定位根因 | 内部 Resource→Target 解析后调用诊断内核 |
 | `CONTROLLED_CHANGE` | 明确的变更请求 | 资源级白名单、审批、执行与验证链 |
 

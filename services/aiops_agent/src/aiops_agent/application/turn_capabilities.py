@@ -74,7 +74,12 @@ def _step_parameters(
     plan: TurnPlanV1, capability: AIOpsCapability
 ) -> dict[str, Any]:
     step = next(
-        (item for item in plan.steps if item.capability == capability), None
+        (
+            item
+            for item in getattr(plan, "steps", ())
+            if item.capability == capability
+        ),
+        None,
     )
     return dict(step.parameters) if step is not None else {}
 
@@ -116,8 +121,10 @@ class KnowledgeQuestionAdapter:
         scope: ScopeResolutionV1,
         internal_scope: dict[str, Any],
     ) -> CapabilityResult:
-        del plan, scope
+        del scope
         runtime = _runtime(internal_scope)
+        parameters = _step_parameters(plan, capability)
+        catalog_mode = parameters.get("query_mode") == "CATALOG"
         policy = AgentKnowledgePolicy.model_validate(
             runtime.get("knowledge_policy") or {}
         )
@@ -128,8 +135,15 @@ class KnowledgeQuestionAdapter:
                 "当前 Agent 版本未启用运维知识问答。",
                 "KNOWLEDGE_POLICY_DISABLED",
             )
+        if catalog_mode and "MANUAL" not in policy.source_kinds:
+            return CapabilityResult(
+                capability,
+                False,
+                "当前 Agent 版本没有授权查询已发布运维手册。",
+                "KNOWLEDGE_MANUAL_POLICY_DISABLED",
+            )
         model_id = dict(runtime.get("models") or {}).get("composer_llm")
-        if not model_id:
+        if not catalog_mode and not model_id:
             return CapabilityResult(
                 capability,
                 False,
@@ -146,10 +160,10 @@ class KnowledgeQuestionAdapter:
                 target_id=targets[0] if len(targets) == 1 else None,
                 request=KnowledgeSearchRequest(
                     query=str(runtime["question"])[:4000],
-                    purpose="EXPLAIN",
+                    purpose="CATALOG" if catalog_mode else "EXPLAIN",
                     knowledge_base_ids=policy.knowledge_base_ids,
                     tag_ids=tuple(str(item) for item in policy.tag_ids),
-                    source_kinds=policy.source_kinds,
+                    source_kinds=("MANUAL",) if catalog_mode else policy.source_kinds,
                     max_results=policy.maximum_references,
                     max_security_level=policy.max_security_level,
                 ),
@@ -160,6 +174,42 @@ class KnowledgeQuestionAdapter:
                 False,
                 "运维知识检索暂时不可用，未生成无依据回答。",
                 "OPERATIONS_KNOWLEDGE_UNAVAILABLE",
+            )
+        if catalog_mode:
+            evidence = []
+            lines = ["### 已发布运维知识"]
+            for item in result.get("results", ()):
+                topics = tuple(item.get("topics") or ())
+                topic_text = "、".join(str(topic) for topic in topics)
+                summary = (
+                    f"可继续提问：{topic_text}"
+                    if topic_text
+                    else "可按资料标题继续询问适用范围和操作主题"
+                )
+                evidence.append(
+                    {
+                        "label": f"K{len(evidence) + 1}",
+                        "source_kind": "KNOWLEDGE",
+                        "source_id": str(item["asset_version_id"]),
+                        "title": str(item["title"]),
+                        "quote": summary,
+                        "locator": {
+                            "asset_id": str(item["asset_id"]),
+                            "asset_version_id": str(item["asset_version_id"]),
+                        },
+                    }
+                )
+                lines.append(
+                    f"- {item['title']}（版本 {item['version']}）："
+                    f"{summary} [K{len(evidence)}]"
+                )
+            if not evidence:
+                lines.append("- 当前 Agent 授权范围内没有已发布运维知识。")
+            return CapabilityResult(
+                capability=capability,
+                supported=True,
+                markdown="\n".join(lines),
+                evidence=tuple(evidence),
             )
         raw_citations = [
             citation
@@ -256,7 +306,7 @@ class KnowledgeQuestionAdapter:
 
 
 class RuntimeQueryAdapter:
-    """把告警、巡检与正式报告查询限制在已解析 Target 集合内。"""
+    """把告警、巡检与历史案例查询限制在已解析 Target 集合内。"""
 
     def __init__(
         self, *, runtime_service, knowledge_service=None, caller_service=None
@@ -290,7 +340,7 @@ class RuntimeQueryAdapter:
             if capability == AIOpsCapability.INSPECTION_QUERY:
                 return await self._inspections(query_scope, targets, parameters)
             if capability == AIOpsCapability.REPORT_CASE_QUERY:
-                return await self._reports(
+                return await self._cases(
                     query_scope, targets, parameters, internal_scope
                 )
         except Exception:
@@ -392,37 +442,11 @@ class RuntimeQueryAdapter:
             evidence=tuple(evidence),
         )
 
-    async def _reports(
+    async def _cases(
         self, scope, targets, parameters, internal_scope
     ) -> CapabilityResult:
-        rows = []
-        for target_id in targets:
-            page = await self._runtime.list_reports(
-                scope=scope,
-                target_id=target_id,
-                report_type=parameters.get("report_type"),
-                cursor=None,
-                limit=min(int(parameters.get("limit") or 20), 50),
-            )
-            rows.extend(page.items)
-        unique = {item.report_id: item for item in rows}
-        rows = sorted(
-            unique.values(), key=lambda item: item.period_end, reverse=True
-        )
-        evidence = tuple(
-            {
-                "source_kind": "REPORT",
-                "source_id": str(item.report_id),
-                "target_id": str(item.target_id),
-                "snapshot": _model_dump(item),
-            }
-            for item in rows[:50]
-        )
-        lines = ["### 报告与诊断记录"]
-        lines.extend(
-            f"- {item.title}（{item.report_type}，{item.status}，{item.period_end.isoformat()}）\n  {item.summary}"
-            for item in rows[:50]
-        )
+        catalog_mode = parameters.get("query_mode") == "CATALOG"
+        lines = ["### 已发布历史诊断案例"]
         case_gap = None
         case_count = 0
         runtime = _runtime(internal_scope)
@@ -437,6 +461,7 @@ class RuntimeQueryAdapter:
             and "DIAGNOSIS_CASE" in policy.source_kinds
         ):
             try:
+                seen_cases: set[str] = set()
                 for target_id in targets:
                     result = await self._knowledge.search(
                         domain_id=scope.domain_id,
@@ -447,7 +472,7 @@ class RuntimeQueryAdapter:
                         target_id=target_id,
                         request=KnowledgeSearchRequest(
                             query=str(runtime["question"])[:4000],
-                            purpose="EXPLAIN",
+                            purpose="CATALOG" if catalog_mode else "EXPLAIN",
                             source_kinds=("DIAGNOSIS_CASE",),
                             knowledge_base_ids=policy.knowledge_base_ids,
                             tag_ids=tuple(str(item) for item in policy.tag_ids),
@@ -456,18 +481,31 @@ class RuntimeQueryAdapter:
                         ),
                     )
                     for item in result.get("results", ()):
+                        asset_version_id = str(item.get("asset_version_id") or "")
+                        if not asset_version_id or asset_version_id in seen_cases:
+                            continue
+                        seen_cases.add(asset_version_id)
                         case_count += 1
                         citations = tuple(item.get("citation_pack", ()))
+                        topics = tuple(item.get("topics") or ())
+                        topic_text = "、".join(str(topic) for topic in topics)
+                        summary = (
+                            f"可继续提问：{topic_text}"
+                            if topic_text
+                            else "可按案例标题继续询问问题特征、根因和验证结果"
+                        )
                         lines.append(
                             f"- 历史案例：{item.get('title') or '未命名案例'}"
-                            f"（{item.get('applicability') or 'UNKNOWN'}）"
+                            f"（{item.get('authority') or item.get('applicability') or 'UNKNOWN'}）"
+                            f"{f'：{summary}' if catalog_mode else ''}"
                         )
                         case_evidence.append(
                             {
                                 "source_kind": "DIAGNOSIS_CASE",
-                                "source_id": str(item.get("asset_version_id") or ""),
+                                "source_id": asset_version_id,
                                 "target_id": str(target_id),
                                 "title": str(item.get("title") or "未命名案例"),
+                                "summary": summary if catalog_mode else None,
                                 "citations": [
                                     {
                                         "quote": _bounded_text(
@@ -488,14 +526,16 @@ class RuntimeQueryAdapter:
                         )
             except Exception:
                 case_gap = "DIAGNOSIS_CASE_VIEW_UNAVAILABLE"
-        if not rows and not case_count:
-            lines.append("- 当前范围内没有符合条件的正式报告或已发布诊断案例。")
+        elif "DIAGNOSIS_CASE" not in policy.source_kinds:
+            case_gap = "DIAGNOSIS_CASE_POLICY_DISABLED"
+        if not case_count:
+            lines.append("- 当前范围内没有符合条件的已发布历史诊断案例。")
         return CapabilityResult(
             AIOpsCapability.REPORT_CASE_QUERY,
             case_gap is None,
             "\n".join(lines),
             case_gap,
-            evidence=(*evidence, *case_evidence),
+            evidence=tuple(case_evidence),
         )
 
 

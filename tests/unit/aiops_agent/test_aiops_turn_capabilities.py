@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from aiops_agent.application.turn_capabilities import (
     KnowledgeQuestionAdapter,
@@ -171,6 +172,50 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.supported)
         self.assertEqual("KNOWLEDGE_CITATION_INVALID", result.gap_code)
 
+    async def test_knowledge_catalog_lists_topics_without_composer(self):
+        asset_id, version_id = uuid7(), uuid7()
+        knowledge = SimpleNamespace(search=AsyncMock(return_value={
+            "status": "READY",
+            "results": [{
+                "asset_id": str(asset_id),
+                "asset_version_id": str(version_id),
+                "asset_kind": "MANUAL",
+                "title": "Oracle 运维手册",
+                "version": 2,
+                "topics": ["连接管理", "备份恢复"],
+                "citation_pack": [],
+            }],
+        }))
+        model = SimpleNamespace(generate_structured=AsyncMock())
+        plan = SimpleNamespace(steps=(SimpleNamespace(
+            capability=AIOpsCapability.KNOWLEDGE_QA,
+            parameters={"query_mode": "CATALOG"},
+        ),))
+
+        result = await KnowledgeQuestionAdapter(
+            knowledge_service=knowledge,
+            structured_model=model,
+            prompt_registry=SimpleNamespace(resolve=AsyncMock()),
+            model_resolver=AsyncMock(),
+            caller_service="aiops-worker",
+        ).execute(
+            capability=AIOpsCapability.KNOWLEDGE_QA,
+            plan=plan,
+            scope=SimpleNamespace(),
+            internal_scope=_internal(
+                uuid7(),
+                question="列出已发布运维知识",
+                models={},
+            ),
+        )
+
+        self.assertTrue(result.supported)
+        self.assertIn("连接管理、备份恢复", result.markdown)
+        request = knowledge.search.await_args.kwargs["request"]
+        self.assertEqual("CATALOG", request.purpose)
+        self.assertEqual(("MANUAL",), request.source_kinds)
+        model.generate_structured.assert_not_awaited()
+
     async def test_alert_query_only_reads_resolved_targets(self):
         targets = (uuid7(), uuid7())
         calls = []
@@ -260,9 +305,7 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
     async def test_report_case_search_is_repeated_with_each_allowed_target(self):
         targets = (uuid7(), uuid7())
         knowledge = _KnowledgeService()
-
-        async def list_reports(**kwargs):
-            return SimpleNamespace(items=())
+        list_reports = AsyncMock(return_value=SimpleNamespace(items=()))
 
         result = await RuntimeQueryAdapter(
             runtime_service=SimpleNamespace(list_reports=list_reports),
@@ -287,6 +330,44 @@ class TurnCapabilityTest(unittest.IsolatedAsyncioTestCase):
             {"DIAGNOSIS_CASE"},
             {item["source_kind"] for item in result.evidence},
         )
+        list_reports.assert_not_awaited()
+
+    async def test_report_case_catalog_lists_case_topics(self):
+        target_id = uuid7()
+        asset_id, version_id = uuid7(), uuid7()
+        knowledge = SimpleNamespace(search=AsyncMock(return_value={
+            "status": "READY",
+            "results": [{
+                "asset_id": str(asset_id),
+                "asset_version_id": str(version_id),
+                "asset_kind": "DIAGNOSIS_CASE",
+                "title": "连接池耗尽案例",
+                "authority": "VERIFIED_RESOLUTION",
+                "topics": ["连接池", "会话耗尽"],
+                "citation_pack": [],
+            }],
+        }))
+        list_reports = AsyncMock()
+        plan = SimpleNamespace(steps=(SimpleNamespace(
+            capability=AIOpsCapability.REPORT_CASE_QUERY,
+            parameters={"query_mode": "CATALOG"},
+        ),))
+
+        result = await RuntimeQueryAdapter(
+            runtime_service=SimpleNamespace(list_reports=list_reports),
+            knowledge_service=knowledge,
+            caller_service="aiops-worker",
+        ).execute(
+            capability=AIOpsCapability.REPORT_CASE_QUERY,
+            plan=plan,
+            scope=SimpleNamespace(),
+            internal_scope=_internal(target_id, question="列出历史诊断案例"),
+        )
+
+        self.assertTrue(result.supported)
+        self.assertIn("连接池、会话耗尽", result.markdown)
+        self.assertEqual("CATALOG", knowledge.search.await_args.kwargs["request"].purpose)
+        list_reports.assert_not_awaited()
 
 
 async def _async_value(value):

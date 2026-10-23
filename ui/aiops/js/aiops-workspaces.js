@@ -401,7 +401,7 @@
     const capabilityLabels = {
       RESOURCE_CATALOG_QUERY: "资源信息", KNOWLEDGE_QA: "运维知识",
       MONITORING_QUERY: "监控现状", ALERT_QUERY: "告警",
-      INSPECTION_QUERY: "巡检", REPORT_CASE_QUERY: "报告与案例",
+      INSPECTION_QUERY: "巡检", REPORT_CASE_QUERY: "历史案例",
       ACTIVE_DIAGNOSIS: "主动诊断", CONTROLLED_CHANGE: "受控变更",
     };
     const capabilities = values(plan.requested_capabilities).map((item) => capabilityLabels[item] || item);
@@ -1460,7 +1460,7 @@
     { capability: "MONITORING_QUERY", title: "查看监控", description: "查看当前监控状态、关键指标和异常变化。", prompt: "查看我有权访问的业务系统当前监控状态和关键指标，并指出需要关注的变化。" },
     { capability: "ALERT_QUERY", title: "查看告警", description: "查询近期告警、严重程度和处理状态。", prompt: "查看我有权访问的业务系统最近的告警事件、严重程度和处理状态。" },
     { capability: "INSPECTION_QUERY", title: "查询巡检", description: "查询近期巡检结果和主要发现。", prompt: "查询我有权访问的业务系统最近的巡检执行结果和主要发现。" },
-    { capability: "REPORT_CASE_QUERY", title: "查询报告案例", description: "查找正式运维报告和历史诊断案例。", prompt: "查询我有权访问的业务系统最近的运维报告和历史诊断案例。" },
+    { capability: "REPORT_CASE_QUERY", title: "查询历史案例", description: "查找已审核发布的历史诊断案例。", prompt: "查询我有权访问的业务系统中已发布的历史诊断案例，并说明可供继续提问的主题。" },
     { capability: "KNOWLEDGE_QA", title: "查询运维知识", description: "检索已发布运维资料和诊断经验。", prompt: "查询已发布的运维知识和历史诊断案例，并说明可供继续提问的主题。" },
   ];
 

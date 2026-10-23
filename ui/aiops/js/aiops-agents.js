@@ -11,7 +11,7 @@
     ["MONITORING_QUERY", "监控现状", "查询业务系统当前指标与趋势"],
     ["ALERT_QUERY", "告警查询", "查询当前与历史告警"],
     ["INSPECTION_QUERY", "巡检查询", "读取巡检结果与报告"],
-    ["REPORT_CASE_QUERY", "报告与案例", "查询诊断、告警和巡检沉淀"],
+    ["REPORT_CASE_QUERY", "历史案例", "查询已审核发布的诊断案例"],
     ["ACTIVE_DIAGNOSIS", "主动诊断", "按自然语言范围执行有界诊断"],
     ["CONTROLLED_CHANGE", "受控变更", "仅保留已有资源级授权；新增授权需在资源治理中完成"],
   ];
