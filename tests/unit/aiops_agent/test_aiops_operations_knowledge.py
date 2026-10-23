@@ -14,6 +14,7 @@ from aiops_agent.application.operations_knowledge import (
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import (
     KnowledgeBaseWrite,
+    KnowledgeSearchRequest,
     ManualUploadMetadata,
 )
 from aiops_agent.repositories.knowledge import OperationsKnowledgeRepository
@@ -276,6 +277,67 @@ class OperationsKnowledgeLifecycleTest(unittest.IsolatedAsyncioTestCase):
             uow_factory=lambda: _KnowledgeUnitOfWork(repository),
             knowledge_core=knowledge_core,
         )
+
+    async def test_search_snapshots_candidates_before_uow_closes(self):
+        domain_id = 42
+        asset_id, version_id = uuid7(), uuid7()
+        collection_id, revision_id = uuid7(), uuid7()
+        state = _SessionState()
+        state.active = True
+        repository = SimpleNamespace(
+            list_published_candidates=AsyncMock(return_value=[(
+                _SessionBoundEntity(
+                    state,
+                    asset_id=asset_id,
+                    asset_kind="MANUAL",
+                    display_name="Oracle 运维手册",
+                ),
+                _SessionBoundEntity(
+                    state,
+                    asset_version_id=version_id,
+                    version_no=1,
+                    profile_json={
+                        "schema_version": "OPS_MANUAL_PROFILE.v1",
+                        "scope": {},
+                    },
+                ),
+                _SessionBoundEntity(
+                    state,
+                    collection_id=collection_id,
+                    bundle_revision_id=revision_id,
+                ),
+            )]),
+        )
+        knowledge_core = SimpleNamespace(
+            discover=AsyncMock(return_value={"candidates": [{
+                "bundle_revision_id": str(revision_id),
+            }]}),
+            retrieve_evidence=AsyncMock(return_value={"citations": [{
+                "bundle_revision_id": str(revision_id),
+                "quote": "先确认数据库角色。",
+            }]}),
+        )
+        service = OperationsKnowledgeService(
+            uow_factory=lambda: _DetachingKnowledgeUnitOfWork(
+                repository, state
+            ),
+            knowledge_core=knowledge_core,
+        )
+
+        result = await service.search(
+            domain_id=domain_id,
+            agent_id=str(uuid7()),
+            request=KnowledgeSearchRequest(
+                query="如何确认数据库角色？",
+                purpose="EXPLAIN",
+                knowledge_base_ids=(uuid7(),),
+            ),
+            context=SimpleNamespace(),
+        )
+
+        self.assertEqual("READY", result["status"])
+        self.assertEqual("Oracle 运维手册", result["results"][0]["title"])
+        self.assertFalse(state.active)
 
     async def test_collection_models_snapshot_id_before_transaction_closes(self):
         knowledge_base_id, collection_id = uuid7(), uuid7()

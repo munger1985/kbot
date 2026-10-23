@@ -210,9 +210,10 @@ def _index_view(entity: OperationsKnowledgeIndexEntity) -> dict[str, Any]:
     }
 
 
-def _profile_dimensions(version: OperationsKnowledgeVersionEntity) -> dict[str, set[str]]:
+def _profile_dimensions_from_profile(
+    profile: dict[str, Any],
+) -> dict[str, set[str]]:
     """把两类提炼合同投影为统一、可解释的匹配维度。"""
-    profile = dict(version.profile_json or {})
     dimensions: dict[str, set[str]] = {}
     if profile.get("schema_version") == "OPS_MANUAL_PROFILE.v1":
         for key, values in dict(profile.get("scope") or {}).items():
@@ -239,6 +240,12 @@ def _profile_dimensions(version: OperationsKnowledgeVersionEntity) -> dict[str, 
         if normalized:
             dimensions[key] = normalized
     return dimensions
+
+
+def _profile_dimensions(
+    version: OperationsKnowledgeVersionEntity,
+) -> dict[str, set[str]]:
+    return _profile_dimensions_from_profile(dict(version.profile_json or {}))
 
 
 class OperationsKnowledgeService:
@@ -2733,10 +2740,27 @@ class OperationsKnowledgeService:
                 scope_filters=filters,
                 limit=request.max_results,
             )
-        if not candidates:
+            candidate_snapshots = [
+                {
+                    "asset_id": str(asset.asset_id),
+                    "asset_version_id": str(version.asset_version_id),
+                    "asset_kind": str(asset.asset_kind),
+                    "title": str(asset.display_name),
+                    "version": int(version.version_no),
+                    "profile": dict(version.profile_json or {}),
+                    "collection_id": index.collection_id,
+                    "bundle_revision_id": index.bundle_revision_id,
+                }
+                for asset, version, index in candidates
+            ]
+        if not candidate_snapshots:
             return {"status": "NO_APPLICABLE_KNOWLEDGE", "results": [], "warnings": []}
-        collection_ids = sorted({row[2].collection_id for row in candidates}, key=str)
-        revision_ids = [row[2].bundle_revision_id for row in candidates]
+        collection_ids = sorted(
+            {row["collection_id"] for row in candidate_snapshots}, key=str
+        )
+        revision_ids = [
+            row["bundle_revision_id"] for row in candidate_snapshots
+        ]
         try:
             discovery = await self._kc.discover(
                 query=request.query,
@@ -2765,16 +2789,20 @@ class OperationsKnowledgeService:
                 status_code=503,
                 retryable=True,
             ) from exc
-        by_revision = {str(row[2].bundle_revision_id): row for row in candidates}
+        by_revision = {
+            str(row["bundle_revision_id"]): row
+            for row in candidate_snapshots
+        }
         evidence_items = evidence.get("citations") or []
         results = []
         for item in evidence_items:
             revision_id = str(item.get("bundle_revision_id") or "")
-            row = by_revision.get(revision_id)
-            if row is None:
+            candidate = by_revision.get(revision_id)
+            if candidate is None:
                 continue
-            asset, version, _ = row
-            known_dimensions = _profile_dimensions(version)
+            known_dimensions = _profile_dimensions_from_profile(
+                candidate["profile"]
+            )
             matched_dimensions = sorted(
                 key for key, values in filters.items()
                 if known_dimensions.get(key)
@@ -2784,14 +2812,18 @@ class OperationsKnowledgeService:
                 key for key in filters if not known_dimensions.get(key)
             )
             results.append({
-                "asset_id": str(asset.asset_id),
-                "asset_version_id": str(version.asset_version_id),
-                "asset_kind": asset.asset_kind,
-                "title": asset.display_name,
-                "version": int(version.version_no),
+                "asset_id": candidate["asset_id"],
+                "asset_version_id": candidate["asset_version_id"],
+                "asset_kind": candidate["asset_kind"],
+                "title": candidate["title"],
+                "version": candidate["version"],
                 "authority": (
-                    "APPROVED_MANUAL" if asset.asset_kind == "MANUAL"
-                    else str((version.profile_json or {}).get("case_kind") or "DIAGNOSTIC_REFERENCE")
+                    "APPROVED_MANUAL"
+                    if candidate["asset_kind"] == "MANUAL"
+                    else str(
+                        candidate["profile"].get("case_kind")
+                        or "DIAGNOSTIC_REFERENCE"
+                    )
                 ),
                 "applicability": (
                     "PARTIAL" if unknown_dimensions else "MATCHED"
