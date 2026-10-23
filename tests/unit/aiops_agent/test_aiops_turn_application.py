@@ -493,6 +493,10 @@ class _Uow:
             target_id=uuid7(),
             status="ENABLED",
             readonly_connection_enabled=True,
+            db_type="ORACLE",
+            version_code="19c",
+            deployment_type="SINGLE_INSTANCE",
+            db_role="PRIMARY",
         )
         self.system = SimpleNamespace(
             business_system_id=uuid7(),
@@ -1354,6 +1358,10 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             "aiops.turn.understanding_requested",
             uow.outbox.rows[0].event_type,
         )
+        self.assertEqual(
+            "问题已进入 Agent 能力规划队列",
+            uow.turns.events[0].payload_json["public_summary"],
+        )
         self.assertEqual(1, uow.commit_count)
 
     async def test_later_turn_waits_until_active_turn_completes(self) -> None:
@@ -1390,7 +1398,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(1, len(waiting))
         self.assertEqual(
-            "上一轮诊断仍在运行，本轮已排队等待",
+            "上一轮任务仍在运行，本轮已排队等待",
             waiting[0].payload_json["public_summary"],
         )
 
@@ -1678,6 +1686,10 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], uow.runs.rows)
         self.assertEqual([], uow.turns.run_links)
         self.assertEqual(1, len(uow.turns.answer_blocks))
+        markdown = uow.turns.answer_blocks[0].payload_json["markdown"]
+        self.assertIn("数据库类型 ORACLE", markdown)
+        self.assertIn("版本 19c", markdown)
+        self.assertIn("拓扑关系：当前未配置已确认关系", markdown)
         event_page = await ConversationTurnService(
             uow_factory=lambda: uow
         ).list_events(
@@ -1687,6 +1699,68 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             actor_id="dba@example.com",
         )
         self.assertTrue(event_page["terminal"])
+
+    async def test_resource_scope_matches_unique_alias_in_decorated_name(
+        self,
+    ) -> None:
+        def system(code: str) -> dict:
+            system_id = uuid7()
+            return {
+                "business_system_id": str(system_id),
+                "system_code": f"DEMO-{code}",
+                "display_name": f"{code} (demo)",
+                "environment": "PROD",
+                "resources": [
+                    {
+                        "system_resource_id": str(uuid7()),
+                        "resource_id": str(uuid7()),
+                        "resource_code": f"{code}-DB",
+                        "display_name": f"{code} (demo)",
+                        "resource_type_key": "DATABASE",
+                        "location_name": "默认站点",
+                        "attributes": {},
+                        "database": {},
+                        "topology_roles": [],
+                        "target_id": str(uuid7()),
+                        "target_ready": True,
+                    }
+                ],
+                "relations": [],
+            }
+
+        plan = TurnPlanV1(
+            turn_id=uuid7(),
+            revision_no=1,
+            requested_capabilities=(AIOpsCapability.RESOURCE_CATALOG_QUERY,),
+            steps=(
+                TurnPlanStepV1(
+                    step_id="s1",
+                    capability=AIOpsCapability.RESOURCE_CATALOG_QUERY,
+                    objective="查询 ERP 数据库版本",
+                    scope_type=ScopeType.SYSTEM,
+                ),
+            ),
+            policy_snapshot_hash="1" * 64,
+        )
+        planner = TurnPlannerService(uow_factory=lambda: None)
+
+        scope, internal, clarification = planner._resolve_scope(
+            {
+                "question": "erp的数据库版本",
+                "policy_snapshot_hash": "1" * 64,
+                "systems": [system("ERP"), system("MES"), system("WMS")],
+                "context_hint": {},
+            },
+            plan,
+        )
+
+        self.assertIsNone(clarification)
+        self.assertEqual(
+            ["ERP (demo)"],
+            [item.display_name for item in scope.business_systems],
+        )
+        self.assertEqual(1, len(scope.resources))
+        self.assertEqual(1, len(internal["resource_catalog"]))
 
     async def test_read_only_specialist_freezes_evidence_without_a_run(self) -> None:
         uow = _Uow()

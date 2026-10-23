@@ -406,7 +406,10 @@
     };
     const capabilities = values(plan.requested_capabilities).map((item) => capabilityLabels[item] || item);
     const systems = values(scope.business_systems).map((item) => item.display_name).filter(Boolean);
-    const resources = values(scope.resources).map((item) => {
+    const systemNames = new Set(systems.map((item) => String(item).trim().toLocaleLowerCase()));
+    const resources = values(scope.resources).filter(
+      (item) => !systemNames.has(String(item.display_name || "").trim().toLocaleLowerCase()),
+    ).map((item) => {
       const roles = values(item.topology_roles);
       return `${item.display_name}${roles.length ? `（${roles.join(" / ")}）` : ""}`;
     });

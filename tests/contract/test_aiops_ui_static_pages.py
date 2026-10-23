@@ -498,9 +498,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261023_2",
-            "situations": "20261023_2",
-            "inspections": "20261023_2",
+            "chat": "20261023_3",
+            "situations": "20261023_3",
+            "inspections": "20261023_3",
         }
         for page_name, version in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(

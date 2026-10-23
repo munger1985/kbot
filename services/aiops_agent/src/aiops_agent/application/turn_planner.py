@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Protocol
 from uuid import UUID
@@ -44,6 +45,56 @@ _RESOURCE_CAPABILITIES = frozenset(
     for capability in AIOpsCapability
     if capability != AIOpsCapability.KNOWLEDGE_QA
 )
+_CATALOG_ALIAS_PART = re.compile(r"[0-9a-z]+|[\u3400-\u9fff]+", re.IGNORECASE)
+
+
+def _catalog_aliases(*values: object) -> frozenset[str]:
+    aliases: set[str] = set()
+    for value in values:
+        normalized = " ".join(str(value or "").casefold().split())
+        if not normalized:
+            continue
+        aliases.add(normalized)
+        for part in _CATALOG_ALIAS_PART.findall(normalized):
+            if (part.isascii() and len(part) >= 3) or (
+                not part.isascii() and len(part) >= 2
+            ):
+                aliases.add(part)
+    return frozenset(aliases)
+
+
+def _catalog_alias_in_text(alias: str, text: str) -> bool:
+    if alias.isascii() and alias.isalnum():
+        return re.search(
+            rf"(?<![0-9a-z]){re.escape(alias)}(?![0-9a-z])",
+            text,
+            re.IGNORECASE,
+        ) is not None
+    return alias in text
+
+
+def _mentioned_business_systems(
+    systems: list[dict[str, Any]], text: str
+) -> list[dict[str, Any]]:
+    aliases_by_system: dict[str, frozenset[str]] = {}
+    alias_owners: dict[str, set[str]] = {}
+    for system in systems:
+        system_id = str(system["business_system_id"])
+        aliases = _catalog_aliases(
+            system.get("system_code"), system.get("display_name")
+        )
+        aliases_by_system[system_id] = aliases
+        for alias in aliases:
+            alias_owners.setdefault(alias, set()).add(system_id)
+    return [
+        system
+        for system in systems
+        if any(
+            len(alias_owners[alias]) == 1
+            and _catalog_alias_in_text(alias, text)
+            for alias in aliases_by_system[str(system["business_system_id"])]
+        )
+    ]
 
 
 def _hash(value: Any) -> str:
@@ -93,6 +144,11 @@ class ResourceCatalogAdapter:
         by_system: dict[UUID, list[ResourceRefV1]] = {}
         for resource in scope.resources:
             by_system.setdefault(resource.business_system_id, []).append(resource)
+        relations_by_system: dict[str, list[dict[str, Any]]] = {}
+        for relation in internal_scope.get("topology_relations", []):
+            relations_by_system.setdefault(
+                str(relation["business_system_id"]), []
+            ).append(relation)
         for system in scope.business_systems:
             environment = f"（{system.environment}）" if system.environment else ""
             lines.append(f"- {system.display_name}{environment}")
@@ -103,6 +159,18 @@ class ResourceCatalogAdapter:
                     facts.append(f"编码 {item['resource_code']}")
                 if item.get("location_name"):
                     facts.append(f"位置 {item['location_name']}")
+                database = dict(item.get("database") or {})
+                if database:
+                    facts.append(
+                        f"数据库类型 {database.get('db_type') or '未登记'}"
+                    )
+                    facts.append(
+                        f"版本 {database.get('version_code') or '未登记'}"
+                    )
+                if database.get("deployment_type"):
+                    facts.append(f"部署形态 {database['deployment_type']}")
+                if database.get("db_role"):
+                    facts.append(f"数据库角色 {database['db_role']}")
                 facts.extend(
                     f"{key}={value}"
                     for key, value in dict(item.get("attributes") or {}).items()
@@ -113,6 +181,17 @@ class ResourceCatalogAdapter:
                 lines.append(
                     f"  - {resource.display_name} [{resource.resource_type_key}]{suffix}"
                 )
+            relations = relations_by_system.get(str(system.business_system_id), [])
+            if not relations:
+                lines.append("  - 拓扑关系：当前未配置已确认关系。")
+            for relation in relations:
+                label = relation.get("display_name") or relation["relation_type_key"]
+                participants = [
+                    f"{item['display_name']}（{item['participant_role']}）"
+                    for item in relation.get("participants", [])
+                ]
+                topology = " → ".join(participants) if participants else "暂无参与资源"
+                lines.append(f"  - 拓扑关系 {label}：{topology}")
         if len(lines) == 1:
             lines.append("- 当前授权范围内没有可展示的有效资源。")
         return CapabilityResult(capability, True, "\n".join(lines))
@@ -801,35 +880,85 @@ class TurnPlannerService:
                         participant.participant_role
                     )
                 resources = []
+                resources_by_system_resource_id = {}
                 for link, resource, database, target in rows:
                     if link.status != "ACTIVE" or resource.lifecycle_status != "ACTIVE":
                         continue
-                    resources.append(
-                        {
-                            "system_resource_id": str(link.system_resource_id),
-                            "resource_id": str(resource.resource_id),
-                            "resource_code": resource.resource_code,
-                            "display_name": resource.display_name,
-                            "resource_type_key": resource.resource_type_key,
-                            "location_name": resource.location_name,
-                            "attributes": self._public_attributes(
-                                dict(resource.attributes_json or {})
-                            ),
-                            "topology_roles": sorted(
-                                set(roles.get(link.system_resource_id, []))
-                            ),
-                            "target_id": (
-                                str(database.target_id) if database is not None else None
-                            ),
-                            "target_ready": bool(
-                                database is not None
-                                and target is not None
-                                and target.status == "ENABLED"
-                                and bool(
-                                    getattr(target, "readonly_connection_enabled", True)
+                    resource_item = {
+                        "system_resource_id": str(link.system_resource_id),
+                        "resource_id": str(resource.resource_id),
+                        "resource_code": resource.resource_code,
+                        "display_name": resource.display_name,
+                        "resource_type_key": resource.resource_type_key,
+                        "location_name": resource.location_name,
+                        "attributes": self._public_attributes(
+                            dict(resource.attributes_json or {})
+                        ),
+                        "database": (
+                            {
+                                "db_type": getattr(target, "db_type", None),
+                                "version_code": getattr(
+                                    target, "version_code", None
+                                ),
+                                "deployment_type": getattr(
+                                    target, "deployment_type", None
+                                ),
+                                "db_role": getattr(target, "db_role", None),
+                            }
+                            if database is not None and target is not None
+                            else None
+                        ),
+                        "topology_roles": sorted(
+                            set(roles.get(link.system_resource_id, []))
+                        ),
+                        "target_id": (
+                            str(database.target_id)
+                            if database is not None
+                            else None
+                        ),
+                        "target_ready": bool(
+                            database is not None
+                            and target is not None
+                            and target.status == "ENABLED"
+                            and bool(
+                                getattr(
+                                    target, "readonly_connection_enabled", True
                                 )
+                            )
+                        ),
+                    }
+                    resources.append(resource_item)
+                    resources_by_system_resource_id[
+                        str(link.system_resource_id)
+                    ] = resource_item
+                participants_by_relation: dict[str, list[dict[str, Any]]] = {}
+                for participant in participants:
+                    resource_item = resources_by_system_resource_id.get(
+                        str(participant.system_resource_id)
+                    )
+                    if resource_item is None:
+                        continue
+                    participants_by_relation.setdefault(
+                        str(participant.relation_id), []
+                    ).append(
+                        {
+                            "system_resource_id": str(
+                                participant.system_resource_id
+                            ),
+                            "resource_id": resource_item["resource_id"],
+                            "display_name": resource_item["display_name"],
+                            "participant_role": participant.participant_role,
+                            "display_order": int(
+                                getattr(participant, "display_order", 0) or 0
                             ),
                         }
+                    )
+                for relation_participants in participants_by_relation.values():
+                    relation_participants.sort(
+                        key=lambda item: (
+                            item["display_order"],
+                            item["display_name"],
+                        )
                     )
                 systems.append(
                     {
@@ -843,6 +972,9 @@ class TurnPlannerService:
                                 "relation_id": str(row.relation_id),
                                 "relation_type_key": row.relation_type_key,
                                 "display_name": row.display_name,
+                                "participants": participants_by_relation.get(
+                                    str(row.relation_id), []
+                                ),
                             }
                             for row in relations
                             if row.confirmation_status == "CONFIRMED"
@@ -966,14 +1098,7 @@ class TurnPlannerService:
                 None,
             )
         text = context["question"].casefold()
-        mentioned = [
-            item
-            for item in systems
-            if any(
-                token and token.casefold() in text
-                for token in (item["system_code"], item["display_name"])
-            )
-        ]
+        mentioned = _mentioned_business_systems(systems, text)
         basis = ["EXPLICIT_SYSTEM_MENTION"] if mentioned else []
         if not mentioned:
             hinted = str(
@@ -1178,6 +1303,14 @@ class TurnPlannerService:
                         **resource,
                     }
                     for system, resource in selected
+                ],
+                "topology_relations": [
+                    {
+                        "business_system_id": system["business_system_id"],
+                        **relation,
+                    }
+                    for system in systems
+                    for relation in system["relations"]
                 ],
             },
         )

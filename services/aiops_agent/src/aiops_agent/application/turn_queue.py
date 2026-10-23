@@ -111,7 +111,7 @@ class TurnQueueService:
                 visibility="USER",
                 payload_json={
                     "status": "QUEUED",
-                    "public_summary": "上一轮诊断仍在运行，本轮已排队等待",
+                    "public_summary": "上一轮任务仍在运行，本轮已排队等待",
                 },
             )
         )
@@ -148,7 +148,7 @@ class TurnQueueService:
                             ],
                         }
                     ],
-                    "public_summary": "问题已进入诊断规划队列",
+                    "public_summary": "问题已进入 Agent 能力规划队列",
                 },
             )
         )
