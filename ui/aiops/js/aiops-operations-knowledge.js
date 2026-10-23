@@ -46,7 +46,7 @@
   async function loadAssets() {
     const knowledgeBaseId = selectedKnowledgeBaseId();
     if (!knowledgeBaseId) { state.assets = []; renderAssets(); return; }
-    const query = new URLSearchParams({ limit: "200" });
+    const query = new URLSearchParams({ limit: "200", asset_kind: "MANUAL" });
     query.set("knowledge_base_id", knowledgeBaseId);
     const status = document.getElementById("knowledge-status").value;
     if (status) query.set("status", status);
@@ -141,7 +141,6 @@
     if (detail.asset.asset_kind === "MANUAL" && ["DRAFT", "REVIEW_REQUIRED", "TAGGING", "TAGGING_FAILED", "PROCESSING", "FAILED", "REJECTED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-delete-asset>删除资料</button>');
     if (["DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push('<button class="danger" type="button" data-review="reject">拒绝</button>');
     if (detail.asset.asset_kind === "MANUAL" && detail.version.status === "REVIEW_REQUIRED") actions.push('<button class="primary" type="button" data-review="approve">批准并开始 AI 识别</button>');
-    if (detail.asset.asset_kind === "DIAGNOSIS_CASE" && ["DRAFT", "REVIEW_REQUIRED"].includes(detail.version.status)) actions.push('<button class="primary" type="button" data-review="publish">审核通过并发布</button>');
     if (detail.version.status === "PUBLISHED") actions.push('<button class="danger" type="button" data-review="retire">退役</button>');
     if (["FAILED", "TAGGING_FAILED"].includes(detail.version.status)) actions.push(`<button class="primary" type="button" data-review="retry">${detail.version.status === "TAGGING_FAILED" ? "重试标签识别" : "重试解析"}</button>`);
     document.getElementById("detail-actions").innerHTML = actions.join("");

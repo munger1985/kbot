@@ -38,7 +38,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         "chat", "situations", "dashboard", "work-item-detail", "responsibility-groups", "monitoring", "runs", "run-detail", "report-detail", "reports", "inspections",
         "business-systems", "business-system-workspace", "targets", "target-detail",
         "recovery-drills",
-        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "knowledge-bases", "knowledge-tags",
+        "diagnostic-sources", "diagnostic-source-detail", "operations-knowledge", "cases", "knowledge-bases", "knowledge-tags",
         "agents",
         "inspection-plans", "inspection-plan-detail",
         "report-templates",
@@ -78,7 +78,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(18, len(scripts))
+        self.assertEqual(19, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -610,7 +610,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('body.set("metadata", JSON.stringify(metadata))', script)
         self.assertIn('`${api}/uploads`', script)
         self.assertIn("X-Expected-Asset-Row-Version", script)
-        self.assertIn('data-review="publish"', script)
+        self.assertNotIn('data-review="publish"', script)
         self.assertNotIn('id="knowledge-overview"', page)
         self.assertNotIn('class="knowledge-cards"', page)
         self.assertNotIn('id="search-form"', page)
@@ -623,6 +623,21 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertFalse((AIOPS_ROOT / "operations-knowledge-chat.html").exists())
         self.assertFalse((AIOPS_ROOT / "js" / "aiops-operations-knowledge-chat.js").exists())
         self.assertNotIn("Knowledge Core", page)
+
+    def test_diagnosis_cases_page_owns_case_governance(self):
+        page = (AIOPS_ROOT / "cases.html").read_text(encoding="utf-8")
+        script = (AIOPS_ROOT / "js" / "aiops-cases.js").read_text(
+            encoding="utf-8"
+        )
+        shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("<h1>历史诊断案例</h1>", page)
+        self.assertIn('data-action="submit-review"', script)
+        self.assertIn('data-action="publish"', script)
+        self.assertIn('data-action="save-edit"', script)
+        self.assertIn("/cases/", script)
+        self.assertIn('["cases", "历史诊断案例"]', shell)
         self.assertNotIn("Collection", page)
         self.assertNotIn("Embedding", page)
         self.assertNotIn("/api/v1/knowledge", script)

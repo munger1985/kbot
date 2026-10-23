@@ -36,8 +36,8 @@ Collection、Bundle、Embedding 等 KC 技术概念。
 旧 AIOps `knowledge-core` 产品页面和专用路由不再保留。既有手册可以在同一资产下上传新版本，
 新版本使用稳定 Bundle 身份形成 KC Revision，只有索引、当前 Revision、Availability 和行版本
 全部复核通过后才能发布；发布切换前上一版本继续参与检索。正式报告提炼直接读取冻结的
-`REPORT_CONTENT.v1`、ReportSource 和 Target 事实，报告发布更正版时，旧报告关联案例立即转为
-`REVIEW_REQUIRED` 并退出新检索。
+`REPORT_CONTENT.v1`、ReportSource 和 Target 事实。报告发布更正版时，系统在同一案例资产下
+提炼新版本，并将旧发布版本转为 `RETIRED`、退出新检索。
 
 ## 2. 当前实现与问题
 
@@ -321,9 +321,9 @@ KC 返回成员失败、Revision 失败或 Publication 失败时，Registry 必�
 
 报告结束后只创建“案例提炼候选”，不自动发布。至少满足以下条件才允许进入审核：
 
-- 报告已经冻结且来源 Run 处于终态；
+- 报告是当前 `READY` 的 `INCIDENT` 报告，来源为 `CHAT` 或 `ALERT`；
 - Target、数据库类型、数据库版本和时间范围可以确定；
-- 至少存在一个有证据引用的 Finding 或 Root Cause；
+- 根因等级为 `CONFIRMED`，具有非空根因说明和至少一个证据引用；
 - 来源 Artifact 内容哈希可以复核；
 - 报告没有安全扫描阻断项；
 - 案例正文能明确区分事实、推断、建议和实际执行结果。
@@ -335,9 +335,8 @@ KC 返回成员失败、Revision 失败或 Publication 失败时，Registry 必�
 | `DIAGNOSTIC_REFERENCE` | 根因或排查路径有充分证据，但没有已验证处置 | 仅借鉴排查方向，不声称方案有效 |
 | `VERIFIED_RESOLUTION` | 处置已执行，并形成 `RESOLVED` 或 `IMPROVED` 验证 | 可借鉴处理步骤，但仍需当前环境校验 |
 
-报告为 `FAILED`、只有“证据不足”、根因已经被后续报告推翻，或者执行结果为 `DEGRADED` 时，
-不得发布为案例。`PARTIAL` 报告只有在其中存在独立、可验证且边界明确的 Finding 时，才允许
-提炼为 `DIAGNOSTIC_REFERENCE`。
+报告为 `PARTIAL` 或 `FAILED`、属于巡检/性能/普通分析、只有“证据不足”、根因已经被后续报告
+推翻，或者执行结果为 `DEGRADED` 时，不得发布为案例。
 
 ### 7.3 Diagnosis Case 合同
 
@@ -388,16 +387,17 @@ KC 返回成员失败、Revision 失败或 Publication 失败时，Registry 必�
 ### 7.4 案例状态流
 
 ```text
-ELIGIBILITY_PENDING → EXTRACTING → DRAFT → REVIEW_REQUIRED → PUBLISHED → RETIRED
-                                  └──────→ REJECTED
-                 └──────────────────────→ FAILED
+PROCESSING → DRAFT → REVIEW_REQUIRED → PUBLISHED → RETIRED
+     └────→ FAILED          └──────────→ REJECTED
 ```
 
-案例默认需要人工发布。审核者可以修正分类、适用范围和脱敏结果；修改根因、命令或验证结论时
-必须创建新版本，并保留原始提炼、修改人和修改原因，不能直接覆盖审计记录。
+案例默认需要人工发布。审核者可以修正分类、适用范围和脱敏结果；所有修订都在同一资产下创建
+不可变的新版本，并保留原始提炼、修改人和修改原因，不能直接覆盖审计记录。来源报告、根因
+证据和验证引用由服务端继承且不可人工替换。新增但没有来源证据的动作会使案例降级为
+`DIAGNOSTIC_REFERENCE`。只有 `REVIEW_REQUIRED` 可发布。
 
-若来源报告被更正，新报告发布后将关联案例置为 `REVIEW_REQUIRED`。旧案例在重新审核前停止进入
-新的候选集合，但历史 Run 的引用保持可读。
+若来源报告被更正，新报告在同一案例资产下重新提炼新版本；旧发布版本转为 `RETIRED` 并停止
+进入新的候选集合，但历史 Run 的引用保持可读。
 
 ## 8. 统一发布与可信度
 
@@ -833,6 +833,10 @@ Collection ID、Bundle ID、Embedding 模型和 KC 行版本放入管理员诊�
 - 脱敏告警；
 - 发布为诊断参考、发布为已验证解决案例、拒绝或退回操作。
 
+“报告与知识”下按“运维报告 → 历史诊断案例 → 运维知识”编排。历史诊断案例页提供状态概览、
+搜索过滤、结构化详情、来源报告跳转、版本与审核记录，以及“编辑并创建新版本、提交审核、
+发布、拒绝、退役、重试”操作。普通用户可查看案例，治理操作需要 `aiops:knowledge_manage`。
+
 审核者不能把没有执行验证的案例提升为 `VERIFIED_RESOLUTION`。该判定由应用根据来源
 Verification 事实限制。
 
@@ -967,7 +971,7 @@ KC/Data Query 类型、Oracle manifest、UI 制品和文档中不存在 KM。完
 14. 新增 DDL 不包含业务 `CHECK`、`UNIQUE` 或唯一索引。
 15. 旧 AIOps `knowledge-core` 产品接口在切换后删除，不存在双读或双写路径。
 16. 同一手册上传新版本不会造成已发布版本检索空窗，并使用资产行版本阻止并发覆盖。
-17. 来源报告被更正后，旧案例在同一事务内进入 `REVIEW_REQUIRED`，不会继续参与新检索。
+17. 来源报告被更正后，新报告在同一案例资产下形成新版本，旧发布版本转为 `RETIRED`，不会继续参与新检索。
 18. 普通用户可通过 Conversation/SSE 完成多轮知识问答，并预览所有实际使用的 Citation。
 19. 浏览器无法指定 Agent、Collection、Revision、安全级、模型或检索策略；零 Citation 时明确拒答。
 20. 超过 KC 单次范围上限时稳定分片，旧而相关的手册不会被时间预截断遗漏。

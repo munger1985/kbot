@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>历史诊断案例</title>
+  <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
+  <link rel="stylesheet" href="./css/aiops-knowledge.css?v=20261023_2">
+</head>
+<body data-page="cases">
+  <main class="ops-main knowledge-page diagnosis-cases-page">
+    <header class="ops-head"><div><h1>历史诊断案例</h1><p>治理经过确认和审核的诊断经验；普通报告、未确认根因和缺少处置结论的事件不会成为案例。</p></div></header>
+    <section id="case-overview" class="case-overview-grid" aria-label="案例状态概览"></section>
+    <section class="ops-panel knowledge-table-card">
+      <header class="knowledge-list-header"><div class="knowledge-list-heading"><h2>案例列表</h2><p>已发布案例可供统一 Agent 检索；草稿和待审核版本不会进入问答。</p></div><div class="knowledge-list-tools"><label class="knowledge-search"><span>⌕</span><input id="case-search" type="search" placeholder="搜索标题、根因或来源报告"></label><label class="knowledge-status-filter"><span>状态</span><select id="case-status"><option value="">全部状态</option><option value="DRAFT">待完善</option><option value="REVIEW_REQUIRED">待审核</option><option value="PUBLISHED">已发布</option><option value="PROCESSING">提炼中</option><option value="FAILED">处理失败</option><option value="RETIRED">已退役</option></select></label><span id="case-count" class="knowledge-count">0 项</span><button id="refresh-cases" type="button">刷新</button></div></header>
+      <div class="ops-table-wrap"><table class="ops-table knowledge-table"><thead><tr><th>案例</th><th>分类</th><th>适用环境</th><th>来源报告</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="case-rows"><tr><td colspan="7" class="ops-empty">正在读取历史诊断案例…</td></tr></tbody></table></div>
+    </section>
+  </main>
+  <dialog id="case-drawer" class="knowledge-drawer knowledge-detail-drawer" aria-labelledby="case-detail-title"><div class="knowledge-drawer-shell"><header class="knowledge-drawer-header"><div><span id="case-detail-eyebrow">历史诊断案例</span><h2 id="case-detail-title">案例详情</h2><p>历史案例只提供经验参考，处理当前故障仍需实时取证。</p></div><div class="knowledge-detail-head-actions"><span id="case-detail-status"></span><button type="button" data-close>关闭</button></div></header><div id="case-detail-body" class="knowledge-drawer-body"></div><footer id="case-detail-actions"></footer></div></dialog>
+  <script src="../runtime-config.js"></script><script src="./js/aiops-auth.js"></script><script src="./js/aiops-shell.js?v=20261023_1"></script><script src="./js/aiops-cases.js?v=20261023_1"></script>
+</body>
+</html>

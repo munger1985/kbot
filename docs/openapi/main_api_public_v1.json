@@ -11509,6 +11509,40 @@
         "title": "OperationWatchUpdate",
         "type": "object"
       },
+      "OperationsDiagnosisCaseDraftPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "base_version_id": {
+            "format": "uuid",
+            "title": "Base Version Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expected_asset_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Asset Row Version",
+            "type": "integer"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          }
+        },
+        "required": [
+          "expected_asset_row_version",
+          "base_version_id",
+          "display_name",
+          "profile"
+        ],
+        "title": "OperationsDiagnosisCaseDraftPayload",
+        "type": "object"
+      },
       "OperationsKnowledgeBasePayload": {
         "additionalProperties": false,
         "properties": {
@@ -27406,6 +27440,176 @@
         ]
       }
     },
+    "/api/v1/apps/aiops/operations-knowledge/cases": {
+      "get": {
+        "operationId": "list_operations_diagnosis_cases_api_v1_apps_aiops_operations_knowledge_cases_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations Diagnosis Cases",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/cases/overview": {
+      "get": {
+        "operationId": "operations_diagnosis_cases_overview_api_v1_apps_aiops_operations_knowledge_cases_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Operations Diagnosis Cases Overview",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/cases/{asset_id}": {
+      "get": {
+        "operationId": "get_operations_diagnosis_case_api_v1_apps_aiops_operations_knowledge_cases__asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Diagnosis Case",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/cases/{asset_id}/versions": {
+      "post": {
+        "operationId": "create_operations_diagnosis_case_version_api_v1_apps_aiops_operations_knowledge_cases__asset_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsDiagnosisCaseDraftPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Operations Diagnosis Case Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
     "/api/v1/apps/aiops/operations-knowledge/knowledge-bases": {
       "get": {
         "operationId": "list_operations_knowledge_bases_api_v1_apps_aiops_operations_knowledge_knowledge_bases_get",
@@ -27728,6 +27932,47 @@
           }
         },
         "summary": "Operations Knowledge Overview",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/reports/{report_id}/case-eligibility": {
+      "get": {
+        "operationId": "get_operations_diagnosis_case_eligibility_api_v1_apps_aiops_operations_knowledge_reports__report_id__case_eligibility_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operations Diagnosis Case Eligibility",
         "tags": [
           "AIOps App"
         ]
@@ -28501,6 +28746,57 @@
           }
         },
         "summary": "Retry Operations Knowledge Version",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/versions/{asset_version_id}:submit-review": {
+      "post": {
+        "operationId": "submit_operations_diagnosis_case_review_api_v1_apps_aiops_operations_knowledge_versions__asset_version_id__submit_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsKnowledgeReviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Operations Diagnosis Case Review",
         "tags": [
           "AIOps App"
         ]

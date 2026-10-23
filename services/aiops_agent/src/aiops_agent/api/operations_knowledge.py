@@ -12,6 +12,7 @@ from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.contracts.knowledge import (
+    DiagnosisCaseDraft,
     KnowledgeBaseWrite,
     KnowledgeReviewCommand,
     KnowledgeSearchRequest,
@@ -135,6 +136,48 @@ async def overview(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.overview(
         domain_id=domain_id
+    )
+
+
+@router.get("/cases/overview")
+async def cases_overview(request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.cases_overview(domain_id=domain_id)
+
+
+@router.get("/cases")
+async def list_cases(
+    request: Request, status: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _use_scope(request, context)
+    return {"items": await request.app.state.operations_knowledge_service.list_cases(
+        domain_id=domain_id, status=status, limit=limit,
+    )}
+
+
+@router.get("/cases/{asset_id}")
+async def get_case(asset_id: UUID, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.get_case(
+        domain_id=domain_id, asset_id=asset_id,
+    )
+
+
+@router.post("/cases/{asset_id}/versions", status_code=202)
+async def create_case_version(
+    asset_id: UUID,
+    payload: DiagnosisCaseDraft,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    return await request.app.state.operations_knowledge_service.create_case_version(
+        domain_id=domain_id,
+        asset_id=asset_id,
+        command=payload,
+        context=context,
     )
 
 
@@ -449,6 +492,14 @@ async def extract_case(
     )
 
 
+@router.get("/reports/{report_id}/case-eligibility")
+async def case_eligibility(report_id: UUID, request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.case_eligibility(
+        domain_id=domain_id, report_id=report_id,
+    )
+
+
 @router.post("/versions/{asset_version_id}:reconcile")
 async def reconcile_version(
     asset_version_id: UUID,
@@ -480,6 +531,13 @@ async def _review(
 async def publish_version(asset_version_id: UUID, payload: KnowledgeReviewCommand,
                           request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
     return await _review(decision="PUBLISH", asset_version_id=asset_version_id,
+                         payload=payload, request=request, context=context)
+
+
+@router.post("/versions/{asset_version_id}:submit-review")
+async def submit_case_review(asset_version_id: UUID, payload: KnowledgeReviewCommand,
+                             request: Request, context: AuthContext = Depends(get_aiops_auth_context)):
+    return await _review(decision="SUBMIT_REVIEW", asset_version_id=asset_version_id,
                          payload=payload, request=request, context=context)
 
 

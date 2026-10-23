@@ -10,9 +10,13 @@ from pydantic import ValidationError
 from aiops_agent.application.operations_knowledge import (
     OperationsKnowledgeService,
     _bundle_source_hash,
+    _diagnosis_case_eligibility,
+    _prepare_case_revision,
 )
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import (
+    DiagnosisCaseDraft,
+    DiagnosisCaseProfile,
     KnowledgeBaseWrite,
     KnowledgeSearchRequest,
     ManualUploadMetadata,
@@ -43,6 +47,56 @@ class _OrderedFlushSession:
 
 
 class OperationsKnowledgeContractTest(unittest.TestCase):
+    def test_only_complete_incident_diagnosis_is_case_eligible(self):
+        report = SimpleNamespace(
+            is_current=True, status="READY", report_type="INCIDENT"
+        )
+        content = {"scope": {
+            "source_kind": "CHAT",
+            "root_cause_grade": "CONFIRMED",
+            "diagnosis_rationale": "连接耗尽由泄漏引起",
+        }}
+        self.assertTrue(_diagnosis_case_eligibility(
+            report=report, report_content=content, evidence_refs=["e-1"]
+        )["eligible"])
+        report.report_type = "INSPECTION"
+        result = _diagnosis_case_eligibility(
+            report=report, report_content=content, evidence_refs=["e-1"]
+        )
+        self.assertFalse(result["eligible"])
+        self.assertIn("REPORT_NOT_DIAGNOSIS", {
+            item["code"] for item in result["reasons"]
+        })
+
+    def test_case_revision_inherits_evidence_and_recalculates_case_kind(self):
+        base = DiagnosisCaseProfile(
+            case_kind="VERIFIED_RESOLUTION",
+            problem_signature={"normalized_symptoms": ["连接失败"]},
+            environment={"database_type": "Oracle"},
+            root_cause={"summary": "连接泄漏", "confidence": "HIGH", "evidence_refs": ["root-1"]},
+            actions=({"summary": "重启连接池", "evidence_refs": ["action-1"]},),
+            verification={"result": "RESOLVED", "before_refs": ["before-1"], "after_refs": ["after-1"]},
+            source={"report_id": "report-1"},
+        )
+        submitted = base.model_copy(deep=True)
+        submitted.root_cause["summary"] = "修订后的连接泄漏结论"
+        submitted.root_cause["evidence_refs"] = ["forged"]
+        submitted.source["report_id"] = "forged-report"
+        submitted.actions = (*submitted.actions, {"summary": "新增动作"})
+        revised = _prepare_case_revision(
+            command=DiagnosisCaseDraft(
+                expected_asset_row_version=2,
+                base_version_id=uuid7(),
+                display_name="连接池故障案例",
+                profile=submitted,
+            ),
+            base_profile=base,
+        )
+        self.assertEqual(["root-1"], revised.root_cause["evidence_refs"])
+        self.assertEqual("report-1", revised.source["report_id"])
+        self.assertEqual("DIAGNOSTIC_REFERENCE", revised.case_kind)
+        self.assertEqual([], revised.actions[1]["evidence_refs"])
+
     def test_knowledge_base_write_requires_models(self):
         with self.assertRaises(ValidationError):
             KnowledgeBaseWrite(display_name="Oracle 运维库")

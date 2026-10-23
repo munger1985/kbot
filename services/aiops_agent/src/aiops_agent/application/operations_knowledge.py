@@ -12,6 +12,7 @@ from uuid import UUID
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.knowledge import (
+    DiagnosisCaseDraft,
     DiagnosisCaseProfile,
     KnowledgeBaseWrite,
     KnowledgeSearchRequest,
@@ -42,7 +43,7 @@ from platform_clients.model import AIModelConfigClient
 
 
 CASE_COLLECTION = "diagnosis-cases"
-PUBLISHABLE_STATUSES = frozenset({"DRAFT", "REVIEW_REQUIRED"})
+PUBLISHABLE_STATUSES = frozenset({"REVIEW_REQUIRED"})
 TAG_CATEGORIES = frozenset({"RESOURCE_CATEGORY", "TECHNOLOGY_STACK", "VENDOR"})
 DELETABLE_MANUAL_STATUSES = frozenset({
     "DRAFT", "REVIEW_REQUIRED", "TAGGING_FAILED", "FAILED", "REJECTED",
@@ -59,6 +60,137 @@ def _now() -> datetime:
 
 def _normalize(value: str) -> str:
     return " ".join(value.strip().upper().split())
+
+
+def _diagnosis_case_eligibility(
+    *, report, report_content: dict[str, Any], evidence_refs: list[str]
+) -> dict[str, Any]:
+    """使用冻结报告的结构化语义判断能否沉淀历史案例。"""
+    scope = dict(report_content.get("scope") or {})
+    reasons: list[dict[str, str]] = []
+    if not bool(report.is_current):
+        reasons.append({"code": "REPORT_NOT_CURRENT", "message": "来源报告不是当前版本"})
+    if str(report.status or "").upper() != "READY":
+        reasons.append({"code": "REPORT_NOT_READY", "message": "来源报告尚未形成完整诊断结论"})
+    if str(report.report_type or "").upper() != "INCIDENT":
+        reasons.append({"code": "REPORT_NOT_DIAGNOSIS", "message": "巡检、性能和普通分析报告不能直接成为历史案例"})
+    if str(scope.get("source_kind") or "").upper() not in {"CHAT", "ALERT"}:
+        reasons.append({"code": "SOURCE_NOT_DIAGNOSIS", "message": "报告来源不是交互诊断或告警诊断"})
+    if str(scope.get("root_cause_grade") or "").upper() != "CONFIRMED":
+        reasons.append({"code": "ROOT_CAUSE_NOT_CONFIRMED", "message": "根因尚未确认"})
+    if not str(scope.get("diagnosis_rationale") or "").strip():
+        reasons.append({"code": "ROOT_CAUSE_SUMMARY_MISSING", "message": "缺少可发布的根因说明"})
+    if not evidence_refs:
+        reasons.append({"code": "EVIDENCE_MISSING", "message": "缺少可追溯诊断证据"})
+    return {"eligible": not reasons, "reasons": reasons}
+
+
+def _prepare_case_revision(
+    *, command: DiagnosisCaseDraft, base_profile: DiagnosisCaseProfile
+) -> DiagnosisCaseProfile:
+    """继承不可编辑的证据链，并按证据重新判定案例等级。"""
+    submitted = command.profile
+    signature = dict(submitted.problem_signature)
+    symptoms = [
+        str(item).strip()
+        for item in signature.get("normalized_symptoms") or ()
+        if str(item).strip()
+    ]
+    if not symptoms:
+        raise AIOpsApplicationError(
+            code="AIOPS_DIAGNOSIS_CASE_INVALID",
+            message="案例至少需要一条问题现象",
+            status_code=422,
+        )
+    signature["normalized_symptoms"] = symptoms
+    root_cause = dict(submitted.root_cause)
+    root_summary = str(root_cause.get("summary") or "").strip()
+    if not root_summary:
+        raise AIOpsApplicationError(
+            code="AIOPS_DIAGNOSIS_CASE_INVALID",
+            message="案例必须保留已确认根因",
+            status_code=422,
+        )
+    base_root = dict(base_profile.root_cause)
+    root_cause.update({
+        "summary": root_summary,
+        "confidence": "HIGH",
+        "evidence_refs": list(base_root.get("evidence_refs") or ()),
+    })
+    base_actions = list(base_profile.actions)
+    actions: list[dict[str, Any]] = []
+    for index, value in enumerate(submitted.actions):
+        summary = str(value.get("summary") or "").strip()
+        if not summary:
+            continue
+        evidence_refs = []
+        if index < len(base_actions):
+            base_summary = str(base_actions[index].get("summary") or "").strip()
+            if summary == base_summary:
+                evidence_refs = list(base_actions[index].get("evidence_refs") or ())
+        actions.append({"summary": summary, "evidence_refs": evidence_refs})
+    verification = dict(base_profile.verification)
+    before_refs = {str(item) for item in verification.get("before_refs") or ()}
+    after_refs = {str(item) for item in verification.get("after_refs") or ()}
+    verified = bool(
+        str(verification.get("result") or "").upper() in {"RESOLVED", "IMPROVED"}
+        and actions
+        and all(item["evidence_refs"] for item in actions)
+        and before_refs
+        and after_refs
+        and before_refs.isdisjoint(after_refs)
+    )
+    return DiagnosisCaseProfile(
+        case_kind="VERIFIED_RESOLUTION" if verified else "DIAGNOSTIC_REFERENCE",
+        problem_signature=signature,
+        environment=dict(submitted.environment),
+        root_cause=root_cause,
+        actions=tuple(actions),
+        verification=verification,
+        applicability=tuple(
+            str(item).strip() for item in submitted.applicability if str(item).strip()
+        ),
+        contraindications=tuple(
+            str(item).strip() for item in submitted.contraindications if str(item).strip()
+        ),
+        source=dict(base_profile.source),
+    )
+
+
+def _diagnosis_case_markdown(*, title: str, profile: DiagnosisCaseProfile) -> bytes:
+    signature = profile.problem_signature
+    environment = profile.environment
+    actions = [str(item.get("summary") or "").strip() for item in profile.actions]
+    lines = [
+        f"# {title}",
+        "",
+        "## 问题特征",
+        "",
+        *[f"- {item}" for item in signature.get("normalized_symptoms") or ()],
+        "",
+        "## 适用环境",
+        "",
+        f"- 数据库：{environment.get('database_type') or '未限定'} {environment.get('database_version') or ''}".rstrip(),
+        f"- 平台：{environment.get('platform') or '未限定'}",
+        f"- 拓扑：{environment.get('topology') or '未限定'}",
+        "",
+        "## 根因",
+        "",
+        str(profile.root_cause.get("summary") or ""),
+        "",
+        "## 已执行动作",
+        "",
+        *([f"- {item}" for item in actions if item] or ["未记录已执行动作，仅作为诊断参考。"]),
+        "",
+        "## 验证结果",
+        "",
+        str(profile.verification.get("result") or "NOT_VERIFIED"),
+    ]
+    if profile.applicability:
+        lines.extend(["", "## 适用条件", "", *[f"- {item}" for item in profile.applicability]])
+    if profile.contraindications:
+        lines.extend(["", "## 不适用条件", "", *[f"- {item}" for item in profile.contraindications]])
+    return ("\n".join(lines).strip() + "\n").encode("utf-8")
 
 
 def _bundle_source_hash(documents: list[dict[str, Any]]) -> str:
@@ -176,6 +308,39 @@ def _scope_view(entity: OperationsKnowledgeScopeEntity) -> dict[str, Any]:
         "normalized_value": entity.normalized_value,
         "source_kind": entity.source_kind,
         "source_locator": entity.source_locator_json,
+    }
+
+
+def _case_item_view(detail: dict[str, Any]) -> dict[str, Any]:
+    asset = detail["asset"]
+    version = detail["version"]
+    profile = dict(version.get("profile") or {})
+    signature = dict(profile.get("problem_signature") or {})
+    environment = dict(profile.get("environment") or {})
+    root_cause = dict(profile.get("root_cause") or {})
+    source = dict(profile.get("source") or {})
+    report_source = next(
+        (item for item in detail.get("sources", ()) if item.get("source_kind") == "REPORT"),
+        {},
+    )
+    return {
+        "asset_id": asset["asset_id"],
+        "asset_version_id": version["asset_version_id"],
+        "display_name": asset["display_name"],
+        "status": version["status"],
+        "case_kind": profile.get("case_kind"),
+        "problem_class": signature.get("problem_class"),
+        "component": signature.get("component"),
+        "database_type": environment.get("database_type"),
+        "database_version": environment.get("database_version"),
+        "topology": environment.get("topology"),
+        "root_cause_summary": root_cause.get("summary"),
+        "source_report_id": report_source.get("report_id") or source.get("report_id"),
+        "source_run_ids": source.get("run_ids") or (),
+        "version_no": version["version_no"],
+        "security_level": asset["security_level"],
+        "published_at": version.get("published_at"),
+        "updated_at": asset["updated_at"],
     }
 
 
@@ -1023,6 +1188,277 @@ class OperationsKnowledgeService:
             )
             return [_asset_view(row) for row in rows]
 
+    async def list_cases(
+        self, *, domain_id: int, status: str | None, limit: int
+    ) -> list[dict[str, Any]]:
+        """返回面向案例治理的业务投影，不暴露 KC 内部对象。"""
+        async with self._uow_factory() as uow:
+            assets = await uow.operations_knowledge.list_assets(
+                domain_id=domain_id, asset_kind="DIAGNOSIS_CASE", status=None,
+                knowledge_base_id=None, limit=500,
+            )
+            result: list[dict[str, Any]] = []
+            for asset in assets:
+                versions = await uow.operations_knowledge.list_versions(
+                    domain_id=domain_id, asset_id=asset.asset_id,
+                )
+                if not versions:
+                    continue
+                version = versions[0]
+                if status is not None and version.status != status:
+                    continue
+                relations = await uow.operations_knowledge.get_version_relations(
+                    asset_version_id=version.asset_version_id,
+                )
+                result.append(_case_item_view({
+                    "asset": _asset_view(asset),
+                    "version": _version_view(version),
+                    "sources": [{
+                        "source_kind": item.source_kind,
+                        "report_id": str(item.source_report_id) if item.source_report_id else None,
+                    } for item in relations["sources"]],
+                }))
+            return result[:limit]
+
+    async def cases_overview(self, *, domain_id: int) -> dict[str, int]:
+        rows = await self.list_cases(domain_id=domain_id, status=None, limit=500)
+        return {
+            "draft": sum(item["status"] == "DRAFT" for item in rows),
+            "review_required": sum(item["status"] == "REVIEW_REQUIRED" for item in rows),
+            "published": sum(item["status"] == "PUBLISHED" for item in rows),
+            "processing": sum(item["status"] in {"PROCESSING", "FAILED"} for item in rows),
+            "retired": sum(item["status"] == "RETIRED" for item in rows),
+        }
+
+    async def get_case(self, *, domain_id: int, asset_id: UUID) -> dict[str, Any]:
+        asset_page = await self.get_asset(domain_id=domain_id, asset_id=asset_id)
+        if asset_page["asset"]["asset_kind"] != "DIAGNOSIS_CASE":
+            raise self._not_found()
+        versions = asset_page["versions"]
+        if not versions:
+            raise self._not_found()
+        detail = await self.get_version(
+            domain_id=domain_id,
+            asset_version_id=UUID(versions[0]["asset_version_id"]),
+        )
+        detail["versions"] = versions
+        return detail
+
+    async def create_case_version(
+        self, *, domain_id: int, asset_id: UUID,
+        command: DiagnosisCaseDraft, context: AuthContext,
+    ) -> dict[str, Any]:
+        """基于最新案例生成不可变的新版本，证据链始终继承自基线版本。"""
+        actor = self._actor(context)
+        async with self._uow_factory() as uow:
+            asset = await uow.operations_knowledge.get_asset(
+                domain_id=domain_id, asset_id=asset_id
+            )
+            if asset is None or asset.asset_kind != "DIAGNOSIS_CASE":
+                raise self._not_found()
+            if int(asset.row_version) != command.expected_asset_row_version:
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_ASSET_CONFLICT",
+                    message="案例已被其他请求更新，请刷新后重试",
+                    status_code=412,
+                )
+            versions = await uow.operations_knowledge.list_versions(
+                domain_id=domain_id, asset_id=asset_id
+            )
+            if not versions or versions[0].asset_version_id != command.base_version_id:
+                raise self._state_conflict("只能基于案例最新版本创建修订")
+            base = versions[0]
+            if base.status in {"PROCESSING", "REVIEW_REQUIRED"}:
+                raise self._state_conflict("当前案例正在处理或审核，不能创建修订")
+            base_profile = DiagnosisCaseProfile.model_validate(base.profile_json)
+            profile = _prepare_case_revision(
+                command=command, base_profile=base_profile
+            )
+            relations = await uow.operations_knowledge.get_version_relations(
+                asset_version_id=base.asset_version_id
+            )
+            source_snapshots = [{
+                "source_kind": item.source_kind,
+                "source_report_id": item.source_report_id,
+                "source_run_id": item.source_run_id,
+                "source_artifact_id": item.source_artifact_id,
+                "source_external_id": item.source_external_id,
+                "content_hash": item.content_hash,
+                "source_locator_json": dict(item.source_locator_json or {}),
+            } for item in relations["sources"]]
+            target_scope = next((
+                str(item.scope_value) for item in relations["scopes"]
+                if item.scope_kind == "TARGET_ID"
+            ), None)
+            next_version_no = int(base.version_no) + 1
+            base_source_hash = str(base.source_hash)
+            base_status = str(base.status)
+            current_version_id = asset.current_version_id
+
+        markdown = _diagnosis_case_markdown(
+            title=command.display_name, profile=profile
+        )
+        source_hash = hashlib.sha256(json.dumps(
+            {"display_name": command.display_name, "profile": profile.model_dump(mode="json")},
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        if source_hash == base_source_hash:
+            raise self._state_conflict("案例内容没有变化，无需创建新版本")
+        collection = await self._collection(
+            domain_id=domain_id, name=CASE_COLLECTION, context=context
+        )
+        response = await self._kc.ingest_user_file(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            file_name=f"diagnosis-case-{asset_id}-v{next_version_no}.md",
+            display_name=command.display_name,
+            media_type="text/markdown",
+            body=markdown,
+            content_sha256=hashlib.sha256(markdown).hexdigest(),
+            idempotency_key=f"diagnosis-case-revision:{asset_id}:{source_hash}",
+            auth_context=context,
+        )
+        item = next(iter((response.payload or {}).get("items", [])), None)
+        if not item or item.get("status") == "REJECTED":
+            raise AIOpsApplicationError(
+                code="AIOPS_KNOWLEDGE_EXTRACTION_FAILED",
+                message="案例修订索引未被受理",
+                status_code=502,
+                retryable=True,
+            )
+        revision_id = UUID(str(item["bundle_revision_id"]))
+        await self._kc.review_user_intake(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            bundle_revision_id=revision_id,
+            decision="APPROVE",
+            comment="AIOps 案例修订进入索引，仍需业务审核后发布",
+            auth_context=context,
+        )
+        version_id = uuid7()
+        version = OperationsKnowledgeVersionEntity(
+            asset_version_id=version_id,
+            asset_id=asset_id,
+            version_no=next_version_no,
+            status="PROCESSING",
+            source_hash=source_hash,
+            profile_schema_version=profile.schema_version,
+            profile_json=profile.model_dump(mode="json"),
+            extraction_warnings_json=[],
+            created_by=actor,
+        )
+        sources = [OperationsKnowledgeSourceEntity(
+            asset_version_id=version_id,
+            source_kind=value["source_kind"],
+            source_report_id=value["source_report_id"],
+            source_run_id=value["source_run_id"],
+            source_artifact_id=value["source_artifact_id"],
+            source_external_id=value["source_external_id"],
+            content_hash=value["content_hash"],
+            source_locator_json={
+                **value["source_locator_json"],
+                "revised_from_version_id": str(command.base_version_id),
+            },
+        ) for value in source_snapshots]
+        scope_values = [
+            ("TARGET_ID", target_scope),
+            ("DATABASE_TYPE", profile.environment.get("database_type")),
+            ("DATABASE_VERSION", profile.environment.get("database_version")),
+            ("PLATFORM", profile.environment.get("platform")),
+            ("PROBLEM_CLASS", profile.problem_signature.get("problem_class")),
+            ("TOPOLOGY", profile.environment.get("topology")),
+        ]
+        scopes = [OperationsKnowledgeScopeEntity(
+            asset_version_id=version_id,
+            scope_kind=kind,
+            scope_value=str(value),
+            normalized_value=_normalize(str(value)),
+            source_kind="CASE_REVISION",
+            source_locator_json={"base_version_id": str(command.base_version_id)},
+        ) for kind, value in scope_values if value]
+        index = OperationsKnowledgeIndexEntity(
+            asset_version_id=version_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            bundle_id=UUID(str(item["bundle_id"])),
+            bundle_revision_id=revision_id,
+            index_status="PROCESSING",
+        )
+        async with self._uow_factory() as uow:
+            locked_asset = await uow.operations_knowledge.get_asset(
+                domain_id=domain_id, asset_id=asset_id, for_update=True
+            )
+            latest = await uow.operations_knowledge.list_versions(
+                domain_id=domain_id, asset_id=asset_id
+            )
+            if (
+                locked_asset is None
+                or int(locked_asset.row_version) != command.expected_asset_row_version
+                or not latest
+                or latest[0].asset_version_id != command.base_version_id
+            ):
+                raise AIOpsApplicationError(
+                    code="AIOPS_KNOWLEDGE_ASSET_CONFLICT",
+                    message="案例已被其他请求更新，请刷新后重试",
+                    status_code=412,
+                )
+            locked_asset.display_name = command.display_name
+            locked_asset.updated_by = actor
+            if current_version_id is None:
+                locked_asset.status = "PROCESSING"
+            await uow.operations_knowledge.add_version(
+                version=version, scopes=scopes, sources=sources, indexes=[index]
+            )
+            await uow.operations_knowledge.add_review(
+                OperationsKnowledgeReviewEntity(
+                    asset_version_id=version_id,
+                    decision="REVISE",
+                    reviewer_id=actor,
+                    comment_text="基于案例现有版本创建人工修订",
+                    before_status=base_status,
+                    after_status="PROCESSING",
+                )
+            )
+            await uow.commit()
+        return await self.get_case(domain_id=domain_id, asset_id=asset_id)
+
+    async def case_eligibility(
+        self, *, domain_id: int, report_id: UUID
+    ) -> dict[str, Any]:
+        async with self._uow_factory() as uow:
+            report = await uow.inspections.get_report_scoped(
+                report_id=report_id, domain_id=domain_id,
+            )
+            if report is None:
+                raise self._not_found()
+            if report.content_artifact_id is None:
+                return {"eligible": False, "reasons": [{
+                    "code": "REPORT_CONTENT_MISSING", "message": "正式报告内容引用不完整",
+                }]}
+            artifact = await uow.runs.get_artifact(artifact_id=report.content_artifact_id)
+            if artifact is None or artifact.schema_version != "REPORT_CONTENT.v1":
+                return {"eligible": False, "reasons": [{
+                    "code": "REPORT_CONTENT_INVALID", "message": "正式报告内容合同无效",
+                }]}
+            report_sources = await uow.inspections.list_report_sources(report_id=report_id)
+            content = dict(artifact.payload_json or {})
+            evidence_refs = [
+                str(item.get("artifact_id"))
+                for item in content.get("evidence_refs") or ()
+                if isinstance(item, dict) and item.get("artifact_id")
+            ] or [str(row.source_artifact_id) for row in report_sources]
+            result = _diagnosis_case_eligibility(
+                report=report, report_content=content, evidence_refs=evidence_refs,
+            )
+            existing = await uow.operations_knowledge.find_by_source_hash(
+                domain_id=domain_id, asset_kind="DIAGNOSIS_CASE",
+                source_hash=str(report.content_hash or ""),
+            )
+            return {
+                **result,
+                "existing_asset_id": str(existing[0].asset_id) if existing is not None else None,
+                "existing_version_id": str(existing[1].asset_version_id) if existing is not None else None,
+            }
+
     async def get_asset(self, *, domain_id: int, asset_id: UUID) -> dict[str, Any]:
         async with self._uow_factory() as uow:
             asset = await uow.operations_knowledge.get_asset(
@@ -1714,13 +2150,7 @@ class OperationsKnowledgeService:
             )
             if report is None:
                 raise self._not_found()
-            if (
-                report.status in {"FAILED"}
-                or not bool(report.is_current)
-                or not report.content_hash
-                or not (report.summary or "").strip()
-                or report.content_artifact_id is None
-            ):
+            if not report.content_hash or report.content_artifact_id is None:
                 raise AIOpsApplicationError(
                     code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
                     message="该报告不满足诊断案例提炼条件",
@@ -1733,6 +2163,13 @@ class OperationsKnowledgeService:
             )
             if existing is not None:
                 return {"asset": _asset_view(existing[0]), "version": _version_view(existing[1]), "replayed": True}
+            previous_case = None
+            if report.supersedes_report_id is not None:
+                previous_case = await uow.operations_knowledge.find_case_by_report_id(
+                    domain_id=domain_id, report_id=report.supersedes_report_id,
+                )
+            case_asset_id = previous_case[0].asset_id if previous_case is not None else uuid7()
+            case_version_no = int(previous_case[1].version_no) + 1 if previous_case is not None else 1
             report_sources = await uow.inspections.list_report_sources(report_id=report_id)
             artifact = await uow.runs.get_artifact(
                 artifact_id=report.content_artifact_id
@@ -1758,20 +2195,17 @@ class OperationsKnowledgeService:
                 if isinstance(item, dict)
             ]
             scope = dict(report_content.get("scope") or {})
-            root_cause_summary = str(
-                scope.get("diagnosis_rationale")
-                or next((
-                    item.get("summary") for item in facts
-                    if item.get("summary")
-                ), "")
-                or report.summary
+            eligibility = _diagnosis_case_eligibility(
+                report=report, report_content=report_content,
+                evidence_refs=evidence_refs,
             )
-            if not evidence_refs or not root_cause_summary.strip():
+            if not eligibility["eligible"]:
                 raise AIOpsApplicationError(
                     code="AIOPS_KNOWLEDGE_SOURCE_REJECTED",
-                    message="报告没有可追溯的发现或根因证据",
+                    message="；".join(item["message"] for item in eligibility["reasons"]),
                     status_code=422,
                 )
+            root_cause_summary = str(scope["diagnosis_rationale"]).strip()
             target = await uow.targets.get_scoped(
                 target_id=report.target_id, domain_id=domain_id
             )
@@ -1779,12 +2213,18 @@ class OperationsKnowledgeService:
                 raise self._not_found()
             recorded_actions = tuple(
                 {"summary": str(item), "evidence_refs": evidence_refs}
-                for item in scope.get("actions") or ()
+                for item in (scope.get("executed_actions") or scope.get("actions") or ())
                 if str(item).strip()
+            )
+            verification = dict(scope.get("verification") or {})
+            before_refs = tuple(str(item) for item in verification.get("before_refs") or ())
+            after_refs = tuple(str(item) for item in verification.get("after_refs") or ())
+            has_independent_verification = bool(
+                before_refs and after_refs and set(before_refs).isdisjoint(after_refs)
             )
             case_kind = (
                 "VERIFIED_RESOLUTION"
-                if report.result in {"RESOLVED", "IMPROVED"} and recorded_actions
+                if report.result in {"RESOLVED", "IMPROVED"} and recorded_actions and has_independent_verification
                 else "DIAGNOSTIC_REFERENCE"
             )
             profile = DiagnosisCaseProfile(
@@ -1807,20 +2247,15 @@ class OperationsKnowledgeService:
                 },
                 root_cause={
                     "summary": root_cause_summary,
-                    "confidence": (
-                        "HIGH"
-                        if str(scope.get("root_cause_grade") or "").upper()
-                        in {"CONFIRMED", "HIGH"}
-                        else "MEDIUM"
-                    ),
+                    "confidence": "HIGH",
                     "evidence_refs": evidence_refs,
                 },
                 actions=recorded_actions,
                 verification={
                     "result": report.result or "NOT_VERIFIED",
-                    "before_refs": evidence_refs,
-                    "after_refs": evidence_refs if case_kind == "VERIFIED_RESOLUTION" else [],
-                    "guardrail_refs": [],
+                    "before_refs": list(before_refs),
+                    "after_refs": list(after_refs),
+                    "guardrail_refs": list(verification.get("guardrail_refs") or ()),
                 },
                 source={
                     "report_id": str(report.report_id),
@@ -1873,14 +2308,9 @@ class OperationsKnowledgeService:
             comment="AIOps 诊断案例候选进入 KC 索引，仍需业务审核后发布",
             auth_context=context,
         )
-        asset_id, version_id = uuid7(), uuid7()
-        asset = OperationsKnowledgeAssetEntity(
-            asset_id=asset_id, domain_id=domain_id, asset_kind="DIAGNOSIS_CASE",
-            display_name=report.title, status="PROCESSING",
-            security_level=int(report.security_level), created_by=actor, updated_by=actor,
-        )
+        version_id = uuid7()
         version = OperationsKnowledgeVersionEntity(
-            asset_version_id=version_id, asset_id=asset_id, version_no=1,
+            asset_version_id=version_id, asset_id=case_asset_id, version_no=case_version_no,
             status="PROCESSING", source_hash=report.content_hash,
             profile_schema_version=profile.schema_version,
             profile_json=profile.model_dump(mode="json"),
@@ -1905,6 +2335,7 @@ class OperationsKnowledgeService:
             for row in report_sources
         ]]
         scope_values = [
+            ("TARGET_ID", str(report.target_id)),
             ("DATABASE_TYPE", target.db_type),
             ("DATABASE_VERSION", target.version_code),
             ("PLATFORM", target.environment),
@@ -1927,9 +2358,51 @@ class OperationsKnowledgeService:
             index_status="PROCESSING",
         )
         async with self._uow_factory() as uow:
-            await uow.operations_knowledge.add_asset_version(
-                asset=asset, version=version, scopes=scopes, sources=sources, indexes=[index]
-            )
+            if previous_case is None:
+                asset = OperationsKnowledgeAssetEntity(
+                    asset_id=case_asset_id, domain_id=domain_id,
+                    asset_kind="DIAGNOSIS_CASE", display_name=report.title,
+                    status="PROCESSING", security_level=int(report.security_level),
+                    created_by=actor, updated_by=actor,
+                )
+                await uow.operations_knowledge.add_asset_version(
+                    asset=asset, version=version, scopes=scopes,
+                    sources=sources, indexes=[index],
+                )
+            else:
+                asset = await uow.operations_knowledge.get_asset(
+                    domain_id=domain_id, asset_id=case_asset_id, for_update=True,
+                )
+                if asset is None:
+                    raise self._not_found()
+                if asset.current_version_id is not None:
+                    previous = await uow.operations_knowledge.get_version(
+                        domain_id=domain_id,
+                        asset_version_id=asset.current_version_id,
+                        for_update=True,
+                    )
+                    if previous is not None:
+                        before_status = previous.status
+                        previous.status = "RETIRED"
+                        previous.retired_at = _now()
+                        await uow.operations_knowledge.add_review(
+                            OperationsKnowledgeReviewEntity(
+                                asset_version_id=previous.asset_version_id,
+                                decision="SOURCE_CORRECTED",
+                                reviewer_id=actor,
+                                comment_text="来源报告已发布更正版，旧案例停止参与检索",
+                                before_status=before_status,
+                                after_status="RETIRED",
+                            )
+                        )
+                    asset.current_version_id = None
+                asset.display_name = report.title
+                asset.status = "PROCESSING"
+                asset.security_level = int(report.security_level)
+                asset.updated_by = actor
+                await uow.operations_knowledge.add_version(
+                    version=version, scopes=scopes, sources=sources, indexes=[index],
+                )
             await uow.commit()
         return {"asset": _asset_view(asset), "version": _version_view(version), "replayed": False}
 
@@ -2343,10 +2816,7 @@ class OperationsKnowledgeService:
                         asset.status = "PUBLISHED"
                         asset.current_version_id = version.asset_version_id
                     else:
-                        version.status = (
-                            "REVIEW_REQUIRED"
-                            if version.extraction_warnings_json else "DRAFT"
-                        )
+                        version.status = "DRAFT"
                         if asset.current_version_id is None:
                             asset.status = version.status
             elif failed and not processing_only:
@@ -2585,7 +3055,27 @@ class OperationsKnowledgeService:
                 domain_id=domain_id, asset_id=version.asset_id, for_update=True
             )
             before = version.status
-            if decision == "PUBLISH":
+            if decision == "SUBMIT_REVIEW":
+                if asset.asset_kind != "DIAGNOSIS_CASE" or before != "DRAFT":
+                    raise self._state_conflict("只有案例草稿可以提交审核")
+                relations = await uow.operations_knowledge.get_version_relations(
+                    asset_version_id=asset_version_id,
+                )
+                if not relations["indexes"] or any(
+                    item.index_status != "READY" for item in relations["indexes"]
+                ):
+                    raise AIOpsApplicationError(
+                        code="AIOPS_KNOWLEDGE_INDEX_PENDING",
+                        message="案例正文索引尚未就绪，不能提交审核",
+                        status_code=409,
+                    )
+                profile = DiagnosisCaseProfile.model_validate(version.profile_json)
+                if profile.root_cause.get("confidence") != "HIGH" or not profile.root_cause.get("evidence_refs"):
+                    raise self._state_conflict("案例缺少已确认根因或根因证据")
+                version.status = "REVIEW_REQUIRED"
+                if asset.current_version_id is None:
+                    asset.status = "REVIEW_REQUIRED"
+            elif decision == "PUBLISH":
                 if before not in PUBLISHABLE_STATUSES:
                     raise self._state_conflict("当前知识版本不能发布")
                 relations = await uow.operations_knowledge.get_version_relations(

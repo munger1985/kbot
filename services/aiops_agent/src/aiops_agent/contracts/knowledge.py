@@ -128,6 +128,16 @@ class DiagnosisCaseProfile(BaseModel):
     source: dict[str, Any]
 
 
+class DiagnosisCaseDraft(BaseModel):
+    """案例人工修订合同；来源与证据由服务端从基线版本继承。"""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_asset_row_version: int = Field(ge=1)
+    base_version_id: UUID
+    display_name: str = Field(min_length=1, max_length=256)
+    profile: DiagnosisCaseProfile
+
+
 class KnowledgeSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=4000)

@@ -102,6 +102,13 @@ class OperationsKnowledgeReviewPayload(_Payload):
     comment: str | None = Field(default=None, max_length=2000)
 
 
+class OperationsDiagnosisCaseDraftPayload(_Payload):
+    expected_asset_row_version: int = Field(ge=1)
+    base_version_id: UUID
+    display_name: str = Field(min_length=1, max_length=256)
+    profile: dict[str, Any]
+
+
 class OperationsKnowledgeCollectionModelsPayload(_Payload):
     models: dict[str, UUID]
 
@@ -395,6 +402,49 @@ async def operations_knowledge_overview(request: Request):
     )
 
 
+@router.get("/operations-knowledge/cases/overview")
+async def operations_diagnosis_cases_overview(request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).get_operations_diagnosis_case_overview(
+        auth_context=request.state.auth_context
+    )
+
+
+@router.get("/operations-knowledge/cases")
+async def list_operations_diagnosis_cases(
+    request: Request,
+    status_filter: str | None = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    await _require(request, "aiops:use")
+    return await _client(request).list_operations_diagnosis_cases(
+        status=status_filter, limit=limit,
+        auth_context=request.state.auth_context,
+    )
+
+
+@router.get("/operations-knowledge/cases/{asset_id}")
+async def get_operations_diagnosis_case(asset_id: UUID, request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).get_operations_diagnosis_case(
+        asset_id, auth_context=request.state.auth_context,
+    )
+
+
+@router.post("/operations-knowledge/cases/{asset_id}/versions", status_code=202)
+async def create_operations_diagnosis_case_version(
+    asset_id: UUID,
+    payload: OperationsDiagnosisCaseDraftPayload,
+    request: Request,
+):
+    await _require(request, "aiops:knowledge_manage")
+    return await _client(request).create_operations_diagnosis_case_version(
+        asset_id,
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+
+
 @router.get("/operations-knowledge/knowledge-bases")
 async def list_operations_knowledge_bases(
     request: Request, include_archived: bool = False,
@@ -668,6 +718,14 @@ async def extract_operations_diagnosis_case(report_id: UUID, request: Request):
     )
 
 
+@router.get("/operations-knowledge/reports/{report_id}/case-eligibility")
+async def get_operations_diagnosis_case_eligibility(report_id: UUID, request: Request):
+    await _require(request, "aiops:use")
+    return await _client(request).get_operations_diagnosis_case_eligibility(
+        report_id, auth_context=request.state.auth_context,
+    )
+
+
 @router.post("/operations-knowledge/versions/{asset_version_id}:reconcile")
 async def reconcile_operations_knowledge_version(asset_version_id: UUID, request: Request):
     await _require(request, "aiops:knowledge_manage")
@@ -692,6 +750,11 @@ async def _review_operations_knowledge(
 @router.post("/operations-knowledge/versions/{asset_version_id}:publish")
 async def publish_operations_knowledge_version(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
     return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="publish", payload=payload, request=request)
+
+
+@router.post("/operations-knowledge/versions/{asset_version_id}:submit-review")
+async def submit_operations_diagnosis_case_review(asset_version_id: UUID, payload: OperationsKnowledgeReviewPayload, request: Request):
+    return await _review_operations_knowledge(asset_version_id=asset_version_id, decision="submit-review", payload=payload, request=request)
 
 
 @router.post("/operations-knowledge/versions/{asset_version_id}:approve")

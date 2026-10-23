@@ -241,6 +241,33 @@ class OperationsKnowledgeRepository(AIOpsRepository):
             )
         return (await self._session.execute(statement)).first()
 
+    async def find_case_by_report_id(
+        self, *, domain_id: int, report_id: UUID
+    ) -> tuple[OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity] | None:
+        """按来源正式报告定位稳定案例资产。"""
+        self._check_active()
+        statement = (
+            select(OperationsKnowledgeAssetEntity, OperationsKnowledgeVersionEntity)
+            .join(
+                OperationsKnowledgeVersionEntity,
+                OperationsKnowledgeVersionEntity.asset_id
+                == OperationsKnowledgeAssetEntity.asset_id,
+            )
+            .join(
+                OperationsKnowledgeSourceEntity,
+                OperationsKnowledgeSourceEntity.asset_version_id
+                == OperationsKnowledgeVersionEntity.asset_version_id,
+            )
+            .where(
+                OperationsKnowledgeAssetEntity.domain_id == domain_id,
+                OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE",
+                OperationsKnowledgeSourceEntity.source_report_id == report_id,
+            )
+            .order_by(OperationsKnowledgeVersionEntity.version_no.desc())
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).first()
+
     async def get_asset(
         self, *, domain_id: int, asset_id: UUID, for_update: bool = False
     ) -> OperationsKnowledgeAssetEntity | None:

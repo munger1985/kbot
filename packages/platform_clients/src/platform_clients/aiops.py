@@ -666,6 +666,54 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_operations_diagnosis_case_overview(
+        self, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases/overview",
+            auth_context=auth_context,
+        )
+
+    async def list_operations_diagnosis_cases(
+        self, *, status: str | None, limit: int, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        query = urlencode({
+            key: value for key, value in {"status": status, "limit": limit}.items()
+            if value is not None
+        })
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases?{query}",
+            auth_context=auth_context,
+        )
+
+    async def get_operations_diagnosis_case(
+        self, asset_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases/{asset_id}",
+            auth_context=auth_context,
+        )
+
+    async def create_operations_diagnosis_case_version(
+        self, asset_id: UUID, *, payload: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases/{asset_id}/versions",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
+    async def get_operations_diagnosis_case_eligibility(
+        self, report_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/reports/{report_id}/case-eligibility",
+            auth_context=auth_context,
+        )
+
     async def reconcile_operations_knowledge_version(
         self, asset_version_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any]:

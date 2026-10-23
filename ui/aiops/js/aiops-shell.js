@@ -2,7 +2,7 @@
   "use strict";
   const pagePermissions = {
     dashboard: "aiops:use", "work-item-detail": "aiops:use", "responsibility-groups": "aiops:work_item_manage", monitoring: "aiops:use", chat: "aiops:use", situations: "aiops:use", inspections: "aiops:use",
-    reports: "aiops:use", "report-detail": "aiops:use",
+    reports: "aiops:use", "report-detail": "aiops:use", cases: "aiops:use",
     "run-detail": "aiops:use", targets: "aiops:target_manage",
     "business-systems": "aiops:target_manage",
     "business-system-workspace": "aiops:target_manage",
@@ -26,7 +26,7 @@
       ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"],
     ]],
     ["reports-knowledge", "报告与知识", "knowledge", [
-      ["reports", "运维报告"], ["operations-knowledge", "运维知识"],
+      ["reports", "运维报告"], ["cases", "历史诊断案例"], ["operations-knowledge", "运维知识"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
       ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
