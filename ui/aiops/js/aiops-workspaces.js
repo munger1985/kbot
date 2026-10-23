@@ -1452,6 +1452,28 @@
     REPORT: "性能报告",
     RUNBOOK: "实施文档",
   };
+  const capabilityShortcuts = [
+    { capability: "RESOURCE_CATALOG_QUERY", title: "查询系统资源", description: "查看授权业务系统、资源类型和拓扑关系。", prompt: "列出我有权访问的业务系统及其系统资源、资源类型和拓扑关系。" },
+    { capability: "MONITORING_QUERY", title: "查看监控", description: "查看当前监控状态、关键指标和异常变化。", prompt: "查看我有权访问的业务系统当前监控状态和关键指标，并指出需要关注的变化。" },
+    { capability: "ALERT_QUERY", title: "查看告警", description: "查询近期告警、严重程度和处理状态。", prompt: "查看我有权访问的业务系统最近的告警事件、严重程度和处理状态。" },
+    { capability: "INSPECTION_QUERY", title: "查询巡检", description: "查询近期巡检结果和主要发现。", prompt: "查询我有权访问的业务系统最近的巡检执行结果和主要发现。" },
+    { capability: "REPORT_CASE_QUERY", title: "查询报告案例", description: "查找正式运维报告和历史诊断案例。", prompt: "查询我有权访问的业务系统最近的运维报告和历史诊断案例。" },
+    { capability: "KNOWLEDGE_QA", title: "查询运维知识", description: "检索已发布运维资料和诊断经验。", prompt: "查询已发布的运维知识和历史诊断案例，并说明可供继续提问的主题。" },
+  ];
+
+  function availableCapabilityShortcuts() {
+    const agentId = document.getElementById("agent-select").value;
+    const agent = state.agents.find((item) => String(item.agent_id) === String(agentId));
+    const capabilities = new Set(values(agent?.capabilities));
+    return capabilityShortcuts.filter((item) => capabilities.has(item.capability));
+  }
+
+  function capabilityShortcutSectionHtml() {
+    const shortcuts = availableCapabilityShortcuts();
+    if (!shortcuts.length) return "";
+    const cards = shortcuts.map((item) => `<button class="ops-starter-card" type="button" data-capability-shortcut="${esc(item.capability)}"><strong>${esc(item.title)}</strong><span>${esc(item.description)}</span><small>点击后开始查询</small></button>`).join("");
+    return `<section class="ops-starter-section"><h4>Agent 能力</h4><div class="ops-starter-grid">${cards}</div></section>`;
+  }
 
   function starterCardHtml(item) {
     const unavailable = item.status === "UNAVAILABLE";
@@ -1472,10 +1494,11 @@
   }
 
   function starterHomeHtml() {
-    if (!state.starters.length) return state.starterCatalogLoaded
-      ? '<div class="ops-empty">功能目录暂不可用，仍可在下方直接输入数据库运维问题。</div>'
+    const capabilitySection = capabilityShortcutSectionHtml();
+    if (!state.starters.length && !capabilitySection) return state.starterCatalogLoaded
+      ? '<div class="ops-empty">功能目录暂不可用，仍可在下方直接输入运维问题。</div>'
       : '<div class="ops-empty">正在读取当前 Agent 可用功能…</div>';
-    return `<section class="ops-starter-home"><header><h3>今天要处理什么？</h3><p>选择一个功能直接执行，或在下方输入任何数据库运维问题。</p></header>${starterSectionsHtml(state.starters, { recommendedOnly: true })}<button class="ops-button ops-starter-more" type="button" data-open-all-starters>查看全部功能</button></section>`;
+    return `<section class="ops-starter-home"><header><h3>今天要处理什么？</h3><p>选择一个功能直接执行，或在下方输入任何运维问题。</p></header>${capabilitySection}${starterSectionsHtml(state.starters, { recommendedOnly: true })}<button class="ops-button ops-starter-more" type="button" data-open-all-starters>查看全部功能</button></section>`;
   }
 
   function bindStarterButtons(root) {
@@ -1485,6 +1508,21 @@
     root.querySelectorAll("[data-open-all-starters]").forEach((button) => {
       button.onclick = openStarterMenu;
     });
+    root.querySelectorAll("[data-capability-shortcut]").forEach((button) => {
+      button.onclick = () => executeCapabilityShortcut(button.dataset.capabilityShortcut);
+    });
+  }
+
+  function executeCapabilityShortcut(capability) {
+    const shortcut = capabilityShortcuts.find((item) => item.capability === capability);
+    if (!shortcut || !availableCapabilityShortcuts().some((item) => item.capability === capability)) {
+      return shell.toast("当前 Agent 未启用该查询能力");
+    }
+    const dialog = document.getElementById("starter-dialog");
+    if (dialog.open) dialog.close();
+    const form = document.getElementById("conversation-form");
+    form.elements.message.value = shortcut.prompt;
+    form.requestSubmit();
   }
 
   async function loadConversationStarters() {
@@ -1511,7 +1549,7 @@
     document.getElementById("starter-dialog-title").textContent = "全部功能";
     document.getElementById("starter-dialog-description").textContent = "功能会根据 Agent 能力与当轮自然语言范围自动筛选。";
     const content = document.getElementById("starter-dialog-content");
-    content.innerHTML = starterSectionsHtml(state.starters)
+    content.innerHTML = capabilityShortcutSectionHtml() + starterSectionsHtml(state.starters)
       || '<div class="ops-empty">当前没有可展示的功能，请直接在聊天框中描述问题。</div>';
     bindStarterButtons(content);
     if (!dialog.open) dialog.showModal();

@@ -477,6 +477,14 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/conversation-starters?agent_id=", workspace)
         self.assertIn("starterCatalogVersion", workspace)
         self.assertIn("executeStarter", workspace)
+        self.assertIn("availableCapabilityShortcuts", workspace)
+        self.assertIn('capability: "RESOURCE_CATALOG_QUERY", title: "查询系统资源"', workspace)
+        self.assertIn('capability: "MONITORING_QUERY", title: "查看监控"', workspace)
+        self.assertIn('capability: "ALERT_QUERY", title: "查看告警"', workspace)
+        self.assertIn('capability: "INSPECTION_QUERY", title: "查询巡检"', workspace)
+        self.assertIn('capability: "REPORT_CASE_QUERY", title: "查询报告案例"', workspace)
+        self.assertIn('capability: "KNOWLEDGE_QA", title: "查询运维知识"', workspace)
+        self.assertIn("form.requestSubmit()", workspace)
         self.assertIn("datetime-local", workspace)
         self.assertIn('field.type === "oracle_datetime"', workspace)
         self.assertIn('value.replace("T", " ")', workspace)
@@ -490,9 +498,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261020_4",
-            "situations": "20261020_4",
-            "inspections": "20261020_4",
+            "chat": "20261023_2",
+            "situations": "20261023_2",
+            "inspections": "20261023_2",
         }
         for page_name, version in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
