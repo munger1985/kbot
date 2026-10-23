@@ -60,7 +60,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 )
 
     def test_pages_share_current_interactive_shell(self):
-        expected = "./js/aiops-shell.js?v=20261020_3"
+        expected = "./js/aiops-shell.js?v=20261023_1"
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             parser = _Parser()
@@ -97,7 +97,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["dashboard", "AIOps 工作台", "overview"]', shell)
+        self.assertIn('["chat", "Agent 工作台", "agents"]', shell)
+        self.assertIn('["dashboard", "运维总览"]', shell)
         self.assertNotIn('["work-items", "工作项中心"]', shell)
         self.assertLess(
             shell.index('["business-systems", "业务系统"]'),
@@ -289,7 +290,8 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         shell = (AIOPS_ROOT / "js" / "aiops-shell.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["dashboard", "AIOps 工作台", "overview"]', shell)
+        self.assertIn('["chat", "Agent 工作台", "agents"]', shell)
+        self.assertIn('["dashboard", "运维总览"]', shell)
         self.assertNotIn('["work-items", "工作项中心"]', shell)
         self.assertFalse((AIOPS_ROOT / "work-items.html").exists())
         self.assertIn("处理队列", page)
@@ -308,7 +310,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("关联资源", detail)
         self.assertIn("活动时间线", detail)
         self.assertIn('class="ops-button ops-back-link"', detail)
-        self.assertIn("返回 AIOps 工作台", detail)
+        self.assertIn("返回运维总览", detail)
         self.assertIn('document.body.dataset.page === "dashboard"', script)
         self.assertIn("./dashboard.html?visibility=", script)
         self.assertIn("/api/v1/apps/aiops/work-items", script)
@@ -497,7 +499,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("workspaces.css?v=20261020_4", page)
-            self.assertIn("aiops-shell.js?v=20261020_3", page)
+            self.assertIn("aiops-shell.js?v=20261023_1", page)
             self.assertIn(f"aiops-workspaces.js?v={version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
@@ -1479,12 +1481,14 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("shellMarkup(access)", shell)
         navigation = shell.split("const pinnedPages", 1)[1].split("const iconPaths", 1)[0]
         expected = [
-            '["dashboard", "AIOps 工作台", "overview"]',
-            '["monitoring-diagnosis", "监控与诊断", "data"',
-            '["operations-assurance", "运维保障", "audit"',
+            '["chat", "Agent 工作台", "agents"]',
+            '["situations-events", "态势与事件", "data"',
+            '["inspections-drills", "巡检与演练", "audit"',
+            '["reports-knowledge", "报告与知识", "knowledge"',
             '["configuration-governance", "配置与治理", "settings"',
+            '["dashboard", "运维总览"]',
             '["monitoring", "实时监控"]', '["situations", "告警诊断"]',
-            '["chat", "智能诊断"]', '["inspections", "日常巡检"]',
+            '["inspections", "日常巡检"]',
             '["recovery-drills", "恢复演练"]', '["reports", "运维报告"]',
             '["operations-knowledge", "运维知识"]',
             '["business-systems", "业务系统"]', '["diagnostic-sources", "监控源"]',
@@ -1500,6 +1504,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('["knowledge-answering-agent", "知识问答 Agent"]', navigation)
         self.assertNotIn('["api-clients", "API 客户端"]', navigation)
         self.assertIn("bindNavigationGroups", shell)
+        self.assertIn('?.key || ""', shell)
+        self.assertNotIn('?.key || groups[0]?.key', shell)
         self.assertIn("const shouldOpen = candidate === group && !isOpen", shell)
         self.assertNotIn("items.querySelector", shell)
         stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
@@ -1526,7 +1532,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         plans = (AIOPS_ROOT / "inspection-plans.html").read_text(
             encoding="utf-8"
         )
-        self.assertIn('["chat", "智能诊断"]', shell)
+        self.assertIn('["chat", "Agent 工作台", "agents"]', shell)
         self.assertIn('["situations", "告警诊断"]', shell)
         self.assertIn('["inspections", "日常巡检"]', shell)
         self.assertNotIn('["inspection-plans", "巡检计划"]', shell)

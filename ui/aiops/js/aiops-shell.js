@@ -17,14 +17,16 @@
     runs: "aiops:use",
     "api-clients": "aiops:api_key_manage",
   };
-  const pinnedPages = [["dashboard", "AIOps 工作台", "overview"]];
+  const pinnedPages = [["chat", "Agent 工作台", "agents"]];
   const navigationGroups = [
-    ["monitoring-diagnosis", "监控与诊断", "data", [
-      ["monitoring", "实时监控"], ["situations", "告警诊断"], ["chat", "智能诊断"],
+    ["situations-events", "态势与事件", "data", [
+      ["dashboard", "运维总览"], ["monitoring", "实时监控"], ["situations", "告警诊断"],
     ]],
-    ["operations-assurance", "运维保障", "audit", [
-      ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"], ["reports", "运维报告"],
-      ["operations-knowledge", "运维知识"],
+    ["inspections-drills", "巡检与演练", "audit", [
+      ["inspections", "日常巡检"], ["recovery-drills", "恢复演练"],
+    ]],
+    ["reports-knowledge", "报告与知识", "knowledge", [
+      ["reports", "运维报告"], ["operations-knowledge", "运维知识"],
     ]],
     ["configuration-governance", "配置与治理", "settings", [
       ["business-systems", "业务系统"], ["diagnostic-sources", "监控源"], ["responsibility-groups", "责任组"], ["knowledge-bases", "运维知识库"], ["knowledge-tags", "知识标签"], ["agents", "Agent 管理"], ["report-templates", "模板中心"], ["runs", "运行记录"],
@@ -32,6 +34,8 @@
   ];
   const iconPaths = {
     overview: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
+    agents: ["M8 9h8", "M8 13h5", "M9 3h6l1 3h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2z"],
+    knowledge: ["M5 4.5A2.5 2.5 0 0 1 7.5 2H11v17H7.5A2.5 2.5 0 0 0 5 21z", "M19 4.5A2.5 2.5 0 0 0 16.5 2H13v17h3.5A2.5 2.5 0 0 1 19 21z"],
     data: ["M4 6c0 1.7 3.6 3 8 3s8-1.3 8-3-3.6-3-8-3-8 1.3-8 3Z", "M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6", "M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"],
     audit: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M8 13h8", "M8 17h6"],
     models: ["M12 3 4.5 7.2v9.6L12 21l7.5-4.2V7.2z", "M4.8 7.4 12 12l7.2-4.6", "M12 12v9"],
@@ -100,7 +104,7 @@
       const visible = pages.filter(([id]) => permissions.has(pagePermissions[id]));
       return visible.length ? { key, name, groupIcon, pages: visible } : null;
     }).filter(Boolean);
-    const activeGroupKey = groups.find((group) => group.pages.some(([id]) => id === currentNavigation))?.key || groups[0]?.key || "";
+    const activeGroupKey = groups.find((group) => group.pages.some(([id]) => id === currentNavigation))?.key || "";
     const pinned = visiblePinned.length
       ? `<section class="ops-nav-pinned" aria-label="常用功能"><nav class="ops-nav-items">${visiblePinned.map(([id, label, itemIcon]) => `<a class="ops-nav-item" href="./${id}.html" ${id === currentNavigation ? 'aria-current="page"' : ""}><span class="ops-nav-item-icon">${icon(itemIcon)}</span><span>${label}</span></a>`).join("")}</nav></section>`
       : "";
