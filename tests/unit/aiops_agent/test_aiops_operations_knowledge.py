@@ -11,10 +11,13 @@ from aiops_agent.application.operations_knowledge import (
     OperationsKnowledgeService,
     _bundle_source_hash,
     _diagnosis_case_eligibility,
+    _freeze_case_version_identity,
     _prepare_case_revision,
+    _validate_closure_evidence,
 )
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.contracts.knowledge import (
+    DiagnosisClosureCommand,
     DiagnosisCaseDraft,
     DiagnosisCaseProfile,
     KnowledgeBaseWrite,
@@ -47,6 +50,87 @@ class _OrderedFlushSession:
 
 
 class OperationsKnowledgeContractTest(unittest.TestCase):
+    def test_case_identity_is_frozen_before_orm_state_expires(self):
+        asset_id = uuid7()
+        active = True
+
+        class Asset:
+            @property
+            def asset_id(self):
+                if not active:
+                    raise RuntimeError("expired ORM state")
+                return asset_id
+
+        class Version:
+            @property
+            def version_no(self):
+                if not active:
+                    raise RuntimeError("expired ORM state")
+                return 7
+
+        frozen = _freeze_case_version_identity((Asset(), Version()))
+        active = False
+        self.assertEqual((asset_id, 7), frozen)
+
+    def test_diagnosis_closure_command_rejects_uncontracted_fields(self):
+        payload = {
+            "included_turn_ids": [uuid7()],
+            "display_name": "连接池故障",
+            "symptoms": ["连接池耗尽"],
+            "root_cause_summary": "连接未释放",
+        }
+        command = DiagnosisClosureCommand.model_validate(payload)
+        self.assertEqual("NOT_VERIFIED", command.verification_result)
+        with self.assertRaises(ValidationError):
+            DiagnosisClosureCommand.model_validate({**payload, "publish": True})
+
+    def test_diagnosis_closure_evidence_stays_in_run_and_separates_samples(self):
+        action_id, before_id, after_id, outsider_id = (
+            uuid7(), uuid7(), uuid7(), uuid7()
+        )
+        base = {
+            "included_turn_ids": [uuid7()],
+            "display_name": "连接池故障",
+            "symptoms": ["连接池耗尽"],
+            "root_cause_summary": "连接未释放",
+            "action_evidence_ids": [action_id],
+            "before_evidence_ids": [before_id],
+            "after_evidence_ids": [after_id],
+        }
+        action_refs, before_refs, after_refs = _validate_closure_evidence(
+            command=DiagnosisClosureCommand.model_validate(base),
+            allowed_ids={action_id, before_id, after_id},
+            allowed_action_ids={action_id},
+        )
+        self.assertEqual([str(action_id)], action_refs)
+        self.assertEqual({str(before_id)}, before_refs)
+        self.assertEqual({str(after_id)}, after_refs)
+
+        with self.assertRaises(AIOpsApplicationError):
+            _validate_closure_evidence(
+                command=DiagnosisClosureCommand.model_validate({
+                    **base, "action_evidence_ids": [outsider_id],
+                }),
+                allowed_ids={action_id, before_id, after_id},
+                allowed_action_ids={action_id},
+            )
+        with self.assertRaises(AIOpsApplicationError):
+            _validate_closure_evidence(
+                command=DiagnosisClosureCommand.model_validate({
+                    **base, "action_evidence_ids": [after_id],
+                }),
+                allowed_ids={action_id, before_id, after_id},
+                allowed_action_ids={action_id},
+            )
+        with self.assertRaises(AIOpsApplicationError):
+            _validate_closure_evidence(
+                command=DiagnosisClosureCommand.model_validate({
+                    **base, "after_evidence_ids": [before_id],
+                }),
+                allowed_ids={action_id, before_id, after_id},
+                allowed_action_ids={action_id},
+            )
+
     def test_only_complete_incident_diagnosis_is_case_eligible(self):
         report = SimpleNamespace(
             is_current=True, status="READY", report_type="INCIDENT"

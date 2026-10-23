@@ -1179,6 +1179,47 @@ def normalize_report_source(
     *, schema_version: str, payload: dict[str, Any], source_kind: str,
 ) -> dict[str, Any]:
     """将三个入口的最终产物归一为报告装配所需的公开事实。"""
+    if schema_version == "DIAGNOSIS_CLOSURE.v1":
+        profile = dict(payload.get("profile") or {})
+        root_cause = dict(profile.get("root_cause") or {})
+        verification = dict(profile.get("verification") or {})
+        return {
+            "status": "READY",
+            "root_cause": {"effective_level": "CONFIRMED"},
+            "diagnosis_rationale": str(root_cause.get("summary") or ""),
+            "facts": tuple({
+                "kind": "diagnosis_closure",
+                "summary": str(item),
+                "trust_level": "USER_PROVIDED",
+            } for item in dict(profile.get("problem_signature") or {}).get(
+                "normalized_symptoms", ()
+            )),
+            "gaps": (),
+            "solution": {
+                "immediate_mitigations": tuple(
+                    str(item.get("summary") or "")
+                    for item in profile.get("actions", ())
+                    if isinstance(item, dict) and item.get("summary")
+                ),
+            },
+            "evidence_refs": tuple({"artifact_id": str(item)} for item in (
+                *tuple(root_cause.get("evidence_refs") or ()),
+                *tuple(verification.get("before_refs") or ()),
+                *tuple(verification.get("after_refs") or ()),
+            )),
+            "executed_actions": tuple(
+                str(item.get("summary") or "")
+                for item in profile.get("actions", ())
+                if isinstance(item, dict) and item.get("summary")
+            ),
+            "verification": verification,
+            "closure_artifact_id": payload.get("artifact_id"),
+            "conversation": {
+                "conversation_id": payload.get("conversation_id"),
+                "included_turn_ids": list(payload.get("source_turn_ids") or ()),
+                "turn_count": len(payload.get("source_turn_ids") or ()),
+            },
+        }
     if schema_version == "DIAGNOSIS_REPORT_DRAFT.v1":
         return {
             "status": str(payload.get("status") or "PARTIAL"),

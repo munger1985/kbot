@@ -4570,6 +4570,13 @@ class AIOpsRuntimeService:
                     rationale if source_kind == "INSPECTION" else None,
                 ),
                 "report_period_kind": period_kind,
+                "closure_artifact_id": (
+                    str(source_artifact.artifact_id)
+                    if source_artifact.schema_version == "DIAGNOSIS_CLOSURE.v1"
+                    else source.get("closure_artifact_id")
+                ),
+                "executed_actions": list(source.get("executed_actions") or ()),
+                "verification": dict(source.get("verification") or {}),
                 **({
                     key: source.get(key)
                     for key in (
@@ -4665,6 +4672,12 @@ class AIOpsRuntimeService:
                 status=status,
                 period_start=period_start,
                 period_end=period_end,
+                result=(
+                    str(dict(source.get("verification") or {}).get("result"))
+                    if dict(source.get("verification") or {}).get("result")
+                    in {"RESOLVED", "IMPROVED", "NOT_ACHIEVED", "ADVERSE"}
+                    else None
+                ),
                 template_id=template.template_ref,
                 template_version=template.version,
                 generated_by_task_id=task.ops_task_id,
@@ -7637,6 +7650,51 @@ class AIOpsRuntimeService:
                 source_rows=source_rows,
                 missing_turns=missing_turns,
             )
+            closure_artifact = None
+            report_run = anchor_run
+            report_task = task
+            for _, candidate_run, _ in reversed(source_rows):
+                candidate = await uow.runs.get_artifact_by_key(
+                    ops_run_id=candidate_run.ops_run_id,
+                    artifact_key=f"diagnosis-closure:{conversation_id}",
+                )
+                if (
+                    candidate is None
+                    or candidate.schema_version != "DIAGNOSIS_CLOSURE.v1"
+                ):
+                    continue
+                candidate_tasks = await uow.runs.list_tasks(
+                    ops_run_id=candidate_run.ops_run_id
+                )
+                candidate_task = next((
+                    item for item in candidate_tasks
+                    if item.ops_task_id == candidate.ops_task_id
+                ), None)
+                if candidate_task is None:
+                    continue
+                closure_artifact = candidate
+                report_run = candidate_run
+                report_task = candidate_task
+                break
+            if closure_artifact is not None:
+                source_override = normalize_report_source(
+                    schema_version=closure_artifact.schema_version,
+                    payload=dict(closure_artifact.payload_json or {}),
+                    source_kind="CHAT",
+                )
+                source_override["conversation"] = {
+                    **dict(source_override.get("conversation") or {}),
+                    "title": conversation.title,
+                    "question_summaries": list(dict.fromkeys(
+                        str(dict(run.plan_snapshot_json or {}).get(
+                            "diagnosis", {}
+                        ).get("question_summary") or "").strip()
+                        for _, run, _ in source_rows
+                        if str(dict(run.plan_snapshot_json or {}).get(
+                            "diagnosis", {}
+                        ).get("question_summary") or "").strip()
+                    )),
+                }
             get_current_report = getattr(
                 uow.inspections,
                 "get_current_report_for_conversation_template",
@@ -7680,9 +7738,9 @@ class AIOpsRuntimeService:
                     return GeneratedReportReceipt.from_entity(current_report)
             report = await self._publish_diagnosis_report(
                 uow=uow,
-                run=anchor_run,
-                task=task,
-                source_artifact=anchor_artifact,
+                run=report_run,
+                task=report_task,
+                source_artifact=closure_artifact or anchor_artifact,
                 now=now,
                 trace_id=trace_id,
                 template=template,

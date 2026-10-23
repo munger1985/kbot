@@ -1226,7 +1226,107 @@
     const source = conversationId
       ? `data-generate-report-conversation="${esc(conversationId)}"`
       : `data-generate-report-run="${esc(runId)}"`;
-    return `<div class="ops-filter-actions"><button type="button" class="primary" ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
+    const closure = conversationId
+      ? `<button type="button" class="primary" data-close-diagnosis="${esc(conversationId)}">诊断收口</button>`
+      : "";
+    return `<div class="ops-filter-actions ops-conversation-actions">${closure}<button type="button" ${conversationId ? "" : 'class="primary"'} ${source} data-report-source-kind="${esc(sourceKind)}" data-report-period-kind="${esc(periodKind)}">生成正式报告</button></div>`;
+  }
+
+  const closureLines = (value) => String(value || "").split("\n")
+    .map((item) => item.trim()).filter(Boolean);
+
+  function closureEvidenceOptions(preview, name) {
+    const roleLabels = { DIAGNOSIS: "诊断", ACTION: "动作", VERIFICATION: "验证" };
+    const candidates = name === "action_evidence_ids"
+      ? values(preview.evidence_candidates).filter((item) => item.role === "ACTION")
+      : values(preview.evidence_candidates);
+    return candidates.map((item) => `<label class="ops-case-closure-evidence"><input type="checkbox" name="${name}" value="${esc(item.artifact_id)}"><span>${esc(item.label || item.schema_version)}<small>${esc(roleLabels[item.role] || item.role)} · ${esc(shell.fmt(item.created_at))}</small></span></label>`).join("") || `<p class="ops-evidence-empty">${name === "action_evidence_ids" ? "当前诊断没有实际执行结果，只能形成诊断参考。" : "当前诊断没有可选择的结构化证据。"}</p>`;
+  }
+
+  async function openDiagnosisClosure(button) {
+    const conversationId = button.dataset.closeDiagnosis;
+    button.disabled = true;
+    try {
+      const preview = await KBotAIOpsAuth.request(
+        `${api}/operations-knowledge/conversations/${encodeURIComponent(conversationId)}/case-candidate`,
+      );
+      const dialog = document.createElement("dialog");
+      dialog.className = "ops-starter-dialog ops-case-closure-dialog";
+      const header = '<header><div><strong>诊断收口</strong><p>收口记录是报告与案例共同的事实源；系统只生成候选，仍需人工审核后发布。</p></div><button type="button" data-close-closure aria-label="关闭诊断收口">关闭</button></header>';
+      if (preview.existing_asset_id) {
+        dialog.innerHTML = `<div class="ops-starter-dialog-shell ops-case-closure-shell">${header}<div class="ops-case-closure-empty"><strong>当前诊断已经形成案例候选</strong><p>重复收口不会创建重复案例，可以直接进入案例治理页面。</p><a class="ops-button primary" href="./cases.html">查看诊断案例</a></div></div>`;
+      } else if (!preview.eligible) {
+        dialog.innerHTML = `<div class="ops-starter-dialog-shell ops-case-closure-shell">${header}<div class="ops-case-closure-empty"><strong>当前诊断还不能收口</strong><ul>${values(preview.reasons).map((item) => `<li>${esc(item.message)}</li>`).join("")}</ul><p>继续在当前会话中补充诊断，形成已确认根因后再收口。</p></div></div>`;
+      } else {
+        const environment = [preview.environment?.database_type, preview.environment?.database_version, preview.environment?.platform].filter(Boolean).join(" · ") || "未限定";
+        dialog.innerHTML = `<form class="ops-starter-dialog-shell ops-case-closure-shell">${header}<div class="ops-case-closure-body"><section class="ops-case-closure-summary"><div><span>根因等级</span><strong>${esc(preview.root_cause_grade)}</strong></div><div><span>案例类型</span><strong data-closure-kind>诊断参考</strong></div><div><span>目标环境</span><strong>${esc(environment)}</strong></div></section><label class="ops-case-closure-field"><span>案例名称</span><input name="display_name" maxlength="256" required value="${esc(preview.display_name)}"></label><label class="ops-case-closure-field"><span>问题现象（每行一条）</span><textarea name="symptoms" rows="4" required>${esc(values(preview.symptoms).join("\n"))}</textarea></label><label class="ops-case-closure-field"><span>已确认根因</span><textarea name="root_cause_summary" rows="4" maxlength="4000" required>${esc(preview.root_cause_summary)}</textarea></label><label class="ops-case-closure-field"><span>实际执行动作（每行一条，不填写建议动作）</span><textarea name="actions" rows="4"></textarea></label><section class="ops-case-closure-evidence-section"><header><strong>动作与验证证据</strong><small>只有执行动作、动作证据和相互独立的实施前后证据完整时，才会标记为已验证解决方案。</small></header><div class="ops-case-closure-evidence-grid"><fieldset><legend>动作证据</legend>${closureEvidenceOptions(preview, "action_evidence_ids")}</fieldset><fieldset><legend>实施前证据</legend>${closureEvidenceOptions(preview, "before_evidence_ids")}</fieldset><fieldset><legend>实施后证据</legend>${closureEvidenceOptions(preview, "after_evidence_ids")}</fieldset></div></section><label class="ops-case-closure-field"><span>验证结果</span><select name="verification_result"><option value="NOT_VERIFIED">未验证</option><option value="RESOLVED">问题已解决</option><option value="IMPROVED">问题已改善</option><option value="NOT_ACHIEVED">未达到预期</option><option value="ADVERSE">出现不利影响</option><option value="INCONCLUSIVE">无法判断</option></select></label><div class="ops-case-closure-columns"><label class="ops-case-closure-field"><span>适用条件（每行一条）</span><textarea name="applicability" rows="3"></textarea></label><label class="ops-case-closure-field"><span>不适用条件（每行一条）</span><textarea name="contraindications" rows="3"></textarea></label></div></div><footer><span>保存后进入待完善队列，不会自动发布。</span><button type="button" data-close-closure>取消</button><button class="primary" type="submit">完成收口并生成候选</button></footer></form>`;
+        const form = dialog.querySelector("form");
+        const updateKind = () => {
+          const data = new FormData(form);
+          const verified = ["RESOLVED", "IMPROVED"].includes(String(data.get("verification_result")))
+            && closureLines(data.get("actions")).length
+            && data.getAll("action_evidence_ids").length
+            && data.getAll("before_evidence_ids").length
+            && data.getAll("after_evidence_ids").length;
+          form.querySelector("[data-closure-kind]").textContent = verified ? "已验证解决方案" : "诊断参考";
+          const before = new Set(data.getAll("before_evidence_ids").map(String));
+          form.querySelectorAll('[name="after_evidence_ids"]').forEach((input) => {
+            if (before.has(input.value)) input.checked = false;
+            input.disabled = before.has(input.value);
+          });
+        };
+        form.addEventListener("input", updateKind);
+        form.addEventListener("change", updateKind);
+        form.onsubmit = async (event) => {
+          event.preventDefault();
+          if (!form.reportValidity()) return;
+          const submit = form.querySelector('[type="submit"]');
+          submit.disabled = true;
+          submit.textContent = "正在收口…";
+          try {
+            const data = new FormData(form);
+            const result = await KBotAIOpsAuth.request(
+              `${api}/operations-knowledge/conversations/${encodeURIComponent(conversationId)}:close-diagnosis`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  included_turn_ids: values(preview.included_turn_ids),
+                  display_name: String(data.get("display_name") || "").trim(),
+                  symptoms: closureLines(data.get("symptoms")),
+                  root_cause_summary: String(data.get("root_cause_summary") || "").trim(),
+                  actions: closureLines(data.get("actions")),
+                  action_evidence_ids: data.getAll("action_evidence_ids"),
+                  verification_result: String(data.get("verification_result") || "NOT_VERIFIED"),
+                  before_evidence_ids: data.getAll("before_evidence_ids"),
+                  after_evidence_ids: data.getAll("after_evidence_ids"),
+                  applicability: closureLines(data.get("applicability")),
+                  contraindications: closureLines(data.get("contraindications")),
+                }),
+              },
+            );
+            shell.toast("诊断已收口，案例候选正在建立索引，审核通过前不会进入 Agent 检索");
+            location.href = `./cases.html?asset_id=${encodeURIComponent(result.asset.asset_id)}`;
+          } catch (error) {
+            shell.toast(error.message || "无法完成诊断收口");
+            submit.disabled = false;
+            submit.textContent = "完成收口并生成候选";
+          }
+        };
+      }
+      document.body.append(dialog);
+      dialog.querySelectorAll("[data-close-closure]").forEach((close) => {
+        close.onclick = () => dialog.close();
+      });
+      dialog.addEventListener("close", () => {
+        button.disabled = false;
+        dialog.remove();
+      }, { once: true });
+      dialog.showModal();
+    } catch (error) {
+      shell.toast(error.message || "无法读取诊断收口信息");
+      button.disabled = false;
+    }
   }
 
   function bindReportArtifactActions(root = document) {
@@ -1352,6 +1452,9 @@
   }
 
   function bindReportActions(root = document) {
+    root.querySelectorAll("[data-close-diagnosis]").forEach((button) => {
+      button.onclick = () => openDiagnosisClosure(button);
+    });
     root.querySelectorAll("[data-generate-report-run], [data-generate-report-conversation]").forEach((button) => {
       button.onclick = () => openReportGenerator(button);
     });

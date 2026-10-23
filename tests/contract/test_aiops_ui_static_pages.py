@@ -498,17 +498,17 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": "20261023_3",
-            "situations": "20261023_3",
-            "inspections": "20261023_3",
+            "chat": ("20261023_5", "20261023_4"),
+            "situations": ("20261020_4", "20261023_3"),
+            "inspections": ("20261020_4", "20261023_3"),
         }
-        for page_name, version in versions.items():
+        for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("workspaces.css?v=20261020_4", page)
+            self.assertIn(f"workspaces.css?v={stylesheet_version}", page)
             self.assertIn("aiops-shell.js?v=20261023_1", page)
-            self.assertIn(f"aiops-workspaces.js?v={version}", page)
+            self.assertIn(f"aiops-workspaces.js?v={script_version}", page)
         self.assertIn("coverage_warning", workspace)
         self.assertIn("ops-chart-warning", workspace)
         self.assertIn(".ops-chart-warning", stylesheet)
@@ -574,8 +574,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('"application/zip"', workspace)
         self.assertIn("bindImplementationRunbookActions(panel)", workspace)
         pages = (AIOPS_ROOT / "js" / "aiops-pages.js").read_text(encoding="utf-8")
-        self.assertIn("data-extract-case", pages)
+        self.assertNotIn("data-extract-case", pages)
+        self.assertIn("data-related-case", pages)
         self.assertIn("/operations-knowledge/reports/", pages)
+        self.assertIn("data-close-diagnosis", workspace)
+        self.assertIn(":close-diagnosis", workspace)
 
     def test_pages_do_not_embed_demo_records_or_api_keys(self):
         source = "\n".join(

@@ -10,8 +10,11 @@ from typing import Any, Callable
 from uuid import UUID
 
 from aiops_agent.application.errors import AIOpsApplicationError
+from aiops_agent.application.reporting import normalize_report_source
 from aiops_agent.adapters.model_serving import AIOpsModelError
 from aiops_agent.contracts.knowledge import (
+    DiagnosisClosure,
+    DiagnosisClosureCommand,
     DiagnosisCaseDraft,
     DiagnosisCaseProfile,
     KnowledgeBaseWrite,
@@ -25,6 +28,7 @@ from aiops_agent.contracts.knowledge import (
     ManualUploadMetadata,
 )
 from aiops_agent.entities import (
+    OpsArtifactEntity,
     OperationsKnowledgeAssetEntity,
     OperationsKnowledgeBaseEntity,
     OperationsKnowledgeIndexEntity,
@@ -60,6 +64,76 @@ def _now() -> datetime:
 
 def _normalize(value: str) -> str:
     return " ".join(value.strip().upper().split())
+
+
+def _freeze_case_version_identity(case: tuple[Any, Any]) -> tuple[UUID, int]:
+    """Copy ORM identity values while their unit of work is still active."""
+    return UUID(str(case[0].asset_id)), int(case[1].version_no)
+
+
+def _diagnosis_closure_artifact_key(conversation_id: UUID) -> str:
+    return f"diagnosis-closure:{conversation_id}"
+
+
+def _closure_evidence_role(schema_version: str) -> str:
+    if schema_version in {
+        "EXECUTION_RESULT.v1", "USER_PROVIDED_ACTION_RESULT.v1",
+    }:
+        return "ACTION"
+    if schema_version in {"ACTION_VERIFICATION.v1", "COMPARISON_RESULT.v1", "GROUNDING_VERIFICATION.v1"}:
+        return "VERIFICATION"
+    return "DIAGNOSIS"
+
+
+def _closure_evidence_label(*, schema_version: str, artifact_key: str) -> str:
+    return {
+        "DIAGNOSIS_REPORT_DRAFT.v1": "诊断结论",
+        "DIAGNOSIS_EVIDENCE_COLLECTION.v1": "诊断取证",
+        "GROUNDING_VERIFICATION.v1": "事实校验",
+        "ACTION_PLAN.v1": "处置计划",
+        "CHANGE_PROPOSAL_SNAPSHOT.v1": "变更提案",
+        "EXECUTION_RESULT.v1": "执行结果",
+        "USER_PROVIDED_ACTION_RESULT.v1": "人工执行结果",
+        "ACTION_VERIFICATION.v1": "动作验证",
+        "COMPARISON_RESULT.v1": "实施前后对比",
+    }.get(schema_version, artifact_key)
+
+
+def _validate_closure_evidence(
+    *, command: DiagnosisClosureCommand, allowed_ids: set[UUID],
+    allowed_action_ids: set[UUID],
+) -> tuple[list[str], set[str], set[str]]:
+    """把收口证据限定在当前诊断，并保证实施前后样本互斥。"""
+    selected_ids = {
+        *command.action_evidence_ids,
+        *command.before_evidence_ids,
+        *command.after_evidence_ids,
+    }
+    if not selected_ids.issubset(allowed_ids):
+        raise AIOpsApplicationError(
+            code="AIOPS_DIAGNOSIS_CLOSURE_EVIDENCE_INVALID",
+            message="诊断收口引用了当前会话之外的证据",
+            status_code=422,
+        )
+    if not set(command.action_evidence_ids).issubset(allowed_action_ids):
+        raise AIOpsApplicationError(
+            code="AIOPS_DIAGNOSIS_CLOSURE_EVIDENCE_INVALID",
+            message="动作证据必须来自实际执行结果，计划或诊断结论不能证明动作已实施",
+            status_code=422,
+        )
+    before_refs = {str(item) for item in command.before_evidence_ids}
+    after_refs = {str(item) for item in command.after_evidence_ids}
+    if before_refs & after_refs:
+        raise AIOpsApplicationError(
+            code="AIOPS_DIAGNOSIS_CLOSURE_EVIDENCE_INVALID",
+            message="实施前证据与实施后证据必须相互独立",
+            status_code=422,
+        )
+    return (
+        [str(item) for item in command.action_evidence_ids],
+        before_refs,
+        after_refs,
+    )
 
 
 def _diagnosis_case_eligibility(
@@ -1188,6 +1262,278 @@ class OperationsKnowledgeService:
             )
             return [_asset_view(row) for row in rows]
 
+    async def _conversation_case_context(
+        self, *, domain_id: int, conversation_id: UUID, actor_id: UUID
+    ) -> dict[str, Any]:
+        async with self._uow_factory() as uow:
+            conversation = await uow.conversations.get_conversation(
+                conversation_id=conversation_id, domain_id=domain_id,
+            )
+            if conversation is None or conversation.created_by != actor_id:
+                raise self._not_found()
+            turns = await uow.turns.list_all_turns(conversation_id=conversation_id)
+            reasons = []
+            if any(turn.status not in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED"} for turn in turns):
+                reasons.append({"code": "CONVERSATION_ACTIVE", "message": "会话仍有进行中的诊断，不能收口"})
+            confirmed = None
+            for turn in reversed(turns):
+                link = await uow.turns.get_run_link(turn_id=turn.turn_id, purpose="PRIMARY")
+                if link is None:
+                    continue
+                run = await uow.runs.get_run_scoped(ops_run_id=link.ops_run_id, domain_id=domain_id)
+                if run is None or run.status not in {"COMPLETED", "PARTIAL"} or run.final_artifact_id is None:
+                    continue
+                artifact = await uow.runs.get_artifact(artifact_id=run.final_artifact_id)
+                if artifact is None or artifact.schema_version not in {"DIAGNOSIS_REPORT_DRAFT.v1", "REPORT_CONTENT.v1"}:
+                    continue
+                source = normalize_report_source(schema_version=artifact.schema_version, payload=dict(artifact.payload_json or {}), source_kind="CHAT")
+                if str(dict(source.get("root_cause") or {}).get("effective_level") or "").upper() == "CONFIRMED":
+                    confirmed = (turn, run, artifact, source)
+                    break
+            if confirmed is None:
+                reasons.append({"code": "ROOT_CAUSE_NOT_CONFIRMED", "message": "当前会话没有形成已确认根因"})
+                return {
+                    "eligible": False, "reasons": reasons,
+                    "conversation_id": str(conversation_id),
+                    "display_name": conversation.title or "诊断案例候选",
+                    "included_turn_ids": [], "symptoms": [],
+                    "root_cause_summary": "", "root_cause_grade": "INCONCLUSIVE",
+                    "environment": {}, "evidence_candidates": [],
+                    "existing_asset_id": None, "_context": None,
+                }
+            turn, run, root_artifact, source = confirmed
+            rationale = str(source.get("diagnosis_rationale") or "").strip()
+            if not rationale:
+                reasons.append({"code": "ROOT_CAUSE_SUMMARY_MISSING", "message": "已确认诊断缺少可发布的根因说明"})
+            target = await uow.targets.get_scoped(target_id=run.target_id, domain_id=domain_id)
+            if target is None:
+                raise self._not_found()
+            allowed_schemas = {
+                "DIAGNOSIS_REPORT_DRAFT.v1", "DIAGNOSIS_EVIDENCE_COLLECTION.v1", "GROUNDING_VERIFICATION.v1",
+                "ACTION_PLAN.v1", "CHANGE_PROPOSAL_SNAPSHOT.v1", "EXECUTION_RESULT.v1",
+                "USER_PROVIDED_ACTION_RESULT.v1", "ACTION_VERIFICATION.v1", "COMPARISON_RESULT.v1",
+            }
+            candidates = []
+            for artifact in await uow.runs.list_artifacts(ops_run_id=run.ops_run_id):
+                if artifact.schema_version not in allowed_schemas and artifact.artifact_id != root_artifact.artifact_id:
+                    continue
+                candidates.append({
+                    "artifact_id": str(artifact.artifact_id), "schema_version": artifact.schema_version,
+                    "label": _closure_evidence_label(schema_version=artifact.schema_version, artifact_key=artifact.artifact_key),
+                    "role": _closure_evidence_role(artifact.schema_version), "created_at": artifact.created_at.isoformat(),
+                })
+            closure_artifact = await uow.runs.get_artifact_by_key(
+                ops_run_id=run.ops_run_id, artifact_key=_diagnosis_closure_artifact_key(conversation_id),
+            )
+            existing = await uow.operations_knowledge.find_case_by_artifact_id(
+                domain_id=domain_id, artifact_id=closure_artifact.artifact_id,
+            ) if closure_artifact is not None else None
+            facts = [dict(item) for item in source.get("facts") or () if isinstance(item, dict)]
+            symptoms = [str(item.get("fact_summary") or item.get("summary") or "").strip() for item in facts]
+            symptoms = [item for item in symptoms if item] or [str(conversation.title or rationale).strip()]
+            environment = {
+                "database_type": target.db_type, "database_version": target.version_code,
+                "platform": target.environment, "topology": (target.capabilities_json or {}).get("topology"),
+            }
+            public = {
+                "eligible": not reasons, "reasons": reasons,
+                "conversation_id": str(conversation_id),
+                "display_name": conversation.title or "诊断案例候选",
+                "included_turn_ids": [str(turn.turn_id)],
+                "symptoms": list(dict.fromkeys(symptoms)),
+                "root_cause_summary": rationale, "root_cause_grade": "CONFIRMED",
+                "environment": environment, "evidence_candidates": candidates,
+                "existing_asset_id": str(existing[0].asset_id) if existing else None,
+            }
+            return {**public, "_context": {
+                "run_id": UUID(str(run.ops_run_id)),
+                "target_id": UUID(str(run.target_id)),
+                "root_artifact_id": UUID(str(root_artifact.artifact_id)),
+                "root_ops_task_id": (
+                    UUID(str(root_artifact.ops_task_id))
+                    if root_artifact.ops_task_id is not None else None
+                ),
+                "environment": environment,
+                "evidence_ids": {UUID(item["artifact_id"]) for item in candidates},
+                "action_evidence_ids": {
+                    UUID(item["artifact_id"]) for item in candidates
+                    if item["role"] == "ACTION"
+                },
+                "existing_asset_id": (
+                    UUID(str(existing[0].asset_id)) if existing else None
+                ),
+            }}
+
+    async def conversation_case_preview(
+        self, *, domain_id: int, conversation_id: UUID, context: AuthContext
+    ) -> dict[str, Any]:
+        result = await self._conversation_case_context(
+            domain_id=domain_id, conversation_id=conversation_id, actor_id=self._actor(context),
+        )
+        return {key: value for key, value in result.items() if key != "_context"}
+
+    async def close_diagnosis(
+        self, *, domain_id: int, conversation_id: UUID,
+        command: DiagnosisClosureCommand, context: AuthContext,
+    ) -> dict[str, Any]:
+        """显式收口诊断并自动形成待治理案例候选，绝不自动发布。"""
+        actor = self._actor(context)
+        preview = await self._conversation_case_context(
+            domain_id=domain_id, conversation_id=conversation_id, actor_id=actor,
+        )
+        internal = preview.get("_context")
+        if not preview["eligible"] or internal is None:
+            raise AIOpsApplicationError(
+                code="AIOPS_DIAGNOSIS_CLOSURE_REJECTED",
+                message="；".join(item["message"] for item in preview["reasons"]), status_code=422,
+            )
+        if internal["existing_asset_id"] is not None:
+            detail = await self.get_case(
+                domain_id=domain_id, asset_id=internal["existing_asset_id"]
+            )
+            return {**detail, "replayed": True}
+        if tuple(str(item) for item in command.included_turn_ids) != tuple(preview["included_turn_ids"]):
+            raise self._state_conflict("诊断内容已经变化，请刷新收口信息后重试")
+        display_name = command.display_name.strip()
+        root_cause_summary = command.root_cause_summary.strip()
+        if not display_name or not root_cause_summary:
+            raise AIOpsApplicationError(
+                code="AIOPS_DIAGNOSIS_CLOSURE_INVALID",
+                message="诊断收口需要有效的案例名称和根因说明",
+                status_code=422,
+            )
+        symptoms = tuple(dict.fromkeys(str(item).strip() for item in command.symptoms if str(item).strip()))
+        if not symptoms:
+            raise AIOpsApplicationError(code="AIOPS_DIAGNOSIS_CLOSURE_INVALID", message="诊断收口至少需要一条问题现象", status_code=422)
+        actions = tuple(dict.fromkeys(str(item).strip() for item in command.actions if str(item).strip()))
+        action_refs, before_refs, after_refs = _validate_closure_evidence(
+            command=command, allowed_ids=internal["evidence_ids"],
+            allowed_action_ids=internal["action_evidence_ids"],
+        )
+        verified = bool(command.verification_result in {"RESOLVED", "IMPROVED"} and actions and action_refs and before_refs and after_refs)
+        profile = DiagnosisCaseProfile(
+            case_kind="VERIFIED_RESOLUTION" if verified else "DIAGNOSTIC_REFERENCE",
+            problem_signature={"problem_class": "INCIDENT", "component": None, "error_codes": [], "normalized_symptoms": list(symptoms), "signal_names": []},
+            environment=dict(internal["environment"]),
+            root_cause={"summary": root_cause_summary, "confidence": "HIGH", "evidence_refs": [str(internal["root_artifact_id"])]},
+            actions=tuple({"summary": summary, "evidence_refs": list(action_refs)} for summary in actions),
+            verification={"result": command.verification_result, "before_refs": sorted(before_refs), "after_refs": sorted(after_refs), "guardrail_refs": []},
+            applicability=tuple(str(item).strip() for item in command.applicability if str(item).strip()),
+            contraindications=tuple(str(item).strip() for item in command.contraindications if str(item).strip()),
+            source={"conversation_id": str(conversation_id), "turn_ids": preview["included_turn_ids"], "run_ids": [str(internal["run_id"])]},
+        )
+        closure = DiagnosisClosure(
+            conversation_id=conversation_id, source_turn_ids=command.included_turn_ids,
+            target_id=internal["target_id"],
+            closed_by=str(actor), closed_at=_now(), profile=profile,
+        )
+        closure_payload = closure.model_dump(mode="json")
+        closure_bytes = json.dumps(closure_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        closure_hash = hashlib.sha256(closure_bytes).hexdigest()
+        previous_asset_id = None
+        previous_version_no = None
+        async with self._uow_factory() as uow:
+            previous_case = await uow.operations_knowledge.find_case_by_external_id(
+                domain_id=domain_id, external_id=str(conversation_id)
+            )
+            if previous_case is not None:
+                previous_asset_id, previous_version_no = (
+                    _freeze_case_version_identity(previous_case)
+                )
+        asset_id = previous_asset_id or uuid7()
+        version_no = (previous_version_no + 1) if previous_version_no is not None else 1
+        markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
+        collection = await self._collection(
+            domain_id=domain_id, name=CASE_COLLECTION, context=context
+        )
+        response = await self._kc.ingest_user_file(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            file_name=f"diagnosis-case-{asset_id}-v{version_no}.md", display_name=display_name,
+            media_type="text/markdown", body=markdown, content_sha256=hashlib.sha256(markdown).hexdigest(),
+            idempotency_key=f"diagnosis-closure:{conversation_id}:{closure_hash}", auth_context=context,
+        )
+        item = next(iter((response.payload or {}).get("items", [])), None)
+        if not item or item.get("status") == "REJECTED":
+            raise AIOpsApplicationError(code="AIOPS_KNOWLEDGE_EXTRACTION_FAILED", message="诊断案例候选索引未被受理", status_code=502, retryable=True)
+        revision_id = UUID(str(item["bundle_revision_id"]))
+        await self._kc.review_user_intake(
+            domain_id=domain_id,
+            collection_id=UUID(str(collection["collection_id"])),
+            bundle_revision_id=revision_id, decision="APPROVE",
+            comment="诊断收口候选进入索引，仍需业务审核后发布", auth_context=context,
+        )
+        closure_artifact_id, version_id = uuid7(), uuid7()
+        version = OperationsKnowledgeVersionEntity(
+            asset_version_id=version_id, asset_id=asset_id,
+            version_no=version_no, status="PROCESSING", source_hash=closure_hash,
+            profile_schema_version=profile.schema_version, profile_json=profile.model_dump(mode="json"),
+            extraction_warnings_json=[], created_by=actor,
+        )
+        source = OperationsKnowledgeSourceEntity(
+            asset_version_id=version_id,
+            source_kind="DIAGNOSIS_CLOSURE", source_run_id=internal["run_id"],
+            source_artifact_id=closure_artifact_id, source_external_id=str(conversation_id), content_hash=closure_hash,
+            source_locator_json={"conversation_id": str(conversation_id), "turn_ids": preview["included_turn_ids"]},
+        )
+        scope_values = [
+            ("TARGET_ID", str(internal["target_id"])), ("DATABASE_TYPE", internal["environment"].get("database_type")),
+            ("DATABASE_VERSION", internal["environment"].get("database_version")), ("PLATFORM", internal["environment"].get("platform")),
+            ("PROBLEM_CLASS", "INCIDENT"), ("TOPOLOGY", internal["environment"].get("topology")),
+        ]
+        scopes = [OperationsKnowledgeScopeEntity(
+            asset_version_id=version_id,
+            scope_kind=kind, scope_value=str(value), normalized_value=_normalize(str(value)),
+            source_kind="DIAGNOSIS_CLOSURE", source_locator_json={"conversation_id": str(conversation_id)},
+        ) for kind, value in scope_values if value]
+        index = OperationsKnowledgeIndexEntity(
+            asset_version_id=version_id,
+            collection_id=UUID(str(collection["collection_id"])), bundle_id=UUID(str(item["bundle_id"])),
+            bundle_revision_id=revision_id, index_status="PROCESSING",
+        )
+        async with self._uow_factory() as uow:
+            replay = await uow.operations_knowledge.find_by_source_hash(domain_id=domain_id, asset_kind="DIAGNOSIS_CASE", source_hash=closure_hash)
+            if replay is not None:
+                replay_asset_id, _ = _freeze_case_version_identity(replay)
+                await uow.rollback()
+                detail = await self.get_case(
+                    domain_id=domain_id, asset_id=replay_asset_id
+                )
+                return {**detail, "replayed": True}
+            await uow.runs.add_artifact(OpsArtifactEntity(
+                artifact_id=closure_artifact_id, ops_run_id=internal["run_id"],
+                ops_task_id=internal["root_ops_task_id"],
+                artifact_key=_diagnosis_closure_artifact_key(conversation_id), artifact_type="DIAGNOSIS_CLOSURE",
+                schema_version=closure.schema_version, payload_json=closure_payload, content_hash=closure_hash,
+                byte_size=len(closure_bytes), provenance_json={"producer": "aiops.diagnosis-closure", "source_artifact_id": str(internal["root_artifact_id"])},
+                trust_level="USER_PROVIDED", security_level=1,
+            ))
+            if previous_asset_id is None:
+                asset = OperationsKnowledgeAssetEntity(
+                    asset_id=asset_id, domain_id=domain_id,
+                    asset_kind="DIAGNOSIS_CASE",
+                    display_name=display_name, status="PROCESSING", security_level=1,
+                    created_by=actor, updated_by=actor,
+                )
+                await uow.operations_knowledge.add_asset_version(asset=asset, version=version, scopes=scopes, sources=[source], indexes=[index])
+            else:
+                asset = await uow.operations_knowledge.get_asset(domain_id=domain_id, asset_id=asset_id, for_update=True)
+                if asset is None:
+                    raise self._not_found()
+                asset.display_name, asset.updated_by = display_name, actor
+                if asset.current_version_id is None:
+                    asset.status = "PROCESSING"
+                await uow.operations_knowledge.add_version(version=version, scopes=scopes, sources=[source], indexes=[index])
+            await uow.operations_knowledge.add_review(OperationsKnowledgeReviewEntity(
+                asset_version_id=version_id,
+                decision="CLOSE_DIAGNOSIS", reviewer_id=actor,
+                comment_text="从 Agent 诊断收口生成案例候选",
+                before_status="PROCESSING", after_status="PROCESSING",
+            ))
+            await uow.commit()
+        detail = await self.get_case(domain_id=domain_id, asset_id=asset_id)
+        return {**detail, "replayed": False}
+
     async def list_cases(
         self, *, domain_id: int, status: str | None, limit: int
     ) -> list[dict[str, Any]]:
@@ -1449,10 +1795,24 @@ class OperationsKnowledgeService:
             result = _diagnosis_case_eligibility(
                 report=report, report_content=content, evidence_refs=evidence_refs,
             )
-            existing = await uow.operations_knowledge.find_by_source_hash(
-                domain_id=domain_id, asset_kind="DIAGNOSIS_CASE",
-                source_hash=str(report.content_hash or ""),
+            closure_artifact_id = dict(content.get("scope") or {}).get(
+                "closure_artifact_id"
             )
+            try:
+                closure_uuid = UUID(str(closure_artifact_id))
+            except (TypeError, ValueError):
+                closure_uuid = None
+            existing = (
+                await uow.operations_knowledge.find_case_by_artifact_id(
+                    domain_id=domain_id, artifact_id=closure_uuid,
+                )
+                if closure_uuid is not None else None
+            )
+            if existing is None:
+                existing = await uow.operations_knowledge.find_by_source_hash(
+                    domain_id=domain_id, asset_kind="DIAGNOSIS_CASE",
+                    source_hash=str(report.content_hash or ""),
+                )
             return {
                 **result,
                 "existing_asset_id": str(existing[0].asset_id) if existing is not None else None,
@@ -2195,6 +2555,20 @@ class OperationsKnowledgeService:
                 if isinstance(item, dict)
             ]
             scope = dict(report_content.get("scope") or {})
+            try:
+                closure_artifact_id = UUID(str(scope.get("closure_artifact_id")))
+            except (TypeError, ValueError):
+                closure_artifact_id = None
+            if closure_artifact_id is not None:
+                closure_case = await uow.operations_knowledge.find_case_by_artifact_id(
+                    domain_id=domain_id, artifact_id=closure_artifact_id,
+                )
+                if closure_case is not None:
+                    return {
+                        "asset": _asset_view(closure_case[0]),
+                        "version": _version_view(closure_case[1]),
+                        "replayed": True,
+                    }
             eligibility = _diagnosis_case_eligibility(
                 report=report, report_content=report_content,
                 evidence_refs=evidence_refs,

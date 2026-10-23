@@ -67,15 +67,20 @@ class OpenApiContractsTest(unittest.TestCase):
         self.assertFalse(any("/agents" in path for path in media_paths))
 
     def test_operations_knowledge_fixed_assistant_routes_are_retired(self) -> None:
-        forbidden = (
-            "/operations-knowledge/knowledge-answering",
-            "/operations-knowledge/conversations",
-            "/operations-knowledge/runs",
-        )
         for filename in ("main_api_public_v1.json", "aiops_internal_v1.json"):
             paths = self.contracts[filename]["paths"]
+            forbidden = [
+                path for path in paths
+                if "/operations-knowledge/knowledge-answering" in path
+                or "/operations-knowledge/runs" in path
+                or (
+                    "/operations-knowledge/conversations" in path
+                    and not path.endswith("/case-candidate")
+                    and not path.endswith(":close-diagnosis")
+                )
+            ]
             self.assertFalse(
-                any(marker in path for marker in forbidden for path in paths),
+                forbidden,
                 f"{filename} 仍暴露旧固定知识问答路径",
             )
 

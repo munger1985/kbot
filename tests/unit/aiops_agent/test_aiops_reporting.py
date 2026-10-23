@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 from sqlalchemy import Text
 
 from aiops_agent.application.runtime.service import AIOpsRuntimeService
-from aiops_agent.application.reporting import resolve_system_template
+from aiops_agent.application.reporting import normalize_report_source, resolve_system_template
 from aiops_agent.application.report_templates import SessionReportTemplateService
 from aiops_agent.contracts.change import ActionVerification
 from aiops_agent.contracts.report import ComparisonPlan
@@ -20,6 +20,41 @@ from platform_core.identity import uuid7
 
 
 class InspectionReportPublishingTest(unittest.TestCase):
+    def test_diagnosis_closure_is_the_report_fact_source(self) -> None:
+        root_ref, before_ref, after_ref = uuid7(), uuid7(), uuid7()
+        source = normalize_report_source(
+            schema_version="DIAGNOSIS_CLOSURE.v1",
+            source_kind="CHAT",
+            payload={
+                "conversation_id": str(uuid7()),
+                "source_turn_ids": [str(uuid7())],
+                "profile": {
+                    "problem_signature": {
+                        "normalized_symptoms": ["连接池耗尽"],
+                    },
+                    "root_cause": {
+                        "summary": "连接未释放",
+                        "evidence_refs": [str(root_ref)],
+                    },
+                    "actions": [{"summary": "修复连接释放逻辑"}],
+                    "verification": {
+                        "result": "RESOLVED",
+                        "before_refs": [str(before_ref)],
+                        "after_refs": [str(after_ref)],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual("READY", source["status"])
+        self.assertEqual("CONFIRMED", source["root_cause"]["effective_level"])
+        self.assertEqual(("修复连接释放逻辑",), source["executed_actions"])
+        self.assertEqual("RESOLVED", source["verification"]["result"])
+        self.assertEqual(
+            {str(root_ref), str(before_ref), str(after_ref)},
+            {item["artifact_id"] for item in source["evidence_refs"]},
+        )
+
     def test_gap_categories_distinguish_reading_errors_and_source_limits(
         self,
     ) -> None:

@@ -117,5 +117,7 @@
     document.getElementById("case-rows").onclick = (event) => { const button = event.target.closest("[data-case-id]"); if (button) openCase(button.dataset.caseId).catch((error) => shell.toast(error.message)); };
     document.getElementById("case-detail-actions").onclick = (event) => { const button = event.target.closest("[data-action]"); if (button) runAction(button.dataset.action).catch((error) => shell.toast(error.message)); };
     await load();
+    const requestedAssetId = new URLSearchParams(location.search).get("asset_id");
+    if (requestedAssetId) await openCase(requestedAssetId);
   }).catch((error) => shell.toast(error.message));
 })();

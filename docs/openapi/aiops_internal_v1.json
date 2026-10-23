@@ -4477,6 +4477,121 @@
         "title": "DiagnosisCaseProfile",
         "type": "object"
       },
+      "DiagnosisClosureCommand": {
+        "additionalProperties": false,
+        "description": "由诊断操作者确认的结构化收口；证据只能引用当前会话已有 Artifact。",
+        "properties": {
+          "action_evidence_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Action Evidence Ids",
+            "type": "array"
+          },
+          "actions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Actions",
+            "type": "array"
+          },
+          "after_evidence_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "After Evidence Ids",
+            "type": "array"
+          },
+          "applicability": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Applicability",
+            "type": "array"
+          },
+          "before_evidence_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Before Evidence Ids",
+            "type": "array"
+          },
+          "contraindications": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Contraindications",
+            "type": "array"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "included_turn_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Included Turn Ids",
+            "type": "array"
+          },
+          "root_cause_summary": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Root Cause Summary",
+            "type": "string"
+          },
+          "symptoms": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Symptoms",
+            "type": "array"
+          },
+          "verification_result": {
+            "default": "NOT_VERIFIED",
+            "enum": [
+              "NOT_VERIFIED",
+              "RESOLVED",
+              "IMPROVED",
+              "NOT_ACHIEVED",
+              "ADVERSE",
+              "INCONCLUSIVE"
+            ],
+            "title": "Verification Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "included_turn_ids",
+          "display_name",
+          "symptoms",
+          "root_cause_summary"
+        ],
+        "title": "DiagnosisClosureCommand",
+        "type": "object"
+      },
       "DiagnosticProgressEvent": {
         "additionalProperties": false,
         "properties": {
@@ -24950,6 +25065,98 @@
           }
         },
         "summary": "Create Case Version",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/conversations/{conversation_id}/case-candidate": {
+      "get": {
+        "operationId": "conversation_case_candidate_internal_v1_aiops_operations_knowledge_conversations__conversation_id__case_candidate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Conversation Case Candidate",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/conversations/{conversation_id}:close-diagnosis": {
+      "post": {
+        "operationId": "close_conversation_diagnosis_internal_v1_aiops_operations_knowledge_conversations__conversation_id__close_diagnosis_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosisClosureCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Conversation Diagnosis",
         "tags": [
           "AIOps Operations Knowledge"
         ]

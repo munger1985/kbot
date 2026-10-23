@@ -12,6 +12,7 @@ from starlette.datastructures import UploadFile
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
 from aiops_agent.contracts.knowledge import (
+    DiagnosisClosureCommand,
     DiagnosisCaseDraft,
     KnowledgeBaseWrite,
     KnowledgeReviewCommand,
@@ -489,6 +490,34 @@ async def extract_case(
     domain_id, _ = _scope(request, context)
     return await request.app.state.operations_knowledge_service.extract_case(
         domain_id=domain_id, report_id=report_id, context=context
+    )
+
+
+@router.get("/conversations/{conversation_id}/case-candidate")
+async def conversation_case_candidate(
+    conversation_id: UUID,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.conversation_case_preview(
+        domain_id=domain_id, conversation_id=conversation_id, context=context,
+    )
+
+
+@router.post("/conversations/{conversation_id}:close-diagnosis", status_code=202)
+async def close_conversation_diagnosis(
+    conversation_id: UUID,
+    payload: DiagnosisClosureCommand,
+    request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.close_diagnosis(
+        domain_id=domain_id,
+        conversation_id=conversation_id,
+        command=payload,
+        context=context,
     )
 
 

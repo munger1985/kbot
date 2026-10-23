@@ -1,5 +1,6 @@
 """运维知识提炼、发布与检索合同。"""
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -135,6 +136,39 @@ class DiagnosisCaseDraft(BaseModel):
     expected_asset_row_version: int = Field(ge=1)
     base_version_id: UUID
     display_name: str = Field(min_length=1, max_length=256)
+    profile: DiagnosisCaseProfile
+
+
+class DiagnosisClosureCommand(BaseModel):
+    """由诊断操作者确认的结构化收口；证据只能引用当前会话已有 Artifact。"""
+
+    model_config = ConfigDict(extra="forbid")
+    included_turn_ids: tuple[UUID, ...] = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=1, max_length=256)
+    symptoms: tuple[str, ...] = Field(min_length=1, max_length=64)
+    root_cause_summary: str = Field(min_length=1, max_length=4000)
+    actions: tuple[str, ...] = Field(default=(), max_length=16)
+    action_evidence_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    verification_result: Literal[
+        "NOT_VERIFIED", "RESOLVED", "IMPROVED", "NOT_ACHIEVED",
+        "ADVERSE", "INCONCLUSIVE",
+    ] = "NOT_VERIFIED"
+    before_evidence_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    after_evidence_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    applicability: tuple[str, ...] = Field(default=(), max_length=32)
+    contraindications: tuple[str, ...] = Field(default=(), max_length=32)
+
+
+class DiagnosisClosure(BaseModel):
+    """报告与案例共同读取的不可变诊断事实源。"""
+
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["DIAGNOSIS_CLOSURE.v1"] = "DIAGNOSIS_CLOSURE.v1"
+    conversation_id: UUID
+    source_turn_ids: tuple[UUID, ...]
+    target_id: UUID
+    closed_by: str = Field(min_length=1, max_length=256)
+    closed_at: datetime
     profile: DiagnosisCaseProfile
 
 

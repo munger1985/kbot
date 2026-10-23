@@ -666,6 +666,26 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def get_conversation_case_candidate(
+        self, conversation_id: UUID, *, auth_context: AuthContext
+    ) -> dict[str, Any]:
+        return await self._json(
+            "GET",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/conversations/{conversation_id}/case-candidate",
+            auth_context=auth_context,
+        )
+
+    async def close_conversation_diagnosis(
+        self, conversation_id: UUID, *, payload: dict[str, Any],
+        auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST",
+            f"{INTERNAL_API_V1}/aiops/operations-knowledge/conversations/{conversation_id}:close-diagnosis",
+            payload=payload,
+            auth_context=auth_context,
+        )
+
     async def get_operations_diagnosis_case_overview(
         self, *, auth_context: AuthContext
     ) -> dict[str, Any]:

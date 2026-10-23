@@ -109,6 +109,23 @@ class OperationsDiagnosisCaseDraftPayload(_Payload):
     profile: dict[str, Any]
 
 
+class DiagnosisClosurePayload(_Payload):
+    included_turn_ids: tuple[UUID, ...] = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=1, max_length=256)
+    symptoms: tuple[str, ...] = Field(min_length=1, max_length=64)
+    root_cause_summary: str = Field(min_length=1, max_length=4000)
+    actions: tuple[str, ...] = Field(default=(), max_length=16)
+    action_evidence_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    verification_result: Literal[
+        "NOT_VERIFIED", "RESOLVED", "IMPROVED", "NOT_ACHIEVED",
+        "ADVERSE", "INCONCLUSIVE",
+    ] = "NOT_VERIFIED"
+    before_evidence_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    after_evidence_ids: tuple[UUID, ...] = Field(default=(), max_length=64)
+    applicability: tuple[str, ...] = Field(default=(), max_length=32)
+    contraindications: tuple[str, ...] = Field(default=(), max_length=32)
+
+
 class OperationsKnowledgeCollectionModelsPayload(_Payload):
     models: dict[str, UUID]
 
@@ -715,6 +732,33 @@ async def extract_operations_diagnosis_case(report_id: UUID, request: Request):
     await _require(request, "aiops:knowledge_manage")
     return await _client(request).extract_operations_diagnosis_case(
         report_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get("/operations-knowledge/conversations/{conversation_id}/case-candidate")
+async def get_conversation_case_candidate(
+    conversation_id: UUID, request: Request,
+):
+    await _conversation_with_access(request, conversation_id)
+    return await _client(request).get_conversation_case_candidate(
+        conversation_id, auth_context=request.state.auth_context
+    )
+
+
+@router.post(
+    "/operations-knowledge/conversations/{conversation_id}:close-diagnosis",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def close_conversation_diagnosis(
+    conversation_id: UUID,
+    payload: DiagnosisClosurePayload,
+    request: Request,
+):
+    await _conversation_with_access(request, conversation_id)
+    return await _client(request).close_conversation_diagnosis(
+        conversation_id,
+        payload=payload.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
     )
 
 
