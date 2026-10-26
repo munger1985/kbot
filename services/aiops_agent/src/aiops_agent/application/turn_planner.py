@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Protocol
 from uuid import UUID
@@ -34,6 +35,7 @@ from platform_core.contracts.aiops import (
     ScopeResolutionV1,
     ScopeType,
     TopologyRelationRefV1,
+    TurnPlanStepV1,
     TurnPlanV1,
     CreateOpsRunCommand,
 )
@@ -46,6 +48,23 @@ _RESOURCE_CAPABILITIES = frozenset(
     if capability != AIOpsCapability.KNOWLEDGE_QA
 )
 _CATALOG_ALIAS_PART = re.compile(r"[0-9a-z]+|[\u3400-\u9fff]+", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class DeterministicTurnPlanReceipt:
+    """记录结构化功能入口绕过模型路由的可审计依据。"""
+
+    starter_id: str
+    catalog_version: str
+
+    def model_dump(self, **_: Any) -> dict[str, str]:
+        return {
+            "schema_version": "aiops.deterministic-turn-plan-receipt.v1",
+            "purpose": "aiops_turn_router",
+            "route": "CONVERSATION_STARTER",
+            "starter_id": self.starter_id,
+            "catalog_version": self.catalog_version,
+        }
 
 
 def _catalog_aliases(*values: object) -> frozenset[str]:
@@ -1012,10 +1031,54 @@ class TurnPlannerService:
                 "policy_snapshot_hash": _hash(policy),
                 "systems": systems,
                 "context_hint": dict(conversation.context_hint_json or {}),
+                "conversation_starter": dict(
+                    dict(payload.get("execution_context") or {}).get(
+                        "conversation_starter"
+                    )
+                    or {}
+                ),
                 "plan_revision": int(turn.current_plan_revision or 0) + 1,
             }
 
     async def _plan(self, context: dict[str, Any]):
+        starter = dict(context.get("conversation_starter") or {})
+        if starter:
+            if AIOpsCapability.ACTIVE_DIAGNOSIS.value not in {
+                str(item) for item in context["capabilities"]
+            }:
+                raise validation_failed(
+                    "当前 Agent 版本未授权执行该诊断功能入口"
+                )
+            starter_id = str(starter.get("starter_id") or "").strip()
+            catalog_version = str(
+                starter.get("catalog_version") or ""
+            ).strip()
+            if not starter_id or not catalog_version:
+                raise validation_failed("冻结的诊断功能入口上下文不完整")
+            title = str(starter.get("title") or starter_id)
+            plan = TurnPlanV1(
+                turn_id=context["turn_id"],
+                revision_no=context["plan_revision"],
+                requested_capabilities=(AIOpsCapability.ACTIVE_DIAGNOSIS,),
+                requires_active_diagnosis=True,
+                steps=(
+                    TurnPlanStepV1(
+                        step_id="s1",
+                        capability=AIOpsCapability.ACTIVE_DIAGNOSIS,
+                        objective=f"执行功能入口“{title}”",
+                        scope_type=ScopeType.RESOURCE,
+                        parameters={
+                            "starter_id": starter_id,
+                            "catalog_version": catalog_version,
+                        },
+                    ),
+                ),
+                policy_snapshot_hash=context["policy_snapshot_hash"],
+            )
+            return plan, DeterministicTurnPlanReceipt(
+                starter_id=starter_id,
+                catalog_version=catalog_version,
+            )
         if not all(
             (self._structured_model, self._prompt_registry, self._model_resolver)
         ):

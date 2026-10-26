@@ -11,6 +11,9 @@ from uuid import UUID
 from loguru import logger
 from pydantic import TypeAdapter
 
+from aiops_agent.application.conversation_starters import (
+    ConversationStarterCatalog,
+)
 from aiops_agent.application.investigation import (
     InvestigationPlanValidationError,
 )
@@ -30,7 +33,9 @@ from platform_core.contracts.aiops import (
     AIOpsCapability,
     ClarificationResponseV1,
     ConversationCreate,
+    ConversationStarterSelection,
     ConversationSourceContext,
+    TrustedContextHint,
     TurnCreate,
     TurnPlanStepV1,
     TurnPlanV1,
@@ -97,9 +102,11 @@ class _PlannerStage:
 class _RouterModel:
     def __init__(self, capability=AIOpsCapability.ACTIVE_DIAGNOSIS) -> None:
         self.capability = capability
+        self.input_payloads = []
 
     async def generate_structured(self, **kwargs):
         input_payload = kwargs["input_payload"]
+        self.input_payloads.append(dict(input_payload))
         plan = TurnPlanV1(
             turn_id=input_payload["turn_id"],
             revision_no=input_payload["revision_no"],
@@ -558,6 +565,7 @@ class _Uow:
         self.business_systems = SimpleNamespace(
             get_resource_for_target=self._resource_for_target,
             find_system_for_target=self._system_for_target,
+            get_database_profile=self._get_database_profile,
             get_scoped=self._get_business_system,
             list_system_resource_rows=self._system_resource_rows,
             list_relations=self._list_relations,
@@ -617,6 +625,11 @@ class _Uow:
     async def _get_business_system(self, *, business_system_id, domain_id):
         if business_system_id == self.system.business_system_id and domain_id == 7:
             return self.system
+        return None
+
+    async def _get_database_profile(self, resource_id):
+        if resource_id == self.resource.resource_id:
+            return self.database_resource
         return None
 
     async def _system_resource_rows(self, business_system_id):
@@ -900,6 +913,66 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             ],
             uow.runs.rows[0].plan_snapshot_json["target_facts"],
         )
+
+    async def test_starter_bypasses_model_router_and_reaches_run_snapshot(
+        self,
+    ) -> None:
+        uow = _Uow()
+        uow.target.connectivity_status = "CONNECTED"
+        service = ConversationTurnService(uow_factory=lambda: uow)
+        receipt = await service.start(
+            domain_id=7,
+            actor_id="dba@example.com",
+            trace_id="trace-top-sql-starter",
+            conversation_create=ConversationCreate(
+                agent_id=uow.agent.agent_id,
+                context_hint=TrustedContextHint(
+                    source_kind="RESOURCE_PAGE",
+                    resource_ids=(uow.resource.resource_id,),
+                ),
+                source=ConversationSourceContext(),
+            ),
+            first_turn=TurnCreate(
+                idempotency_key="top-sql-starter",
+                starter=ConversationStarterSelection(
+                    starter_id="database.sql.top-current",
+                    catalog_version=ConversationStarterCatalog().version,
+                    parameters={"limit": 10},
+                ),
+            ),
+        )
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            created_payload
+        )
+        planning_payload = dict(uow.outbox.rows[1].payload_json)
+        planner = _turn_planner(
+            uow, capability=AIOpsCapability.MONITORING_QUERY
+        )
+
+        routed = await planner.begin(planning_payload)
+
+        self.assertEqual("UNDERSTANDING", routed["status"])
+        self.assertEqual([], planner._structured_model.input_payloads)
+        turn = uow.turns.turns[0]
+        self.assertEqual(
+            [AIOpsCapability.ACTIVE_DIAGNOSIS.value],
+            turn.capability_plan_json["requested_capabilities"],
+        )
+        self.assertEqual(
+            "CONVERSATION_STARTER",
+            turn.orchestration_internal_json["planner_receipt"]["route"],
+        )
+
+        await planner.start_active_diagnosis(planning_payload)
+
+        self.assertEqual(receipt["turn_id"], str(turn.turn_id))
+        frozen = uow.runs.rows[0].plan_snapshot_json["client_metadata"][
+            "conversation_starter"
+        ]
+        self.assertEqual("database.sql.top-current", frozen["starter_id"])
+        self.assertEqual("TOP_SQL_LIST", frozen["planning"]["kind"])
+        self.assertEqual(10, frozen["parameters"]["limit"])
 
     async def test_start_persists_one_atomic_turn_command(self) -> None:
         uow = _Uow()
