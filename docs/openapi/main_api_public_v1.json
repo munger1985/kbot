@@ -3089,6 +3089,7 @@
           "category": {
             "enum": [
               "RECOMMENDED",
+              "QUERY",
               "DIAGNOSTIC",
               "REPORT",
               "RUNBOOK"

@@ -607,7 +607,26 @@ class TurnPlanningService:
             visualization_profile_id
         )
         temporal_mode = TemporalAnalysisMode.CURRENT
-        if kind == "CURRENT_PERFORMANCE":
+        if kind == "TOP_SQL_LIST":
+            tool_ids = ("db.instance.identity", "db.sql.top_current")
+            inputs["db.sql.top_current"] = {
+                "limit": int(parameters.get("limit") or 10),
+            }
+        elif kind == "ALERT_LOG_LIST":
+            tool_ids = (
+                "db.instance.identity", "db.oracle.alert_log.list",
+            )
+            inputs["db.oracle.alert_log.list"] = {
+                "hours": int(parameters.get("hours") or 24),
+                "scope": str(parameters.get("scope") or "IMPORTANT"),
+                "keyword": str(parameters.get("keyword") or ""),
+                "limit": int(parameters.get("limit") or 50),
+            }
+            requested_window_seconds = inputs[
+                "db.oracle.alert_log.list"
+            ]["hours"] * 3_600
+            temporal_mode = TemporalAnalysisMode.HISTORICAL
+        elif kind == "CURRENT_PERFORMANCE":
             tool_ids = {
                 "ORACLE": (
                     "db.instance.identity",
@@ -805,11 +824,22 @@ class TurnPlanningService:
                             if tool_id == "db.oracle.awr.report"
                             else "ASH_REPORT"
                             if tool_id == "db.oracle.ash.report"
+                            else "TOP_SQL_LIST"
+                            if tool_id == "db.sql.top_current"
+                            else "ALERT_LOG_LIST"
+                            if tool_id == "db.oracle.alert_log.list"
                             else "DATABASE_OBSERVATION"
                         ),
                         measurement_semantics=(
                             MeasurementSemantics.SNAPSHOT_DELTA
                             if ".awr." in tool_id
+                            else MeasurementSemantics.HISTORICAL_SAMPLES
+                            if tool_id == "db.oracle.alert_log.list"
+                            else MeasurementSemantics.CUMULATIVE_SINCE_LOAD
+                            if (
+                                tool_id == "db.sql.top_current"
+                                and db_type == "ORACLE"
+                            )
                             else MeasurementSemantics.CURRENT_ACTIVITY
                         ),
                         depends_on=(("a1",) if index > 1 else ()),
@@ -849,7 +879,11 @@ class TurnPlanningService:
                 subject_ref={
                     "conversation_starter": (
                         context.conversation_starter.get("starter_id")
-                    )
+                    ),
+                    "primary_result_kind": (
+                        kind if kind in {"TOP_SQL_LIST", "ALERT_LOG_LIST"}
+                        else None
+                    ),
                 },
                 requires_change=False,
             ),

@@ -194,7 +194,9 @@ class ConversationStarterSelection(AIOpsContract):
 
 class ConversationStarterView(AIOpsContract):
     starter_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,127}$")
-    category: Literal["RECOMMENDED", "DIAGNOSTIC", "REPORT", "RUNBOOK"]
+    category: Literal[
+        "RECOMMENDED", "QUERY", "DIAGNOSTIC", "REPORT", "RUNBOOK"
+    ]
     title: str = Field(min_length=1, max_length=128)
     description: str = Field(min_length=1, max_length=1000)
     supported_db_types: tuple[str, ...] = Field(min_length=1, max_length=3)

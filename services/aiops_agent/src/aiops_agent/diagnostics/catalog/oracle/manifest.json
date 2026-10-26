@@ -2222,6 +2222,94 @@
       "cost_level": "MEDIUM"
     },
     {
+      "tool_id": "db.oracle.alert_log.list",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_diag_alert_list",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "V_$DIAG_ALERT_EXT"
+      ],
+      "parameters": [
+        {
+          "name": "hours",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 168,
+          "default": 24,
+          "required": true
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "enum": [
+            "ERRORS",
+            "IMPORTANT",
+            "ALL"
+          ],
+          "default": "IMPORTANT",
+          "required": true
+        },
+        {
+          "name": "keyword",
+          "type": "string",
+          "max_length": 128,
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 50,
+          "required": true
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "observed_at",
+          "logical_type": "DATETIME",
+          "nullable": false
+        },
+        {
+          "name": "record_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "message_type",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "message_level",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "problem_key",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "message_text",
+          "logical_type": "STRING",
+          "nullable": false,
+          "sensitivity": "MASKED"
+        }
+      ],
+      "template_ref": "sql/alert_log_list.sql",
+      "template_sha256": "91cee94e45b8a83e4d03d8791be0c21bd52de07b788c74f49ea14a36e089609a",
+      "timeout_seconds": 30,
+      "max_rows": 100,
+      "max_bytes": 1048576,
+      "cost_level": "MEDIUM"
+    },
+
+    {
       "tool_id": "db.scheduler.failed_jobs",
       "version": "1.0.0",
       "db_type": "ORACLE",

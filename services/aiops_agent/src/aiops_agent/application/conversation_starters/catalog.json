@@ -1,5 +1,5 @@
 {
-  "catalog_version": "1.3.0",
+  "catalog_version": "1.4.0",
   "starters": [
     {
       "starter_id": "database.health.overview",
@@ -22,6 +22,28 @@
       "input_schema": [],
       "planning": {"kind": "CURRENT_PERFORMANCE", "visualization_profile_id": "performance.current"},
       "sort_order": 20
+    },
+    {
+      "starter_id": "database.sql.top-current",
+      "category": "QUERY",
+      "title": "Top SQL",
+      "description": "列出当前高耗时或长时间运行的 SQL，并可继续发起单 SQL 分析。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [{"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 10, "min": 1, "max": 50, "help": "当前快照最多返回 50 条。"}],
+      "planning": {"kind": "TOP_SQL_LIST"},
+      "sort_order": 21
+    },
+    {
+      "starter_id": "oracle.alert-log.list",
+      "category": "QUERY",
+      "title": "Alert 日志",
+      "description": "按时间、重要程度和关键字查看 Oracle Alert Log。",
+      "supported_db_types": ["ORACLE"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [{"name": "hours", "label": "最近小时数", "type": "integer", "required": true, "default": 24, "min": 1, "max": 168}, {"name": "scope", "label": "日志范围", "type": "select", "required": true, "default": "IMPORTANT", "options": [{"value": "ERRORS", "label": "仅 ORA 错误"}, {"value": "IMPORTANT", "label": "重要与错误"}, {"value": "ALL", "label": "全部日志"}]}, {"name": "keyword", "label": "关键字", "type": "text", "required": false, "max_length": 128, "placeholder": "可选，按日志正文匹配"}, {"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 50, "min": 1, "max": 100}],
+      "planning": {"kind": "ALERT_LOG_LIST"},
+      "sort_order": 22
     },
     {
       "starter_id": "database.sessions.blocking",
@@ -121,17 +143,6 @@
       "input_schema": [],
       "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.archive.status", "db.redo.status", "db.storage.capacity"]},
       "sort_order": 110
-    },
-    {
-      "starter_id": "oracle.errors.recent",
-      "category": "DIAGNOSTIC",
-      "title": "最近数据库错误",
-      "description": "读取最近告警日志摘要和失败调度作业。",
-      "supported_db_types": ["ORACLE"],
-      "execution_mode": "DIAGNOSTIC",
-      "input_schema": [],
-      "planning": {"kind": "TOOLS", "tool_ids": ["db.instance.identity", "db.alert.recent", "db.scheduler.failed_jobs"]},
-      "sort_order": 120
     },
     {
       "starter_id": "oracle.objects.invalid",

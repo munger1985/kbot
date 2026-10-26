@@ -151,6 +151,14 @@
 .ops-evidence-chart figcaption small { color: var(--muted); font-weight: 500; }
 .ops-chart-meta { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .ops-evidence-chart figcaption .ops-chart-warning { color: #9a5a00; }
+.ops-primary-result { margin: 14px 0; overflow: hidden; border: 1px solid var(--line); background: var(--paper); }
+.ops-primary-result > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.ops-primary-result > header h3 { margin: 0; font-size: 16px; }
+.ops-primary-result > header p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.ops-primary-result > header > span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.ops-primary-result .ops-table-wrap { max-height: 440px; }
+.ops-primary-result .ops-table td { max-width: 420px; overflow-wrap: anywhere; white-space: normal; }
+.ops-primary-result > footer { padding: 9px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .ops-chart-rows { display: grid; gap: 8px; }
 .ops-chart-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(120px, 1fr) 62px; align-items: center; gap: 10px; font-size: 12px; }
 .ops-chart-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

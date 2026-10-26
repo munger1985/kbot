@@ -89,6 +89,61 @@ _STANDARD_FORECAST_COVERAGE_RATIO = 0.8
 _STANDARD_FORECAST_HISTORY_RATIO = 0.8
 
 
+_PRIMARY_RESULT_SPECS = {
+    "TOP_SQL_LIST": {
+        "tool_id": "db.sql.top_current",
+        "title": "Top SQL",
+        "identifier_columns": ("sql_id", "digest", "query_id"),
+        "follow_up_label": "深入分析",
+    },
+    "ALERT_LOG_LIST": {
+        "tool_id": "db.oracle.alert_log.list",
+        "title": "Alert 日志",
+        "identifier_columns": ("record_id", "observed_at", "problem_key"),
+        "follow_up_label": "围绕此日志诊断",
+    },
+}
+
+_PRIMARY_COLUMN_LABELS = {
+    "sql_id": "SQL_ID", "digest": "Digest", "query_id": "Query ID",
+    "plan_hash_value": "计划哈希", "session_id": "会话", "username": "用户",
+    "database_name": "数据库", "executions": "执行次数",
+    "session_count": "会话数", "elapsed_seconds": "总耗时（秒）",
+    "maximum_query_seconds": "最长执行（秒）", "cpu_seconds": "CPU（秒）",
+    "buffer_gets": "逻辑读", "disk_reads": "物理读",
+    "rows_processed": "处理行数", "rows_examined": "扫描行数",
+    "rows_sent": "返回行数", "last_active_time": "最近活跃时间",
+    "oldest_query_started_at": "最早开始时间", "wait_event_type": "等待类型",
+    "wait_event": "等待事件", "digest_text": "SQL 摘要",
+    "query_text": "SQL 摘要", "observed_at": "发生时间",
+    "record_id": "记录 ID",
+    "message_type": "消息类型", "message_level": "消息级别",
+    "problem_key": "Problem Key", "message_text": "日志正文",
+}
+
+
+def _primary_result_metadata(
+    result_kind: str | None, fact: TurnEvidenceFact,
+) -> dict[str, Any] | None:
+    spec = _PRIMARY_RESULT_SPECS.get(str(result_kind or ""))
+    if spec is None or fact.tool_id != spec["tool_id"]:
+        return None
+    semantics = str(fact.measurement_semantics)
+    note = {
+        "CUMULATIVE_SINCE_LOAD": "共享池游标自装载以来的累计统计",
+        "CURRENT_ACTIVITY": "当前活动快照",
+        "HISTORICAL_SAMPLES": "所选时间窗口内的日志记录",
+    }.get(semantics, semantics)
+    return {
+        "presentation_role": "PRIMARY",
+        "result_kind": result_kind,
+        "title": spec["title"],
+        "measurement_note": note,
+        "identifier_columns": list(spec["identifier_columns"]),
+        "follow_up_label": spec["follow_up_label"],
+    }
+
+
 def _fact_trust_level(value: object) -> str:
     normalized = str(value or "MODEL_INFERENCE")
     return (
@@ -1753,7 +1808,17 @@ class DbaAnswerComposeHandler:
         )
         if html_block is not None:
             blocks.append(html_block)
-        data_blocks = list(self._data_blocks(assessment.evidence))
+        task_frame = dict(
+            self._answer_context(context).get("task_frame", {})
+        )
+        subject_ref = dict(task_frame.get("subject_ref") or {})
+        data_blocks = list(self._data_blocks(
+            assessment.evidence,
+            primary_result_kind=(
+                str(subject_ref.get("primary_result_kind"))
+                if subject_ref.get("primary_result_kind") else None
+            ),
+        ))
         if diagnosis:
             chart_blocks = [
                 item
@@ -1765,8 +1830,16 @@ class DbaAnswerComposeHandler:
                 for item in data_blocks
                 if item.block_type == AnswerBlockType.TABLE
             ]
+            primary_tables = [
+                item for item in table_blocks
+                if item.payload.get("presentation_role") == "PRIMARY"
+            ]
+            supporting_tables = [
+                item for item in table_blocks if item not in primary_tables
+            ]
+            blocks[1:1] = primary_tables
             blocks[2:2] = chart_blocks
-            blocks.extend(table_blocks)
+            blocks.extend(supporting_tables)
         else:
             blocks.extend(data_blocks)
         evidence_request = (
@@ -2480,6 +2553,8 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _data_blocks(
         evidence: tuple[TurnEvidenceFact, ...],
+        *,
+        primary_result_kind: str | None = None,
     ) -> tuple[TurnAnswerBlock, ...]:
         blocks: list[TurnAnswerBlock] = []
         for fact in evidence:
@@ -2487,12 +2562,26 @@ class DbaAnswerComposeHandler:
                 continue
             columns = list(fact.columns)
             if fact.presentation_kind in {"TABLE", "TABLE_AND_CHART"}:
+                primary = _primary_result_metadata(primary_result_kind, fact)
+                if primary is not None:
+                    columns = [
+                        {
+                            **column,
+                            "label": _PRIMARY_COLUMN_LABELS.get(
+                                str(column.get("name") or "").lower(),
+                                str(column.get("name") or ""),
+                            ),
+                        }
+                        for column in columns
+                    ]
                 blocks.append(
                     TurnAnswerBlock(
                         block_type=AnswerBlockType.TABLE,
                         schema_version="AIOPS_TABLE_BLOCK.v1",
                         payload={
-                            "title": fact.tool_id,
+                            "title": (
+                                primary["title"] if primary else fact.tool_id
+                            ),
                             "columns": columns,
                             "rows": [list(row) for row in fact.rows],
                             "row_count": fact.row_count,
@@ -2501,6 +2590,7 @@ class DbaAnswerComposeHandler:
                             "measurement_semantics": (
                                 fact.measurement_semantics
                             ),
+                            **(primary or {}),
                         },
                         evidence_refs=(fact.evidence_ref,),
                     )

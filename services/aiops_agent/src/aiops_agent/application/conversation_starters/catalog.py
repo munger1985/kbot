@@ -200,6 +200,16 @@ class ConversationStarterCatalog:
                     raise validation_failed(f"{field['label']}超出允许范围")
             else:
                 value = str(value).strip()
+                max_length = field.get("max_length")
+                if max_length is not None and len(value) > int(max_length):
+                    raise validation_failed(f"{field['label']}长度超出允许范围")
+                options = {
+                    str(option["value"])
+                    for option in field.get("options", ())
+                    if isinstance(option, dict) and "value" in option
+                }
+                if options and value not in options:
+                    raise validation_failed(f"{field['label']}不是允许的选项")
                 if kind == "datetime":
                     try:
                         parsed = datetime.fromisoformat(

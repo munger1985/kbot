@@ -2289,6 +2289,35 @@ class DbaTurnAnswerTest(unittest.TestCase):
             model_payload["sufficiency"]["evidence"][0],
         )
 
+    def test_top_sql_query_is_presented_as_primary_result_table(self) -> None:
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(
+                _context(
+                    artifacts=(
+                        _tool_artifact(semantics="CURRENT_ACTIVITY"),
+                    )
+                )
+            )
+        )
+
+        blocks = DbaAnswerComposeHandler._data_blocks(
+            assessment.evidence,
+            primary_result_kind="TOP_SQL_LIST",
+        )
+        table = next(
+            block for block in blocks
+            if block.block_type == AnswerBlockType.TABLE
+        )
+
+        self.assertEqual("PRIMARY", table.payload["presentation_role"])
+        self.assertEqual("TOP_SQL_LIST", table.payload["result_kind"])
+        self.assertEqual("Top SQL", table.payload["title"])
+        self.assertEqual("深入分析", table.payload["follow_up_label"])
+        self.assertEqual(
+            ["SQL_ID", "总耗时（秒）"],
+            [column["label"] for column in table.payload["columns"]],
+        )
+
     def test_answer_model_receives_registered_proposal_summary(self) -> None:
         assessment = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(

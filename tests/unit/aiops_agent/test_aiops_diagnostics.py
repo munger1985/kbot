@@ -382,7 +382,7 @@ class OracleDiagnosticDriverTimeoutTest(unittest.IsolatedAsyncioTestCase):
 class DiagnosticCatalogTest(unittest.TestCase):
     def test_catalog_contains_three_database_parity(self) -> None:
         registry = DiagnosticRegistry.load()
-        self.assertEqual(158, len(registry.tools))
+        self.assertEqual(159, len(registry.tools))
         sensitivities = {
             column.sensitivity
             for tool in registry.tools
@@ -446,12 +446,38 @@ class DiagnosticCatalogTest(unittest.TestCase):
             "db.storage.undo_usage",
             "db.redo.status",
             "db.alert.recent",
+            "db.oracle.alert_log.list",
             "db.scheduler.failed_jobs",
             "db.objects.invalid_summary",
             "db.backup.recent_jobs",
             "db.replication.lag",
         ):
             self.assertIn(("ORACLE", tool_id), pairs)
+
+    def test_oracle_alert_log_list_has_stable_row_identity_and_filters(self) -> None:
+        tool = DiagnosticRegistry.load().resolve(
+            tool_id="db.oracle.alert_log.list",
+            tool_version="1.0.0",
+            db_type="ORACLE",
+            db_version="19c",
+            capabilities={"dynamic_performance_views"},
+            entitlements=set(),
+        )
+
+        self.assertEqual(
+            ("hours", "scope", "keyword", "limit"),
+            tuple(parameter.name for parameter in tool.definition.parameters),
+        )
+        self.assertEqual(
+            ("observed_at", "record_id"),
+            tuple(
+                column.name
+                for column in tool.definition.output_columns[:2]
+            ),
+        )
+        self.assertIn(":scope", tool.sql)
+        self.assertIn(":keyword", tool.sql)
+        self.assertIn("record_id DESC", tool.sql)
 
     def test_oracle_top_sql_uses_only_v_sqlstats_columns(self) -> None:
         registry = DiagnosticRegistry.load()
