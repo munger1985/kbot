@@ -103,10 +103,28 @@ class _RouterModel:
     def __init__(self, capability=AIOpsCapability.ACTIVE_DIAGNOSIS) -> None:
         self.capability = capability
         self.input_payloads = []
+        self.resolved_capability_id = None
+        self.resolved_parameters = {}
 
     async def generate_structured(self, **kwargs):
         input_payload = kwargs["input_payload"]
         self.input_payloads.append(dict(input_payload))
+        if kwargs["purpose"] == "aiops_capability_resolver":
+            output = {
+                "status": (
+                    "MATCHED" if self.resolved_capability_id else "NO_MATCH"
+                ),
+                "capability_id": self.resolved_capability_id,
+                "parameters": dict(self.resolved_parameters),
+                "confidence": 0.99,
+                "reason": "测试能力目录解析",
+            }
+            receipt = SimpleNamespace(
+                model_dump=lambda **_: {
+                    "purpose": "aiops_capability_resolver"
+                }
+            )
+            return SimpleNamespace(output=output, receipt=receipt)
         plan = TurnPlanV1(
             turn_id=input_payload["turn_id"],
             revision_no=input_payload["revision_no"],
@@ -148,7 +166,7 @@ class _RouterPrompt:
 
 class _RouterPrompts:
     async def resolve(self, prompt_id):
-        if prompt_id != "turn_router":
+        if prompt_id not in {"capability_resolver", "turn_router"}:
             raise AssertionError(prompt_id)
         return _RouterPrompt()
 
@@ -366,6 +384,17 @@ class _TurnRepository:
 
     async def list_messages(self, *, turn_id):
         return [row for row in self.messages if row.turn_id == turn_id]
+
+    async def list_recent_conversation_messages(
+        self, *, conversation_id, before_sequence_no, limit=12
+    ):
+        rows = [
+            row
+            for row in self.messages
+            if row.conversation_id == conversation_id
+            and int(row.sequence_no) < before_sequence_no
+        ]
+        return sorted(rows, key=lambda row: row.sequence_no)[-limit:]
 
     async def list_input_items(self, *, turn_id):
         return [row for row in self.input_items if row.turn_id == turn_id]
@@ -970,6 +999,57 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         frozen = uow.runs.rows[0].plan_snapshot_json["client_metadata"][
             "conversation_starter"
         ]
+        self.assertEqual("database.sql.top-current", frozen["starter_id"])
+        self.assertEqual("TOP_SQL_LIST", frozen["planning"]["kind"])
+        self.assertEqual(10, frozen["parameters"]["limit"])
+
+    async def test_natural_language_top_sql_uses_same_frozen_capability(
+        self,
+    ) -> None:
+        uow = _Uow()
+        service = ConversationTurnService(uow_factory=lambda: uow)
+        await service.start(
+            domain_id=7,
+            actor_id="dba@example.com",
+            trace_id="trace-natural-top-sql",
+            conversation_create=ConversationCreate(
+                agent_id=uow.agent.agent_id,
+                context_hint=TrustedContextHint(
+                    source_kind="RESOURCE_PAGE",
+                    resource_ids=(uow.resource.resource_id,),
+                ),
+                source=ConversationSourceContext(),
+            ),
+            first_turn=TurnCreate(
+                idempotency_key="natural-top-sql",
+                content=(
+                    {
+                        "content_type": "TEXT",
+                        "text": "查询 MES 当前 Top SQL，返回前 10 条",
+                    },
+                ),
+            ),
+        )
+        created_payload = dict(uow.outbox.rows[0].payload_json)
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(
+            created_payload
+        )
+        planning_payload = dict(uow.outbox.rows[1].payload_json)
+        planner = _turn_planner(uow)
+        planner._structured_model.resolved_capability_id = (
+            "database.sql.top-current"
+        )
+        planner._structured_model.resolved_parameters = {"limit": 10}
+
+        routed = await planner.begin(planning_payload)
+        await planner.start_active_diagnosis(planning_payload)
+
+        self.assertEqual("UNDERSTANDING", routed["status"])
+        self.assertEqual(1, len(planner._structured_model.input_payloads))
+        frozen = uow.runs.rows[0].plan_snapshot_json["client_metadata"][
+            "conversation_starter"
+        ]
+        self.assertEqual("NATURAL_LANGUAGE", frozen["source"])
         self.assertEqual("database.sql.top-current", frozen["starter_id"])
         self.assertEqual("TOP_SQL_LIST", frozen["planning"]["kind"])
         self.assertEqual(10, frozen["parameters"]["limit"])

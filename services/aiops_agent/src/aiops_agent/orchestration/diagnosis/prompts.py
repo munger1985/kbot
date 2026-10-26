@@ -9,6 +9,7 @@ from platform_core.prompts import PromptIntegrityError, ResolvedPrompt
 
 
 PROMPT_KEYS = {
+    "capability_resolver": "aiops_agent.capability_resolver",
     "turn_router": "aiops_agent.turn_router",
     "compact_planner": "aiops_agent.compact_planner",
     "investigation_planner": "aiops_agent.investigation_planner",
@@ -35,6 +36,7 @@ DIAGNOSIS_PROMPT_IDS = (
     "grounding_verify",
 )
 TURN_PROMPT_IDS = (
+    "capability_resolver",
     "turn_router",
     "compact_planner",
     "investigation_planner",

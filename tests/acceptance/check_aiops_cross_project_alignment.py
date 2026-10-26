@@ -6,6 +6,7 @@ import argparse
 import ast
 import hashlib
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -25,12 +26,28 @@ CONVERSATION_ENTITY = Path(
 TURN_PLANNER = Path(
     "services/aiops_agent/src/aiops_agent/application/turn_planner.py"
 )
+INVESTIGATION_CONTRACT = Path(
+    "packages/platform_core/src/platform_core/contracts/aiops/investigation.py"
+)
 RUNTIME_SERVICE = Path(
     "services/aiops_agent/src/aiops_agent/application/runtime/service.py"
 )
 PUBLIC_CONTRACT_ROOT = Path(
     "packages/platform_core/src/platform_core/contracts/aiops"
 )
+CAPABILITY_CATALOG = Path(
+    "services/aiops_agent/src/aiops_agent/application/"
+    "conversation_starters/catalog.json"
+)
+PROMPT_CATALOG = Path(
+    "packages/platform_core/src/platform_core/resources/prompts.toml"
+)
+ALIGNED_AIOPS_PROMPTS = {
+    "aiops_agent.capability_resolver",
+    "aiops_agent.turn_router",
+    "aiops_agent.compact_planner",
+    "aiops_agent.investigation_planner",
+}
 
 AGENT_OPENAPI_FIELDS = {
     "required": {
@@ -153,6 +170,14 @@ OPENAPI_PROFILES = {
 }
 
 KEY_FIELDS = {
+    INVESTIGATION_CONTRACT: {
+        "TaskFrame": {
+            "requested_window_seconds",
+            "visualization_profile_id",
+            "visualization_window_seconds",
+            "temporal_analysis_mode",
+        },
+    },
     AGENT_APPLICATION: {
         "ResourceControlledActionExecution": {
             "resource_id",
@@ -345,6 +370,45 @@ def _semantic_alignment(root: Path, peer: Path) -> tuple[dict[str, Any], list[st
     return results, violations
 
 
+def _capability_alignment(
+    root: Path, peer: Path
+) -> tuple[dict[str, Any], list[str]]:
+    local_catalog = json.loads((root / CAPABILITY_CATALOG).read_text("utf-8"))
+    peer_catalog = json.loads((peer / CAPABILITY_CATALOG).read_text("utf-8"))
+    local_prompts = {
+        item["prompt_key"]: item["content"]
+        for item in tomllib.loads((root / PROMPT_CATALOG).read_text("utf-8"))[
+            "prompts"
+        ]
+    }
+    peer_prompts = {
+        item["prompt_key"]: item["content"]
+        for item in tomllib.loads((peer / PROMPT_CATALOG).read_text("utf-8"))[
+            "prompts"
+        ]
+    }
+    prompt_alignment = {
+        key: local_prompts.get(key) == peer_prompts.get(key)
+        for key in sorted(ALIGNED_AIOPS_PROMPTS)
+    }
+    violations = []
+    if local_catalog != peer_catalog:
+        violations.append("版本化运维能力目录不一致")
+    if local_catalog.get("catalog_version") != "2.0.0":
+        violations.append("运维能力目录必须使用2.0.0语义合同")
+    if len(local_catalog.get("starters", ())) != 25:
+        violations.append("运维能力目录必须完整包含25项能力")
+    for key, equal in prompt_alignment.items():
+        if not equal:
+            violations.append(f"AIOps关键Prompt语义不一致: {key}")
+    return {
+        "catalog_equal": local_catalog == peer_catalog,
+        "catalog_version": local_catalog.get("catalog_version"),
+        "capability_count": len(local_catalog.get("starters", ())),
+        "prompt_alignment": prompt_alignment,
+    }, violations
+
+
 def _forbidden_regressions(root: Path) -> list[str]:
     violations: list[str] = []
 
@@ -514,6 +578,7 @@ def _openapi_guard(root: Path) -> tuple[dict[str, Any], list[str]]:
 def audit(root: Path, peer: Path) -> dict[str, Any]:
     contracts, contract_violations = _contract_alignment(root, peer)
     semantics, semantic_violations = _semantic_alignment(root, peer)
+    capabilities, capability_violations = _capability_alignment(root, peer)
     local_openapi, local_openapi_violations = _openapi_guard(root)
     peer_openapi, peer_openapi_violations = _openapi_guard(peer)
     local_regressions = _forbidden_regressions(root)
@@ -521,6 +586,7 @@ def audit(root: Path, peer: Path) -> dict[str, Any]:
     violations = [
         *contract_violations,
         *semantic_violations,
+        *capability_violations,
         *(f"本仓: {item}" for item in local_openapi_violations),
         *(f"对端仓: {item}" for item in peer_openapi_violations),
         *(f"本仓: {item}" for item in local_regressions),
@@ -533,6 +599,7 @@ def audit(root: Path, peer: Path) -> dict[str, Any]:
         "passed": not violations,
         "shared_contracts": contracts,
         "semantic_fields": semantics,
+        "capability_semantics": capabilities,
         "openapi": {
             "local": local_openapi,
             "peer": peer_openapi,

@@ -114,6 +114,54 @@ class ConversationStarterCatalog:
             status, reason = self._availability(target)
             if status == "UNAVAILABLE":
                 raise validation_failed(reason)
+        return self._freeze_item(
+            item=item,
+            supplied_parameters=dict(selection.parameters),
+            source="UI_ENTRY",
+            required=required,
+        )
+
+    def resolver_candidates(
+        self, *, supported_db_types: set[str]
+    ) -> tuple[dict[str, Any], ...]:
+        """向自然语言解析器公开语义和参数，不公开内部 Tool DAG。"""
+        return tuple(
+            {
+                "capability_id": str(item["starter_id"]),
+                "title": str(item["title"]),
+                "description": str(item["description"]),
+                "execution_mode": str(item["execution_mode"]),
+                "supported_db_types": list(item["supported_db_types"]),
+                "parameter_schema": list(self._input_schema(item)),
+            }
+            for item in sorted(
+                self._items.values(), key=lambda value: value["sort_order"]
+            )
+            if supported_db_types
+            & {str(value) for value in item.get("supported_db_types", ())}
+        )
+
+    def freeze_natural_language(
+        self, *, capability_id: str, parameters: dict[str, Any]
+    ) -> dict[str, Any]:
+        item = self._items.get(str(capability_id))
+        if item is None:
+            raise validation_failed("自然语言选择了目录外的运维能力")
+        return self._freeze_item(
+            item=item,
+            supplied_parameters=parameters,
+            source="NATURAL_LANGUAGE",
+            required=set(self._required_capabilities(item)),
+        )
+
+    def _freeze_item(
+        self,
+        *,
+        item: dict[str, Any],
+        supplied_parameters: dict[str, Any],
+        source: str,
+        required: set[str],
+    ) -> dict[str, Any]:
         input_schema = self._input_schema(item)
         try:
             if str(dict(item.get("planning") or {}).get("kind") or "") == "IMPLEMENTATION":
@@ -121,23 +169,25 @@ class ConversationStarterCatalog:
                     str(item["planning"]["implementation_profile"])
                 )
                 parameters = normalize_implementation_parameters(
-                    profile, dict(selection.parameters)
+                    profile, supplied_parameters
                 )
             else:
                 parameters = self._validate_parameters(
-                    list(input_schema), dict(selection.parameters)
+                    list(input_schema), supplied_parameters
                 )
         except ValueError as exc:
             raise validation_failed(str(exc)) from exc
         return {
             "starter_id": item["starter_id"],
             "catalog_version": self.version,
+            "source": source,
             "category": item["category"],
             "title": item["title"],
             "execution_mode": item["execution_mode"],
             "required_capabilities": sorted(required),
             "parameters": parameters,
             "planning": dict(item["planning"]),
+            "supported_db_types": list(item["supported_db_types"]),
             "user_message": self._user_message(
                 item, parameters, input_schema=input_schema
             ),

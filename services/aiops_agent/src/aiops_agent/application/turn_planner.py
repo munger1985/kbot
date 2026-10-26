@@ -7,9 +7,14 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Awaitable, Callable, Literal, Protocol
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from aiops_agent.application.conversation_starters import (
+    ConversationStarterCatalog,
+)
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     dependency_unavailable,
@@ -56,15 +61,41 @@ class DeterministicTurnPlanReceipt:
 
     starter_id: str
     catalog_version: str
+    resolution_receipt: dict[str, Any] | None = None
 
-    def model_dump(self, **_: Any) -> dict[str, str]:
-        return {
+    def model_dump(self, **_: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "schema_version": "aiops.deterministic-turn-plan-receipt.v1",
             "purpose": "aiops_turn_router",
             "route": "CONVERSATION_STARTER",
             "starter_id": self.starter_id,
             "catalog_version": self.catalog_version,
         }
+        if self.resolution_receipt is not None:
+            payload["resolution_receipt"] = dict(self.resolution_receipt)
+        return payload
+
+
+class NaturalLanguageCapabilityResolution(BaseModel):
+    """模型只选择版本化能力和显式参数，不参与工具规划。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["MATCHED", "NO_MATCH"]
+    capability_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> "NaturalLanguageCapabilityResolution":
+        if self.status == "MATCHED" and not self.capability_id:
+            raise ValueError("MATCHED 必须提供 capability_id")
+        if self.status == "NO_MATCH" and (
+            self.capability_id is not None or self.parameters
+        ):
+            raise ValueError("NO_MATCH 不得提供能力或参数")
+        return self
 
 
 def _catalog_aliases(*values: object) -> frozenset[str]:
@@ -114,6 +145,62 @@ def _mentioned_business_systems(
             for alias in aliases_by_system[str(system["business_system_id"])]
         )
     ]
+
+
+def _recent_routing_context(
+    messages: list[OpsConversationMessageEntity],
+    *,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    """向路由器提供受限的近期语义引用，不复用历史授权结论。"""
+    context: list[dict[str, Any]] = []
+    allowed_capabilities = {capability.value for capability in AIOpsCapability}
+    for row in messages[-limit:]:
+        payload = dict(row.payload_json or {})
+        text = str(
+            payload.get("text") or payload.get("free_text") or ""
+        ).strip()
+        if row.message_type in {"USER_MESSAGE", "CLARIFICATION_RESPONSE"}:
+            if text:
+                context.append({"role": "USER", "text": text[:2000]})
+            continue
+        if row.message_type != "ASSISTANT_MESSAGE":
+            continue
+        raw_capabilities = payload.get("capabilities_used")
+        capabilities = [
+            str(item)
+            for item in (
+                raw_capabilities
+                if isinstance(raw_capabilities, list)
+                else ()
+            )
+            if str(item) in allowed_capabilities
+        ]
+        evidence_refs: list[dict[str, str]] = []
+        evidence = payload.get("evidence")
+        if isinstance(evidence, list):
+            for index, raw in enumerate(evidence[:12], start=1):
+                if not isinstance(raw, dict):
+                    continue
+                evidence_refs.append(
+                    {
+                        "citation_id": f"C{index}",
+                        "source_kind": str(raw.get("source_kind") or "")[:64],
+                        "record_type": str(raw.get("record_type") or "")[:64],
+                        "record_id": str(raw.get("record_id") or "")[:128],
+                        "label": str(raw.get("label") or "")[:256],
+                    }
+                )
+        if text or capabilities or evidence_refs:
+            context.append(
+                {
+                    "role": "ASSISTANT",
+                    "text": text[:2000],
+                    "capabilities_used": capabilities,
+                    "evidence_refs": evidence_refs,
+                }
+            )
+    return context
 
 
 def _hash(value: Any) -> str:
@@ -245,6 +332,7 @@ class TurnPlannerService:
         prompt_registry=None,
         model_resolver: Callable[[UUID], Awaitable[dict[str, str]]] | None = None,
         runtime_service=None,
+        conversation_starter_catalog=None,
         capability_adapters: dict[AIOpsCapability, CapabilityAdapter] | None = None,
     ):
         self._uow_factory = uow_factory
@@ -252,6 +340,9 @@ class TurnPlannerService:
         self._prompt_registry = prompt_registry
         self._model_resolver = model_resolver
         self._runtime_service = runtime_service
+        self._conversation_starter_catalog = (
+            conversation_starter_catalog or ConversationStarterCatalog()
+        )
         self._capability_adapters = {
             AIOpsCapability.RESOURCE_CATALOG_QUERY: ResourceCatalogAdapter(),
             **dict(capability_adapters or {}),
@@ -361,6 +452,14 @@ class TurnPlannerService:
                 if row.message_type == "USER_MESSAGE"
             )
             execution = dict(payload.get("execution_context") or {})
+            if not execution.get("conversation_starter"):
+                frozen_capability = dict(
+                    turn.orchestration_internal_json or {}
+                ).get("capability_invocation")
+                if frozen_capability:
+                    execution["conversation_starter"] = dict(
+                        frozen_capability
+                    )
             now = datetime.now(UTC)
             run_id = uuid7()
             await uow.runs.add_run(
@@ -1006,6 +1105,20 @@ class TurnPlannerService:
                 for row in messages
                 if row.message_type in {"USER_MESSAGE", "CLARIFICATION_RESPONSE"}
             )
+            input_sequence_nos = [
+                int(row.sequence_no)
+                for row in messages
+                if row.message_type
+                in {"USER_MESSAGE", "CLARIFICATION_RESPONSE"}
+            ]
+            recent_messages = (
+                await uow.turns.list_recent_conversation_messages(
+                    conversation_id=turn.conversation_id,
+                    before_sequence_no=min(input_sequence_nos),
+                )
+                if input_sequence_nos
+                else []
+            )
             policy = {
                 "agent_id": str(agent_id),
                 "agent_version_id": str(version_id),
@@ -1037,11 +1150,21 @@ class TurnPlannerService:
                     )
                     or {}
                 ),
+                "recent_conversation_context": _recent_routing_context(
+                    recent_messages
+                ),
                 "plan_revision": int(turn.current_plan_revision or 0) + 1,
             }
 
     async def _plan(self, context: dict[str, Any]):
         starter = dict(context.get("conversation_starter") or {})
+        resolution_receipt = None
+        if not starter:
+            starter, resolution_receipt = (
+                await self._resolve_natural_language_capability(context)
+            )
+            if starter:
+                context["conversation_starter"] = starter
         if starter:
             if AIOpsCapability.ACTIVE_DIAGNOSIS.value not in {
                 str(item) for item in context["capabilities"]
@@ -1078,6 +1201,7 @@ class TurnPlannerService:
             return plan, DeterministicTurnPlanReceipt(
                 starter_id=starter_id,
                 catalog_version=catalog_version,
+                resolution_receipt=resolution_receipt,
             )
         if not all(
             (self._structured_model, self._prompt_registry, self._model_resolver)
@@ -1099,15 +1223,32 @@ class TurnPlannerService:
                 "question": context["question"],
                 "allowed_capabilities": list(context["capabilities"]),
                 "trusted_context_hint": context["context_hint"],
+                "recent_conversation_context": context.get(
+                    "recent_conversation_context", []
+                ),
                 "authorized_business_systems": [
                     {
-                        key: item[key]
-                        for key in (
-                            "business_system_id",
-                            "system_code",
-                            "display_name",
-                            "environment",
-                        )
+                        **{
+                            key: item[key]
+                            for key in (
+                                "business_system_id",
+                                "system_code",
+                                "display_name",
+                                "environment",
+                            )
+                        },
+                        "resources": [
+                            {
+                                key: resource.get(key)
+                                for key in (
+                                    "resource_id",
+                                    "resource_code",
+                                    "display_name",
+                                    "resource_type_key",
+                                )
+                            }
+                            for resource in item.get("resources", ())[:64]
+                        ],
                     }
                     for item in context["systems"]
                 ],
@@ -1132,6 +1273,70 @@ class TurnPlannerService:
         if plan.policy_snapshot_hash != context["policy_snapshot_hash"]:
             raise validation_failed("规划器返回的策略快照不一致")
         return plan, result.receipt
+
+    async def _resolve_natural_language_capability(
+        self, context: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """优先把自然语言归一到版本化功能目录，未匹配时保留通用路由。"""
+        if AIOpsCapability.ACTIVE_DIAGNOSIS.value not in {
+            str(item) for item in context["capabilities"]
+        }:
+            return {}, None
+        db_types = {
+            str(database.get("db_type") or "")
+            for system in context["systems"]
+            for resource in system.get("resources", ())
+            if (database := dict(resource.get("database") or {})).get("db_type")
+        }
+        candidates = self._conversation_starter_catalog.resolver_candidates(
+            supported_db_types=db_types
+        )
+        if not candidates:
+            return {}, None
+        if not all(
+            (self._structured_model, self._prompt_registry, self._model_resolver)
+        ):
+            raise dependency_unavailable("统一 Turn Router 的结构化规划器未配置")
+        model_id = context.get("planner_model_id")
+        if not model_id:
+            raise validation_failed("AIOps Agent 必须配置 models.planner_llm")
+        prompt = await self._prompt_registry.resolve("capability_resolver")
+        result = await self._structured_model.generate_structured(
+            purpose="aiops_capability_resolver",
+            output_model=NaturalLanguageCapabilityResolution,
+            model_snapshot=await self._model_resolver(UUID(str(model_id))),
+            prompt_ref={**prompt.ref(), "content": prompt.content},
+            input_payload={
+                "question": context["question"],
+                "recent_conversation_context": context.get(
+                    "recent_conversation_context", []
+                ),
+                "trusted_context_hint": context["context_hint"],
+                "capability_catalog_version": (
+                    self._conversation_starter_catalog.version
+                ),
+                "eligible_capabilities": list(candidates),
+            },
+            deadline=None,
+            idempotency_key=(
+                f"capability-resolver:{context['turn_id']}:"
+                f"{context['plan_revision']}"
+            ),
+        )
+        resolution = (
+            result.output
+            if isinstance(result.output, NaturalLanguageCapabilityResolution)
+            else NaturalLanguageCapabilityResolution.model_validate(result.output)
+        )
+        if resolution.status == "NO_MATCH":
+            return {}, result.receipt.model_dump(mode="json")
+        if not resolution.capability_id:
+            raise validation_failed("自然语言能力解析缺少 capability_id")
+        frozen = self._conversation_starter_catalog.freeze_natural_language(
+            capability_id=resolution.capability_id,
+            parameters=dict(resolution.parameters),
+        )
+        return frozen, result.receipt.model_dump(mode="json")
 
     def _resolve_scope(self, context: dict[str, Any], plan: TurnPlanV1):
         requested = {
@@ -1402,9 +1607,28 @@ class TurnPlannerService:
             turn.capability_plan_json = _json(plan)
             turn.scope_resolution_json = _json(scope)
             turn.clarification_json = _json(clarification) if clarification else None
+            capability_invocation = dict(
+                context.get("conversation_starter") or {}
+            )
+            if capability_invocation and clarification is None:
+                selected_db_types = {
+                    str(dict(item.get("database") or {}).get("db_type") or "")
+                    for item in internal_scope.get("resource_catalog", ())
+                }
+                supported_db_types = {
+                    str(value)
+                    for value in capability_invocation.get(
+                        "supported_db_types", ()
+                    )
+                }
+                if selected_db_types - supported_db_types:
+                    raise validation_failed(
+                        "所选运维能力不支持已解析数据库资源"
+                    )
             turn.orchestration_internal_json = {
                 "schema_version": "aiops.orchestration-internal.v1",
                 "planner_receipt": receipt.model_dump(mode="json"),
+                "capability_invocation": capability_invocation,
                 "selected_scope": internal_scope if clarification is None else None,
                 **internal_scope,
             }
