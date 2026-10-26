@@ -7,13 +7,20 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.application.conversation_starters import ConversationStarterCatalog
+from aiops_agent.application.conversation_starters.service import (
+    ConversationStarterService,
+)
 from aiops_agent.application.investigation.service import TurnPlanningService
-from platform_core.contracts.aiops import ConversationStarterSelection
+from platform_core.contracts.aiops import (
+    ConversationStarterSelection,
+)
+from platform_core.identity import uuid7
 
 
 def _target(**overrides):
     values = {
         "target_id": "target-1",
+        "display_name": "Test DB",
         "db_type": "ORACLE",
         "status": "ENABLED",
         "readonly_connection_enabled": True,
@@ -21,6 +28,98 @@ def _target(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+class _FakeUnitOfWork:
+    def __init__(self, agents, business_systems, targets) -> None:
+        self.agents = agents
+        self.business_systems = business_systems
+        self.targets = targets
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+
+class ConversationStarterServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_catalog_returns_agent_scoped_business_system_targets(self) -> None:
+        agent_id = uuid7()
+        version_id = uuid7()
+        system_id = uuid7()
+        resource_id = uuid7()
+        target_id = uuid7()
+        second_resource_id = uuid7()
+        second_target_id = uuid7()
+        target = _target(target_id=target_id, display_name="ERP Primary")
+        second_target = _target(
+            target_id=second_target_id,
+            display_name="ERP Reporting",
+        )
+        agents = SimpleNamespace(
+            get=AsyncMock(return_value=SimpleNamespace(
+                agent_id=agent_id,
+                status="ACTIVE",
+                current_version_id=version_id,
+            )),
+            version=AsyncMock(return_value=SimpleNamespace(
+                agent_version_id=version_id,
+                capabilities_json=["ACTIVE_DIAGNOSIS"],
+            )),
+            version_business_system_ids=AsyncMock(return_value=[system_id]),
+            active_version_target_ids=AsyncMock(
+                return_value=[target_id, second_target_id]
+            ),
+        )
+        business_systems = SimpleNamespace(
+            get_scoped=AsyncMock(return_value=SimpleNamespace(
+                business_system_id=system_id,
+                display_name="ERP",
+                environment="PROD",
+                status="ENABLED",
+            )),
+            list_system_resource_rows=AsyncMock(return_value=[(
+                SimpleNamespace(status="ACTIVE"),
+                SimpleNamespace(
+                    resource_id=resource_id,
+                    display_name="ERP DB",
+                    lifecycle_status="ACTIVE",
+                ),
+                SimpleNamespace(target_id=target_id),
+                target,
+            ), (
+                SimpleNamespace(status="ACTIVE"),
+                SimpleNamespace(
+                    resource_id=second_resource_id,
+                    display_name="ERP Reporting DB",
+                    lifecycle_status="ACTIVE",
+                ),
+                SimpleNamespace(target_id=second_target_id),
+                second_target,
+            )]),
+        )
+        targets = SimpleNamespace(get_scoped=AsyncMock(
+            side_effect=lambda *, target_id, domain_id: {
+                target.target_id: target,
+                second_target.target_id: second_target,
+            }.get(target_id)
+        ))
+        service = ConversationStarterService(
+            uow_factory=lambda: _FakeUnitOfWork(
+                agents, business_systems, targets,
+            ),
+            catalog=ConversationStarterCatalog(),
+        )
+
+        result = await service.list(domain_id=1, agent_id=agent_id)
+
+        self.assertEqual("ERP", result["business_systems"][0]["display_name"])
+        self.assertEqual(2, len(result["business_systems"][0]["targets"]))
+        self.assertEqual(
+            str(resource_id),
+            result["business_systems"][0]["targets"][0]["resource_id"],
+        )
 
 
 class ConversationStarterCatalogTest(unittest.TestCase):

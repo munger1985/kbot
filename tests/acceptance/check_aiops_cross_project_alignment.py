@@ -47,7 +47,10 @@ CONVERSATION_OPENAPI_SCHEMAS = {
         "forbidden": {"target_id"},
     },
     "ConversationStarterCatalogView": {
-        "required": {"catalog_version", "agent_id", "context_hint", "starters"},
+        "required": {
+            "catalog_version", "agent_id", "context_hint",
+            "business_systems", "starters",
+        },
         "forbidden": {"target_id", "db_type"},
     },
     "ConversationStarterView": {

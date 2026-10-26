@@ -265,3 +265,16 @@ Situation、Run、Report 和审批模型。Portal 在运维目标详情中管理
 
 精确 API 以 `docs/openapi/aiops_*.json` 为准，表结构以
 `database/oracle/aiops_agent/` 为准。
+
+## 确定性快捷入口的资源上下文
+
+Agent 工作台的 Top SQL、Alert 日志、报告和实施文档等确定性快捷入口必须先选择当前
+Agent 版本绑定的业务系统，再选择该系统中的单一数据库 Target。功能目录接口返回经过
+服务端授权过滤的 `business_systems[].targets[]`；浏览器提交时只把所选业务系统和数据库
+资源写入 Conversation 的 `TrustedContextHint`，不把 `target_id` 作为可信输入。
+
+服务端会重新校验 Agent 版本、业务系统、资源归属、数据库资源到 Target 的映射、Target
+启用状态和功能支持的数据库类型，并把解析结果冻结为 Turn 的 `focused_target_id`。快捷
+入口选择的资源与已有会话冻结上下文不一致时应创建新的范围化 Conversation，不允许在
+Turn 级覆盖历史会话的可信范围。自然语言问答仍可不预选 Target，由范围解析和澄清流程
+确定资源。

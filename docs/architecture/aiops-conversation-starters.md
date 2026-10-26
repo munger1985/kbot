@@ -17,12 +17,13 @@ services/aiops_agent/src/aiops_agent/application/conversation_starters/catalog.j
 ## API 与冻结链路
 
 ```text
-GET /api/v1/apps/aiops/conversation-starters?target_id=...&agent_id=...
+GET /api/v1/apps/aiops/conversation-starters?agent_id=...
   → Main API
   → GET /internal/v1/aiops/conversation-starters
-  → 校验 Domain、当前 Agent 版本绑定和 Target 状态
+  → 返回当前 Agent 版本授权的业务系统及其全部数据库 Target
 
-POST Conversation / Turn {starter: {...}}
+POST Conversation {context_hint: {business_system_id, resource_ids}, starter: {...}}
+  → 由数据库资源解析 Target 并再次校验 Agent 授权和业务系统归属
   → 服务端校验参数并生成可读 User Message
   → Outbox.execution_context.conversation_starter
   → Run.plan_snapshot_json.client_metadata.conversation_starter
@@ -50,6 +51,9 @@ POST Conversation / Turn {starter: {...}}
 ## 安全边界
 
 - 浏览器只接收展示字段、输入 Schema 和可用状态，不接收内部 planning 定义；
+- 浏览器只提交业务系统 ID 和资源 ID；`target_id` 由服务端根据数据库资源解析；
+- 一个业务系统存在多个数据库 Target 时全部列出，由用户明确单选后执行；
+- 快捷入口始终使用范围化 Conversation，不在 Turn 级覆盖已有会话的可信上下文；
 - 目录版本变化后旧选择被拒绝，要求用户重新打开菜单；
 - 参数白名单、类型、时间顺序和 AWR 等长窗口由服务端校验；
 - 实施文档参数全部可选，空值不进入冻结快照；解析优先级为用户输入、数据库事实、Target 运维事实、

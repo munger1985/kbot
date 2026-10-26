@@ -494,6 +494,11 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn("/conversation-starters?agent_id=", workspace)
         self.assertIn("starterCatalogVersion", workspace)
         self.assertIn("executeStarter", workspace)
+        self.assertIn("starterBusinessSystems", workspace)
+        self.assertIn('source_kind: "RESOURCE_PAGE"', workspace)
+        self.assertIn('business_system_id: selection.system.business_system_id', workspace)
+        self.assertIn('resource_ids: [selection.target.resource_id]', workspace)
+        self.assertIn('shell.toast("请选择要执行该功能的数据库 Target")', workspace)
         self.assertIn("availableCapabilityShortcuts", workspace)
         self.assertIn('capability: "RESOURCE_CATALOG_QUERY", title: "查询系统资源"', workspace)
         self.assertIn('capability: "MONITORING_QUERY", title: "查看监控"', workspace)
@@ -515,7 +520,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261026_1", "20261026_1"),
+            "chat": ("20261026_2", "20261026_2"),
             "situations": ("20261020_4", "20261023_3"),
             "inspections": ("20261020_4", "20261023_3"),
         }
@@ -1618,7 +1623,8 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('id="target-select"', (AIOPS_ROOT / "chat.html").read_text(encoding="utf-8"))
         self.assertNotIn("当前 Agent 未绑定所选 Target", workspace)
         self.assertIn("无需预先选择 Target", workspace)
-        self.assertIn(': { agent_id: agentId, content: [], starter }', workspace)
+        self.assertIn('context_hint: {', workspace)
+        self.assertIn('resource_ids: [selection.target.resource_id]', workspace)
         self.assertIn(': { agent_id: agentId, content }', workspace)
         self.assertNotIn("state.targets", workspace)
         self.assertIn('request(`${api}/targets?limit=200`)', workspace)

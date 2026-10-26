@@ -8,7 +8,7 @@
     agents: [], conversation: null, selectedFiles: [],
     caseAgents: [], caseTargets: [],
     permissions: new Set(), starters: [], starterCatalogVersion: "",
-    starterCatalogLoaded: false,
+    starterBusinessSystems: [], starterCatalogLoaded: false,
   };
   const maxDiagnosticFiles = 15;
   const typingFrameMs = 22;
@@ -1677,12 +1677,14 @@
   async function loadConversationStarters() {
     const agentId = document.getElementById("agent-select").value;
     state.starters = [];
+    state.starterBusinessSystems = [];
     state.starterCatalogVersion = "";
     state.starterCatalogLoaded = false;
     if (!agentId) return;
     try {
       const payload = await KBotAIOpsAuth.request(`${api}/conversation-starters?agent_id=${encodeURIComponent(agentId)}`);
       state.starters = values(payload.starters);
+      state.starterBusinessSystems = values(payload.business_systems);
       state.starterCatalogVersion = payload.catalog_version || "";
     } catch (error) {
       shell.toast(`功能目录读取失败：${error.message}`);
@@ -1696,7 +1698,7 @@
     if (!document.getElementById("agent-select").value) return shell.toast("请先选择 Agent");
     const dialog = document.getElementById("starter-dialog");
     document.getElementById("starter-dialog-title").textContent = "全部功能";
-    document.getElementById("starter-dialog-description").textContent = "功能会根据 Agent 能力与当轮自然语言范围自动筛选。";
+    document.getElementById("starter-dialog-description").textContent = "功能会根据 Agent 能力筛选；执行前需要明确选择业务系统和数据库 Target。";
     const content = document.getElementById("starter-dialog-content");
     content.innerHTML = capabilityShortcutSectionHtml() + starterSectionsHtml(state.starters)
       || '<div class="ops-empty">当前没有可展示的功能，请直接在聊天框中描述问题。</div>';
@@ -1752,73 +1754,120 @@
     }).join("");
   }
 
+  function compatibleStarterSystems(item) {
+    const supported = new Set(values(item.supported_db_types));
+    return state.starterBusinessSystems.map((system) => ({
+      ...system,
+      targets: values(system.targets).filter((target) => supported.has(target.db_type)),
+    })).filter((system) => system.targets.length);
+  }
+
+  function starterTargetSelectable(target) {
+    return target.status === "ENABLED"
+      && target.readonly_connection_enabled === true
+      && ["CONNECTED", "DEGRADED", "UNKNOWN"].includes(target.connectivity_status);
+  }
+
+  function starterTargetStatus(target) {
+    if (!target.readonly_connection_enabled) return "未配置只读连接";
+    return {
+      CONNECTED: "连接正常", DEGRADED: "连接降级", UNKNOWN: "连接待确认",
+      CHECKING: "正在检查", MISCONFIGURED: "配置异常", UNREACHABLE: "无法连接",
+    }[target.connectivity_status] || target.connectivity_status;
+  }
+
+  function starterTargetOptionsHtml(system) {
+    if (!system) return '<p class="ops-starter-resource-empty">请先选择业务系统。</p>';
+    return `<fieldset class="ops-starter-target-list"><legend>数据库 Target</legend>${values(system.targets).map((target) => `<label class="ops-starter-target-option${starterTargetSelectable(target) ? "" : " is-disabled"}"><input type="radio" name="starter_resource_id" value="${esc(target.resource_id)}" required${starterTargetSelectable(target) ? "" : " disabled"}><span><strong>${esc(target.target_name)}</strong><small>${esc(target.resource_name)} · ${esc(target.db_type)}</small><em>${esc(starterTargetStatus(target))}</em></span></label>`).join("")}</fieldset>`;
+  }
+
+  function starterResourceScopeHtml(item) {
+    const systems = compatibleStarterSystems(item);
+    return `<section class="ops-starter-resource-scope"><header><h4>执行资源</h4><p>资源来自当前 Agent 版本的授权边界，提交后由服务端再次校验。</p></header><label><span>业务系统 *</span><select name="starter_business_system_id" required><option value="">请选择业务系统</option>${systems.map((system) => `<option value="${esc(system.business_system_id)}">${esc(system.display_name)}（${esc(system.environment)}）</option>`).join("")}</select></label><div data-starter-target-options>${systems.length ? starterTargetOptionsHtml(null) : '<p class="ops-starter-resource-empty">当前 Agent 没有与该功能兼容的数据库资源。</p>'}</div></section>`;
+  }
+
   function selectStarter(starterId, initialParameters = {}) {
     const item = state.starters.find((row) => row.starter_id === starterId);
     if (!item) return shell.toast("功能目录已经更新，请重新打开菜单");
     if (item.status === "UNAVAILABLE") return shell.toast(item.availability_reason || "当前功能不可用");
-    if (!values(item.input_schema).length) {
-      document.getElementById("starter-dialog").close();
-      executeStarter(item, {}).catch((error) => shell.toast(error.message));
-      return;
-    }
     const dialog = document.getElementById("starter-dialog");
     document.getElementById("starter-dialog-title").textContent = item.title;
     document.getElementById("starter-dialog-description").textContent = item.description;
     const content = document.getElementById("starter-dialog-content");
     const isRunbook = item.execution_mode === "RUNBOOK";
-    content.innerHTML = `<div class="ops-starter-parameters">${starterParameterGroupsHtml(item, initialParameters)}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button>${isRunbook ? '<button type="button" data-starter-auto>使用自动配置生成</button>' : ""}<button class="primary" type="button" data-starter-submit>${isRunbook ? "按当前参数生成" : "开始执行"}</button></div>`;
+    content.innerHTML = `<div class="ops-starter-parameters">${starterResourceScopeHtml(item)}${starterParameterGroupsHtml(item, initialParameters)}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button>${isRunbook ? '<button type="button" data-starter-auto>使用自动配置生成</button>' : ""}<button class="primary" type="button" data-starter-submit>${isRunbook ? "按当前参数生成" : "开始执行"}</button></div>`;
     content.querySelector("[data-starter-back]").onclick = openStarterMenu;
-    if (isRunbook) content.querySelector("[data-starter-auto]").onclick = () => {
-      dialog.close();
-      executeStarter(item, {}).catch((error) => shell.toast(error.message));
+    const systems = compatibleStarterSystems(item);
+    const systemSelect = content.querySelector('[name="starter_business_system_id"]');
+    systemSelect.onchange = () => {
+      const system = systems.find((row) => row.business_system_id === systemSelect.value);
+      content.querySelector("[data-starter-target-options]").innerHTML = starterTargetOptionsHtml(system);
     };
-    content.querySelector("[data-starter-submit]").onclick = () => {
+    const submitSelection = (automatic = false) => {
+      if (!systemSelect.reportValidity()) return;
+      const system = systems.find((row) => row.business_system_id === systemSelect.value);
+      const selectedResource = content.querySelector('[name="starter_resource_id"]:checked');
+      if (!selectedResource) return shell.toast("请选择要执行该功能的数据库 Target");
+      const target = values(system?.targets).find((row) => row.resource_id === selectedResource.value);
+      if (!target || !starterTargetSelectable(target)) return shell.toast("当前 Target 连接不可用，暂不能执行该功能");
       const parameters = {};
-      for (const field of item.input_schema) {
-        const input = content.querySelector(`[name="${CSS.escape(field.name)}"]`);
-        if (!input.reportValidity()) return;
-        let value = input.value.trim();
-        if (!value && !field.required) continue;
-        if (field.type === "datetime") value = new Date(value).toISOString();
-        if (field.type === "oracle_datetime") {
-          if (value.length === 16) value += ":00";
-          value = value.replace("T", " ");
+      if (!automatic) {
+        for (const field of item.input_schema) {
+          const input = content.querySelector(`[name="${CSS.escape(field.name)}"]`);
+          if (!input.reportValidity()) return;
+          let value = input.value.trim();
+          if (!value && !field.required) continue;
+          if (field.type === "datetime") value = new Date(value).toISOString();
+          if (field.type === "oracle_datetime") {
+            if (value.length === 16) value += ":00";
+            value = value.replace("T", " ");
+          }
+          if (field.type === "integer") value = Number(value);
+          parameters[field.name] = value;
         }
-        if (field.type === "integer") value = Number(value);
-        parameters[field.name] = value;
       }
-      dialog.close();
-      executeStarter(item, parameters).catch((error) => shell.toast(error.message));
+      const actionButtons = content.querySelectorAll("[data-starter-auto],[data-starter-submit]");
+      actionButtons.forEach((button) => { button.disabled = true; });
+      executeStarter(item, parameters, { system, target })
+        .catch((error) => shell.toast(error.message))
+        .finally(() => actionButtons.forEach((button) => { button.disabled = false; }));
     };
+    if (isRunbook) content.querySelector("[data-starter-auto]").onclick = () => submitSelection(true);
+    content.querySelector("[data-starter-submit]").onclick = () => submitSelection(false);
     if (!dialog.open) dialog.showModal();
   }
 
-  function starterSubmittedText(item, parameters) {
+  function starterSubmittedText(item, parameters, selection) {
     const labels = Object.fromEntries(values(item.input_schema).map((field) => [field.name, field.label]));
-    return [`执行功能：${item.title}`, ...Object.entries(parameters).map(([key, value]) => `${labels[key] || key}：${value}`)].join("\n");
+    return [`执行功能：${item.title}`, `业务系统：${selection.system.display_name}`, `数据库 Target：${selection.target.target_name}`, ...Object.entries(parameters).map(([key, value]) => `${labels[key] || key}：${value}`)].join("\n");
   }
 
-  async function executeStarter(item, parameters) {
+  async function executeStarter(item, parameters, selection) {
     const agentId = document.getElementById("agent-select").value;
-    const path = state.conversation
-      ? `${api}/conversations/${state.conversation.conversation_id}/turns`
-      : `${api}/conversations`;
     const starter = {
       starter_id: item.starter_id,
       catalog_version: state.starterCatalogVersion,
       parameters,
     };
-    const body = state.conversation
-      ? { content: [], starter }
-      : { agent_id: agentId, content: [], starter };
-    const receipt = await KBotAIOpsAuth.request(path, {
+    const body = {
+      agent_id: agentId,
+      context_hint: {
+        source_kind: "RESOURCE_PAGE",
+        business_system_id: selection.system.business_system_id,
+        resource_ids: [selection.target.resource_id],
+      },
+      content: [],
+      starter,
+    };
+    const receipt = await KBotAIOpsAuth.request(`${api}/conversations`, {
       method: "POST",
       headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },
       body: JSON.stringify(body),
     });
+    document.getElementById("starter-dialog").close();
     const panel = document.getElementById("message-list");
-    if (!state.conversation) panel.innerHTML = "";
-    panel.insertAdjacentHTML("beforeend", messageHtml("USER", starterSubmittedText(item, parameters)));
+    panel.innerHTML = "";
+    panel.insertAdjacentHTML("beforeend", messageHtml("USER", starterSubmittedText(item, parameters, selection)));
     panel.insertAdjacentHTML("beforeend", '<section id="live-progress" class="ops-context-banner ops-progress" aria-live="polite">正在按所选功能建立确定性执行计划…</section>');
     await followTurn(receipt.conversation_id, receipt.turn_id, document.getElementById("live-progress"));
     await loadConversation(receipt.conversation_id);

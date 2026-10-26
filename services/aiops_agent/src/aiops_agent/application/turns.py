@@ -54,6 +54,7 @@ from platform_core.contracts.aiops import (
     ConversationCreate,
     ConversationSourceContext,
     ConversationSourceType,
+    TrustedContextHint,
     TargetFactConfirmCommand,
     TargetFactView,
     InputContent,
@@ -239,6 +240,10 @@ class ConversationTurnService:
         )
         source = conversation_create.source
         source_run = None
+        focused_target_id = await self._focused_target_from_context_hint(
+            uow=uow,
+            context_hint=conversation_create.context_hint,
+        )
         if source.source_type == ConversationSourceType.RUN:
             source_run = await uow.runs.get_run_scoped(
                 ops_run_id=source.run_id,
@@ -305,6 +310,7 @@ class ConversationTurnService:
             actor_id=actor_id,
             trace_id=trace_id,
             source_run=source_run,
+            focused_target_id=focused_target_id,
             execution_context=execution_context,
         )
 
@@ -485,10 +491,15 @@ class ConversationTurnService:
                     domain_id=domain_id,
                     agent_id=agent.agent_id,
                     agent_version_id=version.agent_version_id,
-                    context_hint_json={
-                        "source": "INSPECTION",
-                        "resource_ids": [str(resource.resource_id)],
-                    },
+                    context_hint_json=(
+                        TrustedContextHint(
+                            source_kind="INSPECTION",
+                            resource_ids=(resource.resource_id,),
+                            source_resource_id=fire_id,
+                        ).model_dump(mode="json")
+                        if resource is not None
+                        else None
+                    ),
                     title=f"{payload['plan_display_name']} · 定期巡检",
                     status="ACTIVE",
                     source_type="INSPECTION",
@@ -518,6 +529,7 @@ class ConversationTurnService:
                         actor_id=actor_id,
                         trace_id=trace_id,
                         source_run=None,
+                        focused_target_id=target_id,
                         execution_context={
                             "trigger_type": "SCHEDULE",
                             "interaction_mode": "AUTONOMOUS",
@@ -618,6 +630,11 @@ class ConversationTurnService:
                         "AIOPS_SOURCE_RUN_INVALID",
                         "来源 Run 必须存在且已经产生可用结果",
                     )
+            context_hint = (
+                TrustedContextHint.model_validate(conversation.context_hint_json)
+                if conversation.context_hint_json
+                else None
+            )
             receipt = await self._create_turn(
                 uow=uow,
                 conversation=conversation,
@@ -626,6 +643,10 @@ class ConversationTurnService:
                 actor_id=actor_id,
                 trace_id=trace_id,
                 source_run=source_run,
+                focused_target_id=await self._focused_target_from_context_hint(
+                    uow=uow,
+                    context_hint=context_hint,
+                ),
             )
             await uow.commit()
             return receipt
@@ -1477,13 +1498,42 @@ class ConversationTurnService:
         trace_id: str,
         source_run,
         execution_context: dict[str, Any] | None = None,
+        focused_target_id: UUID | None = None,
     ) -> dict[str, Any]:
+        if source_run is not None:
+            focused_target_id = source_run.target_id
+        if focused_target_id is not None:
+            if not await uow.agents.version_has_target(
+                agent_version_id=version.agent_version_id,
+                target_id=focused_target_id,
+            ):
+                raise self._error(
+                    "AIOPS_AGENT_SCOPE_DENIED",
+                    "诊断焦点不属于当前 Agent 允许访问的业务系统",
+                )
+            await self._require_existing_target(
+                uow=uow,
+                domain_id=int(conversation.domain_id),
+                target_id=focused_target_id,
+            )
         effective_context = dict(execution_context or {})
         content = tuple(command.content)
         if command.starter is not None:
+            if focused_target_id is None:
+                raise self._error(
+                    "AIOPS_STARTER_SCOPE_REQUIRED",
+                    "诊断功能入口必须由可信资源上下文确定数据库资源",
+                )
+            target = await uow.targets.get_scoped(
+                target_id=focused_target_id,
+                domain_id=int(conversation.domain_id),
+            )
+            if target is None:
+                raise resource_not_found("Target")
             frozen_starter = self._conversation_starter_catalog.freeze(
                 selection=command.starter,
                 capabilities=set(version.capabilities_json or ()),
+                target=target,
             )
             content = (
                 InputContent(
@@ -1549,7 +1599,7 @@ class ConversationTurnService:
             turn_no=conversation.last_turn_no,
             idempotency_key=command.idempotency_key,
             status="QUEUED",
-            focused_target_id=None,
+            focused_target_id=focused_target_id,
             scope_resolution_json=None,
             event_cursor=1,
             created_by=actor_id,
@@ -1580,6 +1630,9 @@ class ConversationTurnService:
             "domain_id": int(conversation.domain_id),
             "conversation_id": str(conversation.conversation_id),
             "turn_id": str(turn.turn_id),
+            "focused_target_id": (
+                str(focused_target_id) if focused_target_id else None
+            ),
             "agent_id": str(conversation.agent_id),
             "agent_version_id": str(conversation.agent_version_id),
             "source_situation_id": (
@@ -1629,6 +1682,20 @@ class ConversationTurnService:
         await uow.turns.add_event(event)
         await uow.outbox.add(outbox)
         return self._receipt(turn)
+
+    @staticmethod
+    async def _focused_target_from_context_hint(
+        *,
+        uow,
+        context_hint: TrustedContextHint | None,
+    ) -> UUID | None:
+        """只允许单一数据库资源把会话上下文收敛为执行 Target。"""
+        if context_hint is None or len(context_hint.resource_ids) != 1:
+            return None
+        database = await uow.business_systems.get_database_profile(
+            context_hint.resource_ids[0]
+        )
+        return database.target_id if database is not None else None
 
     async def _validate_context_hint(
         self,

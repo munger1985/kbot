@@ -208,10 +208,33 @@ class ConversationStarterView(AIOpsContract):
     availability_reason: str | None = Field(default=None, max_length=1000)
 
 
+class ConversationStarterTargetOption(AIOpsContract):
+    """功能入口可选择的数据库资源；Target ID 仅用于展示和稳定标识。"""
+
+    target_id: UUIDv7
+    resource_id: UUIDv7
+    target_name: str = Field(min_length=1, max_length=256)
+    resource_name: str = Field(min_length=1, max_length=256)
+    db_type: str = Field(min_length=1, max_length=32)
+    status: str = Field(min_length=1, max_length=16)
+    connectivity_status: str = Field(min_length=1, max_length=16)
+    readonly_connection_enabled: bool
+
+
+class ConversationStarterBusinessSystemOption(AIOpsContract):
+    """当前 Agent 版本授权且包含数据库 Target 的业务系统。"""
+
+    business_system_id: UUIDv7
+    display_name: str = Field(min_length=1, max_length=256)
+    environment: str = Field(min_length=1, max_length=16)
+    targets: tuple[ConversationStarterTargetOption, ...] = Field(min_length=1)
+
+
 class ConversationStarterCatalogView(AIOpsContract):
     catalog_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
     agent_id: UUIDv7
     context_hint: TrustedContextHint | None = None
+    business_systems: tuple[ConversationStarterBusinessSystemOption, ...]
     starters: tuple[ConversationStarterView, ...]
 
 

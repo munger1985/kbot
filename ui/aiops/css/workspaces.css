@@ -63,6 +63,19 @@
 .ops-starter-dialog-shell > header p { margin: 5px 0 0; color: var(--muted); }
 .ops-starter-dialog-content { padding: 20px; overflow: auto; }
 .ops-starter-parameters { display: grid; gap: 20px; }
+.ops-starter-resource-scope { display: grid; gap: 14px; padding: 16px; border: 1px solid #d9dfe9; background: #f8fafc; }
+.ops-starter-resource-scope > header h4 { margin: 0; color: #334765; font-size: 14px; }
+.ops-starter-resource-scope > header p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+.ops-starter-target-list { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.ops-starter-target-list legend { margin-bottom: 8px; color: #45516a; font-size: 12px; font-weight: 650; }
+.ops-starter-target-option { display: flex !important; align-items: flex-start; gap: 10px !important; padding: 12px; border: 1px solid #d9dfe9; background: #fff; cursor: pointer; }
+.ops-starter-target-option:has(input:checked) { border-color: #496da8; background: #eef4ff; }
+.ops-starter-target-option.is-disabled { opacity: .58; cursor: not-allowed; }
+.ops-starter-target-option input { width: auto; min-height: 0; margin: 3px 0 0; }
+.ops-starter-target-option span { display: grid; gap: 3px; }
+.ops-starter-target-option small { color: var(--muted); }
+.ops-starter-target-option em { color: var(--muted); font-size: 11px; font-style: normal; }
+.ops-starter-resource-empty { margin: 0; color: var(--muted); font-size: 12px; }
 .ops-starter-parameter-group { padding: 16px; border: 1px solid #d9dfe9; background: #f8fafc; }
 .ops-starter-parameter-group > header { margin-bottom: 13px; }
 .ops-starter-parameter-group > header h4 { margin: 0; color: #334765; font-size: 14px; }

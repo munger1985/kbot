@@ -2419,6 +2419,45 @@
         "title": "ConversationStart",
         "type": "object"
       },
+      "ConversationStarterBusinessSystemOption": {
+        "additionalProperties": false,
+        "description": "当前 Agent 版本授权且包含数据库 Target 的业务系统。",
+        "properties": {
+          "business_system_id": {
+            "format": "uuid",
+            "title": "Business System Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "environment": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Environment",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationStarterTargetOption"
+            },
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "business_system_id",
+          "display_name",
+          "environment",
+          "targets"
+        ],
+        "title": "ConversationStarterBusinessSystemOption",
+        "type": "object"
+      },
       "ConversationStarterCatalogView": {
         "additionalProperties": false,
         "properties": {
@@ -2426,6 +2465,13 @@
             "format": "uuid",
             "title": "Agent Id",
             "type": "string"
+          },
+          "business_systems": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationStarterBusinessSystemOption"
+            },
+            "title": "Business Systems",
+            "type": "array"
           },
           "catalog_version": {
             "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
@@ -2453,6 +2499,7 @@
         "required": [
           "catalog_version",
           "agent_id",
+          "business_systems",
           "starters"
         ],
         "title": "ConversationStarterCatalogView",
@@ -2483,6 +2530,68 @@
           "catalog_version"
         ],
         "title": "ConversationStarterSelection",
+        "type": "object"
+      },
+      "ConversationStarterTargetOption": {
+        "additionalProperties": false,
+        "description": "功能入口可选择的数据库资源；Target ID 仅用于展示和稳定标识。",
+        "properties": {
+          "connectivity_status": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Connectivity Status",
+            "type": "string"
+          },
+          "db_type": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Db Type",
+            "type": "string"
+          },
+          "readonly_connection_enabled": {
+            "title": "Readonly Connection Enabled",
+            "type": "boolean"
+          },
+          "resource_id": {
+            "format": "uuid",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Resource Name",
+            "type": "string"
+          },
+          "status": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Target Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "resource_id",
+          "target_name",
+          "resource_name",
+          "db_type",
+          "status",
+          "connectivity_status",
+          "readonly_connection_enabled"
+        ],
+        "title": "ConversationStarterTargetOption",
         "type": "object"
       },
       "ConversationStarterView": {
