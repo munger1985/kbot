@@ -726,6 +726,67 @@ class WorkloadService:
         self._uow_factory = uow_factory
         self._postgresql_artifact_store = postgresql_artifact_store
 
+    async def read_top_sql_window(
+        self,
+        *,
+        domain_id: int,
+        target_id: UUID,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int,
+    ) -> dict[str, Any]:
+        """在业务域内读取历史快照，不创建或修改报告。"""
+        if (
+            period_start.tzinfo is None
+            or period_end.tzinfo is None
+            or period_start >= period_end
+            or not 1 <= limit <= 50
+            or period_end - period_start > timedelta(days=365)
+        ):
+            raise validation_failed("Top SQL 时间窗口或返回数量无效")
+        try:
+            exclusive_end = period_end + timedelta(microseconds=1)
+        except OverflowError as exc:
+            raise validation_failed("Top SQL 结束时间无效") from exc
+        async with self._uow_factory() as uow:
+            target = await uow.targets.get_scoped(
+                target_id=target_id, domain_id=domain_id
+            )
+            if target is None:
+                raise resource_not_found("Target")
+            snapshots = await uow.workloads.list_snapshots(
+                domain_id=domain_id,
+                target_id=target_id,
+                period_start=period_start,
+                period_end=exclusive_end,
+            )
+            ids = tuple(item.workload_snapshot_id for item in snapshots)
+            statements = await uow.workloads.list_statements(
+                domain_id=domain_id,
+                target_id=target_id,
+                workload_snapshot_ids=ids,
+            )
+            probe = dict(
+                dict(target.capabilities_json or {}).get("capability_probe") or {}
+            )
+            database_oid = dict(probe.get("details") or {}).get("database_oid")
+            result = build_top_sql_window(
+                snapshots=snapshots,
+                statements=statements,
+                period_start=period_start,
+                period_end=period_end,
+                limit=limit,
+                postgresql_database_oid=(
+                    str(database_oid) if database_oid is not None else None
+                ),
+            )
+            result["snapshot_ids"] = [str(item) for item in ids]
+            result["collection_enabled"] = bool(
+                dict(target.workload_snapshot_policy_json or {}).get("enabled")
+            )
+            return result
+
+
     async def import_pgbadger_artifact(
         self,
         *,
