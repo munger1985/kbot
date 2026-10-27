@@ -36,5 +36,6 @@ LEFT JOIN pg_catalog.pg_database AS database_name
 LEFT JOIN pg_catalog.pg_roles AS role_name
   ON role_name.oid = statements.userid
 WHERE statements.queryid IS NOT NULL
+  AND statements.dbid = (SELECT oid FROM pg_catalog.pg_database WHERE datname = current_database())
 ORDER BY statements.total_exec_time DESC, statements.queryid DESC
 LIMIT :limit

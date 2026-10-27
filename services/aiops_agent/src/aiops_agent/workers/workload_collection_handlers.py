@@ -63,7 +63,16 @@ class WorkloadCollectionHandler:
             if database_type == "POSTGRESQL"
             else _first_row(observations.get("db.instance.performance"))
         )
-        captured_at = _latest_captured_at(observations) or datetime.now(UTC)
+        statement_tool = (
+            "db.mysql.statement.digest.top"
+            if database_type == "MYSQL"
+            else "db.postgresql.statement.top"
+        )
+        captured_at = (
+            _datetime(dict(observations.get(statement_tool) or {}).get("captured_at"))
+            or _latest_captured_at(observations)
+            or datetime.now(UTC)
+        )
         probe = dict(
             dict(diagnostics.get("capability_snapshot") or {}).get(
                 "capability_probe"
@@ -85,8 +94,13 @@ class WorkloadCollectionHandler:
         if database_type == "POSTGRESQL":
             identity_kind = "POSTGRESQL_SYSTEM_IDENTIFIER"
         uptime = _integer(performance.get("uptime_seconds"))
+        performance_captured_at = _datetime(
+            dict(observations.get("db.instance.performance") or {}).get(
+                "captured_at"
+            )
+        )
         instance_started_at = (
-            captured_at - timedelta(seconds=uptime)
+            (performance_captured_at or captured_at) - timedelta(seconds=uptime)
             if uptime is not None
             else _datetime(probe.get("server_started_at")) or captured_at
         )
@@ -99,11 +113,7 @@ class WorkloadCollectionHandler:
         )
         statements = _statement_rows(
             database_type=database_type,
-            observation=(
-                observations.get("db.mysql.statement.digest.top")
-                if database_type == "MYSQL"
-                else observations.get("db.postgresql.statement.top")
-            ),
+            observation=observations.get(statement_tool),
         )
         metrics = _metric_rows(database_type, observations)
         replication_metrics = {

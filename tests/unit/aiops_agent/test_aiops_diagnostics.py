@@ -543,6 +543,11 @@ class DiagnosticCatalogTest(unittest.TestCase):
                     "normalized_statement",
                     tuple(column.name for column in pg_top.definition.output_columns),
                 )
+                self.assertIn(
+                    "statements.dbid = (select oid from pg_catalog.pg_database "
+                    "where datname = current_database())",
+                    pg_top.sql.lower(),
+                )
 
     def test_oracle_plan_monitor_uses_documented_cardinality_column(self) -> None:
         registry = DiagnosticRegistry.load()

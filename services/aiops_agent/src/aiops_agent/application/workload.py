@@ -108,6 +108,23 @@ def counter_delta(
     }
 
 
+def _same_snapshot_instance(previous: object, current: object) -> bool:
+    """MySQL 的 Uptime 以整秒报告，只允许很小的启动时间估算误差。"""
+    if dict(previous.instance_identity_json) != dict(current.instance_identity_json):
+        return False
+    if str(previous.database_type) != "MYSQL" or str(current.database_type) != "MYSQL":
+        return previous.instance_started_at == current.instance_started_at
+    before = dict(previous.instance_metrics_json or {}).get("uptime_seconds")
+    after = dict(current.instance_metrics_json or {}).get("uptime_seconds")
+    if before is None or after is None:
+        return previous.instance_started_at == current.instance_started_at
+    if _number(after) < _number(before):
+        return False
+    return abs(
+        (current.instance_started_at - previous.instance_started_at).total_seconds()
+    ) <= 2
+
+
 def build_workload_report(
     *,
     target_id: UUID,
@@ -131,11 +148,7 @@ def build_workload_report(
     continuous_pairs: set[tuple[UUID, UUID]] = set()
     for previous, current in zip(ordered, ordered[1:]):
         elapsed = (current.collected_at - previous.collected_at).total_seconds()
-        same_instance = (
-            dict(previous.instance_identity_json)
-            == dict(current.instance_identity_json)
-            and previous.instance_started_at == current.instance_started_at
-        )
+        same_instance = _same_snapshot_instance(previous, current)
         if not same_instance or elapsed <= 0:
             discontinuities.append(
                 {
@@ -376,6 +389,156 @@ def build_workload_report(
         "metric_totals_by_family": dict(sorted(metric_totals.items())),
         "metric_discontinuities": metric_discontinuities,
         "metric_gaps": dict(sorted(metric_gaps.items())),
+    }
+
+
+def build_top_sql_window(
+    *,
+    snapshots: Sequence[object],
+    statements: Sequence[object],
+    period_start: datetime,
+    period_end: datetime,
+    limit: int,
+    postgresql_database_oid: str | None = None,
+) -> dict[str, Any]:
+    """只对窗口内相邻且连续的快照求差，明确暴露时间和候选集缺口。"""
+    if period_start.tzinfo is None or period_end.tzinfo is None:
+        raise ValueError("时间窗口必须包含时区")
+    if period_start >= period_end or not 1 <= limit <= 50:
+        raise ValueError("时间窗口或返回数量无效")
+    ordered = sorted(
+        (
+            item for item in snapshots
+            if period_start <= item.collected_at <= period_end
+        ),
+        key=lambda item: (item.collected_at, str(item.workload_snapshot_id)),
+    )
+    by_snapshot: dict[UUID, dict[tuple[str, str, str, str, int], object]] = defaultdict(dict)
+    for item in statements:
+        if (
+            str(item.statement_identity_type) == "POSTGRESQL_QUERY_ID"
+            and (
+                not postgresql_database_oid
+                or str(item.database_name or "") != str(postgresql_database_oid)
+            )
+        ):
+            continue
+        key = (
+            str(item.statement_identity_type),
+            str(item.statement_identity_value),
+            str(item.database_name or ""),
+            str(item.user_identifier or ""),
+            int(item.top_level),
+        )
+        by_snapshot[item.workload_snapshot_id][key] = item
+
+    gaps: Counter[str] = Counter()
+    totals: dict[tuple[str, str, str, str, int], dict[str, Any]] = {}
+    intervals = []
+    for previous, current in zip(ordered, ordered[1:]):
+        elapsed = (current.collected_at - previous.collected_at).total_seconds()
+        family = "DIGEST" if str(current.database_type) == "MYSQL" else "STATEMENT"
+        quality = [
+            str(dict(item.coverage_json or {}).get(family, "UNKNOWN"))
+            for item in (previous, current)
+        ]
+        if (
+            elapsed <= 0
+            or not _same_snapshot_instance(previous, current)
+            or any(str(getattr(item, "status", "READY")) == "FAILED" for item in (previous, current))
+        ):
+            gaps["DISCONTINUITY"] += 1
+            continue
+        if any(value not in {"AVAILABLE", "PARTIAL"} for value in quality):
+            gaps["STATEMENT_SOURCE_UNAVAILABLE"] += 1
+            continue
+        interval_seconds = max(
+            int(getattr(previous, "window_seconds", 0) or 0),
+            int(getattr(current, "window_seconds", 0) or 0),
+        )
+        if interval_seconds and elapsed > interval_seconds * 2:
+            gaps["MISSED_SNAPSHOTS"] += 1
+            continue
+        if "PARTIAL" in quality:
+            gaps["PARTIAL_SOURCE"] += 1
+        if str(current.database_type) == "POSTGRESQL" and not postgresql_database_oid:
+            gaps["DATABASE_OID_UNAVAILABLE"] += 1
+            continue
+        intervals.append((previous.collected_at, current.collected_at))
+        left = by_snapshot.get(previous.workload_snapshot_id, {})
+        right = by_snapshot.get(current.workload_snapshot_id, {})
+        for key in sorted(set(left) | set(right)):
+            if key not in left or key not in right:
+                gaps["STATEMENT_APPEARED_OR_EVICTED"] += 1
+                continue
+            before, after = left[key], right[key]
+            if any(
+                str(getattr(item, "quality_status", "AVAILABLE")) != "AVAILABLE"
+                for item in (before, after)
+            ):
+                gaps["STATEMENT_UNAVAILABLE"] += 1
+                continue
+            if any(
+                int(getattr(after, field)) < int(getattr(before, field))
+                for field in _STATEMENT_COUNTER_FIELDS
+            ):
+                gaps["COUNTER_RESET"] += 1
+                continue
+            count = int(after.execution_count) - int(before.execution_count)
+            duration = int(after.total_duration_microseconds) - int(before.total_duration_microseconds)
+            if count == 0 and duration == 0:
+                continue
+            statement_text = str(getattr(after, "normalized_statement", None) or "")
+            if re.fullmatch(
+                r"\s*(?:ROLLBACK|COMMIT|BEGIN)(?:\s+WORK)?\s*;?\s*|\s*START\s+TRANSACTION\s*;?\s*",
+                statement_text,
+                re.IGNORECASE,
+            ):
+                continue
+            aggregate = totals.setdefault(
+                key,
+                {
+                    "statement_identity_type": key[0],
+                    "statement_identity_value": key[1],
+                    "database_name": key[2],
+                    "user_identifier": key[3],
+                    "normalized_statement": sanitize_statement_text(
+                        getattr(after, "normalized_statement", None)
+                    ),
+                    "execution_count": 0,
+                    "total_duration_microseconds": 0,
+                },
+            )
+            aggregate["execution_count"] += count
+            aggregate["total_duration_microseconds"] += duration
+    ranked = sorted(
+        totals.values(),
+        key=lambda item: (-item["total_duration_microseconds"], item["statement_identity_value"]),
+    )[:limit]
+    for item in ranked:
+        item["mean_duration_microseconds"] = (
+            item["total_duration_microseconds"] / item["execution_count"]
+            if item["execution_count"] else None
+        )
+    if len(ordered) < 2:
+        gaps["INSUFFICIENT_SNAPSHOTS"] += 1
+    if not intervals or intervals[0][0] > period_start or intervals[-1][1] < period_end:
+        gaps["WINDOW_NOT_FULLY_COVERED"] += 1
+    return {
+        "requested_start": period_start.isoformat(),
+        "requested_end": period_end.isoformat(),
+        "covered_intervals": [
+            {"start": start.isoformat(), "end": end.isoformat()}
+            for start, end in intervals
+        ],
+        "snapshot_count": len(ordered),
+        "status": "PARTIAL" if intervals else "INSUFFICIENT",
+        "gaps": dict(sorted(gaps.items())),
+        "warnings": [
+            "候选语句来自按累计耗时截取的有限快照，窗口热点可能遗漏；"
+            "统计重置或淘汰后重新出现的语句可能无法完整识别。"
+        ],
+        "top_statements": ranked,
     }
 
 

@@ -17,6 +17,7 @@ from aiops_agent.application.workload import (
     build_activity_report,
     build_workload_diff_report,
     build_workload_report,
+    build_top_sql_window,
     counter_delta,
     sanitize_statement_text,
 )
@@ -164,6 +165,119 @@ def test_workload_report_calculates_only_continuous_deltas() -> None:
     assert report["top_statements"][0]["mean_duration_microseconds"] == 200
     assert "123" not in report["top_statements"][0]["normalized_statement"]
     assert "secret" not in report["top_statements"][0]["normalized_statement"]
+
+
+def test_mysql_workload_accepts_uptime_rounding_but_rejects_restarts() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=5, questions=160)
+    first.instance_metrics_json["uptime_seconds"] = 1000
+    second.instance_metrics_json["uptime_seconds"] = 1300
+    second.instance_started_at = STARTED_AT + timedelta(milliseconds=600)
+    report = build_workload_report(
+        target_id=TARGET_ID, snapshots=(first, second), statements=()
+    )
+    assert report["continuous_seconds"] == 300
+    second.instance_metrics_json["uptime_seconds"] = 1
+    report = build_workload_report(
+        target_id=TARGET_ID, snapshots=(first, second), statements=()
+    )
+    assert report["continuous_seconds"] == 0
+    assert report["discontinuities"][0]["reason"] == "SERVER_RESTART_OR_IDENTITY_CHANGED"
+
+
+def test_postgresql_workload_does_not_tolerate_start_time_drift() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=5, questions=160)
+    first.database_type = second.database_type = "POSTGRESQL"
+    second.instance_started_at = STARTED_AT + timedelta(milliseconds=600)
+    report = build_workload_report(
+        target_id=TARGET_ID, snapshots=(first, second), statements=()
+    )
+    assert report["continuous_seconds"] == 0
+
+
+def test_top_sql_window_uses_only_continuous_window_deltas() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=5, questions=160)
+    first.coverage_json = second.coverage_json = {"DIGEST": "AVAILABLE"}
+    before = _statement(first, DIGEST_A, executions=10, latency=1000)
+    after = _statement(second, DIGEST_A, executions=14, latency=1800)
+    other_before = _statement(first, DIGEST_B, executions=1, latency=10)
+    other_after = _statement(second, DIGEST_B, executions=2, latency=20)
+    other_after.normalized_statement = "ROLLBACK"
+    result = build_top_sql_window(
+        snapshots=(second, first),
+        statements=(before, after, other_before, other_after),
+        period_start=first.collected_at,
+        period_end=second.collected_at + timedelta(minutes=1),
+        limit=10,
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["gaps"]["WINDOW_NOT_FULLY_COVERED"] == 1
+    assert len(result["top_statements"]) == 1
+    top = result["top_statements"][0]
+    assert top["execution_count"] == 4
+    assert top["total_duration_microseconds"] == 800
+    assert top["mean_duration_microseconds"] == 200
+    assert "secret" not in top["normalized_statement"]
+
+
+def test_top_sql_window_reports_resets_and_unavailable_sources() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=5, questions=160)
+    first.coverage_json = second.coverage_json = {"DIGEST": "AVAILABLE"}
+    before = _statement(first, DIGEST_A, executions=10, latency=1000)
+    after = _statement(second, DIGEST_A, executions=1, latency=100)
+    result = build_top_sql_window(
+        snapshots=(first, second), statements=(before, after),
+        period_start=first.collected_at, period_end=second.collected_at, limit=10,
+    )
+    assert result["gaps"]["COUNTER_RESET"] == 1
+    assert result["top_statements"] == []
+    second.coverage_json = {"DIGEST": "DENIED"}
+    result = build_top_sql_window(
+        snapshots=(first, second), statements=(before, after),
+        period_start=first.collected_at, period_end=second.collected_at, limit=10,
+    )
+    assert result["status"] == "INSUFFICIENT"
+    assert result["gaps"]["STATEMENT_SOURCE_UNAVAILABLE"] == 1
+
+
+def test_top_sql_window_requires_postgresql_database_scope() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=5, questions=160)
+    first.database_type = second.database_type = "POSTGRESQL"
+    first.coverage_json = second.coverage_json = {"STATEMENT": "AVAILABLE"}
+    before = _statement(first, DIGEST_A, executions=10, latency=1000)
+    after = _statement(second, DIGEST_A, executions=14, latency=1800)
+    before.statement_identity_type = after.statement_identity_type = "POSTGRESQL_QUERY_ID"
+    before.database_name = after.database_name = "42"
+    args = dict(
+        snapshots=(first, second), statements=(before, after),
+        period_start=first.collected_at, period_end=second.collected_at, limit=10,
+    )
+    assert build_top_sql_window(**args)["gaps"]["DATABASE_OID_UNAVAILABLE"] == 1
+    assert not build_top_sql_window(**args, postgresql_database_oid="43")["top_statements"]
+    assert len(build_top_sql_window(**args, postgresql_database_oid="42")["top_statements"]) == 1
+
+
+def test_top_sql_window_does_not_bridge_missed_snapshots() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=20, questions=160)
+    first.coverage_json = second.coverage_json = {"DIGEST": "AVAILABLE"}
+    first.window_seconds = second.window_seconds = 300
+    result = build_top_sql_window(
+        snapshots=(first, second), statements=(
+            _statement(first, DIGEST_A, executions=10, latency=1000),
+            _statement(second, DIGEST_A, executions=14, latency=1800),
+        ),
+        period_start=first.collected_at,
+        period_end=second.collected_at,
+        limit=10,
+    )
+    assert result["status"] == "INSUFFICIENT"
+    assert result["gaps"]["MISSED_SNAPSHOTS"] == 1
+    assert result["top_statements"] == []
 
 
 def test_workload_report_marks_new_and_evicted_digests() -> None:
