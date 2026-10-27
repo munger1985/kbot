@@ -382,10 +382,26 @@
     if (resourceDrawerOpen) { renderResourceDrawer(); bindResourceDrawer(); }
   }
 
+  function snapshotToast(message) {
+    const node = document.createElement("div");
+    node.className = "ops-toast";
+    node.textContent = message;
+    node.setAttribute("role", "status");
+    document.getElementById("business-resource-drawer").append(node);
+    if (typeof node.showPopover === "function") {
+      node.setAttribute("popover", "manual");
+      node.style.inset = "auto 24px 24px auto";
+      node.style.margin = "0";
+      node.style.border = "0";
+      node.showPopover();
+    }
+    setTimeout(() => node.remove(), 5000);
+  }
+
   async function loadSnapshotPolicy() {
     const targetId = snapshotTargetId(currentResource());
     const ticket = ++snapshotGeneration;
-    snapshotState = { targetId, target: null, draft: null, busy: true, error: "", message: "" };
+    snapshotState = { targetId, target: null, draft: null, busy: true, error: "" };
     snapshotRender();
     if (!targetId) { snapshotState.busy = false; snapshotState.error = "未找到当前数据库对应的 Target。"; snapshotRender(); return; }
     try {
@@ -413,7 +429,8 @@
     const state = snapshotState;
     if (isPublishedView() || !item || !state?.target || !state.draft || state.busy) return;
     const ticket = snapshotGeneration;
-    state.busy = true; state.mutating = true; state.error = ""; state.message = ""; snapshotRender();
+    state.busy = true; state.mutating = true; state.error = ""; snapshotRender();
+    let notification = "";
     try {
       const url = `/targets/${encodeURIComponent(state.targetId)}`;
       const headers = { "If-Match": `"rv-${item.workload_snapshot?.target_row_version || state.target.row_version}"`, "Idempotency-Key": uuid7() };
@@ -421,9 +438,9 @@
       if (ticket !== snapshotGeneration) return;
       state.target = target;
       if (item.workload_snapshot) item.workload_snapshot.target_row_version = target.row_version;
-      state.message = `连接检查已完成：${target.connectivity_status || "状态未知"}。连接检查立即执行；采集策略仍需发布业务系统。`;
+      notification = `连接检查已完成：${target.connectivity_status || "状态未知"}。连接检查立即执行；采集策略仍需发布业务系统。`;
     } catch (error) { if (ticket === snapshotGeneration) state.error = snapshotError(error); }
-    finally { if (ticket === snapshotGeneration) { state.busy = false; state.mutating = false; snapshotRender(); } }
+    finally { if (ticket === snapshotGeneration) { state.busy = false; state.mutating = false; snapshotRender(); if (notification) snapshotToast(notification); } }
   }
 
   function snapshotHtml(item) {
@@ -435,7 +452,6 @@
     const formatTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "暂无";
     let content = state?.busy && !status ? "<p>正在加载采集策略…</p>" : "";
     if (state?.error) content += `<p class="business-snapshot-error" role="alert">${esc(state.error)} ${!status ? `<button type="button" id="snapshot-reload" ${disabled}>重试</button>` : ""}</p>`;
-    if (state?.message) content += `<p role="status">${esc(state.message)}</p>`;
     if (status && policy) {
       content += `<div class="business-snapshot-status">当前策略：${status.workload_snapshot_policy.enabled ? "已启用" : "未启用"} · 最近采集尝试：${esc(formatTime(status.workload_last_collected_at))} · 下次计划：${esc(formatTime(status.workload_next_run_at))}<br>最近采集错误：${esc(status.workload_last_error_code || "无")}</div>`;
       if (!isPublishedView()) content += `<label class="business-snapshot-toggle"><input data-snapshot-field="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="business-snapshot-fields"><label>采集间隔（分钟）<input data-snapshot-field="interval_minutes" type="number" min="1" max="60" step="1" value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input data-snapshot-field="retention_days" type="number" min="1" max="365" step="1" value="${esc(policy.retention_days)}" ${disabled}></label><label>候选 SQL 数<input data-snapshot-field="top_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="business-snapshot-actions"><button type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button><span id="snapshot-dirty" ${item.workload_snapshot ? "" : "hidden"}>策略已修改，将随业务系统发布</span></div>`;
