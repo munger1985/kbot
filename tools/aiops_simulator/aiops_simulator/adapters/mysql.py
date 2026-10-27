@@ -13,7 +13,10 @@ from aiops_simulator.adapters.base import DatabaseAdapter
 class MySQLAdapter(DatabaseAdapter):
     engine = "mysql"
     display_name = "MySQL WMS"
+    business_scenarios = ("receipt", "pick", "shipment")
     runtime_table = "aiops_sim_wms_activity"
+    business_table = "aiops_sim_wms_business"
+    _business_columns = {"event_id", "run_id", "business_type", "business_key", "started_at", "completed_at", "quantity", "status_code"}
     _runtime_columns = {
         "event_id",
         "run_id",
@@ -143,9 +146,13 @@ class MySQLAdapter(DatabaseAdapter):
                 raise RuntimeError(
                     "MySQL实时活动表缺少列：" + ",".join(sorted(missing))
                 )
+            actual = await self._columns(self.business_table)
+            if self._business_columns - actual:
+                raise RuntimeError("MySQL模拟业务表未准备或列不完整，请先执行prepare")
 
     async def prepare(self) -> None:
         runtime_table_exists = bool(await self._columns(self.runtime_table))
+        business_table_exists = bool(await self._columns(self.business_table))
         async with self._pool.acquire() as connection:
             try:
                 async with connection.cursor() as cursor:
@@ -169,6 +176,21 @@ class MySQLAdapter(DatabaseAdapter):
                             ) TABLESPACE aiops_demo_ts ENGINE=InnoDB
                             """
                         )
+                    if not business_table_exists:
+                        await cursor.execute(f"""
+                            CREATE TABLE {self.business_table} (
+                                event_id char(36) PRIMARY KEY,
+                                run_id char(36) NOT NULL,
+                                business_type varchar(24) NOT NULL,
+                                business_key varchar(64) NOT NULL,
+                                started_at datetime(6) NOT NULL,
+                                completed_at datetime(6),
+                                quantity decimal(14,3) NOT NULL,
+                                status_code varchar(16) NOT NULL,
+                                INDEX aiops_sim_wms_business_time_idx (business_type, started_at),
+                                INDEX aiops_sim_wms_business_ret_idx (started_at)
+                            ) TABLESPACE aiops_demo_ts ENGINE=InnoDB
+                        """)
                     await cursor.execute(
                         """
                         CREATE TABLE IF NOT EXISTS aiops_sim_fault_account (
@@ -200,9 +222,10 @@ class MySQLAdapter(DatabaseAdapter):
                 await connection.rollback()
                 raise
 
-    async def read(self, now: datetime) -> str:
+    async def read(self, now: datetime, scenario: str) -> str:
         history = self.historical_time(now)
-        template = self.randomizer.randrange(5)
+        templates = {"receipt": (0, 4, 5), "pick": (1, 3, 5), "shipment": (2, 3, 5)}
+        template = self.randomizer.choice(templates[scenario])
         async with self._pool.acquire() as connection:
             async with connection.cursor() as cursor:
                 await cursor.execute(
@@ -275,7 +298,7 @@ class MySQLAdapter(DatabaseAdapter):
                             history + timedelta(days=1),
                         ),
                     )
-                else:
+                elif template == 4:
                     name = "wms_movement_summary"
                     await cursor.execute(
                         """
@@ -292,11 +315,20 @@ class MySQLAdapter(DatabaseAdapter):
                             history + timedelta(days=1),
                         ),
                     )
+                else:
+                    name = f"wms_{scenario}_recent_business"
+                    await cursor.execute(
+                        f"""SELECT b.business_key, b.started_at, b.quantity, a.warehouse_id, a.material_id
+                              FROM {self.business_table} b JOIN {self.runtime_table} a ON a.event_id = b.event_id
+                             WHERE b.business_type = %s AND b.started_at >= %s
+                             ORDER BY b.started_at DESC LIMIT 50""",
+                        (scenario.upper(), now.replace(tzinfo=None) - timedelta(days=1)),
+                    )
                 await cursor.fetchall()
                 await connection.rollback()
         return name
 
-    async def write(self, now: datetime) -> str:
+    async def write(self, now: datetime, scenario: str) -> str:
         inventory_id = self.randomizer.randint(1, 200000)
         event_id = str(uuid.uuid4())
         async with self._pool.acquire() as connection:
@@ -315,6 +347,14 @@ class MySQLAdapter(DatabaseAdapter):
                     row = await cursor.fetchone()
                     if row is None:
                         raise RuntimeError("MySQL库存余额不存在")
+                    quantity = self.randomizer.randint(1, 100)
+                    timestamp = now.replace(tzinfo=None)
+                    await cursor.execute(
+                        f"""INSERT INTO {self.business_table}
+                            (event_id, run_id, business_type, business_key, started_at, quantity, status_code)
+                            VALUES (%s, %s, %s, %s, %s, %s, 'STARTED')""",
+                        (event_id, self.run_id, scenario.upper(), f"{row[3]}:{row[0]}:{row[1]}", timestamp, quantity),
+                    )
                     await cursor.execute(
                         f"""
                         INSERT INTO {self.runtime_table} (
@@ -326,24 +366,26 @@ class MySQLAdapter(DatabaseAdapter):
                         (
                             event_id,
                             self.run_id,
-                            now.replace(tzinfo=None),
+                            timestamp,
                             int(row[3]),
                             int(row[0]),
                             int(row[1]),
                             str(row[2]),
                             f"SIM-{event_id[:12]}",
-                            self.randomizer.choice(
-                                ["RECEIPT", "PICK", "MOVE", "SHIPMENT"]
-                            ),
-                            self.randomizer.randint(1, 100),
+                            scenario.upper(),
+                            quantity,
                             "COMPLETED",
                         ),
+                    )
+                    await cursor.execute(
+                        f"UPDATE {self.business_table} SET status_code = 'COMPLETED', completed_at = %s WHERE event_id = %s",
+                        (timestamp, event_id),
                     )
                 await connection.commit()
             except Exception:
                 await connection.rollback()
                 raise
-        return "wms_live_activity"
+        return f"wms_{scenario}_transaction"
 
     async def cleanup(self, cutoff: datetime, batch_size: int) -> int:
         async with self._pool.acquire() as connection:
@@ -359,8 +401,13 @@ class MySQLAdapter(DatabaseAdapter):
                         (cutoff.replace(tzinfo=None), batch_size),
                     )
                     deleted = int(cursor.rowcount or 0)
+                    await cursor.execute(
+                        f"DELETE FROM {self.business_table} WHERE started_at < %s ORDER BY started_at LIMIT %s",
+                        (cutoff.replace(tzinfo=None), batch_size),
+                    )
+                    business_deleted = int(cursor.rowcount or 0)
                 await connection.commit()
-                return deleted
+                return max(deleted, business_deleted)
             except Exception:
                 await connection.rollback()
                 raise

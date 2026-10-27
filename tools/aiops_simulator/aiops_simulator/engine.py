@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from collections import Counter
@@ -19,6 +20,14 @@ from aiops_simulator.modes.base import OperationKind, TrafficMode
 LOGGER = logging.getLogger("aiops_simulator")
 
 
+def _driver_error_code(exc: Exception) -> str:
+    detail = exc.args[0] if exc.args else None
+    code = getattr(detail, "full_code", None)
+    if isinstance(code, str) and re.fullmatch(r"(?:ORA-\d{5}|DPY-\d{4}|DPI-\d{4})", code):
+        return code
+    return "未提供"
+
+
 @dataclass
 class RunnerStats:
     """单数据库自启动以来的实际执行统计。"""
@@ -28,6 +37,7 @@ class RunnerStats:
     failures: int = 0
     latency_seconds: float = 0.0
     templates: Counter[str] = field(default_factory=Counter)
+    scenarios: Counter[str] = field(default_factory=Counter)
 
     @property
     def successes(self) -> int:
@@ -67,9 +77,20 @@ class DatabaseRunner:
             return False
 
     async def run(self) -> None:
+        streams = [asyncio.create_task(self._run_stream(scenario)) for scenario in self.adapter.business_scenarios]
+        try:
+            await asyncio.gather(*streams)
+        finally:
+            for stream in streams:
+                if not stream.done():
+                    stream.cancel()
+            await asyncio.gather(*streams, return_exceptions=True)
+            await self._drain()
+
+    async def _run_stream(self, scenario: str) -> None:
         while not self.stop_event.is_set():
             now = datetime.now(self.config.timezone)
-            rate = self.mode.rate_at(self.database, now)
+            rate = self.mode.rate_at(self.database, now) / len(self.adapter.business_scenarios)
             if rate <= 0:
                 if await self._wait_or_stop(30):
                     break
@@ -84,22 +105,22 @@ class DatabaseRunner:
             delay = self.randomizer.expovariate(rate)
             if await self._wait_or_stop(delay):
                 break
+            if time.monotonic() < self.backoff_until:
+                continue
             await self.semaphore.acquire()
             if self.stop_event.is_set():
                 self.semaphore.release()
                 break
             operation = self.mix.next()
-            task = asyncio.create_task(self._execute(operation))
+            task = asyncio.create_task(self._execute(operation, scenario))
             self.inflight.add(task)
             task.add_done_callback(self.inflight.discard)
 
-        await self._drain()
-
-    async def _execute(self, operation: OperationKind) -> None:
+    async def _execute(self, operation: OperationKind, scenario: str) -> None:
         started = time.monotonic()
         try:
             now = datetime.now(self.config.timezone)
-            call = self.adapter.read(now) if operation is OperationKind.READ else self.adapter.write(now)
+            call = self.adapter.read(now, scenario) if operation is OperationKind.READ else self.adapter.write(now, scenario)
             template = await asyncio.wait_for(
                 call,
                 timeout=self.config.statement_timeout_seconds + 2,
@@ -109,6 +130,7 @@ class DatabaseRunner:
             else:
                 self.stats.write_success += 1
             self.stats.templates[template] += 1
+            self.stats.scenarios[scenario] += 1
             self.consecutive_failures = 0
         except asyncio.CancelledError:
             raise
@@ -118,9 +140,10 @@ class DatabaseRunner:
             backoff = min(30.0, float(2 ** min(self.consecutive_failures, 5)))
             self.backoff_until = time.monotonic() + backoff
             LOGGER.warning(
-                "%s业务事务失败，错误类型=%s，连续失败=%d，退避=%.0f秒",
+                "%s业务事务失败，错误类型=%s，错误代码=%s，连续失败=%d，退避=%.0f秒",
                 self.adapter.display_name,
                 type(exc).__name__,
+                _driver_error_code(exc),
                 self.consecutive_failures,
                 backoff,
             )
@@ -240,8 +263,9 @@ class SimulatorEngine:
                 top_templates = ",".join(
                     name for name, _ in stats.templates.most_common(3)
                 ) or "无"
+                scenarios = ",".join(f"{name}:{stats.scenarios[name]}" for name in runner.adapter.business_scenarios)
                 LOGGER.info(
-                    "%s累计成功=%d，读=%d，写=%d，读占比=%.1f%%，失败=%d，平均耗时=%.1f毫秒，主要模板=%s",
+                    "%s累计成功=%d，读=%d，写=%d，读占比=%.1f%%，失败=%d，平均耗时=%.1f毫秒，业务场景=%s，主要模板=%s",
                     runner.adapter.display_name,
                     total,
                     stats.read_success,
@@ -249,6 +273,7 @@ class SimulatorEngine:
                     ratio,
                     stats.failures,
                     average_ms,
+                    scenarios,
                     top_templates,
                 )
 

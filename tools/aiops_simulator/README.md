@@ -11,10 +11,15 @@
 - 每100个逻辑事务精确包含80个读事务和20个写事务，窗口内随机打散；
 - 使用连接池、绑定参数和稳定SQL模板，便于AWR、Performance Schema和
   `pg_stat_statements`形成可解释的工作负载；
+- 每库并发调度三个业务场景：ERP生产报工/领料/完工入库、MES信号采集/作业报工/质检、
+  WMS入库/拣货/出库；三个场景共用该库原有总速率和并发上限，不额外放大负载；
 - 历史查询读取既有2025年千万行分区表；
-- 写流量进入每库独立的实时活动表，不改变三张精确1000万行的基准表；
+- 写事务关联读取历史业务数据，并在各库自有的模拟业务表与活动表中创建单据、
+  写入明细和完成状态；失败时整体回滚，不修改历史基准业务表；
 - 过期实时活动数据按小批量清理，默认保留30天；
 - 连续失败时自动退避，不制造连接风暴。
+- Oracle连接池在启动时读取当前账号的资源限制，在连接时限前回收连接，并按
+  空闲时限检查连接；错误日志仅记录异常类型和安全错误码，不记录凭据或SQL参数。
 
 故障模拟是同一工具内的独立进程，不会改变或依赖`daily`进程是否运行。
 
@@ -73,11 +78,17 @@ tools/aiops_simulator/manage prepare
 tools/aiops_simulator/manage validate
 ```
 
-`prepare`是唯一会执行DDL的命令，创建以下三张日常活动表及普通索引：
+`prepare`是唯一会执行DDL的命令，创建以下日常活动表、模拟业务表及普通索引：
 
 - Oracle：`AIOPS_SIM_ERP_ACTIVITY`
 - PostgreSQL：`mes.aiops_sim_mes_activity`
 - MySQL：`aiops_sim_wms_activity`
+- Oracle：`AIOPS_SIM_ERP_BUSINESS`
+- PostgreSQL：`mes.aiops_sim_mes_business`
+- MySQL：`aiops_sim_wms_business`
+
+升级旧版时须重新执行`prepare`，创建新增模拟业务表及索引，然后再启动日常流量。
+此操作不修改历史基准业务表；`start`只校验结构，不会自行执行DDL。
 
 同时创建三库各自的`aiops_sim_fault_account`故障账户表（Oracle名称为大写），并写入
 两条固定测试记录。锁等待、死锁和长事务只操作这些模拟程序自有记录，不会锁定或修改
@@ -105,7 +116,8 @@ tools/aiops_simulator/manage stop
 4个逻辑事务/秒，周末按各系统不同倍率降载。所有时间段、周末倍率、并发和保留期都在
 唯一INI中维护，但`daily`模式的8:2读写比例是程序合同，不允许通过配置改成其他比例。
 
-启动日志每分钟报告各数据库累计读写数、实际比例、失败数、平均耗时和主要SQL模板。
+启动日志每分钟报告各数据库累计读写数、实际比例、失败数、平均耗时、各业务场景
+成功次数和主要SQL模板。
 数据库异常只会让对应Runner退避，其他数据库继续运行。
 
 ## 故障模拟

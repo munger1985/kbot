@@ -15,6 +15,7 @@ class DatabaseAdapter(ABC):
 
     engine: str
     display_name: str
+    business_scenarios: tuple[str, ...]
 
     def __init__(
         self,
@@ -58,11 +59,11 @@ class DatabaseAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def read(self, now: datetime) -> str:
+    async def read(self, now: datetime, scenario: str) -> str:
         """执行一个只读业务事务，并返回模板名称。"""
 
     @abstractmethod
-    async def write(self, now: datetime) -> str:
+    async def write(self, now: datetime, scenario: str) -> str:
         """执行一个写业务事务，并返回模板名称。"""
 
     @abstractmethod

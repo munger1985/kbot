@@ -13,7 +13,10 @@ from aiops_simulator.adapters.base import DatabaseAdapter
 class PostgreSQLAdapter(DatabaseAdapter):
     engine = "postgresql"
     display_name = "PostgreSQL MES"
+    business_scenarios = ("signal_ingest", "operation_report", "quality_report")
     runtime_table = "aiops_sim_mes_activity"
+    business_table = "aiops_sim_mes_business"
+    _business_columns = {"event_id", "run_id", "business_type", "business_key", "started_at", "completed_at", "quantity", "status_code"}
     _runtime_columns = {
         "event_id",
         "run_id",
@@ -61,6 +64,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
     @property
     def qualified_runtime_table(self) -> str:
         return f"{self.database.schema}.{self.runtime_table}"
+
+    @property
+    def qualified_business_table(self) -> str:
+        return f"{self.database.schema}.{self.business_table}"
 
     async def open(self) -> None:
         self._driver = importlib.import_module("asyncpg")
@@ -129,6 +136,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 raise RuntimeError(
                     "PostgreSQL实时活动表缺少列：" + ",".join(sorted(missing))
                 )
+            actual = await self._columns(self.business_table)
+            if self._business_columns - actual:
+                raise RuntimeError("PostgreSQL模拟业务表未准备或列不完整，请先执行prepare")
 
     async def prepare(self) -> None:
         runtime_table_exists = bool(await self._columns(self.runtime_table))
@@ -159,6 +169,28 @@ class PostgreSQLAdapter(DatabaseAdapter):
                             TABLESPACE aiops_demo_ts
                         """
                     )
+                await connection.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {self.qualified_business_table} (
+                        event_id uuid PRIMARY KEY,
+                        run_id uuid NOT NULL,
+                        business_type varchar(24) NOT NULL,
+                        business_key varchar(64) NOT NULL,
+                        started_at timestamp NOT NULL,
+                        completed_at timestamp,
+                        quantity numeric(14,3) NOT NULL,
+                        status_code varchar(16) NOT NULL
+                    ) TABLESPACE aiops_demo_ts
+                """)
+                await connection.execute(f"""
+                    CREATE INDEX IF NOT EXISTS aiops_sim_mes_business_time_idx
+                        ON {self.qualified_business_table} (business_type, started_at)
+                        TABLESPACE aiops_demo_ts
+                """)
+                await connection.execute(f"""
+                    CREATE INDEX IF NOT EXISTS aiops_sim_mes_business_ret_idx
+                        ON {self.qualified_business_table} (started_at)
+                        TABLESPACE aiops_demo_ts
+                """)
                 fault_table = f"{self.database.schema}.aiops_sim_fault_account"
                 await connection.execute(
                     f"""
@@ -184,9 +216,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     """
                 )
 
-    async def read(self, now: datetime) -> str:
+    async def read(self, now: datetime, scenario: str) -> str:
         history = self.historical_time(now)
-        template = self.randomizer.randrange(5)
+        templates = {"signal_ingest": (0, 1, 5), "operation_report": (2, 3, 5), "quality_report": (2, 4, 5)}
+        template = self.randomizer.choice(templates[scenario])
         schema = self.database.schema
         async with self._pool.acquire() as connection:
             if template == 0:
@@ -250,7 +283,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     history - timedelta(days=30),
                     history + timedelta(days=1),
                 )
-            else:
+            elif template == 4:
                 name = "mes_quality_exception"
                 await connection.fetch(
                     f"""
@@ -265,9 +298,18 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     history - timedelta(days=30),
                     history + timedelta(days=1),
                 )
+            else:
+                name = f"mes_{scenario}_recent_business"
+                await connection.fetch(
+                    f"""SELECT b.business_key, b.started_at, b.quantity, a.equipment_id, a.material_code
+                          FROM {self.qualified_business_table} b JOIN {self.qualified_runtime_table} a ON a.event_id = b.event_id
+                         WHERE b.business_type = $1 AND b.started_at >= $2
+                         ORDER BY b.started_at DESC LIMIT 50""",
+                    scenario.upper(), now.replace(tzinfo=None) - timedelta(days=1),
+                )
         return name
 
-    async def write(self, now: datetime) -> str:
+    async def write(self, now: datetime, scenario: str) -> str:
         event_id = uuid.uuid4()
         order_id = self.randomizer.randint(1, 100000)
         schema = self.database.schema
@@ -284,6 +326,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 )
                 if row is None:
                     raise RuntimeError("PostgreSQL生产订单不存在")
+                quantity = float(self.randomizer.randint(1000, 9000)) / 100
+                timestamp = now.replace(tzinfo=None)
+                await connection.execute(
+                    f"""INSERT INTO {self.qualified_business_table}
+                        (event_id, run_id, business_type, business_key, started_at, quantity, status_code)
+                        VALUES ($1, $2, $3, $4, $5, $6, 'STARTED')""",
+                    event_id, uuid.UUID(self.run_id), scenario.upper(), str(row["production_order_no"]), timestamp, quantity,
+                )
                 await connection.execute(
                     f"""
                     INSERT INTO {self.qualified_runtime_table} (
@@ -294,34 +344,43 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     """,
                     event_id,
                     uuid.UUID(self.run_id),
-                    now.replace(tzinfo=None),
+                    timestamp,
                     f"PLANT-{int(row['plant_id']):02d}",
                     int(row["equipment_id"]),
                     str(row["material_code"]),
                     str(row["production_order_no"]),
-                    self.randomizer.choice(
-                        ["SIGNAL_INGEST", "OPERATION_REPORT", "QUALITY_REPORT"]
-                    ),
-                    float(self.randomizer.randint(1000, 9000)) / 100,
+                    scenario.upper(),
+                    quantity,
                     "ACCEPTED",
                 )
-        return "mes_live_activity"
+                await connection.execute(
+                    f"UPDATE {self.qualified_business_table} SET status_code = 'COMPLETED', completed_at = $1 WHERE event_id = $2",
+                    timestamp, event_id,
+                )
+        return f"mes_{scenario}_transaction"
 
     async def cleanup(self, cutoff: datetime, batch_size: int) -> int:
         async with self._pool.acquire() as connection:
-            status = await connection.execute(
-                f"""
-                WITH expired AS (
-                    SELECT ctid FROM {self.qualified_runtime_table}
-                     WHERE occurred_at < $1
-                     ORDER BY occurred_at
-                     LIMIT $2
+            async with connection.transaction():
+                status = await connection.execute(
+                    f"""
+                    WITH expired AS (
+                        SELECT ctid FROM {self.qualified_runtime_table}
+                         WHERE occurred_at < $1
+                         ORDER BY occurred_at
+                         LIMIT $2
+                    )
+                    DELETE FROM {self.qualified_runtime_table} target
+                     USING expired
+                     WHERE target.ctid = expired.ctid
+                    """,
+                    cutoff.replace(tzinfo=None),
+                    batch_size,
                 )
-                DELETE FROM {self.qualified_runtime_table} target
-                 USING expired
-                 WHERE target.ctid = expired.ctid
-                """,
-                cutoff.replace(tzinfo=None),
-                batch_size,
-            )
-            return int(status.rsplit(" ", 1)[-1])
+                business_status = await connection.execute(
+                    f"""WITH expired AS (
+                        SELECT ctid FROM {self.qualified_business_table} WHERE started_at < $1 ORDER BY started_at LIMIT $2
+                    ) DELETE FROM {self.qualified_business_table} target USING expired WHERE target.ctid = expired.ctid""",
+                    cutoff.replace(tzinfo=None), batch_size,
+                )
+            return max(int(status.rsplit(" ", 1)[-1]), int(business_status.rsplit(" ", 1)[-1]))
