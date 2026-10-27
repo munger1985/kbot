@@ -636,16 +636,14 @@
         "tool_id": "db.sql.top_current",
         "version": "1.0.0",
         "db_type": "MYSQL",
-        "variant": "mysql_8_performance_schema",
+        "variant": "mysql_8_digest_window",
         "supported_version_min": 8,
         "supported_version_max_exclusive": 10,
         "required_capabilities": [
-          "statement_history"
+          "statement_digest"
         ],
         "required_entitlements": [],
-        "required_privileges": [
-          "PROCESS"
-        ],
+        "required_privileges": [],
         "parameters": [
           {
             "name": "limit",
@@ -654,19 +652,19 @@
             "maximum": 200,
             "required": false,
             "default": 20
+          },
+          {
+            "name": "sample_limit",
+            "type": "integer",
+            "minimum": 2001,
+            "maximum": 2001,
+            "required": false,
+            "default": 2001
           }
         ],
         "output_columns": [
           {
-            "name": "session_id",
-            "logical_type": "INTEGER"
-          },
-          {
-            "name": "username",
-            "logical_type": "STRING"
-          },
-          {
-            "name": "database_name",
+            "name": "schema_name",
             "logical_type": "STRING"
           },
           {
@@ -683,6 +681,10 @@
             "sensitivity": "MASKED"
           },
           {
+            "name": "execution_count",
+            "logical_type": "INTEGER"
+          },
+          {
             "name": "elapsed_seconds",
             "logical_type": "DECIMAL"
           },
@@ -693,10 +695,14 @@
           {
             "name": "rows_sent",
             "logical_type": "INTEGER"
+          },
+          {
+            "name": "sample_window_seconds",
+            "logical_type": "DECIMAL"
           }
         ],
         "template_ref": "sql/sql_top_current.sql",
-        "template_sha256": "34810f9699a3a6176cbb44a34ab1f86c44bdaab0c4034b0867032dbbbe6667b5",
+        "template_sha256": "e4e0da9fc96ec0ae505f381e886f794ebbd7b081e958c02f9e861a959f5f2093",
         "timeout_seconds": 20,
         "max_rows": 200,
         "max_bytes": 4194304,

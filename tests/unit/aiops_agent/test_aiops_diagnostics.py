@@ -503,14 +503,18 @@ class DiagnosticCatalogTest(unittest.TestCase):
         registry = DiagnosticRegistry.load()
         current = registry.resolve(
             tool_id="db.sql.top_current", tool_version="1.0.0",
-            db_type="MYSQL", db_version="8.0", capabilities={"statement_history"},
+            db_type="MYSQL", db_version="8.0", capabilities={"statement_digest"},
             entitlements=set(),
         )
-        self.assertIn("left(statements.sql_text, 4096) as sql_text", current.sql.lower())
+        self.assertIn("events_statements_summary_by_digest", current.sql.lower())
+        self.assertIn("left(statements.query_sample_text, 4096) as sql_text", current.sql.lower())
+        self.assertNotIn("events_statements_current", current.sql.lower())
+        self.assertEqual("mysql_8_digest_window", current.definition.variant)
         self.assertEqual(
             ("digest", "sql_text", "digest_text"),
-            tuple(column.name for column in current.definition.output_columns[3:6]),
+            tuple(column.name for column in current.definition.output_columns[1:4]),
         )
+        self.assertEqual(2001, registry.validate_parameters(current, {"limit": 10})["sample_limit"])
         digest = registry.resolve(
             tool_id="db.mysql.statement.digest.top", tool_version="1.0.0",
             db_type="MYSQL", db_version="8.0", capabilities={"statement_digest"},

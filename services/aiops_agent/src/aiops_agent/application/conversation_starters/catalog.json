@@ -27,10 +27,10 @@
       "starter_id": "database.sql.top-current",
       "category": "QUERY",
       "title": "Top SQL",
-      "description": "列出当前高耗时或长时间运行的 SQL，并可继续发起单 SQL 分析。",
+      "description": "列出高耗时 SQL，并可继续发起单 SQL 分析；统计口径随数据库类型不同。",
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
-      "input_schema": [{"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 10, "min": 1, "max": 50, "help": "当前快照最多返回 50 条。"}],
+      "input_schema": [{"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 10, "min": 1, "max": 50, "help": "最多返回 50 条。"}],
       "planning": {"kind": "TOP_SQL_LIST"},
       "sort_order": 21
     },

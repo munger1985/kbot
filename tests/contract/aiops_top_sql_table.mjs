@@ -47,6 +47,25 @@ assert.ok(!html.includes(sql));
 assert.ok(html.includes(`继续深入分析 SQL ${digest}`));
 assert.ok(html.includes('aria-label="查询结果表格，可横向滚动"'));
 
+const windowTable = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    presentation_role: "PRIMARY", result_kind: "TOP_SQL_LIST",
+    measurement_note: "两次采样间已完成语句的增量",
+    columns: [
+      { name: "schema_name", label: "数据库" },
+      { name: "digest", label: "Digest" },
+      { name: "sql_text", label: "SQL 文本" },
+      { name: "execution_count", label: "执行次数", logical_type: "INTEGER" },
+      { name: "sample_window_seconds", label: "采样时长（秒）", logical_type: "DECIMAL" },
+    ],
+    rows: [["aiops_demo", digest, sql, 5, "5.1"]],
+  },
+}, {});
+assert.ok(windowTable.includes("两次采样间已完成语句的增量"));
+assert.ok(windowTable.includes('class="is-number">采样时长（秒）'));
+assert.ok(!windowTable.includes('>Digest</th>'));
+assert.ok(windowTable.includes(`继续深入分析 SQL ${digest}`));
+
 for (const name of ["sql_id", "query_id"]) {
   const idTable = context.testTable.answerBlockHtml({
     block_type: "TABLE", payload: {

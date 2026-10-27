@@ -39,6 +39,7 @@ REQUIRED_TOOLS = {
     },
     "MYSQL": {
         "db.instance.identity",
+        "db.sql.top_current",
         "db.session.active",
         "db.session.blocking_chain",
         "db.storage.capacity",
@@ -47,6 +48,7 @@ REQUIRED_TOOLS = {
     },
     "POSTGRESQL": {
         "db.instance.identity",
+        "db.sql.top_current",
         "db.session.active",
         "db.session.blocking_chain",
         "db.storage.capacity",

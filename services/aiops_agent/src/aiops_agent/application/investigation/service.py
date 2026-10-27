@@ -835,6 +835,11 @@ class TurnPlanningService:
                             if ".awr." in tool_id
                             else MeasurementSemantics.HISTORICAL_SAMPLES
                             if tool_id == "db.oracle.alert_log.list"
+                            else MeasurementSemantics.SNAPSHOT_DELTA
+                            if (
+                                tool_id == "db.sql.top_current"
+                                and db_type == "MYSQL"
+                            )
                             else MeasurementSemantics.CUMULATIVE_SINCE_LOAD
                             if (
                                 tool_id == "db.sql.top_current"

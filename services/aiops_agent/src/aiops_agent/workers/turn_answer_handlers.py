@@ -123,6 +123,7 @@ _PRIMARY_COLUMN_LABELS = {
     "buffer_gets": "逻辑读", "disk_reads": "物理读",
     "rows_processed": "处理行数", "rows_examined": "扫描行数",
     "rows_sent": "返回行数", "last_active_time": "最近活跃时间",
+    "sample_window_seconds": "采样时长（秒）",
     "oldest_query_started_at": "最早开始时间", "wait_event_type": "等待类型",
     "wait_event": "等待事件", "digest_text": "SQL 摘要",
     "query_text": "SQL 文本", "query_sample_text": "SQL 样本",
@@ -160,6 +161,16 @@ def _primary_result_metadata(
         "CURRENT_ACTIVITY": "当前活动快照",
         "HISTORICAL_SAMPLES": "所选时间窗口内的日志记录",
     }.get(semantics, semantics)
+    if semantics == "SNAPSHOT_DELTA" and any(
+        str(column.get("name", "")).lower() == "sample_window_seconds"
+        for column in fact.columns
+    ):
+        note = (
+            "两次采样间已完成语句的增量；排除事务控制及系统目录查询。"
+            "摘要不区分执行账号，可能包含其他诊断查询；SQL 文本为样本，"
+            "无样本时显示摘要。结果依赖数据库采集配置；采样截断、摘要溢出"
+            "或统计重置时可能不完整。"
+        )
     return {
         "presentation_role": "PRIMARY",
         "result_kind": result_kind,
@@ -431,7 +442,10 @@ class DbaEvidenceAssessmentHandler:
                             step_id=outcome.step_id,
                             tool_id=outcome.tool_id,
                             measurement_semantics=(
-                                result.measurement_semantics
+                                MeasurementSemantics.SNAPSHOT_DELTA
+                                if observation.variant == "mysql_8_digest_window"
+                                and outcome.tool_id == "db.sql.top_current"
+                                else result.measurement_semantics
                             ),
                             presentation_kind=result.presentation_kind,
                             captured_at=observation.captured_at.isoformat(),

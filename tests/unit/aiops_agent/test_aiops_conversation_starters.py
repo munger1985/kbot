@@ -198,6 +198,27 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             {item["status"] for item in payload["starters"]},
         )
 
+    def test_top_sql_starter_uses_database_specific_measurement_semantics(self) -> None:
+        for db_type, semantics in (
+            ("MYSQL", "SNAPSHOT_DELTA"),
+            ("ORACLE", "CUMULATIVE_SINCE_LOAD"),
+            ("POSTGRESQL", "CURRENT_ACTIVITY"),
+        ):
+            with self.subTest(db_type=db_type):
+                context = SimpleNamespace(
+                    question="查看 Top SQL",
+                    target_context={"db_type": db_type, "display_name": "TestDB"},
+                    conversation_starter={"starter_id": "database.sql.top-current"},
+                )
+                output, tools = TurnPlanningService._starter_diagnostic_output(
+                    object.__new__(TurnPlanningService), context=context,
+                    kind="TOP_SQL_LIST", planning={}, parameters={"limit": 10},
+                    title="Top SQL",
+                )
+                self.assertEqual(("db.instance.identity", "db.sql.top_current"), tools)
+                self.assertEqual(semantics, output.plan.actions[1].measurement_semantics)
+                self.assertEqual({"limit": 10}, output.plan.actions[1].input)
+
     def test_query_starters_validate_parameters_and_compile_fixed_tools(self) -> None:
         top = self._freeze(
             selection=ConversationStarterSelection(

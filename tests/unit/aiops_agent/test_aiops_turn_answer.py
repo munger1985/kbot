@@ -2318,6 +2318,29 @@ class DbaTurnAnswerTest(unittest.TestCase):
             [column["label"] for column in table.payload["columns"]],
         )
 
+    def test_mysql_top_sql_window_uses_observed_semantics_and_discloses_scope(self) -> None:
+        artifact = _tool_artifact(semantics="CURRENT_ACTIVITY")
+        observation = artifact["payload"]["tool_outcomes"][0]["observation"]
+        observation["variant"] = "mysql_8_digest_window"
+        observation["db_type"] = "MYSQL"
+        observation["db_version"] = "8.4"
+        observation["columns"] = [
+            {"name": "DIGEST", "logical_type": "STRING", "sensitivity": "PUBLIC"},
+            {"name": "SAMPLE_WINDOW_SECONDS", "logical_type": "DECIMAL", "sensitivity": "PUBLIC"},
+        ]
+        observation["rows"] = [["abc123", 5.2]]
+        assessment = asyncio.run(
+            DbaEvidenceAssessmentHandler().execute(_context(artifacts=(artifact,)))
+        )
+        self.assertEqual("SNAPSHOT_DELTA", assessment.evidence[0].measurement_semantics)
+        blocks = DbaAnswerComposeHandler._data_blocks(
+            assessment.evidence, primary_result_kind="TOP_SQL_LIST",
+        )
+        table = next(block for block in blocks if block.block_type == AnswerBlockType.TABLE)
+        self.assertEqual("采样时长（秒）", table.payload["columns"][1]["label"])
+        self.assertIn("不区分执行账号", table.payload["measurement_note"])
+        self.assertIn("统计重置", table.payload["measurement_note"])
+
     def test_top_sql_table_displays_text_without_losing_evidence(self) -> None:
         cases = (
             ("db.sql.top_current", "SQL_ID", "SQL_TEXT", "SQL 文本"),
