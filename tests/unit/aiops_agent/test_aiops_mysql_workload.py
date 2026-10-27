@@ -248,6 +248,8 @@ def test_top_sql_window_requires_postgresql_database_scope() -> None:
     second = _snapshot(minute=5, questions=160)
     first.database_type = second.database_type = "POSTGRESQL"
     first.coverage_json = second.coverage_json = {"STATEMENT": "AVAILABLE"}
+    first.instance_identity_json["database_oid"] = "42"
+    second.instance_identity_json["database_oid"] = "42"
     before = _statement(first, DIGEST_A, executions=10, latency=1000)
     after = _statement(second, DIGEST_A, executions=14, latency=1800)
     before.statement_identity_type = after.statement_identity_type = "POSTGRESQL_QUERY_ID"
@@ -259,6 +261,30 @@ def test_top_sql_window_requires_postgresql_database_scope() -> None:
     assert build_top_sql_window(**args)["gaps"]["DATABASE_OID_UNAVAILABLE"] == 1
     assert not build_top_sql_window(**args, postgresql_database_oid="43")["top_statements"]
     assert len(build_top_sql_window(**args, postgresql_database_oid="42")["top_statements"]) == 1
+
+
+def test_top_sql_window_rejects_unverified_or_changed_database_identity() -> None:
+    first = _snapshot(minute=0, questions=100)
+    second = _snapshot(minute=5, questions=160)
+    first.database_type = second.database_type = "POSTGRESQL"
+    first.coverage_json = second.coverage_json = {"STATEMENT": "AVAILABLE"}
+    first.instance_identity_json["database_oid"] = "42"
+    before = _statement(first, DIGEST_A, executions=10, latency=1000)
+    after = _statement(second, DIGEST_A, executions=14, latency=1800)
+    before.statement_identity_type = after.statement_identity_type = "POSTGRESQL_QUERY_ID"
+    before.database_name = after.database_name = "42"
+    args = dict(
+        snapshots=(first, second), statements=(before, after),
+        period_start=first.collected_at, period_end=second.collected_at,
+        limit=10, postgresql_database_oid="42",
+    )
+    missing = build_top_sql_window(**args)
+    assert missing["gaps"]["DATABASE_OID_UNAVAILABLE"] == 1
+    assert missing["top_statements"] == []
+    second.instance_identity_json["database_oid"] = "43"
+    changed = build_top_sql_window(**args)
+    assert changed["gaps"]["DATABASE_OID_CHANGED"] == 1
+    assert changed["top_statements"] == []
 
 
 def test_top_sql_window_does_not_bridge_missed_snapshots() -> None:

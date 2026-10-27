@@ -85,6 +85,21 @@ class WorkloadCollectionHandler:
         if not probe:
             probe = dict(raw_capabilities.get("probe") or {})
         probe_details = dict(probe.get("details") or {})
+        database_oid = None
+        if database_type == "POSTGRESQL":
+            # 身份必须来自本轮目标库事实，不能沿用可能过期的能力探测结果。
+            current_database = str(identity.get("instance_name") or "")
+            matching_databases = [
+                row for row in _rows(
+                    observations.get("db.postgresql.database.statistics")
+                )
+                if current_database
+                and str(row.get("database_name") or "") == current_database
+                and _integer(row.get("database_oid")) is not None
+                and _integer(row.get("database_oid")) > 0
+            ]
+            if len(matching_databases) == 1:
+                database_oid = str(matching_databases[0]["database_oid"])
         instance_identifier = str(
             performance.get("server_uuid")
             or probe.get("server_uuid")
@@ -145,8 +160,12 @@ class WorkloadCollectionHandler:
                 "identity_type": identity_kind,
                 "identity_value": instance_identifier,
                 "database_name": (
-                    probe_details.get("database_name")
-                    or identity.get("instance_name")
+                    (identity.get("instance_name") if database_type == "POSTGRESQL" else None)
+                    or probe_details.get("database_name") or identity.get("instance_name")
+                ),
+                **(
+                    {"database_oid": database_oid}
+                    if database_type == "POSTGRESQL" else {}
                 ),
             },
             instance_started_at=instance_started_at,

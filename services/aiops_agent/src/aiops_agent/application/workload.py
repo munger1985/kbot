@@ -442,6 +442,17 @@ def build_top_sql_window(
             str(dict(item.coverage_json or {}).get(family, "UNKNOWN"))
             for item in (previous, current)
         ]
+        if str(current.database_type) == "POSTGRESQL":
+            captured_oids = [
+                str(dict(item.instance_identity_json or {}).get("database_oid") or "")
+                for item in (previous, current)
+            ]
+            if not postgresql_database_oid or not all(captured_oids):
+                gaps["DATABASE_OID_UNAVAILABLE"] += 1
+                continue
+            if any(oid != str(postgresql_database_oid) for oid in captured_oids):
+                gaps["DATABASE_OID_CHANGED"] += 1
+                continue
         if (
             elapsed <= 0
             or not _same_snapshot_instance(previous, current)
@@ -461,9 +472,6 @@ def build_top_sql_window(
             continue
         if "PARTIAL" in quality:
             gaps["PARTIAL_SOURCE"] += 1
-        if str(current.database_type) == "POSTGRESQL" and not postgresql_database_oid:
-            gaps["DATABASE_OID_UNAVAILABLE"] += 1
-            continue
         intervals.append((previous.collected_at, current.collected_at))
         left = by_snapshot.get(previous.workload_snapshot_id, {})
         right = by_snapshot.get(current.workload_snapshot_id, {})
