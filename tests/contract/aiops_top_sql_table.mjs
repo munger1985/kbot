@@ -7,7 +7,7 @@ const sourcePath = fileURLToPath(new URL("../../ui/aiops/js/aiops-workspaces.js"
 const source = readFileSync(sourcePath, "utf8");
 const instrumented = source.replace(
   /\}\)\(\);\s*$/,
-  "globalThis.testTable = { answerBlockHtml, topSqlColumnClass };})();",
+  "globalThis.testTable = { answerBlockHtml, topSqlColumnClass, normalizePrimaryTopSqlBlocks };})();",
 );
 assert.notEqual(instrumented, source);
 const escape = (value) => String(value ?? "")
@@ -134,3 +134,18 @@ const alert = context.testTable.answerBlockHtml({
 }, {});
 assert.ok(alert.indexOf("发生时间") < alert.indexOf("日志正文"));
 assert.ok(!alert.includes("is-top-sql"));
+
+const historicalCurrent = {
+  block_type: "TABLE",
+  payload: { presentation_role: "PRIMARY", result_kind: "TOP_SQL_LIST", title: "Top SQL",
+    measurement_semantics: "CURRENT_ACTIVITY", columns, rows: [] },
+};
+const historicalCumulative = {
+  block_type: "TABLE",
+  payload: { ...block.payload, measurement_semantics: "CUMULATIVE_SINCE_LOAD" },
+};
+const normalized = context.testTable.normalizePrimaryTopSqlBlocks([historicalCurrent, historicalCumulative]);
+assert.equal(normalized[0].payload.presentation_role, "SUPPORTING");
+assert.equal(normalized[0].payload.title, "当前活跃 SQL 快照");
+assert.equal(normalized[1].payload.presentation_role, "PRIMARY");
+assert.equal(historicalCurrent.payload.presentation_role, "PRIMARY");

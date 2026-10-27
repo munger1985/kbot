@@ -181,14 +181,67 @@ def _primary_result_metadata(
             "无样本时显示摘要。结果依赖数据库采集配置；采样截断、摘要溢出"
             "或统计重置时可能不完整。"
         )
+    title = spec["title"]
+    if result_kind == "TOP_SQL_LIST":
+        title = (
+            "Top SQL（窗口增量）" if fact.tool_id == "workload.sql.top_window"
+            else "Top SQL（采样增量）" if semantics == "SNAPSHOT_DELTA"
+            else "Top SQL（累计统计）" if semantics == "CUMULATIVE_SINCE_LOAD"
+            else "当前活跃 SQL 快照" if semantics == "CURRENT_ACTIVITY"
+            else title
+        )
     return {
         "presentation_role": "PRIMARY",
         "result_kind": result_kind,
-        "title": spec["title"],
+        "title": title,
         "measurement_note": note,
         "identifier_columns": list(spec["identifier_columns"]),
         "follow_up_label": spec["follow_up_label"],
     }
+
+
+def _top_sql_primary_fact(
+    evidence: tuple[TurnEvidenceFact, ...],
+    result_kind: str | None,
+) -> TurnEvidenceFact | None:
+    """同一轮仅选择一个 SQL 主结果，优先真正的窗口证据。"""
+    if result_kind not in (None, "TOP_SQL_LIST"):
+        return None
+    candidates = [
+        fact for fact in evidence
+        if fact.tool_id in _PRIMARY_RESULT_SPECS["TOP_SQL_LIST"]["tool_ids"]
+        and fact.presentation_kind in {"TABLE", "TABLE_AND_CHART"}
+    ]
+
+    def priority(fact: TurnEvidenceFact) -> int:
+        if fact.tool_id == "workload.sql.top_window":
+            return 0
+        return {
+            MeasurementSemantics.SNAPSHOT_DELTA: 1,
+            MeasurementSemantics.CUMULATIVE_SINCE_LOAD: 2,
+            MeasurementSemantics.CURRENT_ACTIVITY: 3,
+        }.get(fact.measurement_semantics, 4)
+
+    return min(candidates, key=priority, default=None)
+
+
+def _measurement_boundaries(assessment: DbaSufficiencyAssessment) -> list[str]:
+    boundaries: list[str] = []
+    if any(
+        fact.tool_id in _PRIMARY_RESULT_SPECS["TOP_SQL_LIST"]["tool_ids"]
+        and fact.measurement_semantics == MeasurementSemantics.CUMULATIVE_SINCE_LOAD
+        for fact in assessment.evidence
+    ):
+        boundaries.append(
+            "SQL 累计统计不能代表指定窗口增量；累计起点依数据源、统计重置和淘汰情况而定，"
+            "未经证实不能称为自实例启动以来。"
+        )
+    if any(gap.source_id == "workload.sql.top_window" for gap in assessment.gaps):
+        boundaries.append(
+            "历史 SQL 窗口存在确定性证据缺口，累计统计和当前活动快照不能补齐该缺口；"
+            "仅能说明实际覆盖区间内的事实，不能将结果称为完整窗口排名。"
+        )
+    return boundaries
 
 
 def _fact_trust_level(value: object) -> str:
@@ -863,7 +916,7 @@ class DbaEvidenceAssessmentHandler:
         )
         if requested_window and cumulative_only:
             reasons.append(
-                "请求的是时间窗口数据，但当前证据只有实例启动后的累计口径"
+                "请求的是时间窗口数据，但当前证据只有统计累计口径"
             )
         if database_gap_found:
             reasons.append("部分受控取证步骤未能返回可验证结果")
@@ -921,6 +974,7 @@ class DbaEvidenceAssessmentHandler:
                     "deterministic_sufficiency": deterministic.model_dump(
                         mode="json"
                     ),
+                    "measurement_boundaries": _measurement_boundaries(deterministic),
                 },
                 deadline=(
                     datetime.fromisoformat(context.deadline_at)
@@ -955,6 +1009,29 @@ class DbaEvidenceAssessmentHandler:
         assessed_status = SufficiencyStatus(investigation.sufficiency_status)
         if facts and assessed_status == SufficiencyStatus.NEEDS_EVIDENCE:
             assessed_status = SufficiencyStatus.PARTIAL
+        window_gaps = tuple(
+            gap for gap in gaps if gap.source_id == "workload.sql.top_window"
+        )
+        if window_gaps and assessed_status in {
+            SufficiencyStatus.ANSWERABLE,
+            SufficiencyStatus.PARTIAL,
+            SufficiencyStatus.NEEDS_EVIDENCE,
+        }:
+            if assessed_status == SufficiencyStatus.ANSWERABLE:
+                assessed_status = (
+                    SufficiencyStatus.PARTIAL
+                    if facts else SufficiencyStatus.NEEDS_EVIDENCE
+                )
+            # 模型不能用累计值消除窗口缺口；丢弃与确定性缺口矛盾的推断。
+            investigation = investigation.model_copy(update={
+                "sufficiency_status": assessed_status,
+                "verified_facts": (),
+                "remaining_unknowns": tuple(dict.fromkeys(
+                    (*investigation.remaining_unknowns, *(gap.detail for gap in window_gaps))
+                )),
+                "hypothesis_updates": {},
+                "reason": "历史 SQL 窗口仍有数据缺口，累计统计不能替代窗口增量",
+            })
         if profile_core_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
             assessed_status = SufficiencyStatus.PARTIAL
         if completion_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
@@ -1707,6 +1784,7 @@ class DbaAnswerComposeHandler:
                 ),
                 "task_frame": dict(answer_context.get("task_frame", {})),
                 "sufficiency_status": str(assessment.status),
+                "measurement_boundaries": _measurement_boundaries(assessment),
                 "limitations": list(assessment.reasons),
                 "evidence_gaps": [
                     item.model_dump(mode="json")
@@ -2094,6 +2172,7 @@ class DbaAnswerComposeHandler:
         payload["allowed_evidence_refs"] = [
             fact.evidence_ref for fact in assessment.evidence
         ]
+        payload["measurement_boundaries"] = _measurement_boundaries(assessment)
         return payload
 
     @staticmethod
@@ -2701,12 +2780,18 @@ class DbaAnswerComposeHandler:
         primary_result_kind: str | None = None,
     ) -> tuple[TurnAnswerBlock, ...]:
         blocks: list[TurnAnswerBlock] = []
+        top_sql_primary = _top_sql_primary_fact(evidence, primary_result_kind)
         for fact in evidence:
             if fact.tool_id in _HTML_REPORT_TOOLS:
                 continue
             columns = list(fact.columns)
             if fact.presentation_kind in {"TABLE", "TABLE_AND_CHART"}:
                 primary = _primary_result_metadata(primary_result_kind, fact)
+                if (
+                    primary and primary["result_kind"] == "TOP_SQL_LIST"
+                    and fact is not top_sql_primary
+                ):
+                    primary["presentation_role"] = "SUPPORTING"
                 if primary is not None:
                     columns = [
                         {

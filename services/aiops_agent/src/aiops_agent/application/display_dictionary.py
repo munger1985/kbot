@@ -133,7 +133,7 @@ _DISPLAY_NAMES = {
     "STALE": "数据过期",
     # 证据口径与取证策略
     "CURRENT_ACTIVITY": "当前活动快照",
-    "CUMULATIVE_SINCE_LOAD": "自实例启动以来的累计值",
+    "CUMULATIVE_SINCE_LOAD": "统计累计值（起点由数据源及重置情况决定）",
     "SNAPSHOT_DELTA": "快照区间增量",
     "HISTORICAL_SAMPLES": "历史采样",
     "NOT_APPLICABLE": "不适用",

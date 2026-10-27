@@ -2311,12 +2311,106 @@ class DbaTurnAnswerTest(unittest.TestCase):
 
         self.assertEqual("PRIMARY", table.payload["presentation_role"])
         self.assertEqual("TOP_SQL_LIST", table.payload["result_kind"])
-        self.assertEqual("Top SQL", table.payload["title"])
+        self.assertEqual("当前活跃 SQL 快照", table.payload["title"])
         self.assertEqual("深入分析", table.payload["follow_up_label"])
         self.assertEqual(
             ["SQL_ID", "总耗时（秒）"],
             [column["label"] for column in table.payload["columns"]],
         )
+
+    def test_top_sql_selects_one_primary_and_keeps_activity_as_support(self) -> None:
+        for cumulative_tool in ("db.postgresql.statement.top", "db.mysql.statement.digest.top", "db.sql.top_current"):
+            with self.subTest(tool=cumulative_tool):
+                current = _tool_artifact(semantics="CURRENT_ACTIVITY", row_count=0)
+                cumulative = _tool_artifact(
+                    semantics="CUMULATIVE_SINCE_LOAD", tool_id=cumulative_tool,
+                )
+                assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(
+                    _context(artifacts=(current, cumulative)),
+                ))
+                tables = [
+                    block for block in DbaAnswerComposeHandler._data_blocks(assessment.evidence)
+                    if block.block_type == AnswerBlockType.TABLE
+                ]
+                primary = [block for block in tables if block.payload.get("presentation_role") == "PRIMARY"]
+                supporting = [block for block in tables if block.payload.get("presentation_role") == "SUPPORTING"]
+                self.assertEqual(1, len(primary))
+                self.assertEqual(1, len(supporting))
+                self.assertEqual("Top SQL（累计统计）", primary[0].payload["title"])
+                self.assertEqual("当前活跃 SQL 快照", supporting[0].payload["title"])
+                self.assertEqual(0, supporting[0].payload["row_count"])
+                self.assertEqual((assessment.evidence[0].evidence_ref,), supporting[0].evidence_refs)
+
+    def test_window_result_precedes_cumulative_even_when_empty(self) -> None:
+        window = {
+            "artifact_id": str(uuid7()),
+            "schema_version": "TOP_SQL_WINDOW_RESULT.v1",
+            "payload": {"result": {
+                "requested_start": "2026-10-27T00:00:00+00:00",
+                "requested_end": "2026-10-27T00:15:00+00:00",
+                "covered_intervals": [{"start": "2026-10-27T00:00:00+00:00", "end": "2026-10-27T00:15:00+00:00"}],
+                "collection_enabled": True, "gaps": {}, "top_statements": [],
+            }},
+        }
+        cumulative = _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD", tool_id="db.postgresql.statement.top")
+        assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(
+            _context(artifacts=(cumulative, window)),
+        ))
+        tables = [
+            block for block in DbaAnswerComposeHandler._data_blocks(assessment.evidence, primary_result_kind="TOP_SQL_LIST")
+            if block.block_type == AnswerBlockType.TABLE
+        ]
+        primary = [block for block in tables if block.payload.get("presentation_role") == "PRIMARY"]
+        self.assertEqual(1, len(primary))
+        self.assertEqual("Top SQL（窗口增量）", primary[0].payload["title"])
+        self.assertEqual(0, primary[0].payload["row_count"])
+        self.assertTrue(any(block.payload.get("presentation_role") == "SUPPORTING" for block in tables))
+
+    def test_current_sql_request_keeps_its_own_primary_result(self) -> None:
+        current = _tool_artifact(semantics="CURRENT_ACTIVITY", tool_id="db.sql.active_current")
+        cumulative = _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD", tool_id="db.postgresql.statement.top")
+        assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(
+            _context(artifacts=(cumulative, current)),
+        ))
+        tables = [
+            block for block in DbaAnswerComposeHandler._data_blocks(assessment.evidence, primary_result_kind="CURRENT_SQL_LIST")
+            if block.block_type == AnswerBlockType.TABLE
+        ]
+        primary = [block for block in tables if block.payload.get("presentation_role") == "PRIMARY"]
+        self.assertEqual(1, len(primary))
+        self.assertEqual("当前活跃 SQL", primary[0].payload["title"])
+        self.assertEqual("CURRENT_SQL_LIST", primary[0].payload["result_kind"])
+
+    def test_model_cannot_close_top_sql_window_gap_using_cumulative_statistics(self) -> None:
+        window = {
+            "artifact_id": str(uuid7()),
+            "schema_version": "TOP_SQL_WINDOW_RESULT.v1",
+            "payload": {"result": {
+                "requested_start": "2026-10-27T00:00:00+00:00",
+                "requested_end": "2026-10-27T00:15:00+00:00",
+                "covered_intervals": [], "collection_enabled": True,
+                "gaps": {"INSUFFICIENT_SNAPSHOTS": 1}, "top_statements": [],
+            }},
+        }
+        cumulative = _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD", tool_id="db.postgresql.statement.top")
+        assessment = asyncio.run(DbaEvidenceAssessmentHandler(
+            model_client=_AnswerableAssessmentModel(), prompts=_TestPrompts(),
+        ).execute(_context(artifacts=(cumulative, window), recent=True)))
+        self.assertEqual(SufficiencyStatus.PARTIAL, assessment.status)
+        self.assertTrue(any(gap.code == "INSUFFICIENT_SNAPSHOTS" for gap in assessment.gaps))
+        self.assertEqual(SufficiencyStatus.PARTIAL, assessment.investigation.sufficiency_status)
+        self.assertIn("不能替代窗口增量", assessment.investigation.reason)
+        payload = DbaAnswerComposeHandler._model_assessment_payload(assessment)
+        self.assertTrue(any("不能补齐" in item for item in payload["measurement_boundaries"]))
+        self.assertTrue(any("不能称为自实例启动以来" in item for item in payload["measurement_boundaries"]))
+        self.assertEqual(1, sum(gap.code == "INSUFFICIENT_SNAPSHOTS" for gap in assessment.gaps))
+        partial_assessment = asyncio.run(DbaEvidenceAssessmentHandler(
+            model_client=_AssessmentModel(), prompts=_TestPrompts(),
+        ).execute(_context(artifacts=(cumulative, window), recent=True)))
+        self.assertEqual(SufficiencyStatus.PARTIAL, partial_assessment.status)
+        self.assertIn("不能替代窗口增量", partial_assessment.investigation.reason)
+        self.assertEqual(1, sum(gap.code == "INSUFFICIENT_SNAPSHOTS" for gap in partial_assessment.gaps))
+        self.assertTrue(any(gap.detail == "缺少时间窗口增量" for gap in partial_assessment.gaps))
 
     def test_mysql_top_sql_window_uses_observed_semantics_and_discloses_scope(self) -> None:
         artifact = _tool_artifact(semantics="CURRENT_ACTIVITY")

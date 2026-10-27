@@ -280,11 +280,22 @@
     return answer;
   }
 
+  function normalizePrimaryTopSqlBlocks(blocks) {
+    const candidates = values(blocks).filter((block) => block.block_type === "TABLE"
+      && block.payload?.presentation_role === "PRIMARY" && block.payload?.result_kind === "TOP_SQL_LIST");
+    const rank = (block) => ({ SNAPSHOT_DELTA: 0, CUMULATIVE_SINCE_LOAD: 1, CURRENT_ACTIVITY: 2 }[block.payload?.measurement_semantics] ?? 3);
+    const selected = candidates.reduce((best, block) => !best || rank(block) < rank(best) ? block : best, null);
+    return values(blocks).map((block) => candidates.includes(block) && block !== selected
+      ? { ...block, payload: { ...block.payload, presentation_role: "SUPPORTING",
+        title: block.payload?.measurement_semantics === "CURRENT_ACTIVITY" ? "当前活跃 SQL 快照" : block.payload?.title } }
+      : block);
+  }
+
   function conversationAnswerHtml(result, turn) {
     const context = turn || { display_dictionary: result?.payload?.display_dictionary || {} };
     const schemaVersion = result?.final_artifact?.schema_version;
     if (schemaVersion === "AIOPS_TURN_RESULT.v1") {
-      const narrative = values(result?.payload?.blocks).filter(
+      const narrative = normalizePrimaryTopSqlBlocks(result?.payload?.blocks).filter(
         (block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type)
           || (block.block_type === "TABLE" && block.payload?.presentation_role === "PRIMARY"),
       );
@@ -297,7 +308,7 @@
   function evidenceDetails(result) {
     if (result?.final_artifact?.schema_version === "AIOPS_TURN_RESULT.v1") {
       return turnEvidenceHtml(
-        values(result?.payload?.blocks),
+        normalizePrimaryTopSqlBlocks(result?.payload?.blocks),
         values(result?.payload?.evidence_gaps),
         result?.payload?.display_dictionary || {},
       );
@@ -1530,7 +1541,7 @@
     const messages = values(turn.messages);
     const user = messages.find((item) => item.message_type === "USER_MESSAGE");
     const assistant = messages.find((item) => item.message_type === "ASSISTANT_MESSAGE");
-    const answerBlocks = values(turn.answer_blocks);
+    const answerBlocks = normalizePrimaryTopSqlBlocks(turn.answer_blocks);
     const narrativeBlocks = answerBlocks.filter((block) => !["TABLE", "EVIDENCE_REFERENCES"].includes(block.block_type)
       || (block.block_type === "TABLE" && block.payload?.presentation_role === "PRIMARY"));
     const blocks = narrativeBlocks.map((block) => answerBlockHtml(block, turn)).join("");
