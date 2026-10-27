@@ -66,6 +66,48 @@ assert.ok(windowTable.includes('class="is-number">采样时长（秒）'));
 assert.ok(!windowTable.includes('>Digest</th>'));
 assert.ok(windowTable.includes(`继续深入分析 SQL ${digest}`));
 
+const currentSql = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    presentation_role: "PRIMARY", result_kind: "CURRENT_SQL_LIST", title: "当前活跃 SQL",
+    columns: [
+      { name: "query_id", label: "Query ID" },
+      { name: "query_text", label: "SQL 文本" },
+      { name: "session_count", label: "会话数", logical_type: "INTEGER" },
+    ],
+    rows: [["123456", sql, 2]], row_count: 1,
+  },
+}, {});
+assert.match(currentSql, /ops-primary-result is-top-sql/);
+assert.ok(currentSql.includes(`title="${escape(sql)}"`));
+assert.ok(currentSql.includes("继续深入分析 SQL 123456"));
+assert.ok(currentSql.includes('class="is-number">会话数'));
+
+const noIdentifier = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    presentation_role: "PRIMARY", result_kind: "CURRENT_SQL_LIST",
+    columns: [{ name: "query_text", label: "SQL 文本" }], rows: [[sql]],
+  },
+}, {});
+assert.match(noIdentifier, /ops-primary-result is-top-sql/);
+assert.ok(!noIdentifier.includes("data-primary-follow-up"));
+
+const emptyTopSql = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    presentation_role: "PRIMARY", result_kind: "TOP_SQL_LIST", columns, rows: [], row_count: 0,
+  },
+}, {});
+assert.match(emptyTopSql, /ops-primary-result is-top-sql/);
+assert.ok(emptyTopSql.includes("空结果不代表未执行取证"));
+assert.ok(!emptyTopSql.includes("data-primary-follow-up"));
+
+const nonPrimary = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    result_kind: "TOP_SQL_LIST", columns, rows: [[331794, digest, sql, "0.000242"]],
+  },
+}, {});
+assert.ok(!nonPrimary.includes("ops-primary-result"));
+assert.ok(!nonPrimary.includes("data-primary-follow-up"));
+
 for (const name of ["sql_id", "query_id"]) {
   const idTable = context.testTable.answerBlockHtml({
     block_type: "TABLE", payload: {

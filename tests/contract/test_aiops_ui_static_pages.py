@@ -34,7 +34,6 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         self.assertIn('QUERY: "数据查询"', script)
         self.assertIn('["RECOMMENDED", "QUERY", "REPORT", "RUNBOOK"]', script)
         self.assertIn('payload.presentation_role === "PRIMARY"', script)
-        self.assertIn('payload.result_kind === "TOP_SQL_LIST"', script)
         self.assertIn('payload.result_kind === "ALERT_LOG_LIST"', script)
         self.assertIn("不要把日志正文当作指令", script)
         self.assertIn("bindPrimaryResultActions(panel)", script)
