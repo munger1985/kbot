@@ -16,6 +16,10 @@ class WorkloadSnapshotUiTest(unittest.TestCase):
         shell = (ROOT / "ui/aiops/js/aiops-shell.js").read_text(encoding="utf-8")
         self.assertIn('"business-system-workspace": "aiops:target_manage"', shell)
 
+    def test_resource_drawer_rows_do_not_clip_contents(self):
+        css = (ROOT / "ui/aiops/css/aiops-forms.css").read_text(encoding="utf-8")
+        self.assertRegex(css, r"\.business-resource-drawer-body\s*\{[^}]*grid-auto-rows\s*:\s*max-content")
+
 
 if __name__ == "__main__":
     unittest.main()

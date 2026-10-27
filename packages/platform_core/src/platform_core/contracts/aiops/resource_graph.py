@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from .configuration import SourceBindingCreate, TargetCreate, TargetEndpoint
+from .workload import WorkloadPolicy
 from .types import AIOpsContract, CursorPage, DatabaseType, JsonObject, PUBLIC_SCHEMA_VERSION, UUIDv7, UtcDatetime
 
 
@@ -131,6 +132,17 @@ class DatabaseResourcePatch(AIOpsContract):
     deployment_type: Literal["SINGLE_INSTANCE", "RAC"] | None = None
     rac_node_number: int | None = Field(default=None, ge=1, le=1024)
     db_role: Literal["PRIMARY", "STANDBY", "UNKNOWN"] | None = None
+    workload_snapshot_policy: WorkloadPolicy | None = None
+    target_row_version: int | None = Field(default=None, ge=1)
+    business_system_id: UUIDv7 | None = None
+    system_resource_id: UUIDv7 | None = None
+
+    @model_validator(mode="after")
+    def validate_workload_version(self) -> "DatabaseResourcePatch":
+        fields = (self.target_row_version, self.business_system_id, self.system_resource_id)
+        if (self.workload_snapshot_policy is None and any(value is not None for value in fields)) or (self.workload_snapshot_policy is not None and any(value is None for value in fields)):
+            raise ValueError("修改历史 SQL 采集策略必须同时提交 Target 版本和业务系统资源")
+        return self
 
 
 class ManagedResourcePatch(AIOpsContract):

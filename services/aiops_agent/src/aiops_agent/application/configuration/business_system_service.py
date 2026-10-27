@@ -707,6 +707,17 @@ class BusinessSystemConfigurationMixin:
         async with self._uow_factory() as uow:
             assert uow.business_systems is not None
             assert uow.targets is not None
+            if request.database is not None and request.database.workload_snapshot_policy is not None:
+                system_id = request.database.business_system_id
+                link_id = request.database.system_resource_id
+                system = await uow.business_systems.get_scoped(business_system_id=system_id, lock=True, **_scope_args(scope))
+                if system is None:
+                    raise resource_not_found("Business System")
+                if system.status == "ENABLED":
+                    raise state_conflict("运行中的业务系统不能修改历史 SQL 采集策略")
+                link = await uow.business_systems.get_system_resource_scoped(business_system_id=system_id, system_resource_id=link_id, lock=True)
+                if link is None or link.resource_id != resource_id or link.status != "ACTIVE":
+                    raise validation_failed("数据库资源不属于当前业务系统")
             entity = await uow.business_systems.get_resource_scoped(resource_id=resource_id, lock=True, **_scope_args(scope))
             if entity is None:
                 raise resource_not_found("Managed Resource")
@@ -732,6 +743,19 @@ class BusinessSystemConfigurationMixin:
                 if target is None:
                     raise resource_not_found("Database Target")
                 database_changes = request.database.model_dump(exclude_unset=True)
+                policy = request.database.workload_snapshot_policy
+                target_version = database_changes.pop("target_row_version", None)
+                database_changes.pop("workload_snapshot_policy", None)
+                database_changes.pop("business_system_id", None)
+                database_changes.pop("system_resource_id", None)
+                if policy is not None:
+                    self._check_version(target.row_version, target_version)
+                    target.workload_snapshot_policy_json = policy.model_dump(mode="json")
+                    target.workload_next_run_at = self._now() if policy.enabled else None
+                    target.workload_consecutive_failures = 0
+                    target.workload_last_error_code = None
+                    target.updated_by = scope.actor_id
+                    target.updated_at = self._now()
                 if "version_code" in database_changes:
                     try:
                         validate_supported_database_version(

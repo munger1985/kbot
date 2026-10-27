@@ -78,6 +78,7 @@ from platform_core.contracts.aiops import (
     TargetFactView,
     TargetPage,
     TargetPatch,
+    WorkloadPolicy,
     TargetSummary,
     WebhookKeyRotation,
 )
@@ -485,6 +486,18 @@ class TargetConfigurationMixin:
             if entity is None:
                 raise resource_not_found("Target")
             self._check_version(entity.row_version, expected_version)
+            if "workload_snapshot_policy" in fields and request.workload_snapshot_policy is not None:
+                assert uow.business_systems is not None
+                assigned_system = await uow.business_systems.find_system_for_target(
+                    target_id=target_id, domain_id=scope.domain_id,
+                )
+                if assigned_system is not None:
+                    current_policy = WorkloadPolicy.model_validate(entity.workload_snapshot_policy_json or {})
+                    if request.workload_snapshot_policy != current_policy:
+                        raise state_conflict("业务系统数据库的历史 SQL 采集策略只能在下线后的业务系统编辑页修改")
+                    fields.pop("workload_snapshot_policy")
+                    if not fields:
+                        return _target_detail(entity)
             if "responsibility_group_id" in fields:
                 group_id = request.responsibility_group_id
                 if group_id is not None:

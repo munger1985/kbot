@@ -334,13 +334,8 @@
     mark();
   }
 
-  function snapshotDirty() {
-    return Boolean(snapshotState?.target && snapshotState?.draft && JSON.stringify(snapshotState.target.workload_snapshot_policy) !== JSON.stringify(snapshotState.draft));
-  }
-
   function closeResourceDrawer() {
     if (snapshotState?.mutating) { shell.toast("采集配置操作正在进行，请稍候。"); return; }
-    if (snapshotDirty() && !globalThis.confirm("采集策略尚未保存，确定放弃修改吗？")) return;
     snapshotGeneration += 1;
     snapshotState = null;
     resourceDrawerOpen = false;
@@ -372,7 +367,7 @@
     resourceDrawerOpen = true;
     snapshotState = null;
     renderComposition();
-    if (isPublishedView()) void loadSnapshotPolicy();
+    if (snapshotTargetId(currentResource())) void loadSnapshotPolicy();
   }
 
   function snapshotTargetId(item) {
@@ -380,11 +375,11 @@
   }
 
   function snapshotError(error) {
-    return [409, 412].includes(error?.status) ? "配置已被其他操作修改，请重新加载后再试。" : error?.message || "操作失败，请重试。";
+    return [409, 412].includes(error?.status) ? "Target 配置已被其他操作修改，请重新打开业务系统后检查草稿。" : error?.message || "操作失败，请重试。";
   }
 
   function snapshotRender() {
-    if (resourceDrawerOpen && isPublishedView()) { renderResourceDrawer(); bindResourceDrawer(); }
+    if (resourceDrawerOpen) { renderResourceDrawer(); bindResourceDrawer(); }
   }
 
   async function loadSnapshotPolicy() {
@@ -397,39 +392,36 @@
       const target = await request(`/targets/${encodeURIComponent(targetId)}`);
       if (ticket !== snapshotGeneration) return;
       snapshotState.target = target;
-      snapshotState.draft = { ...target.workload_snapshot_policy };
+      const staged = currentResource()?.workload_snapshot;
+      snapshotState.draft = { ...(staged?.target_id === targetId ? staged.policy : target.workload_snapshot_policy) };
     } catch (error) { if (ticket === snapshotGeneration) snapshotState.error = snapshotError(error); }
     finally { if (ticket === snapshotGeneration) { snapshotState.busy = false; snapshotRender(); } }
   }
 
-  async function snapshotOperation(operation) {
+  function stageSnapshotPolicy() {
+    const item = currentResource();
     const state = snapshotState;
-    if (!state?.target || !state.draft || state.busy) return;
-    if (operation === "save") {
-      const policy = state.draft;
-      if (![[policy.interval_minutes, 1, 60], [policy.retention_days, 1, 365], [policy.top_statement_limit, 10, 500]].every(([value, min, max]) => Number.isInteger(value) && value >= min && value <= max)) {
-        state.error = "请输入有效整数：间隔 1–60 分钟、保留 1–365 天、候选 SQL 数 10–500。"; snapshotRender(); return;
-      }
-    }
+    if (isPublishedView() || !item || !state?.target || !state.draft) return;
+    const old = item.workload_snapshot?.target_id === state.targetId ? item.workload_snapshot : null;
+    const original = old?.original_policy || state.target.workload_snapshot_policy;
+    item.workload_snapshot = JSON.stringify(state.draft) === JSON.stringify(original) ? null : { target_id: state.targetId, target_row_version: old?.target_row_version || state.target.row_version, original_policy: { ...original }, policy: { ...state.draft } };
+    mark();
+  }
+
+  async function snapshotOperation() {
+    const item = currentResource();
+    const state = snapshotState;
+    if (isPublishedView() || !item || !state?.target || !state.draft || state.busy) return;
     const ticket = snapshotGeneration;
     state.busy = true; state.mutating = true; state.error = ""; state.message = ""; snapshotRender();
     try {
       const url = `/targets/${encodeURIComponent(state.targetId)}`;
-      const headers = { "If-Match": `"rv-${state.target.row_version}"` };
-      let target;
-      if (operation === "save") {
-        headers["Content-Type"] = "application/json";
-        target = await request(url, { method: "PATCH", headers, body: JSON.stringify({ workload_snapshot_policy: state.draft }) });
-      } else {
-        headers["Idempotency-Key"] = uuid7();
-        target = await request(`${url}/connectivity-checks`, { method: "POST", headers });
-      }
+      const headers = { "If-Match": `"rv-${item.workload_snapshot?.target_row_version || state.target.row_version}"`, "Idempotency-Key": uuid7() };
+      const target = await request(`${url}/connectivity-checks`, { method: "POST", headers });
       if (ticket !== snapshotGeneration) return;
       state.target = target;
-      if (operation === "save") {
-        state.draft = { ...target.workload_snapshot_policy };
-        state.message = target.workload_snapshot_policy.enabled ? "策略已保存；采集是否成功请查看最近采集和错误状态。" : "策略已保存；后续周期采集已停止。";
-      } else state.message = `连接检查已完成：${target.connectivity_status || "状态未知"}。请确认数据库统计视图与权限可用。`;
+      if (item.workload_snapshot) item.workload_snapshot.target_row_version = target.row_version;
+      state.message = `连接检查已完成：${target.connectivity_status || "状态未知"}。连接检查立即执行；采集策略仍需发布业务系统。`;
     } catch (error) { if (ticket === snapshotGeneration) state.error = snapshotError(error); }
     finally { if (ticket === snapshotGeneration) { state.busy = false; state.mutating = false; snapshotRender(); } }
   }
@@ -442,10 +434,16 @@
     const disabled = state?.busy ? "disabled" : "";
     const formatTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "暂无";
     let content = state?.busy && !status ? "<p>正在加载采集策略…</p>" : "";
-    if (state?.error) content += `<p class="business-snapshot-error" role="alert">${esc(state.error)} ${!status || state.error.includes("重新加载") ? `<button type="button" id="snapshot-reload" ${disabled}>${status ? "重新加载（放弃修改）" : "重试"}</button>` : ""}</p>`;
+    if (state?.error) content += `<p class="business-snapshot-error" role="alert">${esc(state.error)} ${!status ? `<button type="button" id="snapshot-reload" ${disabled}>重试</button>` : ""}</p>`;
     if (state?.message) content += `<p role="status">${esc(state.message)}</p>`;
-    if (status && policy) content += `<div class="business-snapshot-status">策略：${status.workload_snapshot_policy.enabled ? "已启用" : "未启用"} · 最近采集尝试：${esc(formatTime(status.workload_last_collected_at))} · 下次计划：${esc(formatTime(status.workload_next_run_at))}<br>最近采集错误：${esc(status.workload_last_error_code || "无")}</div><form id="snapshot-form"><label class="business-snapshot-toggle"><input name="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="business-snapshot-fields"><label>采集间隔（分钟）<input name="interval_minutes" type="number" min="1" max="60" step="1" required value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input name="retention_days" type="number" min="1" max="365" step="1" required value="${esc(policy.retention_days)}" ${disabled}></label><label>候选 SQL 数<input name="top_statement_limit" type="number" min="10" max="500" step="1" required value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="business-snapshot-actions"><button class="primary" type="submit" id="snapshot-save" ${state.busy || !snapshotDirty() ? "disabled" : ""}>保存策略</button><button type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button><button type="button" id="snapshot-status-refresh" ${state.busy || snapshotDirty() ? "disabled" : ""}>刷新采集状态</button><span id="snapshot-dirty" ${snapshotDirty() ? "" : "hidden"}>有未保存的修改</span></div></form>`;
-    return `<section class="business-readonly-detail-section"><header><span>04</span><div><strong>历史 SQL 采集</strong><small>独立 Target 运维配置，不修改业务拓扑或连接；RAC 按当前节点配置。</small></div></header><div class="business-snapshot-body"><p>统计来源：${esc(source)}。采集需要已启用的 Target、可用的只读连接、有效 Agent 绑定和运行中的采集服务。</p><p>启用后至少需要两次可比较的快照才能计算窗口增量，不回填历史；窗口可能未被完整覆盖。</p>${content}</div></section>`;
+    if (status && policy) {
+      content += `<div class="business-snapshot-status">当前策略：${status.workload_snapshot_policy.enabled ? "已启用" : "未启用"} · 最近采集尝试：${esc(formatTime(status.workload_last_collected_at))} · 下次计划：${esc(formatTime(status.workload_next_run_at))}<br>最近采集错误：${esc(status.workload_last_error_code || "无")}</div>`;
+      if (!isPublishedView()) content += `<label class="business-snapshot-toggle"><input data-snapshot-field="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="business-snapshot-fields"><label>采集间隔（分钟）<input data-snapshot-field="interval_minutes" type="number" min="1" max="60" step="1" value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input data-snapshot-field="retention_days" type="number" min="1" max="365" step="1" value="${esc(policy.retention_days)}" ${disabled}></label><label>候选 SQL 数<input data-snapshot-field="top_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="business-snapshot-actions"><button type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button><span id="snapshot-dirty" ${item.workload_snapshot ? "" : "hidden"}>策略已修改，将随业务系统发布</span></div>`;
+      else content += `<p>采集间隔：${esc(policy.interval_minutes)} 分钟 · 保留：${esc(policy.retention_days)} 天 · 候选 SQL：${esc(policy.top_statement_limit)} 条</p>`;
+      content += `<button type="button" id="snapshot-status-refresh" ${disabled}>刷新采集状态</button>`;
+    }
+    const hint = isPublishedView() ? "运行中的业务系统仅供查看；下线后可编辑采集策略。" : "修改保存在业务系统草稿中，发布时生效；RAC 按当前节点配置。";
+    return `<section class="business-readonly-detail-section"><header><span>04</span><div><strong>历史 SQL 采集</strong><small>${hint}</small></div></header><div class="business-snapshot-body"><p>统计来源：${esc(source)}。采集需要已启用的 Target、可用的只读连接、有效 Agent 绑定和运行中的采集服务。</p><p>启用后至少需要两次可比较的快照才能计算窗口增量，不回填历史；窗口可能未被完整覆盖。</p>${content}</div></section>`;
   }
 
   function renderBusiness() {
@@ -539,7 +537,7 @@
       }).join("");
       connection = `<div class="business-editor-grid business-connection-grid business-rac-editor"><p class="span-12 business-rac-guidance">公共凭据与监控源只填写一次；每个节点分别配置 Host、Service Name、数据库监控 Target 和主机监控 Target。</p><label class="span-3"><span>端口</span><input name="port" value="${esc(database.port)}" type="number"></label><label class="span-3"><span>容器范围</span><select name="oracle_scope">${selectOptions(oracleScopeOptions, database.oracle_scope)}</select></label>${database.oracle_scope === "PDB" ? `<label class="span-6"><span>PDB 名称</span><input name="oracle_pdb_name" value="${esc(database.oracle_pdb_name)}"></label>` : ""}<label class="span-6"><span>诊断用户名（所有节点共用）</span><input name="username" value="${esc(database.username)}" autocomplete="off"></label><label class="span-6"><span>诊断密码（所有节点共用）</span><input name="password" value="${esc(database.password)}" type="password" autocomplete="new-password"></label><label class="span-12"><span>监控源（所有节点共用）</span><select name="source_id" required><option value="">请选择</option>${sources.map((row) => `<option value="${esc(row.source_id)}" ${row.source_id === database.source_id ? "selected" : ""}>${esc(row.display_name)} · ${esc(row.source_type)}</option>`).join("")}</select></label>${database.discovering ? `<p class="span-12 business-inline-note">正在从监控源发现数据库和承载主机…</p>` : ""}<section class="span-12 business-rac-node-list">${nodeCards}<button id="add-rac-node" type="button">＋ 增加 RAC 节点</button></section>${source ? `<p class="span-12 business-inline-note">监控映射来自 ${esc(source.display_name)}；每个 RAC 节点分别绑定数据库与承载主机 Target。</p>` : ""}</div>`;
     }
-    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}</div><footer><p id="resource-connection-result" class="ops-connection-result" data-tone="${connectionTestTone}">${esc(connectionTestMessage)}</p><div class="business-resource-drawer-actions"><button id="remove-resource" class="business-danger-button" type="button">移除资源</button><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving || connectionTestRunning ? "disabled" : ""}>${connectionTestRunning ? "正在测试…" : "测试连接"}</button>` : ""}</div></footer></form>`;
+    return `<form id="resource-editor" class="business-resource-editor"><header><div><span>${esc(layerName(item.architecture_layer_key))} · ${esc(typeName(item.resource_type_key))}</span><h2>${esc(item.display_name || "配置数据库")}</h2><p>${editing ? "编辑资源配置" : "配置连接与监控映射，可按需测试连接"}</p></div><button id="close-resource-drawer" type="button" aria-label="关闭资源配置">关闭</button></header><div class="business-resource-drawer-body">${baseFields}${databaseFields}${connection}${snapshotTargetId(item) ? snapshotHtml(item) : ""}</div><footer><p id="resource-connection-result" class="ops-connection-result" data-tone="${connectionTestTone}">${esc(connectionTestMessage)}</p><div class="business-resource-drawer-actions"><button id="remove-resource" class="business-danger-button" type="button">移除资源</button><button id="finish-resource-drawer" type="button">完成</button>${!editing ? `<button id="validate-resource" class="primary" type="submit" ${saving || connectionTestRunning ? "disabled" : ""}>${connectionTestRunning ? "正在测试…" : "测试连接"}</button>` : ""}</div></footer></form>`;
   }
 
   function renderComposition() {
@@ -596,20 +594,17 @@
     };
     const item = currentResource();
     if (resourceDrawerMode !== "EDITOR" || !item) return;
-    const snapshotForm = document.getElementById("snapshot-form");
-    if (snapshotForm && snapshotState?.draft) {
-      snapshotForm.querySelectorAll("[name]").forEach((input) => input.addEventListener(input.type === "checkbox" ? "change" : "input", () => {
-        snapshotState.draft[input.name] = input.type === "checkbox" ? input.checked : input.value === "" ? "" : Number(input.value);
-        document.getElementById("snapshot-save").disabled = !snapshotDirty();
-        document.getElementById("snapshot-status-refresh").disabled = snapshotDirty();
-        document.getElementById("snapshot-dirty").hidden = !snapshotDirty();
-      }));
-      snapshotForm.onsubmit = (event) => { event.preventDefault(); void snapshotOperation("save"); };
-      document.getElementById("snapshot-refresh").onclick = () => void snapshotOperation("refresh");
-      document.getElementById("snapshot-status-refresh").onclick = () => void loadSnapshotPolicy();
-    }
+    if (snapshotState?.draft && !isPublishedView()) drawer.querySelectorAll("[data-snapshot-field]").forEach((input) => input.addEventListener(input.type === "checkbox" ? "change" : "input", () => {
+      snapshotState.draft[input.dataset.snapshotField] = input.type === "checkbox" ? input.checked : input.value === "" ? "" : Number(input.value);
+      stageSnapshotPolicy();
+      document.getElementById("snapshot-dirty").hidden = !item.workload_snapshot;
+    }));
+    const snapshotRefresh = document.getElementById("snapshot-refresh");
+    if (snapshotRefresh) snapshotRefresh.onclick = () => void snapshotOperation();
+    const snapshotStatusRefresh = document.getElementById("snapshot-status-refresh");
+    if (snapshotStatusRefresh) snapshotStatusRefresh.onclick = () => void loadSnapshotPolicy();
     const snapshotReload = document.getElementById("snapshot-reload");
-    if (snapshotReload) snapshotReload.onclick = () => { if (!snapshotDirty() || globalThis.confirm("重新加载将放弃未保存的采集策略，是否继续？")) void loadSnapshotPolicy(); };
+    if (snapshotReload) snapshotReload.onclick = () => void loadSnapshotPolicy();
     const editor = document.getElementById("resource-editor");
     if (!editor) return;
     editor.querySelectorAll("[name]").forEach((input) => input.addEventListener(input.tagName === "SELECT" ? "change" : "input", () => updateResourceField(item, input)));
@@ -963,6 +958,13 @@
       const error = resourceConfigurationError(item);
       if (error) errors.push(error);
     });
+    resources.forEach((item) => {
+      const staged = item.workload_snapshot;
+      if (!staged) return;
+      const original = detail?.resources?.find((row) => row.system_resource_id === item.system_resource_id)?.resource?.database;
+      const valid = [[staged.policy.interval_minutes, 1, 60], [staged.policy.retention_days, 1, 365], [staged.policy.top_statement_limit, 10, 500]].every(([value, min, max]) => Number.isInteger(value) && value >= min && value <= max);
+      if (!valid || !original || original.target_id !== staged.target_id || !Number.isInteger(staged.target_row_version) || staged.target_row_version < 1) errors.push(`${item.display_name}：历史 SQL 采集策略无效，请检查间隔、保留天数、候选数量及 Target。`);
+    });
     relations.forEach((relation) => {
       const name = relation.display_name || relationName(relation.relation_type_key);
       if (relation.participants.length < 2) errors.push(`${name}：至少需要两个参与资源。`);
@@ -1022,7 +1024,7 @@
     let current = await request(`/business-systems/${encodeURIComponent(systemId)}`);
     for (const item of resources) {
       if (item.system_resource_id) {
-        await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? { version_code: item.database.version_code, environment: item.database.environment, deployment_type: item.database.deployment_type, rac_node_number: item.database.rac_node_number, db_role: item.database.db_role } : null }) });
+        await request(`/managed-resources/${encodeURIComponent(item.resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.resource_row_version}"` }, body: JSON.stringify({ display_name: item.display_name.trim(), owner_group_id: item.owner_group_id, location_name: item.location_name.trim() || null, database: item.database ? { version_code: item.database.version_code, environment: item.database.environment, deployment_type: item.database.deployment_type, rac_node_number: item.database.rac_node_number, db_role: item.database.db_role, ...(item.workload_snapshot ? { workload_snapshot_policy: item.workload_snapshot.policy, target_row_version: item.workload_snapshot.target_row_version, business_system_id: systemId, system_resource_id: item.system_resource_id } : {}) } : null }) });
         current = await request(`/business-systems/${encodeURIComponent(systemId)}/resources/${encodeURIComponent(item.system_resource_id)}`, { method: "PATCH", headers: { "If-Match": `"rv-${item.system_row_version}"` }, body: JSON.stringify({ architecture_layer_key: item.architecture_layer_key, responsibility_group_id: null, display_order: item.display_order }) });
       } else {
         const before = new Set(current.resources.map((row) => row.system_resource_id));
@@ -1042,7 +1044,7 @@
   }
 
   async function commit() {
-    if (isPublishedView()) return;
+    if (isPublishedView() || snapshotState?.mutating) return;
     if (syncInferredDatabaseRelations()) mark();
     const errors = publicationErrors();
     if (errors.length) { shell.toast(errors.join("；")); return; }
@@ -1066,7 +1068,7 @@
     finally { saving = false; updateFooter(); }
   }
   async function saveDraft() {
-    if (isPublishedView()) return;
+    if (isPublishedView() || snapshotState?.mutating) return;
     saving = true; updateFooter();
     try { await persistDraft(); }
     catch (error) { shell.toast(error.message); }
@@ -1168,7 +1170,7 @@
   document.addEventListener("click", (event) => {
     const anchor = event.target.closest?.("a[href]");
     if (anchor && snapshotState?.mutating) { event.preventDefault(); shell.toast("采集配置操作正在进行，请稍候。"); return; }
-    if (!(dirty || snapshotDirty()) || !anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+    if (!dirty || !anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
     const destination = new URL(anchor.href, location.href);
     if (destination.href === location.href || (destination.origin === location.origin && destination.pathname === location.pathname && destination.search === location.search)) return;
     event.preventDefault();
@@ -1188,6 +1190,6 @@
   });
   document.getElementById("cancel-workspace-leave").onclick = () => { pendingLeaveHref = ""; document.getElementById("workspace-leave-dialog").close(); };
   document.getElementById("workspace-leave-dialog").addEventListener("cancel", (event) => { event.preventDefault(); pendingLeaveHref = ""; event.currentTarget.close(); });
-  addEventListener("beforeunload", (event) => { if (dirty || snapshotDirty() || snapshotState?.mutating) event.preventDefault(); });
+  addEventListener("beforeunload", (event) => { if (dirty || snapshotState?.mutating) event.preventDefault(); });
   shell.ready.then(load).catch((error) => shell.toast(error.message));
 })();
