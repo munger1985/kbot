@@ -1,5 +1,9 @@
 # SQL 诊断证据与授权边界
 
+本文描述当前实现。SQL 诊断与窗口分析的目标设计及验收计划见
+[SQL 诊断详细设计](../proposals/aiops-sql-diagnosis-detailed-design.md)；
+目标设计尚未实施，不改变本文所述现状。
+
 ## Oracle 授权声明
 
 在 AIOps 的 Target 编辑页，核对合同后按实际授权勾选 Oracle Diagnostics Pack 和 Tuning Pack。

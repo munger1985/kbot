@@ -1,5 +1,8 @@
 # 智能运维功能入口技术设计
 
+本页描述当前功能入口；SQL 结果行的结构化追问和诊断分析目标见
+[SQL 诊断详细设计（待实施）](../proposals/aiops-sql-diagnosis-detailed-design.md)。
+
 ## 权威目录
 
 功能定义保存在版本化 JSON：
@@ -46,7 +49,8 @@ POST Conversation {context_hint: {business_system_id, resource_ids}, starter: {.
   PostgreSQL WAL/Archiver 或 MySQL Binlog/Replication 工具，并同时消费
   `TARGET_RECOVERY_ASSURANCE.v1` 中的 RPO/RTO 与演练证据。
 
-该分支不调用模型做意图分类。模型只在后续基于真实证据组织诊断结论或文档内容。
+该分支不调用模型做意图分类。后续回答可能由确定性摘要直接生成或由模型结合证据组织；
+不能因此推断单 SQL 的证据关联与深入分析已经完成。
 
 ## 安全边界
 

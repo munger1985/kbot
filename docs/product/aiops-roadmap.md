@@ -8,6 +8,10 @@
 本文回答三件事：现在已经能做什么、客户真正要补什么、后续按什么顺序改和加。
 EICC 接入本期忽略，不纳入近期范围。
 
+2026-10-27 SQL 专项审计发现：既有 Playbook 和统计采集已实施不等于
+SQL 深入诊断闭环已完成。跨库目标与新验收门禁见
+[SQL 诊断详细设计（待实施）](../proposals/aiops-sql-diagnosis-detailed-design.md)。
+
 修订：1.3 写清官方诊断脚本的三种接入方式。不是让用户一律跑完脚本再上传；
 SQL Monitor / AWR / XPLAN 由产品内生成，SQLHC 做成 Playbook，仅 ExaCheck / ORAchk / TFA
 近端消费已有报告。
