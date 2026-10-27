@@ -2318,6 +2318,58 @@ class DbaTurnAnswerTest(unittest.TestCase):
             [column["label"] for column in table.payload["columns"]],
         )
 
+    def test_top_sql_table_displays_text_without_losing_evidence(self) -> None:
+        cases = (
+            ("db.sql.top_current", "SQL_ID", "SQL_TEXT", "SQL 文本"),
+            ("db.sql.top_current", "DIGEST", "DIGEST_TEXT", "SQL 摘要"),
+            ("db.sql.top_current", "QUERY_ID", "QUERY_TEXT", "SQL 文本"),
+            ("db.mysql.statement.digest.top", "DIGEST", "QUERY_SAMPLE_TEXT", "SQL 样本"),
+            ("db.postgresql.statement.top", "QUERY_ID", "NORMALIZED_STATEMENT", "规范化 SQL"),
+        )
+        for tool_id, id_column, text_column, label in cases:
+            with self.subTest(tool_id=tool_id, text_column=text_column):
+                artifact = _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD", tool_id=tool_id)
+                observation = artifact["payload"]["tool_outcomes"][0]["observation"]
+                long_sql = "SELECT " + "中" * 200
+                observation["columns"] = [
+                    {"name": id_column, "logical_type": "STRING", "sensitivity": "PUBLIC"},
+                    {"name": text_column, "logical_type": "STRING", "sensitivity": "PUBLIC"},
+                    {"name": "EXECUTIONS", "logical_type": "INTEGER", "sensitivity": "PUBLIC"},
+                ]
+                observation["rows"] = [
+                    ["36apy6dncjggq", long_sql, 94484],
+                    ["3j2dsgrcqr6m4", "SELECT 1", 94742],
+                    ["missing", None, 0],
+                ]
+                observation["row_count"] = 3
+                assessment = asyncio.run(
+                    DbaEvidenceAssessmentHandler().execute(_context(artifacts=(artifact,)))
+                )
+                context = _context(
+                    artifacts=({
+                        "artifact_id": str(uuid7()),
+                        "schema_version": "DBA_SUFFICIENCY.v1",
+                        "payload": assessment.model_dump(mode="json"),
+                    },),
+                    task_frame_overrides={"objectives": ["EXPLAIN"]},
+                )
+                result = asyncio.run(DbaAnswerComposeHandler(
+                    model_client=_AnswerModel(evidence_refs=(assessment.evidence[0].evidence_ref,)),
+                    prompts=_TestPrompts(),
+                ).execute(context))
+                table = next(block for block in result.blocks if block.block_type == AnswerBlockType.TABLE)
+                self.assertEqual("PRIMARY", table.payload["presentation_role"])
+                self.assertEqual("TOP_SQL_LIST", table.payload["result_kind"])
+                self.assertEqual(["36apy6dncjggq", "3j2dsgrcqr6m4", "missing"], [row[0] for row in table.payload["rows"]])
+                self.assertEqual(long_sql[:157] + "...", table.payload["rows"][0][1])
+                self.assertEqual("SELECT 1", table.payload["rows"][1][1])
+                self.assertIsNone(table.payload["rows"][2][1])
+                self.assertEqual([94484, 94742, 0], [row[2] for row in table.payload["rows"]])
+                self.assertEqual(long_sql, result.evidence[0].rows[0][1])
+                self.assertEqual((assessment.evidence[0].evidence_ref,), table.evidence_refs)
+                self.assertFalse(table.payload["truncated"])
+                self.assertEqual(label, table.payload["columns"][1]["label"])
+
     def test_answer_model_receives_registered_proposal_summary(self) -> None:
         assessment = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(
@@ -2352,12 +2404,11 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual("ADVISORY_READY", proposal["status"])
         self.assertIn("DBMS_STATS", proposal["command_preview"])
         block_types = [item.block_type for item in result.blocks]
+        self.assertEqual(AnswerBlockType.TABLE, block_types[1])
         self.assertEqual(AnswerBlockType.CHART, block_types[2])
-        self.assertEqual(AnswerBlockType.SOLUTION_MARKDOWN, block_types[3])
-        self.assertEqual(AnswerBlockType.PROPOSAL_SUMMARY, block_types[4])
-        self.assertNotEqual(
-            AnswerBlockType.PROPOSAL_SUMMARY,
-            result.blocks[-1].block_type,
+        self.assertLess(
+            block_types.index(AnswerBlockType.SOLUTION_MARKDOWN),
+            block_types.index(AnswerBlockType.PROPOSAL_SUMMARY),
         )
 
     def test_advisory_proposal_completes_without_execution_permission(self) -> None:

@@ -3,6 +3,7 @@ SELECT
     threads.processlist_user AS username,
     threads.processlist_db AS database_name,
     statements.digest,
+    LEFT(statements.sql_text, 4096) AS sql_text,
     statements.digest_text,
     CAST(statements.timer_wait / 1000000000000 AS DECIMAL(20, 6)) AS elapsed_seconds,
     statements.rows_examined,

@@ -10,11 +10,11 @@ SELECT
         AS maximum_query_seconds,
     wait_event_type,
     wait_event,
-    LEFT(MIN(query), 4096) AS query_text
+    LEFT(query, 4096) AS query_text
 FROM pg_stat_activity
 WHERE pid <> pg_backend_pid()
   AND state = 'active'
   AND query_start IS NOT NULL
-GROUP BY query_id, datid, datname, usesysid, usename, wait_event_type, wait_event
-ORDER BY maximum_query_seconds DESC, session_count DESC, query_id NULLS LAST
+GROUP BY query_id, datid, datname, usesysid, usename, wait_event_type, wait_event, query
+ORDER BY maximum_query_seconds DESC, session_count DESC, query_id NULLS LAST, query
 LIMIT :limit

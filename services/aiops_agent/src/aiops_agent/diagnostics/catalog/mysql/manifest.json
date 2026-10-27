@@ -674,6 +674,10 @@
             "logical_type": "STRING"
           },
           {
+            "name": "sql_text",
+            "logical_type": "STRING"
+          },
+          {
             "name": "digest_text",
             "logical_type": "STRING",
             "sensitivity": "MASKED"
@@ -692,10 +696,10 @@
           }
         ],
         "template_ref": "sql/sql_top_current.sql",
-        "template_sha256": "b72c25d9a64f8dd9bdda48754ae4b9117567c31a39197e3d7444130812bcf6e3",
+        "template_sha256": "34810f9699a3a6176cbb44a34ab1f86c44bdaab0c4034b0867032dbbbe6667b5",
         "timeout_seconds": 20,
         "max_rows": 200,
-        "max_bytes": 1048576,
+        "max_bytes": 4194304,
         "cost_level": "LOW"
       },
       {
@@ -1178,6 +1182,10 @@
             "sensitivity": "MASKED"
           },
           {
+            "name": "query_sample_text",
+            "logical_type": "STRING"
+          },
+          {
             "name": "execution_count",
             "logical_type": "INTEGER"
           },
@@ -1211,10 +1219,10 @@
           }
         ],
         "template_ref": "sql/statement_digest_top.sql",
-        "template_sha256": "04cfbd69c3db04e68e36f0ef5db6837e127929dea4f7c73aacb083e9b3b96f38",
+        "template_sha256": "2758310d65e6d00807e189f71cbb93e87cd5ce375d1a379f2b2e541cb8522fe3",
         "timeout_seconds": 20,
         "max_rows": 500,
-        "max_bytes": 1048576,
+        "max_bytes": 16777216,
         "cost_level": "MEDIUM"
       },
       {

@@ -493,6 +493,52 @@ class DiagnosticCatalogTest(unittest.TestCase):
         self.assertNotIn("parsing_schema_name", tool.sql.lower())
         self.assertNotIn("module", tool.sql.lower())
         self.assertNotIn("action", tool.sql.lower())
+        self.assertIn("ranked.sql_text", tool.sql.lower())
+        self.assertEqual(
+            ("sql_id", "sql_text", "plan_hash_value"),
+            tuple(column.name for column in tool.definition.output_columns[:3]),
+        )
+
+    def test_mysql_and_postgresql_top_sql_expose_matching_text(self) -> None:
+        registry = DiagnosticRegistry.load()
+        current = registry.resolve(
+            tool_id="db.sql.top_current", tool_version="1.0.0",
+            db_type="MYSQL", db_version="8.0", capabilities={"statement_history"},
+            entitlements=set(),
+        )
+        self.assertIn("left(statements.sql_text, 4096) as sql_text", current.sql.lower())
+        self.assertEqual(
+            ("digest", "sql_text", "digest_text"),
+            tuple(column.name for column in current.definition.output_columns[3:6]),
+        )
+        digest = registry.resolve(
+            tool_id="db.mysql.statement.digest.top", tool_version="1.0.0",
+            db_type="MYSQL", db_version="8.0", capabilities={"statement_digest"},
+            entitlements=set(),
+        )
+        self.assertIn("left(query_sample_text, 4096)", digest.sql.lower())
+        self.assertEqual(
+            ("digest_text", "query_sample_text", "execution_count"),
+            tuple(column.name for column in digest.definition.output_columns[2:5]),
+        )
+        for version in ("12", "13", "14", "18"):
+            with self.subTest(version=version):
+                pg_current = registry.resolve(
+                    tool_id="db.sql.top_current", tool_version="1.0.0",
+                    db_type="POSTGRESQL", db_version=version,
+                    capabilities={"pg_stat_activity"}, entitlements=set(),
+                )
+                self.assertIn("left(query, 4096) as query_text", pg_current.sql.lower())
+                self.assertIn("wait_event, query\n", pg_current.sql.lower())
+                pg_top = registry.resolve(
+                    tool_id="db.postgresql.statement.top", tool_version="1.0.0",
+                    db_type="POSTGRESQL", db_version=version,
+                    capabilities={"pg_stat_statements"}, entitlements=set(),
+                )
+                self.assertIn(
+                    "normalized_statement",
+                    tuple(column.name for column in pg_top.definition.output_columns),
+                )
 
     def test_oracle_plan_monitor_uses_documented_cardinality_column(self) -> None:
         registry = DiagnosticRegistry.load()
@@ -1028,6 +1074,36 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         serialized = result.model_dump_json()
         self.assertNotIn("hidden", serialized)
         self.assertNotIn("private-user", serialized)
+
+    def test_oracle_top_sql_text_survives_executor_normalization(self) -> None:
+        tool = DiagnosticRegistry.load().resolve(
+            tool_id="db.sql.top_current", tool_version="1.0.0",
+            db_type="ORACLE", db_version="19c",
+            capabilities={"dynamic_performance_views"}, entitlements=set(),
+        )
+        captured_at = datetime(2026, 9, 1, 1, 33, 53, tzinfo=UTC)
+        sql_text = "SELECT * FROM orders WHERE status = :status"
+        observation = DiagnosticExecutorService._normalize(
+            request=SimpleNamespace(executor_request_id=uuid7()),
+            grant=SimpleNamespace(
+                target_id=uuid7(), tool_id=tool.definition.tool_id,
+                tool_version=tool.definition.version, variant=tool.definition.variant,
+                template_sha256=tool.definition.template_sha256, db_type="ORACLE",
+                capability_snapshot_hash="b" * 64,
+                parameters_sha256=canonical_sha256({}),
+            ),
+            tool=tool,
+            raw=DriverQueryResult(
+                columns=tuple(item.name for item in tool.definition.output_columns),
+                rows=(("36apy6dncjggq", sql_text, 123, 94484, 1.25, 0.5, 100, 10, 4, captured_at),),
+                truncated=False, db_version="19.24.0.0.0",
+            ),
+            captured_at=captured_at, duration_ms=8,
+            limits=DiagnosticLimits(statement_timeout_seconds=20, max_result_rows=50, max_result_bytes=1048576),
+        )
+        self.assertEqual("sql_text", observation.columns[1].name)
+        self.assertEqual(sql_text, observation.rows[0][1])
+        self.assertEqual(94484, observation.rows[0][3])
 
     def test_alert_log_text_is_returned_without_business_redaction(self) -> None:
         tool = DiagnosticRegistry.load().resolve(

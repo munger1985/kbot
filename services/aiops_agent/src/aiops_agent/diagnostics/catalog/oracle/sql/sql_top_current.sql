@@ -1,5 +1,6 @@
 SELECT
     ranked.sql_id,
+    ranked.sql_text,
     ranked.plan_hash_value,
     ranked.executions,
     ranked.elapsed_seconds,
@@ -11,6 +12,7 @@ SELECT
 FROM (
     SELECT
         sql_id,
+        sql_text,
         plan_hash_value,
         executions,
         ROUND(elapsed_time / 1000000, 3) AS elapsed_seconds,

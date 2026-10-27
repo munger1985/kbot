@@ -292,6 +292,10 @@
           "logical_type": "STRING"
         },
         {
+          "name": "sql_text",
+          "logical_type": "STRING"
+        },
+        {
           "name": "plan_hash_value",
           "logical_type": "INTEGER"
         },
@@ -331,7 +335,7 @@
         }
       ],
       "template_ref": "sql/sql_top_current.sql",
-      "template_sha256": "b4fe6a3fd89c6fe982574b87d4e83ea7d837c98c88b9740e9fd608a77674b976",
+      "template_sha256": "87cc417554d3e9aae246587bec35af1c27dd9d2f96cfd4c3d3ecee0dc6a3a5a1",
       "timeout_seconds": 20,
       "max_rows": 50,
       "max_bytes": 1048576,

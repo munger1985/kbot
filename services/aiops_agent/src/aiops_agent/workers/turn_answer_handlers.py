@@ -87,17 +87,25 @@ _MIN_FORECAST_REPRESENTATIVE_SAMPLES = 7
 _MIN_FORECAST_HISTORY_DAYS = 7.0
 _STANDARD_FORECAST_COVERAGE_RATIO = 0.8
 _STANDARD_FORECAST_HISTORY_RATIO = 0.8
+_TOP_SQL_TEXT_DISPLAY_LIMIT = 160
+_TOP_SQL_TEXT_COLUMNS = frozenset({
+    "sql_text", "digest_text", "query_text", "query_sample_text",
+    "normalized_statement",
+})
 
 
 _PRIMARY_RESULT_SPECS = {
     "TOP_SQL_LIST": {
-        "tool_id": "db.sql.top_current",
+        "tool_ids": (
+            "db.sql.top_current", "db.mysql.statement.digest.top",
+            "db.postgresql.statement.top",
+        ),
         "title": "Top SQL",
         "identifier_columns": ("sql_id", "digest", "query_id"),
         "follow_up_label": "深入分析",
     },
     "ALERT_LOG_LIST": {
-        "tool_id": "db.oracle.alert_log.list",
+        "tool_ids": ("db.oracle.alert_log.list",),
         "title": "Alert 日志",
         "identifier_columns": ("record_id", "observed_at", "problem_key"),
         "follow_up_label": "围绕此日志诊断",
@@ -105,9 +113,11 @@ _PRIMARY_RESULT_SPECS = {
 }
 
 _PRIMARY_COLUMN_LABELS = {
-    "sql_id": "SQL_ID", "digest": "Digest", "query_id": "Query ID",
+    "sql_id": "SQL_ID", "sql_text": "SQL 文本",
+    "digest": "Digest", "query_id": "Query ID",
     "plan_hash_value": "计划哈希", "session_id": "会话", "username": "用户",
-    "database_name": "数据库", "executions": "执行次数",
+    "database_name": "数据库", "schema_name": "数据库",
+    "executions": "执行次数", "execution_count": "执行次数",
     "session_count": "会话数", "elapsed_seconds": "总耗时（秒）",
     "maximum_query_seconds": "最长执行（秒）", "cpu_seconds": "CPU（秒）",
     "buffer_gets": "逻辑读", "disk_reads": "物理读",
@@ -115,7 +125,14 @@ _PRIMARY_COLUMN_LABELS = {
     "rows_sent": "返回行数", "last_active_time": "最近活跃时间",
     "oldest_query_started_at": "最早开始时间", "wait_event_type": "等待类型",
     "wait_event": "等待事件", "digest_text": "SQL 摘要",
-    "query_text": "SQL 摘要", "observed_at": "发生时间",
+    "query_text": "SQL 文本", "query_sample_text": "SQL 样本",
+    "normalized_statement": "规范化 SQL", "observed_at": "发生时间",
+    "total_latency_picoseconds": "总耗时（皮秒）",
+    "average_latency_picoseconds": "平均耗时（皮秒）",
+    "maximum_latency_picoseconds": "最长耗时（皮秒）",
+    "total_exec_time_ms": "总耗时（毫秒）",
+    "mean_exec_time_ms": "平均耗时（毫秒）",
+    "max_exec_time_ms": "最长耗时（毫秒）",
     "record_id": "记录 ID",
     "message_type": "消息类型", "message_level": "消息级别",
     "problem_key": "Problem Key", "message_text": "日志正文",
@@ -125,12 +142,21 @@ _PRIMARY_COLUMN_LABELS = {
 def _primary_result_metadata(
     result_kind: str | None, fact: TurnEvidenceFact,
 ) -> dict[str, Any] | None:
+    if (
+        not result_kind
+        and fact.tool_id in _PRIMARY_RESULT_SPECS["TOP_SQL_LIST"]["tool_ids"]
+    ):
+        result_kind = "TOP_SQL_LIST"
     spec = _PRIMARY_RESULT_SPECS.get(str(result_kind or ""))
-    if spec is None or fact.tool_id != spec["tool_id"]:
+    if spec is None or fact.tool_id not in spec["tool_ids"]:
         return None
     semantics = str(fact.measurement_semantics)
     note = {
-        "CUMULATIVE_SINCE_LOAD": "共享池游标自装载以来的累计统计",
+        "CUMULATIVE_SINCE_LOAD": (
+            "共享池游标自装载以来的累计统计"
+            if fact.tool_id == "db.sql.top_current"
+            else "数据库统计累计值，不代表指定时间区间的增量"
+        ),
         "CURRENT_ACTIVITY": "当前活动快照",
         "HISTORICAL_SAMPLES": "所选时间窗口内的日志记录",
     }.get(semantics, semantics)
@@ -2574,6 +2600,22 @@ class DbaAnswerComposeHandler:
                         }
                         for column in columns
                     ]
+                rows = [list(row) for row in fact.rows]
+                if primary and primary["result_kind"] == "TOP_SQL_LIST":
+                    text_indexes = {
+                        index for index, column in enumerate(columns)
+                        if str(column.get("name") or "").lower()
+                        in _TOP_SQL_TEXT_COLUMNS
+                    }
+                    for row in rows:
+                        for index in text_indexes:
+                            if index < len(row) and isinstance(row[index], str):
+                                value = row[index]
+                                if len(value) > _TOP_SQL_TEXT_DISPLAY_LIMIT:
+                                    row[index] = (
+                                        value[:_TOP_SQL_TEXT_DISPLAY_LIMIT - 3]
+                                        + "..."
+                                    )
                 blocks.append(
                     TurnAnswerBlock(
                         block_type=AnswerBlockType.TABLE,
@@ -2583,7 +2625,7 @@ class DbaAnswerComposeHandler:
                                 primary["title"] if primary else fact.tool_id
                             ),
                             "columns": columns,
-                            "rows": [list(row) for row in fact.rows],
+                            "rows": rows,
                             "row_count": fact.row_count,
                             "truncated": fact.truncated,
                             "captured_at": fact.captured_at,

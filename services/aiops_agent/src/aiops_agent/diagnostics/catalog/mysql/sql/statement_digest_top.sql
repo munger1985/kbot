@@ -2,6 +2,7 @@ SELECT
     schema_name,
     digest,
     digest_text,
+    LEFT(query_sample_text, 4096) AS query_sample_text,
     count_star AS execution_count,
     sum_timer_wait AS total_latency_picoseconds,
     avg_timer_wait AS average_latency_picoseconds,
