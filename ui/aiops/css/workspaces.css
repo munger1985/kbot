@@ -172,6 +172,32 @@
 .ops-primary-result .ops-table-wrap { max-height: 440px; }
 .ops-primary-result .ops-table td { max-width: 420px; overflow-wrap: anywhere; white-space: normal; }
 .ops-primary-result > footer { padding: 9px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+.ops-primary-result.is-top-sql { min-width: 0; }
+.ops-primary-result.is-top-sql > header p,
+.ops-primary-result.is-top-sql > header > span,
+.ops-primary-result.is-top-sql > footer { font-size: 12px; }
+.ops-primary-result.is-top-sql .ops-table-wrap { min-width: 0; overflow: auto; }
+.ops-primary-result.is-top-sql .ops-table { width: 100%; border-spacing: 0; border-collapse: separate; font-size: 13px; }
+.ops-primary-result.is-top-sql .ops-table th,
+.ops-primary-result.is-top-sql .ops-table td { min-width: 88px; padding: 11px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; white-space: nowrap; overflow-wrap: normal; }
+.ops-primary-result.is-top-sql .ops-table th { position: sticky; z-index: 2; top: 0; color: var(--muted); background: var(--paper); font-size: 12px; font-weight: 650; }
+.ops-primary-result.is-top-sql .ops-table tbody tr:last-child td { border-bottom: 0; }
+.ops-primary-result.is-top-sql .ops-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, var(--paper)); }
+.ops-primary-result.is-top-sql .ops-table td > span { display: block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ops-primary-result.is-top-sql .ops-table .is-identifier { min-width: 155px; }
+.ops-primary-result.is-top-sql .ops-table td.is-identifier > span,
+.ops-primary-result.is-top-sql .ops-table td.is-sql > span { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.ops-primary-result.is-top-sql .ops-table .is-sql { min-width: 300px; width: 300px; }
+.ops-primary-result.is-top-sql .ops-table td.is-sql > span { display: -webkit-box; width: 272px; max-width: 272px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; line-height: 1.55; }
+.ops-primary-result.is-top-sql .ops-table .is-number { text-align: right; font-variant-numeric: tabular-nums; }
+.ops-primary-result.is-top-sql .ops-table th:last-child,
+.ops-primary-result.is-top-sql .ops-table td:last-child { position: sticky; right: 0; background: var(--paper); }
+.ops-primary-result.is-top-sql .ops-table th:last-child { z-index: 4; }
+.ops-primary-result.is-top-sql .ops-table td:last-child { z-index: 1; box-shadow: -1px 0 0 var(--line); }
+@media (max-width: 600px) {
+  .ops-primary-result.is-top-sql .ops-table th:last-child,
+  .ops-primary-result.is-top-sql .ops-table td:last-child { position: static; box-shadow: none; }
+}
 .ops-chart-rows { display: grid; gap: 8px; }
 .ops-chart-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(120px, 1fr) 62px; align-items: center; gap: 10px; font-size: 12px; }
 .ops-chart-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
