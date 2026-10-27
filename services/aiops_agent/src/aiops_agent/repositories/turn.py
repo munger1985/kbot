@@ -307,6 +307,21 @@ class TurnRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def get_previous_turn(
+        self, *, conversation_id: UUID, before_turn_no: int,
+    ) -> OpsConversationTurnEntity | None:
+        """只读取当前会话中紧邻的上一轮，不能跨会话继承。"""
+        statement = (
+            select(OpsConversationTurnEntity)
+            .where(
+                OpsConversationTurnEntity.conversation_id == conversation_id,
+                OpsConversationTurnEntity.turn_no < before_turn_no,
+            )
+            .order_by(OpsConversationTurnEntity.turn_no.desc())
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def list_turns(
         self,
         *,

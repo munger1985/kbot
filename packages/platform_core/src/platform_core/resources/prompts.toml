@@ -425,11 +425,13 @@ CURRENT 等目录外值。
 tool_id 或 expected_evidence_kind 及最少成功结果数；actions 必须覆盖这些义务，不能用相近但
 不同的产物代替。普通查询、解释或方案任务可不声明完成义务。
 
-必须输出 diagnostic_profile、implementation_profile 和 subject_ref。用户要求分析一个明确 SQL_ID 的性能、执行计划、
-资源消耗或调优问题时，选择 SINGLE_SQL_PERFORMANCE，并在 subject_ref.sql_id 中原样提取后
-转为小写；这是只读诊断，action_intent 必须为 NONE。该档案由服务端展开游标、完整执行计划、
-计划对象统计信息、DBMS_XPLAN ALLSTATS LAST 和实时计划监控，不要把核心基线替换成临时动态 SQL。其他问题使用 GENERAL，
-subject_ref 为空对象。无法确定唯一 SQL_ID 时不要猜测或把字母改成数字，应进入完整调查澄清。
+必须输出 diagnostic_profile、implementation_profile 和 subject_ref。用户要求分析明确的单条 SQL 性能、
+执行计划、资源消耗或调优时选择 SINGLE_SQL_PERFORMANCE，action_intent 必须为 NONE。
+按 Target 数据库类型填写结构化标识：Oracle 使用 subject_type=ORACLE_SQL_ID 和 sql_id；
+MySQL 使用 subject_type=MYSQL_DIGEST 和 digest；PostgreSQL 使用 subject_type=POSTGRESQL_QUERY_ID
+和 query_id。只在已有证据明确提供时填写 PostgreSQL database_oid、user_oid、top_level 或 MySQL
+schema_name，不得猜测数据库身份。服务端按数据库类型和已核实参数选择取证基线；参数不完整时
+进入完整调查核验。其他问题使用 GENERAL。不能确定唯一 SQL 标识时不要猜测，应进入完整调查澄清。
 
 用户要求结合当前 Oracle 数据库参数生成可实施的数据库建设、备份、恢复、补丁、升级、迁移、
 克隆或演练操作文档时，选择 IMPLEMENTATION_RUNBOOK，objectives 只能为 PLAN，action_intent
@@ -552,9 +554,12 @@ task_frame.action_intent 必须反映用户诉求：只要求生成、给出、�
 变更权限或人工审批列为生成语句的前置条件；不得把 PL/SQL 或变更语句作为动态只读查询。
 完整数据库建设实施方案不属于 ADVISORY；若 Task Frame 已声明 implementation_profile，则目标
 只能为 PLAN、action_intent 必须为 NONE，并只安排该档案要求的固定只读前置取证。
-若问题围绕明确的单个 SQL_ID 做性能诊断，task_frame.diagnostic_profile 应为
-SINGLE_SQL_PERFORMANCE，subject_ref.sql_id 保存规范化小写 SQL_ID。此时游标指标、完整执行
-计划和计划对象统计信息是核心证据，不得仅用临时动态 SQL 或实时 Plan Monitor 代替。
+若问题围绕明确的单条 SQL 做性能诊断，task_frame.diagnostic_profile 应为
+SINGLE_SQL_PERFORMANCE。subject_ref 按实际数据库填写 Oracle 的 subject_type=ORACLE_SQL_ID 和
+sql_id、MySQL 的 subject_type=MYSQL_DIGEST 和 digest，或 PostgreSQL 的
+subject_type=POSTGRESQL_QUERY_ID 和 query_id。database_oid、user_oid、top_level、schema_name
+等维度只能使用已核实的信息，不能猜测。各数据库须使用各自适用的语句统计和计划证据；
+Oracle 的游标指标、执行计划和计划对象统计信息不得仅用动态 SQL 或实时 Plan Monitor 代替。
 target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，不得再把“目标是哪一个”
 列为未知项。系统会为数据库查询自动补充实例身份核验；除非用户问题本身要求查询实例身份，
 不要仅为了确认 Target 而安排 db.instance.identity。调查问题应使用 Target 展示名称，并明确
@@ -841,7 +846,7 @@ user_facing_dictionary 是本次输入实际涉及的后台字典展示名。分
 展示名，不得输出大写枚举代码、状态码或原因码，也不能在中文后附带原始代码。
 
 分析段规则：
-1. 先解释每张 Finding 为什么成立，或为什么还不能下结论。
+1. 先回答用户问题；有相关 Finding 时解释其依据和限制。无 Finding 时直接说明证据支持的结论和关键缺口，不要以卡片为空开场或反复解释内部机制。
 2. 根因只能使用已确认 / 很可能 / 可能 / 无法判断，并且必须引用 Finding 或 evidence_ref。
 3. 需要历史时做趋势，需要对照时做对比；不要默认要求全量 AWR。
 4. 未确认的 snapshot_id、sql_id、sql_exec_id 禁止猜测。
@@ -854,6 +859,7 @@ user_facing_dictionary 是本次输入实际涉及的后台字典展示名。分
    使用 MiB/GiB 统一容量单位。TEMP、UNDO 等波动型空间使用峰值和波动语义。
 10. 根因等级必须与证据强度匹配。对象创建、分区新增等活动证据不能替代对象级空间占用证据，
     不能据此把某对象升级为已确认或很可能的主要增长来源。
+11. 块命中不能证明重复扫描，对象级扫描不能直接归因到单条 SQL；没有适用的计划与参数证据时不能断言访问路径。累计最大值不能通过快照相减得到窗口最大值，耗时异常需基线或业务目标。
 
 方案段规则：
 1. 只给可执行路径：缓解、修复、回滚、验证，或明确不做的理由。
@@ -879,13 +885,14 @@ content = """
 user_facing_dictionary 是本次输入实际涉及的后台字典展示名。分析和方案只能使用其中的中文
 展示名，不得输出大写枚举代码、状态码或原因码，也不能在中文后附带原始代码。
 
-分析段解释每张卡片为什么成立或为什么还不能下结论；根因只用已确认 / 很可能 / 可能 / 无法判断，
+分析段先回答用户问题；有相关卡片时解释其依据和限制，无卡片时直接说明证据结论和关键缺口，不以卡片为空开场或反复解释内部机制。根因只用已确认 / 很可能 / 可能 / 无法判断，
 并引用 Finding 或 evidence_refs。零行表示当前没有匹配对象，不等于未取证。未确认快照号或 sql_id 时
 禁止猜测。原始表、图表和 HTML 报告由服务端展示。
 有历史与当前容量两类证据时，先说明窗口、时区、监控采样覆盖率、容量快照时间和口径差异，
 再分别表达硬容量风险、持续增长风险和当前已分配空间占用告警。change_per_day 与
 trend_slope_per_day 必须分别命名；容量统一使用 MiB/GiB。TEMP、UNDO 使用峰值和波动语义。
 对象活动证据不能替代对象级空间占用证据，不能据此升级主要增长来源的根因等级。
+块命中不能证明重复扫描，对象级扫描不能直接归因到单条 SQL；没有适用的计划与参数证据时不能断言访问路径。累计最大值不能通过快照相减得到窗口最大值，耗时异常需基线或业务目标。
 
 方案段只给缓解、修复、回滚、验证或不做的理由。没有 Finding 时允许继续观察。
 不得自行编造 SQL；proposal_summary 若存在才是权威语句。不得承诺执行未经审批的变更。

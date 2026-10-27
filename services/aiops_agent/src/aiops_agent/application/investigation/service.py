@@ -35,6 +35,7 @@ from aiops_agent.application.investigation.discovery_binding import (
 )
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.direct_list import add_top_sql_reference
+from aiops_agent.application.investigation.prior_sql_evidence import load_prior_sql_evidence
 from aiops_agent.application.investigation.query_freezing import (
     prepare_attachment_searches,
     prepare_dynamic_queries,
@@ -429,12 +430,14 @@ class TurnPlanningService:
             investigation,
             workflow_kind=str(context.workflow_kind or ""),
         )
+        if investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE:
+            context = replace(context, prior_sql_evidence=await self._load_prior_sql_evidence(context))
         compiled = self._task_compiler.compile(
             playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
             log_binding_ids=log_binding_ids,
             user_evidence_artifact_keys=self._initial_user_evidence_keys(
-                context
+                context, include_prior_sql=(investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE)
             ),
             include_change=(
                 investigation.task_frame.action_intent != ActionIntent.NONE
@@ -1747,9 +1750,35 @@ class TurnPlanningService:
             )
             await uow.commit()
 
+    async def _load_prior_sql_evidence(self, context: TurnPlanningContext) -> dict | None:
+        """仅为单 SQL 任务读取隔离校验过的上一轮原始证据。"""
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(domain_id=context.domain_id, turn_id=context.turn_id)
+            if turn is None or int(turn.turn_no) <= 1:
+                return None
+            link = await uow.turns.get_run_link(turn_id=context.turn_id, purpose="PRIMARY")
+            if link is None or str(link.ops_run_id) != str(context.ops_run_id):
+                return None
+            run = await uow.runs.get_run(ops_run_id=context.ops_run_id)
+            if run is None or run.status != "RUNNING" or any(
+                str(getattr(run, key)) != str(getattr(context, key))
+                for key in ("domain_id", "target_id", "agent_id", "actor_id")
+            ):
+                return None
+            frozen_target = dict(dict(run.plan_snapshot_json or {}).get("target") or {})
+            active_version = context.database_execution.get("target_row_version")
+            if (
+                frozen_target.get("row_version") is None
+                or active_version is None
+                or str(frozen_target["row_version"]) != str(active_version)
+            ):
+                return None
+            return await load_prior_sql_evidence(uow=uow, turn=turn, run=run)
+
     @staticmethod
     def _initial_user_evidence_keys(
         context: TurnPlanningContext,
+        *, include_prior_sql: bool = False,
     ) -> tuple[str, ...]:
         """首轮评估必须看到用户输入、上传抽取和继承的来源证据。"""
         return (
@@ -1764,6 +1793,7 @@ class TurnPlanningService:
                 if context.source_run_evidence is not None
                 else ()
             ),
+            *(("turn-prior-sql-evidence:1",) if include_prior_sql and getattr(context, "prior_sql_evidence", None) else ()),
             *(("target-recovery-assurance:1",) if getattr(context, "recovery_assurance", {}) else ()),
         )
 
@@ -2243,6 +2273,7 @@ class TurnPlanningService:
                 "USER_UPLOAD_EXTRACT.v1",
                 "SOURCE_RUN_EVIDENCE.v1",
                 "SITUATION_EVIDENCE.v1",
+                "PRIOR_TURN_SQL_EVIDENCE.v1",
                 "DBA_TOOL_RESULT.v1",
                 "TOP_SQL_WINDOW_RESULT.v1",
                 "OBSERVATION_SET.v1",
@@ -4357,6 +4388,13 @@ class TurnPlanningService:
                 if context.source_run_evidence is not None
                 else None
             )
+            prior_sql_artifact = (
+                self._artifact(
+                    ops_run_id=run.ops_run_id, artifact_key="turn-prior-sql-evidence:1",
+                    artifact_type="PRIOR_TURN_SQL_EVIDENCE", schema_version="PRIOR_TURN_SQL_EVIDENCE.v1",
+                    payload=context.prior_sql_evidence, producer="aiops.prior-turn-linker", trust_level="SOURCE_VERIFIED",
+                ) if context.prior_sql_evidence and investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE else None
+            )
             recovery_assurance_artifact = (
                 self._artifact(
                     ops_run_id=run.ops_run_id,
@@ -4376,6 +4414,7 @@ class TurnPlanningService:
                 plan_artifact,
                 playbook_artifact,
                 source_run_artifact,
+                prior_sql_artifact,
                 recovery_assurance_artifact,
             ):
                 if artifact is not None:
@@ -4424,6 +4463,15 @@ class TurnPlanningService:
                         usage_reason="用户在本轮对话中直接提供的日志、查询或命令结果",
                         linked_by="aiops.input-understanding",
                     ))
+            if prior_sql_artifact is not None:
+                await uow.turns.add_evidence(OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(), turn_id=turn.turn_id,
+                    artifact_id=prior_sql_artifact.artifact_id, source_kind="RUN",
+                    evidence_kind="INHERITED_DIAGNOSIS", confidence=1,
+                    evidence_role="CONTEXT", measurement_semantics="NOT_APPLICABLE",
+                    freshness_status="UNKNOWN", usage_reason="同一会话及 Target 上一轮的 SQL 原始观测；保留原采集时间",
+                    linked_by=str(context.actor_id),
+                ))
             if source_run_artifact is not None:
                 inherited_from_situation = (
                     context.source_run_evidence.get("source_kind")

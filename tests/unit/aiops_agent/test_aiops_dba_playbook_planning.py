@@ -183,6 +183,7 @@ class _PlanningUow:
     def __init__(self) -> None:
         self._uow_active = False
         self.turn = SimpleNamespace(
+            turn_no=1,
             turn_id=uuid7(),
             conversation_id=uuid7(),
             domain_id=7,
@@ -318,6 +319,7 @@ class _PlanningUow:
         self.commit_count = 0
         self.turns = SimpleNamespace(
             get_turn=self._get_turn,
+            get_previous_turn=AsyncMock(return_value=None),
             get_run_link=self._get_run_link,
             get_run_link_by_ops_run_id=self._get_run_link_by_ops_run_id,
             list_messages=self._list_messages,
