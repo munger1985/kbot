@@ -533,9 +533,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261027_1", "20261027_2"),
-            "situations": ("20261027_1", "20261027_2"),
-            "inspections": ("20261027_1", "20261027_2"),
+            "chat": ("20261027_4", "20261027_4"),
+            "situations": ("20261027_1", "20261027_3"),
+            "inspections": ("20261027_1", "20261027_3"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
@@ -1802,7 +1802,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("`${api}/conversations?limit=50`", workspace)
         self.assertIn("archiveConversation", workspace)
         self.assertIn('method: "DELETE"', workspace)
-        self.assertIn('class="ops-workspace-delete"', workspace)
+        self.assertIn('class="ops-workspace-more"', workspace)
         self.assertIn('data-delete-id="${esc(item.conversation_id)}"', workspace)
         self.assertIn("会话将从聊天历史中移除", workspace)
         self.assertIn("关联的诊断、证据和变更审计记录仍会保留", workspace)

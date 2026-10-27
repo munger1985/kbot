@@ -1607,6 +1607,7 @@
 
   function resetConversationView({ agentSelected = false } = {}) {
     state.conversation = null;
+    document.querySelectorAll(".ops-workspace-item").forEach((button) => button.removeAttribute("aria-current"));
     syncAgentTargetContext();
     document.getElementById("conversation-title").textContent = agentSelected
       ? "开始一次智能运维问答"
@@ -1941,14 +1942,84 @@
     await loadConversationList();
   }
 
+  function conversationGroups(rows, now = new Date()) {
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    const week = new Date(today); week.setDate(today.getDate() - 6);
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const groups = ["未来", "今天", "昨天", "最近 7 天", "更早", "时间未知"].map((label) => ({ label, items: [] }));
+    const timestamp = (item) => item.updated_at ? new Date(item.updated_at).getTime() : NaN;
+    const sorted = [...rows].sort((a, b) => {
+      const left = timestamp(a), right = timestamp(b);
+      return (Number.isNaN(right) ? -Infinity : right) - (Number.isNaN(left) ? -Infinity : left);
+    });
+    sorted.forEach((item) => {
+      const time = timestamp(item);
+      const index = Number.isNaN(time) ? 5 : time >= tomorrow.getTime() ? 0 : time >= today.getTime() ? 1
+        : time >= yesterday.getTime() ? 2 : time >= week.getTime() ? 3 : 4;
+      groups[index].items.push(item);
+    });
+    return groups.filter((group) => group.items.length);
+  }
+
+  let conversationMenu = null;
+  let conversationMenuTrigger = null;
+  function closeConversationMenu(restoreFocus = false) {
+    conversationMenu?.remove();
+    conversationMenu = null;
+    conversationMenuTrigger?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) conversationMenuTrigger?.focus();
+    conversationMenuTrigger = null;
+  }
+  function showConversationMenu(button) {
+    if (conversationMenuTrigger === button) { closeConversationMenu(); return; }
+    closeConversationMenu();
+    conversationMenuTrigger = button;
+    button.setAttribute("aria-expanded", "true");
+    const rect = button.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.className = "ops-conversation-menu";
+    menu.setAttribute("role", "menu");
+    menu.style.left = `${Math.max(8, Math.min(rect.right - 144, window.innerWidth - 152))}px`;
+    menu.style.top = `${rect.bottom + 58 > window.innerHeight ? Math.max(8, rect.top - 58) : rect.bottom + 6}px`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("role", "menuitem");
+    remove.textContent = "删除会话";
+    remove.onclick = () => {
+      const { deleteId, deleteTitle } = button.dataset;
+      closeConversationMenu();
+      archiveConversation(deleteId, deleteTitle).catch((error) => shell.toast(error.message));
+    };
+    menu.append(remove);
+    document.body.append(menu);
+    conversationMenu = menu;
+    remove.focus();
+  }
+  let conversationMenuEventsBound = false;
+  function bindConversationMenuEvents() {
+    if (conversationMenuEventsBound) return;
+    conversationMenuEventsBound = true;
+    document.addEventListener("pointerdown", (event) => {
+      if (conversationMenu && !conversationMenu.contains(event.target) && !conversationMenuTrigger?.contains(event.target)) closeConversationMenu();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && conversationMenu) { event.preventDefault(); closeConversationMenu(true); }
+    });
+    document.addEventListener("scroll", () => closeConversationMenu(), true);
+    window.addEventListener("resize", () => closeConversationMenu());
+  }
+
   function renderConversationList(rows) {
     const list = document.getElementById("conversation-list");
-    list.innerHTML = rows.length ? rows.map((item) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(item.source_type)} · ${esc(shell.fmt(item.updated_at))}</small></button><button class="ops-workspace-delete" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="删除会话 ${esc(item.title || "未命名会话")}" title="删除会话">删除</button></div>`).join("") : '<div class="ops-empty">还没有诊断会话</div>';
+    bindConversationMenuEvents();
+    closeConversationMenu();
+    list.innerHTML = rows.length ? conversationGroups(rows).map((group) => `<section class="ops-conversation-group" aria-label="${esc(group.label)}"><h3>${esc(group.label)}</h3>${group.items.map((item) => `<div class="ops-workspace-row"><button class="ops-workspace-item" type="button" data-id="${esc(item.conversation_id)}" ${String(item.conversation_id) === String(state.conversation?.conversation_id) ? 'aria-current="true"' : ""} title="${esc(`${item.title || "未命名会话"} · ${shell.fmt(item.updated_at)}`)}"><strong>${esc(item.title || "未命名会话")}</strong><small>${esc(shell.fmt(item.updated_at))}${item.source_type ? ` · ${esc(item.source_type)}` : ""}</small></button><button class="ops-workspace-more" type="button" data-delete-id="${esc(item.conversation_id)}" data-delete-title="${esc(item.title || "未命名会话")}" aria-label="会话操作：${esc(item.title || "未命名会话")}" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">⋮</span></button></div>`).join("")}</section>`).join("") : '<div class="ops-empty">还没有诊断会话</div>';
     list.querySelectorAll(".ops-workspace-item").forEach((button) => {
       button.onclick = () => loadConversation(button.dataset.id).catch((error) => shell.toast(error.message));
     });
-    list.querySelectorAll(".ops-workspace-delete").forEach((button) => {
-      button.onclick = () => archiveConversation(button.dataset.deleteId, button.dataset.deleteTitle).catch((error) => shell.toast(error.message));
+    list.querySelectorAll(".ops-workspace-more").forEach((button) => {
+      button.onclick = () => showConversationMenu(button);
     });
   }
 
