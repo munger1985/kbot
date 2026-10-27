@@ -147,6 +147,39 @@ def _mentioned_business_systems(
     ]
 
 
+def _capability_scope_db_types(context: dict[str, Any]) -> set[str]:
+    """只按与正式范围解析一致的显式系统、资源或可信系统提示筛选候选。"""
+    systems = list(context.get("systems") or ())
+    text = str(context.get("question") or "").casefold()
+    selected_systems = _mentioned_business_systems(systems, text)
+    if not selected_systems:
+        hinted = str(dict(context.get("context_hint") or {}).get("business_system_id") or "")
+        selected_systems = [
+            system for system in systems
+            if str(system.get("business_system_id") or "") == hinted
+        ] or systems
+    resources = [
+        resource for system in selected_systems
+        for resource in system.get("resources", ())
+    ]
+    matched = [
+        resource for resource in resources
+        if text and any(
+            token and str(token).casefold() in text
+            for token in (
+                resource.get("resource_code"), resource.get("display_name"),
+                *(resource.get("topology_roles") or ()),
+                *dict(resource.get("attributes") or {}).values(),
+            )
+        )
+    ]
+    return {
+        str(database.get("db_type")).upper()
+        for resource in (matched or resources)
+        if (database := dict(resource.get("database") or {})).get("db_type")
+    }
+
+
 def _recent_routing_context(
     messages: list[OpsConversationMessageEntity],
     *,
@@ -1282,14 +1315,12 @@ class TurnPlannerService:
             str(item) for item in context["capabilities"]
         }:
             return {}, None
-        db_types = {
-            str(database.get("db_type") or "")
-            for system in context["systems"]
-            for resource in system.get("resources", ())
-            if (database := dict(resource.get("database") or {})).get("db_type")
-        }
-        candidates = self._conversation_starter_catalog.resolver_candidates(
-            supported_db_types=db_types
+        db_types = _capability_scope_db_types(context)
+        candidates = tuple(
+            item for item in self._conversation_starter_catalog.resolver_candidates(
+                supported_db_types=db_types
+            )
+            if db_types <= {str(value).upper() for value in item["supported_db_types"]}
         )
         if not candidates:
             return {}, None
@@ -1330,12 +1361,20 @@ class TurnPlannerService:
         )
         if resolution.status == "NO_MATCH":
             return {}, result.receipt.model_dump(mode="json")
-        if not resolution.capability_id:
-            raise validation_failed("自然语言能力解析缺少 capability_id")
-        frozen = self._conversation_starter_catalog.freeze_natural_language(
-            capability_id=resolution.capability_id,
-            parameters=dict(resolution.parameters),
-        )
+        eligible_ids = {str(item["capability_id"]) for item in candidates}
+        if not resolution.capability_id or resolution.capability_id not in eligible_ids:
+            return {}, result.receipt.model_dump(mode="json")
+        try:
+            frozen = self._conversation_starter_catalog.freeze_natural_language(
+                capability_id=resolution.capability_id,
+                parameters=dict(resolution.parameters),
+            )
+        except AIOpsApplicationError as exc:
+            if exc.code != "OPS_VALIDATION_FAILED":
+                raise
+            # 自然语言匹配与参数均来自模型，校验失败时交由通用路由澄清。
+            # 显式 UI 功能入口仍使用严格校验，不能借此绕过。
+            return {}, result.receipt.model_dump(mode="json")
         return frozen, result.receipt.model_dump(mode="json")
 
     def _resolve_scope(self, context: dict[str, Any], plan: TurnPlanV1):
