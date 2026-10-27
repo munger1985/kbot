@@ -76,7 +76,7 @@ class BusinessSystemCardContractTests(unittest.TestCase):
         self.assertIn("draftRevision >= 1", WORKSPACE_SCRIPT)
         self.assertIn('method: "POST"', WORKSPACE_SCRIPT)
         self.assertIn(
-            "aiops-business-system-workspace.js?v=20261022_4",
+            "aiops-business-system-workspace.js?v=20261027_1",
             WORKSPACE_PAGE,
         )
 
@@ -107,7 +107,7 @@ class BusinessSystemCardContractTests(unittest.TestCase):
             "function readonlyResourceHtml(item)", 1
         )[1].split("function resourceEditorHtml(item)", 1)[0]
         self.assertNotIn("database.password", readonly_detail)
-        self.assertIn("aiops-forms.css?v=20261022_4", WORKSPACE_PAGE)
+        self.assertIn("aiops-forms.css?v=20261027_1", WORKSPACE_PAGE)
 
     def test_new_target_cards_can_be_deleted_without_affecting_published_cards(self):
         self.assertIn('class="business-resource-card-shell"', WORKSPACE_SCRIPT)
