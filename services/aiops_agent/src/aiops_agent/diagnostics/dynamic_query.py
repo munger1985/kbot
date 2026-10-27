@@ -134,6 +134,8 @@ class DynamicQueryPolicySnapshot(BaseModel):
     max_sql_chars: int = Field(default=20_000, ge=1, le=100_000)
     max_bind_count: int = Field(default=32, ge=0, le=128)
     allow_catalog_object_families: bool = True
+    allow_diagnostics_pack: bool = False
+    allow_tuning_pack: bool = False
 
 
 class ValidatedDynamicQuery(BaseModel):
@@ -309,6 +311,15 @@ class OracleDynamicQueryPolicy:
                     "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
                     "动态 SQL 只允许策略声明的只读包函数",
                 )
+            if (
+                str(dot.this.name).upper() == "DBMS_XPLAN"
+                and str(dot.expression.name).upper() == "DISPLAY_AWR"
+                and not self.snapshot.allow_diagnostics_pack
+            ):
+                raise DynamicQueryRejected(
+                    "ORACLE_DIAGNOSTICS_PACK_REQUIRED",
+                    "访问 AWR 需要确认 Oracle Diagnostics Pack 授权",
+                )
             package_functions.add(id(dot.expression))
         table_wrappers = {
             id(table.this)
@@ -341,6 +352,7 @@ class OracleDynamicQueryPolicy:
             isinstance(package, exp.Identifier)
             and str(package.name).upper() in self._allowed_packages
             and isinstance(expression.expression, exp.Func)
+            and str(expression.expression.name).upper() in {"DISPLAY_CURSOR", "DISPLAY_AWR"}
         )
 
     @staticmethod
@@ -416,8 +428,6 @@ class OracleDynamicQueryPolicy:
             if self._table_function_package(table) is not None:
                 continue
             name = str(table.name or "")
-            if name.lower() in cte_names:
-                continue
             if "@" in name:
                 raise DynamicQueryRejected(
                     "DYNAMIC_SQL_DATABASE_LINK_FORBIDDEN",
@@ -433,6 +443,33 @@ class OracleDynamicQueryPolicy:
                     f"动态 SQL 禁止访问 Schema：{owner}",
                 )
             short_name = name.lower()
+            diagnostic_pack_object = (
+                short_name.startswith(("dba_hist_", "cdb_hist_"))
+                or short_name in {
+                    "v$active_session_history", "gv$active_session_history",
+                    "v_$active_session_history", "gv_$active_session_history",
+                }
+            )
+            tuning_pack_object = short_name in {
+                "v$sql_monitor", "gv$sql_monitor", "v_$sql_monitor", "gv_$sql_monitor",
+                "v$sql_plan_monitor", "gv$sql_plan_monitor",
+                "v_$sql_plan_monitor", "gv_$sql_plan_monitor",
+            }
+            if diagnostic_pack_object and not self.snapshot.allow_diagnostics_pack:
+                raise DynamicQueryRejected(
+                    "ORACLE_DIAGNOSTICS_PACK_REQUIRED",
+                    "访问 AWR 或 ASH 需要确认 Oracle Diagnostics Pack 授权",
+                )
+            if tuning_pack_object and not (
+                self.snapshot.allow_diagnostics_pack and self.snapshot.allow_tuning_pack
+            ):
+                raise DynamicQueryRejected(
+                    "ORACLE_TUNING_PACK_REQUIRED",
+                    "访问 SQL Monitor 需要确认 Oracle Diagnostics Pack 和 Tuning Pack 授权",
+                )
+            # 即使同名 CTE 出现在其他作用域，也不能跳过授权检查。
+            if not owner and not table.catalog and name.lower() in cte_names:
+                continue
             family_allowed = (
                 self.snapshot.allow_catalog_object_families
                 and _DIAGNOSTIC_OBJECT.fullmatch(short_name) is not None
@@ -476,7 +513,8 @@ class OracleDynamicQueryPolicy:
         if set(normalized) != set(bind_names):
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_PARAMETERS_MISMATCH",
-                "动态 SQL bind 与参数不一致",
+                f"动态 SQL bind 与参数不一致：缺少 {sorted(set(bind_names) - set(normalized))}，"
+                f"多余 {sorted(set(normalized) - set(bind_names))}",
             )
         for name, value in normalized.items():
             if value is not None and not isinstance(
@@ -668,7 +706,8 @@ class PostgreSQLDynamicQueryPolicy:
         if set(normalized) != set(bind_names):
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_PARAMETERS_MISMATCH",
-                "动态 SQL bind 与参数不一致",
+                f"动态 SQL bind 与参数不一致：缺少 {sorted(set(bind_names) - set(normalized))}，"
+                f"多余 {sorted(set(normalized) - set(bind_names))}",
             )
         for name, value in normalized.items():
             if value is not None and not isinstance(value, (str, int, float, bool)):

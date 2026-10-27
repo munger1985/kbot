@@ -178,6 +178,12 @@
             <input id="target-oracle-pdb-name" name="oracle_pdb_name" maxlength="128">
             <small>填写预期 PDB Name；系统会与实际 CON_NAME 比对。</small>
           </div>
+          <section id="target-oracle-license" class="target-connection-field span-12" hidden>
+            <h3>Oracle Pack 授权声明</h3>
+            <p>请核实合同后声明；数据库权限或参数不代表已获许可。AWR/ASH 需要 Diagnostics Pack，SQL Monitor 还需要 Tuning Pack。</p>
+            <label><input name="oracle_diagnostics_pack" type="checkbox"> 已确认 Diagnostics Pack 授权</label>
+            <label><input name="oracle_tuning_pack" type="checkbox"> 已确认 Tuning Pack 授权</label>
+          </section>
           <div id="target-database-field" class="ops-field span-6 target-connection-field" hidden>
             <label for="target-database">Database</label>
             <input id="target-database" name="database" maxlength="256" placeholder="postgres">

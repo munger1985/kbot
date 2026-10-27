@@ -420,6 +420,30 @@ def _proposal_artifact(*, mode: str = "ADVISORY") -> dict:
 
 
 class FindingCompilerTest(unittest.TestCase):
+    def test_postgresql_analyze_threshold_and_zero_denominator(self) -> None:
+        columns = ("relation_oid", "schema_name", "table_name", "n_live_tup", "n_mod_since_analyze")
+        cases = ((0, 0, False, None), (5000, 1000, True, None),
+                 (10, 999, False, None), (0, 1000, False, "FINDING_RATIO_UNDEFINED"))
+        for live, modified, expected_finding, expected_gap in cases:
+            with self.subTest(live=live, modified=modified):
+                result = compile_findings(
+                    (_fact(tool_id="db.postgresql.analyze.health", columns=columns,
+                           rows=((123, "mes", "signals", live, modified),)),),
+                    database_type="POSTGRESQL",
+                )
+                self.assertEqual(expected_finding, bool(result.findings))
+                self.assertEqual([expected_gap] if expected_gap else [],
+                                 [gap.code for gap in result.gaps])
+
+    def test_postgresql_checkpoint_count_and_ratio_are_both_checked(self) -> None:
+        fact = _fact(
+            tool_id="db.postgresql.checkpoint.statistics",
+            columns=("checkpoints_timed", "checkpoints_requested", "stats_reset"),
+            rows=((40, 10, "2026-01-01"),),
+        )
+        result = compile_findings((fact,), database_type="POSTGRESQL")
+        self.assertEqual(["CHECKPOINT_PRESSURE"], [str(card.finding_type) for card in result.findings])
+
     def test_catalog_finding_types_are_declared(self) -> None:
         load_finding_catalog.cache_clear()
         catalog_types = {

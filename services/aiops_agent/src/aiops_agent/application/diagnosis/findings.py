@@ -242,7 +242,20 @@ def _apply_parses(
             den_raw = values.get(denominator.lower())
             number = _as_number(num_raw)
             denom = _as_number(den_raw)
+            threshold_number = _as_number(values.get(str(predicate["column"]).lower()))
             parsed = None
+            if (
+                parsed_field.lower() != str(predicate["column"]).lower()
+                and threshold_number is not None
+                and (
+                    (predicate.get("op") == "gte" and threshold_number < float(predicate["value"]))
+                    or (predicate.get("op") == "lte" and threshold_number > float(predicate["value"]))
+                )
+            ):
+                # 原始计数未达到前置阈值，无需对空表或分区父表计算比率。
+                derived[parsed_field.lower()] = None
+                values[parsed_field.lower()] = None
+                continue
             if denom is None or denom == 0:
                 if den_raw not in {None, ""}:
                     gaps.append(
@@ -250,7 +263,10 @@ def _apply_parses(
                             finding_type=finding_type,
                             source_tool_id=fact.tool_id,
                             column=denominator,
-                            code="FINDING_VALUE_UNPARSEABLE",
+                            code=(
+                                "FINDING_RATIO_UNDEFINED"
+                                if denom == 0 else "FINDING_VALUE_UNPARSEABLE"
+                            ),
                             detail=f"{denominator} 无法作为比率分母：{den_raw}",
                             evidence_ref=fact.evidence_ref,
                         )
@@ -303,9 +319,10 @@ def _predicates_match(spec: dict[str, Any], values: dict[str, Any]) -> bool:
                 return False
         elif parse in {"ratio_percent", "ratio_sum_percent"}:
             parsed_field = str(predicate.get("parsed_field") or "used_percent")
-            raw = values.get(parsed_field.lower())
-            if raw is None:
-                return False
+            if column.lower() == parsed_field.lower():
+                raw = values.get(parsed_field.lower())
+                if raw is None:
+                    return False
         op = str(predicate["op"])
         if op == "gte":
             number = _as_number(raw)

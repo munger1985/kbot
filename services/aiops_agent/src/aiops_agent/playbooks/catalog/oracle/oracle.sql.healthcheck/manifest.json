@@ -19,9 +19,7 @@
     "V_$SQL_PLAN_STATISTICS_ALL",
     "GV_$SQL_PLAN",
     "DBA_TABLES",
-    "DBA_TAB_STATISTICS",
-    "GV_$SQL_PLAN_MONITOR",
-    "GV_$SQL_MONITOR"
+    "DBA_TAB_STATISTICS"
   ],
   "required_entitlements": [],
   "input_schema": "oracle.sql.healthcheck.input.v1",
@@ -31,9 +29,7 @@
     {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
     {"step_id": "cursor_details", "tool_id": "db.sql.cursor_details", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {"limit": 50}},
     {"step_id": "display_cursor", "tool_id": "db.sql.display_cursor", "tool_version": "1.0.0", "depends_on": ["cursor_details"], "input": {}},
-    {"step_id": "object_statistics", "tool_id": "db.sql.object_statistics", "tool_version": "1.0.0", "depends_on": ["display_cursor"], "input": {}},
-    {"step_id": "plan_monitor", "tool_id": "db.sql.plan_monitor", "tool_version": "1.0.0", "depends_on": ["object_statistics"], "input": {"limit": 200}},
-    {"step_id": "sql_monitor_report", "tool_id": "db.oracle.sql_monitor.report", "tool_version": "1.0.0", "depends_on": ["plan_monitor"], "input": {}}
+    {"step_id": "object_statistics", "tool_id": "db.sql.object_statistics", "tool_version": "1.0.0", "depends_on": ["display_cursor"], "input": {}}
   ],
   "output_schema": "oracle.sql.healthcheck.output.v1",
   "measurement_semantics": "CURRENT_ACTIVITY",

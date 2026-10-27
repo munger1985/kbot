@@ -29,12 +29,15 @@ _DYNAMIC_TOOL_IDS = {
 }
 
 
-def prepare_dynamic_queries(investigation, *, database_type: str):
+def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=()):
     """规划端先验证并规范化动态 SQL，再冻结供 Executor 重放。"""
     normalized_database_type = str(database_type).upper()
     tool_id = _DYNAMIC_TOOL_IDS.get(normalized_database_type)
     if normalized_database_type == "ORACLE":
-        snapshot = DynamicQueryPolicySnapshot()
+        snapshot = DynamicQueryPolicySnapshot(
+            allow_diagnostics_pack="ORACLE_DIAGNOSTICS_PACK" in entitlements,
+            allow_tuning_pack="ORACLE_TUNING_PACK" in entitlements,
+        )
         policy = OracleDynamicQueryPolicy(snapshot)
         required_privileges = ["SELECT ANY DICTIONARY"]
     elif normalized_database_type == "POSTGRESQL":

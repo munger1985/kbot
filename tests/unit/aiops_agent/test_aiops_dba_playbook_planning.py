@@ -1310,7 +1310,6 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
                 "db.sql.display_cursor",
-                "db.sql.plan_monitor",
             ],
             [item.tool_id for item in uow.tool_invocations],
         )
@@ -3016,8 +3015,6 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "db.sql.cursor_details",
                 "db.sql.display_cursor",
                 "db.sql.object_statistics",
-                "db.sql.plan_monitor",
-                "db.oracle.sql_monitor.report",
             ],
             [step.tool_id for step in manifest.tool_dag],
         )
@@ -3027,8 +3024,6 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 ["identity"],
                 ["cursor_details"],
                 ["display_cursor"],
-                ["object_statistics"],
-                ["plan_monitor"],
             ],
             [list(step.depends_on) for step in manifest.tool_dag],
         )
@@ -3092,7 +3087,6 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
                 "db.sql.display_cursor",
-                "db.sql.plan_monitor",
             ],
             [item.tool_id for item in output.plan.actions],
         )
@@ -3154,8 +3148,6 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "db.sql.cursor_details",
                 "db.sql.display_cursor",
                 "db.sql.object_statistics",
-                "db.sql.plan_monitor",
-                "db.oracle.sql_monitor.report",
             ],
             [item["tool_id"] for item in invocation["tools"]],
         )
@@ -3169,7 +3161,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         )
         self.assertNotIn("SQLHC", invocation["tools"][-1]["manual_sql"].upper())
         self.assertIn(
-            "REPORT_SQL_MONITOR",
+            "DBA_TABLES",
             invocation["tools"][-1]["manual_sql"].upper(),
         )
 

@@ -1419,7 +1419,6 @@ class TurnPlanningService:
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
                 "db.sql.display_cursor",
-                "db.sql.plan_monitor",
             )
         return ()
 
@@ -1517,13 +1516,6 @@ class TurnPlanningService:
                 "DBMS_XPLAN ALLSTATS LAST 格式化执行计划",
                 "db.sql.display_cursor",
                 {"sql_id": sql_id},
-                MeasurementSemantics.CURRENT_ACTIVITY,
-                True,
-            ),
-            (
-                "可用的实时执行行源统计",
-                "db.sql.plan_monitor",
-                {"sql_id": sql_id, "limit": 200},
                 MeasurementSemantics.CURRENT_ACTIVITY,
                 True,
             ),
@@ -2954,6 +2946,9 @@ class TurnPlanningService:
                     target_context.get("database_type")
                     or target_context.get("db_type", ""),
                 )
+            ),
+            entitlements=getattr(
+                getattr(context, "capabilities", None), "entitlements", ()
             ),
         )
         investigation, source_queries = prepare_source_queries(investigation)

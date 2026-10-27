@@ -328,6 +328,68 @@ def _runtime_error(
     )
 
 
+def _replan_budget_exhausted(turn: object, *, now: datetime, max_replans: int, max_seconds: int) -> bool:
+    started_at = getattr(turn, "started_at", None) or getattr(turn, "created_at", None)
+    if started_at is not None and started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    return (
+        int(getattr(turn, "current_plan_revision", 1) or 1) > max_replans
+        or (started_at is not None and now >= started_at + timedelta(seconds=max_seconds))
+    )
+
+
+def _assessment_progress(previous: dict[str, Any], current: DbaSufficiencyAssessment) -> bool:
+    """比较证据形态和已解决缺口，不能把新 artifact 引用当成新信息。"""
+    def evidence_keys(items):
+        result = set()
+        for item in items:
+            value = item if isinstance(item, dict) else item.model_dump(mode="json")
+            columns = tuple(
+                str(column.get("name") or "").lower()
+                for column in value.get("columns", ())
+                if isinstance(column, dict)
+            )
+            identity_columns = {
+                "query_id", "sql_id", "digest", "database_oid", "user_oid",
+                "schema_name", "table_name", "relation_name", "relation_oid",
+                "index_name", "instance_id", "session_id", "pid",
+                "snapshot_id", "begin_snapshot_id", "end_snapshot_id",
+                "period_start", "period_end", "window_start", "window_end",
+            }
+            positions = tuple(
+                index for index, column in enumerate(columns)
+                if column in identity_columns
+            )
+            identities = tuple(sorted({
+                tuple(str(row[index]) for index in positions if index < len(row))
+                for row in (value.get("rows") or ())[:500]
+                if positions and isinstance(row, (list, tuple))
+            }))
+            semantics = str(value.get("measurement_semantics") or "")
+            # 时点采样允许同一工具在不同时间提供新的观测。
+            sampled_at = value.get("captured_at") if semantics == "CURRENT_ACTIVITY" else None
+            result.add((
+                str(value.get("source_id") or ""),
+                str(value.get("tool_id") or ""),
+                semantics, columns, identities, bool(value.get("row_count")),
+                bool(value.get("truncated")), sampled_at,
+            ))
+        return result
+
+    def gap_keys(items):
+        return {
+            (str(value.get("source_id") or ""), str(value.get("code") or ""))
+            for item in items
+            for value in [item if isinstance(item, dict) else item.model_dump(mode="json")]
+        }
+
+    before_facts = evidence_keys(previous.get("evidence") or ())
+    after_facts = evidence_keys(current.evidence)
+    before_gaps = gap_keys(previous.get("gaps") or ())
+    after_gaps = gap_keys(current.gaps)
+    return bool(after_facts - before_facts or before_gaps - after_gaps)
+
+
 class AIOpsRuntimeService:
     """所有运行状态变化均在一个显式 UoW 中提交。"""
 
@@ -2351,18 +2413,8 @@ class AIOpsRuntimeService:
             )
         elif artifact.schema_version == "DBA_SUFFICIENCY.v1":
             assessment = DbaSufficiencyAssessment.model_validate(payload)
-            previous_evidence_refs = {
-                str(item.get("evidence_ref") or "")
-                for item in dict(turn.sufficiency_json or {}).get(
-                    "evidence", ()
-                )
-                if isinstance(item, dict) and item.get("evidence_ref")
-            }
-            current_evidence_refs = {
-                fact.evidence_ref for fact in assessment.evidence
-            }
-            gained_new_evidence = bool(
-                current_evidence_refs - previous_evidence_refs
+            gained_new_evidence = _assessment_progress(
+                dict(turn.sufficiency_json or {}), assessment
             )
             turn.sufficiency_status = str(assessment.status)
             turn.sufficiency_json = assessment.model_dump(mode="json")
@@ -2399,13 +2451,23 @@ class AIOpsRuntimeService:
                 dict(run.plan_snapshot_json or {}).get("answer_context")
                 or {}
             ).get("investigation_plan")
+            replan_limit = int(
+                getattr(self._diagnosis_config, "max_investigation_replans", 2)
+            )
+            replan_seconds = int(
+                getattr(self._diagnosis_config, "max_investigation_replan_seconds", 180)
+            )
+            replan_budget_exhausted = _replan_budget_exhausted(
+                turn, now=now, max_replans=replan_limit, max_seconds=replan_seconds
+            )
             should_replan = self._should_replan_investigation(
                 assessment=assessment,
                 deterministic_replan=deterministic_replan,
                 no_progress_count=int(turn.no_progress_count or 0),
                 has_deferred=prior_plan_has_deferred(investigation_plan),
                 deadline_reached=(
-                    run.deadline_at is not None and run.deadline_at <= now
+                    replan_budget_exhausted
+                    or (run.deadline_at is not None and run.deadline_at <= now)
                 ),
                 tool_budget_remaining=(
                     int(turn.tool_call_count or 0)
@@ -2429,7 +2491,10 @@ class AIOpsRuntimeService:
                 event_type="turn.status",
                 payload={
                     "status": "ANSWERING",
-                    "public_summary": "证据已整理，正在形成回答",
+                    "public_summary": (
+                        "补证预算已用完，正在基于已有证据形成回答"
+                        if replan_budget_exhausted else "证据已整理，正在形成回答"
+                    ),
                 },
             )
         elif artifact.schema_version == "AIOPS_TURN_RESULT.v1":
@@ -3739,6 +3804,7 @@ class AIOpsRuntimeService:
         product_contract_codes = {
             "FINDING_COLUMN_MISSING",
             "FINDING_VALUE_UNPARSEABLE",
+            "FINDING_RATIO_UNDEFINED",
             "OUTPUT_COLUMNS_MISMATCH",
             "OUTPUT_COLUMN_LIMIT_EXCEEDED",
             "OUTPUT_VALUE_TYPE_UNSUPPORTED",

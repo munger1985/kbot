@@ -204,6 +204,10 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
         )
         self._assert_rejected(
+            "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQLSET('set_name'))",
+            "DYNAMIC_SQL_PACKAGE_CALL_FORBIDDEN",
+        )
+        self._assert_rejected(
             "SELECT custom_function(sid) AS result FROM v$session",
             "DYNAMIC_SQL_FUNCTION_FORBIDDEN",
         )
@@ -213,7 +217,15 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_CURSOR("
             "NULL, NULL, 'ALLSTATS LAST'))"
         )
-        historical = self.policy.validate(
+        with self.assertRaises(DynamicQueryRejected) as rejected:
+            self.policy.validate(
+                "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_AWR(:sql_id))",
+                {"sql_id": "6tjx7su0q5ttj"},
+            )
+        self.assertEqual("ORACLE_DIAGNOSTICS_PACK_REQUIRED", rejected.exception.code)
+        historical = OracleDynamicQueryPolicy(
+            DynamicQueryPolicySnapshot(allow_diagnostics_pack=True)
+        ).validate(
             "SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_AWR(:sql_id))",
             {"sql_id": "6tjx7su0q5ttj"},
         )
@@ -228,6 +240,23 @@ class OracleDynamicQueryPolicyTest(unittest.TestCase):
             ("sys.dbms_xplan",),
             historical.referenced_objects,
         )
+
+    def test_pack_views_require_explicit_entitlements(self) -> None:
+        queries = (
+            ("SELECT snap_id FROM sys.dba_hist_snapshot", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
+            ("WITH dba_hist_snapshot AS (SELECT 1 AS snap_id FROM dual) SELECT snap_id FROM sys.dba_hist_snapshot", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
+            ("WITH x AS (WITH dba_hist_snapshot AS (SELECT 1 AS snap_id FROM dual) SELECT snap_id FROM dba_hist_snapshot) SELECT snap_id FROM dba_hist_snapshot", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
+            ("WITH h AS (SELECT session_id FROM gv$active_session_history) SELECT session_id FROM h", "ORACLE_DIAGNOSTICS_PACK_REQUIRED"),
+            ("SELECT sql_id FROM sys.v_$sql_monitor", "ORACLE_TUNING_PACK_REQUIRED"),
+            ("SELECT sql_id FROM gv$sql_plan_monitor", "ORACLE_TUNING_PACK_REQUIRED"),
+        )
+        for sql, code in queries:
+            with self.subTest(sql=sql), self.assertRaises(DynamicQueryRejected) as rejected:
+                self.policy.validate(sql)
+            self.assertEqual(code, rejected.exception.code)
+        policy = OracleDynamicQueryPolicy(DynamicQueryPolicySnapshot(
+            allow_diagnostics_pack=True, allow_tuning_pack=True))
+        self.assertTrue(policy.validate("SELECT sql_id FROM gv$sql_monitor").referenced_objects)
 
     def test_only_declared_database_packages_are_allowed(self) -> None:
         restricted = OracleDynamicQueryPolicy(
@@ -603,6 +632,17 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
 
 
 class DynamicQueryPlanningTest(unittest.TestCase):
+    def test_replan_can_stop_with_reason_but_initial_plan_must_collect(self) -> None:
+        payload = self._investigation(sql="SELECT sid FROM v$session WHERE status = :status").model_dump(mode="json")
+        payload["plan"] = {"revision_no": 1, "actions": [], "answer_if_no_more_evidence": True, "stop_reason": "证据无法继续补齐"}
+        with self.assertRaises(ValueError):
+            InvestigationPlanningOutput.model_validate(payload)
+        payload["plan"]["revision_no"] = 2
+        self.assertEqual((), InvestigationPlanningOutput.model_validate(payload).plan.actions)
+        payload["plan"]["stop_reason"] = None
+        with self.assertRaises(ValueError):
+            InvestigationPlanningOutput.model_validate(payload)
+
     def _investigation(self, *, sql: str):
         return InvestigationPlanningOutput.model_validate(
             {
@@ -719,7 +759,7 @@ class DynamicQueryPlanningTest(unittest.TestCase):
         self.assertIn(
             "policy.allowed_functions", dynamic_tool["description"]
         )
-        self.assertIn("policy.allowed_packages", dynamic_tool["description"])
+        self.assertIn("DBMS_XPLAN.DISPLAY_CURSOR", dynamic_tool["description"])
         self.assertEqual(
             "AUTO_EXECUTE_BOUNDED",
             dynamic_tool["policy"]["star_projection_behavior"],
@@ -729,10 +769,10 @@ class DynamicQueryPlanningTest(unittest.TestCase):
             dynamic_tool["database_access"]["granted_system_privileges"],
         )
         self.assertEqual(
-            ["CURRENT", "AWR", "ASH"],
+            ["CURRENT"],
             dynamic_tool["database_access"]["diagnostic_scopes"],
         )
-        self.assertFalse(dynamic_tool["database_access"]["license_gating"])
+        self.assertTrue(dynamic_tool["database_access"]["license_gating"])
 
     def test_fixed_tool_exposes_complete_parameter_constraints(self) -> None:
         diagnostic_registry = DiagnosticRegistry.load()
@@ -1098,6 +1138,7 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
                 database_version="19c",
                 target_enabled=True,
                 target_reachable=True,
+                entitlements=("ORACLE_DIAGNOSTICS_PACK",),
                 target_capabilities=(
                     "DB_READONLY",
                     "dynamic_performance_views",

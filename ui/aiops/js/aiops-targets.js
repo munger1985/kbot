@@ -387,6 +387,7 @@
     oracleScope.required = readonly && oracle;
     oraclePdbField.hidden = !readonly || !oracle || oracleScope.value !== "PDB";
     oraclePdbName.required = readonly && oracle && oracleScope.value === "PDB";
+    document.getElementById("target-oracle-license").hidden = !readonly || !oracle;
     if (oracle) database.value = "";
     else {
       service.value = "";
@@ -405,6 +406,13 @@
       version.value = previousVersion;
     }
     clearResult();
+  }
+
+  function syncOraclePackSelection() {
+    const diagnostic = form.elements.oracle_diagnostics_pack;
+    const tuning = form.elements.oracle_tuning_pack;
+    tuning.disabled = !diagnostic.checked;
+    if (!diagnostic.checked) tuning.checked = false;
   }
 
   function toggleAccessFields() {
@@ -457,6 +465,7 @@
     await ensureResponsibilityGroups();
     editingTarget = null;
     form.reset();
+    syncOraclePackSelection();
     dbType.disabled = false;
     dbType.value = "ORACLE";
     oracleScope.value = "";
@@ -506,6 +515,9 @@
       form.elements.workload_interval.value = target.workload_snapshot_policy?.interval_minutes ?? 5;
       form.elements.workload_retention.value = target.workload_snapshot_policy?.retention_days ?? 30;
       form.elements.workload_limit.value = target.workload_snapshot_policy?.top_statement_limit ?? 100;
+      form.elements.oracle_diagnostics_pack.checked = (target.capabilities?.entitlements || []).includes("ORACLE_DIAGNOSTICS_PACK");
+      form.elements.oracle_tuning_pack.checked = (target.capabilities?.entitlements || []).includes("ORACLE_TUNING_PACK");
+      syncOraclePackSelection();
       if (target.db_type === "ORACLE") service.value = target.endpoint?.service || "";
       else database.value = target.endpoint?.database || "";
       oracleScope.value = target.oracle_container_scope || "";
@@ -626,6 +638,15 @@
     }
   }
 
+  function targetCapabilities() {
+    const capabilities = { ...(editingTarget?.capabilities || {}) };
+    const previous = Array.isArray(capabilities.entitlements) ? capabilities.entitlements : [];
+    const entitlements = previous.filter((item) => item !== "ORACLE_DIAGNOSTICS_PACK" && item !== "ORACLE_TUNING_PACK");
+    if (dbType.value === "ORACLE" && form.elements.oracle_diagnostics_pack.checked) entitlements.push("ORACLE_DIAGNOSTICS_PACK");
+    if (dbType.value === "ORACLE" && form.elements.oracle_diagnostics_pack.checked && form.elements.oracle_tuning_pack.checked) entitlements.push("ORACLE_TUNING_PACK");
+    return { ...capabilities, entitlements };
+  }
+
   function targetFields() {
     const fields = {
       display_name: form.elements.display_name.value.trim(),
@@ -686,7 +707,7 @@
         const createPayload = {
           ...targetFields(),
           db_type: dbType.value,
-          capabilities: {},
+          capabilities: targetCapabilities(),
         };
         if (readonlyEnabled.checked) createPayload.diagnostic_credential = credentialPayload();
         if (rotatingExecutionCredential) {
@@ -734,7 +755,7 @@
         updated = await KBotAIOpsAuth.request(targetUrl, {
           method: "PATCH",
           headers: { "If-Match": `"rv-${updated.row_version}"` },
-          body: JSON.stringify({ ...targetFields(), capabilities: editingTarget.capabilities || {} }),
+          body: JSON.stringify({ ...targetFields(), capabilities: targetCapabilities() }),
         });
         editingTarget = updated;
         baseSaved = true;
@@ -783,6 +804,7 @@
       if (button) void commandMonitorBinding(button);
     });
     oracleScope.addEventListener("change", () => configureEndpoint(false));
+    form.elements.oracle_diagnostics_pack.addEventListener("change", syncOraclePackSelection);
     readonlyEnabled.addEventListener("change", toggleAccessFields);
     changeEnabled.addEventListener("change", toggleAccessFields);
     form.addEventListener("input", () => { clearResult(); updateWizardStatuses(); });

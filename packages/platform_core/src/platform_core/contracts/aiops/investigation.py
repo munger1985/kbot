@@ -365,7 +365,12 @@ class InvestigationPlanningOutput(AIOpsContract):
             }
         )
         if requires_observation and not supplied and not self.plan.actions:
-            raise ValueError("诊断或评估任务在没有用户证据时必须安排取证动作")
+            if not (
+                self.plan.revision_no > 1
+                and self.plan.answer_if_no_more_evidence
+                and self.plan.stop_reason
+            ):
+                raise ValueError("诊断或评估任务必须安排取证动作，或在重规划时明确停止原因")
         if (
             TaskObjective.COMPARE in self.task_frame.objectives
             and not self.task_frame.completion_requirements

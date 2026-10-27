@@ -95,7 +95,7 @@ class OracleSqlMonitorReportTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
+            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         executions = registry.resolve(
             tool_id="db.oracle.sql_monitor.executions",
@@ -103,7 +103,7 @@ class OracleSqlMonitorReportTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
+            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         report_sql = (CATALOG_SQL / "sql_monitor_report_html.sql").read_bytes()
         executions_sql = (CATALOG_SQL / "sql_monitor_executions.sql").read_bytes()
@@ -239,7 +239,7 @@ class OracleSqlMonitorReportTest(unittest.TestCase):
             db_type="ORACLE",
             db_version="19c",
             capabilities={"dynamic_performance_views"},
-            entitlements=set(),
+            entitlements={"ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"},
         )
         with self.assertRaisesRegex(ValueError, "缺少诊断参数：sql_id"):
             registry.validate_parameters(tool, {})

@@ -621,6 +621,8 @@ class TargetConfigurationMixin:
                         "MySQL/PostgreSQL Endpoint 必须只设置 database"
                     )
                 fields["endpoint_json"] = fields.pop("endpoint")
+            if "capabilities" in fields:
+                fields["capabilities_json"] = fields.pop("capabilities")
             for name, value in fields.items():
                 setattr(entity, name, value)
             if connectivity_changed and effective_readonly:

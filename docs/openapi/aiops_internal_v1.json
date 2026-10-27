@@ -4192,6 +4192,18 @@
       "DatabaseResourcePatch": {
         "additionalProperties": false,
         "properties": {
+          "business_system_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business System Id"
+          },
           "db_role": {
             "anyOf": [
               {
@@ -4252,6 +4264,30 @@
             ],
             "title": "Rac Node Number"
           },
+          "system_resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Resource Id"
+          },
+          "target_row_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Row Version"
+          },
           "version_code": {
             "anyOf": [
               {
@@ -4264,6 +4300,16 @@
               }
             ],
             "title": "Version Code"
+          },
+          "workload_snapshot_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkloadPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "DatabaseResourcePatch",

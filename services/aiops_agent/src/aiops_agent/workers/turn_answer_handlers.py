@@ -184,7 +184,7 @@ def _primary_result_metadata(
     title = spec["title"]
     if result_kind == "TOP_SQL_LIST":
         title = (
-            "Top SQL（窗口增量）" if fact.tool_id == "workload.sql.top_window"
+            "Top SQL（已采集候选的窗口增量）" if fact.tool_id == "workload.sql.top_window"
             else "Top SQL（采样增量）" if semantics == "SNAPSHOT_DELTA"
             else "Top SQL（累计统计）" if semantics == "CUMULATIVE_SINCE_LOAD"
             else "当前活跃 SQL 快照" if semantics == "CURRENT_ACTIVITY"
@@ -227,6 +227,20 @@ def _top_sql_primary_fact(
 
 def _measurement_boundaries(assessment: DbaSufficiencyAssessment) -> list[str]:
     boundaries: list[str] = []
+    if any(fact.tool_id == "db.postgresql.statement.details" for fact in assessment.evidence):
+        boundaries.append(
+            "pg_stat_statements_info 的 stats_reset 是全局重置时间，并非单条 SQL 的统计起点；"
+            "单条重置或淘汰仍可能发生。plan_count 为零不能证明执行计划不存在，"
+            "需结合 pg_stat_statements.track_planning 及真实计划证据判断。"
+        )
+    if any(fact.tool_id in {
+        "db.postgresql.statement.details", "db.sql.cursor_details",
+        "db.mysql.statement.history", "db.sql.execution_plan", "db.sql.display_cursor",
+    } for fact in assessment.evidence):
+        boundaries.append(
+            "没有业务 SLO 或基线时不能仅凭平均耗时宣称正常或异常；"
+            "估算或示例计划不能当成历史实际执行计划，索引存在也不证明曾被使用。"
+        )
     if any(
         fact.tool_id in _PRIMARY_RESULT_SPECS["TOP_SQL_LIST"]["tool_ids"]
         and fact.measurement_semantics == MeasurementSemantics.CUMULATIVE_SINCE_LOAD
@@ -328,6 +342,7 @@ class DbaEvidenceAssessmentHandler:
                     "MISSED_SNAPSHOTS": "采样间断",
                     "COUNTER_RESET": "统计计数器重置",
                     "PARTIAL_SOURCE": "采集来源不完整",
+                    "LIMITED_CANDIDATE_SET": "累计排名截取的候选集可能遗漏窗口热点",
                     "STATEMENT_APPEARED_OR_EVICTED": "语句新增或淘汰",
                     "STATEMENT_UNAVAILABLE": "部分语句统计不可用",
                 }

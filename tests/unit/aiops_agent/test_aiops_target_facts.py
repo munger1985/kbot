@@ -457,9 +457,9 @@ class TargetFactSchemaContractTest(unittest.TestCase):
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         rebuild = REBUILD_SCRIPT.read_text(encoding="utf-8")
         roots = (SCHEMA_DIR / "001_ops_roots.sql").read_text(encoding="utf-8")
-        self.assertEqual(49, manifest["schema_version"])
+        self.assertEqual(50, manifest["schema_version"])
         self.assertEqual(
-            "aiops-oracle-v49-unified-assistant",
+            "aiops-oracle-v50-unified-agent-only",
             manifest["contract_version"],
         )
         self.assertIn("KBOT_OPS_TARGET_FACT", manifest["tables"])

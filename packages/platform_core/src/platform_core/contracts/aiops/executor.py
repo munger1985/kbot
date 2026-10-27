@@ -93,6 +93,8 @@ class OracleDynamicQueryPolicyGrant(AIOpsContract):
     max_sql_chars: int = Field(ge=1, le=100_000)
     max_bind_count: int = Field(ge=0, le=128)
     allow_catalog_object_families: bool
+    allow_diagnostics_pack: bool = False
+    allow_tuning_pack: bool = False
 
 
 class PostgreSQLDynamicQueryPolicyGrant(AIOpsContract):

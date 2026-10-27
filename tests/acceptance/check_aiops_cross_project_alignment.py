@@ -394,10 +394,10 @@ def _capability_alignment(
     violations = []
     if local_catalog != peer_catalog:
         violations.append("版本化运维能力目录不一致")
-    if local_catalog.get("catalog_version") != "2.0.0":
-        violations.append("运维能力目录必须使用2.0.0语义合同")
-    if len(local_catalog.get("starters", ())) != 25:
-        violations.append("运维能力目录必须完整包含25项能力")
+    if local_catalog.get("catalog_version") != "2.1.0":
+        violations.append("运维能力目录必须使用2.1.0语义合同")
+    if len(local_catalog.get("starters", ())) != 26:
+        violations.append("运维能力目录必须完整包含26项能力")
     for key, equal in prompt_alignment.items():
         if not equal:
             violations.append(f"AIOps关键Prompt语义不一致: {key}")

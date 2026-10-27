@@ -116,7 +116,10 @@ def available_tools(
         str(capabilities.database_type) == "ORACLE"
         and "DB_READONLY" in capabilities.target_capabilities
     ):
-        dynamic_policy = DynamicQueryPolicySnapshot()
+        dynamic_policy = DynamicQueryPolicySnapshot(
+            allow_diagnostics_pack="ORACLE_DIAGNOSTICS_PACK" in capabilities.entitlements,
+            allow_tuning_pack="ORACLE_TUNING_PACK" in capabilities.entitlements,
+        )
         tools[("db.oracle.readonly_query", "1.0.0")] = {
             "tool_id": "db.oracle.readonly_query",
             "version": "1.0.0",
@@ -124,13 +127,13 @@ def available_tools(
             "description": (
                 "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
                 "诊断账号已授予 CREATE SESSION 和 SELECT ANY DICTIONARY，"
-                "可以查询 V$/GV$、DBA_/CDB_/ALL_ 以及 AWR/ASH 系统视图；"
+                "可以查询授权范围内的 V$/GV$、DBA_/CDB_/ALL_ 诊断视图；"
                 "仅在固定目录工具不能回答问题时使用；对于监控指标、历史趋势"
                 "和时间窗口统计，仅在监控证据缺失或不足时使用；"
                 "优先显式投影并使用 bind 参数；"
                 "查询结果按诊断账号实际可见内容原样返回，不做业务字段脱敏；"
                 "SQL 只能使用 policy.allowed_functions 中列出的函数；"
-                "包函数只能使用 policy.allowed_packages 中列出的 DBMS_XPLAN"
+                "包函数只允许 DBMS_XPLAN.DISPLAY_CURSOR 和经授权的 DISPLAY_AWR"
             ),
             "database_access": {
                 "granted_system_privileges": [
@@ -144,8 +147,8 @@ def available_tools(
                     "CDB_",
                     "ALL_",
                 ],
-                "diagnostic_scopes": ["CURRENT", "AWR", "ASH"],
-                "license_gating": False,
+                "diagnostic_scopes": (["CURRENT", "AWR", "ASH"] if dynamic_policy.allow_diagnostics_pack else ["CURRENT"]),
+                "license_gating": True,
             },
             "input": {
                 "sql": "Oracle SELECT，必须为每个计算表达式提供别名",
@@ -154,6 +157,7 @@ def available_tools(
             "policy": {
                 "allowed_functions": list(dynamic_policy.allowed_functions),
                 "allowed_packages": list(dynamic_policy.allowed_packages),
+                "allowed_package_functions": ["DISPLAY_CURSOR"] + (["DISPLAY_AWR"] if dynamic_policy.allow_diagnostics_pack else []),
                 "max_rows": dynamic_policy.max_rows,
                 "max_sql_chars": dynamic_policy.max_sql_chars,
                 "max_bind_count": dynamic_policy.max_bind_count,

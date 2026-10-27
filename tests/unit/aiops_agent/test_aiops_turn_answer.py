@@ -2362,7 +2362,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         ]
         primary = [block for block in tables if block.payload.get("presentation_role") == "PRIMARY"]
         self.assertEqual(1, len(primary))
-        self.assertEqual("Top SQL（窗口增量）", primary[0].payload["title"])
+        self.assertEqual("Top SQL（已采集候选的窗口增量）", primary[0].payload["title"])
         self.assertEqual(0, primary[0].payload["row_count"])
         self.assertTrue(any(block.payload.get("presentation_role") == "SUPPORTING" for block in tables))
 
@@ -2411,6 +2411,13 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertIn("不能替代窗口增量", partial_assessment.investigation.reason)
         self.assertEqual(1, sum(gap.code == "INSUFFICIENT_SNAPSHOTS" for gap in partial_assessment.gaps))
         self.assertTrue(any(gap.detail == "缺少时间窗口增量" for gap in partial_assessment.gaps))
+
+    def test_statement_details_carry_plan_and_slo_boundaries(self) -> None:
+        artifact = _tool_artifact(semantics="CUMULATIVE_SINCE_LOAD", tool_id="db.postgresql.statement.details")
+        assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(_context(artifacts=(artifact,))))
+        boundaries = DbaAnswerComposeHandler._model_assessment_payload(assessment)["measurement_boundaries"]
+        self.assertTrue(any("全局重置时间" in boundary and "plan_count" in boundary for boundary in boundaries))
+        self.assertTrue(any("SLO" in boundary and "估算或示例计划" in boundary for boundary in boundaries))
 
     def test_mysql_top_sql_window_uses_observed_semantics_and_discloses_scope(self) -> None:
         artifact = _tool_artifact(semantics="CURRENT_ACTIVITY")

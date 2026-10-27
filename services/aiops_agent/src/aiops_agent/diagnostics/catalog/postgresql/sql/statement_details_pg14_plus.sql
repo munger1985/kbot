@@ -27,8 +27,11 @@ SELECT
     statements.blk_write_time AS block_write_time_ms,
     statements.wal_records,
     statements.wal_fpi,
-    statements.wal_bytes
+    statements.wal_bytes,
+    stats_info.stats_reset AS statement_stats_reset,
+    stats_info.dealloc AS statement_stats_dealloc
 FROM pg_stat_statements AS statements
+CROSS JOIN pg_stat_statements_info AS stats_info
 LEFT JOIN pg_catalog.pg_database AS database_name
   ON database_name.oid = statements.dbid
 LEFT JOIN pg_catalog.pg_roles AS role_name

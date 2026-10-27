@@ -214,12 +214,39 @@ def test_top_sql_window_uses_only_continuous_window_deltas() -> None:
     )
     assert result["status"] == "PARTIAL"
     assert result["gaps"]["WINDOW_NOT_FULLY_COVERED"] == 1
+    assert result["gaps"]["LIMITED_CANDIDATE_SET"] == 1
     assert len(result["top_statements"]) == 1
     top = result["top_statements"][0]
     assert top["execution_count"] == 4
     assert top["total_duration_microseconds"] == 800
     assert top["mean_duration_microseconds"] == 200
     assert "secret" not in top["normalized_statement"]
+
+
+def test_window_ranking_remains_candidate_limited_for_all_three_databases() -> None:
+    for db_type in ("MYSQL", "POSTGRESQL", "ORACLE"):
+        first = _snapshot(minute=0, questions=100)
+        second = _snapshot(minute=5, questions=160)
+        first.database_type = second.database_type = db_type
+        first.coverage_json = second.coverage_json = {
+            ("DIGEST" if db_type == "MYSQL" else "STATEMENT"): "AVAILABLE"
+        }
+        if db_type == "POSTGRESQL":
+            first.instance_identity_json["database_oid"] = "42"
+            second.instance_identity_json["database_oid"] = "42"
+        before = _statement(first, DIGEST_A, executions=10, latency=1000)
+        after = _statement(second, DIGEST_A, executions=14, latency=1800)
+        if db_type == "POSTGRESQL":
+            before.statement_identity_type = after.statement_identity_type = "POSTGRESQL_QUERY_ID"
+            before.database_name = after.database_name = "42"
+        result = build_top_sql_window(
+            snapshots=(first, second), statements=(before, after),
+            period_start=first.collected_at, period_end=second.collected_at,
+            limit=10, postgresql_database_oid="42",
+        )
+        assert result["gaps"]["LIMITED_CANDIDATE_SET"] == 1, db_type
+        assert result["status"] != "READY", db_type
+        assert len(result["top_statements"]) == 1, db_type
 
 
 def test_top_sql_window_reports_resets_and_unavailable_sources() -> None:

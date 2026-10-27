@@ -195,6 +195,8 @@ class AIOpsMonitoringConfig(BaseModel):
 class AIOpsDiagnosisConfig(BaseModel):
     max_rounds: int = Field(default=3, ge=1, le=3)
     max_tool_calls: int = Field(default=12, ge=0, le=64)
+    max_investigation_replans: int = Field(default=2, ge=0, le=12)
+    max_investigation_replan_seconds: int = Field(default=180, ge=1, le=3600)
     max_evidence_facts: int = Field(default=256, ge=1, le=2000)
 
 

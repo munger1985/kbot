@@ -539,6 +539,9 @@ def build_top_sql_window(
         gaps["INSUFFICIENT_SNAPSHOTS"] += 1
     if not intervals or intervals[0][0] > period_start or intervals[-1][1] < period_end:
         gaps["WINDOW_NOT_FULLY_COVERED"] += 1
+    if intervals:
+        # 当前采集器按累计统计截取候选集，不能证明窗口排名完整。
+        gaps["LIMITED_CANDIDATE_SET"] += 1
     return {
         "requested_start": period_start.isoformat(),
         "requested_end": period_end.isoformat(),

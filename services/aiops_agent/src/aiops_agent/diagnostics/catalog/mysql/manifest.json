@@ -2,6 +2,14 @@
   "catalog_version": "mysql-baseline.v1",
   "tools": [
     {
+      "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"MYSQL","variant":"mysql_object_indexes_8_plus",
+      "description":"按指定 schema 和表查询可见索引列；不提供函数索引表达式；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",
+      "supported_version_min":8,"supported_version_max_exclusive":10,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],
+      "parameters":[{"name":"schema_name","type":"string","max_length":64},{"name":"table_name","type":"string","max_length":64},{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
+      "output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_name","logical_type":"STRING"},{"name":"index_name","logical_type":"STRING"},{"name":"column_position","logical_type":"INTEGER"},{"name":"column_name","logical_type":"STRING"},{"name":"column_expression","logical_type":"STRING","sensitivity":"MASKED"},{"name":"index_type","logical_type":"STRING"},{"name":"is_visible","logical_type":"STRING"}],
+      "template_ref":"sql/object_indexes.sql","template_sha256":"cfdd77db7a18d960246b0847810db8dd8ccdac30ab6cb721023e3671054e774a","timeout_seconds":20,"max_rows":500,"max_bytes":2097152,"cost_level":"LOW"
+    },
+    {
       "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "MYSQL",
       "variant": "mysql_active_sessions", "supported_version_min": 8,
       "supported_version_max_exclusive": 10, "required_capabilities": ["information_schema"],

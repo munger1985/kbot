@@ -2,6 +2,14 @@
   "catalog_version": "oracle-baseline.v1",
   "tools": [
     {
+      "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_indexes_19_plus",
+      "description":"按指定 owner 和表查询当前用户可见索引列；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",
+      "supported_version_min":19,"supported_version_max_exclusive":27,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],
+      "parameters":[{"name":"schema_name","type":"string","max_length":128},{"name":"table_name","type":"string","max_length":128},{"name":"limit","type":"integer","minimum":1,"maximum":500,"required":false,"default":100}],
+      "output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_name","logical_type":"STRING"},{"name":"index_name","logical_type":"STRING"},{"name":"column_position","logical_type":"INTEGER"},{"name":"column_name","logical_type":"STRING"},{"name":"index_status","logical_type":"STRING"},{"name":"partitioned","logical_type":"STRING"}],
+      "template_ref":"sql/object_indexes.sql","template_sha256":"bc70382ffc0831768391756d727b7a0ff36e95b656c830e9c4810f39b49c7a70","timeout_seconds":20,"max_rows":500,"max_bytes":2097152,"cost_level":"LOW"
+    },
+    {
       "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "ORACLE",
       "variant": "oracle_active_sessions", "supported_version_min": 19,
       "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
@@ -817,7 +825,7 @@
       "required_capabilities": [
         "dynamic_performance_views"
       ],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"],
       "required_privileges": [
         "GV_$SQL_PLAN_MONITOR"
       ],
@@ -3859,7 +3867,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "V_$DATABASE"
@@ -3909,7 +3917,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "V_$DATABASE"
@@ -3955,7 +3963,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "V_$DATABASE"
@@ -4013,7 +4021,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "DBA_HIST_SYSSTAT",
@@ -4098,7 +4106,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "DBA_HIST_SYSTEM_EVENT",
@@ -4192,7 +4200,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "DBA_HIST_SNAPSHOT",
         "DBA_HIST_SQLSTAT",
@@ -4295,7 +4303,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": [],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK"],
       "required_privileges": [
         "V_$DATABASE"
       ],
@@ -4337,7 +4345,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"],
       "required_privileges": ["GV_$SQL_MONITOR"],
       "parameters": [
         {"name": "limit", "type": "integer", "minimum": 1, "maximum": 200, "default": 100, "required": false}
@@ -4371,7 +4379,7 @@
       "supported_version_min": 19,
       "supported_version_max_exclusive": 27,
       "required_capabilities": ["dynamic_performance_views"],
-      "required_entitlements": [],
+      "required_entitlements": ["ORACLE_DIAGNOSTICS_PACK", "ORACLE_TUNING_PACK"],
       "required_privileges": ["GV_$SQL_MONITOR"],
       "allowed_packages": ["DBMS_SQLTUNE"],
       "parameters": [

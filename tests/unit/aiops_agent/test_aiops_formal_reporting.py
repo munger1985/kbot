@@ -848,6 +848,7 @@ class FormalReportingTest(unittest.TestCase):
             runs=SimpleNamespace(
                 get_run_scoped=AsyncMock(side_effect=lambda *, ops_run_id, domain_id, lock: next(run for run in runs.values() if run.ops_run_id == ops_run_id)),
                 get_artifact=AsyncMock(side_effect=lambda *, artifact_id: artifacts[artifact_id]),
+                get_artifact_by_key=AsyncMock(return_value=None),
                 list_tasks=AsyncMock(return_value=[SimpleNamespace(output_artifact_id=second_artifact)]),
                 database_now=AsyncMock(return_value=now),
             ),
@@ -965,6 +966,7 @@ class FormalReportingTest(unittest.TestCase):
             ),
             runs=SimpleNamespace(
                 get_run_scoped=AsyncMock(return_value=run),
+                get_artifact_by_key=AsyncMock(return_value=None),
                 get_artifact=AsyncMock(
                     side_effect=lambda *, artifact_id: (
                         source_artifact
