@@ -1179,7 +1179,8 @@
       };
       const primary = payload.presentation_role === "PRIMARY";
       const topSql = primary && payload.result_kind === "TOP_SQL_LIST";
-      const orderedColumns = columns.map((column, index) => ({ column, index }));
+      const orderedColumns = columns.map((column, index) => ({ column, index }))
+        .filter(({ column }) => !topSql || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
       const rows = values(payload.rows);
       const actionHead = primary ? "<th>操作</th>" : "";

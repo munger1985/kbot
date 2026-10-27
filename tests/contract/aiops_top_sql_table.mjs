@@ -37,16 +37,26 @@ const block = {
 };
 const html = context.testTable.answerBlockHtml(block, {});
 assert.match(html, /ops-primary-result is-top-sql/);
-assert.ok(html.indexOf('class="is-identifier">Digest') < html.indexOf('class="is-sql">SQL 文本'));
 assert.ok(html.indexOf('class="is-sql">SQL 文本') < html.indexOf('class="is-number">会话'));
 assert.match(html, /<th class="is-number">会话<\/th>/);
-assert.match(html, /<td class="is-identifier"><span tabindex="0"/);
-assert.ok(html.includes(`title="${digest}"`));
+assert.ok(!html.includes('>Digest</th>'));
+assert.ok(!html.includes(`title="${digest}"`));
 assert.ok(html.includes(`title="${escape(sql)}"`));
 assert.ok(html.includes(escape(sql)));
 assert.ok(!html.includes(sql));
 assert.ok(html.includes(`继续深入分析 SQL ${digest}`));
 assert.ok(html.includes('aria-label="查询结果表格，可横向滚动"'));
+
+for (const name of ["sql_id", "query_id"]) {
+  const idTable = context.testTable.answerBlockHtml({
+    block_type: "TABLE", payload: {
+      presentation_role: "PRIMARY", result_kind: "TOP_SQL_LIST",
+      columns: [{ name, label: name }, columns[2]], rows: [["abc123", "SELECT 1"]],
+    },
+  }, {});
+  assert.ok(idTable.includes(`>${name}</th>`));
+  assert.ok(idTable.includes('title="abc123"'));
+}
 
 const plain = context.testTable.answerBlockHtml({
   block_type: "TABLE", payload: { columns: [columns[0]], rows: [[null]] },
