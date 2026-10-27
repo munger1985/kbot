@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from aiops_agent.application.top_sql_window import TOP_SQL_REFERENCE_CONDITION
 from aiops_agent.contracts.tool_execution import (
     DbaToolResult,
     ToolOutcome,
@@ -109,6 +110,25 @@ class DbaDiagnosticToolHandler:
         execution = context.plan_snapshot["investigation_execution"]
         invocation = dict(execution["direct_invocations"][context.task_key])
         tool = dict(invocation["tool"])
+        if invocation.get("execution_condition") == TOP_SQL_REFERENCE_CONDITION:
+            windows = [
+                dict(item.get("payload") or {}).get("result")
+                for item in context.input_artifacts
+                if item.get("schema_version") == "TOP_SQL_WINDOW_RESULT.v1"
+            ]
+            if len(windows) != 1 or not isinstance(windows[0], dict):
+                raise ValueError("累计参考缺少唯一的窗口结果，不能判断执行条件")
+            if windows[0].get("covered_intervals"):
+                return DbaToolResult(
+                    source_type="TOOL", source_id=tool["tool_id"],
+                    source_version=tool["tool_version"], definition_hash=invocation["catalog_hash"],
+                    output_schema="DBA_TOOL_RESULT.v1", measurement_semantics=invocation["measurement_semantics"],
+                    presentation_kind=invocation["presentation_kind"], status="SUCCEEDED",
+                    tool_outcomes=(ToolOutcome(
+                        step_id=tool["step_id"], tool_id=tool["tool_id"],
+                        tool_version=tool["tool_version"], status="SKIPPED",
+                    ),),
+                )
         database_snapshot = {
             **dict(execution["database"]),
             "catalog_hash": execution["diagnostic_catalog_hash"],

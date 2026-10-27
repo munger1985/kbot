@@ -28,6 +28,7 @@ from aiops_agent.application.errors import (
 from aiops_agent.application.investigation.discovery_binding import (
     prior_plan_has_deferred,
 )
+from aiops_agent.application.investigation.projection import direct_list_result_kind
 from aiops_agent.application.configuration.common import (
     ConfigurationScope,
     SignedCursorCodec,
@@ -2460,8 +2461,12 @@ class AIOpsRuntimeService:
             replan_budget_exhausted = _replan_budget_exhausted(
                 turn, now=now, max_replans=replan_limit, max_seconds=replan_seconds
             )
+            task_frame = dict(
+                dict(run.plan_snapshot_json or {}).get("answer_context") or {}
+            ).get("task_frame") or {}
             should_replan = self._should_replan_investigation(
                 assessment=assessment,
+                task_frame=task_frame,
                 deterministic_replan=deterministic_replan,
                 no_progress_count=int(turn.no_progress_count or 0),
                 has_deferred=prior_plan_has_deferred(investigation_plan),
@@ -2510,6 +2515,7 @@ class AIOpsRuntimeService:
     def _should_replan_investigation(
         *,
         assessment: DbaSufficiencyAssessment,
+        task_frame: dict[str, Any] | None = None,
         deterministic_replan: bool,
         no_progress_count: int,
         has_deferred: bool = False,
@@ -2523,7 +2529,8 @@ class AIOpsRuntimeService:
             else None
         )
         if (
-            next_action == "STOP_UNSAFE"
+            direct_list_result_kind(task_frame or {})
+            or next_action == "STOP_UNSAFE"
             or no_progress_count >= 2
             or deadline_reached
             or not tool_budget_remaining
@@ -2758,7 +2765,8 @@ class AIOpsRuntimeService:
             if outcome is None:
                 continue
             tool_row.status = (
-                "SUCCEEDED" if outcome.observation is not None
+                "SKIPPED" if outcome.status == "SKIPPED"
+                else "SUCCEEDED" if outcome.observation is not None
                 else "FAILED" if outcome.gap is not None
                 else "NO_DATA"
             )
@@ -2770,7 +2778,7 @@ class AIOpsRuntimeService:
                 turn,
                 event_type=(
                     "tool.completed"
-                    if outcome.observation is not None
+                    if outcome.observation is not None or outcome.status == "SKIPPED"
                     else "tool.gap"
                 ),
                 payload={
@@ -2778,7 +2786,9 @@ class AIOpsRuntimeService:
                     "tool_id": tool_row.tool_id,
                     "status": tool_row.status,
                     "public_summary": (
-                        "数据库只读观测已经完成"
+                        "本步骤按计划跳过"
+                        if outcome.status == "SKIPPED"
+                        else "数据库只读观测已经完成"
                         if outcome.observation is not None
                         else "数据库只读观测未取得有效证据"
                     ),
@@ -2970,7 +2980,7 @@ class AIOpsRuntimeService:
                         else None
                     ),
                     source_kind="LOG",
-                    evidence_kind="ALERT_LOG",
+                    evidence_kind="LOG_ENTRY",
                     confidence=1,
                     evidence_role="SUPPORTS",
                     measurement_semantics="HISTORICAL_SAMPLES",
@@ -2978,7 +2988,7 @@ class AIOpsRuntimeService:
                     window_start_at=result.window_start,
                     window_end_at=result.window_end,
                     freshness_status="FRESH",
-                    usage_reason="用于回答本轮问题的 Oracle Alert Log",
+                    usage_reason="用于回答本轮问题的日志证据",
                     linked_by="aiops.turn-projector",
                 )
             )
@@ -2988,8 +2998,8 @@ class AIOpsRuntimeService:
                 event_type="evidence.added",
                 payload={
                     "source_kind": "LOG",
-                    "evidence_kind": "ALERT_LOG",
-                    "public_summary": "新的 Oracle Alert Log 依据已加入本轮调查",
+                    "evidence_kind": "LOG_ENTRY",
+                    "public_summary": "新的日志依据已加入本轮调查",
                 },
             )
         await self._append_turn_event(
@@ -3000,7 +3010,7 @@ class AIOpsRuntimeService:
                 "source_id": result.source_id,
                 "entry_count": len(result.entries),
                 "gap_count": len(result.gaps),
-                "public_summary": "Oracle Alert Log 查询已经完成",
+                "public_summary": "日志查询已经完成",
             },
         )
 

@@ -36,6 +36,7 @@ from aiops_agent.application.display_dictionary import (
     display_name,
     display_text,
 )
+from aiops_agent.application.investigation.projection import direct_list_result_kind
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -521,7 +522,7 @@ class DbaEvidenceAssessmentHandler:
                         TurnEvidenceFact(
                             evidence_ref=f"artifact:{artifact_id}#loki",
                             artifact_id=artifact_id,
-                            source_id="oracle.alert-log",
+                            source_id="logging.range",
                             step_id="loki",
                             tool_id="loki.query_range",
                             measurement_semantics=(
@@ -550,7 +551,7 @@ class DbaEvidenceAssessmentHandler:
                     monitoring_gap_found = True
                     gaps.append(
                         TurnEvidenceGap(
-                            source_id="oracle.alert-log",
+                            source_id="logging.range",
                             step_id="loki",
                             code=gap.code,
                             detail=gap.detail,
@@ -952,6 +953,17 @@ class DbaEvidenceAssessmentHandler:
             status = SufficiencyStatus.PARTIAL
         else:
             status = SufficiencyStatus.ANSWERABLE
+        direct_kind = direct_list_result_kind(task_frame)
+        if direct_kind:
+            required_tool_ids = (
+                ("workload.sql.top_window",)
+                if direct_kind == "TOP_SQL_LIST"
+                else _PRIMARY_RESULT_SPECS[direct_kind]["tool_ids"]
+            )
+            if not any(fact.tool_id in required_tool_ids for fact in facts):
+                reasons.append("未取得本次功能入口所要求的主结果")
+                if status == SufficiencyStatus.ANSWERABLE:
+                    status = SufficiencyStatus.PARTIAL if facts else SufficiencyStatus.NEEDS_EVIDENCE
         deterministic = DbaSufficiencyAssessment(
             status=status,
             evidence=tuple(facts),
@@ -966,7 +978,7 @@ class DbaEvidenceAssessmentHandler:
             # 巡检按冻结模板和确定性规则评估覆盖率。通用问题评估模型会
             # 把补证设想追加成新的巡检缺口，导致报告重复并偏离模板范围。
             return deterministic
-        if self._model is None or self._prompts is None:
+        if direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return deterministic
         model_snapshot = dict(answer_context.get("model") or {})
         if not model_snapshot:
@@ -1556,6 +1568,10 @@ class DbaAnswerComposeHandler:
     async def execute(self, context: TaskExecutionContext) -> AIOpsTurnResult:
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
+        task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
+        kind = direct_list_result_kind(task_frame)
+        if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
+            return self._direct_list_result(kind, assessment)
         waiting_status = assessment.status in {
             SufficiencyStatus.NEEDS_CLARIFICATION,
             SufficiencyStatus.NEEDS_EVIDENCE,
@@ -1693,10 +1709,91 @@ class DbaAnswerComposeHandler:
             model_receipt=result.receipt.model_dump(mode="json"),
         )
 
+    @staticmethod
+    def _direct_list_result(kind: str, assessment: DbaSufficiencyAssessment) -> AIOpsTurnResult:
+        """列表事实和口径由服务端直接生成，模型不能改写排名或时间。"""
+        if kind == "TOP_SQL_LIST":
+            fact = _top_sql_primary_fact(assessment.evidence, kind)
+        else:
+            tool_ids = _PRIMARY_RESULT_SPECS[kind]["tool_ids"]
+            fact = next(
+                (item for item in assessment.evidence
+                 if item.tool_id in tool_ids and item.presentation_kind in {"TABLE", "TABLE_AND_CHART"}),
+                None,
+            )
+        if kind == "TOP_SQL_LIST":
+            if fact is None:
+                message = "请求窗口内的 Top SQL 排名暂不可用；未取得可用的窗口证据，不能推断窗口内没有 SQL。"
+                codes = {gap.code for gap in assessment.gaps if gap.source_id == "workload.sql.top_window"}
+                if "COLLECTION_DISABLED" in codes:
+                    message += "周期 SQL 快照未启用；请在 Target 采集配置中启用并发布，积累覆盖所需窗口的快照后重试。"
+                elif "INSUFFICIENT_SNAPSHOTS" in codes:
+                    message += "可比较快照不足；请确认采集正常，待快照覆盖所需窗口后重试。"
+                else:
+                    message += "请查看证据缺口。"
+            elif fact.tool_id == "workload.sql.top_window":
+                message = (
+                    "下表是已采集候选的窗口增量排名；实际覆盖范围和采集限制见表格说明，不能保证覆盖全部窗口热点。"
+                    if fact.row_count else
+                    "可比较快照中没有返回可排名的 SQL；这不证明窗口内没有 SQL 执行。实际覆盖范围和采集限制见表格说明。"
+                )
+            elif fact.measurement_semantics == MeasurementSemantics.CUMULATIVE_SINCE_LOAD:
+                message = "请求窗口的排名不可用；下表仅为数据库累计统计参考，不能代表指定窗口增量，统计起点受重置和淘汰影响。"
+            else:
+                message = "请求窗口的排名不可用；下表仅为其他采样或当前活动参考，不能代表指定窗口排名。"
+        elif kind == "CURRENT_SQL_LIST":
+            message = (
+                "下表是采集时点的当前活跃 SQL 快照。"
+                if fact and fact.row_count else
+                "当前活跃 SQL 快照未返回匹配记录；这不能证明其他时刻没有 SQL 执行。"
+                if fact else "当前活跃 SQL 暂不可用，请查看证据缺口。"
+            )
+        else:
+            message = (
+                "下表是所选范围内返回的日志记录。"
+                if fact and fact.row_count else
+                "所选范围未返回匹配的日志记录；这不能证明不存在其他异常。"
+                if fact else "日志查询结果暂不可用，请查看证据缺口。"
+            )
+        refs = (fact.evidence_ref,) if fact else ()
+        blocks = [
+            TurnAnswerBlock(
+                block_type=AnswerBlockType.MARKDOWN,
+                schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                payload={"markdown": message},
+                evidence_refs=refs,
+            )
+        ]
+        if fact is not None:
+            blocks.extend(DbaAnswerComposeHandler._data_blocks((fact,), primary_result_kind=kind))
+        return AIOpsTurnResult(
+            status=(
+                "COMPLETED"
+                if fact is not None and assessment.status == SufficiencyStatus.ANSWERABLE
+                and (kind != "TOP_SQL_LIST" or fact.tool_id == "workload.sql.top_window")
+                else "PARTIAL"
+            ),
+            sufficiency_status=assessment.status,
+            blocks=tuple(blocks),
+            evidence=assessment.evidence,
+            evidence_gaps=assessment.gaps,
+            assessment_reasons=assessment.reasons,
+        )
+
     async def execute_stream(self, context: TaskExecutionContext):
         """诊断 Turn 先生成结构化草稿再切块；非诊断仍走带引用的正文流。"""
         assessment = self._assessment(context.input_artifacts)
         proposal_summary = self._proposal_summary(context.input_artifacts)
+        task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
+        kind = direct_list_result_kind(task_frame)
+        if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
+            result = self._direct_list_result(kind, assessment).model_copy(update={"answer_streamed": True})
+            yield DbaAnswerProgress(
+                event_type="answer.delta", event_key="answer-delta:1",
+                payload={"chunk_index": 1, "delta": result.blocks[0].payload["markdown"]},
+            )
+            yield result
+            return
         waiting_status = assessment.status in {
             SufficiencyStatus.NEEDS_CLARIFICATION,
             SufficiencyStatus.NEEDS_EVIDENCE,

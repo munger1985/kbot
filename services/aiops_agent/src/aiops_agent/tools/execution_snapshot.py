@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 
-from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL, validate_top_sql_window
+from aiops_agent.application.top_sql_window import (
+    TOP_SQL_REFERENCE_CONDITION, TOP_SQL_REFERENCE_KIND, TOP_SQL_WINDOW_TOOL,
+    validate_top_sql_window,
+)
 from aiops_agent.diagnostics import DiagnosticRegistry, ResolvedDiagnosticTool
 from aiops_agent.playbooks import (
     PlaybookCatalogError,
@@ -351,6 +354,12 @@ class ToolExecutionSnapshotBuilder:
                 "measurement_semantics": action.measurement_semantics,
                 "presentation_kind": "TABLE",
                 "catalog_hash": self._tools.catalog_hash,
+                "execution_condition": (
+                    TOP_SQL_REFERENCE_CONDITION
+                    if getattr(action, "optional", False)
+                    and getattr(action, "expected_evidence_kind", "") == TOP_SQL_REFERENCE_KIND
+                    else None
+                ),
                 "tool": {
                     "step_id": action.action_id,
                     "depends_on": [],

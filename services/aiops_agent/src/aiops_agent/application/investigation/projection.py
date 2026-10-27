@@ -6,6 +6,15 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 
+def direct_list_result_kind(task_frame: Mapping[str, Any]) -> str | None:
+    """识别用户明确选择的只读列表入口，避免把它扩展成自主调查。"""
+    subject = task_frame.get("subject_ref") or {}
+    if not isinstance(subject, Mapping) or not subject.get("conversation_starter"):
+        return None
+    kind = str(subject.get("primary_result_kind") or "")
+    return kind if kind in {"TOP_SQL_LIST", "CURRENT_SQL_LIST", "ALERT_LOG_LIST"} else None
+
+
 def tool_class_for(tool_id: str) -> str:
     """把工具标识映射为数据库持久化使用的封闭分类。"""
     if tool_id == "workload.sql.top_window":

@@ -34,12 +34,14 @@ from aiops_agent.application.investigation.discovery_binding import (
     prior_plan_has_deferred,
 )
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
+from aiops_agent.application.investigation.direct_list import add_top_sql_reference
 from aiops_agent.application.investigation.query_freezing import (
     prepare_attachment_searches,
     prepare_dynamic_queries,
     prepare_source_queries,
 )
 from aiops_agent.application.investigation.projection import (
+    direct_list_result_kind,
     safe_plan_projection,
     tool_class_for,
 )
@@ -551,6 +553,13 @@ class TurnPlanningService:
                 title=title,
             )
             requested_playbook_ids = ()
+            if kind == "TOP_SQL_LIST":
+                investigation, reference_tool = add_top_sql_reference(
+                    investigation, db_type=str(context.target_context.get("db_type") or ""),
+                    available_tools=available_tools,
+                )
+                if reference_tool:
+                    requested_tool_ids = (*requested_tool_ids, reference_tool)
         planning_tools, planning_playbooks = select_planning_candidates(
             tools=available_tools,
             playbooks=available_playbooks,
@@ -2560,7 +2569,19 @@ class TurnPlanningService:
         inspection: bool,
         alert_diagnosis: bool,
     ) -> bool:
-        """历史分析首轮始终加载监控基线，不依赖模型显式选择工具。"""
+        """只读列表入口不因历史时间口径自动采集无关监控。"""
+        explicit_monitoring = any(
+            action.tool_id.startswith(("monitor.", "prometheus.", "loki."))
+            for action in investigation.plan.actions
+        )
+        if (
+            direct_list_result_kind(investigation.task_frame.model_dump(mode="python"))
+            and not inspection
+            and not alert_diagnosis
+            and not explicit_monitoring
+            and not investigation.task_frame.visualization_profile_id
+        ):
+            return False
         return (
             alert_diagnosis
             or inspection
