@@ -1165,7 +1165,7 @@
         : row?.[column.key || column.name || column];
       const followUp = (row) => {
         const rowValues = Object.fromEntries(columns.map((column, index) => [String(column.name || column.key || column).toLowerCase(), cell(row, column, index)]));
-        if (payload.result_kind === "TOP_SQL_LIST") {
+        if (["TOP_SQL_LIST", "CURRENT_SQL_LIST"].includes(payload.result_kind)) {
           const identifier = rowValues.sql_id || rowValues.digest || rowValues.query_id;
           return identifier ? `继续深入分析 SQL ${identifier}，沿用上一轮数据库资源和证据。` : "";
         }
@@ -1178,7 +1178,7 @@
         return "";
       };
       const primary = payload.presentation_role === "PRIMARY";
-      const topSql = primary && payload.result_kind === "TOP_SQL_LIST";
+      const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST"].includes(payload.result_kind);
       const orderedColumns = columns.map((column, index) => ({ column, index }))
         .filter(({ column }) => !topSql || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
@@ -1741,7 +1741,7 @@
     return value;
   }
 
-  function starterParameterHtml(field, initialParameters = {}) {
+  function starterParameterHtml(field, initialParameters = {}, item = null) {
     const isDateTime = field.type === "datetime" || field.type === "oracle_datetime";
     const type = isDateTime ? "datetime-local" : field.type === "integer" ? "number" : "text";
     const value = starterParameterValue(field, initialParameters);
@@ -1760,7 +1760,9 @@
     } else if (field.type === "identifier_list") {
       control = `<textarea name="${esc(field.name)}" rows="3" ${attributes}>${esc(value)}</textarea>`;
     }
-    return `<label><span>${esc(field.label)}${field.required ? " *" : ""}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
+    const windowField = item?.starter_id === "database.sql.top-current" && ["begin_time", "end_time"].includes(field.name);
+    const hidden = windowField && (initialParameters.window || "15m") !== "custom";
+    return `<label${windowField ? " data-top-sql-window-field" : ""}${hidden ? " hidden" : ""}><span>${esc(field.label)}${field.required || windowField ? " *" : ""}</span>${control}${field.help ? `<small>${esc(field.help)}</small>` : ""}</label>`;
   }
 
   function starterParameterGroupsHtml(item, initialParameters = {}) {
@@ -1776,7 +1778,7 @@
         : fields.every((field) => !field.required)
           ? "所有字段均可留空，系统会继续使用数据库事实、Target 运维事实和默认策略。"
           : "请填写带星号的必填参数后继续。";
-      return `<section class="ops-starter-parameter-group"><header><h4>${esc(group)}</h4><p>${help}</p></header><div>${fields.map((field) => starterParameterHtml(field, initialParameters)).join("")}</div></section>`;
+      return `<section class="ops-starter-parameter-group"><header><h4>${esc(group)}</h4><p>${help}</p></header><div>${fields.map((field) => starterParameterHtml(field, initialParameters, item)).join("")}</div></section>`;
     }).join("");
   }
 
@@ -1822,6 +1824,20 @@
     const content = document.getElementById("starter-dialog-content");
     const isRunbook = item.execution_mode === "RUNBOOK";
     content.innerHTML = `<div class="ops-starter-parameters">${starterResourceScopeHtml(item)}${starterParameterGroupsHtml(item, initialParameters)}</div><div class="ops-starter-form-actions"><button type="button" data-starter-back>返回功能列表</button>${isRunbook ? '<button type="button" data-starter-auto>使用自动配置生成</button>' : ""}<button class="primary" type="button" data-starter-submit>${isRunbook ? "按当前参数生成" : "开始执行"}</button></div>`;
+    if (item.starter_id === "database.sql.top-current") {
+      const windowSelect = content.querySelector('[name="window"]');
+      const updateWindowFields = () => {
+        const custom = windowSelect.value === "custom";
+        content.querySelectorAll("[data-top-sql-window-field]").forEach((label) => {
+          label.hidden = !custom;
+          const input = label.querySelector("input");
+          input.disabled = !custom;
+          input.required = custom;
+        });
+      };
+      windowSelect.addEventListener("change", updateWindowFields);
+      updateWindowFields();
+    }
     content.querySelector("[data-starter-back]").onclick = openStarterMenu;
     const systems = compatibleStarterSystems(item);
     const systemSelect = content.querySelector('[name="starter_business_system_id"]');
@@ -1840,6 +1856,7 @@
       if (!automatic) {
         for (const field of item.input_schema) {
           const input = content.querySelector(`[name="${CSS.escape(field.name)}"]`);
+          if (input.disabled) continue;
           if (!input.reportValidity()) return;
           let value = input.value.trim();
           if (!value && !field.required) continue;

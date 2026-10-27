@@ -574,9 +574,9 @@ class TargetConfigurationMixin:
                 policy = getattr(request, policy_name)
                 if policy is None:
                     raise validation_failed("数据库采集策略不能为空")
-                if entity.db_type not in {"MYSQL", "POSTGRESQL"} and policy.enabled:
+                if policy_name == "activity_sampler_policy" and entity.db_type not in {"MYSQL", "POSTGRESQL"} and policy.enabled:
                     raise validation_failed(
-                        "只有MySQL或PostgreSQL Target可以启用工作负载快照或活动采样"
+                        "只有MySQL或PostgreSQL Target可以启用活动采样"
                     )
                 fields[f"{policy_name}_json"] = fields.pop(policy_name)
             now = datetime.now(UTC)

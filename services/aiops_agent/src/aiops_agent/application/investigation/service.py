@@ -10,6 +10,7 @@ from uuid import UUID
 from loguru import logger
 
 from aiops_agent.application.conversation_inputs import ConversationInputResolver
+from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL, freeze_top_sql_window
 from aiops_agent.application.diagnosis import freeze_automatic_entry_intent
 from aiops_agent.application.errors import resource_not_found, state_conflict
 from aiops_agent.application.investigation.context import (
@@ -608,10 +609,17 @@ class TurnPlanningService:
         )
         temporal_mode = TemporalAnalysisMode.CURRENT
         if kind == "TOP_SQL_LIST":
-            tool_ids = ("db.instance.identity", "db.sql.top_current")
-            inputs["db.sql.top_current"] = {
-                "limit": int(parameters.get("limit") or 10),
-            }
+            tool_ids = ("db.instance.identity", TOP_SQL_WINDOW_TOOL)
+            inputs[TOP_SQL_WINDOW_TOOL] = freeze_top_sql_window(
+                parameters, now=datetime.now(UTC)
+            )
+            start = datetime.fromisoformat(inputs[TOP_SQL_WINDOW_TOOL]["period_start"])
+            end = datetime.fromisoformat(inputs[TOP_SQL_WINDOW_TOOL]["period_end"])
+            requested_window_seconds = int((end - start).total_seconds())
+            temporal_mode = TemporalAnalysisMode.HISTORICAL
+        elif kind == "CURRENT_SQL_LIST":
+            tool_ids = ("db.instance.identity", "db.sql.active_current")
+            inputs["db.sql.active_current"] = {"limit": int(parameters.get("limit") or 10)}
         elif kind == "ALERT_LOG_LIST":
             tool_ids = (
                 "db.instance.identity", "db.oracle.alert_log.list",
@@ -825,14 +833,16 @@ class TurnPlanningService:
                             else "ASH_REPORT"
                             if tool_id == "db.oracle.ash.report"
                             else "TOP_SQL_LIST"
-                            if tool_id == "db.sql.top_current"
+                            if tool_id == TOP_SQL_WINDOW_TOOL
+                            else "CURRENT_SQL_LIST"
+                            if tool_id == "db.sql.active_current"
                             else "ALERT_LOG_LIST"
                             if tool_id == "db.oracle.alert_log.list"
                             else "DATABASE_OBSERVATION"
                         ),
                         measurement_semantics=(
                             MeasurementSemantics.SNAPSHOT_DELTA
-                            if ".awr." in tool_id
+                            if ".awr." in tool_id or tool_id == TOP_SQL_WINDOW_TOOL
                             else MeasurementSemantics.HISTORICAL_SAMPLES
                             if tool_id == "db.oracle.alert_log.list"
                             else MeasurementSemantics.SNAPSHOT_DELTA
@@ -886,7 +896,7 @@ class TurnPlanningService:
                         context.conversation_starter.get("starter_id")
                     ),
                     "primary_result_kind": (
-                        kind if kind in {"TOP_SQL_LIST", "ALERT_LOG_LIST"}
+                        kind if kind in {"TOP_SQL_LIST", "CURRENT_SQL_LIST", "ALERT_LOG_LIST"}
                         else None
                     ),
                 },
@@ -2233,6 +2243,7 @@ class TurnPlanningService:
                 "SOURCE_RUN_EVIDENCE.v1",
                 "SITUATION_EVIDENCE.v1",
                 "DBA_TOOL_RESULT.v1",
+                "TOP_SQL_WINDOW_RESULT.v1",
                 "OBSERVATION_SET.v1",
                 "LOG_EVIDENCE_SET.v1",
                 "ATTACHMENT_EVIDENCE_SET.v1",

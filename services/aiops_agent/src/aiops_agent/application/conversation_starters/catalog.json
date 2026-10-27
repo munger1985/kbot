@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2.0.0",
+  "catalog_version": "2.1.0",
   "starters": [
     {
       "starter_id": "database.health.overview",
@@ -27,12 +27,23 @@
       "starter_id": "database.sql.top-current",
       "category": "QUERY",
       "title": "Top SQL",
-      "description": "列出高耗时 SQL，并可继续发起单 SQL 分析；统计口径随数据库类型不同。",
+      "description": "按所选时间窗口的累计耗时列出 SQL；采集不足时明确提示，不代表当前活动会话。",
       "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
       "execution_mode": "DIAGNOSTIC",
-      "input_schema": [{"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 10, "min": 1, "max": 50, "help": "最多返回 50 条。"}],
+      "input_schema": [{"name": "window", "label": "时间范围", "type": "select", "required": true, "default": "15m", "options": [{"value": "5m", "label": "最近 5 分钟"}, {"value": "15m", "label": "最近 15 分钟"}, {"value": "1h", "label": "最近 1 小时"}, {"value": "24h", "label": "最近 24 小时"}, {"value": "custom", "label": "自定义时间"}]}, {"name": "begin_time", "label": "自定义开始时间", "type": "datetime", "required": false}, {"name": "end_time", "label": "自定义结束时间", "type": "datetime", "required": false}, {"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 10, "min": 1, "max": 50, "help": "最多返回 50 条。"}],
       "planning": {"kind": "TOP_SQL_LIST"},
       "sort_order": 21
+    },
+    {
+      "starter_id": "database.sql.active-current",
+      "category": "QUERY",
+      "title": "当前活跃 SQL",
+      "description": "查看此刻正在执行的 SQL 和会话，不代表历史窗口 Top SQL。",
+      "supported_db_types": ["ORACLE", "MYSQL", "POSTGRESQL"],
+      "execution_mode": "DIAGNOSTIC",
+      "input_schema": [{"name": "limit", "label": "返回数量", "type": "integer", "required": true, "default": 10, "min": 1, "max": 50}],
+      "planning": {"kind": "CURRENT_SQL_LIST"},
+      "sort_order": 22
     },
     {
       "starter_id": "oracle.alert-log.list",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+import re
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -19,6 +20,7 @@ PGBADGER_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 class WorkloadDatabaseType(StrEnum):
+    ORACLE = "ORACLE"
     MYSQL = "MYSQL"
     POSTGRESQL = "POSTGRESQL"
 
@@ -42,12 +44,14 @@ class WorkloadReportType(StrEnum):
 
 
 class StatementIdentityType(StrEnum):
+    ORACLE_SQL_ID = "ORACLE_SQL_ID"
     MYSQL_DIGEST = "MYSQL_DIGEST"
     POSTGRESQL_QUERY_ID = "POSTGRESQL_QUERY_ID"
 
 
 class CollectionQuality(StrEnum):
     AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
     DISABLED = "DISABLED"
     DENIED = "DENIED"
     TIMEOUT = "TIMEOUT"
@@ -79,6 +83,9 @@ class WorkloadStatementSnapshot(AIOpsContract):
         if self.statement_identity_type == StatementIdentityType.MYSQL_DIGEST:
             if len(value) != 64 or any(c not in "0123456789ABCDEF" for c in value):
                 raise ValueError("MySQL Digest 必须是64位大写十六进制字符串")
+        elif self.statement_identity_type == StatementIdentityType.ORACLE_SQL_ID:
+            if not re.fullmatch(r"[0-9abcdfghjkmnpqrstuvwxyz]{13}", value):
+                raise ValueError("Oracle SQL_ID 格式无效")
         else:
             if not _signed_bigint_string(value):
                 raise ValueError("PostgreSQL query_id 必须是有符号bigint十进制字符串")

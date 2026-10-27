@@ -2,6 +2,17 @@
   "catalog_version": "postgresql-baseline.v1",
   "tools": [
     {
+      "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "POSTGRESQL",
+      "variant": "postgresql_active_sessions", "supported_version_min": 12,
+      "supported_version_max_exclusive": 20, "required_capabilities": ["pg_stat_activity"],
+      "required_entitlements": [], "required_privileges": ["pg_read_all_stats"],
+      "parameters": [{"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}],
+      "output_columns": [{"name": "session_id", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"}, {"name": "database_name", "logical_type": "STRING"}, {"name": "sql_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "elapsed_seconds", "logical_type": "INTEGER"}, {"name": "wait_event", "logical_type": "STRING"}],
+      "template_ref": "sql/sql_active_current.sql",
+      "template_sha256": "79730d74e01568d577b30f1a35092016b14d050a89497aa661289e42660ca5a7",
+      "timeout_seconds": 20, "max_rows": 50, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.instance.identity",
       "version": "1.0.0",
       "db_type": "POSTGRESQL",

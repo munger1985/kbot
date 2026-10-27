@@ -8,6 +8,8 @@ from typing import Any
 
 def tool_class_for(tool_id: str) -> str:
     """把工具标识映射为数据库持久化使用的封闭分类。"""
+    if tool_id == "workload.sql.top_window":
+        return "REASONING"
     if tool_id == "monitor.query_range":
         return "PROMETHEUS"
     if tool_id == "loki.query_range":

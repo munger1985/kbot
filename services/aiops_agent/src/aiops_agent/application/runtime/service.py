@@ -2322,6 +2322,10 @@ class AIOpsRuntimeService:
                 payload=payload,
                 now=now,
             )
+        elif artifact.schema_version == "TOP_SQL_WINDOW_RESULT.v1":
+            await self._project_top_sql_window_result(
+                uow=uow, turn=turn, task=task, artifact=artifact, payload=payload, now=now,
+            )
         elif artifact.schema_version == "OBSERVATION_SET.v1":
             await self._project_monitoring_result(
                 uow=uow,
@@ -2608,6 +2612,51 @@ class AIOpsRuntimeService:
                 "error_code": error_code,
                 "public_summary": public_summary,
             },
+        )
+
+    async def _project_top_sql_window_result(
+        self, *, uow, turn, task, artifact, payload: dict[str, Any], now: datetime,
+    ) -> None:
+        """登记派生快照结果和其真实 Artifact，不把数据缺口登记为空排行。"""
+        result = dict(payload.get("result") or {})
+        intervals = tuple(result.get("covered_intervals") or ())
+        tool_row = next(
+            (item for item in await uow.turns.list_tool_invocations(turn_id=turn.turn_id, lock=True)
+             if item.ops_task_id == task.ops_task_id and item.tool_id == "workload.sql.top_window"),
+            None,
+        )
+        if tool_row is not None:
+            tool_row.status = "SUCCEEDED" if intervals else "NO_DATA"
+            tool_row.output_artifact_id = artifact.artifact_id
+            tool_row.attempt_count = int(task.attempt_count)
+            tool_row.completed_at = now
+        existing = await uow.turns.get_evidence_by_artifact(
+            turn_id=turn.turn_id, artifact_id=artifact.artifact_id,
+        )
+        if intervals and existing is None:
+            starts = [datetime.fromisoformat(str(item["start"]).replace("Z", "+00:00")) for item in intervals]
+            ends = [datetime.fromisoformat(str(item["end"]).replace("Z", "+00:00")) for item in intervals]
+            await uow.turns.add_evidence(
+                OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(), turn_id=turn.turn_id,
+                    artifact_id=artifact.artifact_id,
+                    tool_invocation_id=tool_row.tool_invocation_id if tool_row is not None else None,
+                    source_kind="DATABASE", evidence_kind="OBSERVATION", confidence=1,
+                    evidence_role="SUPPORTS", measurement_semantics="SNAPSHOT_DELTA",
+                    observed_at=max(ends), window_start_at=min(starts), window_end_at=max(ends),
+                    freshness_status="FRESH", usage_reason="由目标历史快照计算，实际覆盖区间及缺口见证据",
+                    linked_by=turn.created_by,
+                )
+            )
+            await self._append_turn_event(
+                uow, turn, event_type="evidence.added",
+                payload={"source_kind": "DATABASE", "evidence_kind": "OBSERVATION",
+                         "public_summary": "历史 SQL 窗口快照依据已加入本轮调查"},
+            )
+        await self._append_turn_event(
+            uow, turn, event_type="tool.completed" if intervals else "tool.gap",
+            payload={"tool_id": "workload.sql.top_window", "status": "SUCCEEDED" if intervals else "NO_DATA",
+                     "public_summary": "历史 SQL 窗口计算已完成" if intervals else "历史 SQL 快照不足"},
         )
 
     async def _project_tool_result(

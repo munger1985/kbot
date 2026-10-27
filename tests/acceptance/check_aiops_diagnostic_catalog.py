@@ -17,6 +17,9 @@ REQUIRED_TOOLS = {
     "ORACLE": {
         "db.instance.identity",
         "db.sql.top_current",
+        "db.sql.active_current",
+        "db.oracle.workload.identity",
+        "db.oracle.workload.statements",
         "db.session.active",
         "db.session.blocking_chain",
         "db.storage.capacity",
@@ -40,6 +43,7 @@ REQUIRED_TOOLS = {
     "MYSQL": {
         "db.instance.identity",
         "db.sql.top_current",
+        "db.sql.active_current",
         "db.session.active",
         "db.session.blocking_chain",
         "db.storage.capacity",
@@ -49,6 +53,7 @@ REQUIRED_TOOLS = {
     "POSTGRESQL": {
         "db.instance.identity",
         "db.sql.top_current",
+        "db.sql.active_current",
         "db.session.active",
         "db.session.blocking_chain",
         "db.storage.capacity",

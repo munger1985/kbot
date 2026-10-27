@@ -53,6 +53,12 @@ _POSTGRESQL_ACTIVITY_TOOLS = (
     "db.postgresql.activity.sample",
 )
 
+_ORACLE_WORKLOAD_TOOLS = (
+    "db.instance.identity",
+    "db.oracle.workload.identity",
+    "db.oracle.workload.statements",
+)
+
 
 class WorkloadCollectionScheduler:
     """按 Target 策略创建固定 Tool Task，不直接连接被监控数据库。"""
@@ -320,13 +326,12 @@ class WorkloadCollectionScheduler:
             dict(target.capabilities_json or {}).get("entitlements")
         )
         db_type = str(target.db_type)
-        requested = (
-            _MYSQL_WORKLOAD_TOOLS if kind == "WORKLOAD" else _MYSQL_ACTIVITY_TOOLS
-        ) if db_type == "MYSQL" else (
-            _POSTGRESQL_WORKLOAD_TOOLS
-            if kind == "WORKLOAD"
-            else _POSTGRESQL_ACTIVITY_TOOLS
-        )
+        if db_type == "ORACLE":
+            requested = _ORACLE_WORKLOAD_TOOLS if kind == "WORKLOAD" else ()
+        elif db_type == "MYSQL":
+            requested = _MYSQL_WORKLOAD_TOOLS if kind == "WORKLOAD" else _MYSQL_ACTIVITY_TOOLS
+        else:
+            requested = _POSTGRESQL_WORKLOAD_TOOLS if kind == "WORKLOAD" else _POSTGRESQL_ACTIVITY_TOOLS
         tools: list[dict[str, Any]] = []
         unavailable: list[dict[str, str]] = []
         for tool_id in requested:
@@ -358,6 +363,8 @@ class WorkloadCollectionScheduler:
                 parameters["limit"] = int(
                     policy.get("top_statement_limit") or 100
                 )
+            if tool_id == "db.oracle.workload.statements":
+                parameters["limit"] = int(policy.get("top_statement_limit") or 100)
             if tool_id in {
                 "db.mysql.activity.sample",
                 "db.postgresql.activity.sample",

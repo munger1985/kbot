@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL, validate_top_sql_window
 from aiops_agent.diagnostics import DiagnosticRegistry, ResolvedDiagnosticTool
 from aiops_agent.playbooks import (
     PlaybookCatalogError,
@@ -150,6 +151,9 @@ class ToolExecutionSnapshotBuilder:
         """在编译前校验模型选择的固定目录 Tool 参数并补齐默认值。"""
         normalized = {}
         for action in actions:
+            if action.tool_id == TOP_SQL_WINDOW_TOOL:
+                normalized[action.action_id] = validate_top_sql_window(dict(action.input))
+                continue
             resolved = self._resolve_direct_action(
                 action=action,
                 capabilities=capabilities,
@@ -323,6 +327,19 @@ class ToolExecutionSnapshotBuilder:
         for action, task_key in zip(
             direct_actions, compiled.diagnostic_task_keys, strict=True
         ):
+            if action.tool_id == TOP_SQL_WINDOW_TOOL:
+                direct_invocations[task_key] = {
+                    "action_id": action.action_id,
+                    "question": action.question,
+                    "measurement_semantics": action.measurement_semantics,
+                    "presentation_kind": "TABLE",
+                    "tool": {
+                        "tool_id": TOP_SQL_WINDOW_TOOL,
+                        "tool_version": "1.0.0",
+                        "parameters": validate_top_sql_window(dict(action.input)),
+                    },
+                }
+                continue
             resolved = self._resolve_direct_action(
                 action=action,
                 capabilities=capabilities,

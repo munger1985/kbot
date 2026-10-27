@@ -2,6 +2,52 @@
   "catalog_version": "oracle-baseline.v1",
   "tools": [
     {
+      "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "ORACLE",
+      "variant": "oracle_active_sessions", "supported_version_min": 19,
+      "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [], "required_privileges": ["GV_$SESSION", "GV_$SQL"],
+      "parameters": [{"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}],
+      "output_columns": [{"name": "instance_id", "logical_type": "INTEGER"}, {"name": "session_id", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"}, {"name": "sql_id", "logical_type": "STRING"}, {"name": "sql_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "elapsed_seconds", "logical_type": "INTEGER"}, {"name": "wait_event", "logical_type": "STRING"}],
+      "template_ref": "sql/sql_active_current.sql",
+      "template_sha256": "5353e7b20e3e7545f78c5ec62b8a0316c8a7474ac836d574257411974794da28",
+      "timeout_seconds": 20, "max_rows": 50, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.oracle.workload.identity", "version": "1.0.0", "db_type": "ORACLE",
+      "variant": "oracle_19_plus_workload_identity", "supported_version_min": 19,
+      "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [], "required_privileges": ["V_$DATABASE", "V_$INSTANCE"],
+      "parameters": [], "output_columns": [
+        {"name": "database_id", "logical_type": "STRING", "nullable": false},
+        {"name": "instance_number", "logical_type": "INTEGER", "nullable": false},
+        {"name": "instance_name", "logical_type": "STRING", "nullable": false},
+        {"name": "instance_started_at", "logical_type": "STRING", "nullable": false},
+        {"name": "container_id", "logical_type": "STRING", "nullable": false},
+        {"name": "container_name", "logical_type": "STRING", "nullable": false}
+      ],
+      "template_ref": "sql/workload_identity.sql",
+      "template_sha256": "d8e92f86a7dbcef884a533bca529b47a1e0df90598e324459d09e229cc719aae",
+      "timeout_seconds": 20, "max_rows": 1, "max_bytes": 65536, "cost_level": "LOW"
+    },
+    {
+      "tool_id": "db.oracle.workload.statements", "version": "1.0.0", "db_type": "ORACLE",
+      "variant": "oracle_19_plus_workload_sqlstats", "supported_version_min": 19,
+      "supported_version_max_exclusive": 27, "required_capabilities": ["dynamic_performance_views"],
+      "required_entitlements": [], "required_privileges": ["V_$SQLSTATS"],
+      "parameters": [{"name": "limit", "type": "integer", "minimum": 10, "maximum": 500, "default": 100, "required": false}],
+      "output_columns": [
+        {"name": "sql_id", "logical_type": "STRING", "nullable": false},
+        {"name": "sql_text", "logical_type": "STRING"},
+        {"name": "executions", "logical_type": "INTEGER", "nullable": false},
+        {"name": "elapsed_time", "logical_type": "INTEGER", "nullable": false},
+        {"name": "rows_processed", "logical_type": "INTEGER", "nullable": false},
+        {"name": "plan_hash_value", "logical_type": "INTEGER"}
+      ],
+      "template_ref": "sql/workload_statements.sql",
+      "template_sha256": "3ac816f01b08d6ab50c01d4839bd6458daaf6f666176f8cc7e0467c40fd086b8",
+      "timeout_seconds": 20, "max_rows": 500, "max_bytes": 2097152, "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.oracle.backup.volume_summary",
       "version": "1.0.0",
       "db_type": "ORACLE",

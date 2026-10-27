@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from aiops_agent.application.diagnosis.awr_facts import AWR_FACT_TOOL_IDS
+from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL
 from aiops_agent.application.investigation.discovery_binding import (
     catalog_tool_cards,
     discovery_consumer_window_count,
@@ -41,6 +42,18 @@ def available_tools(
     tools = {
         (item["tool_id"], item["version"]): item
         for item in snapshot_builder.discover_tools(capabilities)
+    }
+    tools[(TOP_SQL_WINDOW_TOOL, "1.0.0")] = {
+        "tool_id": TOP_SQL_WINDOW_TOOL,
+        "version": "1.0.0",
+        "tool_class": "REASONING",
+        "description": "读取当前 Target 已采集的 SQL 统计快照，计算指定时间窗口的耗时增量；缺采时报告缺口。",
+        "input": {
+            "period_start": {"type": "string", "required": True},
+            "period_end": {"type": "string", "required": True},
+            "limit": {"type": "integer", "required": True},
+        },
+        "returns": ["normalized_statement", "execution_count", "total_duration_microseconds", "mean_duration_microseconds"],
     }
     if CAPABILITY_METRIC_QUERY_RANGE in capabilities.available_source_capabilities:
         tools[("monitor.query_range", "1.0.0")] = {

@@ -171,6 +171,7 @@ def create_runtime_handler_registry(
     kernel = create_kernel_handler_registry()
     manifests = list(kernel.manifests)
     if workload_service is not None:
+        from .top_sql_window_handler import TopSqlWindowHandler
         from .workload_collection_handlers import (
             ActivityCollectionHandler,
             WorkloadCollectionHandler,
@@ -178,6 +179,13 @@ def create_runtime_handler_registry(
 
         manifests.extend(
             (
+                HandlerManifest(
+                    handler_id="workload.top-sql-window.query",
+                    version="1",
+                    output_schema_version="TOP_SQL_WINDOW_RESULT.v1",
+                    idempotent=True,
+                    implementation=TopSqlWindowHandler(workload_service=workload_service),
+                ),
                 HandlerManifest(
                     handler_id="workload.snapshot.collect",
                     version="1",

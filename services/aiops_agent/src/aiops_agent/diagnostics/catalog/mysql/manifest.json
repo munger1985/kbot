@@ -2,6 +2,17 @@
   "catalog_version": "mysql-baseline.v1",
   "tools": [
     {
+      "tool_id": "db.sql.active_current", "version": "1.0.0", "db_type": "MYSQL",
+      "variant": "mysql_active_sessions", "supported_version_min": 8,
+      "supported_version_max_exclusive": 10, "required_capabilities": ["information_schema"],
+      "required_entitlements": [], "required_privileges": ["PROCESS"],
+      "parameters": [{"name": "limit", "type": "integer", "minimum": 1, "maximum": 50, "default": 10, "required": false}],
+      "output_columns": [{"name": "session_id", "logical_type": "INTEGER"}, {"name": "username", "logical_type": "STRING"}, {"name": "database_name", "logical_type": "STRING"}, {"name": "sql_text", "logical_type": "STRING", "sensitivity": "MASKED"}, {"name": "elapsed_seconds", "logical_type": "INTEGER"}, {"name": "wait_event", "logical_type": "STRING"}],
+      "template_ref": "sql/sql_active_current.sql",
+      "template_sha256": "5956c043d0a8d5dd33d1422c0bf3eb1c9bbe05172a443dfbcd13e4d5c87e8065",
+      "timeout_seconds": 20, "max_rows": 50, "max_bytes": 1048576, "cost_level": "LOW"
+    },
+    {
       "tool_id": "db.instance.identity",
       "version": "1.0.0",
       "db_type": "MYSQL",

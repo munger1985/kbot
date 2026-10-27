@@ -463,6 +463,13 @@ def build_top_sql_window(
         if any(value not in {"AVAILABLE", "PARTIAL"} for value in quality):
             gaps["STATEMENT_SOURCE_UNAVAILABLE"] += 1
             continue
+        # 旧快照的 PARTIAL 也可能表示来源失败；没有记录时无法确认来源可用。
+        if any(
+            value == "PARTIAL" and not by_snapshot.get(item.workload_snapshot_id)
+            for item, value in zip((previous, current), quality, strict=True)
+        ):
+            gaps["STATEMENT_SOURCE_UNAVAILABLE"] += 1
+            continue
         interval_seconds = max(
             int(getattr(previous, "window_seconds", 0) or 0),
             int(getattr(current, "window_seconds", 0) or 0),

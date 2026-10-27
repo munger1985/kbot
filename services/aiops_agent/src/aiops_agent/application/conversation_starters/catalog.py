@@ -175,6 +175,11 @@ class ConversationStarterCatalog:
                 parameters = self._validate_parameters(
                     list(input_schema), supplied_parameters
                 )
+                if str(dict(item.get("planning") or {}).get("kind") or "") == "TOP_SQL_LIST":
+                    if parameters.get("window") == "custom" and not (
+                        parameters.get("begin_time") and parameters.get("end_time")
+                    ):
+                        raise ValueError("自定义 Top SQL 时间窗口需要开始时间和结束时间")
         except ValueError as exc:
             raise validation_failed(str(exc)) from exc
         return {

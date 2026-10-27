@@ -696,13 +696,14 @@ class TargetRepository(AIOpsRepository):
             if activity
             else ""
         )
+        database_types = "'MYSQL', 'POSTGRESQL'" if activity else "'ORACLE', 'MYSQL', 'POSTGRESQL'"
         claimed_id = await self._claim_oracle_uuid(
             plsql=f"""
                 DECLARE
                     CURSOR c_claim IS
                         SELECT TARGET_ID
                         FROM KBOT_OPS_TARGET
-                        WHERE DB_TYPE IN ('MYSQL', 'POSTGRESQL')
+                        WHERE DB_TYPE IN ({database_types})
                           AND STATUS = 'ENABLED'
                           AND READONLY_CONNECTION_ENABLED = 1
                           AND CONNECTIVITY_STATUS IN ('CONNECTED', 'DEGRADED')

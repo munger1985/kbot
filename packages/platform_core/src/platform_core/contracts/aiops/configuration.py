@@ -179,12 +179,9 @@ class TargetCreate(AIOpsContract):
         if self.db_type not in {
             DatabaseType.MYSQL,
             DatabaseType.POSTGRESQL,
-        } and (
-            self.workload_snapshot_policy.enabled
-            or self.activity_sampler_policy.enabled
-        ):
+        } and self.activity_sampler_policy.enabled:
             raise ValueError(
-                "只有MySQL或PostgreSQL Target可以启用工作负载快照或活动采样"
+                "只有MySQL或PostgreSQL Target可以启用活动采样"
             )
         if self.endpoint is None:
             if self.oracle_container_scope is not None or self.oracle_pdb_name is not None:

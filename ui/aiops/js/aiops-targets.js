@@ -502,6 +502,10 @@
       form.elements.host.value = target.endpoint?.host || "";
       form.elements.port.value = target.endpoint?.port || "";
       form.elements.tls_enabled.checked = Boolean(target.endpoint?.tls_enabled);
+      form.elements.workload_enabled.checked = Boolean(target.workload_snapshot_policy?.enabled);
+      form.elements.workload_interval.value = target.workload_snapshot_policy?.interval_minutes ?? 5;
+      form.elements.workload_retention.value = target.workload_snapshot_policy?.retention_days ?? 30;
+      form.elements.workload_limit.value = target.workload_snapshot_policy?.top_statement_limit ?? 100;
       if (target.db_type === "ORACLE") service.value = target.endpoint?.service || "";
       else database.value = target.endpoint?.database || "";
       oracleScope.value = target.oracle_container_scope || "";
@@ -632,6 +636,13 @@
       controlled_change_enabled: changeEnabled.checked,
       importance_level: Number(form.elements.importance_level.value),
       responsibility_group_id: form.elements.responsibility_group_id.value || null,
+      workload_snapshot_policy: {
+        enabled: readonlyEnabled.checked && form.elements.workload_enabled.checked,
+        interval_minutes: Number(form.elements.workload_interval.value),
+        retention_days: Number(form.elements.workload_retention.value),
+        top_statement_limit: Number(form.elements.workload_limit.value),
+        round_timeout_seconds: editingTarget?.workload_snapshot_policy?.round_timeout_seconds ?? 30,
+      },
       ...oracleContainerPayload(),
     };
     if (readonlyEnabled.checked) fields.endpoint = endpointPayload();

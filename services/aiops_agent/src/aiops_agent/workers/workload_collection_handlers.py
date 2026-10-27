@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import re
 from typing import Any, Literal
 from uuid import UUID
 
@@ -63,11 +64,12 @@ class WorkloadCollectionHandler:
             if database_type == "POSTGRESQL"
             else _first_row(observations.get("db.instance.performance"))
         )
-        statement_tool = (
-            "db.mysql.statement.digest.top"
-            if database_type == "MYSQL"
-            else "db.postgresql.statement.top"
-        )
+        statement_tool = {
+            "MYSQL": "db.mysql.statement.digest.top",
+            "POSTGRESQL": "db.postgresql.statement.top",
+            "ORACLE": "db.oracle.workload.statements",
+        }[database_type]
+        oracle_identity = _first_row(observations.get("db.oracle.workload.identity"))
         captured_at = (
             _datetime(dict(observations.get(statement_tool) or {}).get("captured_at"))
             or _latest_captured_at(observations)
@@ -108,6 +110,12 @@ class WorkloadCollectionHandler:
         identity_kind = "MYSQL_SERVER_UUID"
         if database_type == "POSTGRESQL":
             identity_kind = "POSTGRESQL_SYSTEM_IDENTIFIER"
+        if database_type == "ORACLE":
+            identity_kind = "ORACLE_DATABASE_INSTANCE_CONTAINER"
+            parts = [oracle_identity.get(name) for name in ("database_id", "instance_number", "container_id")]
+            instance_identifier = ":".join(str(part) for part in parts) if all(
+                part is not None and str(part) != "" for part in parts
+            ) else "UNKNOWN"
         uptime = _integer(performance.get("uptime_seconds"))
         performance_captured_at = _datetime(
             dict(observations.get("db.instance.performance") or {}).get(
@@ -119,6 +127,8 @@ class WorkloadCollectionHandler:
             if uptime is not None
             else _datetime(probe.get("server_started_at")) or captured_at
         )
+        if database_type == "ORACLE":
+            instance_started_at = _datetime(oracle_identity.get("instance_started_at"))
 
         coverage = _workload_coverage(
             database_type=database_type,
@@ -142,7 +152,7 @@ class WorkloadCollectionHandler:
                 "db.postgresql.archiver.status",
             }
         }
-        fatal = not identity or instance_identifier == "UNKNOWN"
+        fatal = not identity or instance_identifier == "UNKNOWN" or instance_started_at is None
         partial = bool(gaps) or any(
             value != CollectionQuality.AVAILABLE for value in coverage.values()
         )
@@ -160,6 +170,8 @@ class WorkloadCollectionHandler:
                 "identity_type": identity_kind,
                 "identity_value": instance_identifier,
                 "database_name": (
+                    (oracle_identity.get("container_name") if database_type == "ORACLE" else None)
+                    or
                     (identity.get("instance_name") if database_type == "POSTGRESQL" else None)
                     or probe_details.get("database_name") or identity.get("instance_name")
                 ),
@@ -168,7 +180,7 @@ class WorkloadCollectionHandler:
                     if database_type == "POSTGRESQL" else {}
                 ),
             },
-            instance_started_at=instance_started_at,
+            instance_started_at=instance_started_at or captured_at,
             database_version=str(
                 identity.get("version")
                 or diagnostics.get("configured_version")
@@ -182,7 +194,7 @@ class WorkloadCollectionHandler:
             continuity={
                 "instance": {
                     "identity": instance_identifier,
-                    "started_at": instance_started_at.isoformat(),
+                    "started_at": (instance_started_at or captured_at).isoformat(),
                 }
             },
             coverage=coverage,
@@ -382,9 +394,13 @@ def _workload_coverage(
         "db.postgresql.replication.slot_retention": "REPLICATION_SLOT",
         "db.postgresql.archiver.status": "ARCHIVE",
     }
+    oracle = {
+        "db.oracle.workload.identity": "INSTANCE",
+        "db.oracle.workload.statements": "STATEMENT",
+    }
     families = {
         **common,
-        **(mysql if database_type == "MYSQL" else postgresql),
+        **(mysql if database_type == "MYSQL" else oracle if database_type == "ORACLE" else postgresql),
     }
     result: dict[str, CollectionQuality] = {}
     unavailable_ids = {str(item.get("tool_id")) for item in unavailable}
@@ -403,12 +419,12 @@ def _workload_coverage(
                 if "TIMEOUT" in code
                 else CollectionQuality.DENIED
                 if "DENIED" in code or "SECRET" in code
-                else CollectionQuality.PARTIAL
+                else CollectionQuality.UNAVAILABLE
             )
         elif tool_id in unavailable_ids:
             result[family] = CollectionQuality.DISABLED
         else:
-            result[family] = CollectionQuality.PARTIAL
+            result[family] = CollectionQuality.UNAVAILABLE
     return result
 
 
@@ -417,6 +433,25 @@ def _statement_rows(
 ) -> list[WorkloadStatementSnapshot]:
     result: list[WorkloadStatementSnapshot] = []
     for rank, item in enumerate(_rows(observation), start=1):
+        if database_type == "ORACLE":
+            sql_id = str(item.get("sql_id") or "").lower()
+            if not re.fullmatch(r"[0-9abcdfghjkmnpqrstuvwxyz]{13}", sql_id):
+                continue
+            count = _integer(item.get("executions")) or 0
+            duration = _integer(item.get("elapsed_time")) or 0
+            result.append(WorkloadStatementSnapshot(
+                statement_identity_type=StatementIdentityType.ORACLE_SQL_ID,
+                statement_identity_value=sql_id,
+                normalized_statement=str(item["sql_text"])[:4000] if item.get("sql_text") is not None else None,
+                execution_count=count,
+                total_duration_microseconds=duration,
+                mean_duration_microseconds=duration // count if count else 0,
+                max_duration_microseconds=0,
+                rows_processed=_integer(item.get("rows_processed")) or 0,
+                database_metrics={"plan_hash_value": item.get("plan_hash_value")},
+                rank_no=rank,
+            ))
+            continue
         if database_type == "MYSQL":
             identity = str(item.get("digest") or "").upper()
             if len(identity) != 64:

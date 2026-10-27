@@ -95,10 +95,16 @@ _TOP_SQL_TEXT_COLUMNS = frozenset({
 
 
 _PRIMARY_RESULT_SPECS = {
+    "CURRENT_SQL_LIST": {
+        "tool_ids": ("db.sql.active_current",),
+        "title": "当前活跃 SQL",
+        "identifier_columns": ("sql_id",),
+        "follow_up_label": "深入分析",
+    },
     "TOP_SQL_LIST": {
         "tool_ids": (
             "db.sql.top_current", "db.mysql.statement.digest.top",
-            "db.postgresql.statement.top",
+            "db.postgresql.statement.top", "workload.sql.top_window",
         ),
         "title": "Top SQL",
         "identifier_columns": ("sql_id", "digest", "query_id"),
@@ -133,6 +139,8 @@ _PRIMARY_COLUMN_LABELS = {
     "maximum_latency_picoseconds": "最长耗时（皮秒）",
     "total_exec_time_ms": "总耗时（毫秒）",
     "mean_exec_time_ms": "平均耗时（毫秒）",
+    "total_duration_seconds": "总耗时（秒）",
+    "mean_duration_seconds": "平均耗时（秒）",
     "max_exec_time_ms": "最长耗时（毫秒）",
     "record_id": "记录 ID",
     "message_type": "消息类型", "message_level": "消息级别",
@@ -161,6 +169,8 @@ def _primary_result_metadata(
         "CURRENT_ACTIVITY": "当前活动快照",
         "HISTORICAL_SAMPLES": "所选时间窗口内的日志记录",
     }.get(semantics, semantics)
+    if fact.tool_id == "workload.sql.top_window":
+        note = "；".join(fact.warnings)
     if semantics == "SNAPSHOT_DELTA" and any(
         str(column.get("name", "")).lower() == "sample_window_seconds"
         for column in fact.columns
@@ -233,6 +243,100 @@ class DbaEvidenceAssessmentHandler:
         )
         for artifact in context.input_artifacts:
             schema_version = artifact.get("schema_version")
+            if schema_version == "TOP_SQL_WINDOW_RESULT.v1":
+                result = dict(dict(artifact.get("payload") or {}).get("result") or {})
+                artifact_id = str(artifact["artifact_id"])
+                intervals = list(result.get("covered_intervals") or ())
+                requested = (
+                    f"请求窗口：{result.get('requested_start')} 至 "
+                    f"{result.get('requested_end')}"
+                )
+                merged = []
+                for interval in intervals:
+                    start, end = str(interval["start"]), str(interval["end"])
+                    if merged and merged[-1][1] == start:
+                        merged[-1] = (merged[-1][0], end)
+                    else:
+                        merged.append((start, end))
+                covered = "、".join(f"{start} 至 {end}" for start, end in merged[:5]) or "无"
+                if len(merged) > 5:
+                    covered += f"（另有 {len(merged) - 5} 段）"
+                gap_counts = dict(result.get("gaps") or {})
+                if not result.get("collection_enabled"):
+                    gap_counts["COLLECTION_DISABLED"] = 1
+                gap_labels = {
+                    "COLLECTION_DISABLED": "周期快照未启用",
+                    "INSUFFICIENT_SNAPSHOTS": "有效快照不足两次",
+                    "WINDOW_NOT_FULLY_COVERED": "未覆盖完整窗口",
+                    "STATEMENT_SOURCE_UNAVAILABLE": "SQL 统计来源不可用",
+                    "DATABASE_OID_UNAVAILABLE": "无法核实数据库身份",
+                    "DATABASE_OID_CHANGED": "数据库身份发生变化",
+                    "DISCONTINUITY": "实例身份或启动时间不连续",
+                    "MISSED_SNAPSHOTS": "采样间断",
+                    "COUNTER_RESET": "统计计数器重置",
+                    "PARTIAL_SOURCE": "采集来源不完整",
+                    "STATEMENT_APPEARED_OR_EVICTED": "语句新增或淘汰",
+                    "STATEMENT_UNAVAILABLE": "部分语句统计不可用",
+                }
+                warnings = (
+                    requested,
+                    f"实际覆盖区间：{covered}",
+                    *(str(item) for item in result.get("warnings") or ()),
+                    *(f"数据缺口：{gap_labels.get(str(code), str(code))}（{count}）"
+                      for code, count in gap_counts.items()),
+                )
+                statements = list(result.get("top_statements") or ())
+                if intervals:
+                    identity_type = str(statements[0].get("statement_identity_type") or "") if statements else ""
+                    identity_column = {
+                        "MYSQL_DIGEST": "digest",
+                        "POSTGRESQL_QUERY_ID": "query_id",
+                        "ORACLE_SQL_ID": "sql_id",
+                    }.get(identity_type, "statement_identity")
+                    facts.append(
+                        TurnEvidenceFact(
+                            evidence_ref=f"artifact:{artifact_id}#top-sql-window",
+                            artifact_id=artifact_id,
+                            source_id="workload.sql.top_window",
+                            step_id="top-sql-window",
+                            tool_id="workload.sql.top_window",
+                            measurement_semantics=MeasurementSemantics.SNAPSHOT_DELTA,
+                            presentation_kind="TABLE",
+                            captured_at=str(result["requested_end"]),
+                            columns=(
+                                {"name": identity_column, "logical_type": "STRING"},
+                                {"name": "normalized_statement", "logical_type": "STRING"},
+                                {"name": "execution_count", "logical_type": "INTEGER"},
+                                {"name": "total_duration_seconds", "logical_type": "DECIMAL"},
+                                {"name": "mean_duration_seconds", "logical_type": "DECIMAL"},
+                            ),
+                            rows=tuple(
+                                (
+                                    item.get("statement_identity_value"),
+                                    item.get("normalized_statement"),
+                                    item.get("execution_count"),
+                                    item.get("total_duration_microseconds", 0) / 1_000_000,
+                                    item["mean_duration_microseconds"] / 1_000_000
+                                    if item.get("mean_duration_microseconds") is not None else None,
+                                ) for item in statements
+                            ),
+                            row_count=len(statements),
+                            truncated=False,
+                            warnings=warnings,
+                        )
+                    )
+                for code, count in gap_counts.items():
+                    database_gap_found = True
+                    gaps.append(
+                        TurnEvidenceGap(
+                            source_id="workload.sql.top_window",
+                            step_id="top-sql-window",
+                            code=str(code),
+                            detail=f"历史 SQL 快照存在数据缺口：{gap_labels.get(str(code), str(code))}（{count}）；{requested}；实际覆盖区间：{covered}",
+                            retryable=False,
+                        )
+                    )
+                continue
             if schema_version in {
                 "SOURCE_RUN_EVIDENCE.v1",
                 "SITUATION_EVIDENCE.v1",
@@ -2607,7 +2711,10 @@ class DbaAnswerComposeHandler:
                     columns = [
                         {
                             **column,
-                            "label": _PRIMARY_COLUMN_LABELS.get(
+                            "label": "已执行（秒）"
+                            if primary["result_kind"] == "CURRENT_SQL_LIST"
+                            and str(column.get("name") or "").lower() == "elapsed_seconds"
+                            else _PRIMARY_COLUMN_LABELS.get(
                                 str(column.get("name") or "").lower(),
                                 str(column.get("name") or ""),
                             ),
@@ -2615,7 +2722,7 @@ class DbaAnswerComposeHandler:
                         for column in columns
                     ]
                 rows = [list(row) for row in fact.rows]
-                if primary and primary["result_kind"] == "TOP_SQL_LIST":
+                if primary and primary["result_kind"] in {"TOP_SQL_LIST", "CURRENT_SQL_LIST"}:
                     text_indexes = {
                         index for index, column in enumerate(columns)
                         if str(column.get("name") or "").lower()

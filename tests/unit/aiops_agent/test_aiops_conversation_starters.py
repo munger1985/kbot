@@ -131,7 +131,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             supported_db_types={"ORACLE", "MYSQL", "POSTGRESQL"}
         )
 
-        self.assertEqual(25, len(candidates))
+        self.assertEqual(26, len(candidates))
         self.assertTrue(all("planning" not in item for item in candidates))
         self.assertTrue(all("tool_ids" not in item for item in candidates))
 
@@ -198,11 +198,11 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             {item["status"] for item in payload["starters"]},
         )
 
-    def test_top_sql_starter_uses_database_specific_measurement_semantics(self) -> None:
+    def test_top_sql_starter_uses_window_semantics_for_all_databases(self) -> None:
         for db_type, semantics in (
             ("MYSQL", "SNAPSHOT_DELTA"),
-            ("ORACLE", "CUMULATIVE_SINCE_LOAD"),
-            ("POSTGRESQL", "CURRENT_ACTIVITY"),
+            ("ORACLE", "SNAPSHOT_DELTA"),
+            ("POSTGRESQL", "SNAPSHOT_DELTA"),
         ):
             with self.subTest(db_type=db_type):
                 context = SimpleNamespace(
@@ -215,15 +215,32 @@ class ConversationStarterCatalogTest(unittest.TestCase):
                     kind="TOP_SQL_LIST", planning={}, parameters={"limit": 10},
                     title="Top SQL",
                 )
-                self.assertEqual(("db.instance.identity", "db.sql.top_current"), tools)
+                self.assertEqual(("db.instance.identity", "workload.sql.top_window"), tools)
                 self.assertEqual(semantics, output.plan.actions[1].measurement_semantics)
-                self.assertEqual({"limit": 10}, output.plan.actions[1].input)
+                self.assertEqual(10, output.plan.actions[1].input["limit"])
+                self.assertEqual(900, output.task_frame.requested_window_seconds)
+
+    def test_current_sql_starter_is_not_a_historical_ranking(self) -> None:
+        for db_type in ("ORACLE", "MYSQL", "POSTGRESQL"):
+            context = SimpleNamespace(
+                question="查看当前活跃 SQL",
+                target_context={"db_type": db_type},
+                conversation_starter={"starter_id": "database.sql.active-current"},
+            )
+            output, tools = TurnPlanningService._starter_diagnostic_output(
+                object.__new__(TurnPlanningService), context=context,
+                kind="CURRENT_SQL_LIST", planning={}, parameters={"limit": 10},
+                title="当前活跃 SQL",
+            )
+            self.assertEqual(("db.instance.identity", "db.sql.active_current"), tools)
+            self.assertEqual("CURRENT_ACTIVITY", output.plan.actions[1].measurement_semantics)
+            self.assertEqual("CURRENT_SQL_LIST", output.task_frame.subject_ref["primary_result_kind"])
 
     def test_query_starters_validate_parameters_and_compile_fixed_tools(self) -> None:
         top = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="database.sql.top-current",
-                catalog_version="2.0.0",
+                catalog_version="2.1.0",
                 parameters={"limit": 20},
             ),
             target=_target(),
@@ -231,7 +248,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         alert = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.alert-log.list",
-                catalog_version="2.0.0",
+                catalog_version="2.1.0",
                 parameters={
                     "hours": 6, "scope": "ERRORS", "keyword": "ORA-00600",
                     "limit": 50,
@@ -253,7 +270,8 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             context=context, kind=alert["planning"]["kind"], planning={},
             parameters=alert["parameters"], title=alert["title"],
         )
-        self.assertEqual({"limit": 20}, top_output.plan.actions[1].input)
+        self.assertEqual(20, top_output.plan.actions[1].input["limit"])
+        self.assertEqual(900, top_output.task_frame.requested_window_seconds)
         self.assertEqual(
             {"hours": 6, "scope": "ERRORS", "keyword": "ORA-00600", "limit": 50},
             alert_output.plan.actions[1].input,
@@ -266,7 +284,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.alert-log.list",
-                    catalog_version="2.0.0",
+                    catalog_version="2.1.0",
                     parameters={"hours": 24, "scope": "DEBUG", "limit": 50},
                 ),
                 target=_target(),
@@ -275,7 +293,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
     def test_awr_diff_requires_equal_time_windows(self) -> None:
         selection = ConversationStarterSelection(
             starter_id="oracle.report.awr-diff",
-            catalog_version="2.0.0",
+            catalog_version="2.1.0",
             parameters={
                 "first_begin_time": "2026-09-28T08:00:00+00:00",
                 "first_end_time": "2026-09-28T09:00:00+00:00",
@@ -291,7 +309,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.adg-build",
-                catalog_version="2.0.0",
+                catalog_version="2.1.0",
             ),
             target=_target(),
         )
@@ -318,7 +336,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.datapump",
-                catalog_version="2.0.0",
+                catalog_version="2.1.0",
                 parameters={
                     "DATAPUMP_DIRECTORY_PATH": "",
                     "SOURCE_SCHEMAS": "app_core, APP_REPORT\napp_core",
@@ -348,7 +366,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
         frozen = self._freeze(
             selection=ConversationStarterSelection(
                 starter_id="oracle.runbook.rman-recovery",
-                catalog_version="2.0.0",
+                catalog_version="2.1.0",
                 parameters={
                     "RECOVERY_SCENARIO": "DATABASE_PITR",
                     "RECOVERY_TARGET_TIME": "2026-9-29 17:00:00",
@@ -366,7 +384,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rman-recovery",
-                    catalog_version="2.0.0",
+                    catalog_version="2.1.0",
                     parameters={
                         "RECOVERY_TARGET_TIME": "2026-02-30 17:00:00",
                     },
@@ -379,7 +397,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
-                    catalog_version="2.0.0",
+                    catalog_version="2.1.0",
                     parameters={"PASSWORD": "secret"},
                 ),
                 target=_target(),
@@ -388,7 +406,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.datapump",
-                    catalog_version="2.0.0",
+                    catalog_version="2.1.0",
                     parameters={"DATAPUMP_DIRECTORY_PATH": "../../tmp"},
                 ),
                 target=_target(),
@@ -399,7 +417,7 @@ class ConversationStarterCatalogTest(unittest.TestCase):
             self._freeze(
                 selection=ConversationStarterSelection(
                     starter_id="oracle.runbook.rac-build",
-                    catalog_version="2.0.0",
+                    catalog_version="2.1.0",
                     parameters={
                         "NODE1_HOST": "rac01.example.com",
                         "NODE2_HOST": "rac01.example.com",
@@ -560,7 +578,7 @@ class ConversationStarterPlanningTest(unittest.IsolatedAsyncioTestCase):
             target_context={"db_type": "ORACLE", "display_name": "TestDB"},
             conversation_starter={
                 "starter_id": "oracle.runbook.adg-build",
-                "catalog_version": "2.0.0",
+                "catalog_version": "2.1.0",
                 "title": "ADG 部署文档",
                 "parameters": {"STANDBY_HOST": "testdb-dr"},
                 "planning": {

@@ -201,6 +201,16 @@
           <div class="ops-field span-12 target-connection-field">
             <label><input name="tls_enabled" type="checkbox" checked> 数据库连接启用 TLS</label>
           </div>
+          <section class="target-connection-field span-12">
+            <h3>历史 SQL 快照</h3>
+            <p>启用后周期采集只读统计，历史 Top SQL 至少需要两次有效快照。Oracle 使用 V$SQLSTATS，不使用 AWR。</p>
+            <label><input name="workload_enabled" type="checkbox"> 启用周期快照</label>
+            <div class="ops-form">
+              <div class="ops-field"><label>采集间隔（分钟）<input name="workload_interval" type="number" min="1" max="60" value="5"></label></div>
+              <div class="ops-field"><label>保留天数<input name="workload_retention" type="number" min="1" max="365" value="30"></label></div>
+              <div class="ops-field"><label>候选 SQL 数<input name="workload_limit" type="number" min="10" max="500" value="100"></label></div>
+            </div>
+          </section>
               </div>
               <p id="target-credential-note" class="ops-dialog-note">诊断凭据仅通过 Main API 提交给 AIOps 加密凭据存储，列表和详情不会返回密码明文。</p>
             </section>
@@ -236,6 +246,6 @@
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261023_1"></script>
   <script src="./js/aiops-pages.js?v=20261014-1"></script>
-  <script src="./js/aiops-targets.js?v=20261012-2"></script>
+  <script src="./js/aiops-targets.js?v=20261027-3"></script>
 </body>
 </html>

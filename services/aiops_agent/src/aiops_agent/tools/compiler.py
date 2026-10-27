@@ -8,6 +8,7 @@ from aiops_agent.orchestration.blueprints import TaskSpec
 from platform_core.contracts.aiops.playbooks import DbaPlaybookPlan
 
 from aiops_agent.playbooks import PlaybookRegistry
+from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL
 
 
 class InvestigationCatalogChangedError(ValueError):
@@ -227,10 +228,18 @@ class InvestigationTaskCompiler:
                 TaskSpec(
                     task_key=task_key,
                     task_type="TOOL_INVOKE",
-                    handler_id="dba.diagnostic.invoke",
+                    handler_id=(
+                        "workload.top-sql-window.query"
+                        if action.tool_id == TOP_SQL_WINDOW_TOOL
+                        else "dba.diagnostic.invoke"
+                    ),
                     handler_version="1",
                     input_schema_version="DIAGNOSTIC_TOOL_INPUT.v1",
-                    output_schema_version="DBA_TOOL_RESULT.v1",
+                    output_schema_version=(
+                        "TOP_SQL_WINDOW_RESULT.v1"
+                        if action.tool_id == TOP_SQL_WINDOW_TOOL
+                        else "DBA_TOOL_RESULT.v1"
+                    ),
                     depends_on=dependencies,
                     input_artifact_keys=dependencies,
                     # 固定目录中包含原生 AWR/ASH 报告等长查询；具体数据库
