@@ -99,6 +99,38 @@ def test_top_sql_window_passes_postgresql_database_oid():
     assert build.call_args.kwargs["postgresql_database_oid"] == "42"
 
 
+def test_top_sql_window_fetches_snapshot_statements_in_bounded_batches():
+    tenant_id, domain_id, target_id = uuid7(), uuid7(), uuid7()
+    target = SimpleNamespace(
+        capabilities_json={}, workload_snapshot_policy_json={"enabled": True}
+    )
+    targets = SimpleNamespace(get_scoped=AsyncMock(return_value=target))
+    snapshots = [SimpleNamespace(workload_snapshot_id=uuid7()) for _ in range(1001)]
+    workloads = SimpleNamespace(
+        list_snapshots=AsyncMock(return_value=snapshots),
+        list_statements=AsyncMock(return_value=[]),
+    )
+    uow = SimpleNamespace(targets=targets, workloads=workloads)
+
+    class UnitOfWork:
+        async def __aenter__(self):
+            return uow
+
+        async def __aexit__(self, *args):
+            return None
+
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    with patch("aiops_agent.application.workload.build_top_sql_window", return_value={}):
+        asyncio.run(WorkloadService(uow_factory=UnitOfWork).read_top_sql_window(
+            domain_id=7, target_id=target_id, period_start=start,
+            period_end=start + timedelta(minutes=15), limit=10,
+        ))
+    assert [
+        len(call.kwargs["workload_snapshot_ids"])
+        for call in workloads.list_statements.await_args_list
+    ] == [500, 500, 1]
+
+
 @pytest.mark.parametrize("duration,limit", [(0, 10), (366, 10), (1, 0), (1, 51)])
 def test_top_sql_window_rejects_invalid_requests_before_reading(duration, limit):
     tenant_id, domain_id, target_id = uuid7(), uuid7(), uuid7()

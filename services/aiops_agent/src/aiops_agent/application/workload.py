@@ -761,11 +761,15 @@ class WorkloadService:
                 period_end=exclusive_end,
             )
             ids = tuple(item.workload_snapshot_id for item in snapshots)
-            statements = await uow.workloads.list_statements(
-                domain_id=domain_id,
-                target_id=target_id,
-                workload_snapshot_ids=ids,
-            )
+            statements = []
+            for offset in range(0, len(ids), 500):
+                statements.extend(
+                    await uow.workloads.list_statements(
+                        domain_id=domain_id,
+                        target_id=target_id,
+                        workload_snapshot_ids=ids[offset:offset + 500],
+                    )
+                )
             probe = dict(
                 dict(target.capabilities_json or {}).get("capability_probe") or {}
             )
