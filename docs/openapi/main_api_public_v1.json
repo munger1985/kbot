@@ -18377,8 +18377,19 @@
             "title": "Allowed Objects",
             "type": "array"
           },
+          "capture_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Run Id"
+          },
           "capture_scheduled": {
-            "const": false,
             "default": false,
             "title": "Capture Scheduled",
             "type": "boolean"
@@ -18423,7 +18434,7 @@
             "type": "string"
           },
           "notice": {
-            "default": "仅记录独立风险审批，尚未调度计划采集；不执行 ANALYZE 或业务 SQL。",
+            "default": "审批回执不授予执行权；采集须由独立后台任务兑换当前授权，不执行 ANALYZE 或业务 SQL。",
             "title": "Notice",
             "type": "string"
           },
@@ -23498,7 +23509,8 @@
           "CHAT_TURN",
           "CHANGE",
           "VERIFICATION",
-          "EVIDENCE_FOLLOWUP"
+          "EVIDENCE_FOLLOWUP",
+          "SQL_PLAN_CAPTURE"
         ],
         "title": "WorkflowKind",
         "type": "string"

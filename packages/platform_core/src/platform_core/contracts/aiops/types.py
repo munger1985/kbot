@@ -108,6 +108,7 @@ class WorkflowKind(StrEnum):
     CHANGE = "CHANGE"
     VERIFICATION = "VERIFICATION"
     EVIDENCE_FOLLOWUP = "EVIDENCE_FOLLOWUP"
+    SQL_PLAN_CAPTURE = "SQL_PLAN_CAPTURE"
 
 
 class RootCauseGrade(StrEnum):

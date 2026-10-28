@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 
 from aiops_agent.api.changes.routes import get_service
 from aiops_agent.api.dependencies import require_service_scope
@@ -19,6 +20,11 @@ from platform_core.contracts.aiops.executor import (
 )
 from aiops_agent.application.credential_issuance import CredentialIssuanceService, CredentialIssueError
 from aiops_agent.application.execution_fence import ReadonlyExecutionFenceService
+from aiops_agent.application.execution_fence import ExecutionFenceError
+from aiops_agent.diagnostics.grants import DiagnosticGrantError
+from platform_core.contracts.aiops.sql_plan_execution import (
+    SqlPlanCaptureExecute, SqlPlanCaptureExchange, SqlPlanCaptureReport, SqlPlanCaptureResult,
+)
 from aiops_agent.application.readonly_lifecycle import ReadonlyLifecycleService, ReadonlyLifecycleError
 from platform_core.contracts.aiops.executor import ReadonlyTerminationRequest
 from platform_core.contracts.aiops.readonly_lifecycle import ReadonlyTerminationReceipt
@@ -106,6 +112,30 @@ async def release_resource(body: ResourceLeaseReceipt, request: Request) -> Reso
     return ResourceReleaseReceipt()
 
 
+@event_router.post("/sql-plan-captures:exchange", response_model=SqlPlanCaptureExchange)
+async def exchange_sql_plan_capture(body: SqlPlanCaptureExecute, request: Request):
+    """仅隔离Executor持专用Grant一次兑换；普通输出序列化仍屏蔽保护字段。"""
+    require_service_scope(request, "aiops.plan-capture.exchange")
+    try:
+        result = await request.app.state.sql_plan_capture_execution_service.exchange(body.grant)
+    except (ExecutionFenceError, DiagnosticGrantError) as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code}, headers={"Cache-Control": "no-store"}) from None
+    except ResourceAdmissionError as exc:
+        raise HTTPException(status_code=429, detail={"code": exc.code}, headers={"Cache-Control": "no-store"}) from None
+    return JSONResponse(content=result.protected_transport(), headers={"Cache-Control": "no-store"})
+
+
+@event_router.post("/sql-plan-captures:report", response_model=SqlPlanCaptureResult)
+async def report_sql_plan_capture(body: SqlPlanCaptureReport, request: Request, response: Response):
+    """独立Executor回传安全估算结果；回传权限不能消费材料或执行SQL。"""
+    require_service_scope(request, "aiops.plan-capture.report")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await request.app.state.sql_plan_capture_execution_service.report(body)
+    except ExecutionFenceError as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code}, headers={"Cache-Control": "no-store"}) from None
+
+
 @event_router.post("/readonly-executions:check", response_model=ReadonlyExecutionFenceReceipt)
 async def check_readonly_execution(body: ReadonlyExecutionFenceRequest, request: Request) -> ReadonlyExecutionFenceReceipt:
     """只向 Executor 返回当前执行围栏，不签发新的授权或连接材料。"""
@@ -114,6 +144,7 @@ async def check_readonly_execution(body: ReadonlyExecutionFenceRequest, request:
         uow_factory=request.app.state.configuration_service._uow_factory,
         diagnostic_codec=request.app.state.diagnostic_grant_codec,
         audience="kbot-aiops-db-executor",
+        plan_captures=getattr(request.app.state, "sql_plan_capture_execution_service", None),
     )
     return await service.check(body)
 

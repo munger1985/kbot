@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .sql_plan_material import SqlPlanMaterialSource
 from .types import AIOpsContract, UUIDv7, UtcDatetime
@@ -46,8 +46,15 @@ class SqlPlanCaptureView(AIOpsContract):
     created_at: UtcDatetime
     expires_at: UtcDatetime
     execution_authorized: Literal[False] = False
-    capture_scheduled: Literal[False] = False
-    notice: str = "仅记录独立风险审批，尚未调度计划采集；不执行 ANALYZE 或业务 SQL。"
+    capture_scheduled: bool = False
+    capture_run_id: UUIDv7 | None = None
+    notice: str = "审批回执不授予执行权；采集须由独立后台任务兑换当前授权，不执行 ANALYZE 或业务 SQL。"
+
+    @model_validator(mode="after")
+    def validate_scheduling(self):
+        if self.capture_scheduled != (self.capture_run_id is not None):
+            raise ValueError("采集调度状态与后台运行引用不一致")
+        return self
 
 
 class SqlPlanCapturePage(AIOpsContract):

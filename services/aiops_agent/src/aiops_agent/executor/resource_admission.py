@@ -16,9 +16,17 @@ from platform_core.contracts.aiops.executor import ResourceLeaseReceipt
 
 @asynccontextmanager
 async def readonly_credentials(control_plane, *, token, grant):
+    async with readonly_resource(control_plane, token=token, grant=grant,
+        acquire=lambda: control_plane.issue_credential(token, trace_id=grant.trace_id)) as issued:
+        yield issued
+
+
+@asynccontextmanager
+async def readonly_resource(control_plane, *, token, grant, acquire):
+    """普通只读与审批计划采集共享配额/围栏；兑换入口仍由专用调用方确定。"""
     try:
         issued = await wait_for_resource(
-            lambda: control_plane.issue_credential(token, trace_id=grant.trace_id),
+            acquire,
             retry_errors=(AIOpsExecutionClientError,),
         )
     except AIOpsExecutionClientError as exc:

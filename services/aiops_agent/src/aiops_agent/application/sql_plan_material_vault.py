@@ -91,6 +91,16 @@ class SqlPlanMaterialVault:
             return "EXPIRED"
         return "STORED"
 
+    async def open_for_capture(self, *, uow, scope, material_id, binding, now):
+        """专用采集服务在当前审批和任务租约核验后调用，不提供公开读入口。"""
+        if await self.state(uow=uow, scope=scope, material_id=material_id, binding=binding, now=now) != "STORED":
+            raise state_conflict("计划材料不可兑换")
+        row = await self._row(uow=uow, scope=scope, material_id=material_id)
+        protected = self._cipher.decrypt(ManagedCredentialPayload(
+            ciphertext=bytes(row.ciphertext), nonce=bytes(row.nonce), key_version=row.key_version),
+            **self._scope(scope), namespace=NAMESPACE, credential_kind=KIND, credential_id=row.credential_id)
+        return protected["document"]
+
     async def erase(self, *, uow, scope, material_id, binding):
         row = await self._row(uow=uow, scope=scope, material_id=material_id)
         if row is None:

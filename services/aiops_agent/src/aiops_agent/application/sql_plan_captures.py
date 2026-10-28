@@ -77,7 +77,7 @@ class SqlPlanCaptureService:
             provenance_json={"producer": "aiops.sql-plan-capture", "contains_parameter_values": False},
             trust_level="SYSTEM", security_level=security_level))
 
-    def _view(self, request, state, decision=None):
+    def _view(self, request, state, decision=None, execution=None):
         return SqlPlanCaptureView(request_id=request["request_id"], ops_run_id=request["ops_run_id"],
             material_id=request["material_id"], source=request["source"], request_sha256=canonical_hash(request),
             state=state, allowed_objects=request["frozen"]["capture_policy"]["allowed_objects"],
@@ -85,7 +85,9 @@ class SqlPlanCaptureService:
             require_distinct_approver=request["frozen"]["capture_policy"]["require_distinct_approver"],
             oracle_plan_table_write=request["oracle_plan_table_write"], requested_by=request["requested_by"],
             decided_by=decision["decided_by"] if decision else None,
-            created_at=request["created_at"], expires_at=request["expires_at"])
+            created_at=request["created_at"], expires_at=request["expires_at"],
+            capture_run_id=execution.get("capture_run_id") if execution else None,
+            capture_scheduled=execution is not None)
 
     @staticmethod
     def _request_id(artifact):
@@ -129,7 +131,7 @@ class SqlPlanCaptureService:
                         state = "UNAVAILABLE"
                 except AIOpsApplicationError:
                     state = "UNAVAILABLE"
-        return row, protected, self._view(request, state, decision)
+        return row, protected, self._view(request, state, decision, protected.get("execution"))
 
     async def request(self, *, scope, run_id, command, agent_ids=()):
         now = self._clock()
@@ -241,4 +243,4 @@ class SqlPlanCaptureService:
                     payload_json={"request_id": str(request_id), "execution_authorized": False,
                         "public_summary": "计划采集请求已撤回；原参数材料可另外撤回清除"})
             await uow.commit()
-            return self._view(protected["request"], "REVOKED", protected["decision"])
+            return self._view(protected["request"], "REVOKED", protected["decision"], protected.get("execution"))

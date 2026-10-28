@@ -47,27 +47,43 @@ async def validate_diagnostic_fence(*, uow, grant, now):
 
 
 class ReadonlyExecutionFenceService:
-    def __init__(self, *, uow_factory, diagnostic_codec, audience):
+    def __init__(self, *, uow_factory, diagnostic_codec, audience, plan_captures=None):
         self._uow_factory = uow_factory
         self._codec = diagnostic_codec
         self._audience = audience
+        self._plan_captures = plan_captures
 
     async def check(self, request):
+        capture = False
         try:
             try:
                 grant = self._codec.verify(request.grant)
             except DiagnosticGrantError:
-                grant = self._codec.verify_dynamic(request.grant)
+                try:
+                    grant = self._codec.verify_dynamic(request.grant)
+                except DiagnosticGrantError:
+                    if self._plan_captures is None:
+                        raise
+                    grant = self._codec.verify_plan_capture(request.grant)
+                    capture = True
             if grant.audience != self._audience or grant.expires_at <= datetime.now(UTC):
                 raise ExecutionFenceError("EXECUTION_GRANT_INVALID")
             async with self._uow_factory() as uow:
-                run, task, _target = await validate_diagnostic_fence(uow=uow, grant=grant, now=datetime.now(UTC))
+                if capture:
+                    _, run, task, _, protected = await self._plan_captures.validate(
+                        uow=uow, grant=grant, now=datetime.now(UTC))
+                    if protected["execution"].get("consumed_grant_id") != str(grant.grant_id):
+                        raise ExecutionFenceError("EXECUTION_LEASE_INVALID")
+                    target_id = run.target_id
+                else:
+                    run, task, _target = await validate_diagnostic_fence(uow=uow, grant=grant, now=datetime.now(UTC))
+                    target_id = grant.target_id
                 lease = await uow.resources.get_lease(request.resource_lease.lease_id, lock=True)
                 now = await uow.resources.database_now()
                 receipt = request.resource_lease
                 if (lease is None or str(lease.lease_id) != str(grant.grant_id)
-                    or str(lease.run_id) != str(run.ops_run_id) or str(lease.target_id) != str(grant.target_id)
-                    or lease.source_kind != "DATABASE" or str(lease.source_id) != str(grant.target_id)
+                    or str(lease.run_id) != str(run.ops_run_id) or str(lease.target_id) != str(target_id)
+                    or lease.source_kind != "DATABASE" or str(lease.source_id) != str(target_id)
                     or lease.released_at is not None
                     or not secrets.compare_digest(lease.release_token_hash, token_hash(receipt.release_token))
                     or lease.execution_deadline_at != receipt.execution_deadline_at or lease.held_until != receipt.held_until):

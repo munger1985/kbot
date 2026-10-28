@@ -323,6 +323,11 @@ def create_aiops_api(
         diagnostic_grant_codec = create_diagnostic_grant_codec(resolved)
         app.state.managed_credential_service = managed_credential_service
         app.state.diagnostic_grant_codec = diagnostic_grant_codec
+        from aiops_agent.application.sql_plan_execution import SqlPlanCaptureExecutionService
+        app.state.sql_plan_capture_execution_service = SqlPlanCaptureExecutionService(
+            captures=app.state.sql_plan_capture_service, codec=diagnostic_grant_codec,
+            credentials=managed_credential_service, audience="kbot-aiops-db-executor",
+        )
         app.state.mutation_grant_codec = create_mutation_grant_codec(resolved)
         db_executor_client = DatabaseExecutorClient(
             base_url=resolved.clients.db_executor.base_url,
@@ -438,6 +443,8 @@ def create_aiops_api(
                         "aiops.resources.release",
                         "aiops.readonly.check",
                         "aiops.readonly.report",
+                        "aiops.plan-capture.exchange",
+                        "aiops.plan-capture.report",
                     }
                 ),
                 "kbot-model-embedding": frozenset({"model.references"}),
