@@ -23,7 +23,8 @@ class SqlConclusion(BaseModel):
     conclusion_id: str = Field(pattern=r"^c[0-9]+$")
     statement: str = Field(min_length=1, max_length=3000)
     level: Literal["OBSERVED", "SUPPORTED", "HYPOTHESIS", "UNKNOWN"]
-    scope: Literal["SUBJECT", "CONTEXT"]
+    scope: Literal["SUBJECT", "CONTEXT", "COMPARISON"]
+    subject_ids: tuple[str, ...] = Field(default=(), max_length=20)
     applicable_time: str = Field(min_length=1, max_length=1000)
     evidence_fields: tuple[EvidenceFieldReference, ...] = Field(default=(), max_length=24)
     reasoning: str = Field(min_length=1, max_length=3000)
@@ -32,6 +33,8 @@ class SqlConclusion(BaseModel):
 
     @model_validator(mode="after")
     def validate_support(self):
+        if len(self.subject_ids) != len(set(self.subject_ids)):
+            raise ValueError("SQL 诊断统计主体不能重复")
         if self.level in {"OBSERVED", "SUPPORTED"} and not self.evidence_fields:
             raise ValueError("事实或有依据的解释必须引用具体观察字段")
         if self.level == "SUPPORTED" and not self.limitations:

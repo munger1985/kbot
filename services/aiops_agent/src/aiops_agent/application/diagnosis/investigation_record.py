@@ -131,13 +131,16 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
     return record.model_copy(update={"runbook": runbook})
 
 
-def sql_investigation_draft(draft, subject):
+def sql_investigation_draft(draft, subject, subjects=()):
     """保留 SQL 专项校验的输出，但不从自由正文猜测原因类型。"""
+    labels = {item["subject_id"]: subject + "（" + "，".join(f"{key}={value}" for key, value in item["dimensions"].items()) + "）"
+              for item in subjects}
     return DiagnosisAnswerDraft(
         claims=tuple(InvestigationClaim(
             claim_id=item.conclusion_id,
             kind="FACT" if item.level == "OBSERVED" else "INTERPRETATION",
-            subject=subject if item.scope == "SUBJECT" else "数据库背景（不可直接归因到指定 SQL）",
+            subject=("；".join(labels[key] for key in item.subject_ids) if item.subject_ids else subject)
+                if item.scope in {"SUBJECT", "COMPARISON"} else "数据库背景（不可直接归因到指定 SQL）",
             statement=item.statement, level=item.level, applicable_time=item.applicable_time,
             evidence_fields=item.evidence_fields, reasoning=item.reasoning,
             alternatives=item.alternatives,

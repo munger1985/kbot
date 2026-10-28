@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from aiops_agent.application.diagnosis.investigation_record import render_investigation, sql_investigation_draft
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref, decode_selection, resolve_sql_selection, subject_from_row
+from aiops_agent.playbooks import canonical_hash
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceFact
@@ -197,6 +198,8 @@ def selection_scope():
     conversation = SimpleNamespace(conversation_id=conversation_id, agent_id=agent, agent_version_id=version, domain_id=domain_id, tenant_id=tenant_id)
     turn = SimpleNamespace(turn_id=turn_id, conversation_id=conversation_id, created_by=actor, sufficiency_artifact_id=artifact_id)
     artifact = SimpleNamespace(artifact_id=artifact_id, ops_run_id=run_id, created_at=now, schema_version="DBA_SUFFICIENCY.v1", payload_json=DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,)).model_dump(mode="json"))
+    artifact.trust_level = "SOURCE_VERIFIED"
+    artifact.content_hash = canonical_hash(artifact.payload_json)
     uow = SimpleNamespace(
         runs=SimpleNamespace(get_artifact=AsyncMock(return_value=artifact), get_run_scoped=AsyncMock(return_value=run)),
         turns=SimpleNamespace(get_run_link_by_ops_run_id=AsyncMock(return_value=SimpleNamespace(turn_id=turn_id)), get_turn=AsyncMock(return_value=turn)),

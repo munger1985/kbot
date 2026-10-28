@@ -9,7 +9,7 @@ from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference
 
 
 _TEXT_TOOLS = {
-    "POSTGRESQL": {"db.postgresql.statement.details", "db.postgresql.statement.top"},
+    "POSTGRESQL": {"db.postgresql.statement.details", "db.postgresql.statement.subjects", "db.postgresql.statement.top"},
     "MYSQL": {"db.sql.cursor_details", "db.mysql.statement.digest.top"},
     "ORACLE": {"db.sql.cursor_details", "db.sql.top_current"},
 }

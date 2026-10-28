@@ -1,6 +1,8 @@
 SELECT *
   FROM (
-        SELECT inst_id,
+        SELECT database_identity.dbid,
+               inst_id,
+               con_id AS container_id,
                sql_id,
                child_number,
                plan_hash_value,
@@ -27,6 +29,7 @@ SELECT *
                last_active_time,
                sql_text
           FROM gv$sql
+         CROSS JOIN v$database database_identity
          WHERE sql_id = :sql_id
          ORDER BY last_active_time DESC NULLS LAST,
                   inst_id,

@@ -150,7 +150,9 @@ def test_sql_bundle_does_not_choose_one_user_from_ambiguous_statistics():
     text = text.model_copy(update={"rows": (text.rows[0], (subject["query_id"], "16510", "43", True, "SELECT * FROM mes.orders")), "row_count": 2})
     bundle = build_sql_evidence_bundle(task_frame={"diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": {"query_id": subject["query_id"]}},
         database_type="POSTGRESQL", evidence=(text, indexes))
-    assert bundle["subject_resolution"]["status"] == "AMBIGUOUS" and bundle["object_graph"] is None
+    assert bundle["subject_resolution"]["status"] == "COMPARISON" and bundle["object_graph"] is None
+    assert len(bundle["subjects"]) == 2
+    assert all(item["object_graph"] is not None for item in bundle["subjects"])
 
 
 def test_answer_freezes_graph_and_report_replays_original_rows_instead_of_trusting_graph_description():

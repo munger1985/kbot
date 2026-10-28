@@ -449,8 +449,10 @@ tool_id 或 expected_evidence_kind 及最少成功结果数；actions 必须覆�
 按 Target 数据库类型填写结构化标识：Oracle 使用 subject_type=ORACLE_SQL_ID 和 sql_id；
 MySQL 使用 subject_type=MYSQL_DIGEST 和 digest；PostgreSQL 使用 subject_type=POSTGRESQL_QUERY_ID
 和 query_id。只在已有证据明确提供时填写 PostgreSQL database_oid、user_oid、top_level 或 MySQL
-schema_name，不得猜测数据库身份。服务端按数据库类型和已核实参数选择取证基线；参数不完整时
-进入完整调查核验。其他问题使用 GENERAL。不能确定唯一 SQL 标识时不要猜测，应进入完整调查澄清。
+schema_name，不得猜测数据库身份。PG 只有 query_id 时可用 db.postgresql.statement.subjects
+按该标识发现凭据可见的库、用户与顶层/嵌套主体，不要先猜 database_oid，也不要只查 Top N 代替精确查找。
+服务端按数据库类型和已核实参数取证；多个完整统计主体分别分析比较，不任取第一条、不隐式合并。
+其他问题使用 GENERAL。不能确定唯一 SQL 标识时不要猜测，应进入完整调查澄清。
 
 用户要求结合当前 Oracle 数据库参数生成可实施的数据库建设、备份、恢复、补丁、升级、迁移、
 克隆或演练操作文档时，选择 IMPLEMENTATION_RUNBOOK，objectives 只能为 PLAN，action_intent
@@ -575,7 +577,10 @@ task_frame.action_intent 必须反映用户诉求：只要求生成、给出、�
 SINGLE_SQL_PERFORMANCE。subject_ref 按实际数据库填写 Oracle 的 subject_type=ORACLE_SQL_ID 和
 sql_id、MySQL 的 subject_type=MYSQL_DIGEST 和 digest，或 PostgreSQL 的
 subject_type=POSTGRESQL_QUERY_ID 和 query_id。database_oid、user_oid、top_level、schema_name
-等维度只能使用已核实的信息，不能猜测。各数据库须使用各自适用的语句统计和计划证据；
+等维度只能使用已核实的信息，不能猜测。PG 缺 database_oid 时先按 query_id 调用
+db.postgresql.statement.subjects，保留所有库、用户和顶层/嵌套主体，不以当前连接库或 Top N 冒充精确查询。
+同一标识的多个完整主体可分别诊断比较，不必强迫用户任选一个；不完整、截断或身份冲突仍需澄清。
+各数据库须使用各自适用的语句统计和计划证据；
 按问题判断计划是否必要；锁/事务/错误可在无计划时形成有依据的诊断。
 若 target_context.sql_selection 存在，其 subject_ref 是服务端已验证的选择，必须原样沿用，不从旧对话换成另一条SQL。
 target_context 是当前 Agent 已绑定且用户已经选定的逻辑 Target，不得再把“目标是哪一个”
@@ -905,6 +910,12 @@ continues_investigation；用 claim_revisions 关联父版本与本轮结论，�
 投影的 records；SUBJECT_CANDIDATE 仍需核对缺失身份。CONTEXT 只能说明背景，不能单独证明
 该 SQL 的行为；对 SQL 的已确认事实/原因必须有 SUBJECT 直接证据并结合相关观察。
 scope=CONTEXT 可说明数据库、主机、其他 SQL 或事务的事实，不能偷换成目标 SQL 根因。
+evidence_bundle.subjects 给出服务端核验的 subject_id 和完整维度。当 subject_resolution.status=COMPARISON，
+scope=SUBJECT 的每条结论必须在 subject_ids 中填写唯一主体，且只引用该主体及相关背景；
+跨主体的描述性比较用 scope=COMPARISON，subject_ids 至少两个，并引用各主体自己的直接证据。
+逐主体给出原因与措施，不能将一条主体的计划、锁或资源计数套给其他主体。比较不是统计合并或因果验证，
+累计工作量差异不等于同窗口性能差异；不得无可比基线宣称某主体更慢。维度不完整时保持候选，不任取第一条。
+历史观察保留原采集时间；有界搜索可能遗漏更早证据，不能把历史值当当前值或把缺失当作零。
 OBSERVED/SUPPORTED 的字段引用必须为 SOURCE_VERIFIED；USER_PROVIDED 材料仅能形成待核验假设，不能升级为生产已确认事实。
 引用齐全不等于因果成立。数据库 CPU 高须结合 SQL 工作量/等待/时间和资源映射区分来源与受害者，
 同一计数器经 Exporter 与直连取得不是独立互证。当前状态不能否定历史事件。

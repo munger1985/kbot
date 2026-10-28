@@ -123,13 +123,22 @@ SQL 文本差异或碰撞无法排除时返回歧义。
 身份格式校验属于引擎与来源适配：PG query_id 的有符号十进制值不能套 Oracle SQL ID
 正则，MySQL Digest 按已发现来源格式校验；缺失维度走消歧而不是格式错误或隐式聚合。
 
-当前实现对已识别 SQL 标识的本轮语句统计执行有界主体消歧：按 PostgreSQL
-库/用户/顶层、MySQL Schema、Oracle 实例/容器/游标/计划保留不同统计主体。
-存在多个主体时直接结束自动评估预算，显示可选择的主体表，不调用模型任取第一条。
-选择仍引用原始充分性 Artifact、原行号及行哈希，续问重验当前权限和 Target 版本。
-最多检查 256 行、展示 20 个不同候选，截断明确保留；历史统计和重复活动会话不制造歧义。
-Oracle 已选的零号子游标及计划值不得在规划时被丢弃。此切片不声称支持未采样维度
-自动补齐、标识碰撞消除或任意多主体的完整对比调查。
+当前实现按 PostgreSQL 库/用户/顶层、MySQL Schema、Oracle DBID/实例/容器/游标/计划
+保留独立统计主体。PG 只有 query_id 时，可使用版本化 statement.subjects 在凭据可见范围
+定向发现完整维度，不猜当前连接数据库就是该 query_id 的库；Oracle 游标读取 DBID/CON_ID，
+MySQL 显式 NULL Schema 不降为未知。最多检查 256 行、展示 20 个主体，截断明确保留。
+多个完整且未截断的主体可分别诊断并做描述性比较；结论声明 subject_ids，单主体判断只能
+引用自己的直接观察，COMPARISON 判断须引用每个参与主体。不能把一条游标的计划或用户的负载
+套给其他主体，不生成混合对象图。维度缺失、文本冲突或截断仍保留歧义，不能隐式合并。
+表格保留选行继续诊断能力，引用原始充分性 Artifact、原行号及行哈希，续问重验权限和 Target 版本。
+历史统计和重复活动会话不扩大当前候选集合；零号子游标及计划值不得在规划时丢弃。
+此切片不声称消除标识碰撞或支持任意多个不同 SQL 标识的完整比较。
+
+无选行的续问按明确 SQL 主体搜索同会话最近 16 轮，跨过中间失败/无关轮，最多保留 8 份
+观察、512 行和 256 KiB；达到预算须声明不完整。逐来源重新验证用户、Agent 版本、域/租户、
+Target 配置和当前授权，以及原始充分性 Artifact 哈希。只投影匹配行并保存原行号、来源链和
+原采集时间，不继承模型结论或历史副本。显式选择在取证前也重新读取源并校验原 TTL，
+不直接复用接收请求时缓存的可信标签。历史值不是当前值，逻辑 Target 相同不是物理身份互证。
 
 标识、OID、计数器及可能超出 JavaScript 安全整数范围的值经 wire 使用十进制字符串；
 内部使用精确整数/Decimal 计算并记录单位，不得先经 float。数据库原生计数及单位保留，
@@ -575,8 +584,9 @@ Top SQL 使用紧凑表格显示 SQL 片段、执行次数、总/平均耗时等
 
 1. **任务与对象链**：两端 `packages/platform_core/.../aiops/conversation.py`、
    会话应用服务、主 API/客户端、OpenAPI 和前端共同实现任务范围与选择引用；验证隔离、
-   大整数、历史证据归属、自然语言消歧和幂等。修正 `prior_sql_evidence.py` 只继承
-   紧邻上一轮部分统计的限制，按授权引用历史 Subject/Evidence；不把历史回答作事实。
+   大整数、历史证据归属、自然语言消歧和幂等。`application/investigation/prior_sql_evidence.py`
+   已增加按授权与 SQL 身份的 16 轮有界历史搜索；仍须验收真实模型、物理身份和多标识比较，
+   不把历史回答作事实。
    KBot 使用 Domain，Ammolite 额外校验 Tenant；不修改 KBot `integrations/apex/**`。
 2. **资源发现与安全能力**：扩展 `DbaCapabilitySnapshot`、Diagnostic Source port/
    registry、`investigation/discovery.py` 与 Tool Catalog，形成实际能力快照和受控

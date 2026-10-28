@@ -9,6 +9,7 @@ from typing import Any
 from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, _subject
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+from aiops_agent.playbooks import canonical_hash
 
 
 def exact_wire(value: Any) -> Any:
@@ -33,14 +34,14 @@ _SQL_SCOPE_DIMENSIONS = {
     "ORACLE": ("dbid", "inst_id", "container_id", "child_number", "plan_hash_value"),
 }
 _SQL_STATISTICS_TOOLS = {
-    "POSTGRESQL": ("db.postgresql.statement.details", "db.postgresql.statement.top", "workload.sql.top_window"),
+    "POSTGRESQL": ("db.postgresql.statement.details", "db.postgresql.statement.subjects", "db.postgresql.statement.top", "workload.sql.top_window"),
     "MYSQL": ("db.sql.cursor_details", "db.mysql.statement.digest.top", "workload.sql.top_window"),
     "ORACLE": ("db.sql.cursor_details", "db.sql.top_current", "workload.sql.top_window"),
 }
 
 
 def sql_scope_resolution(subject, identity, database_type, evidence):
-    """只用本轮语句统计发现多个主体；历史观测和活动会话不会扩大候选集。"""
+    """当前完整主体可分别诊断与比较；不合并统计，不让历史或活动行扩大主体集合。"""
     tools = _SQL_STATISTICS_TOOLS[database_type]
     sources = [fact for fact in evidence if (
         fact.tool_id in tools and fact.trust_level == "SOURCE_VERIFIED"
@@ -51,7 +52,7 @@ def sql_scope_resolution(subject, identity, database_type, evidence):
         names = [str(column.get("name") or "").lower() for column in fact.columns]
         if len(names) != len(set(names)):
             continue
-        candidates, seen = [], set()
+        candidates, seen, conflicts = [], {}, False
         for index, row in enumerate(fact.rows[:256]):
             if len(row) != len(names):
                 continue
@@ -59,17 +60,30 @@ def sql_scope_resolution(subject, identity, database_type, evidence):
             if not _matches(mapped, subject, identity):
                 continue
             dimensions = {key: exact_wire(mapped[key]) for key in _SQL_SCOPE_DIMENSIONS[database_type] if key in mapped}
-            signature = tuple(sorted((key, str(value)) for key, value in dimensions.items()))
+            signature = canonical_hash(dimensions)
+            statement = next((mapped[key] for key in ("normalized_statement", "sql_text", "digest_text") if mapped.get(key)), None)
             if signature in seen:
+                if statement is not None and seen[signature] is not None and statement != seen[signature]:
+                    conflicts = True
                 continue
-            seen.add(signature)
-            candidates.append({"evidence_ref": fact.evidence_ref, "row_index": index, "dimensions": dimensions})
+            seen[signature] = statement
+            required = {"POSTGRESQL": ("database_oid", "user_oid"), "MYSQL": ("schema_name",),
+                        "ORACLE": ("dbid", "inst_id", "container_id", "child_number", "plan_hash_value")}[database_type]
+            if database_type == "POSTGRESQL" and "top_level" in names:
+                required = (*required, "top_level")
+            missing = [key for key in required if key not in dimensions or dimensions[key] is None and key != "schema_name"]
+            resolved = {**subject, **dimensions}
+            candidates.append({"evidence_ref": fact.evidence_ref, "row_index": index, "dimensions": dimensions,
+                               "subject_id": "sql-" + canonical_hash(resolved)[:24], "subject_ref": resolved,
+                               "missing_dimensions": missing})
         if candidates:
+            truncated = fact.truncated or len(fact.rows) > 256 or len(candidates) > 20
+            comparable = len(candidates) > 1 and not truncated and not conflicts and all(not item["missing_dimensions"] for item in candidates)
             return {
-                "status": "AMBIGUOUS" if len(candidates) > 1 else "BOUNDED" if fact.truncated or len(fact.rows) > 256 else "RESOLVED",
+                "status": "COMPARISON" if comparable else "AMBIGUOUS" if len(candidates) > 1 or conflicts else "BOUNDED" if truncated else "RESOLVED",
                 "candidates": candidates[:20], "observed_candidate_count": len(candidates),
-                "truncated": fact.truncated or len(fact.rows) > 256 or len(candidates) > 20,
-                "limitation": "只覆盖本轮凭据可见的统计主体；不合并用户、库、顶层或游标/计划。",
+                "truncated": truncated, "identity_conflict": conflicts,
+                "limitation": "仅对本轮凭据可见主体分别诊断；不同库、用户、Schema、顶层或游标/计划不合并，不把累计值比较当作窗口或效果归因。",
             }
     return {"status": "UNOBSERVED", "candidates": [], "observed_candidate_count": 0, "truncated": False}
 
@@ -92,7 +106,12 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
     for fact in evidence:
         names = [str(column.get("name") or "").lower() for column in fact.columns]
         records = []
-        for index, row in enumerate(fact.rows[:40]):
+        # 将命中主体放入有界投影，避免目标位于第 41 行后时只向模型提供其他 SQL。
+        indexed = list(enumerate(fact.rows[:256]))
+        def matching(entry):
+            return len(entry[1]) == len(names) and _matches(dict(zip(names, entry[1], strict=True)), subject, identity)
+        indexed.sort(key=lambda entry: not matching(entry))
+        for index, row in sorted(indexed[:40]):
             if len(row) != len(names):
                 continue
             mapped = dict(zip(names, row, strict=True))
@@ -105,7 +124,11 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
                     role = "SUBJECT_CANDIDATE"
             else:
                 role = "CONTEXT"
-            records.append({"row_index": index, "role": role, "fields": exact_wire(mapped)})
+            subject_ids = [item["subject_id"] for item in resolution["candidates"]
+                           if _matches(mapped, item["subject_ref"], identity)] if role == "SUBJECT" else []
+            if resolution["status"] == "COMPARISON" and len(subject_ids) != 1:
+                role = "SUBJECT_CANDIDATE" if _matches(mapped, subject, identity) else "CONTEXT"
+            records.append({"row_index": index, "role": role, "subject_ids": subject_ids, "fields": exact_wire(mapped)})
         subject_paths = {
             f"artifact:{fact.artifact_id}#/result/top_statements/{record['row_index']}/"
             for record in records if record["role"] == "SUBJECT"
@@ -179,6 +202,12 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         "object_graph": sql_object_graph_for_resolution(
             database_type=database_type, subject=subject, resolution=resolution, evidence=evidence,
         ),
+        "subjects": [{**item, "object_graph": sql_object_graph_for_resolution(
+            database_type=database_type, subject=item["subject_ref"],
+            resolution={"status": "RESOLVED", "candidates": [item]}, evidence=evidence,
+        ) if resolution["status"] in {"RESOLVED", "BOUNDED", "COMPARISON"} else None} for item in resolution["candidates"]],
+        "comparison_policy": {"separate_subjects": True, "implicit_aggregation": False,
+                              "cumulative_difference_is_window": False, "comparison_is_causal_effect": False},
         "interpretation_policy": {
             "plan_is_not_universal_prerequisite": True,
             "context_is_not_sql_attribution": True,
@@ -213,6 +242,7 @@ def validate_sql_diagnosis(draft: SqlDiagnosisDraft, bundle: dict) -> None:
     }
     for conclusion in draft.conclusions:
         has_subject = False
+        cited_subjects = set()
         for ref in conclusion.evidence_fields:
             entry = records.get((ref.evidence_ref, ref.row_index))
             if entry is None or ref.field.lower() not in entry[1]["fields"]:
@@ -222,8 +252,19 @@ def validate_sql_diagnosis(draft: SqlDiagnosisDraft, bundle: dict) -> None:
                 raise ValueError("未经来源核验的材料不能作为已确认事实或原因的依据")
             if record["role"] == "SUBJECT" and observation["trust_level"] == "SOURCE_VERIFIED":
                 has_subject = True
+                cited_subjects.update(record.get("subject_ids", ()))
         # 关联会话的原因解释还必须引用 SQL 身份锚点，不允许孤立的全库锁行自证。
         if conclusion.scope == "SUBJECT" and conclusion.level in {"OBSERVED", "SUPPORTED"} and not has_subject:
             raise ValueError("对象或数据库背景证据不能单独升级为该 SQL 已确认的事实或原因")
+        known_subjects = {item["subject_id"] for item in bundle.get("subjects", ())}
+        if not set(conclusion.subject_ids) <= known_subjects:
+            raise ValueError("SQL 诊断引用了未知统计主体")
+        if bundle["subject_resolution"]["status"] == "COMPARISON" and conclusion.scope == "SUBJECT":
+            if len(conclusion.subject_ids) != 1 or not cited_subjects <= set(conclusion.subject_ids):
+                raise ValueError("多主体诊断的每条 SQL 结论必须定位单一主体；跨主体比较使用 COMPARISON 范围")
+        if conclusion.scope == "COMPARISON":
+            if (len(conclusion.subject_ids) < 2 or not set(conclusion.subject_ids) <= cited_subjects
+                or not cited_subjects <= set(conclusion.subject_ids)):
+                raise ValueError("比较判断必须引用所有声明主体各自的直接证据，不能用背景或其他主体代替")
     if draft.goal_satisfied and not any(item.level in {"OBSERVED", "SUPPORTED"} for item in draft.conclusions):
         raise ValueError("只有假设时不能声明诊断目标已经完成")

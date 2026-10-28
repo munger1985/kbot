@@ -407,7 +407,8 @@
       ],
       "required_entitlements": [],
       "required_privileges": [
-        "GV_$SQL"
+        "GV_$SQL",
+        "V_$DATABASE"
       ],
       "parameters": [
         {
@@ -426,7 +427,17 @@
       ],
       "output_columns": [
         {
+          "name": "dbid",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
           "name": "inst_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "container_id",
           "logical_type": "INTEGER",
           "nullable": false
         },
@@ -545,7 +556,7 @@
         }
       ],
       "template_ref": "sql/sql_cursor_details.sql",
-      "template_sha256": "849f2c975d399299c81a35d758c4cbf8ae7c3b7a694476514c58a545e951a9af",
+      "template_sha256": "84a0532c2f7315d05b1f1642d60a062c36f90241218348d89e087923938fedde",
       "timeout_seconds": 20,
       "max_rows": 100,
       "max_bytes": 2097152,

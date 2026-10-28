@@ -33,20 +33,23 @@ def scenario(engine):
     else:
         frame = {**task_frame(), "subject_ref": {"subject_type": "ORACLE_SQL_ID", "sql_id": "36apy6dncjggq"}}
         fact = observation(
-            names=("sql_id", "inst_id", "child_number", "plan_hash_value", "executions"),
-            rows=(("36apy6dncjggq", 1, 0, 100, 100), ("36apy6dncjggq", 1, 1, 200, 200)),
+            names=("sql_id", "inst_id", "child_number", "plan_hash_value", "executions", "dbid", "container_id"),
+            rows=(("36apy6dncjggq", 1, 0, 100, 100, 42, 3), ("36apy6dncjggq", 1, 1, 200, 200, 42, 3)),
             tool_id="db.sql.cursor_details",
         )
     return frame, fact
 
 
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
-def test_distinct_scopes_are_candidates_not_one_subject(engine):
+def test_complete_scopes_are_separate_comparison_subjects_not_merged(engine):
     frame, fact = scenario(engine)
     bundle = build_sql_evidence_bundle(task_frame=frame, database_type=engine, evidence=(fact,))
-    assert bundle["subject_resolution"]["status"] == "AMBIGUOUS"
+    assert bundle["subject_resolution"]["status"] == "COMPARISON"
     assert bundle["subject_resolution"]["observed_candidate_count"] == 2
-    assert {row["role"] for row in bundle["observations"][0]["records"]} == {"SUBJECT_CANDIDATE"}
+    assert {row["role"] for row in bundle["observations"][0]["records"]} == {"SUBJECT"}
+    assert len({item["subject_id"] for item in bundle["subjects"]}) == 2
+    assert bundle["object_graph"] is None
+    assert not bundle["comparison_policy"]["implicit_aggregation"]
 
 
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
@@ -61,6 +64,7 @@ def test_selecting_a_real_row_resolves_exact_scope_without_aggregating(engine):
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
 def test_candidate_table_points_to_original_artifact_and_original_row(engine):
     frame, fact = scenario(engine)
+    fact = fact.model_copy(update={"truncated": True})
     assessment = DbaSufficiencyAssessment(
         status="NEEDS_CLARIFICATION", evidence=(fact,),
         clarification_question="请选择统计主体",
@@ -115,6 +119,7 @@ def test_invalid_oracle_dimensions_are_not_silently_discarded(key, value):
 def test_ambiguity_stops_before_model_assessment_and_is_nonretryable():
     async def execute():
         frame, fact = scenario("POSTGRESQL")
+        fact = fact.model_copy(update={"truncated": True})
         model = SimpleNamespace(generate_structured=AsyncMock())
         handler = DbaEvidenceAssessmentHandler(model_client=model, prompts=SimpleNamespace())
         context = SimpleNamespace(
@@ -129,6 +134,7 @@ def test_ambiguity_stops_before_model_assessment_and_is_nonretryable():
             db_type="POSTGRESQL", db_version="16",
             columns=[{**column, "sensitivity": "PUBLIC"} for column in fact.columns],
             rows=fact.rows, captured_at=NOW.isoformat(),
+            truncated=True,
         )
         context.input_artifacts = (artifact,)
         assessment = await handler.execute(context)

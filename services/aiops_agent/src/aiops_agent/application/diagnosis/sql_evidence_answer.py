@@ -89,7 +89,7 @@ def _subject(task_frame: dict, database_type: str) -> tuple[dict, tuple[str, str
 
 
 def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict, database_type: str = "") -> tuple[TurnEvidenceFact, ...]:
-    """仅把上一轮同一 SQL 的来源观测作为带原采集时间的历史上下文。"""
+    """仅把历史中同一 SQL 的来源观测作为带原采集时间的上下文。"""
     if task_frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE":
         return ()
     raw_subject = task_frame.get("subject_ref") or {}
@@ -119,7 +119,9 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
             "derivations": fact.derivations if rows == fact.rows else (),
             "calculation_graphs": fact.calculation_graphs if rows == fact.rows else (),
             "series_computations": fact.series_computations if rows == fact.rows else (),
-            "warnings": (*fact.warnings, "上一轮历史观测，保留原采集时间，不能视为当前值"),
+            "warnings": (*fact.warnings, "历史观测，保留原采集时间，不能视为当前值", *(
+                ("历史证据搜索达到上限，不保证已搜索完整会话",) if dict(payload.get("search") or {}).get("truncated") else ()
+            )),
         }))
     return tuple(result)
 
@@ -139,7 +141,8 @@ def build_sql_evidence_answer(
     }
     candidates = [
         fact for fact in evidence
-        if (fact.tool_id == tool_id or (fact.source_id == "prior_turn.sql_observation" and fact.tool_id == prior_tools[database_type]))
+        if (fact.tool_id == tool_id or database_type == "POSTGRESQL" and fact.tool_id == "db.postgresql.statement.subjects"
+            or (fact.source_id == "prior_turn.sql_observation" and fact.tool_id == prior_tools[database_type]))
         and fact.trust_level == "SOURCE_VERIFIED"
         and str(fact.measurement_semantics) == "CUMULATIVE_SINCE_LOAD"
     ]
@@ -167,7 +170,7 @@ def build_sql_evidence_answer(
                 dimensions = [f"{key}={row[key]}" for key in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value") if row.get(key) is not None]
                 scope = f"（{'，'.join(dimensions)}）" if dimensions else ""
                 descriptions.append(f"记录 {index}{scope}：" + "，".join(values) + "。")
-        origin = "上一轮历史观测" if fact.source_id == "prior_turn.sql_observation" else "本轮观测"
+        origin = "历史观测" if fact.source_id == "prior_turn.sql_observation" else "本轮观测"
         analysis = f"已取得与指定 SQL 匹配的累计统计（{origin}，采集时间 {fact.captured_at}）。" + "\n\n" + "\n\n".join(descriptions)
         if fact.source_id == "prior_turn.sql_observation":
             analysis += "\n\n历史数据来自同一逻辑 Target，不能单凭此确认实际实例未切换。"
@@ -188,7 +191,7 @@ def build_sql_evidence_answer(
         if fact.source_id != "prior_turn.sql_observation":
             prior = next((item for item in candidates if item.source_id == "prior_turn.sql_observation" and any(_matches(row, subject, identity) for row in _row_dicts(item))), None)
             if prior is not None:
-                analysis += f"\n\n上一轮同一逻辑 Target 存在相同标识的历史统计（采集时间 {prior.captured_at}）；统计维度见证据，不能直接当作窗口增量，也不能单凭此确认实际实例未切换。"
+                analysis += f"\n\n同一授权会话及逻辑 Target 存在相同标识的历史统计（采集时间 {prior.captured_at}）；统计维度见证据，不能直接当作窗口增量，也不能单凭此确认实际实例未切换。"
                 refs = (*refs, prior.evidence_ref)
     solution = (
         "先核对统计身份及覆盖区间；仅在快照可比较且未发生可识别的重置或淘汰时计算执行次数、总耗时及平均耗时增量。"

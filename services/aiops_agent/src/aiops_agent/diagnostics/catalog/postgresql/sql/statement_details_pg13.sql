@@ -34,6 +34,6 @@ LEFT JOIN pg_catalog.pg_roles AS role_name
   ON role_name.oid = statements.userid
 WHERE statements.queryid = CAST(CAST(:query_id AS text) AS bigint)
   AND statements.dbid = :database_oid
-  AND (:user_oid = 0 OR statements.userid = :user_oid)
+  AND (CAST(:user_oid AS bigint) = 0 OR CAST(statements.userid AS bigint) = CAST(:user_oid AS bigint))
 ORDER BY statements.total_exec_time DESC
 LIMIT :limit

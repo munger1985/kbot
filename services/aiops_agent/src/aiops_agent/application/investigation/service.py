@@ -429,7 +429,9 @@ class TurnPlanningService:
             workflow_kind=str(context.workflow_kind or ""),
         )
         if investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE:
-            context = replace(context, prior_sql_evidence=await self._load_prior_sql_evidence(context))
+            context = replace(context, prior_sql_evidence=await self._load_prior_sql_evidence(
+                context, task_frame=investigation.task_frame.model_dump(mode="json"),
+            ))
         compiled = self._task_compiler.compile(
             playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
@@ -1439,6 +1441,7 @@ class TurnPlanningService:
                 "db.instance.parameters",
             )
         return (
+            "db.postgresql.statement.subjects",
             "db.postgresql.statement.details",
             "db.sql.object_statistics",
             "db.postgresql.table.statistics",
@@ -1559,10 +1562,10 @@ class TurnPlanningService:
                     "subject_type": subject_type,
                     "digest": digest,
                 }
-                schema_name = str(
-                    compact.subject_ref.get("schema_name") or ""
-                ).strip()
-                if schema_name:
+                if "schema_name" in compact.subject_ref:
+                    schema_name = compact.subject_ref["schema_name"]
+                    if schema_name is not None and (not isinstance(schema_name, str) or not schema_name or len(schema_name) > 64):
+                        return None
                     subject["schema_name"] = schema_name
                 return subject
             return None
@@ -1578,25 +1581,20 @@ class TurnPlanningService:
             query_id_value = int(query_id)
             if not -(2**63) <= query_id_value <= 2**63 - 1:
                 return None
-            try:
-                database_oid = int(compact.subject_ref["database_oid"])
-            except (KeyError, TypeError, ValueError):
-                return None
-            if not 1 <= database_oid <= 2**32 - 1:
-                return None
             subject: dict[str, Any] = {
                 "subject_type": subject_type,
                 "query_id": query_id,
-                "database_oid": database_oid,
             }
+            if "database_oid" in compact.subject_ref:
+                raw = compact.subject_ref["database_oid"]
+                if isinstance(raw, bool) or not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw)) or int(raw) > 2**32 - 1:
+                    return None
+                subject["database_oid"] = int(raw)
             if compact.subject_ref.get("user_oid") is not None:
-                try:
-                    user_oid = int(compact.subject_ref["user_oid"])
-                except (TypeError, ValueError):
+                raw = compact.subject_ref["user_oid"]
+                if isinstance(raw, bool) or not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw)) or int(raw) > 2**32 - 1:
                     return None
-                if not 1 <= user_oid <= 2**32 - 1:
-                    return None
-                subject["user_oid"] = user_oid
+                subject["user_oid"] = int(raw)
             if compact.subject_ref.get("top_level") is not None:
                 top_level = compact.subject_ref["top_level"]
                 if not isinstance(top_level, bool):
@@ -1724,16 +1722,18 @@ class TurnPlanningService:
         else:
             statement_input: dict[str, Any] = {
                 "query_id": subject_value,
-                "database_oid": int(subject["database_oid"]),
+                "database_oid": int(subject.get("database_oid") or 0),
                 "user_oid": int(subject.get("user_oid") or 0),
                 "limit": 20,
             }
             if "top_level" in subject:
                 statement_input["top_level"] = bool(subject["top_level"])
+                if "database_oid" not in subject:
+                    statement_input["include_nested"] = False
             action_specs = (
                 (
                     "pg_stat_statements累计性能指标和脱敏语句",
-                    "db.postgresql.statement.details",
+                    "db.postgresql.statement.details" if "database_oid" in subject and "top_level" in subject else "db.postgresql.statement.subjects",
                     statement_input,
                     MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
                     False,
@@ -2009,8 +2009,8 @@ class TurnPlanningService:
             )
             await uow.commit()
 
-    async def _load_prior_sql_evidence(self, context: TurnPlanningContext) -> dict | None:
-        """仅为单 SQL 任务读取隔离校验过的上一轮原始证据。"""
+    async def _load_prior_sql_evidence(self, context: TurnPlanningContext, *, task_frame: dict) -> dict | None:
+        """为指定 SQL 有界搜索同会话内隔离校验后的原始证据。"""
         async with self._uow_factory() as uow:
             turn = await uow.turns.get_turn(domain_id=context.domain_id, turn_id=context.turn_id)
             if turn is None or int(turn.turn_no) <= 1:
@@ -2032,7 +2032,7 @@ class TurnPlanningService:
                 or str(frozen_target["row_version"]) != str(active_version)
             ):
                 return None
-            return await load_prior_sql_evidence(uow=uow, turn=turn, run=run)
+            return await load_prior_sql_evidence(uow=uow, turn=turn, run=run, task_frame=task_frame)
 
     @staticmethod
     def _initial_user_evidence_keys(

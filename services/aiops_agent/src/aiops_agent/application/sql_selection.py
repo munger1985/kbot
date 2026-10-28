@@ -10,6 +10,7 @@ from uuid import UUID
 
 from aiops_agent.application.diagnosis.sql_diagnosis import exact_wire
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceFact
+from aiops_agent.playbooks import canonical_hash
 
 
 def _row_hash(fact: TurnEvidenceFact, row_index: int) -> str:
@@ -60,7 +61,9 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
     """重新校验会话、主体、Agent 版本、Target 版本、来源及行内容，不执行客户端 SQL。"""
     data = decode_selection(reference)
     artifact = await uow.runs.get_artifact(artifact_id=UUID(data["artifact_id"]))
-    if artifact is None or artifact.schema_version != "DBA_SUFFICIENCY.v1":
+    if (artifact is None or artifact.schema_version != "DBA_SUFFICIENCY.v1"
+        or artifact.trust_level != "SOURCE_VERIFIED"
+        or canonical_hash(artifact.payload_json) != artifact.content_hash):
         raise ValueError("SQL 来源证据已失效，请重新查询")
     source_run = await uow.runs.get_run_scoped(ops_run_id=artifact.ops_run_id, domain_id=conversation.domain_id)
     if source_run is None or any(str(getattr(source_run, key)) != str(getattr(conversation, key)) for key in ("agent_id", "agent_version_id", "domain_id")) or str(source_run.actor_id) != str(actor_id):
@@ -93,6 +96,8 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
         "derivations": (), "calculation_graphs": (), "series_computations": (),
     })
     return {
+        "selection_ref": reference,
+        "selection_ttl_seconds": ttl_seconds,
         "subject_ref": subject, "target_id": str(target.target_id), "target_row_version": str(target.row_version),
         "source_turn_id": str(source_turn.turn_id), "source_run_id": str(source_run.ops_run_id),
         "source_artifact_id": str(artifact.artifact_id), "captured_at": fact.captured_at,

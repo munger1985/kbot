@@ -82,6 +82,20 @@ assert.ok(currentSql.includes(`title="${escape(sql)}"`));
 assert.ok(currentSql.includes("继续深入分析 SQL 123456"));
 assert.ok(currentSql.includes('class="is-number">会话数'));
 
+const comparisonTable = context.testTable.answerBlockHtml({
+  block_type: "TABLE", payload: {
+    presentation_role: "PRIMARY", result_kind: "SQL_SUBJECT_COMPARISON", title: "SQL 统计主体对比",
+    follow_up_label: "仅诊断此主体", row_selections: ["opaque-original-row-ref"],
+    columns: [{ name: "digest" }, { name: "schema_name", label: "数据库" }, { name: "sql_text", label: "SQL 文本" }],
+    rows: [[digest, null, sql]], row_count: 1,
+  },
+}, {});
+assert.match(comparisonTable, /ops-primary-result is-top-sql/);
+assert.ok(comparisonTable.includes('data-sql-selection="opaque-original-row-ref"'));
+assert.ok(comparisonTable.includes("仅诊断此主体"));
+assert.ok(comparisonTable.includes(`title="${escape(sql)}"`));
+assert.ok(!comparisonTable.includes(sql));
+
 const noIdentifier = context.testTable.answerBlockHtml({
   block_type: "TABLE", payload: {
     presentation_role: "PRIMARY", result_kind: "CURRENT_SQL_LIST",

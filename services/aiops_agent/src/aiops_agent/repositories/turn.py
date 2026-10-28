@@ -336,6 +336,16 @@ class TurnRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalar_one_or_none()
 
+    async def list_prior_turns(self, *, conversation_id: UUID, before_turn_no: int, limit: int = 17):
+        """最近轮次倒序、有界读取，供按 SQL 身份搜索历史观察；应用层仍逐项重新授权。"""
+        rows = await self._session.scalars(
+            select(OpsConversationTurnEntity).where(
+                OpsConversationTurnEntity.conversation_id == conversation_id,
+                OpsConversationTurnEntity.turn_no < before_turn_no,
+            ).order_by(OpsConversationTurnEntity.turn_no.desc()).limit(min(17, max(1, limit)))
+        )
+        return list(rows)
+
     async def list_turns(
         self,
         *,

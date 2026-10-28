@@ -127,6 +127,8 @@ _PRIMARY_RESULT_SPECS = {
 }
 
 _PRIMARY_COLUMN_LABELS = {
+    "dbid": "DBID", "database_oid": "数据库 OID", "user_oid": "用户 OID",
+    "top_level": "顶层语句", "inst_id": "实例", "container_id": "容器", "child_number": "子游标",
     "sql_id": "SQL_ID", "sql_text": "SQL 文本",
     "digest": "Digest", "query_id": "Query ID",
     "plan_hash_value": "计划哈希", "session_id": "会话", "username": "用户",
@@ -235,14 +237,14 @@ def _top_sql_primary_fact(
 
 def _measurement_boundaries(assessment: DbaSufficiencyAssessment) -> list[str]:
     boundaries: list[str] = []
-    if any(fact.tool_id == "db.postgresql.statement.details" for fact in assessment.evidence):
+    if any(fact.tool_id in {"db.postgresql.statement.details", "db.postgresql.statement.subjects"} for fact in assessment.evidence):
         boundaries.append(
             "pg_stat_statements_info 的 stats_reset 是全局重置时间，并非单条 SQL 的统计起点；"
             "单条重置或淘汰仍可能发生。plan_count 为零不能证明执行计划不存在，"
             "需结合 pg_stat_statements.track_planning 及真实计划证据判断。"
         )
     if any(fact.tool_id in {
-        "db.postgresql.statement.details", "db.sql.cursor_details",
+        "db.postgresql.statement.details", "db.postgresql.statement.subjects", "db.sql.cursor_details",
         "db.mysql.statement.history", "db.sql.execution_plan", "db.sql.display_cursor",
     } for fact in assessment.evidence):
         boundaries.append(
@@ -1010,7 +1012,13 @@ class DbaEvidenceAssessmentHandler:
                     database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
                 )
             )
-            combined = value.model_copy(update={"evidence": (*value.evidence, *prior_facts)})
+            bounded_search = any(
+                dict(dict(artifact.get("payload") or {}).get("search") or {}).get("truncated")
+                for artifact in context.input_artifacts if artifact.get("schema_version") == "PRIOR_TURN_SQL_EVIDENCE.v1"
+            )
+            search_gaps = (TurnEvidenceGap(source_id="sql.history", step_id="sql.history", code="SQL_HISTORY_SEARCH_BOUNDED",
+                detail="历史 SQL 证据搜索达到轮次、行数或字节上限，未覆盖完整会话；缺失不能解释为历史不存在。", retryable=False),) if bounded_search else ()
+            combined = value.model_copy(update={"evidence": (*value.evidence, *prior_facts), "gaps": (*value.gaps, *search_gaps)})
             bundle = build_sql_evidence_bundle(
                 task_frame=task_frame,
                 database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
@@ -1018,6 +1026,8 @@ class DbaEvidenceAssessmentHandler:
             )
             if bundle and bundle["subject_resolution"]["status"] == "AMBIGUOUS" and value.status != SufficiencyStatus.UNSAFE:
                 question = "同一 SQL 标识对应多个统计主体，不能合并为一个诊断对象。请从下表选择库、用户、顶层语句或游标/计划，再继续诊断。"
+                if bundle["subject_resolution"].get("identity_conflict"):
+                    question = "同一完整统计身份返回不同 SQL 文本，尚不能排除身份冲突或来源不一致；应先核对原始来源和完整文本，不能任选一条继续归因。"
                 return combined.model_copy(update={
                     "status": SufficiencyStatus.NEEDS_CLARIFICATION,
                     "clarification_question": question,
@@ -1705,7 +1715,7 @@ class DbaAnswerComposeHandler:
                 draft = SqlDiagnosisDraft.model_validate(generated.output.model_dump(mode="python"))
                 validate_sql_diagnosis(draft, bundle)
                 record = freeze_investigation(
-                    draft=sql_investigation_draft(draft, "SQL " + str(bundle["subject"].get("query_id") or bundle["subject"].get("sql_id") or bundle["subject"].get("digest") or "当前选定语句")),
+                    draft=sql_investigation_draft(draft, "SQL " + str(bundle["subject"].get("query_id") or bundle["subject"].get("sql_id") or bundle["subject"].get("digest") or "当前选定语句"), bundle["subjects"]),
                     evidence=assessment.evidence, context=context, gaps=assessment.gaps,
                 )
                 receipt = generated.receipt.model_dump(mode="json")
@@ -1726,12 +1736,14 @@ class DbaAnswerComposeHandler:
             if answer is None:
                 return None
             analysis, solution, refs = answer.analysis, answer.solution, answer.evidence_refs
+        if bundle["subject_resolution"]["status"] == "COMPARISON":
+            analysis = f"已核验 {len(bundle['subjects'])} 个独立统计主体，以下分别诊断与比较，不合并其计数、计划或原因。\n\n" + analysis
         blocks = [
             TurnAnswerBlock(
                 block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
                 schema_version="AIOPS_ANALYSIS_BLOCK.v1",
                 payload={"markdown": analysis, "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
-                         "subject": bundle["subject"]}, evidence_refs=refs,
+                         "subject": bundle["subject"], "subject_resolution": bundle["subject_resolution"]}, evidence_refs=refs,
             ),
             TurnAnswerBlock(
                 block_type=AnswerBlockType.SOLUTION_MARKDOWN,
@@ -1739,12 +1751,16 @@ class DbaAnswerComposeHandler:
                 payload={"markdown": solution}, evidence_refs=refs,
             ),
         ]
+        comparison_blocks = self._sql_candidate_blocks(assessment, context, comparison=True)
+        blocks.extend(comparison_blocks)
         for block in self._data_blocks(assessment.evidence, primary_result_kind="SINGLE_SQL_DETAIL"):
+            if comparison_blocks and set(block.evidence_refs) <= set(comparison_blocks[0].evidence_refs):
+                continue
             if str(block.block_type) == "TABLE" and any(
                 fact.source_id == "prior_turn.sql_observation" and fact.evidence_ref in block.evidence_refs
                 for fact in assessment.evidence
             ):
-                block = block.model_copy(update={"payload": {**block.payload, "title": f"上一轮历史观测 · {block.payload['title']}"}})
+                block = block.model_copy(update={"payload": {**block.payload, "title": f"历史观测 · {block.payload['title']}"}})
             blocks.append(block)
         reasons = tuple(dict.fromkeys((*assessment.reasons, *((fallback_reason,) if fallback_reason else ()))))
         if record is not None and record.runbook is not None:
@@ -2609,27 +2625,32 @@ class DbaAnswerComposeHandler:
         )
 
     @staticmethod
-    def _sql_candidate_blocks(assessment, context):
+    def _sql_candidate_blocks(assessment, context, *, comparison=False):
         frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
-        if frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE" or assessment.status != SufficiencyStatus.NEEDS_CLARIFICATION:
+        if frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE" or not comparison and assessment.status != SufficiencyStatus.NEEDS_CLARIFICATION:
             return ()
         bundle = build_sql_evidence_bundle(
             task_frame=frame, database_type=DbaAnswerComposeHandler._database_type(context),
             evidence=assessment.evidence,
         )
-        if not bundle or bundle["subject_resolution"]["status"] != "AMBIGUOUS":
+        if not bundle or bundle["subject_resolution"]["status"] != ("COMPARISON" if comparison else "AMBIGUOUS"):
             return ()
         resolution = bundle["subject_resolution"]
         source_ref = next((str(item["artifact_id"]) for item in context.input_artifacts if item.get("schema_version") == "DBA_SUFFICIENCY.v1" and item.get("artifact_id")), None)
         fact = next(item for item in assessment.evidence if item.evidence_ref == resolution["candidates"][0]["evidence_ref"])
         indices = [item["row_index"] for item in resolution["candidates"]]
         wanted = {"query_id", "sql_id", "digest", "database_oid", "database_name", "user_oid", "username", "top_level", "schema_name", "inst_id", "container_id", "child_number", "plan_hash_value", "normalized_statement", "sql_text", "digest_text"}
+        if comparison:
+            wanted |= {"dbid", "execution_count", "executions", "total_exec_time_ms", "mean_exec_time_ms",
+                       "total_latency_picoseconds", "average_latency_picoseconds", "elapsed_seconds", "cpu_seconds",
+                       "shared_blks_hit", "shared_blks_read", "buffer_gets", "disk_reads"}
         columns = [(index, column) for index, column in enumerate(fact.columns) if str(column.get("name") or "").lower() in wanted]
         return (TurnAnswerBlock(
             block_type=AnswerBlockType.TABLE, schema_version="AIOPS_TABLE_BLOCK.v1",
             payload={
-                "title": "选择 SQL 统计主体", "presentation_role": "PRIMARY",
-                "result_kind": "SQL_SUBJECT_CANDIDATES", "follow_up_label": "选择并诊断",
+                "title": "SQL 统计主体对比" if comparison else "选择 SQL 统计主体", "presentation_role": "PRIMARY",
+                "result_kind": "SQL_SUBJECT_COMPARISON" if comparison else "SQL_SUBJECT_CANDIDATES",
+                "follow_up_label": "仅诊断此主体" if comparison else "选择并诊断",
                 "columns": [{**column, "label": _PRIMARY_COLUMN_LABELS.get(str(column["name"]).lower(), str(column["name"]))} for _, column in columns],
                 "rows": [exact_wire([fact.rows[row_index][index] for index, _ in columns]) for row_index in indices],
                 "row_selections": [selection_ref(artifact_id=source_ref, fact=fact, row_index=index) for index in indices] if source_ref else [],

@@ -11,6 +11,7 @@ from aiops_agent.application.investigation.prior_sql_evidence import load_prior_
 from aiops_agent.application.investigation.service import TurnPlanningService
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceFact
 from aiops_agent.entities import OpsRunEntity
+from aiops_agent.playbooks import canonical_hash
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
@@ -92,6 +93,20 @@ def test_oracle_legacy_subject_and_small_nonzero_latency():
     assert build_sql_evidence_answer(task_frame=change_request, database_type="ORACLE", evidence=(entry,)) is None
 
 
+def test_oracle_starter_builds_a_typed_single_sql_subject():
+    context = SimpleNamespace(
+        question="分析 SQL 6tjx7su0q5ttj", target_context={"db_type": "ORACLE"},
+        conversation_starter={"starter_id": "oracle.sql.healthcheck", "title": "SQL 分析",
+                              "planning": {"kind": "SINGLE_SQL"}, "parameters": {"sql_id": "6TJX7SU0Q5TTJ"}},
+    )
+    planner = object.__new__(TurnPlanningService)
+    planner._record_planning_route = AsyncMock()
+    available = tuple({"tool_id": item} for item in
+                      ("db.sql.cursor_details", "db.sql.execution_plan", "db.sql.object_statistics", "db.sql.display_cursor"))
+    investigation, _, _, _ = asyncio.run(planner._plan_conversation_starter(context=context, available_tools=available, available_playbooks=()))
+    assert investigation.task_frame.subject_ref == {"subject_type": "ORACLE_SQL_ID", "sql_id": "6tjx7su0q5ttj"}
+
+
 def test_single_sql_safe_fallback_stream_and_nonstream_agree():
     subject = {"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42", "database_oid": 1}
     entry = fact("db.postgresql.statement.details", ("query_id", "database_oid", "execution_count"), (("42", 1, 100),))
@@ -121,7 +136,7 @@ def test_prior_sql_is_rebound_to_current_artifact_and_labeled_historical():
     assert len(rebound) == 1 and rebound[0].row_count == 1
     assert rebound[0].evidence_ref != entry.evidence_ref
     result = build_sql_evidence_answer(task_frame=frame(subject), database_type="POSTGRESQL", evidence=rebound)
-    assert result.historical_only and "上一轮历史观测" in result.analysis
+    assert result.historical_only and "历史观测" in result.analysis
     assert "执行次数 100" in result.analysis and "999" not in result.analysis
     current = fact("db.postgresql.statement.details", ("query_id", "database_oid", "user_oid", "execution_count"), (("42", 1, 2, 200),))
     result = build_sql_evidence_answer(task_frame=frame(subject), database_type="POSTGRESQL", evidence=(*rebound, current))
@@ -146,7 +161,7 @@ def test_historical_citation_has_a_separately_labeled_table():
     assert result.status == "PARTIAL"
     tables = [block for block in result.blocks if str(block.block_type) == "TABLE"]
     assert len(tables) == 1
-    assert tables[0].payload["title"].startswith("上一轮历史观测")
+    assert tables[0].payload["title"].startswith("历史观测")
     assert tables[0].payload["captured_at"] == entry.captured_at
     assert tables[0].evidence_refs == (prior[0].evidence_ref,)
 
@@ -198,7 +213,7 @@ def test_postgresql_core_evidence_is_database_specific_and_identity_matched(obse
 
 
 def test_prior_link_through_planning_assessment_and_answer():
-    scope_keys = ("tenant_id", "domain_id", "target_id", "agent_id", "actor_id")
+    scope_keys = ("domain_id", "target_id", "agent_id", "agent_version_id", "actor_id")
     scope = {key: str(uuid7()) for key in scope_keys if key in OpsRunEntity.__table__.columns}
     prior_run_id, run_id, turn_id, previous_id, conversation_id = (uuid7() for _ in range(5))
     context = SimpleNamespace(**scope, turn_id=turn_id, ops_run_id=run_id, resolved_uploads=(),
@@ -207,14 +222,15 @@ def test_prior_link_through_planning_assessment_and_answer():
     target_snapshot = {"target": {"row_version": 1, "db_type": "POSTGRESQL"}}
     current_run = SimpleNamespace(**scope, status="RUNNING", ops_run_id=run_id, plan_snapshot_json=target_snapshot)
     old_run = SimpleNamespace(**scope, ops_run_id=prior_run_id, plan_snapshot_json=target_snapshot)
-    turn_scope = {key: scope[key] for key in ("tenant_id", "domain_id") if key in scope}
+    turn_scope = {"domain_id": scope["domain_id"]}
     current_turn = SimpleNamespace(**turn_scope, turn_no=2, conversation_id=conversation_id, created_by=scope["actor_id"])
     previous = SimpleNamespace(**turn_scope, turn_no=1, conversation_id=conversation_id, created_by=scope["actor_id"],
                                status="COMPLETED", turn_id=previous_id, sufficiency_artifact_id=uuid7())
     entry = fact("db.postgresql.statement.top", ("query_id", "database_oid", "execution_count"), (("42", 1, 100),))
     previous_assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry,))
     source_artifact = SimpleNamespace(artifact_id=previous.sufficiency_artifact_id, ops_run_id=prior_run_id,
-                                      schema_version="DBA_SUFFICIENCY.v1", payload_json=previous_assessment.model_dump(mode="json"))
+                                      schema_version="DBA_SUFFICIENCY.v1", payload_json=previous_assessment.model_dump(mode="json"), trust_level="SOURCE_VERIFIED")
+    source_artifact.content_hash = canonical_hash(source_artifact.payload_json)
 
     class Uow:
         async def __aenter__(self):
@@ -224,14 +240,17 @@ def test_prior_link_through_planning_assessment_and_answer():
 
     uow = Uow()
     uow.turns = SimpleNamespace(
-        get_turn=AsyncMock(return_value=current_turn), get_previous_turn=AsyncMock(return_value=previous),
+        get_turn=AsyncMock(return_value=current_turn), list_prior_turns=AsyncMock(return_value=[previous]),
         get_run_link=AsyncMock(side_effect=lambda *, turn_id, purpose: SimpleNamespace(ops_run_id=run_id if turn_id == context.turn_id else prior_run_id)),
     )
     uow.runs = SimpleNamespace(get_run=AsyncMock(side_effect=lambda *, ops_run_id: current_run if ops_run_id == run_id else old_run),
                                get_artifact=AsyncMock(return_value=source_artifact))
+    uow.targets = SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(status="ENABLED", row_version=1, db_type="POSTGRESQL")))
+    uow.agents = SimpleNamespace(version_has_target=AsyncMock(return_value=True))
     planner = object.__new__(TurnPlanningService)
     planner._uow_factory = lambda: uow
-    payload = asyncio.run(planner._load_prior_sql_evidence(context))
+    subject = {"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42", "database_oid": 1}
+    payload = asyncio.run(planner._load_prior_sql_evidence(context, task_frame=frame(subject)))
     assert payload and payload["source_run_id"] == str(prior_run_id)
     context.prior_sql_evidence = payload
     assert "turn-prior-sql-evidence:1" in planner._initial_user_evidence_keys(context, include_prior_sql=True)
@@ -250,30 +269,32 @@ def test_prior_link_through_planning_assessment_and_answer():
                                      input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": assessment.model_dump(mode="json")},))
     result = asyncio.run(DbaAnswerComposeHandler(model_client=None, prompts=None).execute(answer_ctx))
     assert result.status == "PARTIAL"
-    assert any(block.payload.get("title", "").startswith("上一轮历史观测") for block in result.blocks)
+    assert any(block.payload.get("title", "").startswith("历史观测") for block in result.blocks)
     assert str(artifact.artifact_id) in result.evidence[0].evidence_ref
     context.target_id = str(uuid7())
-    assert asyncio.run(planner._load_prior_sql_evidence(context)) is None
+    assert asyncio.run(planner._load_prior_sql_evidence(context, task_frame=frame(subject))) is None
     context.target_id = scope["target_id"]
     old_run.plan_snapshot_json = {"target": {"row_version": 2, "db_type": "POSTGRESQL"}}
-    assert asyncio.run(planner._load_prior_sql_evidence(context)) is None
+    assert asyncio.run(planner._load_prior_sql_evidence(context, task_frame=frame(subject))) is None
     old_run.plan_snapshot_json = target_snapshot
     context.database_execution = {"target_row_version": 2}
-    assert asyncio.run(planner._load_prior_sql_evidence(context)) is None
+    assert asyncio.run(planner._load_prior_sql_evidence(context, task_frame=frame(subject))) is None
 
 
 @pytest.mark.parametrize("changed", [None, "target_id", "domain_id", "agent_id", "actor_id", "created_by", "conversation_id"])
 def test_prior_loader_requires_same_scope_and_trusted_source(changed):
-    identifiers = {key: str(uuid7()) for key in ("target_id", "domain_id", "agent_id", "actor_id", "created_by", "conversation_id")}
+    identifiers = {key: str(uuid7()) for key in ("target_id", "domain_id", "agent_id", "agent_version_id", "actor_id", "created_by", "conversation_id")}
     turn = SimpleNamespace(**{key: identifiers[key] for key in ("domain_id", "created_by", "conversation_id")}, turn_no=2)
-    run = SimpleNamespace(**{key: identifiers[key] for key in ("target_id", "domain_id", "agent_id", "actor_id")}, plan_snapshot_json={"target": {"row_version": 1, "db_type": "POSTGRESQL"}})
+    run = SimpleNamespace(**{key: identifiers[key] for key in ("target_id", "domain_id", "agent_id", "agent_version_id", "actor_id")}, plan_snapshot_json={"target": {"row_version": 1, "db_type": "POSTGRESQL"}})
     previous = SimpleNamespace(**{key: identifiers[key] for key in ("domain_id", "created_by", "conversation_id")}, status="COMPLETED", turn_id=uuid7(), sufficiency_artifact_id=uuid7())
-    prior_run = SimpleNamespace(**{key: identifiers[key] for key in ("target_id", "domain_id", "agent_id", "actor_id")}, ops_run_id=uuid7(), plan_snapshot_json={"target": {"row_version": 1, "db_type": "POSTGRESQL"}})
+    prior_run = SimpleNamespace(**{key: identifiers[key] for key in ("target_id", "domain_id", "agent_id", "agent_version_id", "actor_id")}, ops_run_id=uuid7(), plan_snapshot_json={"target": {"row_version": 1, "db_type": "POSTGRESQL"}})
     if changed:
         setattr(previous if changed in {"created_by", "conversation_id"} else prior_run, changed, str(uuid7()))
     entry = fact("db.postgresql.statement.top", ("query_id", "database_oid"), (("42", 1),))
     assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry,))
-    artifact = SimpleNamespace(artifact_id=previous.sufficiency_artifact_id, ops_run_id=prior_run.ops_run_id, schema_version="DBA_SUFFICIENCY.v1", payload_json=assessment.model_dump(mode="json"))
-    uow = SimpleNamespace(turns=SimpleNamespace(get_previous_turn=AsyncMock(return_value=previous), get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=prior_run.ops_run_id))), runs=SimpleNamespace(get_run=AsyncMock(return_value=prior_run), get_artifact=AsyncMock(return_value=artifact)))
-    loaded = asyncio.run(load_prior_sql_evidence(uow=uow, turn=turn, run=run))
+    artifact = SimpleNamespace(artifact_id=previous.sufficiency_artifact_id, ops_run_id=prior_run.ops_run_id, schema_version="DBA_SUFFICIENCY.v1", payload_json=assessment.model_dump(mode="json"), trust_level="SOURCE_VERIFIED")
+    artifact.content_hash = canonical_hash(artifact.payload_json)
+    uow = SimpleNamespace(turns=SimpleNamespace(list_prior_turns=AsyncMock(return_value=[previous]), get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=prior_run.ops_run_id))), runs=SimpleNamespace(get_run=AsyncMock(return_value=prior_run), get_artifact=AsyncMock(return_value=artifact)),
+        targets=SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(status="ENABLED", row_version=1, db_type="POSTGRESQL"))), agents=SimpleNamespace(version_has_target=AsyncMock(return_value=True)))
+    loaded = asyncio.run(load_prior_sql_evidence(uow=uow, turn=turn, run=run, task_frame=frame({"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42"})))
     assert (loaded is not None) == (changed is None)
