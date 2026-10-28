@@ -230,6 +230,19 @@ def available_tools(
             "policy": {**policy.model_dump(mode="json"), "require_bind_parameters": True},
             "database_access": {"queryable_schemas": list(policy.allowed_schemas), "diagnostic_scopes": ["CURRENT", "CATALOG"]},
         }
+    for tool in tools.values():
+        if tool.get("tool_class") in {"ORACLE_SQL_DYNAMIC", "POSTGRESQL_SQL_DYNAMIC", "MYSQL_SQL_DYNAMIC"}:
+            tool["database_access"]["object_access_probe"] = {
+                "execution": "SAME_AUTHORIZED_READONLY_QUERY_TOOL",
+                "shape": "SELECT explicit_columns FROM one_authorized_object WHERE 1=0",
+                "scope": "OBJECT_AND_EXPLICIT_COLUMNS",
+                "readable_proves_row_visibility": False,
+                "cached_denial_ttl_seconds": 30,
+                "success_hint_ttl_seconds": 300,
+                "cached_success_replaces_query": False,
+                "recheck_current_authorization": True,
+                "grants_authority": False,
+            }
     return tuple(tools[key] for key in sorted(tools))
 
 

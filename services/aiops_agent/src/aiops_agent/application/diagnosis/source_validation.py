@@ -6,7 +6,7 @@ from aiops_agent.application.diagnosis.monitoring_calculations import validate_m
 from aiops_agent.application.diagnosis.provenance import database_provenance
 from aiops_agent.contracts.investigation import InvestigationRecord
 from aiops_agent.contracts.tool_execution import DbaToolResult
-from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+from aiops_agent.contracts.turn_answer import TurnEvidenceFact, TurnEvidenceGap
 from aiops_agent.playbooks import canonical_hash
 
 
@@ -16,7 +16,11 @@ async def validate_investigation_sources(*, uow, run, payload):
     record_payload = payload.get("investigation_record") or {}
     if not isinstance(record_payload, dict):
         return False
-    if record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs"):
+    if (record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs")
+            and not record_payload.get("access_gaps")
+            and not any(item.get("object_access") for item in record_payload.get("observations", ()))
+            and not any(item.get("object_access") for item in payload.get("evidence", ()))
+            and not any(item.get("object_access") for item in payload.get("evidence_gaps", ()))):
         return True
     try:
         record = InvestigationRecord.model_validate(record_payload)
@@ -24,7 +28,9 @@ async def validate_investigation_sources(*, uow, run, payload):
         if record.target_id != str(run.target_id) or record.run_id != str(run.ops_run_id):
             return False
         record.validate_observations(facts)
+        record.validate_access_gaps(tuple(TurnEvidenceGap.model_validate(item) for item in payload.get("evidence_gaps", ())))
         used = {ref.evidence_ref for graph in record.sql_graphs for edge in graph.relationships for ref in (edge.anchor, edge.related)}
+        used.update(fact.evidence_ref for fact in facts if fact.object_access)
         # 多主体图可能没有可建立的对象边；其已确认语句判断仍须回查原工具，而非仅信任冻结副本。
         used.update(ref.evidence_ref for claim in record.claims
                     for ref in (*claim.evidence_fields, *claim.counterevidence_fields)
@@ -54,15 +60,35 @@ async def validate_investigation_sources(*, uow, run, payload):
             observation = outcomes[0].observation
             if (fact.evidence_ref != f"artifact:{identity}#{fact.step_id}"
                 or str(observation.target_id) != str(run.target_id)
-                or observation.db_type not in {graph.database_type for graph in record.sql_graphs}
+                or (record.sql_graphs and observation.db_type not in {graph.database_type for graph in record.sql_graphs})
                 or fact.captured_at != observation.captured_at.isoformat()
                 or fact.row_count != observation.row_count or fact.truncated != observation.truncated
                 or fact.columns != tuple(column.model_dump(mode="json") for column in observation.columns)
-                or fact.provenance != database_provenance(observation)):
+                or fact.provenance != database_provenance(observation)
+                or fact.object_access != observation.object_access):
                 return False
             # 与生产投影相同的精确序列化，不把大整数的字符串形式误当作篡改。
             expected_rows = fact.model_copy(update={"rows": observation.rows}).model_dump(mode="json")["rows"]
             if fact.model_dump(mode="json")["rows"] != expected_rows:
+                return False
+        for gap in record.access_gaps:
+            prefix, step_id = gap.evidence_ref.rsplit("#", 1)
+            identity = str(UUID(prefix.removeprefix("artifact:")))
+            if prefix != f"artifact:{identity}" or step_id != gap.step_id:
+                return False
+            if identity not in sources:
+                artifact = await uow.runs.get_artifact(artifact_id=UUID(identity))
+                if (artifact is None or str(artifact.ops_run_id) != str(run.ops_run_id)
+                        or artifact.schema_version != "DBA_TOOL_RESULT.v1"
+                        or artifact.trust_level != "SOURCE_VERIFIED"
+                        or canonical_hash(artifact.payload_json) != artifact.content_hash):
+                    return False
+                sources[identity] = DbaToolResult.model_validate(artifact.payload_json)
+            source = sources[identity]
+            outcomes = [item for item in source.tool_outcomes if item.step_id == gap.step_id
+                        and item.status == "GAP" and item.gap is not None]
+            if (source.source_id != gap.source_id or len(outcomes) != 1
+                    or outcomes[0].gap.code != gap.code or outcomes[0].gap.object_access != gap.object_access):
                 return False
     except (ValueError, TypeError, IndexError, KeyError, AttributeError):
         return False

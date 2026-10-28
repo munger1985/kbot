@@ -237,8 +237,12 @@ class MySQLDiagnosticDriver:
             code = int(exc.args[0]) if exc.args else 0
             if code in {1044, 1045}:
                 mapped = "AUTH_FAILED"
-            elif code in {1142, 1227}:
+            elif code in {1142, 1143, 1227}:
                 mapped = "PRIVILEGE_MISSING"
+            elif code == 1146:
+                mapped = "QUERY_OBJECT_UNAVAILABLE"
+            elif code == 1054:
+                mapped = "QUERY_COLUMN_INVALID"
             elif code in {1049, 2003, 2005, 2013}:
                 mapped = "TARGET_UNREACHABLE"
             else:

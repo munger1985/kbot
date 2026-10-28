@@ -85,6 +85,15 @@
             "title": "Executor Request Id",
             "type": "string"
           },
+          "object_access": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ObjectAccessObservation"
+            },
+            "maxItems": 1,
+            "title": "Object Access",
+            "type": "array"
+          },
           "parameters_sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Parameters Sha256",
@@ -331,6 +340,100 @@
         "title": "MutationExecutionRequest",
         "type": "object"
       },
+      "ObjectAccessObservation": {
+        "additionalProperties": false,
+        "description": "零行 SELECT 的历史访问观察，不授予权限，也不证明业务行可见。",
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "db_type": {
+            "enum": [
+              "POSTGRESQL",
+              "ORACLE",
+              "MYSQL"
+            ],
+            "title": "Db Type",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "grants_authority": {
+            "const": false,
+            "default": false,
+            "title": "Grants Authority",
+            "type": "boolean"
+          },
+          "object_ref": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Object Ref",
+            "type": "string"
+          },
+          "read_columns": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Read Columns",
+            "type": "array"
+          },
+          "reused": {
+            "default": false,
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "const": "OBJECT_ACCESS_OBSERVATION.v1",
+            "default": "OBJECT_ACCESS_OBSERVATION.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope": {
+            "const": "OBJECT_AND_EXPLICIT_COLUMNS",
+            "default": "OBJECT_AND_EXPLICIT_COLUMNS",
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_executor_request_id": {
+            "format": "uuid",
+            "title": "Source Executor Request Id",
+            "type": "string"
+          },
+          "source_query_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Query Sha256",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "READABLE",
+              "DENIED",
+              "OBJECT_UNAVAILABLE"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "db_type",
+          "object_ref",
+          "read_columns",
+          "state",
+          "checked_at",
+          "expires_at",
+          "source_executor_request_id",
+          "source_query_sha256"
+        ],
+        "title": "ObjectAccessObservation",
+        "type": "object"
+      },
       "ReadDiagnosticRequest": {
         "additionalProperties": false,
         "properties": {
@@ -391,6 +494,15 @@
             "format": "uuid",
             "title": "Executor Request Id",
             "type": "string"
+          },
+          "object_access": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ObjectAccessObservation"
+            },
+            "maxItems": 1,
+            "title": "Object Access",
+            "type": "array"
           },
           "observation": {
             "anyOf": [

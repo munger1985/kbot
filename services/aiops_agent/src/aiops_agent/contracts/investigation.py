@@ -13,6 +13,7 @@ from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.implementation import ImplementationRunbook
 from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
+from platform_core.contracts.aiops.executor import ObjectAccessObservation
 
 
 class InvestigationParent(BaseModel):
@@ -143,6 +144,7 @@ class InvestigationObservation(BaseModel):
     row_count: int = Field(ge=0)
     truncated: bool
     provenance: EvidenceProvenance | None = None
+    object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
@@ -155,6 +157,18 @@ class InvestigationObservation(BaseModel):
         if len(indexes) != len(set(indexes)):
             raise ValueError("同一摘要行不能绑定多份监控计算")
         return self
+
+
+class InvestigationAccessGap(BaseModel):
+    """保留访问受限的原工具引用，不把历史拒绝转换成新的现场数据。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    evidence_ref: str = Field(min_length=1, max_length=512)
+    source_id: str
+    step_id: str
+    code: str
+    object_access: tuple[ObjectAccessObservation, ...] = Field(min_length=1, max_length=1)
 
 
 class InvestigationRecord(BaseModel):
@@ -185,6 +199,15 @@ class InvestigationRecord(BaseModel):
     runbook: ImplementationRunbook | None = None
     sql_object_graph: SqlObjectGraph | None = None
     sql_subject_graphs: tuple[SqlObjectGraph, ...] = Field(default=(), max_length=20)
+    access_gaps: tuple[InvestigationAccessGap, ...] = Field(default=(), max_length=128)
+
+    def validate_access_gaps(self, gaps):
+        expected = tuple(InvestigationAccessGap(
+            evidence_ref=gap.evidence_ref, source_id=gap.source_id, step_id=gap.step_id,
+            code=gap.code, object_access=gap.object_access,
+        ) for gap in gaps if gap.object_access)
+        if self.access_gaps != expected:
+            raise ValueError("调查访问缺口与原工具引用或历史观察不一致")
 
     @property
     def sql_graphs(self) -> tuple[SqlObjectGraph, ...]:

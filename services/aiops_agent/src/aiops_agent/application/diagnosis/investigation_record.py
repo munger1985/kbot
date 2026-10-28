@@ -7,7 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from aiops_agent.contracts.investigation import (
     DiagnosisAnswerDraft, InvestigationClaim, InvestigationGoal,
-    InvestigationObservation, InvestigationRecord, InvestigationParent,
+    InvestigationObservation, InvestigationRecord, InvestigationParent, InvestigationAccessGap,
 )
 
 
@@ -106,10 +106,15 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             measurement_semantics=str(fact.measurement_semantics), trust_level=fact.trust_level,
             row_count=fact.row_count, truncated=fact.truncated,
             provenance=fact.provenance, derivations=fact.derivations,
+            object_access=fact.object_access,
             calculation_graphs=fact.calculation_graphs,
             series_computations=fact.series_computations,
         ) for fact in evidence),
         claims=draft.claims, recommendations=draft.recommendations,
+        access_gaps=tuple(InvestigationAccessGap(
+            evidence_ref=gap.evidence_ref, source_id=gap.source_id, step_id=gap.step_id,
+            code=gap.code, object_access=gap.object_access,
+        ) for gap in gaps if gap.object_access),
         goal_assessments=goals,
         unresolved_questions=draft.unresolved_questions,
         stop_reason="GOAL_ANSWERED" if satisfied else "PARTIAL_ANSWER",

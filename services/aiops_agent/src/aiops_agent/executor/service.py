@@ -22,7 +22,8 @@ from aiops_agent.executor.drivers import (
 )
 from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
 from aiops_agent.executor.access_observations import (
-    CACHED_ACCESS_DENIAL, QueryAccessObservations, catalog_object_group,
+    CACHED_ACCESS_DENIAL, OBJECT_CACHED_ACCESS_DENIAL, QueryAccessObservations,
+    catalog_object_group, object_read_scope,
 )
 from aiops_agent.adapters.aiops_execution_client import AIOpsExecutionClient
 from aiops_agent.ports.secret_store import ResolvedSecret
@@ -61,6 +62,9 @@ class DiagnosticExecutorService:
         tool_id = "UNKNOWN"
         access_key = None
         object_group = ()
+        scope = None
+        scope_key = None
+        object_access = ()
         try:
             grant = self._grant_codec.verify(request.grant)
             tool_id = grant.tool_id
@@ -88,9 +92,18 @@ class DiagnosticExecutorService:
             async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
                 issued = await self._control_plane.issue_credential(request.grant, trace_id=grant.trace_id)
                 access_key = self._access_observations.key(grant, issued=issued, query_sha256=grant.template_sha256)
+                scope_key = self._access_observations.scope_key(grant, issued=issued)
+                scope = object_read_scope(tool.sql, grant.db_type)
                 cached_access = self._access_observations.get(access_key)
                 if cached_access is not None and cached_access.state == "DENIED":
-                    return self._gap(request, CACHED_ACCESS_DENIAL, retryable=False)
+                    return self._gap(request, CACHED_ACCESS_DENIAL, retryable=False,
+                        object_access=tuple(item.model_copy(update={"reused": True}) for item in cached_access.object_access))
+                prior = self._access_observations.find_object(scope_key, scope)
+                if prior is not None:
+                    object_access = (prior,)
+                    if prior.state == "DENIED":
+                        return self._gap(request, OBJECT_CACHED_ACCESS_DENIAL,
+                            retryable=False, object_access=object_access)
                 object_group = catalog_object_group(tool.sql, grant.db_type)
                 secret = ResolvedSecret(values={"username": issued.username, "password": issued.password}, fingerprint="issued")
                 started = datetime.now(UTC)
@@ -114,8 +127,14 @@ class DiagnosticExecutorService:
                 ),
                 limits=limits,
             )
+            if scope is not None and scope.is_probe and not raw.rows and not raw.truncated:
+                object_access = (self._access_observations.object_observation(scope_key,
+                    scope=scope, state="READABLE", request_id=request.executor_request_id,
+                    query_sha256=grant.template_sha256, database_type=grant.db_type),)
+                observation = observation.model_copy(update={"warnings": (*observation.warnings,
+                    "本次为显式零行访问探测，仅核对对象和列的读取边界，不代表业务数据或活动 SQL 为空")})
             access = self._access_observations.remember(access_key, state="SUCCEEDED", objects=object_group)
-            observation = observation.model_copy(update={"provenance": {
+            observation = observation.model_copy(update={"object_access": object_access, "provenance": {
                 **observation.provenance, "access_observation": access.public_metadata(),
             }})
             return ReadDiagnosticResult(
@@ -124,8 +143,14 @@ class DiagnosticExecutorService:
                 observation=observation,
             )
         except DiagnosticDriverError as exc:
+            if scope is not None and scope.is_probe and exc.code in {"PRIVILEGE_MISSING", "QUERY_OBJECT_UNAVAILABLE"}:
+                object_access = (self._access_observations.object_observation(scope_key,
+                    scope=scope, state="DENIED" if exc.code == "PRIVILEGE_MISSING" else "OBJECT_UNAVAILABLE",
+                    request_id=request.executor_request_id, query_sha256=grant.template_sha256,
+                    database_type=grant.db_type),)
             if exc.code == "PRIVILEGE_MISSING" and access_key is not None:
-                self._access_observations.remember(access_key, state="DENIED", objects=object_group)
+                self._access_observations.remember(access_key, state="DENIED", objects=object_group,
+                    object_access=object_access if scope is not None and scope.is_probe else ())
             logger.warning(
                 "数据库只读诊断未取得结果：tool_id={} code={} retryable={}",
                 tool_id,
@@ -133,7 +158,7 @@ class DiagnosticExecutorService:
                 exc.retryable,
             )
             return self._gap(
-                request, exc.code, retryable=exc.retryable
+                request, exc.code, retryable=exc.retryable, object_access=object_access
             )
         except DiagnosticGrantError:
             raise
@@ -183,12 +208,14 @@ class DiagnosticExecutorService:
         code: str,
         *,
         retryable: bool,
+        object_access=(),
     ) -> ReadDiagnosticResult:
         return ReadDiagnosticResult(
             executor_request_id=request.executor_request_id,
             status="GAP",
             error_code=code,
             retryable=retryable,
+            object_access=object_access,
         )
 
     @staticmethod

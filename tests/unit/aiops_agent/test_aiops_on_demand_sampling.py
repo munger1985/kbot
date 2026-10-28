@@ -21,7 +21,7 @@ from aiops_agent.tools.sampling import freeze_sampling, validate_sampling_plan
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.tool_handlers import DbaDiagnosticToolHandler
 from aiops_agent.workers.turn_answer_handlers import DbaEvidenceAssessmentHandler
-from platform_core.contracts.aiops.executor import DatabaseObservation
+from platform_core.contracts.aiops.executor import DatabaseObservation, ReadDiagnosticResult
 from platform_core.contracts.aiops.investigation import DiagnosticSampling, InvestigationAction, InvestigationPlan
 from platform_core.contracts.aiops.playbooks import DbaCapabilitySnapshot
 from platform_core.identity import uuid7
@@ -285,9 +285,10 @@ def test_executor_sample_idempotency_is_unique_without_changing_task_or_authorit
             deadline_at=(now + timedelta(seconds=120)).isoformat(),
             plan_snapshot={"database_diagnostics": snapshot})
         codec = SimpleNamespace(issue=lambda grant: "g" * 64)
-        client = SimpleNamespace(execute_diagnostic=AsyncMock(return_value=SimpleNamespace(
-            status="GAP", observation=None, error_code="PRIVILEGE_MISSING", retryable=False,
-        )))
+        def gap_reply(request, **kwargs):
+            return ReadDiagnosticResult(executor_request_id=request.executor_request_id,
+                status="GAP", error_code="PRIVILEGE_MISSING", retryable=False)
+        client = SimpleNamespace(execute_diagnostic=AsyncMock(side_effect=gap_reply))
         handler = DatabaseDiagnosticHandler(executor_client=client, grant_codec=codec,
             grant_issuer="worker", grant_audience="executor", grant_ttl_seconds=30)
         for index in (1, 2):

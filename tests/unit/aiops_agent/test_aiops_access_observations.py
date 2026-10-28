@@ -15,7 +15,10 @@ from aiops_agent.diagnostics.dynamic_query import (
     MySQLDynamicQueryPolicySnapshot,
 )
 from aiops_agent.diagnostics.mysql_dynamic_query import MySQLDynamicQueryPolicy
-from aiops_agent.executor.access_observations import CACHED_ACCESS_DENIAL, QueryAccessObservations, catalog_object_group
+from aiops_agent.executor.access_observations import (
+    CACHED_ACCESS_DENIAL, OBJECT_CACHED_ACCESS_DENIAL, QueryAccessObservations,
+    catalog_object_group, object_read_scope,
+)
 from aiops_agent.executor.drivers import DiagnosticDriverError, DriverQueryResult
 from aiops_agent.executor.dynamic_service import DynamicDiagnosticExecutorService
 from aiops_agent.executor.service import DiagnosticExecutorService
@@ -98,8 +101,19 @@ def harness(engine="POSTGRESQL", dynamic=False):
             return DynamicReadDiagnosticRequest(**fields, grant=codec.issue_dynamic(current), sql=validated.normalized_sql)
         return ReadDiagnosticRequest(**fields, grant=codec.issue(current))
 
+    def query_request(sql, **updates):
+        current = policy(snapshot).validate(sql, {})
+        updated = grant.model_copy(update={
+            "query_sha256": current.query_sha256, "policy_sha256": current.policy_sha256,
+            "projected_columns": getattr(current, "projected_columns", ("*",)), **updates,
+        })
+        return DynamicReadDiagnosticRequest(executor_request_id=uuid7(), parameters={},
+            idempotency_key=str(uuid7()), grant=codec.issue_dynamic(updated), sql=current.normalized_sql)
+
     return SimpleNamespace(cache=cache, clock=clock, grant=grant, driver=driver, control=control,
-        service=service, request=request, method=driver.execute_dynamic if dynamic else driver.execute)
+        service=service, request=request, query_request=query_request,
+        codec=codec, snapshot=snapshot if dynamic else None, policy=policy if dynamic else None,
+        method=driver.execute_dynamic if dynamic else driver.execute)
 
 
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
@@ -222,6 +236,203 @@ def test_union_query_denial_does_not_claim_each_object_is_denied():
     assert "本次未重复查库" in _database_gap_detail(CACHED_ACCESS_DENIAL)
 
 
+OBJECTS = [
+    ("POSTGRESQL", "pg_catalog.pg_stat_activity", "pid", "datid"),
+    ("MYSQL", "performance_schema.threads", "thread_id", "processlist_id"),
+    ("ORACLE", "v$session", "sid", "username"),
+]
+
+
+@pytest.mark.parametrize("engine,table,column,other", OBJECTS)
+def test_minimal_object_probe_denial_is_reused_for_different_sql_requiring_all_columns(engine, table, column, other):
+    h = harness(engine, dynamic=True)
+    h.method.side_effect = DiagnosticDriverError("PRIVILEGE_MISSING")
+    async def run():
+        first = await h.service.execute(h.query_request(f"SELECT {column} FROM {table} WHERE 1=0"))
+        assert first.error_code == "PRIVILEGE_MISSING"
+        observed, = first.object_access
+        assert observed.state == "DENIED" and not observed.reused
+        second = await h.service.execute(h.query_request(f"SELECT {other}, {column} FROM {table} WHERE {column} > 0"))
+        assert second.error_code == OBJECT_CACHED_ACCESS_DENIAL
+        reused, = second.object_access
+        assert reused.reused and reused.checked_at == observed.checked_at
+        assert reused.source_executor_request_id == observed.source_executor_request_id
+        assert h.method.await_count == 1 and h.control.issue_credential.await_count == 2
+        # 不相交的列不能受拒绝影响；SELECT * 与函数也不冒充完整的显式列集合。
+        for sql in (f"SELECT {other} FROM {table}", f"SELECT * FROM {table}", f"SELECT COUNT(*) AS n FROM {table}"):
+            result = await h.service.execute(h.query_request(sql))
+            assert result.error_code == "PRIVILEGE_MISSING"
+            assert not result.object_access
+        assert h.method.await_count == 4
+        h.clock.utc += timedelta(seconds=31)
+        h.clock.monotonic += 31
+        third = await h.service.execute(h.query_request(f"SELECT {column} FROM {table} WHERE {column} > 0"))
+        assert third.error_code == "PRIVILEGE_MISSING" and not third.object_access
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("engine,table,column,other", OBJECTS)
+def test_multicolumn_denial_does_not_guess_which_column_is_denied(engine, table, column, other):
+    h = harness(engine, dynamic=True)
+    h.method.side_effect = DiagnosticDriverError("PRIVILEGE_MISSING")
+    async def run():
+        await h.service.execute(h.query_request(f"SELECT {column}, {other} FROM {table} WHERE 0=1"))
+        single = await h.service.execute(h.query_request(f"SELECT {column} FROM {table}"))
+        assert single.error_code == "PRIVILEGE_MISSING" and not single.object_access
+        full = await h.service.execute(h.query_request(f"SELECT {other}, {column} FROM {table}"))
+        assert full.error_code == OBJECT_CACHED_ACCESS_DENIAL
+        assert h.method.await_count == 2
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("engine,table,column,other", OBJECTS)
+def test_probe_success_is_reusable_hint_not_fresh_data_or_row_visibility(engine, table, column, other):
+    h = harness(engine, dynamic=True)
+    h.method.return_value = DriverQueryResult(columns=(column,), rows=(), truncated=False, db_version="16")
+    async def run():
+        first = await h.service.execute(h.query_request(f"SELECT {column} FROM {table} WHERE 1=0"))
+        assert first.status == "SUCCEEDED"
+        probe, = first.observation.object_access
+        assert probe.state == "READABLE" and not probe.grants_authority and not probe.reused
+        h.method.side_effect = DiagnosticDriverError("PRIVILEGE_MISSING")
+        second = await h.service.execute(h.query_request(f"SELECT {column} FROM {table} WHERE {column} > 0"))
+        assert second.error_code == "PRIVILEGE_MISSING"
+        prior, = second.object_access
+        assert prior.state == "READABLE" and prior.reused
+        assert prior.checked_at == probe.checked_at
+        assert h.method.await_count == 2
+        assert "private-user" not in first.model_dump_json()
+        assert "private-password" not in second.model_dump_json()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("code", ["QUERY_OBJECT_UNAVAILABLE", "QUERY_COLUMN_INVALID", "AUTH_FAILED", "TIMEOUT"])
+@pytest.mark.parametrize("engine,table,column,other", OBJECTS)
+def test_probe_non_permission_error_does_not_create_crossquery_denial(code, engine, table, column, other):
+    h = harness(engine, dynamic=True)
+    h.method.side_effect = DiagnosticDriverError(code)
+    async def run():
+        first = await h.service.execute(h.query_request(f"SELECT {column} FROM {table} WHERE 1=0"))
+        if code == "QUERY_OBJECT_UNAVAILABLE":
+            assert first.object_access[0].state == "OBJECT_UNAVAILABLE"
+        else:
+            assert not first.object_access
+        second = await h.service.execute(h.query_request(f"SELECT {column} FROM {table}"))
+        assert second.error_code == code and not second.object_access
+        assert h.method.await_count == 2
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT * FROM pg_catalog.pg_stat_activity WHERE 1=0",
+    "SELECT count(pid) FROM pg_catalog.pg_stat_activity WHERE 1=0",
+    "SELECT a.pid FROM pg_catalog.pg_stat_activity a JOIN pg_catalog.pg_database d ON TRUE WHERE 1=0",
+    "WITH a AS (SELECT pid FROM pg_catalog.pg_stat_activity) SELECT pid FROM a WHERE 1=0",
+    "SELECT a.pid FROM (SELECT pid FROM pg_catalog.pg_stat_activity) a WHERE 1=0",
+    "SELECT pid FROM pg_catalog.pg_stat_activity UNION SELECT pid FROM pg_catalog.pg_stat_activity",
+    "SELECT pid FROM pg_catalog.pg_stat_activity; SELECT datid FROM pg_catalog.pg_stat_activity",
+    "SELECT other.pid FROM pg_catalog.pg_stat_activity WHERE 1=0",
+])
+def test_complex_or_ambiguous_queries_cannot_claim_single_object_probe(sql):
+    assert object_read_scope(sql, "POSTGRESQL") is None
+
+
+def test_probe_parser_retains_identifier_case_and_alias_semantics():
+    a = object_read_scope("SELECT a.PID AS id FROM PG_CATALOG.PG_STAT_ACTIVITY a WHERE 1=0", "POSTGRESQL")
+    b = object_read_scope("SELECT pid FROM pg_catalog.pg_stat_activity WHERE FALSE", "POSTGRESQL")
+    assert a.is_probe and b.is_probe
+    assert a.object_ref == b.object_ref and a.columns == b.columns
+    quoted = object_read_scope('SELECT "PID" FROM pg_catalog.pg_stat_activity WHERE 1=0', "POSTGRESQL")
+    assert quoted.columns != b.columns
+    ordinary = object_read_scope("SELECT pid FROM pg_catalog.pg_stat_activity WHERE pid=0", "POSTGRESQL")
+    assert not ordinary.is_probe
+    assert object_read_scope("SELECT pid AS datid FROM pg_catalog.pg_stat_activity ORDER BY datid", "POSTGRESQL") is None
+    annotated = object_read_scope("SELECT pid /* private-comment */ FROM pg_catalog.pg_stat_activity /* private-table-comment */ WHERE 1=0", "POSTGRESQL")
+    assert annotated.is_probe and "private" not in repr(annotated)
+
+
+def test_object_cache_shares_capacity_and_preserves_ttl_and_authorization_scopes():
+    h = harness(dynamic=True)
+    cache, clock = clock_cache(capacity=2)
+    scope = object_read_scope("SELECT pid FROM pg_catalog.pg_stat_activity WHERE 1=0", "POSTGRESQL")
+    key = cache.scope_key(h.grant, issued=h.control.issue_credential.return_value)
+    cache.object_observation(key, scope=scope, state="DENIED", request_id=uuid7(),
+        query_sha256="e" * 64, database_type="POSTGRESQL")
+    assert cache.find_object(key, scope).state == "DENIED"
+    assert cache.find_object("other-authorization", scope) is None
+    # 查询和对象观察共用同一个 LRU，不增加第二份容量。
+    cache.remember("one", state="SUCCEEDED")
+    cache.remember("two", state="SUCCEEDED")
+    assert cache.find_object(key, scope) is None
+    cache.object_observation(key, scope=scope, state="DENIED", request_id=uuid7(),
+        query_sha256="e" * 64, database_type="POSTGRESQL")
+    clock.utc -= timedelta(seconds=1)
+    assert cache.find_object(key, scope) is None
+
+
+def test_object_cache_search_does_not_touch_unrelated_entries_and_readable_hint_expires():
+    h = harness(dynamic=True)
+    cache, clock = clock_cache(capacity=3)
+    scope = object_read_scope("SELECT pid FROM pg_catalog.pg_stat_activity WHERE 1=0", "POSTGRESQL")
+    key = cache.scope_key(h.grant, issued=h.control.issue_credential.return_value)
+    cache.remember("first", state="SUCCEEDED")
+    observed = cache.object_observation(key, scope=scope, state="READABLE", request_id=uuid7(),
+        query_sha256="e" * 64, database_type="POSTGRESQL")
+    cache.remember("last", state="SUCCEEDED")
+    assert cache.find_object(key, scope).reused
+    cache.remember("fourth", state="SUCCEEDED")
+    assert cache.get("first") is None and cache.get("last") is not None
+    assert cache.find_object(key, scope).checked_at == observed.checked_at
+    clock.utc += timedelta(seconds=301)
+    clock.monotonic += 301
+    assert cache.find_object(key, scope) is None
+
+
+def test_current_revocation_and_cancellation_still_precede_crossquery_denial():
+    h = harness(dynamic=True)
+    h.method.side_effect = DiagnosticDriverError("PRIVILEGE_MISSING")
+    async def run():
+        await h.service.execute(h.query_request("SELECT pid FROM pg_catalog.pg_stat_activity WHERE 1=0"))
+        h.control.issue_credential.side_effect = DiagnosticGrantError("GRANT_REVOKED", "已撤权")
+        with pytest.raises(DiagnosticGrantError):
+            await h.service.execute(h.query_request("SELECT pid FROM pg_catalog.pg_stat_activity"))
+        h.control.issue_credential.side_effect = asyncio.CancelledError()
+        with pytest.raises(asyncio.CancelledError):
+            await h.service.execute(h.query_request("SELECT pid FROM pg_catalog.pg_stat_activity"))
+        assert h.method.await_count == 1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mutation", ["credential", "profile", "policy", "target", "capability", "domain"])
+def test_crossquery_probe_isolated_by_current_credential_target_policy_and_endpoint(mutation):
+    h = harness(dynamic=True)
+    async def run():
+        h.method.side_effect = DiagnosticDriverError("PRIVILEGE_MISSING")
+        await h.service.execute(h.query_request("SELECT pid FROM pg_catalog.pg_stat_activity WHERE 1=0"))
+        updates = {}
+        if mutation == "credential":
+            h.control.issue_credential.return_value = SimpleNamespace(username="private-user", password="rotated")
+        elif mutation == "profile":
+            updates["connection_profile"] = h.grant.connection_profile.model_copy(update={"database": "other"})
+        elif mutation == "policy":
+            # 冻结策略摘要改变时不能因旧访问观察跳过 SQL/Grant 重验。
+            updates["policy_sha256"] = "d" * 64
+        elif mutation == "target":
+            updates["target_row_version"] = 2
+        elif mutation == "capability":
+            updates["capability_snapshot_hash"] = "e" * 64
+        else:
+            updates["domain_id"] = 102 if type(h.grant).model_fields["domain_id"].annotation is int else uuid7()
+        request = h.query_request("SELECT pid FROM pg_catalog.pg_stat_activity", **updates)
+        if mutation == "policy":
+            with pytest.raises(DiagnosticGrantError):
+                await h.service.execute(request)
+        else:
+            assert (await h.service.execute(request)).error_code == "PRIVILEGE_MISSING"
+            assert h.method.await_count == 2
+    asyncio.run(run())
+
+
 def test_cancellation_is_neither_cached_nor_converted_to_a_gap():
     h = harness()
     h.method.side_effect = asyncio.CancelledError()
@@ -229,4 +440,149 @@ def test_cancellation_is_neither_cached_nor_converted_to_a_gap():
         with pytest.raises(asyncio.CancelledError):
             await h.service.execute(h.request())
         assert not h.cache._entries
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("engine,table,column,other", OBJECTS)
+@pytest.mark.parametrize("denied", [False, True])
+@pytest.mark.parametrize("reused", [False, True])
+@pytest.mark.parametrize("tamper", ["none", "source", "frozen", "missing", "projection"])
+def test_object_access_survives_worker_assessment_freeze_and_report_case_source_replay(
+        engine, table, column, other, denied, reused, tamper):
+    from aiops_agent.application.diagnosis.investigation_record import freeze_investigation, investigation_report_source
+    from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
+    from aiops_agent.contracts.investigation import DiagnosisAnswerDraft
+    from aiops_agent.contracts.turn_answer import AIOpsTurnResult, TurnAnswerBlock
+    from aiops_agent.workers.database_handlers import DynamicQueryInvocationHandler
+    from aiops_agent.workers.handlers import TaskExecutionContext
+    from aiops_agent.workers.turn_answer_handlers import DbaEvidenceAssessmentHandler, DbaAnswerComposeHandler
+    from aiops_agent.playbooks import canonical_hash
+
+    h = harness(engine, dynamic=True)
+    h.method.return_value = DriverQueryResult(columns=(column,), rows=(), truncated=False, db_version="16")
+    if denied:
+        h.method.side_effect = DiagnosticDriverError("PRIVILEGE_MISSING")
+    validated = h.policy(h.snapshot).validate(f"SELECT {column} FROM {table}" + ("" if reused else " WHERE 1=0"), {})
+    database = dict(db_type=engine, domain_id=h.grant.domain_id if isinstance(h.grant.domain_id, int) else str(h.grant.domain_id), target_row_version=1,
+        connection_profile=h.grant.connection_profile.model_dump(mode="json"),
+        diagnostic_credential_id=str(h.grant.diagnostic_credential_id), automatic_access_enabled=True)
+    if "tenant_id" in type(h.grant).model_fields:
+        database["tenant_id"] = str(h.grant.tenant_id)
+    context = TaskExecutionContext(run_id=str(h.grant.run_id), task_id=str(h.grant.task_id), task_key="dynamic:a1",
+        target_id=str(h.grant.target_id), agent_id=str(uuid7()), actor_id=uuid7(), trigger_type="CHAT",
+        trace_id="access-pipeline", attempt=1, deadline_at=None, policy_snapshot={}, input_artifacts=(),
+        lease_token="test-lease", lease_until=(datetime.now(UTC) + timedelta(seconds=60)).isoformat(),
+        plan_snapshot={"capability_snapshot": {"database_type": engine},
+            "answer_context": {"question": "核对所需诊断列的访问边界", "task_frame": {"objectives": ["ASSESS"]}},
+            "investigation_execution": {"capability_snapshot_hash": h.grant.capability_snapshot_hash,
+                "database": database, "dynamic_invocations": {"dynamic:a1": {
+                    "action_id": "a1", "tool_id": h.grant.tool_id, "measurement_semantics": "CURRENT_ACTIVITY",
+                    "policy_snapshot": h.snapshot.model_dump(mode="json"),
+                    "validated_query": validated.model_dump(mode="json"),
+                    "limits": h.grant.limits.model_dump(mode="json"),
+                }}}})
+
+    async def execute_request(request, trace_id):
+        return await h.service.execute(request)
+
+    handler = DynamicQueryInvocationHandler(
+        executor_client=SimpleNamespace(execute_dynamic_diagnostic=AsyncMock(side_effect=execute_request)),
+        grant_codec=h.codec, grant_issuer="test-worker", grant_audience="test-executor", grant_ttl_seconds=30)
+
+    async def run():
+        from dataclasses import replace
+        if reused:
+            await h.service.execute(h.query_request(f"SELECT {column} FROM {table} WHERE 1=0"))
+        result = await handler.execute(context)
+        outcome = result.tool_outcomes[0]
+        observed = outcome.gap.object_access if denied else outcome.observation.object_access
+        assert observed[0].state == ("DENIED" if denied else "READABLE")
+        assert observed[0].reused is reused
+        artifact_id = uuid7()
+        original = result.model_dump(mode="json")
+        artifact = {"artifact_id": str(artifact_id), "schema_version": "DBA_TOOL_RESULT.v1", "payload": original}
+        assessment = await DbaEvidenceAssessmentHandler().execute(replace(context, input_artifacts=(artifact,)))
+        projected = assessment.gaps[0].object_access if denied else assessment.evidence[0].object_access
+        assert projected == observed
+        if not denied:
+            blocks = DbaAnswerComposeHandler._data_blocks(assessment.evidence)
+            assert len(blocks) == 1 and str(blocks[0].block_type) == ("TABLE" if reused else "MARKDOWN")
+            if not reused:
+                assert "按设计不读取数据行" in blocks[0].payload["markdown"]
+        draft = DiagnosisAnswerDraft(claims=({
+            "claim_id": "c1", "kind": "INTERPRETATION", "subject": "业务数据可见范围",
+            "statement": "仅凭零行访问探测无法判断业务数据的可见范围", "level": "UNKNOWN",
+            "applicable_time": "当前调查", "reasoning": "访问探测不返回业务数据",
+            "limitations": ("尚未取得业务数据观测",),
+        },), goal_satisfied=False, unresolved_questions=("访问观察不代表业务数据可见",))
+        record = freeze_investigation(draft=draft, evidence=assessment.evidence, context=context, gaps=assessment.gaps)
+        report = investigation_report_source(record)
+        frozen = report["investigation_record"]
+        assert (frozen["access_gaps"][0] if denied else frozen["observations"][0])["object_access"]
+        record.validate_observations(assessment.evidence)
+        record.validate_access_gaps(assessment.gaps)
+        payload = AIOpsTurnResult(status="PARTIAL", sufficiency_status=assessment.status,
+            blocks=(TurnAnswerBlock(block_type="ANALYSIS_MARKDOWN", schema_version="AIOPS_ANALYSIS_BLOCK.v1",
+                payload={"markdown": "访问观察不代表业务数据可见"}),),
+            investigation_record=record, evidence=assessment.evidence,
+            evidence_gaps=assessment.gaps).model_dump(mode="json")
+        frozen = payload["investigation_record"]
+        source = SimpleNamespace(ops_run_id=context.run_id, schema_version="DBA_TOOL_RESULT.v1",
+            trust_level="SOURCE_VERIFIED", payload_json=original, content_hash=canonical_hash(original))
+        if tamper == "source":
+            parent = original["tool_outcomes"][0]["gap" if denied else "observation"]
+            parent["object_access"][0]["read_columns"] = ["unrelated_column"]
+            source.content_hash = canonical_hash(original)
+        elif tamper == "frozen":
+            parent = frozen["access_gaps"][0] if denied else frozen["observations"][0]
+            parent["object_access"][0]["reused"] = not reused
+        elif tamper == "projection":
+            parent = payload["evidence_gaps"][0] if denied else payload["evidence"][0]
+            parent["object_access"] = []
+        uow = SimpleNamespace(runs=SimpleNamespace(get_artifact=AsyncMock(return_value=None if tamper == "missing" else source)))
+        valid = await validate_investigation_sources(uow=uow,
+            run=SimpleNamespace(ops_run_id=context.run_id, target_id=context.target_id), payload=payload)
+        assert valid == (tamper == "none")
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("error,expected", [
+    ("UndefinedTableError", "QUERY_OBJECT_UNAVAILABLE"),
+    ("UndefinedColumnError", "QUERY_COLUMN_INVALID"),
+    ("UndefinedFunctionError", "CAPABILITY_UNAVAILABLE"),
+    ("InsufficientPrivilegeError", "PRIVILEGE_MISSING"),
+])
+def test_postgresql_native_errors_keep_object_column_and_privilege_distinct(error, expected):
+    from unittest.mock import patch
+    from aiops_agent.executor.drivers.postgresql import PostgreSQLDiagnosticDriver
+    import asyncpg
+    h = harness()
+    async def run():
+        with patch("aiops_agent.executor.drivers.postgresql.asyncpg.connect", AsyncMock(side_effect=getattr(asyncpg, error)("private detail"))):
+            with pytest.raises(DiagnosticDriverError) as caught:
+                await PostgreSQLDiagnosticDriver().execute_dynamic(profile=h.grant.connection_profile,
+                    secret=SimpleNamespace(values={"username": "u", "password": "p"}),
+                    sql="SELECT pid FROM pg_catalog.pg_stat_activity", parameters={},
+                    limits=h.grant.limits, trace_id="native-errors")
+            assert caught.value.code == expected
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("code,expected", [
+    (1142, "PRIVILEGE_MISSING"), (1143, "PRIVILEGE_MISSING"),
+    (1146, "QUERY_OBJECT_UNAVAILABLE"), (1054, "QUERY_COLUMN_INVALID"), (1045, "AUTH_FAILED"),
+])
+def test_mysql_native_column_privilege_and_object_errors_are_distinct(code, expected):
+    from unittest.mock import patch
+    from aiops_agent.executor.drivers.mysql import MySQLDiagnosticDriver
+    import aiomysql
+    h = harness("MYSQL")
+    async def run():
+        with patch("aiops_agent.executor.drivers.mysql.aiomysql.connect", AsyncMock(side_effect=aiomysql.Error(code, "private detail"))):
+            with pytest.raises(DiagnosticDriverError) as caught:
+                await MySQLDiagnosticDriver().execute_dynamic(profile=h.grant.connection_profile,
+                    secret=SimpleNamespace(values={"username": "u", "password": "p"}),
+                    sql="SELECT thread_id FROM performance_schema.threads", parameters={},
+                    limits=h.grant.limits, trace_id="native-errors")
+            assert caught.value.code == expected
     asyncio.run(run())

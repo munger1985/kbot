@@ -224,6 +224,34 @@ class DatabaseColumn(AIOpsContract):
     sensitivity: Literal["PUBLIC", "MASKED", "HASHED"]
 
 
+class ObjectAccessObservation(AIOpsContract):
+    """零行 SELECT 的历史访问观察，不授予权限，也不证明业务行可见。"""
+
+    schema_version: Literal["OBJECT_ACCESS_OBSERVATION.v1"] = "OBJECT_ACCESS_OBSERVATION.v1"
+    scope: Literal["OBJECT_AND_EXPLICIT_COLUMNS"] = "OBJECT_AND_EXPLICIT_COLUMNS"
+    grants_authority: Literal[False] = False
+    db_type: Literal["POSTGRESQL", "ORACLE", "MYSQL"]
+    object_ref: str = Field(min_length=1, max_length=256)
+    read_columns: tuple[str, ...] = Field(min_length=1, max_length=128)
+    state: Literal["READABLE", "DENIED", "OBJECT_UNAVAILABLE"]
+    checked_at: UtcDatetime
+    expires_at: UtcDatetime
+    source_executor_request_id: UUIDv7
+    source_query_sha256: Sha256Digest
+    reused: bool = False
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        if self.expires_at <= self.checked_at:
+            raise ValueError("访问观察有效期必须晚于采集时间")
+        if (self.expires_at - self.checked_at).total_seconds() > (300 if self.state == "READABLE" else 30):
+            raise ValueError("访问观察有效期超过状态上限")
+        if (len(set(self.read_columns)) != len(self.read_columns)
+                or any(not column or len(column) > 256 or column == "*" for column in self.read_columns)):
+            raise ValueError("访问观察必须声明有界且不重复的显式列")
+        return self
+
+
 class DatabaseObservation(AIOpsContract):
     schema_version: Literal["DATABASE_OBSERVATION.v1"] = (
         "DATABASE_OBSERVATION.v1"
@@ -247,6 +275,7 @@ class DatabaseObservation(AIOpsContract):
     parameters_sha256: Sha256Digest
     warnings: tuple[str, ...] = ()
     provenance: JsonObject = Field(default_factory=dict)
+    object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
 
 
 class ReadDiagnosticResult(AIOpsContract):
@@ -258,6 +287,7 @@ class ReadDiagnosticResult(AIOpsContract):
     observation: DatabaseObservation | None = None
     error_code: str | None = Field(default=None, max_length=128)
     retryable: bool = False
+    object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
 
 
 class MutationExecutionRequest(AIOpsContract):

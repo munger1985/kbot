@@ -49,22 +49,23 @@ def _utc(value: str) -> datetime:
     )
 
 
-def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
+def _database_gap_detail(code: str, *, dynamic: bool = False, object_access=()) -> str:
     """将执行错误转换为不会误判权限的用户可读说明。"""
     details = {
         "PRIVILEGE_MISSING": "Target 只读凭据缺少该查询所需的对象权限",
         "PRIVILEGE_PROBE_CACHED_DENIAL": "近 30 秒内，同一凭据、Target 版本及完全相同查询曾被拒绝；本次未重复查库，这不是当前权限重验，缓存到期后可重新检查",
+        "OBJECT_ACCESS_CACHED_DENIAL": "近 30 秒内，同一授权范围和凭据的单对象显式列探测曾被拒绝，本次查询需要被拒绝的完整列集合；本次未重复查库，不代表当前权限重验。可改用已授权的其他对象或来源，缓存到期后可重新检查",
         "AUTH_FAILED": "Target 只读凭据认证失败",
         "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
         "TIMEOUT": "受控只读查询执行超时",
         "TARGET_CONNECTION_TIMEOUT": "Target 数据库只读连接建立超时",
         "QUERY_TIMEOUT": "受控只读查询执行超时",
         "EXECUTION_DEADLINE_EXCEEDED": "排队、凭据领取或查询超过本轮授权期限，未采纳迟到结果",
-        "QUERY_INCOMPATIBLE": "查询与当前 Oracle 版本或视图列定义不兼容",
+        "QUERY_INCOMPATIBLE": "查询与当前数据库版本或视图列定义不兼容",
         "QUERY_OBJECT_UNAVAILABLE": "查询引用的对象在当前数据库中不存在或不可见",
         "QUERY_COLUMN_INVALID": "查询引用了当前数据库中不存在的列",
         "QUERY_COLUMN_AMBIGUOUS": "查询包含无法唯一识别的列名",
-        "QUERY_SYNTAX_INVALID": "查询不符合当前 Oracle SQL 语法",
+        "QUERY_SYNTAX_INVALID": "查询不符合当前数据库 SQL 语法",
         "QUERY_VALUE_FORMAT_INVALID": "查询中的值与 Oracle 要求的格式不匹配",
         "OUTPUT_COLUMNS_MISMATCH": "查询已执行，但返回列与冻结投影不一致",
         "OUTPUT_COLUMN_LIMIT_EXCEEDED": "查询已执行，但返回列数超过诊断结果限制",
@@ -86,7 +87,14 @@ def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
         if dynamic
         else "该数据库诊断证据本次不可用"
     )
-    return details.get(code, fallback)
+    detail = details.get(code, fallback)
+    if object_access:
+        observed = object_access[0]
+        columns = "、".join(column[:64] for column in observed.read_columns[:3])
+        if len(observed.read_columns) > 3:
+            columns += f"等 {len(observed.read_columns)} 列"
+        detail += f"；访问观察时间：{observed.checked_at.isoformat()}，对象：{observed.object_ref}，列集合：{columns}"
+    return detail
 
 
 class DatabaseScopeHandler:
@@ -295,6 +303,7 @@ class DatabaseDiagnosticHandler:
                 tool_id,
                 result.error_code or "EXECUTOR_INTERNAL_ERROR",
                 retryable=result.retryable,
+                object_access=result.object_access,
             ),
         )
 
@@ -318,6 +327,7 @@ class DatabaseDiagnosticHandler:
         code: str,
         *,
         retryable: bool,
+        object_access=(),
     ) -> DatabaseDiagnosticResult:
         return DatabaseDiagnosticResult(
             target_id=context.target_id,
@@ -326,8 +336,9 @@ class DatabaseDiagnosticHandler:
             gap=EvidenceGap(
                 code=code,
                 tool_id=tool_id,
-                detail=_database_gap_detail(code),
+                detail=_database_gap_detail(code, object_access=object_access),
                 retryable=retryable,
+                object_access=object_access,
             ),
         )
 
@@ -502,8 +513,10 @@ class DynamicQueryInvocationHandler:
                     detail=_database_gap_detail(
                         result.error_code or "EXECUTOR_INTERNAL_ERROR",
                         dynamic=True,
+                        object_access=result.object_access,
                     ),
                     retryable=result.retryable,
+                    object_access=result.object_access,
                 ),
             ),
         )

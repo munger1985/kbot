@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from platform_core.contracts.aiops.executor import DatabaseObservation
+from platform_core.contracts.aiops.executor import DatabaseObservation, ObjectAccessObservation
 
 
 class DatabaseScopeResult(BaseModel):
@@ -31,6 +31,7 @@ class EvidenceGap(BaseModel):
     tool_id: str | None = None
     detail: str
     retryable: bool = False
+    object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
 
 
 class DatabaseDiagnosticResult(BaseModel):

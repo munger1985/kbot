@@ -18,6 +18,7 @@ from platform_core.contracts.aiops import (
     InvestigationAssessment,
 )
 from platform_core.contracts.aiops.playbooks import PresentationPreference
+from platform_core.contracts.aiops.executor import ObjectAccessObservation
 from platform_core.contracts.visualization import ChartSpec
 
 
@@ -44,6 +45,7 @@ class TurnEvidenceFact(BaseModel):
     warnings: tuple[str, ...] = ()
     visualizations: tuple[ChartSpec, ...] = ()
     provenance: EvidenceProvenance | None = None
+    object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
@@ -81,6 +83,8 @@ class TurnEvidenceGap(BaseModel):
     code: str = Field(min_length=1, max_length=128)
     detail: str = Field(min_length=1, max_length=2000)
     retryable: bool = False
+    evidence_ref: str | None = Field(default=None, min_length=1, max_length=512)
+    object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
 
 
 class DbaSufficiencyAssessment(BaseModel):
@@ -143,6 +147,7 @@ class AIOpsTurnResult(BaseModel):
             raise ValueError("Turn 回答至少包含一个展示块")
         if self.investigation_record is not None:
             self.investigation_record.validate_observations(self.evidence)
+            self.investigation_record.validate_access_gaps(self.evidence_gaps)
         return self
 
 

@@ -178,14 +178,11 @@ class PostgreSQLDiagnosticDriver:
                 (asyncpg.InvalidCatalogNameError, asyncpg.CannotConnectNowError),
             ):
                 mapped = "TARGET_UNREACHABLE"
-            elif isinstance(
-                exc,
-                (
-                    asyncpg.UndefinedTableError,
-                    asyncpg.UndefinedFunctionError,
-                    asyncpg.UndefinedColumnError,
-                ),
-            ):
+            elif isinstance(exc, asyncpg.UndefinedTableError):
+                mapped = "QUERY_OBJECT_UNAVAILABLE"
+            elif isinstance(exc, asyncpg.UndefinedColumnError):
+                mapped = "QUERY_COLUMN_INVALID"
+            elif isinstance(exc, asyncpg.UndefinedFunctionError):
                 mapped = "CAPABILITY_UNAVAILABLE"
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"

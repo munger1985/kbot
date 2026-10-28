@@ -693,6 +693,7 @@ class DbaEvidenceAssessmentHandler:
                                 if result.sampling is not None else ()
                             )),
                             provenance=database_provenance(observation),
+                            object_access=observation.object_access,
                         )
                     )
                 if outcome.gap is not None:
@@ -704,6 +705,8 @@ class DbaEvidenceAssessmentHandler:
                             code=outcome.gap.code,
                             detail=outcome.gap.detail,
                             retryable=outcome.gap.retryable,
+                            evidence_ref=f"artifact:{artifact_id}#{outcome.step_id}",
+                            object_access=outcome.gap.object_access,
                         )
                     )
 
@@ -2899,6 +2902,14 @@ class DbaAnswerComposeHandler:
         blocks: list[TurnAnswerBlock] = []
         top_sql_primary = _top_sql_primary_fact(evidence, primary_result_kind)
         for fact in evidence:
+            probe = next((item for item in fact.object_access if not item.reused and item.state == "READABLE"), None)
+            if probe is not None:
+                blocks.append(TurnAnswerBlock(
+                    block_type=AnswerBlockType.MARKDOWN, schema_version="AIOPS_MARKDOWN_BLOCK.v1",
+                    payload={"markdown": f"已完成诊断对象的显式列读取探测（{probe.checked_at.isoformat()}）。本次按设计不读取数据行，不代表没有活动 SQL 或业务数据为空。"},
+                    evidence_refs=(fact.evidence_ref,),
+                ))
+                continue
             if fact.tool_id in _HTML_REPORT_TOOLS:
                 continue
             columns = list(fact.columns)
