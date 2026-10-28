@@ -67,7 +67,7 @@
     {
       "name": "013_ops_resource_governance.sql",
       "statements": 5,
-      "sha256": "caa65c81aa0d5866948df6827195f81fdb345f760fc0fb1056e6db796db24aec"
+      "sha256": "09e132ef3308ac5157150a5a6649985f254a4f55bea412b025a5e2e5087092c6"
     }
   ],
   "tables": [
