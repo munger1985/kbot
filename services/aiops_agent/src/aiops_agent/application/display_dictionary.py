@@ -14,6 +14,8 @@ _DISPLAY_NAMES = {
     "ORACLE": "Oracle",
     "MYSQL": "MySQL",
     "POSTGRESQL": "PostgreSQL",
+    "artifact.sql_plan.import": "执行计划（用户材料）",
+    "SQL_PLAN_IMPORT_INVALID": "执行计划格式无效或超出解析边界",
     "ACTIVE": "启用",
     "DISABLED": "停用",
     "REVOKED": "已撤销",

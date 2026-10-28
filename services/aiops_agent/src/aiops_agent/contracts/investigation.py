@@ -14,6 +14,7 @@ from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.evidence import SourcePaginationObservation
 from aiops_agent.contracts.implementation import ImplementationRunbook
 from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
+from aiops_agent.contracts.sql_plan import SqlPlanDocument, SqlPlanAssessment
 from platform_core.contracts.aiops.executor import ObjectAccessObservation, DiagnosticPaginationObservation
 
 
@@ -146,6 +147,7 @@ class InvestigationObservation(BaseModel):
     truncated: bool
     followup_run_id: str | None = None
     provenance: EvidenceProvenance | None = None
+    sql_plan: SqlPlanDocument | None = None
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     pagination: DiagnosticPaginationObservation | None = None
     source_pagination: SourcePaginationObservation | None = None
@@ -213,6 +215,7 @@ class InvestigationRecord(BaseModel):
     runbook: ImplementationRunbook | None = None
     sql_object_graph: SqlObjectGraph | None = None
     sql_subject_graphs: tuple[SqlObjectGraph, ...] = Field(default=(), max_length=20)
+    sql_plan_assessments: tuple[SqlPlanAssessment, ...] = Field(default=(), max_length=80)
     access_gaps: tuple[InvestigationAccessGap, ...] = Field(default=(), max_length=128)
 
     def validate_access_gaps(self, gaps):
@@ -255,6 +258,11 @@ class InvestigationRecord(BaseModel):
             for edge in graph.relationships:
                 if edge.anchor.evidence_ref not in refs or edge.related.evidence_ref not in refs:
                     raise ValueError("对象关系必须引用本记录冻结的观测")
+        for plan in self.sql_plan_assessments:
+            if plan.evidence_ref not in refs or (plan.anchor_ref is not None and plan.anchor_ref not in refs) or not any(
+                graph.database_type == plan.database_type and graph.subject == plan.subject for graph in self.sql_graphs
+            ):
+                raise ValueError("计划核验必须绑定本记录的材料与 SQL 主体")
         claim_ids = {item.claim_id for item in self.claims}
         if any(not set(goal.claim_refs) <= claim_ids for goal in self.goal_assessments):
             raise ValueError("目标完成状态引用了不存在的主张")
@@ -299,3 +307,5 @@ class InvestigationRecord(BaseModel):
         from aiops_agent.domain.evidence.sql_object_graph import replay_sql_object_graph
         for graph in self.sql_graphs:
             replay_sql_object_graph(graph, evidence)
+        from aiops_agent.domain.evidence.sql_plan_matching import replay_sql_plan_assessments
+        replay_sql_plan_assessments(self.sql_plan_assessments, self.sql_graphs, evidence)

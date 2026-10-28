@@ -11,6 +11,7 @@ from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasur
 from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.evidence import SourcePaginationObservation
+from aiops_agent.contracts.sql_plan import SqlPlanDocument
 
 from platform_core.contracts.aiops import (
     AnswerBlockType,
@@ -47,6 +48,7 @@ class TurnEvidenceFact(BaseModel):
     warnings: tuple[str, ...] = ()
     visualizations: tuple[ChartSpec, ...] = ()
     provenance: EvidenceProvenance | None = None
+    sql_plan: SqlPlanDocument | None = None
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     pagination: DiagnosticPaginationObservation | None = None
     source_pagination: SourcePaginationObservation | None = None
@@ -56,6 +58,12 @@ class TurnEvidenceFact(BaseModel):
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.sql_plan is not None and (
+            self.trust_level != "USER_PROVIDED" or self.tool_id != "artifact.sql_plan.import"
+            or self.measurement_semantics != "NOT_APPLICABLE" or self.provenance is not None
+            or self.row_count != len(self.sql_plan.nodes) or self.row_count != len(self.rows) or self.truncated
+        ):
+            raise ValueError("导入计划必须保留人工来源和完整安全投影，不能自证数据库来源")
         if self.source_pagination is not None and (
             self.pagination is not None or sum(self.source_pagination.returned_page_rows) != self.row_count
             or self.row_count != len(self.rows)

@@ -107,6 +107,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             row_count=fact.row_count, truncated=fact.truncated,
             followup_run_id=str(fact.followup_run_id) if fact.followup_run_id else None,
             provenance=fact.provenance, derivations=fact.derivations,
+            sql_plan=fact.sql_plan,
             object_access=fact.object_access,
             pagination=fact.pagination,
             source_pagination=fact.source_pagination,
@@ -135,6 +136,11 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
         elif bundle:
             graphs = tuple(SqlObjectGraph.model_validate(item["object_graph"]) for item in bundle["subjects"] if item.get("object_graph") is not None)
             record = record.model_copy(update={"sql_subject_graphs": graphs})
+        if bundle:
+            from aiops_agent.contracts.sql_plan import SqlPlanAssessment
+            record = record.model_copy(update={"sql_plan_assessments": tuple(
+                SqlPlanAssessment.model_validate(item) for item in bundle.get("plan_assessments", ())
+            )})
         record = type(record).model_validate(record.model_dump(mode="python"))
         record.validate_observations(evidence)
     runbook = compile_diagnostic_runbook(

@@ -42,6 +42,7 @@ from aiops_agent.application.investigation.projection import direct_list_result_
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref
+from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
@@ -511,7 +512,13 @@ class DbaEvidenceAssessmentHandler:
                     )
                 continue
             if schema_version == "USER_UPLOAD_EXTRACT.v1":
-                fact = self._sqlhc_upload_fact(artifact)
+                if (artifact.get("payload") or {}).get("extraction_error") == "SQL_PLAN_IMPORT_INVALID":
+                    gaps.append(TurnEvidenceGap(source_id="user.uploaded-sql-plan", step_id="upload",
+                        code="SQL_PLAN_IMPORT_INVALID", detail="计划 JSON 格式无效或超出解析边界，未向模型开放原文；其他证据仍可继续诊断。", retryable=False))
+                    continue
+                fact = sql_plan_upload_fact(artifact)
+                if fact is None:
+                    fact = self._sqlhc_upload_fact(artifact)
                 if fact is None:
                     fact = self._exacheck_upload_fact(artifact)
                 if fact is not None:

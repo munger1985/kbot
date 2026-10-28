@@ -4382,6 +4382,7 @@ class TurnPlanningService:
                             "extraction_mode": upload.extraction_mode,
                             "report_kind": upload.report_kind,
                             "structured_facts": upload.structured_facts,
+                            "extracted_at": upload.extracted_at,
                             "searchable": {
                                 "content_hash": upload.searchable_content_hash,
                                 "byte_size": upload.searchable_byte_size,

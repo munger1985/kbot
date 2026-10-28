@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from typing import Any
 from uuid import UUID
@@ -19,6 +21,7 @@ from aiops_agent.application.sqlhc_report import (
     SQLHC_REPORT_KIND,
     parse_sqlhc_html,
 )
+from aiops_agent.domain.evidence.sql_plan import SQL_PLAN_REPORT_KIND, SqlPlanImportError, parse_sql_plan_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +46,7 @@ class ResolvedConversationUpload:
     extraction_error: str | None = None
     report_kind: str | None = None
     structured_facts: dict[str, Any] | None = None
+    extracted_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +233,12 @@ class ConversationInputResolver:
                 extraction_mode = "TEXT_DECODE"
                 report_kind = None
                 structured_facts = None
+                plan = parse_sql_plan_json(text) if stored.media_type not in {"text/html", "application/xhtml+xml"} else None
+                if plan is not None:
+                    report_kind = SQL_PLAN_REPORT_KIND
+                    structured_facts = plan.model_dump(mode="json")
+                    text = json.dumps(structured_facts, ensure_ascii=False, indent=2)
+                    extraction_mode = "SQL_PLAN_SAFE_PROJECTION"
                 if stored.media_type in {"text/html", "application/xhtml+xml"}:
                     exacheck = parse_exacheck_html(text, file_name=stored.file_name)
                     sqlhc = parse_sqlhc_html(text, file_name=stored.file_name)
@@ -262,6 +272,7 @@ class ConversationInputResolver:
                     line_count=text.count("\n") + 1,
                     report_kind=report_kind,
                     structured_facts=structured_facts,
+                    extracted_at=datetime.now(UTC).isoformat(),
                 )
             except (UnicodeDecodeError, ValueError) as exc:
                 return ResolvedConversationUpload(
@@ -271,7 +282,9 @@ class ConversationInputResolver:
                     ),
                     extraction_mode="TEXT_DECODE",
                     extraction_error=(
-                        "INPUT_TEXT_ENCODING_INVALID"
+                        "SQL_PLAN_IMPORT_INVALID"
+                        if isinstance(exc, SqlPlanImportError)
+                        else "INPUT_TEXT_ENCODING_INVALID"
                         if isinstance(exc, UnicodeDecodeError)
                         else "INPUT_TEXT_EXTRACTION_EMPTY"
                     ),

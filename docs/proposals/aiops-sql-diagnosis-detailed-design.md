@@ -322,6 +322,63 @@ SQL 对象图从已消歧主体的完整显式语法引用或匹配计划目录�
 哈希、可信度、原始行与身份，不能凭一份自述一致的关系副本升级结论。
 真实管理通道只读目录检查与 Agent 绑定诊断凭据、模型及浏览器闭环分别验收。
 
+### 5.3 已有计划材料的安全导入与逐主体匹配
+
+现有对话附件入口支持 PostgreSQL EXPLAIN JSON（单元素数组或 auto_explain 的计划对象）、
+MySQL EXPLAIN JSON，以及 Oracle 导出计划行的 SQL_PLAN_IMPORT.v1 封装。
+Oracle 19c 不假定存在统一原生计划 JSON：封装的 plan 为小写字段名的行数组，
+至少包含 id、parent_id、operation，可带 options、object_owner、object_name、
+object_type、cardinality、cost、last_starts、last_output_rows、last_elapsed_time。
+只能有一个根，原节点编号唯一，不能循环或悬空；多个游标或计划必须分别导入。
+这一路径读取已有材料，不执行 EXPLAIN、不启动计划采集或重放业务语句。
+
+需要声明 SQL/来源身份时使用如下封装，subject 按引擎提供完整维度；
+physical_identity 与 captured_at 可缺省，但核验结果保持不完整/未知，不自行补值：
+
+```json
+{
+  "schema_version": "SQL_PLAN_IMPORT.v1",
+  "database_type": "POSTGRESQL",
+  "subject": {
+    "query_id": "1285382359565720997",
+    "database_oid": "16510",
+    "user_oid": "16384",
+    "top_level": true
+  },
+  "captured_at": "2026-10-28T00:00:00+00:00",
+  "plan": [{"Plan": {"Node Type": "Seq Scan", "Schema": "mes", "Relation Name": "mes_equipment_signal", "Plan Rows": 1000}}]
+}
+```
+
+MySQL subject 使用 digest/schema_name（显式 NULL Schema 不当成默认库）；
+Oracle 使用 sql_id/dbid/inst_id/container_id/child_number/plan_hash_value。
+物理身份按引擎保存 system_identifier/database_oid、server_uuid 或
+dbid/container_id/instance_number，以及 instance_started_at；
+这些均为用户声明，和数据库来源一致也只能是 DECLARED_MATCH，而不是 SOURCE_VERIFIED。
+完整维度缺失、SQL/引擎/启动代次冲突、历史时间均逐主体区分。
+有运行统计不等于已核验生产执行，也不证明与代表参数属于同一次执行。
+
+解析上限为 1 MiB、128 节点、32 层、64 个参数类型；重复 JSON 键、非有限数、
+布尔数值、异常精度、破损树或超界均拒绝，不把失败计划回退到原文检索。
+只保留有界节点/目录标识和精确数值，原 SQL、谓词、表达式、参数键和值、
+任意扩展字段不进入安全投影；原上传仍按既有权限和保留策略保存。
+如封装带 parameters，仅冻结 NULL/BOOLEAN/NUMBER/STRING/ARRAY/OBJECT 类型序列，
+不保存可猜测的值哈希，也不把类型当作代表性证明或执行参数。
+安全投影在写入可检索正文前完成，避免 artifact.search 再把原值交给模型。
+
+PG actual_rows 为每循环口径，仅实际循环大于零才与估算比较；
+Oracle LAST 输出行数按 starts 归一，starts=0 或估算为零不生成比率。
+MySQL 普通 JSON 保持估算口径，优化器成本不当作毫秒，表名可能是别名；
+Oracle 索引对象不误投影为表名。解析的运行统计按 NONE/PARTIAL/PRESENT 保存。
+逐节点证据使用中文列标签，并保留原生字段含义。
+
+每主体有界核对前四份已有计划，匹配结果进入 SQL Evidence Bundle 和不可变调查记录；
+多 SQL 请求分别核验，不能继承第一条 SQL 的结果。记录冻结计划材料与数据库身份锚点引用，
+报告/案例重算匹配并回查同 Run 原始 USER_UPLOAD_EXTRACT/DBA_TOOL_RESULT、
+哈希、信任、时间、节点和行值，不接受一份自述一致的副本。
+人工计划支持具体待核验假设；不能凭上传计划确认生产访问路径或根因。
+此增量不关闭代表参数安全使用、独立审批的计划采集、运行时动态对象和真实三库验收。
+
 ## 6. 可发现的信息资源与受控查询
 
 ### 6.1 当前基础与待补齐边界

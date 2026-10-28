@@ -6,6 +6,11 @@ import re
 
 
 SQL_IDENTITIES = {"POSTGRESQL_QUERY_ID": "query_id", "MYSQL_DIGEST": "digest", "ORACLE_SQL_ID": "sql_id"}
+SQL_STATISTICS_TOOLS = {
+    "POSTGRESQL": ("db.postgresql.statement.details", "db.postgresql.statement.subjects", "db.postgresql.statement.top", "workload.sql.top_window"),
+    "MYSQL": ("db.sql.cursor_details", "db.mysql.statement.digest.top", "workload.sql.top_window"),
+    "ORACLE": ("db.sql.cursor_details", "db.sql.top_current", "workload.sql.top_window"),
+}
 _SQL_ENGINES = {"POSTGRESQL_QUERY_ID": "POSTGRESQL", "MYSQL_DIGEST": "MYSQL", "ORACLE_SQL_ID": "ORACLE"}
 
 

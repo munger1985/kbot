@@ -10,6 +10,8 @@ from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, _sub
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from aiops_agent.playbooks import canonical_hash
+from aiops_agent.domain.evidence.sql_plan_matching import assess_sql_plans
+from aiops_agent.domain.sql_subjects import SQL_STATISTICS_TOOLS as _SQL_STATISTICS_TOOLS
 
 
 def exact_wire(value: Any) -> Any:
@@ -32,11 +34,6 @@ _SQL_SCOPE_DIMENSIONS = {
     "POSTGRESQL": ("database_oid", "user_oid", "top_level"),
     "MYSQL": ("schema_name",),
     "ORACLE": ("dbid", "inst_id", "container_id", "child_number", "plan_hash_value"),
-}
-_SQL_STATISTICS_TOOLS = {
-    "POSTGRESQL": ("db.postgresql.statement.details", "db.postgresql.statement.subjects", "db.postgresql.statement.top", "workload.sql.top_window"),
-    "MYSQL": ("db.sql.cursor_details", "db.mysql.statement.digest.top", "workload.sql.top_window"),
-    "ORACLE": ("db.sql.cursor_details", "db.sql.top_current", "workload.sql.top_window"),
 }
 
 
@@ -117,7 +114,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         def matching(entry):
             return len(entry[1]) == len(names) and _matches(dict(zip(names, entry[1], strict=True)), subject, identity)
         indexed.sort(key=lambda entry: not matching(entry))
-        for index, row in sorted(indexed[:40]):
+        projection_limit = 128 if fact.sql_plan is not None else 40
+        for index, row in sorted(indexed[:projection_limit]):
             if len(row) != len(names):
                 continue
             mapped = dict(zip(names, row, strict=True))
@@ -154,8 +152,9 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "columns": list(fact.columns),
             "records": records,
             "row_count": fact.row_count,
-            "truncated": fact.truncated or len(fact.rows) > 40,
+            "truncated": fact.truncated or len(fact.rows) > projection_limit,
             "warnings": list(fact.warnings),
+            "sql_plan": fact.sql_plan.model_dump(mode="json") if fact.sql_plan is not None else None,
             "object_access": [item.model_dump(mode="json") for item in fact.object_access],
             "pagination": fact.pagination.model_dump(mode="json") if fact.pagination is not None else None,
             "lineage": {"artifact_id": str(fact.artifact_id), "step_id": fact.step_id,
@@ -200,6 +199,14 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
                             "time_skew_seconds": age,
                             "limitation": "相近时点的会话关联，不证明其他时段或对象访问路径",
                         })
+    subjects = []
+    for item in resolution["candidates"]:
+        graph = sql_object_graph_for_resolution(
+            database_type=database_type, subject=item["subject_ref"],
+            resolution={"status": "RESOLVED", "candidates": [item]}, evidence=evidence,
+        ) if resolution["status"] in {"RESOLVED", "BOUNDED", "COMPARISON"} else None
+        plans = assess_sql_plans(database_type=database_type, subject=graph["subject"], evidence=evidence) if graph else ()
+        subjects.append({**item, "object_graph": graph, "plan_assessments": [plan.model_dump(mode="json") for plan in plans]})
     return {
         "schema_version": "SQL_EVIDENCE_BUNDLE.v1",
         "subject": exact_wire(subject),
@@ -211,10 +218,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         "object_graph": sql_object_graph_for_resolution(
             database_type=database_type, subject=subject, resolution=resolution, evidence=evidence,
         ),
-        "subjects": [{**item, "object_graph": sql_object_graph_for_resolution(
-            database_type=database_type, subject=item["subject_ref"],
-            resolution={"status": "RESOLVED", "candidates": [item]}, evidence=evidence,
-        ) if resolution["status"] in {"RESOLVED", "BOUNDED", "COMPARISON"} else None} for item in resolution["candidates"]],
+        "subjects": subjects,
+        "plan_assessments": [plan for item in subjects for plan in item["plan_assessments"]],
         "comparison_policy": {"separate_subjects": True, "implicit_aggregation": False,
                               "cumulative_difference_is_window": False, "comparison_is_causal_effect": False},
         "interpretation_policy": {
@@ -269,8 +274,9 @@ def _comparison_evidence_bundle(*, task_frame, database_type, evidence):
                 if row["role"] == "SUBJECT" and not row["subject_ids"]:
                     row["role"] = "SUBJECT_CANDIDATE"
             ranked = sorted(by_index.values(), key=lambda row: (row["role"] not in {"SUBJECT", "SUBJECT_CANDIDATE"}, row["row_index"]))
-            target["truncated"] = target["truncated"] or len(ranked) > 40
-            target["records"] = sorted(ranked[:40], key=lambda row: row["row_index"])
+            projection_limit = 128 if target.get("sql_plan") is not None else 40
+            target["truncated"] = target["truncated"] or len(ranked) > projection_limit
+            target["records"] = sorted(ranked[:projection_limit], key=lambda row: row["row_index"])
             graphs = {canonical_hash(graph): graph for graph in (*target["calculation_graphs"], *item["calculation_graphs"])}
             target["calculation_graphs_truncated"] = target["calculation_graphs_truncated"] or len(graphs) > 4
             target["calculation_graphs"] = list(graphs.values())[:4]
@@ -292,6 +298,7 @@ def _comparison_evidence_bundle(*, task_frame, database_type, evidence):
             "limitation": "各 SQL 按独立完整主体取证；逐行保留来源、时间与口径。缺失不能补零，累计值不能替代窗口或效果归因。",
         },
         "observations": list(observations.values()),
+        "plan_assessments": [plan for item in subjects for plan in item["plan_assessments"]],
         "relationships": list({canonical_hash(item): item for part in parts for item in part["relationships"]}.values()),
     }
 
