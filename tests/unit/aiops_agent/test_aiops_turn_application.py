@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -1578,7 +1579,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             reconciler.stop()
             return False
 
-        queue = SimpleNamespace(promote_next=promote_next)
+        queue = SimpleNamespace(promote_next=promote_next, expire_next=AsyncMock(return_value=False))
         reconciler = AIOpsReconciler(
             runtime_service=runtime,
             turn_queue_service=queue,
@@ -1965,7 +1966,7 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             "interaction_mode": "AUTONOMOUS",
             "workflow_kind": WorkflowKind.INSPECTION.value,
             "inspection_fire_id": str(fire_id),
-            "deadline_at": "2026-07-24T02:00:00+00:00",
+            "deadline_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
             "observation_start": "2026-07-22T16:00:00+00:00",
             "observation_end": "2026-07-23T16:00:00+00:00",
             "inspection": {
@@ -1997,8 +1998,40 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             ],
             "DAILY",
         )
-        self.assertEqual(str(run.deadline_at), "2026-07-24 02:00:00+00:00")
+        self.assertEqual(run.deadline_at.isoformat(), created_payload["execution_context"]["deadline_at"])
         self.assertEqual(receipt["turn_id"], str(uow.turns.turns[0].turn_id))
+
+    async def test_expired_queue_never_promotes_or_invokes_planner(self) -> None:
+        uow = _Uow()
+        _, receipt = await self._start(uow)
+        payload = dict(uow.outbox.rows[0].payload_json)
+        payload["execution_context"] = {"deadline_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}
+        await TurnQueueService(uow_factory=lambda: uow).accept_created(payload)
+        self.assertEqual("FAILED", uow.turns.turns[0].status)
+        self.assertEqual(1, len(uow.outbox.rows))
+        planner = _turn_planner(uow)
+        planner._plan = AsyncMock()
+        result = await planner.begin(payload)
+        self.assertEqual("FAILED", result["status"])
+        planner._plan.assert_not_awaited()
+        self.assertEqual([], uow.runs.rows)
+
+    async def test_expired_after_routing_never_launches_database_run(self) -> None:
+        uow = _Uow()
+        await self._start(uow)
+        queue = TurnQueueService(uow_factory=lambda: uow)
+        await queue.accept_created(dict(uow.outbox.rows[0].payload_json))
+        payload = dict(uow.outbox.rows[1].payload_json)
+        planner = _turn_planner(uow)
+        await planner.begin(payload)
+        turn = uow.turns.turns[0]
+        turn.orchestration_internal_json = {
+            **turn.orchestration_internal_json,
+            "planning_deadline_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        }
+        result = await planner.start_active_diagnosis(payload)
+        self.assertEqual("FAILED", result["status"])
+        self.assertEqual([], uow.runs.rows)
 
     async def test_waiting_user_ends_current_turn_event_stream(self) -> None:
         uow = _Uow()
@@ -2080,6 +2113,15 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
             idempotency_key="choose-mes",
             candidate_id=clarification["candidates"][0]["candidate_id"],
         )
+        from aiops_agent.application.turn_budget import pause_turn_budget
+        paused_at = datetime.now(UTC) - timedelta(hours=4)
+        frozen_budget = pause_turn_budget(paused_at + timedelta(seconds=45), now=paused_at)
+        turn = uow.turns.turns[0]
+        turn.orchestration_internal_json = {
+            **turn.orchestration_internal_json, "paused_turn_budget": frozen_budget,
+        }
+        original_payload = dict(uow.outbox.rows[0].payload_json)
+        before_resume = datetime.now(UTC)
         first = await service.respond_to_clarification(
             domain_id=7,
             conversation_id=UUID(receipt["conversation_id"]),
@@ -2106,6 +2148,11 @@ class ConversationTurnApplicationTest(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(1, len(responses))
         resolved_payload = dict(uow.outbox.rows[-1].payload_json)
+        resumed_deadline = datetime.fromisoformat(resolved_payload["execution_context"]["deadline_at"])
+        self.assertGreaterEqual(resumed_deadline, before_resume + timedelta(seconds=45))
+        self.assertLessEqual(resumed_deadline, datetime.now(UTC) + timedelta(seconds=45))
+        self.assertEqual(original_payload, dict(uow.outbox.rows[0].payload_json))
+        self.assertIsNone(turn.orchestration_internal_json["paused_turn_budget"])
         routed = await planner.resume(resolved_payload)
         self.assertEqual("ACTIVE_DIAGNOSIS", routed["dispatch"])
         await planner.start_active_diagnosis(resolved_payload)

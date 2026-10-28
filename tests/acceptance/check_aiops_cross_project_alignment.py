@@ -13,6 +13,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/contracts/turn_budget.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/turn_budget.py"),
     Path("services/aiops_agent/src/aiops_agent/tools/sampling.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/tool_execution.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/calculation.py"),

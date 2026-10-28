@@ -9,6 +9,7 @@ from uuid import UUID
 
 from aiops_agent.application.errors import resource_not_found, state_conflict
 from aiops_agent.entities import OpsTurnEventEntity, OutboxEntity
+from aiops_agent.application.turn_budget import expire_unstarted_turn
 
 
 class TurnQueueService:
@@ -16,6 +17,7 @@ class TurnQueueService:
 
     def __init__(self, *, uow_factory):
         self._uow_factory = uow_factory
+        self._budget_cursor = None
 
     async def accept_created(self, payload: dict) -> None:
         domain_id = int(payload["domain_id"])
@@ -39,6 +41,9 @@ class TurnQueueService:
             if turn.conversation_id != conversation_id:
                 raise state_conflict("Turn Outbox 的 Conversation 归属不一致")
             if turn.status != "QUEUED":
+                return
+            if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                await uow.commit()
                 return
             blocker = await uow.turns.get_blocking_turn(
                 conversation_id=conversation_id,
@@ -92,9 +97,37 @@ class TurnQueueService:
             ):
                 return False
             payload = await self._created_payload(uow, turn)
+            if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                await uow.commit()
+                return True
             await self._promote(uow, turn, payload)
             await uow.commit()
             return True
+
+    async def expire_next(self) -> bool:
+        """轮转检查最多 32 个尚无 Run 的 Turn，过期一项即释放会话执行槽。"""
+        async with self._uow_factory() as uow:
+            candidates = await uow.turns.list_unstarted_budget_candidates(after=self._budget_cursor, limit=32)
+            candidates = [(row.created_at, row.turn_id, row.domain_id, row.conversation_id) for row in candidates]
+        if not candidates:
+            self._budget_cursor = None
+            return False
+        for created_at, turn_id, domain_id, conversation_id in candidates:
+            self._budget_cursor = (created_at, turn_id)
+            async with self._uow_factory() as uow:
+                conversation = await uow.conversations.get_conversation(
+                    domain_id=domain_id, conversation_id=conversation_id, lock=True,
+                )
+                if conversation is None:
+                    continue
+                turn = await uow.turns.get_turn(domain_id=domain_id, turn_id=turn_id, lock=True)
+                if turn is None:
+                    continue
+                payload = await self._created_payload(uow, turn)
+                if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                    await uow.commit()
+                    return True
+        return False
 
     @staticmethod
     async def _record_waiting(uow, turn) -> None:

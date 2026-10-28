@@ -45,6 +45,7 @@ class AIOpsReconciler:
                 worked = False
             if self._turn_queue_service is not None:
                 try:
+                    worked = await self._turn_queue_service.expire_next() or worked
                     worked = (
                         await self._turn_queue_service.promote_next()
                         or worked

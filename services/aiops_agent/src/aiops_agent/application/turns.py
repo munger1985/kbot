@@ -1301,6 +1301,23 @@ class ConversationTurnService:
                     raise validation_failed("澄清候选不存在或已经失效")
             elif not clarification.get("allow_free_text", False):
                 raise validation_failed("当前澄清不接受自由文字")
+            created = await uow.outbox.get_by_idempotency(idempotency_key=f"turn-created:{turn_id}")
+            if created is None:
+                raise state_conflict("Turn 缺少可重放的创建命令")
+            execution_context = dict(dict(created.payload_json or {}).get("execution_context") or {})
+            if execution_context.get("deadline_at"):
+                from aiops_agent.application.turn_budget import expire_unstarted_turn, resume_turn_budget
+                now = datetime.now(UTC)
+                if await expire_unstarted_turn(uow=uow, turn=turn, payload=dict(created.payload_json or {}), now=now):
+                    await uow.commit()
+                    return self._receipt(turn)
+                internal = dict(turn.orchestration_internal_json or {})
+                try:
+                    resumed_deadline = resume_turn_budget(internal.get("paused_turn_budget"), now=now)
+                except (ValueError, TypeError) as exc:
+                    raise state_conflict("本轮没有有效的剩余续跑预算，请重新提问") from exc
+                execution_context["deadline_at"] = resumed_deadline
+                turn.orchestration_internal_json = {**internal, "planning_deadline_at": resumed_deadline, "paused_turn_budget": None}
             conversation.last_message_no = int(conversation.last_message_no) + 1
             conversation.updated_by = actor_id
             conversation.updated_at = datetime.now(UTC)
@@ -1336,13 +1353,9 @@ class ConversationTurnService:
                     },
                 )
             )
-            created = await uow.outbox.get_by_idempotency(
-                idempotency_key=f"turn-created:{turn_id}"
-            )
-            if created is None:
-                raise state_conflict("Turn 缺少可重放的创建命令")
             outbox_payload = {
                 **dict(created.payload_json or {}),
+                "execution_context": execution_context,
                 "response": response_payload,
                 "trace_id": trace_id,
             }

@@ -461,6 +461,10 @@ class TurnPlannerService:
                 }
             if turn.status != "UNDERSTANDING":
                 raise state_conflict("只有已完成统一路由的 Turn 可以启动诊断")
+            from aiops_agent.application.turn_budget import expire_unstarted_turn
+            if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                await uow.commit()
+                return self._result(turn.turn_id, turn.status)
             plan = TurnPlanV1.model_validate(turn.capability_plan_json)
             if AIOpsCapability.ACTIVE_DIAGNOSIS not in plan.requested_capabilities:
                 raise state_conflict("当前 Turn 未规划主动诊断能力")
@@ -605,6 +609,10 @@ class TurnPlannerService:
             )
             if turn is None:
                 raise resource_not_found("Conversation Turn")
+            from aiops_agent.application.turn_budget import expire_unstarted_turn
+            if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                await uow.commit()
+                return {"terminal_status": turn.status}
             internal = dict(turn.orchestration_internal_json or {})
             selected_scope = dict(internal.get("selected_scope") or {})
             targets = [
@@ -997,10 +1005,14 @@ class TurnPlannerService:
         agent_id = UUID(str(payload["agent_id"]))
         version_id = UUID(str(payload["agent_version_id"]))
         async with self._uow_factory() as uow:
-            turn = await uow.turns.get_turn(domain_id=domain_id, turn_id=turn_id)
+            turn = await uow.turns.get_turn(domain_id=domain_id, turn_id=turn_id, lock=True)
             if turn is None:
                 raise resource_not_found("Conversation Turn")
             if turn.status != "ACCEPTED":
+                return {"turn_id": str(turn_id), "status": turn.status}
+            from aiops_agent.application.turn_budget import expire_unstarted_turn
+            if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                await uow.commit()
                 return {"turn_id": str(turn_id), "status": turn.status}
             conversation = await uow.conversations.get_conversation(
                 domain_id=domain_id, conversation_id=turn.conversation_id
@@ -1671,6 +1683,10 @@ class TurnPlannerService:
                 raise resource_not_found("Conversation Turn")
             if turn.status != "ACCEPTED":
                 return self._result(turn.turn_id, turn.status)
+            from aiops_agent.application.turn_budget import expire_unstarted_turn, pause_turn_budget
+            if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
+                await uow.commit()
+                return self._result(turn.turn_id, turn.status)
             turn.current_plan_revision = plan.revision_no
             turn.capability_plan_json = _json(plan)
             turn.scope_resolution_json = _json(scope)
@@ -1695,6 +1711,8 @@ class TurnPlannerService:
                     )
             turn.orchestration_internal_json = {
                 "schema_version": "aiops.orchestration-internal.v1",
+                "planning_deadline_at": dict(payload.get("execution_context") or {}).get("deadline_at"),
+                "paused_turn_budget": pause_turn_budget(dict(payload.get("execution_context") or {}).get("deadline_at"), now=datetime.now(UTC)) if clarification is not None else None,
                 "planner_receipt": receipt.model_dump(mode="json"),
                 "capability_invocation": capability_invocation,
                 "selected_scope": internal_scope if clarification is None else None,

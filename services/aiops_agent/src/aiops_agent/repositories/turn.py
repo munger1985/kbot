@@ -6,7 +6,7 @@ from collections.abc import Collection
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.orm import aliased
 
 from aiops_agent.entities import (
@@ -39,6 +39,20 @@ _TURN_QUEUE_BLOCKING_STATUSES = (
 
 class TurnRepository(AIOpsRepository):
     """只持久化 Turn 子聚合，不拥有事务提交。"""
+
+    async def list_unstarted_budget_candidates(self, *, after=None, limit=32):
+        """只扫描尚无任何 Run 的规划/等待状态，JSON 期限由应用层解释。"""
+        has_run = exists().where(OpsTurnRunEntity.turn_id == OpsConversationTurnEntity.turn_id)
+        statement = select(OpsConversationTurnEntity).where(
+            OpsConversationTurnEntity.status.in_(("QUEUED", "ACCEPTED", "UNDERSTANDING", "PLANNING", "WAITING_USER")),
+            ~has_run,
+        )
+        if after is not None:
+            stamp, turn_id = after
+            statement = statement.where(or_(OpsConversationTurnEntity.created_at > stamp,
+                and_(OpsConversationTurnEntity.created_at == stamp, OpsConversationTurnEntity.turn_id > turn_id)))
+        statement = statement.order_by(OpsConversationTurnEntity.created_at, OpsConversationTurnEntity.turn_id).limit(min(32, max(1, limit)))
+        return list((await self._session.execute(statement)).scalars())
 
     async def add_turn(
         self, row: OpsConversationTurnEntity
