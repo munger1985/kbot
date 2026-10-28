@@ -6,16 +6,20 @@
 
 基准日期：2026-10-11
 
+2026-10-28 设计复审补充：既有标准监控能力状态不变；第 5.4 节及相关诊断扩展是待实施
+目标，实施与验收以 [SQL 诊断详细设计](aiops-sql-diagnosis-detailed-design.md) 为准。
+
 ## 1. 决策摘要
 
 AIOps 统一使用原生实时监控页面，不再部署或集成 Grafana Server。观测栈保留
 Prometheus、Alertmanager、Loki、Grafana Alloy、Node Exporter 和数据库 Exporter。
 其中 Grafana Alloy 仅是日志采集器，与 Grafana Server、Dashboard 或登录体系没有运行依赖。
 
-实时监控与 Agent 智能诊断的监控取证共用唯一 Monitoring Profile Catalog 和唯一 Metric
-Catalog。调用方不得按页面、告警类型或数据库版本另写指标清单；必须使用
+实时监控与 Agent 智能诊断的标准监控概览共用唯一 Monitoring Profile Catalog 和唯一 Metric
+Catalog。标准概览调用方不得按页面、告警类型或数据库版本另写指标清单；必须使用
 `profile_id + db_type + version_code` 解析一个确定的 Profile Variant，再从 Variant 取得
-Metric Code。
+Metric Code。问题驱动的临时取证不以 Profile 清单为能力上限，但必须走第 5.4 节的
+受控发现与查询，不能复制标准定义或绕过授权/版本策略。
 
 ## 2. 设计目标
 
@@ -35,8 +39,9 @@ Metric Code。
 `services/aiops_agent/src/aiops_agent/resources/metrics/baseline.v1.json`
 
 Metric Catalog 定义稳定 Metric Code、单位、值类型、维度、查询预算，以及 Prometheus、
-Zabbix 等 Provider 的受控查询定位。它是指标定义的唯一来源，实时监控和诊断都不得复制 Provider
-查询模板。
+Zabbix 等 Provider 的受控查询定位。它是标准指标定义的唯一来源，实时监控和诊断都不得复制
+已有 Provider 查询模板。诊断发现的原生指标保留真实来源、单位/类型、标签、时间与质量，
+不能冒称已有 Metric Code 的等价指标；通用化后需评审纳入同一 Catalog。
 
 ### 3.2 Monitoring Profile Catalog
 
@@ -104,9 +109,11 @@ Profile 列表必须按实际 Target 的类型和版本过滤。View 请求仍�
 
 ### 5.2 告警与智能诊断
 
-告警诊断、健康总览及需要实时基线的 Agent 调查使用
+告警诊断、健康总览及确需标准实时概览的 Agent 调查使用
 `overview_for_database(db_type, version_code)`。诊断快照记录已解析的 Profile 版本、Variant ID
 和 Metric Code，保证证据可回放、可审计。
+
+这不要求每次 SQL 调查先查完概览、复制等所有指标；是否需要概览由问题与证据需求决定。
 
 数据库直连 SQL 诊断工具仍使用 Diagnostic Tool Catalog 的版本 Variant。它和 Monitoring
 Profile 职责不同，但必须使用同一个 Target `db_type/version_code`，不得自行猜测版本。
@@ -115,6 +122,22 @@ Profile 职责不同，但必须使用同一个 Target `db_type/version_code`，
 
 巡检需要趋势证据时，先根据 Target 类型和版本解析 Monitoring Profile，再由检查项或可视化策略
 选择该 Profile 内允许的指标。检查项不得直接注入未进入统一 Metric Catalog 的查询。
+
+### 5.4 问题驱动的临时诊断查询（待实施）
+
+Agent 可基于具体问题/假设，在授权 Target 绑定内发现真实可用的指标、标签、日志与
+数据库视图，选择已有目录或受控动态查询回答长尾问题。不要求每个临时查询先修改
+Metric Catalog；也不把 Monitoring Profile 版本不支持等同于所有直连诊断能力不可用。
+各能力仍须满足自身引擎/版本、实际权限与安全策略，不能隐式匹配最近版本。
+
+临时查询必须记录证据需求、源身份与血缘、元数据/测量语义、实际时间/覆盖、变换、
+成本/截断与引用；沿用 AST、精确 Target selector、行数/字节/序列/点数/超时配额。
+没有真实指标元数据或可解释的单位时，不猜名字、不把空值当 0、不推导因果。
+监控与数据库直连按信息价值组合，不使用“监控失败才查库”的串行门禁。
+
+该路径只供有审计的本轮诊断，不作为浏览器任意查询接口，不自动加入日常巡检或
+Dashboard，不修改标准 Metric Code 的语义，也不生成第二套指标定义。稳定需求仍走
+Catalog/Profile Variant 评审发布；新 Adapter 必须实际注册、绑定并验证后才能调用。
 
 ## 6. Grafana 删除后的部署边界
 
@@ -169,5 +192,6 @@ Ammolite 的运行时 Secret 清理会删除过期 Grafana Secret。持久化的
 ## 9. 后续演进
 
 缺少的专业监控能力直接补到 AIOps 原生页面和统一 Profile，包括更细的容量、复制、锁、等待、
-SQL、日志关联、跨实例对比与导出。新增能力先进入 Metric Catalog 和版本 Variant，再进入页面；
-不得重新引入另一套 Dashboard 指标定义。
+SQL、日志关联、跨实例对比与导出。新增标准页面能力先进入 Metric Catalog 和版本 Variant，
+再进入页面；不得重新引入另一套 Dashboard 指标定义。Agent 临时调查按第 5.4 节处理，
+不以页面指标发布流程限制其在已授权资源内的证据发现。

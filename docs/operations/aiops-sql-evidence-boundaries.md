@@ -4,6 +4,9 @@
 [SQL 诊断详细设计](../proposals/aiops-sql-diagnosis-detailed-design.md)；
 目标设计尚未实施，不改变本文所述现状。
 
+2026-10-28 目标设计已按多源调查、假设检验、条件化解决方案和真实闭环验收重新修订；
+包括扩大跨轮证据引用、补齐资源发现及全流程 deadline，均不能视为本文当前实现已具备。
+
 ## Oracle 授权声明
 
 在 AIOps 的 Target 编辑页，核对合同后按实际授权勾选 Oracle Diagnostics Pack 和 Tuning Pack。

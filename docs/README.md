@@ -49,7 +49,7 @@ Git 历史保存，不再作为有效文档。
 
 - [KBot 1.0 OCIR 生产部署与初始化方案](proposals/ocir-1.0-production-deployment-plan.md)：正式镜像的 OCI 基础设施、Digest 锁定门禁、空库初始化、验收与回滚方案。
 - [AIOps 跨项目统一实施方案](proposals/aiops-cross-project-unified-implementation-plan.md)：按七个批次完成双向能力吸收、实时监控、双前端和真实环境联合验收。
-- [AIOps SQL 诊断与窗口分析详细设计（待实施）](proposals/aiops-sql-diagnosis-detailed-design.md)：三库统一 SQL 身份、窗口统计、计划关联与真实数据库验收。
+- [AIOps SQL 诊断与窗口分析详细设计（待实施）](proposals/aiops-sql-diagnosis-detailed-design.md)：三库统一身份与窗口、多源假设驱动调查、诊断解决方案及真实运维闭环验收。
 - [AIOps 实时监控 Dashboard 集成详细设计](proposals/aiops-monitoring-dashboard-integration-detailed-design.md)：第一阶段对齐 Prometheus/Zabbix 的 Oracle、MySQL、PostgreSQL 多实例图表及诊断闭环；Zabbix只保留外部接入，OEM暂缓，并要求与Ammolite Cube同步实施。
 - [AIOps 数据库实施文档中心详细设计](proposals/aiops-database-implementation-library-detailed-design.md)：已实施的 Runbook v3、RAC、RMAN、补丁、升级、迁移、克隆和 ADG 演练基准。
 - [AIOps 运维知识库详细设计](proposals/aiops-operations-knowledge-base-detailed-design.md)：用户手册提炼、诊断案例治理、KC 内部索引、Agent 检索与迁移方案。
