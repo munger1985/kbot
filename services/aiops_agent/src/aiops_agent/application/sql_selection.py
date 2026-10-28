@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from aiops_agent.application.diagnosis.sql_diagnosis import exact_wire
+from aiops_agent.application.diagnosis.evidence_projection import project_evidence_rows
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment, TurnEvidenceFact
 from aiops_agent.playbooks import canonical_hash
 
@@ -36,6 +37,13 @@ def decode_selection(value: str) -> dict:
         return data
     except (ValueError, TypeError, KeyError, UnicodeError) as exc:
         raise ValueError("SQL 选择引用无效，请从结果列表重新选择") from exc
+
+
+def sql_selection_context(selected: dict) -> dict:
+    """规划快照和用户消息只存定位信息，原始行只能由可撤销的证据链提供。"""
+    fields = ("selection_ref", "selection_ttl_seconds", "subject_ref", "target_id", "target_row_version",
+        "source_turn_id", "source_run_id", "source_artifact_id", "captured_at", "measurement_semantics")
+    return {field: selected[field] for field in fields}
 
 
 def subject_from_row(fact: TurnEvidenceFact, row_index: int, database_type: str) -> dict:
@@ -91,10 +99,11 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
     if fact is None or fact.trust_level != "SOURCE_VERIFIED" or index >= len(fact.rows) or _row_hash(fact, index) != data["row_sha256"]:
         raise ValueError("SQL 结果行校验失败，请重新查询")
     subject = subject_from_row(fact, index, str(target.db_type).upper())
-    selected_fact = fact.model_copy(update={
-        "rows": (fact.rows[index],), "row_count": 1,
-        "derivations": (), "calculation_graphs": (), "series_computations": (),
-    })
+    from aiops_agent.application.investigation.prior_sql_replay import validate_original_sql_fact
+    if not await validate_original_sql_fact(uow=uow, run=source_run, fact=fact):
+        raise ValueError("SQL 原始工具来源校验失败，请重新查询")
+    from aiops_agent.application.investigation.prior_sql_evidence import MAX_ROWS
+    selected_fact = project_evidence_rows(fact, (index,), truncated=len(fact.rows) > MAX_ROWS)
     return {
         "selection_ref": reference,
         "selection_ttl_seconds": ttl_seconds,
@@ -103,4 +112,8 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
         "source_artifact_id": str(artifact.artifact_id), "captured_at": fact.captured_at,
         "measurement_semantics": str(fact.measurement_semantics),
         "facts": [selected_fact.model_dump(mode="json")],
+        "sources": [{"fact_index": 0, "source_turn_id": str(source_turn.turn_id),
+            "source_run_id": str(source_run.ops_run_id), "source_artifact_id": str(artifact.artifact_id),
+            "source_content_hash": artifact.content_hash, "source_evidence_ref": fact.evidence_ref,
+            "source_row_indices": [index]}],
     }

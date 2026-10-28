@@ -27,7 +27,7 @@ from aiops_agent.application.errors import (
     validation_failed,
 )
 from aiops_agent.application.display_dictionary import dictionary_for_payload
-from aiops_agent.application.sql_selection import resolve_sql_selection
+from aiops_agent.application.sql_selection import resolve_sql_selection, sql_selection_context
 from aiops_agent.application.targets.facts import create_confirmed_fact
 from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
@@ -1542,7 +1542,7 @@ class ConversationTurnService:
             if focused_target_id is not None and str(focused_target_id) != selected["target_id"]:
                 raise self._error("AIOPS_SQL_SELECTION_TARGET_MISMATCH", "所选 SQL 与当前诊断资源不一致")
             focused_target_id = UUID(selected["target_id"])
-            effective_context["sql_selection"] = selected
+            effective_context["sql_selection"] = sql_selection_context(selected)
         if source_run is not None:
             if focused_target_id is not None and focused_target_id != source_run.target_id:
                 raise self._error("AIOPS_SQL_SELECTION_TARGET_MISMATCH", "来源 Run 与所选 SQL 资源不一致")

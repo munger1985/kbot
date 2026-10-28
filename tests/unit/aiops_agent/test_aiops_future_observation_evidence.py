@@ -97,6 +97,34 @@ def worker_context(fixture, artifacts):
         } for item in artifacts))
 
 
+@pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
+def test_mapped_future_sources_keep_native_scope_and_sampling_warnings_during_report_replay(engine, monkeypatch):
+    from aiops_agent.contracts.tool_execution import DbaToolResult, ToolOutcome
+    from tests.unit.aiops_agent.test_aiops_native_field_lineage import observation_for, tool_for
+
+    def mapped_result(target_id, *, engine="POSTGRESQL", captured_at=NOW, **updates):
+        observed = observation_for(tool_for(engine), target=target_id).model_copy(update={"captured_at": captured_at, **updates})
+        return DbaToolResult(source_type="TOOL", source_id=observed.tool_id, source_version="1.0.0",
+            definition_hash="e" * 64, output_schema="DBA_TOOL_RESULT.v1", measurement_semantics="CUMULATIVE_SINCE_LOAD",
+            presentation_kind="TABLE", status="SUCCEEDED", tool_outcomes=(ToolOutcome(step_id="a1", tool_id=observed.tool_id,
+                tool_version=observed.tool_version, status="SUCCEEDED", observation=observed),))
+
+    monkeypatch.setitem(fixture.__globals__, "result", mapped_result)
+    monkeypatch.setitem(scenario.__globals__, "result", mapped_result)
+
+    async def run():
+        fixture = await scenario(engine=engine)
+        artifact = await imported(fixture)
+        assessment = await DbaEvidenceAssessmentHandler().execute(worker_context(fixture, (artifact,)))
+        assert len(assessment.evidence) == 3, [(gap.code, gap.detail) for gap in assessment.gaps]
+        assert all(fact.provenance.native_lineage is not None for fact in assessment.evidence)
+        payload = {"evidence": [fact.model_dump(mode="json") for fact in assessment.evidence]}
+        assert await validate_investigation_sources(uow=fixture.uow, run=fixture.run, payload=payload)
+        payload["evidence"][0]["warnings"] = []
+        assert not await validate_investigation_sources(uow=fixture.uow, run=fixture.run, payload=payload)
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("engine", ["ORACLE", "POSTGRESQL", "MYSQL"])
 @pytest.mark.parametrize("status", ["COMPLETED", "PARTIAL", "CANCELLED", "FAILED", "EXPIRED"])
 def test_terminal_series_flows_through_planner_worker_and_report_source_replay(engine, status):

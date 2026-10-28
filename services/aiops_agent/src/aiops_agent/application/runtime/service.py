@@ -9689,6 +9689,8 @@ class AIOpsRuntimeService:
 
         from aiops_agent.application.investigation.future_observation_evidence import revalidate_future_observation_inputs
         selected = await revalidate_future_observation_inputs(uow=uow, run_id=run_id, artifacts=artifacts, selected=selected)
+        from aiops_agent.application.investigation.prior_sql_replay import revalidate_prior_sql_inputs
+        selected = await revalidate_prior_sql_inputs(uow=uow, run_id=run_id, artifacts=artifacts, selected=selected)
         from aiops_agent.application.investigation.sql_plan_evidence import revalidate_plan_capture_inputs
         return await revalidate_plan_capture_inputs(uow=uow, run_id=run_id, artifacts=artifacts,
             selected=selected, reader=getattr(self, "_plan_capture_reader", None))

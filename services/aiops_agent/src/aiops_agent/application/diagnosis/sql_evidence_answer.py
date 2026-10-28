@@ -103,6 +103,7 @@ def sql_subject_specs(task_frame: dict, database_type: str) -> tuple:
 
 def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict, database_type: str = "") -> tuple[TurnEvidenceFact, ...]:
     """仅把历史中同一 SQL 的来源观测作为带原采集时间的上下文。"""
+    from aiops_agent.application.diagnosis.evidence_projection import project_evidence_rows
     if task_frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"}:
         return ()
     raw_subject = task_frame.get("subject_ref") or {}
@@ -122,16 +123,14 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
             continue
         if fact.trust_level != "SOURCE_VERIFIED" or fact.followup_run_id is not None:
             continue
-        rows = tuple(tuple(row) for row, mapped in zip(fact.rows, _row_dicts(fact), strict=True) if any(_matches(mapped, subject, spec[1]) for subject, spec in matches)) if all(len(row) == len(fact.columns) for row in fact.rows) else ()
-        if not rows:
+        indices = tuple(row_index for row_index, mapped in enumerate(_row_dicts(fact))
+            if any(_matches(mapped, subject, spec[1]) for subject, spec in matches)) if all(len(row) == len(fact.columns) for row in fact.rows) else ()
+        if not indices:
             continue
-        result.append(TurnEvidenceFact.model_validate({**fact.model_dump(mode="python"),
+        projected = project_evidence_rows(fact, indices)
+        result.append(TurnEvidenceFact.model_validate({**projected.model_dump(mode="python"),
             "artifact_id": artifact_id, "evidence_ref": f"artifact:{artifact_id}#prior-sql-{index}",
             "source_id": "prior_turn.sql_observation", "step_id": f"prior-sql-{index}",
-            "rows": rows, "row_count": len(rows),
-            "derivations": fact.derivations if rows == fact.rows else (),
-            "calculation_graphs": fact.calculation_graphs if rows == fact.rows else (),
-            "series_computations": fact.series_computations if rows == fact.rows else (),
             "warnings": (*fact.warnings, "历史观测，保留原采集时间，不能视为当前值", *(
                 ("历史证据搜索达到上限，不保证已搜索完整会话",) if dict(payload.get("search") or {}).get("truncated") else ()
             )),

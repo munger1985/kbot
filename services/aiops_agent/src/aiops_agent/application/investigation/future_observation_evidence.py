@@ -214,8 +214,7 @@ async def revalidate_future_observation_inputs(*, uow, run_id, artifacts, select
 
 async def validate_future_observation_facts(*, uow, run, payload):
     """即使没有 Finding/对象图，报告或案例引用后台时点也必须重放原始来源。"""
-    from aiops_agent.application.diagnosis.provenance import database_provenance
-    from aiops_agent.application.diagnosis.sql_plans import database_cursor_plan
+    from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact
     from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 
     sources = {}
@@ -230,23 +229,15 @@ async def validate_future_observation_facts(*, uow, run, payload):
                 if artifact is None or not await validate_reused_future_observation(uow=uow, run=run, artifact=artifact):
                     return False
                 origin = FutureObservationOrigin.model_validate(artifact.provenance_json["future_observation_source"])
-                sources[identity] = (origin.background_run_id, DbaToolResult.model_validate(artifact.payload_json))
-            background_id, source = sources[identity]
+                sources[identity] = (origin.background_run_id, DbaToolResult.model_validate(artifact.payload_json), artifact.provenance_json)
+            background_id, source, provenance = sources[identity]
             outcomes = [item for item in source.tool_outcomes if item.step_id == fact.step_id
                 and item.tool_id == fact.tool_id and item.status == "SUCCEEDED" and item.observation is not None]
             if len(outcomes) != 1 or fact.source_id != source.source_id or str(fact.followup_run_id) != str(background_id):
                 return False
-            observation = outcomes[0].observation
-            semantics = "SNAPSHOT_DELTA" if observation.variant == "mysql_8_digest_window" and fact.tool_id == "db.sql.top_current" else source.measurement_semantics
-            if (fact.trust_level != "SOURCE_VERIFIED" or fact.evidence_ref != f"artifact:{identity}#{fact.step_id}"
-                or fact.measurement_semantics != semantics or fact.presentation_kind != source.presentation_kind
-                or str(observation.target_id) != str(run.target_id) or fact.captured_at != observation.captured_at.isoformat()
-                or fact.row_count != observation.row_count or fact.truncated != observation.truncated
-                or fact.columns != tuple(column.model_dump(mode="json") for column in observation.columns)
-                or fact.provenance != database_provenance(observation) or fact.object_access != observation.object_access
-                or fact.sql_plan != database_cursor_plan(observation)[0]
-                or fact.pagination != observation.pagination
-                or fact.model_dump(mode="json")["rows"] != fact.model_copy(update={"rows": observation.rows}).model_dump(mode="json")["rows"]):
+            expected = database_evidence_fact(result=source, outcome=outcomes[0], artifact_id=identity, provenance=provenance)
+            if (str(outcomes[0].observation.target_id) != str(run.target_id)
+                or expected.model_dump(mode="json") != fact.model_dump(mode="json")):
                 return False
     except (ValueError, TypeError, KeyError, AttributeError):
         return False

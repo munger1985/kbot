@@ -4602,6 +4602,15 @@ class TurnPlanningService:
                     payload=context.prior_sql_evidence, producer="aiops.prior-turn-linker", trust_level="SOURCE_VERIFIED",
                 ) if context.prior_sql_evidence and investigation.task_frame.diagnostic_profile in {DiagnosticProfile.SINGLE_SQL_PERFORMANCE, DiagnosticProfile.SQL_COMPARISON} else None
             )
+            if prior_sql_artifact is not None:
+                from aiops_agent.application.investigation.prior_sql_replay import validate_prior_sql_payload, prior_sql_security_level
+                if not await validate_prior_sql_payload(uow=uow, run=run, turn=turn, payload=context.prior_sql_evidence):
+                    prior_sql_artifact = self._artifact(ops_run_id=run.ops_run_id,
+                        artifact_key="turn-prior-sql-evidence:1", artifact_type="PRIOR_SQL_UNAVAILABLE",
+                        schema_version="PRIOR_SQL_UNAVAILABLE.v1", payload={"code": "PRIOR_SQL_SOURCE_UNAVAILABLE"},
+                        producer="aiops.prior-turn-linker", trust_level="SOURCE_VERIFIED")
+                else:
+                    prior_sql_artifact.security_level = await prior_sql_security_level(uow=uow, payload=context.prior_sql_evidence)
             recovery_assurance_artifact = (
                 self._artifact(
                     ops_run_id=run.ops_run_id,
@@ -4677,7 +4686,7 @@ class TurnPlanningService:
                         usage_reason="用户在本轮对话中直接提供的日志、查询或命令结果",
                         linked_by="aiops.input-understanding",
                     ))
-            if prior_sql_artifact is not None:
+            if prior_sql_artifact is not None and prior_sql_artifact.schema_version == "PRIOR_TURN_SQL_EVIDENCE.v1":
                 await uow.turns.add_evidence(OpsTurnEvidenceEntity(
                     turn_evidence_id=uuid7(), turn_id=turn.turn_id,
                     artifact_id=prior_sql_artifact.artifact_id, source_kind="RUN",

@@ -18,6 +18,10 @@ from aiops_agent.application.diagnosis.sql_plans import (
 
 
 async def validate_investigation_sources(*, uow, run, payload, plan_capture_reader=None):
+    from aiops_agent.application.investigation.prior_sql_replay import validate_prior_sql_facts
+    from aiops_agent.application.investigation.prior_sql_evidence import _SQL_TOOLS
+    if not await validate_prior_sql_facts(uow=uow, run=run, payload=payload):
+        return False
     if not await validate_source_history_facts(uow=uow, run=run, payload=payload):
         return False
     if not await validate_future_observation_facts(uow=uow, run=run, payload=payload):
@@ -28,6 +32,8 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
     if not isinstance(record_payload, dict):
         return False
     if (record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs")
+            and not any(item.get("source_id") == "prior_turn.sql_observation" or item.get("followup_run_id") for item in payload.get("evidence", ()))
+            and not any(item.get("tool_id") in _SQL_TOOLS for item in payload.get("evidence", ()))
             and not record_payload.get("sql_plan_assessments")
             and not any(item.get("sql_plan") or item.get("tool_id") in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID, CONTROLLED_PLAN_TOOL_ID} for item in payload.get("evidence", ()))
             and not record_payload.get("access_gaps")
@@ -56,6 +62,7 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
         used.update(fact.evidence_ref for fact in facts if fact.object_access or fact.pagination is not None)
         used.update(fact.evidence_ref for fact in facts if fact.provenance is not None and fact.provenance.native_lineage is not None)
         used.update(fact.evidence_ref for fact in facts if fact.tool_id in native_mapping_tool_ids() and fact.source_id != "prior_turn.sql_observation")
+        used.update(fact.evidence_ref for fact in facts if fact.tool_id in _SQL_TOOLS)
         used.update(fact.evidence_ref for fact in facts if fact.sql_plan is not None or fact.tool_id in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID, CONTROLLED_PLAN_TOOL_ID})
         used.update(plan.anchor_ref for plan in (record.sql_plan_assessments if record is not None else ()) if plan.anchor_ref is not None)
         used.update(ref for plan in (record.sql_plan_assessments if record is not None else ()) for ref in plan.bind_metadata_refs)
@@ -69,7 +76,22 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
         for fact in facts:
             if fact.evidence_ref not in used:
                 continue
+            # 两类历史来源已在入口独立重放，不再错误要求其来自本轮原始工具。
+            if fact.source_id == "prior_turn.sql_observation" or fact.followup_run_id is not None:
+                continue
             identity = str(fact.artifact_id)
+            if fact.tool_id == "workload.sql.top_window":
+                from aiops_agent.application.diagnosis.evidence_projection import top_sql_window_evidence_fact
+                artifact = await uow.runs.get_artifact(artifact_id=UUID(identity))
+                if (artifact is None or str(artifact.ops_run_id) != str(run.ops_run_id)
+                    or artifact.schema_version != "TOP_SQL_WINDOW_RESULT.v1" or artifact.trust_level != "SOURCE_VERIFIED"
+                    or canonical_hash(artifact.payload_json) != artifact.content_hash
+                    or str(artifact.payload_json.get("target_id")) != str(run.target_id)):
+                    return False
+                expected = top_sql_window_evidence_fact(result=artifact.payload_json["result"], artifact_id=identity)
+                if expected is None or expected.model_dump(mode="json") != fact.model_dump(mode="json"):
+                    return False
+                continue
             if fact.tool_id == CONTROLLED_PLAN_TOOL_ID or fact.sql_plan is not None and fact.sql_plan.origin == "CONTROLLED_ESTIMATE":
                 from aiops_agent.application.investigation.sql_plan_evidence import validate_reused_plan_capture
                 artifact = await uow.runs.get_artifact(artifact_id=UUID(identity))
@@ -95,6 +117,7 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
                 artifact = await uow.runs.get_artifact(artifact_id=UUID(identity))
                 if (artifact is None or str(artifact.ops_run_id) != str(run.ops_run_id)
                     or artifact.schema_version != "DBA_TOOL_RESULT.v1"
+                    or getattr(artifact, "artifact_type", None) == "FUTURE_OBSERVATION_EVIDENCE"
                     or artifact.trust_level != "SOURCE_VERIFIED"
                     or canonical_hash(artifact.payload_json) != artifact.content_hash):
                     return False

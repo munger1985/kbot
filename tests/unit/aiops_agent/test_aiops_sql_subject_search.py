@@ -18,6 +18,7 @@ from aiops_agent.playbooks import canonical_hash
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler
 from platform_core.identity import uuid7
+from tests.support.aiops_sql_evidence import backed_sql_fact
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis, observation, task_frame, selection_scope
 from tests.unit.aiops_agent.test_aiops_sql_subject_resolution import scenario
 
@@ -31,8 +32,11 @@ def search_fixture():
                            created_by=scope["actor_id"], turn_no=10)
     entry = observation(names=("query_id", "database_oid", "user_oid", "top_level", "execution_count"),
                         rows=(("42", 1, 2, True, 100), ("99", 1, 2, True, 999)))
+    source_run_id = uuid7()
+    raw_artifact, entry = backed_sql_fact(entry, SimpleNamespace(ops_run_id=source_run_id,
+        target_id=run.target_id, plan_snapshot_json={"target": target}))
     assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry,))
-    artifact = SimpleNamespace(artifact_id=uuid7(), ops_run_id=uuid7(), schema_version="DBA_SUFFICIENCY.v1",
+    artifact = SimpleNamespace(artifact_id=uuid7(), ops_run_id=source_run_id, schema_version="DBA_SUFFICIENCY.v1",
                                trust_level="SOURCE_VERIFIED", payload_json=assessment.model_dump(mode="json"))
     artifact.content_hash = canonical_hash(artifact.payload_json)
     previous = SimpleNamespace(tenant_id=scope["tenant_id"], domain_id=scope["domain_id"], conversation_id=conversation_id,
@@ -42,13 +46,14 @@ def search_fixture():
     uow = SimpleNamespace(
         turns=SimpleNamespace(list_prior_turns=AsyncMock(return_value=[latest, previous]),
                               get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=artifact.ops_run_id))),
-        runs=SimpleNamespace(get_run=AsyncMock(return_value=old_run), get_artifact=AsyncMock(return_value=artifact)),
+        runs=SimpleNamespace(get_run=AsyncMock(return_value=old_run), get_artifact=AsyncMock(
+            side_effect=lambda *, artifact_id: artifact if artifact_id == artifact.artifact_id else raw_artifact if artifact_id == raw_artifact.artifact_id else None)),
         targets=SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(status="ENABLED", **target))),
         agents=SimpleNamespace(version_has_target=AsyncMock(return_value=True)),
     )
     frame = {**task_frame(), "subject_ref": {"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42"}}
     return SimpleNamespace(uow=uow, turn=turn, run=run, previous=previous, old_run=old_run,
-                           artifact=artifact, entry=entry, frame=frame)
+                           artifact=artifact, raw_artifact=raw_artifact, entry=entry, frame=frame)
 
 
 def load(fixture):
@@ -96,7 +101,7 @@ def test_search_is_bounded_and_does_not_scan_the_seventeenth_turn():
     result = load(fixture)
     assert result["search"]["scanned_turns"] == 16 and result["search"]["truncated"]
     assert len(result["facts"]) == 1
-    assert fixture.uow.runs.get_artifact.await_count == 16
+    assert fixture.uow.runs.get_artifact.await_count == 17
 
 
 def test_history_byte_budget_does_not_accept_an_oversized_matching_sql():
@@ -105,6 +110,9 @@ def test_history_byte_budget_does_not_accept_an_oversized_matching_sql():
     raw["columns"].append({"name": "normalized_statement", "logical_type": "STRING"})
     raw["rows"][0].append("x" * 262144)
     raw["rows"][1].append("other")
+    original, entry = backed_sql_fact(type(fixture.entry).model_validate(raw), fixture.old_run)
+    fixture.raw_artifact.payload_json, fixture.raw_artifact.content_hash = original.payload_json, original.content_hash
+    fixture.artifact.payload_json["evidence"][0] = entry.model_dump(mode="json")
     fixture.artifact.content_hash = canonical_hash(fixture.artifact.payload_json)
     result = load(fixture)
     assert result["facts"] == [] and result["search"]["truncated"]

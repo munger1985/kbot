@@ -7,6 +7,7 @@ import json
 from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, sql_subject_specs
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment
 from aiops_agent.playbooks import canonical_hash
+from aiops_agent.application.diagnosis.evidence_projection import project_evidence_rows
 
 
 _SQL_TOOLS = frozenset({
@@ -104,11 +105,11 @@ async def load_prior_sql_evidence(*, uow, turn, run, task_frame: dict) -> dict |
             if key in seen:
                 continue
             seen.add(key)
+            from aiops_agent.application.investigation.prior_sql_replay import validate_original_sql_fact
+            if not await validate_original_sql_fact(uow=uow, run=prior_run, fact=fact):
+                continue
             rows = tuple(fact.rows[index] for index in indices)
-            projected = fact.model_copy(update={
-                "rows": rows, "row_count": len(rows), "truncated": fact.truncated or len(fact.rows) > MAX_ROWS,
-                "derivations": (), "calculation_graphs": (), "series_computations": (),
-            }).model_dump(mode="json")
+            projected = project_evidence_rows(fact, tuple(indices), truncated=len(fact.rows) > MAX_ROWS).model_dump(mode="json")
             size = len(json.dumps(projected, ensure_ascii=False, separators=(",", ":")).encode())
             if len(facts) >= MAX_FACTS or row_count + len(rows) > MAX_ROWS or byte_count + size > MAX_BYTES:
                 truncated = True
@@ -118,6 +119,7 @@ async def load_prior_sql_evidence(*, uow, turn, run, task_frame: dict) -> dict |
                 "fact_index": len(facts) - 1, "source_turn_id": str(previous.turn_id),
                 "source_run_id": str(prior_run.ops_run_id), "source_artifact_id": str(artifact.artifact_id),
                 "source_content_hash": artifact.content_hash, "source_row_indices": indices,
+                "source_evidence_ref": fact.evidence_ref,
             })
             row_count += len(rows)
             byte_count += size

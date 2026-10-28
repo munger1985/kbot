@@ -25,6 +25,7 @@ from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler
 from platform_core.contracts.aiops.conversation import TurnCreate
 from platform_core.identity import uuid7
+from tests.support.aiops_sql_evidence import backed_sql_fact
 
 
 def observation(names=("query_id", "database_oid", "execution_count", "pid"), rows=(("1285382359565720997", 16510, 100, 42),), **overrides):
@@ -195,13 +196,15 @@ def selection_scope():
     artifact_id = uuid7()
     target = SimpleNamespace(target_id=target_id, row_version=2, db_type="POSTGRESQL", status="ENABLED")
     run = SimpleNamespace(ops_run_id=run_id, target_id=target_id, actor_id=actor, agent_id=agent, agent_version_id=version, domain_id=domain_id, tenant_id=tenant_id, plan_snapshot_json={"target": {"row_version": 2, "db_type": "POSTGRESQL"}})
+    raw_artifact, fact = backed_sql_fact(fact, run)
     conversation = SimpleNamespace(conversation_id=conversation_id, agent_id=agent, agent_version_id=version, domain_id=domain_id, tenant_id=tenant_id)
     turn = SimpleNamespace(turn_id=turn_id, conversation_id=conversation_id, created_by=actor, sufficiency_artifact_id=artifact_id)
     artifact = SimpleNamespace(artifact_id=artifact_id, ops_run_id=run_id, created_at=now, schema_version="DBA_SUFFICIENCY.v1", payload_json=DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,)).model_dump(mode="json"))
     artifact.trust_level = "SOURCE_VERIFIED"
     artifact.content_hash = canonical_hash(artifact.payload_json)
     uow = SimpleNamespace(
-        runs=SimpleNamespace(get_artifact=AsyncMock(return_value=artifact), get_run_scoped=AsyncMock(return_value=run)),
+        runs=SimpleNamespace(get_artifact=AsyncMock(side_effect=lambda *, artifact_id: artifact if artifact_id == artifact.artifact_id
+            else raw_artifact if artifact_id == raw_artifact.artifact_id else None), get_run_scoped=AsyncMock(return_value=run)),
         turns=SimpleNamespace(get_run_link_by_ops_run_id=AsyncMock(return_value=SimpleNamespace(turn_id=turn_id)), get_turn=AsyncMock(return_value=turn)),
         targets=SimpleNamespace(get_scoped=AsyncMock(return_value=target)),
         agents=SimpleNamespace(version_has_target=AsyncMock(return_value=True)),
@@ -216,6 +219,18 @@ def test_authorized_historical_selection_does_not_require_immediately_previous_t
     assert result["subject_ref"]["query_id"] == "1285382359565720997"
     assert result["source_turn_id"] == str(fixture.turn.turn_id)
     assert result["captured_at"] == fixture.fact.captured_at
+
+
+def test_selection_context_never_copies_raw_values_to_unrevokable_plan_or_user_message():
+    from aiops_agent.application.sql_selection import sql_selection_context
+    fixture = selection_scope()
+    selected = asyncio.run(resolve_sql_selection(uow=fixture.uow, reference=fixture.reference,
+        conversation=fixture.conversation, actor_id=fixture.actor, now=fixture.now))
+    assert selected["facts"] and selected["sources"]
+    context = sql_selection_context({**selected, "future_raw_values": {"not_metadata": True}})
+    assert "facts" not in context and "sources" not in context and "future_raw_values" not in context
+    assert context["selection_ref"] == fixture.reference
+    assert context["subject_ref"] == selected["subject_ref"]
 
 
 @pytest.mark.parametrize("violation", ["actor", "conversation", "agent_version", "target_version", "revoked", "expired", "row_hash", "disabled"])

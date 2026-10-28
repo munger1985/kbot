@@ -15,6 +15,7 @@ from aiops_agent.playbooks import canonical_hash
 from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from platform_core.identity import uuid7
+from tests.support.aiops_sql_evidence import backed_sql_fact
 
 
 def fact(tool_id, columns, rows, *, semantics="CUMULATIVE_SINCE_LOAD", captured="2026-10-27T10:28:00+00:00", trust="SOURCE_VERIFIED"):
@@ -228,6 +229,7 @@ def test_prior_link_through_planning_assessment_and_answer():
     previous = SimpleNamespace(**turn_scope, turn_no=1, conversation_id=conversation_id, created_by=scope["actor_id"],
                                status="COMPLETED", turn_id=previous_id, sufficiency_artifact_id=uuid7())
     entry = fact("db.postgresql.statement.top", ("query_id", "database_oid", "execution_count"), (("42", 1, 100),))
+    raw_artifact, entry = backed_sql_fact(entry, old_run)
     previous_assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry,))
     source_artifact = SimpleNamespace(artifact_id=previous.sufficiency_artifact_id, ops_run_id=prior_run_id,
                                       schema_version="DBA_SUFFICIENCY.v1", payload_json=previous_assessment.model_dump(mode="json"), trust_level="SOURCE_VERIFIED")
@@ -245,7 +247,8 @@ def test_prior_link_through_planning_assessment_and_answer():
         get_run_link=AsyncMock(side_effect=lambda *, turn_id, purpose: SimpleNamespace(ops_run_id=run_id if turn_id == context.turn_id else prior_run_id)),
     )
     uow.runs = SimpleNamespace(get_run=AsyncMock(side_effect=lambda *, ops_run_id: current_run if ops_run_id == run_id else old_run),
-                               get_artifact=AsyncMock(return_value=source_artifact))
+                               get_artifact=AsyncMock(side_effect=lambda *, artifact_id: source_artifact if artifact_id == source_artifact.artifact_id
+                                   else raw_artifact if artifact_id == raw_artifact.artifact_id else None))
     uow.targets = SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(status="ENABLED", row_version=1, db_type="POSTGRESQL")))
     uow.agents = SimpleNamespace(version_has_target=AsyncMock(return_value=True))
     planner = object.__new__(TurnPlanningService)
@@ -292,10 +295,11 @@ def test_prior_loader_requires_same_scope_and_trusted_source(changed):
     if changed:
         setattr(previous if changed in {"created_by", "conversation_id"} else prior_run, changed, str(uuid7()))
     entry = fact("db.postgresql.statement.top", ("query_id", "database_oid"), (("42", 1),))
+    raw_artifact, entry = backed_sql_fact(entry, prior_run)
     assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry,))
     artifact = SimpleNamespace(artifact_id=previous.sufficiency_artifact_id, ops_run_id=prior_run.ops_run_id, schema_version="DBA_SUFFICIENCY.v1", payload_json=assessment.model_dump(mode="json"), trust_level="SOURCE_VERIFIED")
     artifact.content_hash = canonical_hash(artifact.payload_json)
-    uow = SimpleNamespace(turns=SimpleNamespace(list_prior_turns=AsyncMock(return_value=[previous]), get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=prior_run.ops_run_id))), runs=SimpleNamespace(get_run=AsyncMock(return_value=prior_run), get_artifact=AsyncMock(return_value=artifact)),
+    uow = SimpleNamespace(turns=SimpleNamespace(list_prior_turns=AsyncMock(return_value=[previous]), get_run_link=AsyncMock(return_value=SimpleNamespace(ops_run_id=prior_run.ops_run_id))), runs=SimpleNamespace(get_run=AsyncMock(return_value=prior_run), get_artifact=AsyncMock(side_effect=lambda *, artifact_id: artifact if artifact_id == artifact.artifact_id else raw_artifact if artifact_id == raw_artifact.artifact_id else None)),
         targets=SimpleNamespace(get_scoped=AsyncMock(return_value=SimpleNamespace(status="ENABLED", row_version=1, db_type="POSTGRESQL"))), agents=SimpleNamespace(version_has_target=AsyncMock(return_value=True)))
     loaded = asyncio.run(load_prior_sql_evidence(uow=uow, turn=turn, run=run, task_frame=frame({"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42"})))
     assert (loaded is not None) == (changed is None)

@@ -43,14 +43,13 @@ from aiops_agent.application.investigation.projection import direct_list_result_
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref
-from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, database_cursor_plan, controlled_estimate_fact
+from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, controlled_estimate_fact
+from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact, top_sql_window_evidence_fact
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
 )
-from aiops_agent.application.diagnosis.provenance import database_provenance, monitoring_provenance, native_metric_provenance
-from aiops_agent.contracts.measurements import DerivedMeasurement
-from aiops_agent.application.diagnosis.calculations import statement_window_graphs
+from aiops_agent.application.diagnosis.provenance import monitoring_provenance, native_metric_provenance
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -332,6 +331,11 @@ class DbaEvidenceAssessmentHandler:
                 gaps.append(TurnEvidenceGap(source_id="evidence.future_observation", step_id="future.observation", code="FOLLOWUP_SOURCE_UNAVAILABLE",
                     detail="后台观察的当前授权或原始来源已变化，未沿用旧结果；需要在当前权限下重新取证。", retryable=False))
                 continue
+            if schema_version == "PRIOR_SQL_UNAVAILABLE.v1":
+                database_gap_found = True
+                gaps.append(TurnEvidenceGap(source_id="prior_turn.sql_observation", step_id="prior.sql", code="PRIOR_SQL_SOURCE_UNAVAILABLE",
+                    detail="历史 SQL 的当前授权或原始来源已变化，未沿用旧观测与判断；需要重新取证。", retryable=False))
+                continue
             if schema_version == "TOP_SQL_WINDOW_RESULT.v1":
                 result = dict(dict(artifact.get("payload") or {}).get("result") or {})
                 artifact_id = str(artifact["artifact_id"])
@@ -375,53 +379,9 @@ class DbaEvidenceAssessmentHandler:
                     *(f"数据缺口：{gap_labels.get(str(code), str(code))}（{count}）"
                       for code, count in gap_counts.items()),
                 )
-                statements = list(result.get("top_statements") or ())
-                if intervals:
-                    identity_type = str(statements[0].get("statement_identity_type") or "") if statements else ""
-                    identity_column = {
-                        "MYSQL_DIGEST": "digest",
-                        "POSTGRESQL_QUERY_ID": "query_id",
-                        "ORACLE_SQL_ID": "sql_id",
-                    }.get(identity_type, "statement_identity")
-                    facts.append(
-                        TurnEvidenceFact(
-                            evidence_ref=f"artifact:{artifact_id}#top-sql-window",
-                            artifact_id=artifact_id,
-                            source_id="workload.sql.top_window",
-                            step_id="top-sql-window",
-                            tool_id="workload.sql.top_window",
-                            measurement_semantics=MeasurementSemantics.SNAPSHOT_DELTA,
-                            presentation_kind="TABLE",
-                            captured_at=str(result["requested_end"]),
-                            columns=(
-                                {"name": identity_column, "logical_type": "STRING"},
-                                {"name": "normalized_statement", "logical_type": "STRING"},
-                                *({"name": name, "logical_type": "STRING"} for name in (("database_oid", "user_oid", "top_level") if identity_type == "POSTGRESQL_QUERY_ID" else ("schema_name",) if identity_type == "MYSQL_DIGEST" else ("plan_hash_value",) if identity_type == "ORACLE_SQL_ID" else ())),
-                                {"name": "execution_count", "logical_type": "INTEGER"},
-                                {"name": "total_duration_seconds", "logical_type": "DECIMAL"},
-                                {"name": "mean_duration_seconds", "logical_type": "DECIMAL"},
-                            ),
-                            rows=tuple(
-                                (
-                                    item.get("statement_identity_value"),
-                                    item.get("normalized_statement"),
-                                    *((item.get("database_name"), item.get("user_identifier"), item.get("top_level")) if identity_type == "POSTGRESQL_QUERY_ID" else (item.get("schema_name", item.get("database_name")),) if identity_type == "MYSQL_DIGEST" else (item.get("plan_hash_value"),) if identity_type == "ORACLE_SQL_ID" else ()),
-                                    item.get("execution_count"),
-                                    str(Decimal(str(item.get("total_duration_microseconds", 0))) / 1_000_000),
-                                    str(Decimal(str(item["mean_duration_microseconds"])) / 1_000_000)
-                                    if item.get("mean_duration_microseconds") is not None else None,
-                                ) for item in statements
-                            ),
-                            row_count=len(statements),
-                            truncated=False,
-                            warnings=warnings,
-                            derivations=tuple(
-                                DerivedMeasurement.model_validate(value)
-                                for item in statements for value in item.get("derivations", ())
-                            ),
-                            calculation_graphs=statement_window_graphs(result, artifact_id),
-                        )
-                    )
+                fact = top_sql_window_evidence_fact(result=result, artifact_id=artifact_id)
+                if fact is not None:
+                    facts.append(fact)
                 for code, count in gap_counts.items():
                     database_gap_found = True
                     gaps.append(
@@ -680,49 +640,10 @@ class DbaEvidenceAssessmentHandler:
                 if is_turn_evidence_outcome(result, outcome):
                     observation = outcome.observation
                     assert observation is not None
-                    sql_plan, plan_warnings = database_cursor_plan(observation)
-                    facts.append(
-                        TurnEvidenceFact(
-                            evidence_ref=(
-                                f"artifact:{artifact_id}#"
-                                f"{outcome.step_id}"
-                            ),
-                            artifact_id=artifact_id,
-                            source_id=result.source_id,
-                            step_id=outcome.step_id,
-                            tool_id=outcome.tool_id,
-                            measurement_semantics=(
-                                MeasurementSemantics.SNAPSHOT_DELTA
-                                if observation.variant == "mysql_8_digest_window"
-                                and outcome.tool_id == "db.sql.top_current"
-                                else result.measurement_semantics
-                            ),
-                            presentation_kind=result.presentation_kind,
-                            captured_at=observation.captured_at.isoformat(),
-                            columns=tuple(
-                                column.model_dump(mode="json")
-                                for column in observation.columns
-                            ),
-                            rows=observation.rows,
-                            row_count=observation.row_count,
-                            truncated=observation.truncated,
-                            followup_run_id=dict(dict(artifact.get("provenance") or {}).get("future_observation_source") or {}).get("background_run_id"),
-                            warnings=(*observation.warnings, *plan_warnings, *(
-                                (f"本轮按需采样：实际完成 {result.sampling.completed_count}/{result.sampling.requested.count} 次；间隔至少 {result.sampling.requested.interval_seconds} 秒；仅代表实际采集时点，不覆盖请求的历史窗口",)
-                                if result.sampling is not None else ()
-                            ), *(
-                                (f"后台未来观察：实际完成 {result.observation_series.completed_count}/{result.observation_series.requested.count} 次；仅代表原采集时点，不能当作当前值或补造过去请求窗口，未自动计算差分",)
-                                if result.observation_series is not None else ()
-                            ), *(
-                                ("后台观察历史搜索达到轮次、事实、行数或字节上限，不保证覆盖完整会话",)
-                                if dict(dict(artifact.get("provenance") or {}).get("future_observation_source") or {}).get("search_truncated") else ()
-                            )),
-                            provenance=database_provenance(observation),
-                            sql_plan=sql_plan,
-                            object_access=observation.object_access,
-                            pagination=observation.pagination,
-                        )
-                    )
+                    facts.append(database_evidence_fact(
+                        result=result, outcome=outcome, artifact_id=artifact_id,
+                        provenance=artifact.get("provenance"),
+                    ))
                 if outcome.gap is not None:
                     database_gap_found = True
                     gaps.append(
