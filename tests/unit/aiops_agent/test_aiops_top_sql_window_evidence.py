@@ -89,7 +89,7 @@ def test_scoped_window_handler_produces_citable_evidence_or_explicit_gap(availab
         assert len(assessment.evidence) == 1
         fact = assessment.evidence[0]
         assert fact.evidence_ref == f"artifact:{artifact_id}#top-sql-window"
-        assert fact.rows[0][2:] == (4, 2.0, 0.5)
+        assert fact.rows[0][2:] == (None, None, None, 4, "2", "0.5")
         blocks = DbaAnswerComposeHandler._data_blocks(assessment.evidence, primary_result_kind="TOP_SQL_LIST")
         assert blocks[0].payload["rows"][0][1].endswith("...")
         assert "实际覆盖区间" in blocks[0].payload["measurement_note"]

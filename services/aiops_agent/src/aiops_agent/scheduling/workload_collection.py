@@ -357,14 +357,14 @@ class WorkloadCollectionScheduler:
             }
             if tool_id == "db.mysql.statement.digest.top":
                 parameters["limit"] = int(
-                    policy.get("top_statement_limit") or 100
+                    (policy.get("visible_statement_limit") or 500) if policy.get("collection_mode") == "VISIBLE_SET" else (policy.get("top_statement_limit") or 100)
                 )
             if tool_id == "db.postgresql.statement.top":
                 parameters["limit"] = int(
-                    policy.get("top_statement_limit") or 100
+                    (policy.get("visible_statement_limit") or 500) if policy.get("collection_mode") == "VISIBLE_SET" else (policy.get("top_statement_limit") or 100)
                 )
             if tool_id == "db.oracle.workload.statements":
-                parameters["limit"] = int(policy.get("top_statement_limit") or 100)
+                parameters["limit"] = int((policy.get("visible_statement_limit") or 500) if policy.get("collection_mode") == "VISIBLE_SET" else (policy.get("top_statement_limit") or 100))
             if tool_id in {
                 "db.mysql.activity.sample",
                 "db.postgresql.activity.sample",

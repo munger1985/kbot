@@ -173,104 +173,15 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
                 self._investigation("monitor.query_range", "up")
             )
 
-    def test_monitoring_first_strategy_defers_database_in_initial_round(
-        self,
-    ) -> None:
-        database_only = self._investigation(
-            "db.oracle.readonly_query",
-            "SELECT 1 AS value FROM dual",
-        )
-        database_only = database_only.model_copy(
-            update={
-                "task_frame": database_only.task_frame.model_copy(
-                    update={
-                        "evidence_source_strategy": "MONITORING_FIRST"
-                    }
-                )
-            }
-        )
-        available_tools = (
-            {"tool_id": "monitor.query_range"},
-            {"tool_id": "db.oracle.readonly_query"},
-        )
-
-        normalized = (
-            TurnPlanningService._enforce_initial_evidence_source_strategy(
-                investigation=database_only,
-                available_tools=available_tools,
-                revision_no=1,
-            )
-        )
-        self.assertEqual((), normalized.plan.actions)
-        self.assertTrue(
-            TurnPlanningService._requires_monitoring_snapshot(
-                investigation=normalized,
-                inspection=False,
-                alert_diagnosis=False,
-            )
-        )
-        TurnPlanningService._validate_evidence_source_strategy(
-            investigation=normalized,
-            available_tools=available_tools,
-            revision_no=1,
-        )
-
-        TurnPlanningService._validate_evidence_source_strategy(
-            investigation=database_only,
-            available_tools=available_tools,
-            revision_no=2,
-        )
-
-        monitoring_only = self._investigation(
-            "monitor.query_range",
-            'up{instance="${external_target}"}',
-        )
-        monitoring_only = monitoring_only.model_copy(
-            update={
-                "task_frame": monitoring_only.task_frame.model_copy(
-                    update={
-                        "evidence_source_strategy": "MONITORING_FIRST"
-                    }
-                )
-            }
-        )
-        TurnPlanningService._validate_evidence_source_strategy(
-            investigation=monitoring_only,
-            available_tools=available_tools,
-            revision_no=1,
-        )
-
-        mixed = monitoring_only.model_copy(
-            update={
-                "plan": monitoring_only.plan.model_copy(
-                    update={
-                        "actions": (
-                            *monitoring_only.plan.actions,
-                            database_only.plan.actions[0].model_copy(
-                                update={"action_id": "a2"}
-                            ),
-                        )
-                    }
-                )
-            }
-        )
-        with self.assertRaises(InvestigationPlanValidationError):
-            TurnPlanningService._validate_evidence_source_strategy(
-                investigation=mixed,
-                available_tools=available_tools,
-                revision_no=1,
-            )
-        normalized_mixed = (
-            TurnPlanningService._enforce_initial_evidence_source_strategy(
-                investigation=mixed,
-                available_tools=available_tools,
-                revision_no=1,
-            )
-        )
-        self.assertEqual(
-            ["monitor.query_range"],
-            [action.tool_id for action in normalized_mixed.plan.actions],
-        )
+    def test_source_preference_is_not_a_database_or_monitoring_gate(self) -> None:
+        database = self._investigation("db.oracle.readonly_query", "SELECT 1 AS value FROM dual")
+        monitor = self._investigation("monitor.query_range", 'up{instance="${external_target}"}')
+        mixed = database.model_copy(update={"plan": database.plan.model_copy(update={"actions": (
+            database.plan.actions[0], monitor.plan.actions[0].model_copy(update={"action_id": "a2"}),
+        )})})
+        prepared, _ = prepare_source_queries(mixed)
+        self.assertEqual(2, len(prepared.plan.actions))
+        self.assertEqual(["db.oracle.readonly_query", "monitor.query_range"], [action.tool_id for action in prepared.plan.actions])
 
     def test_monitoring_first_defaults_to_prometheus_maximum_window(self) -> None:
         current = self._investigation(
@@ -386,7 +297,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             ],
         )
 
-    def test_historical_forecast_loads_monitoring_without_explicit_action(
+    def test_history_alone_does_not_load_unrelated_monitoring(
         self,
     ) -> None:
         database_only = self._investigation(
@@ -405,7 +316,7 @@ class MonitoringQueryPlanningTest(unittest.TestCase):
             }
         )
 
-        self.assertTrue(
+        self.assertFalse(
             TurnPlanningService._requires_monitoring_snapshot(
                 investigation=database_only,
                 inspection=False,

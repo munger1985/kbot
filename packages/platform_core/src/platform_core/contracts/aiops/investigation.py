@@ -143,8 +143,9 @@ class ImplementationProfile(StrEnum):
 
 
 class EvidenceSourceStrategy(StrEnum):
-    """同类事实在监控与数据库之间的确定性取证顺序。"""
+    """来源选择偏好，不构成数据库或监控的执行门禁。"""
 
+    ADAPTIVE = "ADAPTIVE"
     MONITORING_FIRST = "MONITORING_FIRST"
     DATABASE_FIRST = "DATABASE_FIRST"
     COMBINED = "COMBINED"
@@ -234,7 +235,7 @@ class TaskFrame(AIOpsContract):
     diagnostic_profile: DiagnosticProfile = DiagnosticProfile.GENERAL
     implementation_profile: ImplementationProfile = ImplementationProfile.NONE
     evidence_source_strategy: EvidenceSourceStrategy = (
-        EvidenceSourceStrategy.DATABASE_FIRST
+        EvidenceSourceStrategy.ADAPTIVE
     )
     subject_ref: JsonObject = Field(default_factory=dict)
     requires_change: bool = False
@@ -279,6 +280,10 @@ class InvestigationHypothesis(AIOpsContract):
     statement: str = Field(min_length=1, max_length=2000)
     rationale: str = Field(min_length=1, max_length=2000)
     confidence: float = Field(ge=0, le=1)
+    supporting_predictions: tuple[str, ...] = Field(default=(), max_length=12)
+    refuting_predictions: tuple[str, ...] = Field(default=(), max_length=12)
+    alternatives: tuple[str, ...] = Field(default=(), max_length=12)
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=24)
 
 
 class InvestigationAction(AIOpsContract):
@@ -291,6 +296,10 @@ class InvestigationAction(AIOpsContract):
     depends_on: tuple[str, ...] = ()
     optional: bool = False
     deferred: bool = False
+    hypothesis_ids: tuple[str, ...] = Field(default=(), max_length=12)
+    evidence_need: str | None = Field(default=None, max_length=2000)
+    decision_impact: str | None = Field(default=None, max_length=2000)
+    stop_condition: str | None = Field(default=None, max_length=1000)
 
 
 class InvestigationPlan(AIOpsContract):
@@ -433,7 +442,7 @@ class CompactPlanningOutput(AIOpsContract):
         ),
     )
     evidence_source_strategy: EvidenceSourceStrategy = (
-        EvidenceSourceStrategy.DATABASE_FIRST
+        EvidenceSourceStrategy.ADAPTIVE
     )
     subject_ref: JsonObject = Field(
         description=(

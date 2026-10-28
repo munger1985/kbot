@@ -2472,7 +2472,7 @@ class AIOpsRuntimeService:
                 has_deferred=prior_plan_has_deferred(investigation_plan),
                 deadline_reached=(
                     replan_budget_exhausted
-                    or (run.deadline_at is not None and run.deadline_at <= now)
+                    or (run.deadline_at is not None and run.deadline_at <= now + timedelta(seconds=int(getattr(self._diagnosis_config, "answer_reserve_seconds", 20))))
                 ),
                 tool_budget_remaining=(
                     int(turn.tool_call_count or 0)
@@ -2622,6 +2622,46 @@ class AIOpsRuntimeService:
                 "public_summary": "当前证据仍有可补齐的关键缺口，正在调整调查计划",
             },
         )
+
+    async def _project_deadline_partial(self, *, uow, run, now: datetime) -> bool:
+        """有已持久化事实时在原事务内产生唯一部分结果，不再消耗外部执行预算。"""
+        from aiops_agent.application.diagnosis.deadline_result import deadline_result
+
+        if run.workflow_kind != "CHAT_TURN":
+            return False
+        link = await uow.turns.get_run_link_by_ops_run_id(ops_run_id=run.ops_run_id)
+        if link is None:
+            return False
+        turn = await uow.turns.get_turn(domain_id=run.domain_id, turn_id=link.turn_id, lock=True)
+        if turn is None or turn.status in {"COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "WAITING_USER"}:
+            return False
+        artifacts = await uow.runs.list_artifacts(ops_run_id=run.ops_run_id)
+        projected_ids = {str(item.artifact_id) for item in await uow.turns.list_evidence(turn_id=turn.turn_id)}
+        plan = dict(run.plan_snapshot_json or {})
+        result = deadline_result(
+            artifacts=artifacts,
+            task_frame=dict(dict(plan.get("answer_context") or {}).get("task_frame") or {}),
+            database_type=str(dict(plan.get("capability_snapshot") or {}).get("database_type") or "").upper(),
+            projected_ids=projected_ids,
+        )
+        if result is None:
+            return False
+        payload = result.model_dump(mode="json")
+        artifact = await uow.runs.add_artifact(OpsArtifactEntity(
+            ops_run_id=run.ops_run_id, ops_task_id=None,
+            artifact_key="turn:deadline-result", artifact_type="AIOPS_TURN_RESULT",
+            schema_version="AIOPS_TURN_RESULT.v1", payload_json=payload,
+            content_hash=sha256_json(payload), byte_size=len(canonical_bytes(payload)),
+            provenance_json={"producer": "execution.deadline", "producer_version": "1"},
+            trust_level="SOURCE_VERIFIED", security_level=1,
+        ))
+        await self._project_turn_answer(uow=uow, turn=turn, artifact=artifact, payload=payload, now=now)
+        turn.sufficiency_json = DbaSufficiencyAssessment(
+            status="PARTIAL", evidence=result.evidence, gaps=result.evidence_gaps,
+            reasons=("执行预算已用完，保留已核验事实。",),
+        ).model_dump(mode="json")
+        run.final_artifact_id = artifact.artifact_id
+        return True
 
     async def _project_turn_failure(
         self,
@@ -6033,6 +6073,20 @@ class AIOpsRuntimeService:
             )
             if not retry:
                 self._block_unreachable(tasks, failed_key=task.task_key)
+                if command.error_code == "RUN_DEADLINE_EXCEEDED" and DomainOpsRunStatus(run.status) not in TERMINAL_RUN_STATUSES:
+                    if await self._project_deadline_partial(uow=uow, run=run, now=now):
+                        ensure_run_transition(DomainOpsRunStatus(run.status), DomainOpsRunStatus.PARTIAL)
+                        run.status = DomainOpsRunStatus.PARTIAL.value
+                        run.error_code = command.error_code
+                        run.completed_at = now
+                        await uow.runs.append_event(
+                            ops_run_id=run.ops_run_id, event_type="run.partial",
+                            event_key=f"run:{run.ops_run_id}:terminal", visibility="USER",
+                            payload_json={"status": "PARTIAL", "error_code": command.error_code, "trace_id": command.trace_id},
+                        )
+                        await self._add_multi_resource_terminal_outbox(uow, run=run, trace_id=command.trace_id, now=now)
+                        await uow.commit()
+                        return self._mutation_receipt(run, task, int(event.sequence_no), None)
                 if DomainOpsRunStatus(run.status) not in TERMINAL_RUN_STATUSES:
                     ensure_run_transition(
                         DomainOpsRunStatus(run.status),
@@ -6196,13 +6250,12 @@ class AIOpsRuntimeService:
                         task.status = DomainOpsTaskStatus.EXPIRED.value
                         task.completed_at = now
                         self._clear_lease(task)
-                ensure_run_transition(
-                    DomainOpsRunStatus(run.status),
-                    DomainOpsRunStatus.EXPIRED,
-                )
-                run.status = DomainOpsRunStatus.EXPIRED.value
+                partial = await self._project_deadline_partial(uow=uow, run=run, now=now)
+                terminal_status = DomainOpsRunStatus.PARTIAL if partial else DomainOpsRunStatus.EXPIRED
+                ensure_run_transition(DomainOpsRunStatus(run.status), terminal_status)
+                run.status = terminal_status.value
                 run.completed_at = now
-                if run.workflow_kind in _AGENT_TURN_WORKFLOWS:
+                if not partial and run.workflow_kind in _AGENT_TURN_WORKFLOWS:
                     await self._project_turn_terminal(
                         uow=uow,
                         run=run,
@@ -6213,11 +6266,11 @@ class AIOpsRuntimeService:
                     )
                 await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
-                    event_type="run.expired",
+                    event_type="run.partial" if partial else "run.expired",
                     event_key=f"run:{run.ops_run_id}:terminal",
                     visibility="USER",
                     payload_json={
-                        "status": DomainOpsRunStatus.EXPIRED.value,
+                        "status": terminal_status.value,
                         "trace_id": trace_id,
                     },
                 )
@@ -9563,7 +9616,7 @@ class AIOpsRuntimeService:
                 "OPS_RUN_CANCEL_REQUESTED",
                 "Run 已请求取消，拒绝提交新的任务结果",
             )
-        if run.deadline_at is not None and run.deadline_at <= now:
+        if not allow_expired and run.deadline_at is not None and run.deadline_at <= now:
             raise _runtime_error(
                 "OPS_RUN_DEADLINE_EXCEEDED",
                 "Run 已超过截止时间",

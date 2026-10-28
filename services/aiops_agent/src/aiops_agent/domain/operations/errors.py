@@ -14,6 +14,7 @@ ERROR_CATALOG: dict[str, RuntimeErrorPolicy] = {
     "INPUT_SCHEMA_INVALID": RuntimeErrorPolicy(False, "任务输入格式无效"),
     "OUTPUT_SCHEMA_INVALID": RuntimeErrorPolicy(False, "任务输出格式无效"),
     "HANDLER_TIMEOUT": RuntimeErrorPolicy(True, "任务执行超时"),
+    "RUN_DEADLINE_EXCEEDED": RuntimeErrorPolicy(False, "本轮执行预算已用完"),
     "HANDLER_RETRYABLE_FAILURE": RuntimeErrorPolicy(
         True, "任务执行暂时失败"
     ),

@@ -40,6 +40,7 @@ from platform_core.contracts.aiops import (
     WorkloadDiffRequest,
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
+from platform_core.contracts.aiops.conversation import SqlDiagnosisSelection
 
 
 router = APIRouter(
@@ -258,6 +259,7 @@ class ConversationStartPayload(_Payload):
     context_hint: TrustedContextHint | None = None
     content: list[InputContent] = Field(default_factory=list, max_length=16)
     starter: ConversationStarterSelection | None = None
+    sql_diagnosis: SqlDiagnosisSelection | None = None
     title: str | None = Field(default=None, min_length=1, max_length=256)
     source_situation_id: UUID | None = None
     source_run_id: UUID | None = None
@@ -275,6 +277,7 @@ class AIOpsConversationTurnPayload(_Payload):
     content: list[InputContent] = Field(default_factory=list, max_length=16)
     source_run_id: UUID | None = None
     starter: ConversationStarterSelection | None = None
+    sql_diagnosis: SqlDiagnosisSelection | None = None
 
     @model_validator(mode="after")
     def validate_input(self) -> "AIOpsConversationTurnPayload":
@@ -1151,6 +1154,7 @@ async def start_conversation(
                     if payload.source_run_id
                     else None
                 ),
+                "sql_diagnosis": payload.sql_diagnosis.model_dump(mode="json") if payload.sql_diagnosis else None,
                 "starter": (
                     payload.starter.model_dump(mode="json")
                     if payload.starter is not None
@@ -1277,6 +1281,7 @@ async def create_conversation_turn(
             "source_run_id": (
                 str(payload.source_run_id) if payload.source_run_id else None
             ),
+            "sql_diagnosis": payload.sql_diagnosis.model_dump(mode="json") if payload.sql_diagnosis else None,
             "starter": (
                 payload.starter.model_dump(mode="json")
                 if payload.starter is not None

@@ -454,8 +454,8 @@
     if (state?.error) content += `<p class="business-snapshot-error" role="alert">${esc(state.error)} ${!status ? `<button type="button" id="snapshot-reload" ${disabled}>重试</button>` : ""}</p>`;
     if (status && policy) {
       content += `<div class="business-snapshot-status">当前策略：${status.workload_snapshot_policy.enabled ? "已启用" : "未启用"} · 最近采集尝试：${esc(formatTime(status.workload_last_collected_at))} · 下次计划：${esc(formatTime(status.workload_next_run_at))}<br>最近采集错误：${esc(status.workload_last_error_code || "无")}</div>`;
-      if (!isPublishedView()) content += `<label class="business-snapshot-toggle"><input data-snapshot-field="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="business-snapshot-fields"><label>采集间隔（分钟）<input data-snapshot-field="interval_minutes" type="number" min="1" max="60" step="1" value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input data-snapshot-field="retention_days" type="number" min="1" max="365" step="1" value="${esc(policy.retention_days)}" ${disabled}></label><label>候选 SQL 数<input data-snapshot-field="top_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="business-snapshot-actions"><button type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button><span id="snapshot-dirty" ${item.workload_snapshot ? "" : "hidden"}>策略已修改，将随业务系统发布</span></div>`;
-      else content += `<p>采集间隔：${esc(policy.interval_minutes)} 分钟 · 保留：${esc(policy.retention_days)} 天 · 候选 SQL：${esc(policy.top_statement_limit)} 条</p>`;
+      if (!isPublishedView()) content += `<label class="business-snapshot-toggle"><input data-snapshot-field="enabled" type="checkbox" ${policy.enabled ? "checked" : ""} ${disabled}> 启用周期快照</label><div class="business-snapshot-fields"><label>采集范围<select data-snapshot-field="collection_mode" ${disabled}><option value="BOUNDED_CANDIDATES" ${policy.collection_mode !== "VISIBLE_SET" ? "selected" : ""}>有限累计候选</option><option value="VISIBLE_SET" ${policy.collection_mode === "VISIBLE_SET" ? "selected" : ""}>尝试读取可见集合（有界）</option></select></label><label>可见集合行数上限<input data-snapshot-field="visible_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.visible_statement_limit || 500)}" ${disabled}></label><label>采集间隔（分钟）<input data-snapshot-field="interval_minutes" type="number" min="1" max="60" step="1" value="${esc(policy.interval_minutes)}" ${disabled}></label><label>保留天数<input data-snapshot-field="retention_days" type="number" min="1" max="365" step="1" value="${esc(policy.retention_days)}" ${disabled}></label><label>候选 SQL 数<input data-snapshot-field="top_statement_limit" type="number" min="10" max="500" step="1" value="${esc(policy.top_statement_limit)}" ${disabled}></label></div><div class="business-snapshot-actions"><button type="button" id="snapshot-refresh" ${disabled}>测试连接并刷新能力</button><span id="snapshot-dirty" ${item.workload_snapshot ? "" : "hidden"}>策略已修改，将随业务系统发布</span></div>`;
+      else content += `<p>采集范围：${policy.collection_mode === "VISIBLE_SET" ? "尝试读取可见集合（有界）" : "有限累计候选"} · 行数上限：${esc(policy.collection_mode === "VISIBLE_SET" ? policy.visible_statement_limit : policy.top_statement_limit)} · 采集间隔：${esc(policy.interval_minutes)} 分钟 · 保留：${esc(policy.retention_days)} 天 · 候选 SQL：${esc(policy.top_statement_limit)} 条</p>`;
       content += `<button type="button" id="snapshot-status-refresh" ${disabled}>刷新采集状态</button>`;
     }
     const hint = isPublishedView() ? "运行中的业务系统仅供查看；下线后可编辑采集策略。" : "修改保存在业务系统草稿中，发布时生效；RAC 按当前节点配置。";
@@ -611,7 +611,7 @@
     const item = currentResource();
     if (resourceDrawerMode !== "EDITOR" || !item) return;
     if (snapshotState?.draft && !isPublishedView()) drawer.querySelectorAll("[data-snapshot-field]").forEach((input) => input.addEventListener(input.type === "checkbox" ? "change" : "input", () => {
-      snapshotState.draft[input.dataset.snapshotField] = input.type === "checkbox" ? input.checked : input.value === "" ? "" : Number(input.value);
+      snapshotState.draft[input.dataset.snapshotField] = input.type === "checkbox" ? input.checked : input.dataset.snapshotField === "collection_mode" ? input.value : input.value === "" ? "" : Number(input.value);
       stageSnapshotPolicy();
       document.getElementById("snapshot-dirty").hidden = !item.workload_snapshot;
     }));
@@ -978,7 +978,7 @@
       const staged = item.workload_snapshot;
       if (!staged) return;
       const original = detail?.resources?.find((row) => row.system_resource_id === item.system_resource_id)?.resource?.database;
-      const valid = [[staged.policy.interval_minutes, 1, 60], [staged.policy.retention_days, 1, 365], [staged.policy.top_statement_limit, 10, 500]].every(([value, min, max]) => Number.isInteger(value) && value >= min && value <= max);
+      const valid = ["BOUNDED_CANDIDATES", "VISIBLE_SET"].includes(staged.policy.collection_mode) && [[staged.policy.visible_statement_limit, 10, 500], [staged.policy.interval_minutes, 1, 60], [staged.policy.retention_days, 1, 365], [staged.policy.top_statement_limit, 10, 500]].every(([value, min, max]) => Number.isInteger(value) && value >= min && value <= max);
       if (!valid || !original || original.target_id !== staged.target_id || !Number.isInteger(staged.target_row_version) || staged.target_row_version < 1) errors.push(`${item.display_name}：历史 SQL 采集策略无效，请检查间隔、保留天数、候选数量及 Target。`);
     });
     relations.forEach((relation) => {

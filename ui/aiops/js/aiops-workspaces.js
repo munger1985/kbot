@@ -1195,9 +1195,10 @@
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
       const rows = values(payload.rows);
       const actionHead = primary ? "<th>操作</th>" : "";
-      const body = rows.map((row) => {
+      const body = rows.map((row, rowIndex) => {
         const prompt = followUp(row);
-        const action = primary ? `<td>${prompt ? `<button type="button" data-primary-follow-up="${esc(prompt)}">${esc(payload.follow_up_label || "继续诊断")}</button>` : "-"}</td>` : "";
+        const reference = payload.row_selections?.[rowIndex] || "";
+        const action = primary ? `<td>${prompt ? `<button type="button" data-primary-follow-up="${esc(prompt)}" data-sql-selection="${esc(reference)}">${esc(payload.follow_up_label || "继续诊断")}</button>` : "-"}</td>` : "";
         const cells = orderedColumns.map(({ column, index }) => {
           const value = cell(row, column, index) ?? (topSql ? "—" : "-");
           if (!topSql) return `<td>${esc(value)}</td>`;
@@ -1532,6 +1533,7 @@
         const form = document.getElementById("conversation-form");
         if (!prompt || !form) return;
         form.elements.message.value = prompt;
+        form.dataset.sqlSelection = button.dataset.sqlSelection || "";
         form.requestSubmit();
       };
     });
@@ -2221,6 +2223,8 @@
     const agentId = document.getElementById("agent-select").value;
     const text = form.elements.message.value.trim();
     const selectedFiles = state.selectedFiles;
+    const sqlSelection = form.dataset.sqlSelection;
+    delete form.dataset.sqlSelection;
     if (pendingClarificationTurn()) return shell.toast("请先在当前轮回答范围确认");
     if (!agentId) return shell.toast("请先选择 Agent");
     if (!text && !selectedFiles.length) return shell.toast("请输入问题或上传诊断材料");
@@ -2250,6 +2254,7 @@
       const body = state.conversation
         ? { content }
         : { agent_id: agentId, content };
+      if (sqlSelection) body.sql_diagnosis = { selection_ref: sqlSelection };
       const receipt = await KBotAIOpsAuth.request(path, {
         method: "POST",
         headers: { "Idempotency-Key": KBotAIOpsAuth.uuid() },

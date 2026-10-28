@@ -140,6 +140,7 @@ _DISPLAY_NAMES = {
     "SOURCE_VERIFIED": "来源已验证",
     "USER_PROVIDED": "用户提供",
     "MODEL_INFERENCE": "模型推断",
+    "ADAPTIVE": "按问题选择证据来源",
     "MONITORING_FIRST": "优先使用监控数据",
     "MONITORING_UNAVAILABLE": "监控数据不可用",
     "MONITORING_FORECAST_INSUFFICIENT": "历史数据不足，无法预测",

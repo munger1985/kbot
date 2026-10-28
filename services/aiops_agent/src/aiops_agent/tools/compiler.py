@@ -140,6 +140,7 @@ class InvestigationTaskCompiler:
                 "loki.query_range",
                 "db.oracle.readonly_query",
                 "db.postgresql.readonly_query",
+                "db.mysql.readonly_query",
                 "artifact.search",
             }
         )
@@ -153,6 +154,7 @@ class InvestigationTaskCompiler:
             if action.tool_id in {
                 "db.oracle.readonly_query",
                 "db.postgresql.readonly_query",
+                "db.mysql.readonly_query",
             }
         )
         dynamic_key_by_action = {

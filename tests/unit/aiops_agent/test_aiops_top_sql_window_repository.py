@@ -40,7 +40,7 @@ def test_top_sql_window_queries_only_scoped_target():
     assert targets.get_scoped.await_args.kwargs == {"domain_id": 7, "target_id": target_id}
     args = workloads.list_snapshots.await_args.kwargs
     assert args | {"domain_id": 7, "target_id": target_id} == args
-    assert args["period_start"] == start
+    assert args["period_start"] == start - timedelta(minutes=5)
     assert args["period_end"] == end + timedelta(microseconds=1)
     assert result["status"] == "INSUFFICIENT"
     assert result["collection_enabled"] is False

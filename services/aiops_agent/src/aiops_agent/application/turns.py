@@ -27,6 +27,7 @@ from aiops_agent.application.errors import (
     validation_failed,
 )
 from aiops_agent.application.display_dictionary import dictionary_for_payload
+from aiops_agent.application.sql_selection import resolve_sql_selection
 from aiops_agent.application.targets.facts import create_confirmed_fact
 from aiops_agent.application.investigation.projection import (
     safe_plan_projection,
@@ -73,9 +74,12 @@ class ConversationTurnService:
         uow_factory,
         upload_store=None,
         conversation_starter_catalog=None,
+        diagnosis_config=None,
     ):
         self._uow_factory = uow_factory
         self._upload_store = upload_store
+        self._turn_budget_seconds = int(getattr(diagnosis_config, "interactive_turn_budget_seconds", 90))
+        self._sql_selection_ttl = int(getattr(diagnosis_config, "sql_selection_ttl_seconds", 86400))
         self._conversation_starter_catalog = (
             conversation_starter_catalog or ConversationStarterCatalog()
         )
@@ -612,6 +616,10 @@ class ConversationTurnService:
                 idempotency_key=command.idempotency_key,
             )
             if existing is not None:
+                messages = await uow.turns.list_messages(turn_id=existing.turn_id)
+                original = next((item for item in messages if item.message_type == "USER_MESSAGE"), None)
+                if original is None or original.payload_json.get("request_sha256") != self._request_sha256(command):
+                    raise self._error("AIOPS_IDEMPOTENCY_CONFLICT", "同一幂等键不能提交不同内容或 SQL 选择")
                 return self._receipt(existing)
             version = await uow.agents.version(
                 agent_id=conversation.agent_id,
@@ -1487,6 +1495,11 @@ class ConversationTurnService:
         except IntegrityError as exc:
             raise state_conflict("配置自然键已存在或并发创建冲突") from exc
 
+    @staticmethod
+    def _request_sha256(command: TurnCreate) -> str:
+        encoded = json.dumps(command.model_dump(mode="json"), sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
     async def _create_turn(
         self,
         *,
@@ -1500,7 +1513,26 @@ class ConversationTurnService:
         execution_context: dict[str, Any] | None = None,
         focused_target_id: UUID | None = None,
     ) -> dict[str, Any]:
+        effective_context = dict(execution_context or {})
+        if not effective_context.get("deadline_at") and str(effective_context.get("workflow_kind") or "CHAT_TURN") == "CHAT_TURN":
+            effective_context["deadline_at"] = (datetime.now(UTC) + timedelta(seconds=self._turn_budget_seconds)).isoformat()
+        if command.sql_diagnosis is not None:
+            try:
+                selected = await resolve_sql_selection(
+                    uow=uow, reference=command.sql_diagnosis.selection_ref,
+                    conversation=conversation, actor_id=actor_id, ttl_seconds=self._sql_selection_ttl,
+                )
+            except PermissionError as exc:
+                raise self._error("AIOPS_SQL_SELECTION_FORBIDDEN", str(exc)) from exc
+            except ValueError as exc:
+                raise self._error("AIOPS_SQL_SELECTION_INVALID", str(exc)) from exc
+            if focused_target_id is not None and str(focused_target_id) != selected["target_id"]:
+                raise self._error("AIOPS_SQL_SELECTION_TARGET_MISMATCH", "所选 SQL 与当前诊断资源不一致")
+            focused_target_id = UUID(selected["target_id"])
+            effective_context["sql_selection"] = selected
         if source_run is not None:
+            if focused_target_id is not None and focused_target_id != source_run.target_id:
+                raise self._error("AIOPS_SQL_SELECTION_TARGET_MISMATCH", "来源 Run 与所选 SQL 资源不一致")
             focused_target_id = source_run.target_id
         if focused_target_id is not None:
             if not await uow.agents.version_has_target(
@@ -1516,7 +1548,6 @@ class ConversationTurnService:
                 domain_id=int(conversation.domain_id),
                 target_id=focused_target_id,
             )
-        effective_context = dict(execution_context or {})
         content = tuple(command.content)
         if command.starter is not None:
             if focused_target_id is None:
@@ -1614,6 +1645,8 @@ class ConversationTurnService:
             payload_json={
                 "text": message,
                 "content": [item.model_dump(mode="json") for item in content],
+                "request_sha256": self._request_sha256(command),
+                "sql_selection": effective_context.get("sql_selection"),
             },
             created_by=actor_id,
         )

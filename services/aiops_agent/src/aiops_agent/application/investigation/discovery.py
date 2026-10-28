@@ -15,6 +15,7 @@ from aiops_agent.application.investigation.discovery_binding import (
 from aiops_agent.diagnostics import (
     DynamicQueryPolicySnapshot,
     PostgreSQLDynamicQueryPolicySnapshot,
+    MySQLDynamicQueryPolicySnapshot,
 )
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
@@ -64,8 +65,8 @@ def available_tools(
                 "执行受控 PromQL 时间序列查询；每个向量选择器必须用"
                 " instance=\"${external_target}\" 或"
                 " target_key=\"${host_target}\" 精确绑定当前 Target；"
-                "指标现状、时间窗口、趋势、变化速度和持续性调查应优先使用"
-                "本工具，只有监控采样不足时才改查数据库"
+                "用于已核实指标的时间窗口与趋势；与数据库直连、日志互补，"
+                "按具体证据需求选择，不要求先监控后查库；不得猜测指标名或把空采样当零"
             ),
             "input": {
                 "query": "带 Target 占位符的 PromQL",
@@ -126,17 +127,16 @@ def available_tools(
             "tool_class": "ORACLE_SQL_DYNAMIC",
             "description": (
                 "在只读事务中执行一条受 AST 策略约束的 Oracle 诊断 SELECT；"
-                "诊断账号已授予 CREATE SESSION 和 SELECT ANY DICTIONARY，"
-                "可以查询授权范围内的 V$/GV$、DBA_/CDB_/ALL_ 诊断视图；"
-                "仅在固定目录工具不能回答问题时使用；对于监控指标、历史趋势"
-                "和时间窗口统计，仅在监控证据缺失或不足时使用；"
+                "仅可查询当前凭据实际授权且策略允许的 V$/GV$、DBA_/CDB_/ALL_ 诊断视图；"
+                "权限不可假定，缺权限应换用合适来源或报告缺口；"
+                "常见问题复用目录工具，长尾问题可按需要直接查询，与监控互补；"
                 "优先显式投影并使用 bind 参数；"
                 "查询结果按诊断账号实际可见内容原样返回，不做业务字段脱敏；"
                 "SQL 只能使用 policy.allowed_functions 中列出的函数；"
                 "包函数只允许 DBMS_XPLAN.DISPLAY_CURSOR 和经授权的 DISPLAY_AWR"
             ),
             "database_access": {
-                "granted_system_privileges": [
+                "recommended_system_privileges": [
                     "CREATE SESSION",
                     "SELECT ANY DICTIONARY",
                 ],
@@ -149,6 +149,7 @@ def available_tools(
                 ],
                 "diagnostic_scopes": (["CURRENT", "AWR", "ASH"] if dynamic_policy.allow_diagnostics_pack else ["CURRENT"]),
                 "license_gating": True,
+                "privilege_status": "UNKNOWN_UNTIL_OBSERVED",
             },
             "input": {
                 "sql": "Oracle SELECT，必须为每个计算表达式提供别名",
@@ -198,6 +199,16 @@ def available_tools(
                 "max_bind_count": dynamic_policy.max_bind_count,
                 "require_bind_parameters": True,
             },
+        }
+    if str(capabilities.database_type) == "MYSQL" and "DB_READONLY" in capabilities.target_capabilities:
+        policy = MySQLDynamicQueryPolicySnapshot()
+        tools[("db.mysql.readonly_query", "1.0.0")] = {
+            "tool_id": "db.mysql.readonly_query", "version": "1.0.0",
+            "tool_class": "MYSQL_SQL_DYNAMIC",
+            "description": "按证据需求查询实际授权的 MySQL 目录/性能视图；仅 SELECT/只读 CTE，禁止业务表、变量赋值、文件访问、锁定与未允许函数，与监控/日志互补。",
+            "input": {"sql": "单条 MySQL SELECT；参数用 :name", "parameters": "与 bind 名称一致的标量对象"},
+            "policy": {**policy.model_dump(mode="json"), "require_bind_parameters": True},
+            "database_access": {"queryable_schemas": list(policy.allowed_schemas), "diagnostic_scopes": ["CURRENT", "CATALOG"]},
         }
     return tuple(tools[key] for key in sorted(tools))
 
@@ -321,6 +332,7 @@ SPECIAL_PLAN_TOOL_IDS = {
     "loki.query_range",
     "db.oracle.readonly_query",
     "db.postgresql.readonly_query",
+    "db.mysql.readonly_query",
     "artifact.search",
 }
 

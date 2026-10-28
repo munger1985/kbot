@@ -405,6 +405,7 @@ def _context(
         attempt=1,
         deadline_at=None,
         plan_snapshot={
+            "capability_snapshot": {"database_type": "ORACLE"},
             "answer_context": {
                 "question": "分析最近十五分钟的 Top SQL",
                 "task_frame": task_frame,
@@ -1124,7 +1125,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertIsNone(result.investigation)
         self.assertEqual(1, len(result.evidence))
 
-    def test_single_sql_missing_object_statistics_is_not_answerable(
+    def test_unmatched_sql_cannot_be_replaced_by_generic_core_tools(
         self,
     ) -> None:
         artifacts = tuple(
@@ -1152,13 +1153,13 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
         self.assertTrue(
             any(
-                gap.step_id == "db.sql.object_statistics"
-                and gap.code == "SINGLE_SQL_CORE_EVIDENCE_MISSING"
+                gap.step_id == "sql.subject"
+                and gap.code == "SQL_SUBJECT_EVIDENCE_UNMATCHED"
                 for gap in result.gaps
             )
         )
 
-    def test_model_cannot_override_missing_single_sql_core_evidence(
+    def test_model_cannot_override_sql_identity_mismatch(
         self,
     ) -> None:
         artifacts = tuple(
@@ -1189,7 +1190,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
         self.assertEqual(SufficiencyStatus.PARTIAL, result.status)
         self.assertTrue(
             any(
-                gap.step_id == "db.sql.object_statistics"
+                gap.code == "SQL_SUBJECT_EVIDENCE_UNMATCHED"
                 for gap in result.gaps
             )
         )
@@ -1206,6 +1207,10 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 "db.sql.object_statistics",
             )
         )
+        for artifact in artifacts:
+            observation = artifact["payload"]["tool_outcomes"][0]["observation"]
+            for row in observation["rows"]:
+                row[0] = "6tjx7su0q5ttj"
         result = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(
                 _context(
@@ -1240,6 +1245,10 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 "db.sql.plan_monitor",
             )
         )
+        for artifact in artifacts:
+            observation = artifact["payload"]["tool_outcomes"][0]["observation"]
+            for row in observation["rows"]:
+                row[0] = "6tjx7su0q5ttj"
         result = asyncio.run(
             DbaEvidenceAssessmentHandler().execute(
                 _context(
@@ -2488,7 +2497,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 self.assertEqual(long_sql[:157] + "...", table.payload["rows"][0][1])
                 self.assertEqual("SELECT 1", table.payload["rows"][1][1])
                 self.assertIsNone(table.payload["rows"][2][1])
-                self.assertEqual([94484, 94742, 0], [row[2] for row in table.payload["rows"]])
+                self.assertEqual(["94484", "94742", "0"], [row[2] for row in table.payload["rows"]])
                 self.assertEqual(long_sql, result.evidence[0].rows[0][1])
                 self.assertEqual((assessment.evidence[0].evidence_ref,), table.evidence_refs)
                 self.assertFalse(table.payload["truncated"])

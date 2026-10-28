@@ -475,6 +475,16 @@
             ],
             "title": "Source Run Id"
           },
+          "sql_diagnosis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SqlDiagnosisSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "starter": {
             "anyOf": [
               {
@@ -2974,6 +2984,16 @@
               }
             ],
             "title": "Source Situation Id"
+          },
+          "sql_diagnosis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SqlDiagnosisSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "starter": {
             "anyOf": [
@@ -17458,6 +17478,23 @@
         "title": "SourceBindingPatch",
         "type": "object"
       },
+      "SqlDiagnosisSelection": {
+        "additionalProperties": false,
+        "description": "服务端结果行引用；不接收浏览器提供的 SQL 身份或文本。",
+        "properties": {
+          "selection_ref": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Selection Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "selection_ref"
+        ],
+        "title": "SqlDiagnosisSelection",
+        "type": "object"
+      },
       "StatusChangeRequest": {
         "properties": {
           "status": {
@@ -22260,6 +22297,15 @@
       "WorkloadPolicy": {
         "additionalProperties": false,
         "properties": {
+          "collection_mode": {
+            "default": "BOUNDED_CANDIDATES",
+            "enum": [
+              "BOUNDED_CANDIDATES",
+              "VISIBLE_SET"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -22291,6 +22337,13 @@
             "maximum": 500.0,
             "minimum": 10.0,
             "title": "Top Statement Limit",
+            "type": "integer"
+          },
+          "visible_statement_limit": {
+            "default": 500,
+            "maximum": 500.0,
+            "minimum": 10.0,
+            "title": "Visible Statement Limit",
             "type": "integer"
           }
         },

@@ -158,6 +158,7 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             upload_store=conversation_upload_store,
             conversation_starter_catalog=conversation_starter_catalog,
+            diagnosis_config=resolved.diagnosis,
         )
         app.state.inspection_template_service = InspectionTemplateService(
             uow_factory=runtime.uow_factory

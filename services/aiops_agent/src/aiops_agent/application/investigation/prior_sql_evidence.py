@@ -14,6 +14,13 @@ _SQL_TOOLS = frozenset({
 
 
 async def load_prior_sql_evidence(*, uow, turn, run) -> dict | None:
+    selection = dict(dict(run.plan_snapshot_json or {}).get("client_metadata") or {}).get("sql_selection")
+    if selection:
+        # 选行证据已在接收 Turn 时验证；取证前再核验权限和 Target 版本，保留原采集时间。
+        target = await uow.targets.get_scoped(target_id=run.target_id, domain_id=run.domain_id)
+        if target is None or str(target.row_version) != selection["target_row_version"] or not await uow.agents.version_has_target(agent_version_id=run.agent_version_id, target_id=run.target_id):
+            return None
+        return dict(selection)
     if int(turn.turn_no) <= 1:
         return None
     previous = await uow.turns.get_previous_turn(

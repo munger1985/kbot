@@ -8,7 +8,10 @@ from .dynamic_query import (
     PostgreSQLDynamicQueryPolicySnapshot,
     ValidatedDynamicQuery,
     ValidatedPostgreSQLQuery,
+    MySQLDynamicQueryPolicySnapshot,
+    ValidatedMySQLQuery,
 )
+from .mysql_dynamic_query import MySQLDynamicQueryPolicy
 from .registry import (
     DiagnosticRegistry,
     ResolvedDiagnosticTool,
@@ -29,6 +32,9 @@ __all__ = [
     "ResolvedDiagnosticTool",
     "ValidatedDynamicQuery",
     "ValidatedPostgreSQLQuery",
+    "MySQLDynamicQueryPolicy",
+    "MySQLDynamicQueryPolicySnapshot",
+    "ValidatedMySQLQuery",
     "database_major_version",
     "create_diagnostic_grant_codec",
     "create_diagnostic_registry",

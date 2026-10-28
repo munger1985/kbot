@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import ssl
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 import aiomysql
+from sqlglot import Dialect
+from sqlglot.tokens import TokenType
 
 from aiops_agent.diagnostics.registry import ResolvedDiagnosticTool
 from aiops_agent.actions import RenderedAction
@@ -27,7 +28,20 @@ from .base import (
 )
 
 
-_NAMED_BIND = re.compile(r":([a-z][a-z0-9_]*)\b", re.IGNORECASE)
+def _mysql_bound_sql(sql: str) -> str:
+    """仅替换词法绑定标记；字符串、注释中的冒号保持原样，百分号正确转义。"""
+    tokens = Dialect.get_or_raise("mysql").tokenize(sql)
+    parts = []
+    offset = 0
+    for index, token in enumerate(tokens[:-1]):
+        following = tokens[index + 1]
+        if token.token_type != TokenType.COLON or following.token_type != TokenType.VAR or following.start != token.end + 1:
+            continue
+        parts.append(sql[offset:token.start].replace("%", "%%"))
+        parts.append("%(" + following.text + ")s")
+        offset = following.end + 1
+    parts.append(sql[offset:].replace("%", "%%"))
+    return "".join(parts)
 _TOP_SQL_SAMPLE_SECONDS = 5
 _TOP_SQL_SAMPLE_COLUMNS = (
     "requested_limit", "sampled_at", "schema_name", "digest", "sql_text",
@@ -116,6 +130,16 @@ def _mysql_top_sql_delta(
 class MySQLDiagnosticDriver:
     db_type = "MYSQL"
 
+    async def execute_dynamic(
+        self, *, profile: DiagnosticConnectionProfile, secret: ResolvedSecret,
+        sql: str, parameters: dict[str, Any], limits: DiagnosticLimits, trace_id: str,
+    ) -> DriverQueryResult:
+        """SQL 已在签名授权边界按 MySQL AST 策略重验。"""
+        return await self._execute(
+            profile=profile, secret=secret, sql_template=sql, variant="mysql_dynamic",
+            parameters=parameters, limits=limits, trace_id=trace_id,
+        )
+
     async def execute(
         self,
         *,
@@ -125,6 +149,16 @@ class MySQLDiagnosticDriver:
         parameters: dict[str, Any],
         limits: DiagnosticLimits,
         trace_id: str,
+    ) -> DriverQueryResult:
+        return await self._execute(
+            profile=profile, secret=secret, sql_template=tool.sql,
+            variant=tool.definition.variant, parameters=parameters, limits=limits, trace_id=trace_id,
+        )
+
+    async def _execute(
+        self, *, profile: DiagnosticConnectionProfile, secret: ResolvedSecret,
+        sql_template: str, variant: str, parameters: dict[str, Any],
+        limits: DiagnosticLimits, trace_id: str,
     ) -> DriverQueryResult:
         username = secret.values.get("username")
         password = secret.values.get("password")
@@ -157,8 +191,8 @@ class MySQLDiagnosticDriver:
                         "SET SESSION MAX_EXECUTION_TIME=%s",
                         (limits.statement_timeout_seconds * 1000,),
                     )
-                    sql = _NAMED_BIND.sub(r"%(\1)s", tool.sql)
-                    if tool.definition.variant == "mysql_8_digest_window":
+                    sql = _mysql_bound_sql(sql_template)
+                    if variant == "mysql_8_digest_window":
                         samples = []
                         for sample in range(2):
                             if sample:

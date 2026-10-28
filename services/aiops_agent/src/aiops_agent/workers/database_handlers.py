@@ -34,6 +34,7 @@ from platform_core.contracts.aiops.executor import (
     DynamicReadDiagnosticRequest,
     OracleDynamicQueryPolicyGrant,
     PostgreSQLDynamicQueryPolicyGrant,
+    MySQLDynamicQueryPolicyGrant,
     ReadDiagnosticRequest,
 )
 from platform_core.identity import uuid7
@@ -391,6 +392,10 @@ class DynamicQueryInvocationHandler:
             )
             variant = "oracle-dynamic-readonly-v1"
             projected_columns = tuple(validated["projected_columns"])
+        elif database_type == "MYSQL":
+            policy_snapshot = MySQLDynamicQueryPolicyGrant.model_validate(invocation["policy_snapshot"])
+            variant = "mysql-dynamic-readonly-v1"
+            projected_columns = ("*",)
         else:
             policy_snapshot = PostgreSQLDynamicQueryPolicyGrant.model_validate(
                 invocation["policy_snapshot"]

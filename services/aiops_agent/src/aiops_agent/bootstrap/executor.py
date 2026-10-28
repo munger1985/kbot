@@ -97,7 +97,7 @@ def create_aiops_executor(
                 timeout_seconds=resolved.clients.aiops_api.timeout_seconds,
                 session=client_session,
             ),
-            drivers=(oracle_driver, postgresql_driver),
+            drivers=(oracle_driver, postgresql_driver, MySQLDiagnosticDriver()),
             hard_limits=DiagnosticLimits(
                 statement_timeout_seconds=config.statement_timeout_seconds,
                 max_result_rows=config.max_result_rows,

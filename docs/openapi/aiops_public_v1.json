@@ -14048,6 +14048,15 @@
       "WorkloadPolicy": {
         "additionalProperties": false,
         "properties": {
+          "collection_mode": {
+            "default": "BOUNDED_CANDIDATES",
+            "enum": [
+              "BOUNDED_CANDIDATES",
+              "VISIBLE_SET"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -14079,6 +14088,13 @@
             "maximum": 500.0,
             "minimum": 10.0,
             "title": "Top Statement Limit",
+            "type": "integer"
+          },
+          "visible_statement_limit": {
+            "default": 500,
+            "maximum": 500.0,
+            "minimum": 10.0,
+            "title": "Visible Statement Limit",
             "type": "integer"
           }
         },

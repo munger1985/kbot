@@ -698,6 +698,18 @@ class _CompactLookupReasoner(_PastedLogReasoner):
 
 
 class _CompactSingleSqlReasoner(_CompactLookupReasoner):
+    async def plan(self, **kwargs):
+        planned = await _PastedLogReasoner.plan(self, **kwargs)
+        action = InvestigationAction(
+            action_id="a1", question="读取目标游标",
+            tool_id="db.sql.cursor_details", input={"sql_id": "6tjx7su0q5ttj"},
+            expected_evidence_kind="SQL_OBSERVATION", measurement_semantics="CUMULATIVE_SINCE_LOAD",
+        )
+        return StructuredModelResult(
+            output=planned.output.model_copy(update={"plan": planned.output.plan.model_copy(update={"actions": (action,)})}),
+            receipt=planned.receipt,
+        )
+
     async def plan_compact(self, **kwargs):
         self.compact_calls.append(kwargs)
         output = CompactPlanningOutput.model_validate(
@@ -706,7 +718,10 @@ class _CompactSingleSqlReasoner(_CompactLookupReasoner):
                 "objectives": ["DIAGNOSE", "ASSESS"],
                 "action_intent": "NONE",
                 "diagnostic_profile": "SINGLE_SQL_PERFORMANCE",
-                "subject_ref": {"sql_id": "6TJX7SU0Q5TTJ"},
+                "subject_ref": {
+                    "subject_type": "ORACLE_SQL_ID",
+                    "sql_id": "6TJX7SU0Q5TTJ",
+                },
                 "problem_statement": "分析指定 SQL 的性能问题",
                 "success_criteria": ["识别已验证的主要性能原因"],
                 "selected_tool_ids": [],
@@ -1249,7 +1264,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             [item.tool_id for item in uow.tool_invocations],
         )
 
-    async def test_single_sql_profile_expands_complete_fixed_baseline(self):
+    async def test_single_sql_uses_question_driven_investigation_not_fixed_baseline(self):
         uow = _PlanningUow()
         uow.target.capabilities_json["privileges"] = [
             "V_$INSTANCE",
@@ -1296,25 +1311,26 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("COLLECTING", result["status"])
         self.assertEqual(1, len(reasoner.compact_calls))
         snapshot = uow.run.plan_snapshot_json
-        self.assertEqual("READ_ONLY_LOOKUP", snapshot["planning_route"]["mode"])
+        self.assertEqual("FULL_INVESTIGATION", snapshot["planning_route"]["mode"])
         self.assertEqual(
             "SINGLE_SQL_PERFORMANCE",
             snapshot["answer_context"]["task_frame"]["diagnostic_profile"],
         )
         self.assertEqual(
-            {"sql_id": "6tjx7su0q5ttj"},
+            {
+                "subject_type": "ORACLE_SQL_ID",
+                "sql_id": "6tjx7su0q5ttj",
+            },
             snapshot["answer_context"]["task_frame"]["subject_ref"],
         )
         self.assertEqual(
             [
                 "db.instance.identity",
                 "db.sql.cursor_details",
-                "db.sql.execution_plan",
-                "db.sql.object_statistics",
-                "db.sql.display_cursor",
             ],
             [item.tool_id for item in uow.tool_invocations],
         )
+        self.assertIn("db.oracle.readonly_query", {item["tool_id"] for item in reasoner.available_tools})
         self.assertNotIn(
             "db.oracle.readonly_query",
             [item.tool_id for item in uow.tool_invocations],
@@ -3076,7 +3092,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
             question="分析 SQL 6TJX7SU0Q5TTJ 的问题",
             compact=compact,
             target_context={"display_name": "订单生产库"},
-            sql_id="6tjx7su0q5ttj",
+            subject={"subject_type": "ORACLE_SQL_ID", "sql_id": "6tjx7su0q5ttj"},
         )
 
         self.assertEqual(

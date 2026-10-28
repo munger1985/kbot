@@ -18,6 +18,8 @@ from aiops_agent.diagnostics.dynamic_query import (
     PostgreSQLDynamicQueryPolicy,
     PostgreSQLDynamicQueryPolicySnapshot,
 )
+from aiops_agent.diagnostics.mysql_dynamic_query import MySQLDynamicQueryPolicy
+from aiops_agent.diagnostics.dynamic_query import MySQLDynamicQueryPolicySnapshot
 from aiops_agent.diagnostics.grants import (
     DiagnosticGrantCodec,
     DiagnosticGrantError,
@@ -68,8 +70,8 @@ class DynamicDiagnosticExecutorService:
         self._grant_codec = grant_codec
         self._control_plane = control_plane
         self._drivers = {driver.db_type: driver for driver in drivers}
-        if set(self._drivers) != {"ORACLE", "POSTGRESQL"}:
-            raise ValueError("动态诊断Executor必须配置Oracle和PostgreSQL Driver")
+        if not {"ORACLE", "POSTGRESQL"} <= set(self._drivers) or set(self._drivers) - {"ORACLE", "POSTGRESQL", "MYSQL"}:
+            raise ValueError("动态诊断 Executor 的 Driver 集合无效")
         self._hard_limits = hard_limits
         self._semaphore = asyncio.Semaphore(concurrency)
 
@@ -90,6 +92,9 @@ class DynamicDiagnosticExecutorService:
                 validated = OracleDynamicQueryPolicy(snapshot).validate(
                     request.sql, request.parameters
                 )
+            elif grant.db_type == "MYSQL":
+                snapshot = MySQLDynamicQueryPolicySnapshot.model_validate(grant.policy_snapshot.model_dump(mode="json"))
+                validated = MySQLDynamicQueryPolicy(snapshot).validate(request.sql, request.parameters)
             else:
                 snapshot = PostgreSQLDynamicQueryPolicySnapshot.model_validate(
                     grant.policy_snapshot.model_dump(mode="json")
@@ -124,6 +129,8 @@ class DynamicDiagnosticExecutorService:
             )
             started = datetime.now(UTC)
             async with self._semaphore:
+                if grant.db_type not in self._drivers:
+                    raise DiagnosticDriverError("CAPABILITY_UNAVAILABLE")
                 raw = await self._drivers[grant.db_type].execute_dynamic(
                     profile=grant.connection_profile,
                     secret=secret,
@@ -315,6 +322,7 @@ class DynamicDiagnosticExecutorService:
                 "executor_policy": (
                     "oracle-dynamic-readonly.v1"
                     if grant.db_type == "ORACLE"
+                    else "mysql-dynamic-readonly.v1" if grant.db_type == "MYSQL"
                     else "postgresql-dynamic-readonly.v1"
                 ),
                 "policy_sha256": grant.policy_sha256,

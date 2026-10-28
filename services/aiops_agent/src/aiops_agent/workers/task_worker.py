@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -91,6 +92,13 @@ class AIOpsTaskWorker:
             ):
                 error_code = "OUTPUT_SCHEMA_INVALID"
                 raise ValueError("Handler 输出 Schema 与 Task 冻结值不一致")
+            deadline_remaining = (
+                (lease.deadline_at - datetime.now(UTC)).total_seconds()
+                if lease.deadline_at is not None else float("inf")
+            )
+            if deadline_remaining <= 1:
+                error_code = "RUN_DEADLINE_EXCEEDED"
+                raise TimeoutError("任务领取时全流程预算已用完，未调用 Handler")
             execution = asyncio.create_task(
                 self._invoke_handler(
                     manifest=manifest,
@@ -101,16 +109,17 @@ class AIOpsTaskWorker:
             heartbeat = asyncio.create_task(
                 self._heartbeat_loop(current)
             )
+            execution_timeout = max(0, min(lease.timeout_seconds, deadline_remaining - 1))
             try:
                 done, _ = await asyncio.wait(
                     {execution, heartbeat},
-                    timeout=lease.timeout_seconds,
+                    timeout=execution_timeout,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if not done:
                     await self._cancel_execution(execution)
-                    error_code = "HANDLER_TIMEOUT"
-                    raise TimeoutError("Handler 执行超过 Task 超时")
+                    error_code = "RUN_DEADLINE_EXCEEDED" if deadline_remaining <= lease.timeout_seconds else "HANDLER_TIMEOUT"
+                    raise TimeoutError("Handler 执行超过本轮截止时间或 Task 超时")
                 if heartbeat in done:
                     await self._cancel_execution(execution)
                     error_code = "HANDLER_RETRYABLE_FAILURE"

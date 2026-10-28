@@ -169,6 +169,8 @@ class ActivitySamplerPolicy(AIOpsContract):
 
 class WorkloadPolicy(AIOpsContract):
     enabled: bool = False
+    collection_mode: Literal["BOUNDED_CANDIDATES", "VISIBLE_SET"] = "BOUNDED_CANDIDATES"
+    visible_statement_limit: int = Field(default=500, ge=10, le=500)
     interval_minutes: int = Field(default=5, ge=1, le=60)
     retention_days: int = Field(default=30, ge=1, le=365)
     top_statement_limit: int = Field(default=100, ge=10, le=500)

@@ -59,8 +59,13 @@ def _matches(row: dict[str, Any], subject: dict[str, Any], identity: str) -> boo
     expected = str(subject.get(identity) or "").strip()
     if not expected or str(row.get(identity) or "").strip().casefold() != expected.casefold():
         return False
-    for dimension in ("database_oid", "user_oid", "top_level", "schema_name"):
-        if subject.get(dimension) is not None and str(row.get(dimension)) != str(subject[dimension]):
+    for dimension in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value", "container_id", "dbid"):
+        if dimension not in subject:
+            continue
+        if dimension not in row:
+            return False
+        matches = row[dimension] == subject[dimension] if dimension == "schema_name" else str(row[dimension]).casefold() == str(subject[dimension]).casefold()
+        if not matches:
             return False
     return True
 
@@ -96,18 +101,13 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
     subject, spec = match
     subject_type = spec[0]
     identity = spec[1]
-    permitted = {
-        "POSTGRESQL_QUERY_ID": {"db.postgresql.statement.details", "db.postgresql.statement.top"},
-        "MYSQL_DIGEST": {"db.sql.cursor_details", "db.mysql.statement.digest.top"},
-        "ORACLE_SQL_ID": {"db.sql.cursor_details", "db.sql.top_current"},
-    }[subject_type]
     result = []
     for index, raw in enumerate(payload.get("facts") or ()):
         try:
             fact = TurnEvidenceFact.model_validate(raw)
         except (ValidationError, TypeError, ValueError):
             continue
-        if fact.trust_level != "SOURCE_VERIFIED" or fact.tool_id not in permitted:
+        if fact.trust_level != "SOURCE_VERIFIED":
             continue
         rows = tuple(tuple(row) for row, mapped in zip(fact.rows, _row_dicts(fact), strict=True) if _matches(mapped, subject, identity)) if all(len(row) == len(fact.columns) for row in fact.rows) else ()
         if not rows:

@@ -658,6 +658,8 @@
       importance_level: Number(form.elements.importance_level.value),
       responsibility_group_id: form.elements.responsibility_group_id.value || null,
       workload_snapshot_policy: {
+        collection_mode: editingTarget?.workload_snapshot_policy?.collection_mode ?? "BOUNDED_CANDIDATES",
+        visible_statement_limit: editingTarget?.workload_snapshot_policy?.visible_statement_limit ?? 500,
         enabled: readonlyEnabled.checked && form.elements.workload_enabled.checked,
         interval_minutes: Number(form.elements.workload_interval.value),
         retention_days: Number(form.elements.workload_retention.value),

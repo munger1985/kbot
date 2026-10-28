@@ -193,11 +193,20 @@ class AIOpsMonitoringConfig(BaseModel):
 
 
 class AIOpsDiagnosisConfig(BaseModel):
+    interactive_turn_budget_seconds: int = Field(default=90, ge=30, le=600)
+    answer_reserve_seconds: int = Field(default=20, ge=5, le=60)
+    sql_selection_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     max_rounds: int = Field(default=3, ge=1, le=3)
     max_tool_calls: int = Field(default=12, ge=0, le=64)
     max_investigation_replans: int = Field(default=2, ge=0, le=12)
     max_investigation_replan_seconds: int = Field(default=180, ge=1, le=3600)
     max_evidence_facts: int = Field(default=256, ge=1, le=2000)
+
+    @model_validator(mode="after")
+    def validate_answer_reserve(self) -> "AIOpsDiagnosisConfig":
+        if self.answer_reserve_seconds >= self.interactive_turn_budget_seconds:
+            raise ValueError("回答预留时间必须小于交互总预算")
+        return self
 
 
 class AIOpsManagementConfig(BaseModel):

@@ -140,6 +140,12 @@ class WorkloadCollectionHandler:
             database_type=database_type,
             observation=observations.get(statement_tool),
         )
+        policy = dict(collection.get("policy") or {})
+        collection_mode = str(policy.get("collection_mode") or "BOUNDED_CANDIDATES")
+        statement_limit = int(policy.get("visible_statement_limit") or 500) if collection_mode == "VISIBLE_SET" else int(policy.get("top_statement_limit") or 100)
+        statement_observation = dict(observations.get(statement_tool) or {})
+        observed_rows = len(_rows(statement_observation))
+        candidate_complete = collection_mode == "VISIBLE_SET" and not statement_observation.get("truncated", True) and observed_rows < statement_limit and len(statements) == observed_rows and coverage.get("DIGEST" if database_type == "MYSQL" else "STATEMENT") == CollectionQuality.AVAILABLE
         metrics = _metric_rows(database_type, observations)
         replication_metrics = {
             tool_id: _rows(observation)
@@ -192,6 +198,7 @@ class WorkloadCollectionHandler:
             ),
             catalog_version=str(diagnostics["catalog_hash"]),
             continuity={
+                "sql_collection": {"mode": collection_mode, "limit": statement_limit, "observed_rows": observed_rows, "accepted_rows": len(statements), "visible_set_read_complete": candidate_complete, "atomic": False, "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_ONLY"},
                 "instance": {
                     "identity": instance_identifier,
                     "started_at": (instance_started_at or captured_at).isoformat(),
@@ -489,7 +496,7 @@ def _statement_rows(
                     mean_duration_microseconds=mean_us,
                     max_duration_microseconds=max_us,
                     rows_processed=_integer(item.get("rows_sent")) or 0,
-                    database_metrics=database_metrics,
+                    database_metrics={**database_metrics, "schema_name": item.get("schema_name")},
                     rank_no=rank,
                 )
             )

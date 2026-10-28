@@ -111,6 +111,18 @@ class PostgreSQLDynamicQueryPolicyGrant(AIOpsContract):
     max_bind_count: int = Field(ge=0, le=128)
 
 
+class MySQLDynamicQueryPolicyGrant(AIOpsContract):
+    """MySQL 目录查询策略随签名 Grant 冻结。"""
+
+    schema_version: Literal["MYSQL_DYNAMIC_QUERY_POLICY.v1"] = "MYSQL_DYNAMIC_QUERY_POLICY.v1"
+    allowed_objects: tuple[str, ...] = ()
+    allowed_functions: tuple[str, ...]
+    allowed_schemas: tuple[str, ...]
+    max_rows: int = Field(ge=1, le=1000)
+    max_sql_chars: int = Field(ge=1, le=100_000)
+    max_bind_count: int = Field(ge=0, le=128)
+
+
 class DynamicDiagnosticExecutionGrant(AIOpsContract):
     """数据库动态只读查询的短期签名执行授权。"""
 
@@ -128,22 +140,24 @@ class DynamicDiagnosticExecutionGrant(AIOpsContract):
     target_id: UUIDv7
     domain_id: int = Field(ge=1)
     target_row_version: int = Field(ge=1)
-    db_type: Literal["ORACLE", "POSTGRESQL"]
+    db_type: Literal["ORACLE", "POSTGRESQL", "MYSQL"]
     connection_profile: DiagnosticConnectionProfile
     diagnostic_credential_id: UUIDv7
     tool_id: Literal[
         "db.oracle.readonly_query",
         "db.postgresql.readonly_query",
+        "db.mysql.readonly_query",
     ]
     tool_version: Literal["1.0.0"] = "1.0.0"
     variant: Literal[
         "oracle-dynamic-readonly-v1",
         "postgresql-dynamic-readonly-v1",
+        "mysql-dynamic-readonly-v1",
     ]
     query_sha256: Sha256Digest
     policy_sha256: Sha256Digest
     policy_snapshot: (
-        OracleDynamicQueryPolicyGrant | PostgreSQLDynamicQueryPolicyGrant
+        OracleDynamicQueryPolicyGrant | PostgreSQLDynamicQueryPolicyGrant | MySQLDynamicQueryPolicyGrant
     )
     parameters_sha256: Sha256Digest
     projected_columns: tuple[str, ...] = Field(min_length=1, max_length=128)
@@ -154,6 +168,11 @@ class DynamicDiagnosticExecutionGrant(AIOpsContract):
     @model_validator(mode="after")
     def validate_database_contract(self) -> "DynamicDiagnosticExecutionGrant":
         expected = {
+            "MYSQL": (
+                "db.mysql.readonly_query",
+                "mysql-dynamic-readonly-v1",
+                "MYSQL_DYNAMIC_QUERY_POLICY.v1",
+            ),
             "ORACLE": (
                 "db.oracle.readonly_query",
                 "oracle-dynamic-readonly-v1",

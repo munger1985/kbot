@@ -92,7 +92,7 @@ def test_oracle_legacy_subject_and_small_nonzero_latency():
     assert build_sql_evidence_answer(task_frame=change_request, database_type="ORACLE", evidence=(entry,)) is None
 
 
-def test_single_sql_stream_and_nonstream_bypass_model():
+def test_single_sql_safe_fallback_stream_and_nonstream_agree():
     subject = {"subject_type": "POSTGRESQL_QUERY_ID", "query_id": "42", "database_oid": 1}
     entry = fact("db.postgresql.statement.details", ("query_id", "database_oid", "execution_count"), (("42", 1, 100),))
     assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry,))
@@ -192,9 +192,9 @@ def test_postgresql_core_evidence_is_database_specific_and_identity_matched(obse
                           plan_snapshot={"capability_snapshot": {"database_type": "POSTGRESQL"},
                                          "answer_context": {"task_frame": frame(subject)}})
     assessment = asyncio.run(DbaEvidenceAssessmentHandler().execute(ctx))
-    core_gaps = [gap for gap in assessment.gaps if gap.code == "SINGLE_SQL_CORE_EVIDENCE_MISSING"]
+    core_gaps = [gap for gap in assessment.gaps if gap.code == "SQL_SUBJECT_EVIDENCE_UNMATCHED"]
     assert bool(core_gaps) == missing
-    assert all(gap.step_id == "db.postgresql.statement.details" for gap in core_gaps)
+    assert all(gap.step_id == "sql.subject" for gap in core_gaps)
 
 
 def test_prior_link_through_planning_assessment_and_answer():

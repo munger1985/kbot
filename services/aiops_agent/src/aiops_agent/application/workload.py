@@ -400,20 +400,26 @@ def build_top_sql_window(
     period_end: datetime,
     limit: int,
     postgresql_database_oid: str | None = None,
+    boundary_tolerance_seconds: int = 300,
 ) -> dict[str, Any]:
-    """只对窗口内相邻且连续的快照求差，明确暴露时间和候选集缺口。"""
+    """按不晚于请求边界的最近快照对齐；不插值，不隐藏候选集和连续性缺口。"""
     if period_start.tzinfo is None or period_end.tzinfo is None:
         raise ValueError("时间窗口必须包含时区")
-    if period_start >= period_end or not 1 <= limit <= 50:
+    if period_start >= period_end or not 1 <= limit <= 50 or not 0 <= boundary_tolerance_seconds <= 3600:
         raise ValueError("时间窗口或返回数量无效")
-    ordered = sorted(
-        (
-            item for item in snapshots
-            if period_start <= item.collected_at <= period_end
-        ),
+    available = sorted(
+        (item for item in snapshots if item.collected_at <= period_end),
         key=lambda item: (item.collected_at, str(item.workload_snapshot_id)),
     )
-    by_snapshot: dict[UUID, dict[tuple[str, str, str, str, int], object]] = defaultdict(dict)
+    start_boundary = next((item for item in reversed(available) if item.collected_at <= period_start), None)
+    end_boundary = available[-1] if available else None
+    start_skew = (period_start - start_boundary.collected_at).total_seconds() if start_boundary else None
+    end_skew = (period_end - end_boundary.collected_at).total_seconds() if end_boundary else None
+    boundary_ok = all(value is not None and 0 <= value <= boundary_tolerance_seconds for value in (start_skew, end_skew))
+    alignment = "EXACT" if start_skew == end_skew == 0 else "SAMPLE_ALIGNED" if boundary_ok else "OUT_OF_TOLERANCE"
+    observed_start = start_boundary.collected_at if start_boundary and start_skew <= boundary_tolerance_seconds else period_start
+    ordered = [item for item in available if item.collected_at >= observed_start]
+    by_snapshot: dict[UUID, dict[tuple, object]] = defaultdict(dict)
     for item in statements:
         if (
             str(item.statement_identity_type) == "POSTGRESQL_QUERY_ID"
@@ -423,17 +429,20 @@ def build_top_sql_window(
             )
         ):
             continue
+        native = dict(getattr(item, "database_metrics_json", None) or {})
+        schema = native.get("schema_name") if "schema_name" in native else item.database_name
         key = (
             str(item.statement_identity_type),
             str(item.statement_identity_value),
-            str(item.database_name or ""),
+            ("NULL" if schema is None else "VALUE:" + str(schema)) if str(item.statement_identity_type) == "MYSQL_DIGEST" else str(item.database_name or ""),
             str(item.user_identifier or ""),
             int(item.top_level),
+            str(native.get("plan_hash_value") or ""),
         )
         by_snapshot[item.workload_snapshot_id][key] = item
 
     gaps: Counter[str] = Counter()
-    totals: dict[tuple[str, str, str, str, int], dict[str, Any]] = {}
+    totals: dict[tuple, dict[str, Any]] = {}
     intervals = []
     for previous, current in zip(ordered, ordered[1:]):
         elapsed = (current.collected_at - previous.collected_at).total_seconds()
@@ -477,6 +486,12 @@ def build_top_sql_window(
         if interval_seconds and elapsed > interval_seconds * 2:
             gaps["MISSED_SNAPSHOTS"] += 1
             continue
+        if any(
+            getattr(previous, field, None) != getattr(current, field, None)
+            for field in ("database_version", "capability_probe_version", "catalog_version")
+        ):
+            gaps["SOURCE_VERSION_CHANGED"] += 1
+            continue
         if "PARTIAL" in quality:
             gaps["PARTIAL_SOURCE"] += 1
         intervals.append((previous.collected_at, current.collected_at))
@@ -487,6 +502,14 @@ def build_top_sql_window(
                 gaps["STATEMENT_APPEARED_OR_EVICTED"] += 1
                 continue
             before, after = left[key], right[key]
+            before_native = dict(getattr(before, "database_metrics_json", None) or {})
+            after_native = dict(getattr(after, "database_metrics_json", None) or {})
+            if any(
+                before_native.get(field) != after_native.get(field)
+                for field in ("statement_stats_reset", "statement_stats_dealloc", "stats_since", "first_seen")
+            ):
+                gaps["IDENTIFIED_RESET_OR_EVICTION"] += 1
+                continue
             if any(
                 str(getattr(item, "quality_status", "AVAILABLE")) != "AVAILABLE"
                 for item in (before, after)
@@ -515,8 +538,12 @@ def build_top_sql_window(
                 {
                     "statement_identity_type": key[0],
                     "statement_identity_value": key[1],
-                    "database_name": key[2],
+                    "database_name": str(after.database_name or ""),
+                    **({"schema_name": after_native["schema_name"]} if "schema_name" in after_native else {}),
                     "user_identifier": key[3],
+                    **({"plan_hash_value": after_native["plan_hash_value"]} if "plan_hash_value" in after_native else {}),
+                    "top_level": bool(key[4]) if key[4] in (0, 1) else None,
+                    "covered_intervals": [],
                     "normalized_statement": sanitize_statement_text(
                         getattr(after, "normalized_statement", None)
                     ),
@@ -526,35 +553,51 @@ def build_top_sql_window(
             )
             aggregate["execution_count"] += count
             aggregate["total_duration_microseconds"] += duration
+            aggregate["covered_intervals"].append({"start": previous.collected_at.isoformat(), "end": current.collected_at.isoformat()})
     ranked = sorted(
         totals.values(),
-        key=lambda item: (-item["total_duration_microseconds"], item["statement_identity_value"]),
+        key=lambda item: (-item["total_duration_microseconds"], item["statement_identity_type"], item["statement_identity_value"], str(item.get("schema_name", item["database_name"])), item["user_identifier"], str(item["top_level"]), str(item.get("plan_hash_value", ""))),
     )[:limit]
     for item in ranked:
         item["mean_duration_microseconds"] = (
-            item["total_duration_microseconds"] / item["execution_count"]
+            str(Decimal(item["total_duration_microseconds"]) / Decimal(item["execution_count"]))
             if item["execution_count"] else None
         )
     if len(ordered) < 2:
         gaps["INSUFFICIENT_SNAPSHOTS"] += 1
-    if not intervals or intervals[0][0] > period_start or intervals[-1][1] < period_end:
+    if not intervals or not boundary_ok or any(left[1] != right[0] for left, right in zip(intervals, intervals[1:])):
         gaps["WINDOW_NOT_FULLY_COVERED"] += 1
-    if intervals:
-        # 当前采集器按累计统计截取候选集，不能证明窗口排名完整。
+    collection_metadata = [dict(dict(getattr(item, "continuity_json", None) or {}).get("sql_collection") or {}) for item in ordered]
+    visible_complete = bool(ordered) and all(item.get("mode") == "VISIBLE_SET" and item.get("visible_set_read_complete") is True for item in collection_metadata)
+    if intervals and not visible_complete:
         gaps["LIMITED_CANDIDATE_SET"] += 1
     return {
         "requested_start": period_start.isoformat(),
         "requested_end": period_end.isoformat(),
+        "observed_start": intervals[0][0].isoformat() if intervals else None,
+        "observed_end": intervals[-1][1].isoformat() if intervals else None,
+        "boundary_skew_seconds": {"start": start_skew, "end": end_skew},
+        "alignment": alignment,
+        "availability": "PARTIAL" if intervals and gaps else "OBSERVED" if intervals else "UNAVAILABLE",
+        "candidate_scope": {"mode": "VISIBLE_SET" if visible_complete else "BOUNDED_CANDIDATES", "complete": visible_complete, "atomic": False},
+        "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_CANDIDATES",
+        "continuity_confidence": "NO_IDENTIFIED_RESET_NOT_PROOF_OF_CONTINUITY",
+        "rank_metric": "TOTAL_DURATION",
         "covered_intervals": [
             {"start": start.isoformat(), "end": end.isoformat()}
             for start, end in intervals
         ],
+        "valid_intervals": [
+            {"start": start.isoformat(), "end": end.isoformat()}
+            for start, end in intervals
+        ],
         "snapshot_count": len(ordered),
-        "status": "PARTIAL" if intervals else "INSUFFICIENT",
+        "status": "OBSERVED" if intervals and not gaps else "PARTIAL" if intervals else "INSUFFICIENT",
         "gaps": dict(sorted(gaps.items())),
         "warnings": [
-            "候选语句来自按累计耗时截取的有限快照，窗口热点可能遗漏；"
-            "统计重置或淘汰后重新出现的语句可能无法完整识别。"
+            ("已读取声明来源在采集时可见的集合；非原子采集，不保证捕获所有执行或源内部淘汰。"
+             if visible_complete else "候选语句来自有限快照，窗口热点可能遗漏；统计重置或淘汰重建可能无法完整识别。"),
+            f"边界口径：{alignment}；起点偏差 {start_skew} 秒，终点偏差 {end_skew} 秒；不插值、不称精确请求窗口。"
         ],
         "top_statements": ranked,
     }
@@ -775,7 +818,7 @@ class WorkloadService:
             snapshots = await uow.workloads.list_snapshots(
                 domain_id=domain_id,
                 target_id=target_id,
-                period_start=period_start,
+                period_start=period_start - timedelta(seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60),
                 period_end=exclusive_end,
             )
             ids = tuple(item.workload_snapshot_id for item in snapshots)
@@ -801,6 +844,7 @@ class WorkloadService:
                 postgresql_database_oid=(
                     str(database_oid) if database_oid is not None else None
                 ),
+                boundary_tolerance_seconds=int(dict(target.workload_snapshot_policy_json or {}).get("interval_minutes") or 5) * 60,
             )
             result["snapshot_ids"] = [str(item) for item in ids]
             result["collection_enabled"] = bool(

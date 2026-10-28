@@ -6,7 +6,8 @@ import hashlib
 import json
 import re
 import time
-from datetime import UTC, datetime
+from decimal import Decimal
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from loguru import logger
@@ -38,6 +39,9 @@ from aiops_agent.application.display_dictionary import (
 )
 from aiops_agent.application.investigation.projection import direct_list_result_kind
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
+from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, render_sql_diagnosis, validate_sql_diagnosis
+from aiops_agent.application.sql_selection import selection_ref
+from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -376,6 +380,7 @@ class DbaEvidenceAssessmentHandler:
                             columns=(
                                 {"name": identity_column, "logical_type": "STRING"},
                                 {"name": "normalized_statement", "logical_type": "STRING"},
+                                *({"name": name, "logical_type": "STRING"} for name in (("database_oid", "user_oid", "top_level") if identity_type == "POSTGRESQL_QUERY_ID" else ("schema_name",) if identity_type == "MYSQL_DIGEST" else ())),
                                 {"name": "execution_count", "logical_type": "INTEGER"},
                                 {"name": "total_duration_seconds", "logical_type": "DECIMAL"},
                                 {"name": "mean_duration_seconds", "logical_type": "DECIMAL"},
@@ -384,9 +389,10 @@ class DbaEvidenceAssessmentHandler:
                                 (
                                     item.get("statement_identity_value"),
                                     item.get("normalized_statement"),
+                                    *((item.get("database_name"), item.get("user_identifier"), item.get("top_level")) if identity_type == "POSTGRESQL_QUERY_ID" else (item.get("schema_name", item.get("database_name")),) if identity_type == "MYSQL_DIGEST" else ()),
                                     item.get("execution_count"),
-                                    item.get("total_duration_microseconds", 0) / 1_000_000,
-                                    item["mean_duration_microseconds"] / 1_000_000
+                                    str(Decimal(str(item.get("total_duration_microseconds", 0))) / 1_000_000),
+                                    str(Decimal(str(item["mean_duration_microseconds"])) / 1_000_000)
                                     if item.get("mean_duration_microseconds") is not None else None,
                                 ) for item in statements
                             ),
@@ -835,54 +841,7 @@ class DbaEvidenceAssessmentHandler:
                 for item in gaps
             ):
                 reasons.append("部分模板固定取证工具当前不可用")
-        profile_core_gaps: list[TurnEvidenceGap] = []
-        if (
-            str(task_frame.get("diagnostic_profile"))
-            == "SINGLE_SQL_PERFORMANCE"
-        ):
-            database_type = str(
-                dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type")
-                or dict(task_frame.get("database_context") or {}).get("db_type")
-                or ""
-            ).upper()
-            if not database_type and (task_frame.get("subject_ref") or {}).get("sql_id"):
-                database_type = "ORACLE"
-            required_core = {
-                "ORACLE": {
-                    "db.sql.cursor_details": "缺少目标 SQL 的游标指标和子游标证据",
-                    "db.sql.execution_plan": "缺少目标 SQL 的完整执行计划证据",
-                    "db.sql.object_statistics": "缺少执行计划所访问表的统计信息证据",
-                },
-                "MYSQL": {"db.sql.cursor_details": "缺少目标 Digest 的累计语句统计"},
-                "POSTGRESQL": {"db.postgresql.statement.details": "缺少目标 query_id 的累计语句统计"},
-            }.get(database_type, {})
-            observed = {
-                fact.tool_id
-                for fact in facts
-                if fact.row_count > 0
-            }
-            if database_type in {"POSTGRESQL", "MYSQL"}:
-                sql_answer = build_sql_evidence_answer(
-                    task_frame=task_frame, database_type=database_type, evidence=tuple(facts),
-                )
-                if sql_answer is None or not sql_answer.has_statistics:
-                    observed.difference_update(required_core)
-            profile_core_gaps = [
-                TurnEvidenceGap(
-                    source_id="single-sql.performance-baseline",
-                    step_id=tool_id,
-                    code="SINGLE_SQL_CORE_EVIDENCE_MISSING",
-                    detail=detail,
-                    retryable=True,
-                )
-                for tool_id, detail in required_core.items()
-                if tool_id not in observed
-            ]
-            if profile_core_gaps:
-                gaps.extend(profile_core_gaps)
-                reasons.append(
-                    "单 SQL 性能基线缺少当前数据库类型的核心证据"
-                )
+        # 证据义务来自用户目标；不再按诊断档案强制凑齐统计、计划与对象三件套。
         completion_gaps: list[TurnEvidenceGap] = []
         plan_actions = {
             str(item.get("action_id") or ""): item
@@ -997,7 +956,27 @@ class DbaEvidenceAssessmentHandler:
                     database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
                 )
             )
-            return value.model_copy(update={"evidence": (*value.evidence, *prior_facts)})
+            combined = value.model_copy(update={"evidence": (*value.evidence, *prior_facts)})
+            bundle = build_sql_evidence_bundle(
+                task_frame=task_frame,
+                database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
+                evidence=combined.evidence,
+            )
+            if task_frame.get("diagnostic_profile") == "SINGLE_SQL_PERFORMANCE" and (not bundle or not any(
+                observation["trust_level"] == "SOURCE_VERIFIED" and row["role"] == "SUBJECT"
+                for observation in bundle["observations"] for row in observation["records"]
+            )):
+                gap = TurnEvidenceGap(
+                    source_id="sql.subject", step_id="sql.subject", code="SQL_SUBJECT_EVIDENCE_UNMATCHED",
+                    detail="未取得与指定 SQL 身份匹配的观测；其他 SQL 或全库背景不能替代。",
+                    retryable=False,
+                )
+                return combined.model_copy(update={
+                    "status": (SufficiencyStatus.PARTIAL if value.evidence else SufficiencyStatus.NEEDS_EVIDENCE)
+                    if value.status == SufficiencyStatus.ANSWERABLE else value.status,
+                    "gaps": (*combined.gaps, gap),
+                })
+            return combined
         if (
             context.trigger_type == "SCHEDULE"
             and str(answer_context.get("workflow_kind") or "")
@@ -1006,7 +985,8 @@ class DbaEvidenceAssessmentHandler:
             # 巡检按冻结模板和确定性规则评估覆盖率。通用问题评估模型会
             # 把补证设想追加成新的巡检缺口，导致报告重复并偏离模板范围。
             return with_prior(deterministic)
-        if direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
+        remaining = (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() if getattr(context, "deadline_at", None) else float("inf")
+        if remaining < 25 or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return with_prior(deterministic)
         model_snapshot = dict(answer_context.get("model") or {})
         if not model_snapshot:
@@ -1030,6 +1010,11 @@ class DbaEvidenceAssessmentHandler:
                         mode="json"
                     ),
                     "measurement_boundaries": _measurement_boundaries(deterministic),
+                    "sql_evidence_bundle": build_sql_evidence_bundle(
+                        task_frame=task_frame,
+                        database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
+                        evidence=with_prior(deterministic).evidence,
+                    ),
                 },
                 deadline=(
                     datetime.fromisoformat(context.deadline_at)
@@ -1067,7 +1052,7 @@ class DbaEvidenceAssessmentHandler:
         window_gaps = tuple(
             gap for gap in gaps if gap.source_id == "workload.sql.top_window"
         )
-        if window_gaps and assessed_status in {
+        if window_gaps and task_frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE" and assessed_status in {
             SufficiencyStatus.ANSWERABLE,
             SufficiencyStatus.PARTIAL,
             SufficiencyStatus.NEEDS_EVIDENCE,
@@ -1087,8 +1072,6 @@ class DbaEvidenceAssessmentHandler:
                 "hypothesis_updates": {},
                 "reason": "历史 SQL 窗口仍有数据缺口，累计统计不能替代窗口增量",
             })
-        if profile_core_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
-            assessed_status = SufficiencyStatus.PARTIAL
         if completion_gaps and assessed_status == SufficiencyStatus.ANSWERABLE:
             assessed_status = (
                 SufficiencyStatus.PARTIAL
@@ -1599,9 +1582,9 @@ class DbaAnswerComposeHandler:
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
         kind = direct_list_result_kind(task_frame)
         if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
-            return self._direct_list_result(kind, assessment)
+            return self._direct_list_result(kind, assessment, context)
         if assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION, SufficiencyStatus.CAPABILITY_UNAVAILABLE}:
-            sql_result = self._single_sql_evidence_result(context, assessment)
+            sql_result = await self._single_sql_evidence_result(context, assessment)
             if sql_result is not None:
                 return sql_result
         waiting_status = assessment.status in {
@@ -1742,7 +1725,7 @@ class DbaAnswerComposeHandler:
         )
 
     @staticmethod
-    def _direct_list_result(kind: str, assessment: DbaSufficiencyAssessment) -> AIOpsTurnResult:
+    def _direct_list_result(kind: str, assessment: DbaSufficiencyAssessment, context: TaskExecutionContext | None = None) -> AIOpsTurnResult:
         """列表事实和口径由服务端直接生成，模型不能改写排名或时间。"""
         if kind == "TOP_SQL_LIST":
             fact = _top_sql_primary_fact(assessment.evidence, kind)
@@ -1797,7 +1780,7 @@ class DbaAnswerComposeHandler:
             )
         ]
         if fact is not None:
-            blocks.extend(DbaAnswerComposeHandler._data_blocks((fact,), primary_result_kind=kind))
+            blocks.extend(DbaAnswerComposeHandler._data_blocks((fact,), primary_result_kind=kind, selection_artifact_id=next((str(item["artifact_id"]) for item in context.input_artifacts if item.get("schema_version") == "DBA_SUFFICIENCY.v1" and item.get("artifact_id")), None) if context else None))
         return AIOpsTurnResult(
             status=(
                 "COMPLETED"
@@ -1812,49 +1795,88 @@ class DbaAnswerComposeHandler:
             assessment_reasons=assessment.reasons,
         )
 
-    def _single_sql_evidence_result(
+    @staticmethod
+    def _database_type(context: TaskExecutionContext) -> str:
+        return str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper()
+
+    async def _single_sql_evidence_result(
         self, context: TaskExecutionContext, assessment: DbaSufficiencyAssessment,
     ) -> AIOpsTurnResult | None:
         task_frame = dict(self._answer_context(context).get("task_frame") or {})
         if task_frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE":
             return None
-        database_type = str(
-            dict(context.plan_snapshot.get("target") or {}).get("db_type")
-            or dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type")
-            or ""
-        ).strip().upper()
-        answer = build_sql_evidence_answer(
-            task_frame=task_frame, database_type=database_type,
+        bundle = build_sql_evidence_bundle(
+            task_frame=task_frame, database_type=self._database_type(context),
             evidence=assessment.evidence,
         )
-        if answer is None:
+        if bundle is None:
             return None
-        current_assessment = assessment.model_copy(update={"evidence": tuple(
-            fact for fact in assessment.evidence if fact.source_id != "prior_turn.sql_observation"
-        )})
-        compilation = compile_findings(
-            current_assessment.evidence, database_type=database_type, target_id=str(context.target_id or "") or None,
-        )
-        blocks = self._assemble_blocks(
-            context=context, assessment=current_assessment, compilation=compilation,
-            analysis_markdown=answer.analysis, solution_markdown=answer.solution,
-            evidence_refs=answer.evidence_refs,
-        )
-        # 引用明细从公开 TABLE 投影；历史来源需单独投影并明确标记原采集时间。
-        prior_facts = tuple(
-            fact for fact in assessment.evidence
-            if fact.source_id == "prior_turn.sql_observation" and fact.evidence_ref in answer.evidence_refs
-        )
-        for block in self._data_blocks(prior_facts):
-            if str(block.block_type) == "TABLE":
-                blocks.append(block.model_copy(update={
-                    "payload": {**block.payload, "title": f"上一轮历史观测 · {block.payload.get('title', 'SQL')}"}
-                }))
+        draft = None
+        receipt = None
+        fallback_reason = None
+        if self._model is not None and self._prompts is not None:
+            answer_context = self._answer_context(context)
+            try:
+                prompt = await self._prompts.resolve(
+                    "sql_diagnosis", frozen_prompts=dict(answer_context.get("prompts") or {}),
+                )
+                generated = await self._model.generate_structured(
+                    purpose="aiops.sql-diagnosis", output_model=SqlDiagnosisDraft,
+                    model_snapshot=dict(answer_context.get("model") or {}),
+                    prompt_ref={**prompt.ref(), "content": prompt.content},
+                    input_payload={
+                        "question": answer_context.get("question", ""),
+                        "evidence_bundle": bundle,
+                        "investigation": assessment.investigation.model_dump(mode="json") if assessment.investigation else None,
+                        "resource_capabilities": context.plan_snapshot.get("capability_snapshot", {}),
+                        "gaps": [item.model_dump(mode="json") for item in assessment.gaps],
+                    },
+                    deadline=self._deadline(context.deadline_at) - timedelta(seconds=3) if context.deadline_at else None,
+                    idempotency_key=f"turn:{context.run_id}:sql-diagnosis:{context.attempt}",
+                )
+                draft = SqlDiagnosisDraft.model_validate(generated.output.model_dump(mode="python"))
+                validate_sql_diagnosis(draft, bundle)
+                receipt = generated.receipt.model_dump(mode="json")
+            except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
+                logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={}", context.task_id, type(exc).__name__)
+                fallback_reason = "诊断生成未通过证据校验或服务不可用；本次仅提供已核验画像，原因与方案尚未完成。"
+        else:
+            fallback_reason = "诊断模型未配置；本次仅提供已核验画像，不能视为已完成根因分析。"
+        if draft is not None:
+            analysis, solution, refs = render_sql_diagnosis(draft)
+        else:
+            answer = build_sql_evidence_answer(
+                task_frame=task_frame, database_type=self._database_type(context), evidence=assessment.evidence,
+            )
+            if answer is None:
+                return None
+            analysis, solution, refs = answer.analysis, answer.solution, answer.evidence_refs
+        blocks = [
+            TurnAnswerBlock(
+                block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
+                schema_version="AIOPS_ANALYSIS_BLOCK.v1",
+                payload={"markdown": analysis, "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
+                         "subject": bundle["subject"]}, evidence_refs=refs,
+            ),
+            TurnAnswerBlock(
+                block_type=AnswerBlockType.SOLUTION_MARKDOWN,
+                schema_version="AIOPS_SOLUTION_BLOCK.v1",
+                payload={"markdown": solution}, evidence_refs=refs,
+            ),
+        ]
+        for block in self._data_blocks(assessment.evidence, primary_result_kind="SINGLE_SQL_DETAIL"):
+            if str(block.block_type) == "TABLE" and any(
+                fact.source_id == "prior_turn.sql_observation" and fact.evidence_ref in block.evidence_refs
+                for fact in assessment.evidence
+            ):
+                block = block.model_copy(update={"payload": {**block.payload, "title": f"上一轮历史观测 · {block.payload['title']}"}})
+            blocks.append(block)
+        reasons = tuple(dict.fromkeys((*assessment.reasons, *((fallback_reason,) if fallback_reason else ()))))
         return AIOpsTurnResult(
-            status=("COMPLETED" if answer.has_statistics and not answer.historical_only and assessment.status == SufficiencyStatus.ANSWERABLE else "PARTIAL"),
+            status="COMPLETED" if draft and draft.goal_satisfied and assessment.status == SufficiencyStatus.ANSWERABLE else "PARTIAL",
             sufficiency_status=assessment.status, blocks=tuple(blocks),
             evidence=assessment.evidence, evidence_gaps=assessment.gaps,
-            assessment_reasons=assessment.reasons,
+            assessment_reasons=reasons, model_receipt=receipt,
         )
 
     async def execute_stream(self, context: TaskExecutionContext):
@@ -1864,7 +1886,7 @@ class DbaAnswerComposeHandler:
         task_frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
         kind = direct_list_result_kind(task_frame)
         if kind and assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION}:
-            result = self._direct_list_result(kind, assessment).model_copy(update={"answer_streamed": True})
+            result = self._direct_list_result(kind, assessment, context).model_copy(update={"answer_streamed": True})
             yield DbaAnswerProgress(
                 event_type="answer.delta", event_key="answer-delta:1",
                 payload={"chunk_index": 1, "delta": result.blocks[0].payload["markdown"]},
@@ -1872,7 +1894,7 @@ class DbaAnswerComposeHandler:
             yield result
             return
         if assessment.status not in {SufficiencyStatus.UNSAFE, SufficiencyStatus.NEEDS_CLARIFICATION, SufficiencyStatus.CAPABILITY_UNAVAILABLE}:
-            sql_result = self._single_sql_evidence_result(context, assessment)
+            sql_result = await self._single_sql_evidence_result(context, assessment)
             if sql_result is not None:
                 sections = {str(block.block_type): str(block.payload.get("markdown") or "") for block in sql_result.blocks}
                 markdown = f"## 分析结论\n{sections.get('ANALYSIS_MARKDOWN', '')}\n\n## 处理建议\n{sections.get('SOLUTION_MARKDOWN', '')}"
@@ -2977,6 +2999,7 @@ class DbaAnswerComposeHandler:
         evidence: tuple[TurnEvidenceFact, ...],
         *,
         primary_result_kind: str | None = None,
+        selection_artifact_id: str | None = None,
     ) -> tuple[TurnAnswerBlock, ...]:
         blocks: list[TurnAnswerBlock] = []
         top_sql_primary = _top_sql_primary_fact(evidence, primary_result_kind)
@@ -3005,7 +3028,7 @@ class DbaAnswerComposeHandler:
                         }
                         for column in columns
                     ]
-                rows = [list(row) for row in fact.rows]
+                rows = [exact_wire(list(row)) for row in fact.rows]
                 if primary and primary["result_kind"] in {"TOP_SQL_LIST", "CURRENT_SQL_LIST"}:
                     text_indexes = {
                         index for index, column in enumerate(columns)
@@ -3031,6 +3054,7 @@ class DbaAnswerComposeHandler:
                             ),
                             "columns": columns,
                             "rows": rows,
+                            "row_selections": [selection_ref(artifact_id=selection_artifact_id, fact=fact, row_index=index) for index in range(len(rows))] if selection_artifact_id and primary and primary["result_kind"] in {"TOP_SQL_LIST", "CURRENT_SQL_LIST"} else [],
                             "row_count": fact.row_count,
                             "truncated": fact.truncated,
                             "captured_at": fact.captured_at,

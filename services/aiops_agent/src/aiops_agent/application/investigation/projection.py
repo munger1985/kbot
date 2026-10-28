@@ -27,6 +27,8 @@ def tool_class_for(tool_id: str) -> str:
         return "ORACLE_SQL_DYNAMIC"
     if tool_id == "db.postgresql.readonly_query":
         return "POSTGRESQL_SQL_DYNAMIC"
+    if tool_id == "db.mysql.readonly_query":
+        return "MYSQL_SQL_DYNAMIC"
     if tool_id == "artifact.search":
         return "USER_EVIDENCE"
     if tool_id.startswith("db.postgresql."):

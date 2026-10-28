@@ -766,7 +766,7 @@ class DynamicQueryPlanningTest(unittest.TestCase):
         )
         self.assertEqual(
             ["CREATE SESSION", "SELECT ANY DICTIONARY"],
-            dynamic_tool["database_access"]["granted_system_privileges"],
+            dynamic_tool["database_access"]["recommended_system_privileges"],
         )
         self.assertEqual(
             ["CURRENT"],

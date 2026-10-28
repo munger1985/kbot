@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from loguru import logger
@@ -133,7 +135,11 @@ class _ReplanInputSnapshot:
 class TurnPlanningService:
     """在外部模型调用两侧使用短事务冻结并持久化计划。"""
 
-    SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID = "oracle.sql.healthcheck"
+    SINGLE_SQL_HEALTHCHECK_PLAYBOOK_IDS = {
+        "ORACLE_SQL_ID": "oracle.sql.healthcheck",
+        "MYSQL_DIGEST": "mysql.sql.healthcheck",
+        "POSTGRESQL_QUERY_ID": "postgresql.sql.healthcheck",
+    }
     ORACLE_ADG_BUILD_PLAYBOOK_ID = "oracle.ha.adg_build"
     IMPLEMENTATION_PROFILE_CATALOG = {
         ImplementationProfile.ORACLE_ADG_BUILD: (
@@ -321,28 +327,19 @@ class TurnPlanningService:
                     available_playbooks=discovered_playbooks,
                 )
             )
-            investigation = self._enforce_initial_evidence_source_strategy(
-                investigation=self._bind_target_to_plan(
+            investigation = self._bind_target_to_plan(
                     investigation=self._apply_default_temporal_windows(
                         reset_model_deferred_flags(investigation)
                     ),
                     target_context=context.target_context,
                     available_tools=planning_tools,
-                ),
-                available_tools=planning_tools,
-                revision_no=1,
-            )
+                )
             rewritten = rewrite_incomplete_discovery_actions(
                 investigation=investigation,
                 available_tools=planning_tools,
             )
             if rewritten is not None:
                 investigation = rewritten
-            self._validate_evidence_source_strategy(
-                investigation=investigation,
-                available_tools=planning_tools,
-                revision_no=1,
-            )
             investigation, dynamic_queries, source_queries, attachment_searches = (
                 self._prepare_query_inputs(
                     investigation=investigation,
@@ -519,9 +516,9 @@ class TurnPlanningService:
                 compact=compact,
                 target_context=context.target_context,
             )
-            requested_tool_ids = self._profile_tool_ids(compact)
+            requested_tool_ids = self._profile_tool_ids(compact, context.target_context)
             requested_playbook_ids = self._profile_playbook_ids(
-                compact, available_playbooks
+                compact, context.target_context, available_playbooks
             )
         elif kind == "SINGLE_SQL":
             sql_id = str(parameters.get("sql_id") or "").lower()
@@ -532,7 +529,7 @@ class TurnPlanningService:
                 diagnostic_profile=DiagnosticProfile.SINGLE_SQL_PERFORMANCE,
                 implementation_profile=ImplementationProfile.NONE,
                 evidence_source_strategy=EvidenceSourceStrategy.DATABASE_FIRST,
-                subject_ref={"sql_id": sql_id},
+                subject_ref={"subject_type": "ORACLE_SQL_ID", "sql_id": sql_id},
                 problem_statement=f"深度分析 SQL_ID {sql_id}",
                 success_criteria=("形成单 SQL 性能证据基线和优化结论",),
                 public_reasoning_summary="已按单 SQL 固定诊断档案建立计划",
@@ -541,11 +538,11 @@ class TurnPlanningService:
                 question=context.question,
                 compact=compact,
                 target_context=context.target_context,
-                sql_id=sql_id,
+                subject={"subject_type": "ORACLE_SQL_ID", "sql_id": sql_id},
             )
-            requested_tool_ids = self._profile_tool_ids(compact)
+            requested_tool_ids = self._profile_tool_ids(compact, context.target_context)
             requested_playbook_ids = self._profile_playbook_ids(
-                compact, available_playbooks
+                compact, context.target_context, available_playbooks
             )
         else:
             investigation, requested_tool_ids = self._starter_diagnostic_output(
@@ -1118,7 +1115,7 @@ class TurnPlanningService:
     ):
         """对纯文本问题先做精简语义规划，复杂材料直接进入完整规划。"""
         compact_question = self._compact_question(context)
-        if compact_question is None:
+        if compact_question is None or context.target_context.get("sql_selection"):
             await self._record_planning_route(
                 context=context,
                 mode="FULL_INVESTIGATION",
@@ -1168,7 +1165,10 @@ class TurnPlanningService:
             idempotency_key=f"turn:{context.turn_id}:compact-planning:1",
         )
         compact = routed.output
-        profile_tool_ids = self._profile_tool_ids(compact)
+        profile_tool_ids = (
+            () if compact.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+            else self._profile_tool_ids(compact, context.target_context)
+        )
         available_tool_ids = {
             str(item["tool_id"]) for item in available_tools
         }
@@ -1187,7 +1187,10 @@ class TurnPlanningService:
             )
         )
         profile_playbook_ids = self._profile_playbook_ids(
-            compact, available_playbooks
+            compact,
+            context.target_context,
+            available_playbooks,
+            source_run_evidence=context.source_run_evidence,
         )
         selected_tools, selected_playbooks = select_planning_candidates(
             tools=available_tools,
@@ -1215,12 +1218,14 @@ class TurnPlanningService:
             )
             != (compact.action_intent != ActionIntent.NONE)
         )
-        single_sql_id = self._single_sql_id(compact)
+        single_sql_subject = self._single_sql_subject(
+            compact, context.target_context
+        )
         profile_incomplete = (
             (
                 compact.diagnostic_profile
                 == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
-                and single_sql_id is None
+                and single_sql_subject is None
             )
             or (
                 bool(profile_tool_ids)
@@ -1247,17 +1252,17 @@ class TurnPlanningService:
         effective_mode = (
             CompactPlanningMode.FULL_INVESTIGATION
             if compact_route_incomplete
-            else CompactPlanningMode.READ_ONLY_LOOKUP
-            if single_sql_id is not None
+            else CompactPlanningMode.FULL_INVESTIGATION
+            if single_sql_subject is not None
             else compact.planning_mode
         )
         public_summary = compact.public_reasoning_summary
-        if single_sql_id is not None and not compact_route_incomplete:
-            public_summary = (
-                f"已识别单 SQL 性能调查对象 {single_sql_id}，"
-                "选用 oracle.sql.healthcheck，"
-                "将执行游标、计划、对象统计、DBMS_XPLAN 和实时计划监控基线"
-            )
+        if single_sql_subject is not None:
+            compact = compact.model_copy(update={"subject_ref": single_sql_subject})
+            public_summary = "已确定单 SQL 对象，将按问题和可用证据形成诊断计划"
+            # 不用固定基线替代诊断；目录外受控观察也必须可被规划器选择。
+            selected_tools = available_tools
+            selected_playbooks = available_playbooks
         if compact_route_incomplete:
             public_summary = (
                 "精简路由已识别任务方向，但尚未形成可执行的前置核验，"
@@ -1311,19 +1316,6 @@ class TurnPlanningService:
                 },
             ],
         )
-        if single_sql_id is not None and not compact_route_incomplete:
-            output = self._single_sql_investigation_output(
-                question=compact_question,
-                compact=compact,
-                target_context=context.target_context,
-                sql_id=single_sql_id,
-            )
-            return (
-                StructuredModelResult(output=output, receipt=routed.receipt),
-                selected_tools,
-                selected_playbooks,
-                route_snapshot,
-            )
         if (
             not compact_route_incomplete
             and compact.planning_mode
@@ -1340,7 +1332,7 @@ class TurnPlanningService:
                 selected_playbooks,
                 route_snapshot,
             )
-        if not compact_route_incomplete and compact.planning_mode in {
+        if single_sql_subject is None and not compact_route_incomplete and compact.planning_mode in {
             CompactPlanningMode.READ_ONLY_LOOKUP,
             CompactPlanningMode.CONTROLLED_ACTION,
         }:
@@ -1414,78 +1406,201 @@ class TurnPlanningService:
         )
         return investigation.model_copy(update={"task_frame": task_frame})
 
-    @staticmethod
-    def _profile_tool_ids(compact) -> tuple[str, ...]:
-        """把模型选择的诊断或实施档案展开为确定性固定 Tool 集合。"""
-        implementation = TurnPlanningService.IMPLEMENTATION_PROFILE_CATALOG.get(
+    @classmethod
+    def _profile_tool_ids(
+        cls, compact, target_context: dict | None = None
+    ) -> tuple[str, ...]:
+        """把模型选择的诊断或实施档案展开为确定性 Tool 集合。"""
+        implementation = cls.IMPLEMENTATION_PROFILE_CATALOG.get(
             compact.implementation_profile
         )
         if implementation is not None:
             return ("db.instance.identity", implementation[0])
-        if (
-            compact.diagnostic_profile
-            == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
-        ):
+        subject = cls._single_sql_subject(compact, target_context or {})
+        if subject is None:
+            return ()
+        if subject["subject_type"] == "ORACLE_SQL_ID":
             return (
                 "db.sql.cursor_details",
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
                 "db.sql.display_cursor",
             )
-        return ()
+        if subject["subject_type"] == "MYSQL_DIGEST":
+            return (
+                "db.sql.cursor_details",
+                "db.mysql.statement.history",
+                "db.sql.object_statistics",
+                "db.table.statistics",
+                "db.index.health",
+                "db.mysql.statistics.health",
+                "db.mysql.lock.current",
+                "db.instance.parameters",
+            )
+        return (
+            "db.postgresql.statement.details",
+            "db.sql.object_statistics",
+            "db.postgresql.table.statistics",
+            "db.postgresql.index.statistics",
+            "db.session.current_sql",
+            "db.postgresql.lock.tree",
+            "db.transaction.long_running",
+            "db.instance.parameters",
+        )
 
     @classmethod
     def _profile_playbook_ids(
         cls,
         compact,
+        target_context: dict,
         available_playbooks: tuple[dict, ...],
+        *,
+        source_run_evidence: dict | None = None,
     ) -> tuple[str, ...]:
-        """把结构化档案挂到确定性 Playbook；不可用时记缺口不中断。"""
+        """确定性加入实施档案、单 SQL 或告警推荐 Playbook。"""
         available_ids = {
             str(item["playbook_id"]) for item in available_playbooks
         }
         implementation = cls.IMPLEMENTATION_PROFILE_CATALOG.get(
-            compact.implementation_profile
+            getattr(compact, "implementation_profile", ImplementationProfile.NONE)
         )
         if implementation is not None:
             playbook_id = implementation[1]
-            return (
-                (playbook_id,)
-                if playbook_id in available_ids
-                else ()
-            )
+            return (playbook_id,) if playbook_id in available_ids else ()
+        selected: list[str] = []
         if (
             compact.diagnostic_profile
-            != DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+            == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
         ):
-            return ()
-        if cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID not in available_ids:
-            return ()
-        return (cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID,)
+            subject = cls._single_sql_subject(compact, target_context)
+            if subject is not None:
+                selected.append(
+                    cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_IDS[
+                        str(subject["subject_type"])
+                    ]
+                )
+        payload = dict((source_run_evidence or {}).get("payload") or {})
+        for event in payload.get("signal_events") or ():
+            attributes = dict(event.get("provider_attributes") or {})
+            database_type = str(attributes.get("database_type") or "")
+            if database_type and database_type != str(
+                target_context.get("db_type") or ""
+            ):
+                continue
+            playbook_id = str(
+                attributes.get("recommended_playbook_id") or ""
+            )
+            if playbook_id:
+                selected.append(playbook_id)
+        return tuple(
+            item
+            for item in dict.fromkeys(selected)
+            if item in available_ids
+        )
 
     @classmethod
-    def _suggested_single_sql_playbook_ids(cls, compact) -> tuple[str, ...]:
+    def _suggested_single_sql_playbook_ids(
+        cls, compact, subject: dict[str, str]
+    ) -> tuple[str, ...]:
         """单 SQL 调查始终建议 SQLHC 语义 Playbook，不依赖模型临场选择。"""
         return tuple(
             dict.fromkeys(
                 (
                     *compact.selected_playbook_ids,
-                    cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_ID,
+                    cls.SINGLE_SQL_HEALTHCHECK_PLAYBOOK_IDS[
+                        subject["subject_type"]
+                    ],
                 )
             )
         )
 
     @staticmethod
-    def _single_sql_id(compact) -> str | None:
+    def _single_sql_subject(
+        compact, target_context: dict
+    ) -> dict[str, Any] | None:
         if (
             compact.diagnostic_profile
             != DiagnosticProfile.SINGLE_SQL_PERFORMANCE
         ):
             return None
-        sql_id = str(compact.subject_ref.get("sql_id") or "").strip().lower()
-        if len(sql_id) != 13 or not sql_id.isalnum():
+        subject_type = str(
+            compact.subject_ref.get("subject_type") or ""
+        ).strip().upper()
+        db_type = str(target_context.get("db_type") or "").strip().upper()
+        if subject_type == "ORACLE_SQL_ID" and db_type in {"", "ORACLE"}:
+            sql_id = str(
+                compact.subject_ref.get("sql_id") or ""
+            ).strip().lower()
+            if len(sql_id) == 13 and sql_id.isalnum():
+                return {
+                    "subject_type": subject_type,
+                    "sql_id": sql_id,
+                }
+        if subject_type == "MYSQL_DIGEST" and db_type in {"", "MYSQL"}:
+            digest = str(
+                compact.subject_ref.get("digest") or ""
+            ).strip().upper()
+            if len(digest) == 64 and all(
+                char in "0123456789ABCDEF" for char in digest
+            ):
+                subject = {
+                    "subject_type": subject_type,
+                    "digest": digest,
+                }
+                schema_name = str(
+                    compact.subject_ref.get("schema_name") or ""
+                ).strip()
+                if schema_name:
+                    subject["schema_name"] = schema_name
+                return subject
             return None
-        return sql_id
+        if subject_type == "POSTGRESQL_QUERY_ID" and db_type in {
+            "",
+            "POSTGRESQL",
+        }:
+            query_id = str(
+                compact.subject_ref.get("query_id") or ""
+            ).strip()
+            if not re.fullmatch(r"-?(?:0|[1-9][0-9]{0,18})", query_id):
+                return None
+            query_id_value = int(query_id)
+            if not -(2**63) <= query_id_value <= 2**63 - 1:
+                return None
+            try:
+                database_oid = int(compact.subject_ref["database_oid"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            if not 1 <= database_oid <= 2**32 - 1:
+                return None
+            subject: dict[str, Any] = {
+                "subject_type": subject_type,
+                "query_id": query_id,
+                "database_oid": database_oid,
+            }
+            if compact.subject_ref.get("user_oid") is not None:
+                try:
+                    user_oid = int(compact.subject_ref["user_oid"])
+                except (TypeError, ValueError):
+                    return None
+                if not 1 <= user_oid <= 2**32 - 1:
+                    return None
+                subject["user_oid"] = user_oid
+            if compact.subject_ref.get("top_level") is not None:
+                top_level = compact.subject_ref["top_level"]
+                if not isinstance(top_level, bool):
+                    return None
+                subject["top_level"] = top_level
+            return subject
+        return None
+
+    @staticmethod
+    def _single_sql_subject_value(subject: dict[str, Any]) -> str:
+        return str(
+            subject.get("sql_id")
+            or subject.get("digest")
+            or subject.get("query_id")
+            or ""
+        )
 
     @classmethod
     def _single_sql_investigation_output(
@@ -1494,7 +1609,7 @@ class TurnPlanningService:
         question: str,
         compact,
         target_context: dict,
-        sql_id: str,
+        subject: dict[str, Any],
     ) -> InvestigationPlanningOutput:
         """为单 SQL 调优建立不依赖模型临场发挥的核心证据基线。"""
         display_name = str(
@@ -1502,40 +1617,169 @@ class TurnPlanningService:
             or target_context.get("target_id")
             or "当前 Target"
         )
-        action_specs = (
+        subject_value = cls._single_sql_subject_value(subject)
+        if subject["subject_type"] == "ORACLE_SQL_ID":
+            action_specs = (
             (
                 "游标指标",
                 "db.sql.cursor_details",
-                {"sql_id": sql_id, "limit": 50},
+                {"sql_id": subject_value, "limit": 50},
                 MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
                 False,
             ),
             (
                 "完整执行计划、对象、估算基数和谓词",
                 "db.sql.execution_plan",
-                {"sql_id": sql_id, "limit": 500},
+                {"sql_id": subject_value, "limit": 500},
                 MeasurementSemantics.CURRENT_ACTIVITY,
                 False,
             ),
             (
                 "执行计划所访问表的统计信息状态",
                 "db.sql.object_statistics",
-                {"sql_id": sql_id},
+                {"sql_id": subject_value},
                 MeasurementSemantics.CURRENT_ACTIVITY,
                 False,
             ),
             (
                 "DBMS_XPLAN ALLSTATS LAST 格式化执行计划",
                 "db.sql.display_cursor",
-                {"sql_id": sql_id},
+                {"sql_id": subject_value},
                 MeasurementSemantics.CURRENT_ACTIVITY,
                 True,
             ),
-        )
+            )
+        elif subject["subject_type"] == "MYSQL_DIGEST":
+            schema_name = str(subject.get("schema_name") or "")
+            action_specs = (
+                (
+                    "Digest累计性能指标和脱敏样例",
+                    "db.sql.cursor_details",
+                    {"digest": subject_value, "limit": 50},
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    False,
+                ),
+                (
+                    "近期语句活动与运行时指标",
+                    "db.mysql.statement.history",
+                    {"limit": 100},
+                    MeasurementSemantics.HISTORICAL_SAMPLES,
+                    True,
+                ),
+                (
+                    "相关Schema对象I/O统计",
+                    "db.sql.object_statistics",
+                    {"schema_name": schema_name, "limit": 100},
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    True,
+                ),
+                (
+                    "相关Schema表容量与统计时间",
+                    "db.table.statistics",
+                    {"schema_name": schema_name, "limit": 100},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    True,
+                ),
+                (
+                    "索引使用与冗余候选证据",
+                    "db.index.health",
+                    {"limit": 100},
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    True,
+                ),
+                (
+                    "表统计信息健康状态",
+                    "db.mysql.statistics.health",
+                    {"limit": 100},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    True,
+                ),
+                (
+                    "当前行锁等待事实",
+                    "db.mysql.lock.current",
+                    {"limit": 100},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    True,
+                ),
+                (
+                    "影响优化器行为的受控参数基线",
+                    "db.instance.parameters",
+                    {},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    False,
+                ),
+            )
+        else:
+            statement_input: dict[str, Any] = {
+                "query_id": subject_value,
+                "database_oid": int(subject["database_oid"]),
+                "user_oid": int(subject.get("user_oid") or 0),
+                "limit": 20,
+            }
+            if "top_level" in subject:
+                statement_input["top_level"] = bool(subject["top_level"])
+            action_specs = (
+                (
+                    "pg_stat_statements累计性能指标和脱敏语句",
+                    "db.postgresql.statement.details",
+                    statement_input,
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    False,
+                ),
+                (
+                    "数据库对象容量、扫描和统计信息",
+                    "db.sql.object_statistics",
+                    {"schema_name": "", "limit": 100},
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    True,
+                ),
+                (
+                    "表级扫描、元组变化和分析时间",
+                    "db.postgresql.table.statistics",
+                    {"limit": 100},
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    True,
+                ),
+                (
+                    "索引扫描、有效性和容量",
+                    "db.postgresql.index.statistics",
+                    {"limit": 100},
+                    MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
+                    True,
+                ),
+                (
+                    "当前执行、等待和会话关联",
+                    "db.session.current_sql",
+                    {"limit": 100},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    True,
+                ),
+                (
+                    "当前阻塞树和锁对象",
+                    "db.postgresql.lock.tree",
+                    {"limit": 100},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    True,
+                ),
+                (
+                    "长事务和xmin风险",
+                    "db.transaction.long_running",
+                    {"minimum_seconds": 60, "limit": 100},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    True,
+                ),
+                (
+                    "优化器、work_mem、parallel和JIT参数基线",
+                    "db.instance.parameters",
+                    {},
+                    MeasurementSemantics.CURRENT_ACTIVITY,
+                    False,
+                ),
+            )
         actions = tuple(
             InvestigationAction(
                 action_id=f"a{index}",
-                question=f"{sql_id} 的{title}是什么？",
+                question=f"{subject_value} 的{title}是什么？",
                 tool_id=tool_id,
                 input=parameters,
                 expected_evidence_kind="SINGLE_SQL_PERFORMANCE",
@@ -1559,7 +1803,9 @@ class TurnPlanningService:
                         summary=question[:2000],
                         key_facts=(
                             f"用户已选择逻辑 Target：{display_name}",
-                            f"调查对象 SQL_ID：{sql_id}",
+                            "调查对象类型："
+                            f"{subject['subject_type']}",
+                            f"调查对象：{subject_value}",
                         ),
                         confidence=1,
                         contains_user_evidence=False,
@@ -1580,13 +1826,14 @@ class TurnPlanningService:
                 forecast_horizon_seconds=compact.forecast_horizon_seconds,
                 known_facts=(
                     f"当前逻辑 Target 为 {display_name}",
-                    f"待分析 SQL_ID 为 {sql_id}",
+                    "待分析对象类型为"
+                    f" {subject['subject_type']}，标识为 {subject_value}",
                 ),
                 unknowns=(
-                    "游标资源消耗和子游标差异",
-                    "执行计划、估算基数、访问对象与谓词",
-                    "计划对象统计信息是否缺失或陈旧",
-                    "可用的实际行源统计与估算偏差",
+                    "语句资源消耗和执行分布",
+                    "执行计划、访问对象与估算偏差",
+                    "对象统计信息、直方图和索引状态",
+                    "可用的运行时活动、等待与锁证据",
                 ),
                 constraints=(
                     "只执行当前 Target 的固定只读单 SQL 诊断基线",
@@ -1607,11 +1854,11 @@ class TurnPlanningService:
                 evidence_source_strategy=(
                     EvidenceSourceStrategy.DATABASE_FIRST
                 ),
-                subject_ref={"sql_id": sql_id},
+                subject_ref=dict(subject),
             ),
             plan=InvestigationPlan(revision_no=1, actions=actions),
             suggested_playbook_ids=cls._suggested_single_sql_playbook_ids(
-                compact
+                compact, subject
             ),
         )
 
@@ -2427,17 +2674,13 @@ class TurnPlanningService:
     ):
         """先按发现目录确定性补全计划，再对仍越界的 Tool 输入做一次受控修正。"""
         planned = StructuredModelResult(
-            output=self._enforce_initial_evidence_source_strategy(
-                investigation=self._bind_target_to_plan(
+            output=self._bind_target_to_plan(
                     investigation=self._apply_default_temporal_windows(
                         reset_model_deferred_flags(planned.output)
                     ),
                     target_context=context.target_context,
                     available_tools=available_tools,
                 ),
-                available_tools=available_tools,
-                revision_no=revision_no,
-            ),
             receipt=planned.receipt,
         )
         rewritten = rewrite_incomplete_discovery_actions(
@@ -2457,11 +2700,6 @@ class TurnPlanningService:
                 receipt=planned.receipt,
             )
         try:
-            self._validate_evidence_source_strategy(
-                investigation=planned.output,
-                available_tools=available_tools,
-                revision_no=revision_no,
-            )
             investigation, dynamic_queries, source_queries, attachment_searches = (
                 self._prepare_query_inputs(
                     investigation=planned.output,
@@ -2492,11 +2730,6 @@ class TurnPlanningService:
                     [action.tool_id for action in rewritten.plan.actions],
                 )
                 try:
-                    self._validate_evidence_source_strategy(
-                        investigation=rewritten,
-                        available_tools=available_tools,
-                        revision_no=revision_no,
-                    )
                     investigation, dynamic_queries, source_queries, attachment_searches = (
                         self._prepare_query_inputs(
                             investigation=rewritten,
@@ -2549,25 +2782,16 @@ class TurnPlanningService:
                 )
             )
             repaired = StructuredModelResult(
-                output=self._enforce_initial_evidence_source_strategy(
-                    investigation=self._bind_target_to_plan(
+                output=self._bind_target_to_plan(
                         investigation=self._apply_default_temporal_windows(
                             repaired.output
                         ),
                         target_context=context.target_context,
                         available_tools=available_tools,
                     ),
-                    available_tools=available_tools,
-                    revision_no=revision_no,
-                ),
                 receipt=repaired.receipt,
             )
             try:
-                self._validate_evidence_source_strategy(
-                    investigation=repaired.output,
-                    available_tools=available_tools,
-                    revision_no=revision_no,
-                )
                 investigation, dynamic_queries, source_queries, attachment_searches = (
                     self._prepare_query_inputs(
                         investigation=repaired.output,
@@ -2617,10 +2841,6 @@ class TurnPlanningService:
             alert_diagnosis
             or inspection
             or bool(investigation.task_frame.visualization_profile_id)
-            or investigation.task_frame.evidence_source_strategy
-            == EvidenceSourceStrategy.MONITORING_FIRST
-            or investigation.task_frame.temporal_analysis_mode
-            != TemporalAnalysisMode.CURRENT
             or any(
                 action.tool_id.startswith("monitor.")
                 or action.tool_id.startswith("prometheus.")
@@ -2693,88 +2913,6 @@ class TurnPlanningService:
             }
         )
 
-    @staticmethod
-    def _enforce_initial_evidence_source_strategy(
-        *,
-        investigation: InvestigationPlanningOutput,
-        available_tools: tuple[dict, ...],
-        revision_no: int,
-    ) -> InvestigationPlanningOutput:
-        """首轮监控优先时延后数据库动作，由服务端监控快照负责取证。"""
-        if (
-            revision_no != 1
-            or investigation.task_frame.evidence_source_strategy
-            != EvidenceSourceStrategy.MONITORING_FIRST
-            or "monitor.query_range"
-            not in {
-                str(item.get("tool_id") or "")
-                for item in available_tools
-            }
-        ):
-            return investigation
-        actions = tuple(
-            action
-            for action in investigation.plan.actions
-            if not action.tool_id.startswith("db.")
-        )
-        retained_ids = {action.action_id for action in actions}
-        normalized_actions = tuple(
-            action.model_copy(
-                update={
-                    "depends_on": tuple(
-                        dependency
-                        for dependency in action.depends_on
-                        if dependency in retained_ids
-                    )
-                }
-            )
-            for action in actions
-        )
-        if normalized_actions == investigation.plan.actions:
-            return investigation
-        return investigation.model_copy(
-            update={
-                "plan": investigation.plan.model_copy(
-                    update={"actions": normalized_actions}
-                )
-            }
-        )
-
-    @staticmethod
-    def _validate_evidence_source_strategy(
-        *,
-        investigation: InvestigationPlanningOutput,
-        available_tools: tuple[dict, ...],
-        revision_no: int,
-    ) -> None:
-        """首轮强制执行结构化证据来源策略，补证轮允许切换来源。"""
-        if (
-            revision_no != 1
-            or investigation.task_frame.evidence_source_strategy
-            != EvidenceSourceStrategy.MONITORING_FIRST
-        ):
-            return
-        available_tool_ids = {
-            str(item.get("tool_id") or "") for item in available_tools
-        }
-        if "monitor.query_range" not in available_tool_ids:
-            return
-        executable = tuple(
-            action
-            for action in investigation.plan.actions
-            if not action.deferred
-        )
-        database_actions = tuple(
-            action
-            for action in executable
-            if action.tool_id.startswith("db.")
-        )
-        if database_actions:
-            raise InvestigationPlanValidationError(
-                "证据来源策略为MONITORING_FIRST，首轮不能同时执行同类"
-                "数据库取证；服务端会先加载监控快照，监控不足时再重规划补证"
-            )
-
     def _prepare_valid_query_subset(
         self,
         *,
@@ -2786,16 +2924,6 @@ class TurnPlanningService:
         normalized_actions: dict[str, InvestigationAction] = {}
         rejected_reasons: dict[str, str] = {}
         source_actions = tuple(investigation.plan.actions)
-        if (
-            revision_no == 1
-            and investigation.task_frame.evidence_source_strategy
-            == EvidenceSourceStrategy.MONITORING_FIRST
-        ):
-            source_actions = tuple(
-                action
-                for action in source_actions
-                if not action.tool_id.startswith("db.")
-            )
 
         for action in source_actions:
             isolated_action = action.model_copy(update={"depends_on": ()})
@@ -2890,12 +3018,27 @@ class TurnPlanningService:
         available_tools: tuple[dict, ...],
     ) -> InvestigationPlanningOutput:
         """冻结目标语义，并为数据库调查补充可审计的实例身份前置步骤。"""
+        selection = dict(target_context.get("sql_selection") or {})
         task_frame = investigation.task_frame.model_copy(
-            update={"database_context": dict(target_context)}
+            update={
+                "database_context": dict(target_context),
+                **({
+                    "diagnostic_profile": DiagnosticProfile.SINGLE_SQL_PERFORMANCE,
+                    "subject_ref": dict(selection["subject_ref"]),
+                    "action_intent": ActionIntent.NONE,
+                    "requires_change": False,
+                } if selection else {}),
+            }
         )
         if task_frame.action_intent == ActionIntent.ADVISORY:
             return investigation.model_copy(update={"task_frame": task_frame})
-        actions = list(investigation.plan.actions)
+        actions = [
+            action.model_copy(update={"input": {
+                **dict(action.input),
+                **{key: value for key, value in selection.get("subject_ref", {}).items() if key in action.input},
+            }}) if selection else action
+            for action in investigation.plan.actions
+        ]
         database_actions = [
             action for action in actions if action.tool_id.startswith("db.")
         ]
@@ -3191,6 +3334,7 @@ class TurnPlanningService:
                         if item.tool_id in {
                             "db.oracle.readonly_query",
                             "db.postgresql.readonly_query",
+                            "db.mysql.readonly_query",
                         }
                     ),
                     compiled.dynamic_task_keys,
@@ -3236,6 +3380,7 @@ class TurnPlanningService:
                 elif action.tool_id in {
                     "db.oracle.readonly_query",
                     "db.postgresql.readonly_query",
+                    "db.mysql.readonly_query",
                 }:
                     task_id = dynamic_task_by_action[action.action_id]
                 elif action.tool_id == "artifact.search":
@@ -3896,6 +4041,7 @@ class TurnPlanningService:
                     "status": str(target.status),
                     "connectivity_status": str(target.connectivity_status),
                     "selection_status": "BOUND",
+                    "sql_selection": dict(user_message.payload_json.get("sql_selection") or {}),
                 },
                 prompt_snapshot=prompt_snapshot,
                 capabilities=build_capability_snapshot(
@@ -4606,6 +4752,7 @@ class TurnPlanningService:
                         if item.tool_id in {
                             "db.oracle.readonly_query",
                             "db.postgresql.readonly_query",
+                            "db.mysql.readonly_query",
                         }
                     ),
                     compiled.dynamic_task_keys,
@@ -4645,6 +4792,7 @@ class TurnPlanningService:
                 elif action.tool_id in {
                     "db.oracle.readonly_query",
                     "db.postgresql.readonly_query",
+                    "db.mysql.readonly_query",
                 }:
                     task_id = dynamic_task_by_action[action.action_id]
                 elif action.tool_id == "artifact.search":

@@ -267,6 +267,12 @@ class ConversationSummary(AIOpsContract):
     updated_at: UtcDatetime
 
 
+class SqlDiagnosisSelection(AIOpsContract):
+    """服务端结果行引用；不接收浏览器提供的 SQL 身份或文本。"""
+
+    selection_ref: str = Field(min_length=1, max_length=2048)
+
+
 class TurnCreate(AIOpsContract):
     schema_version: str = CONVERSATION_SCHEMA_VERSION
     content: tuple["InputContent", ...] = Field(default=(), max_length=16)
@@ -274,8 +280,12 @@ class TurnCreate(AIOpsContract):
     source_run_id: UUIDv7 | None = None
     starter: ConversationStarterSelection | None = None
 
+    sql_diagnosis: SqlDiagnosisSelection | None = None
+
     @model_validator(mode="after")
     def validate_input(self) -> "TurnCreate":
+        if self.starter is not None and self.sql_diagnosis is not None:
+            raise ValueError("SQL 选行诊断与功能入口不能同时提交")
         if not self.content and self.starter is None:
             raise ValueError("Turn 必须包含对话内容或功能入口选择")
         return self

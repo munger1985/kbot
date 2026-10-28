@@ -13,6 +13,8 @@ from aiops_agent.diagnostics import (
     OracleDynamicQueryPolicy,
     PostgreSQLDynamicQueryPolicy,
     PostgreSQLDynamicQueryPolicySnapshot,
+    MySQLDynamicQueryPolicy,
+    MySQLDynamicQueryPolicySnapshot,
 )
 from aiops_agent.monitoring import (
     LogQueryPolicy,
@@ -26,6 +28,7 @@ from aiops_agent.monitoring import (
 _DYNAMIC_TOOL_IDS = {
     "ORACLE": "db.oracle.readonly_query",
     "POSTGRESQL": "db.postgresql.readonly_query",
+    "MYSQL": "db.mysql.readonly_query",
 }
 
 
@@ -44,6 +47,10 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
         snapshot = PostgreSQLDynamicQueryPolicySnapshot()
         policy = PostgreSQLDynamicQueryPolicy(snapshot)
         required_privileges = ["pg_read_all_stats"]
+    elif normalized_database_type == "MYSQL":
+        snapshot = MySQLDynamicQueryPolicySnapshot()
+        policy = MySQLDynamicQueryPolicy(snapshot)
+        required_privileges = []
     else:
         snapshot = None
         policy = None

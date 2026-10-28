@@ -192,6 +192,27 @@ class ValidatedPostgreSQLQuery(BaseModel):
     explain: bool = False
 
 
+class MySQLDynamicQueryPolicySnapshot(BaseModel):
+    """MySQL 只读目录查询策略，不包含业务表或可执行过程权限。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = "MYSQL_DYNAMIC_QUERY_POLICY.v1"
+    allowed_objects: tuple[str, ...] = ()
+    allowed_functions: tuple[str, ...] = (
+        "ABS", "AVG", "CAST", "CEIL", "COALESCE", "COUNT", "FLOOR",
+        "GREATEST", "LEAST", "LENGTH", "LOWER", "MAX", "MIN", "NULLIF",
+        "ROUND", "SUM", "TRIM", "UPPER",
+    )
+    allowed_schemas: tuple[str, ...] = ("performance_schema", "information_schema")
+    max_rows: int = Field(default=200, ge=1, le=1000)
+    max_sql_chars: int = Field(default=20_000, ge=1, le=100_000)
+    max_bind_count: int = Field(default=32, ge=0, le=128)
+
+
+class ValidatedMySQLQuery(ValidatedPostgreSQLQuery):
+    schema_version: str = "MYSQL_VALIDATED_DYNAMIC_QUERY.v1"
+
 class OracleDynamicQueryPolicy:
     """使用 Oracle AST 验证单条、显式投影、无副作用查询。"""
 
@@ -540,8 +561,12 @@ class OracleDynamicQueryPolicy:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+
 class PostgreSQLDynamicQueryPolicy:
     """保守验证 PostgreSQL 单条只读 SELECT/CTE，并可生成无 ANALYZE 的 EXPLAIN。"""
+
+    dialect = "postgres"
+    result_model = ValidatedPostgreSQLQuery
 
     def __init__(self, snapshot: PostgreSQLDynamicQueryPolicySnapshot) -> None:
         self.snapshot = snapshot
@@ -569,11 +594,11 @@ class PostgreSQLDynamicQueryPolicy:
                 "动态 SQL 为空或超过长度限制",
             )
         try:
-            statements = parse(sql, read="postgres")
+            statements = parse(sql, read=self.dialect)
         except ParseError as exc:
             raise DynamicQueryRejected(
                 "DYNAMIC_SQL_PARSE_FAILED",
-                "动态 SQL 无法按 PostgreSQL 方言解析",
+                f"动态 SQL 无法按 {self.dialect} 方言解析",
             ) from exc
         if len(statements) != 1 or statements[0] is None:
             raise DynamicQueryRejected(
@@ -593,7 +618,7 @@ class PostgreSQLDynamicQueryPolicy:
             bind_names, parameters or {}
         )
         normalized_select = expression.sql(
-            dialect="postgres", comments=False
+            dialect=self.dialect, comments=False
         )
         normalized_sql = (
             "EXPLAIN (FORMAT JSON, COSTS TRUE, SETTINGS TRUE) "
@@ -601,7 +626,7 @@ class PostgreSQLDynamicQueryPolicy:
             if explain
             else expression.copy().limit(
                 self.snapshot.max_rows, copy=False
-            ).sql(dialect="postgres", comments=False)
+            ).sql(dialect=self.dialect, comments=False)
         )
         policy_payload = json.dumps(
             self.snapshot.model_dump(mode="json"),
@@ -609,7 +634,7 @@ class PostgreSQLDynamicQueryPolicy:
             sort_keys=True,
             separators=(",", ":"),
         )
-        return ValidatedPostgreSQLQuery(
+        return self.result_model(
             normalized_sql=normalized_sql,
             query_sha256=self._sha256(normalized_sql),
             policy_sha256=self._sha256(policy_payload),
@@ -660,7 +685,7 @@ class PostgreSQLDynamicQueryPolicy:
         objects: set[str] = set()
         for table in expression.find_all(exp.Table):
             name = str(table.name or "").lower()
-            if name in cte_names:
+            if name in cte_names and not table.db and not table.catalog:
                 continue
             schema = str(table.db or "").lower()
             canonical = self._canonical_object(

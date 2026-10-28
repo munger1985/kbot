@@ -475,6 +475,9 @@ class TurnPlannerService:
             if len(targets) != 1:
                 raise state_conflict("现有诊断内核只接受一个已解析执行资源")
             target_id = UUID(str(targets[0]["target_id"]))
+            selection = dict(dict(payload.get("execution_context") or {}).get("sql_selection") or {})
+            if selection and str(target_id) != selection["target_id"]:
+                raise validation_failed("SQL 选择与执行资源不匹配")
             facts = await uow.targets.list_target_facts(
                 target_id=target_id, domain_id=domain_id, active_only=True
             )
@@ -534,6 +537,7 @@ class TurnPlannerService:
                         "observation_end": execution.get("observation_end"),
                         "client_metadata": {
                             "inspection": dict(execution.get("inspection") or {}),
+                            "sql_selection": dict(execution.get("sql_selection") or {}),
                             "conversation_starter": dict(
                                 execution.get("conversation_starter") or {}
                             ),
@@ -1164,6 +1168,8 @@ class TurnPlannerService:
                 "status": turn.status,
                 "question": question,
                 "capabilities": tuple(version.capabilities_json or ()),
+                "deadline_at": dict(payload.get("execution_context") or {}).get("deadline_at"),
+                "sql_selection": dict(dict(payload.get("execution_context") or {}).get("sql_selection") or {}),
                 "planner_model_id": dict(version.models_json or {}).get(
                     "planner_llm"
                 ),
@@ -1190,6 +1196,16 @@ class TurnPlannerService:
             }
 
     async def _plan(self, context: dict[str, Any]):
+        if context.get("sql_selection"):
+            if AIOpsCapability.ACTIVE_DIAGNOSIS.value not in {str(item) for item in context["capabilities"]}:
+                raise validation_failed("当前 Agent 未授权 SQL 诊断")
+            return TurnPlanV1(
+                turn_id=context["turn_id"], revision_no=context["plan_revision"],
+                requested_capabilities=(AIOpsCapability.ACTIVE_DIAGNOSIS,),
+                requires_active_diagnosis=True,
+                steps=(TurnPlanStepV1(step_id="s1", capability=AIOpsCapability.ACTIVE_DIAGNOSIS, objective="深入诊断所选 SQL", scope_type=ScopeType.RESOURCE),),
+                policy_snapshot_hash=context["policy_snapshot_hash"],
+            ), DeterministicTurnPlanReceipt(starter_id="sql.selection", catalog_version="SQL_SELECTION.v1")
         starter = dict(context.get("conversation_starter") or {})
         resolution_receipt = None
         if not starter:
@@ -1286,7 +1302,7 @@ class TurnPlannerService:
                     for item in context["systems"]
                 ],
             },
-            deadline=None,
+            deadline=datetime.fromisoformat(context["deadline_at"]) if context.get("deadline_at") else None,
             idempotency_key=(
                 f"turn-router:{context['turn_id']}:{context['plan_revision']}"
             ),
@@ -1311,6 +1327,8 @@ class TurnPlannerService:
         self, context: dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """优先把自然语言归一到版本化功能目录，未匹配时保留通用路由。"""
+        if context.get("sql_selection"):
+            return {}, None
         if AIOpsCapability.ACTIVE_DIAGNOSIS.value not in {
             str(item) for item in context["capabilities"]
         }:
@@ -1348,7 +1366,7 @@ class TurnPlannerService:
                 ),
                 "eligible_capabilities": list(candidates),
             },
-            deadline=None,
+            deadline=datetime.fromisoformat(context["deadline_at"]) if context.get("deadline_at") else None,
             idempotency_key=(
                 f"capability-resolver:{context['turn_id']}:"
                 f"{context['plan_revision']}"
@@ -1404,6 +1422,17 @@ class TurnPlannerService:
                 {"execution_targets": []},
                 None,
             )
+        selection = dict(context.get("sql_selection") or {})
+        if selection:
+            selected_systems = [
+                {**system, "resources": [resource for resource in system["resources"] if str(resource.get("target_id")) == selection["target_id"]]}
+                for system in systems
+                if any(str(resource.get("target_id")) == selection["target_id"] for resource in system["resources"])
+            ]
+            if not selected_systems:
+                raise validation_failed("所选 SQL 的资源已不属于 Agent 授权范围")
+            scope, internal = self._resolved_scope(selected_systems, "", authorization_hash, ("VERIFIED_SQL_SELECTION",), True)
+            return scope, internal, None
         text = context["question"].casefold()
         mentioned = _mentioned_business_systems(systems, text)
         basis = ["EXPLICIT_SYSTEM_MENTION"] if mentioned else []

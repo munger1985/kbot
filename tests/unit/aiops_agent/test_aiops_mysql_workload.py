@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -213,13 +214,14 @@ def test_top_sql_window_uses_only_continuous_window_deltas() -> None:
         limit=10,
     )
     assert result["status"] == "PARTIAL"
-    assert result["gaps"]["WINDOW_NOT_FULLY_COVERED"] == 1
+    assert result["alignment"] == "SAMPLE_ALIGNED"
+    assert result["boundary_skew_seconds"] == {"start": 0, "end": 60}
     assert result["gaps"]["LIMITED_CANDIDATE_SET"] == 1
     assert len(result["top_statements"]) == 1
     top = result["top_statements"][0]
     assert top["execution_count"] == 4
     assert top["total_duration_microseconds"] == 800
-    assert top["mean_duration_microseconds"] == 200
+    assert Decimal(top["mean_duration_microseconds"]) == 200
     assert "secret" not in top["normalized_statement"]
 
 
