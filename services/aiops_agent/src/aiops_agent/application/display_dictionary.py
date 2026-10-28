@@ -498,6 +498,7 @@ _METRIC_FIELD_DISPLAY_NAMES = {
     "maximum": "最大值",
     "minimum": "最小值",
     "sample_count": "有效样本数",
+    "sample_p95": "采样值 P95（非执行延迟 P95）",
     "trend_slope_per_day": "每日趋势斜率",
 }
 _FIELD_TOKEN_DISPLAY_NAMES = {

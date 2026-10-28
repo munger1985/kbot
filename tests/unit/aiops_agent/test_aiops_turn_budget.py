@@ -171,4 +171,3 @@ async def test_reaper_rechecks_locked_state_and_releases_each_conversation_lock(
     assert not await queue.expire_next()
     assert queue._budget_cursor is None
     uow.commit.assert_not_awaited()
-

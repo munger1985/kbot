@@ -90,7 +90,7 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
     subject = subject_from_row(fact, index, str(target.db_type).upper())
     selected_fact = fact.model_copy(update={
         "rows": (fact.rows[index],), "row_count": 1,
-        "derivations": (), "calculation_graphs": (),
+        "derivations": (), "calculation_graphs": (), "series_computations": (),
     })
     return {
         "subject_ref": subject, "target_id": str(target.target_id), "target_row_version": str(target.row_version),

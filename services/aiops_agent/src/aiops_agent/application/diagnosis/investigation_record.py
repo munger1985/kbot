@@ -12,6 +12,26 @@ from aiops_agent.contracts.investigation import (
 
 
 def validate_diagnosis(draft, evidence):
+    from aiops_agent.domain.evidence.series_calculation import replay_series_computation
+    for fact in evidence:
+        names = [str(column.get("name")) for column in fact.columns]
+        for trace in fact.series_computations:
+            if not trace.input_ref.startswith(f"artifact:{fact.artifact_id}#/observations/"):
+                raise ValueError("序列计算来源不属于原始监控 Artifact")
+            summary = replay_series_computation(trace)
+            if trace.row_index >= len(fact.rows):
+                raise ValueError("序列计算引用不存在的摘要行")
+            row = fact.rows[trace.row_index]
+            identity = {"metric_code": trace.metric_code, "unit": trace.unit,
+                "value_kind": trace.value_kind, "window_start": trace.window_start.isoformat(),
+                "window_end": trace.window_end.isoformat(),
+                "dimensions": ", ".join(f"{key}={value}" for key, value in trace.dimensions) or "-"}
+            if len(row) != len(names) or any(key not in names or row[names.index(key)] != value for key, value in identity.items()):
+                raise ValueError("序列计算身份与摘要行不一致")
+            for key, value in summary.items():
+                field = "history_elapsed_days" if key == "elapsed_days" else key
+                if field in names and row[names.index(field)] != value:
+                    raise ValueError("序列摘要与冻结计算不一致")
     facts = {fact.evidence_ref: fact for fact in evidence}
     for action in draft.recommendations:
         for parameter in action.parameters:
@@ -87,6 +107,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             row_count=fact.row_count, truncated=fact.truncated,
             provenance=fact.provenance, derivations=fact.derivations,
             calculation_graphs=fact.calculation_graphs,
+            series_computations=fact.series_computations,
         ) for fact in evidence),
         claims=draft.claims, recommendations=draft.recommendations,
         goal_assessments=goals,

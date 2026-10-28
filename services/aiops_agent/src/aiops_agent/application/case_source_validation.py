@@ -60,6 +60,9 @@ async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None):
             payload = dict(root.payload_json or {})
         record = payload.get("investigation_record")
         if record:
+            from aiops_agent.application.diagnosis.monitoring_calculations import validate_monitoring_trace_sources
+            if not await validate_monitoring_trace_sources(uow=uow, run=run, payload=payload):
+                return False
             from aiops_agent.contracts.investigation import InvestigationRecord
             try:
                 value = InvestigationRecord.model_validate(record)

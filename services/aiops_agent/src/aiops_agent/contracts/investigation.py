@@ -10,6 +10,7 @@ from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference, SqlRecom
 from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGoal
 from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
 from aiops_agent.contracts.calculation import CalculationEvaluation
+from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.implementation import ImplementationRunbook
 
 
@@ -143,6 +144,16 @@ class InvestigationObservation(BaseModel):
     provenance: EvidenceProvenance | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
+    series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
+
+    @model_validator(mode="after")
+    def validate_series_budget(self):
+        if sum(len(item.samples) for item in self.series_computations) > 8192:
+            raise ValueError("调查监控计算总输入超出预算")
+        indexes = [item.row_index for item in self.series_computations]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("同一摘要行不能绑定多份监控计算")
+        return self
 
 
 class InvestigationRecord(BaseModel):

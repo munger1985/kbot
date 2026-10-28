@@ -9,6 +9,7 @@ from typing import Any
 
 from aiops_agent.contracts.diagnosis import EvidenceFact, EvidenceIndex
 from aiops_agent.domain.evidence import summarize_numeric_trend
+from aiops_agent.domain.evidence.observations import parse_numeric_sample
 
 
 def _canonical(value: Any) -> bytes:
@@ -310,8 +311,7 @@ def normalize_evidence_artifacts(
                         value = point.get("value")
                         if (
                             point.get("quality") != "GOOD"
-                            or not isinstance(value, (int, float))
-                            or isinstance(value, bool)
+                            or parse_numeric_sample(value) is None
                         ):
                             continue
                         try:
@@ -320,10 +320,10 @@ def normalize_evidence_artifacts(
                                     "Z", "+00:00"
                                 )
                             )
-                        except ValueError:
+                        except (ValueError, TypeError):
                             continue
-                        samples.append((observed_at, float(value)))
-                    trend = summarize_numeric_trend(tuple(samples))
+                        samples.append((observed_at, value))
+                    trend = summarize_numeric_trend(tuple(samples)) if metric.get("value_kind") == "GAUGE" else None
                     if trend is None:
                         continue
                     dimensions = {

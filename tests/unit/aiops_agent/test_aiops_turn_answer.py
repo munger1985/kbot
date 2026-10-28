@@ -1561,6 +1561,7 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 "semantic_role": "STORAGE_USED",
                 "unit": "bytes",
                 "window_start": start.isoformat(),
+                "window_end": (start + timedelta(days=7)).isoformat(),
                 "series": [
                     {"dimensions": dimensions, "points": points}
                 ],

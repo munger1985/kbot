@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator, field_serial
 from aiops_agent.contracts.investigation import DiagnosisAnswerDraft, InvestigationRecord
 from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
 from aiops_agent.contracts.calculation import CalculationEvaluation
+from aiops_agent.contracts.series_calculation import SeriesComputation
 
 from platform_core.contracts.aiops import (
     AnswerBlockType,
@@ -45,6 +46,16 @@ class TurnEvidenceFact(BaseModel):
     provenance: EvidenceProvenance | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
+    series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
+
+    @model_validator(mode="after")
+    def validate_series_budget(self):
+        if sum(len(item.samples) for item in self.series_computations) > 8192:
+            raise ValueError("监控计算总输入超出预算")
+        indexes = [item.row_index for item in self.series_computations]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("同一摘要行不能绑定多份监控计算")
+        return self
 
     @field_serializer("rows", when_used="json")
     def exact_json_rows(self, rows):

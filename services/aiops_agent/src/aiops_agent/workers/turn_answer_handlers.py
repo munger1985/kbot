@@ -95,10 +95,6 @@ from platform_core.visualization import ChartSkill
 from .handlers import TaskExecutionContext
 
 
-_MIN_FORECAST_REPRESENTATIVE_SAMPLES = 7
-_MIN_FORECAST_HISTORY_DAYS = 7.0
-_STANDARD_FORECAST_COVERAGE_RATIO = 0.8
-_STANDARD_FORECAST_HISTORY_RATIO = 0.8
 _TOP_SQL_TEXT_DISPLAY_LIMIT = 160
 _TOP_SQL_TEXT_COLUMNS = frozenset({
     "sql_text", "digest_text", "query_text", "query_sample_text",
@@ -1311,243 +1307,10 @@ class DbaEvidenceAssessmentHandler:
         visualization_profile_id: str | None = None,
     ) -> TurnEvidenceFact | None:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
-        rows: list[tuple[Any, ...]] = []
-        warnings: list[str] = []
-        latest_by_role_and_dimensions: dict[
-            tuple[str, tuple[tuple[str, str], ...]], float
-        ] = {}
-        for observation in result.observations:
-            for series in observation.series:
-                latest = next(
-                    (
-                        point.value
-                        for point in reversed(series.points)
-                        if point.quality == "GOOD"
-                        and isinstance(point.value, (int, float))
-                        and not isinstance(point.value, bool)
-                    ),
-                    None,
-                )
-                if latest is not None:
-                    latest_by_role_and_dimensions[
-                        (
-                            observation.semantic_role,
-                            tuple(sorted(series.dimensions.items())),
-                        )
-                    ] = float(latest)
-        for observation in result.observations:
-            warnings.extend(observation.warnings)
-            for series in observation.series:
-                points = [
-                    point
-                    for point in series.points
-                    if point.quality == "GOOD" and point.value is not None
-                ]
-                if not points:
-                    continue
-                numeric_values = [
-                    float(point.value)
-                    for point in points
-                    if isinstance(point.value, (int, float))
-                    and not isinstance(point.value, bool)
-                ]
-                daily_values: dict[str, list[float]] = {}
-                for point in points:
-                    if not isinstance(point.value, (int, float)) or isinstance(
-                        point.value, bool
-                    ):
-                        continue
-                    day = point.observed_at.astimezone(UTC).date().isoformat()
-                    daily_values.setdefault(day, []).append(float(point.value))
-                daily_points = [
-                    {
-                        "date": day,
-                        "value": round(sum(values) / len(values), 4),
-                    }
-                    for day, values in sorted(daily_values.items())
-                ]
-                trend = summarize_numeric_trend(
-                    tuple(
-                        (point.observed_at, float(point.value))
-                        for point in points
-                        if isinstance(point.value, (int, float))
-                        and not isinstance(point.value, bool)
-                    )
-                )
-                forecast_confidence = None
-                if (
-                    trend is not None
-                    and forecast_horizon_days is not None
-                    and int(trend["representative_sample_count"])
-                    >= _MIN_FORECAST_REPRESENTATIVE_SAMPLES
-                    and float(trend["elapsed_days"])
-                    >= min(_MIN_FORECAST_HISTORY_DAYS, forecast_horizon_days)
-                ):
-                    history_ratio = (
-                        float(trend["elapsed_days"])
-                        / forecast_horizon_days
-                    )
-                    forecast_confidence = (
-                        "MEDIUM"
-                        if observation.coverage_ratio
-                        >= _STANDARD_FORECAST_COVERAGE_RATIO
-                        and history_ratio
-                        >= _STANDARD_FORECAST_HISTORY_RATIO
-                        else "LOW"
-                    )
-                    trend = summarize_numeric_trend(
-                        tuple(
-                            (point.observed_at, float(point.value))
-                            for point in points
-                            if isinstance(point.value, (int, float))
-                            and not isinstance(point.value, bool)
-                        ),
-                        forecast_horizon_days=forecast_horizon_days,
-                    )
-                estimated_days_to_limit = None
-                forecast_utilization_percent = None
-                if (
-                    observation.semantic_role == METRIC_ROLE_STORAGE_USED
-                    and trend is not None
-                    and forecast_confidence is not None
-                    and float(trend["trend_slope_per_day"]) > 0
-                    and float(trend["positive_change_ratio"]) >= 0.6
-                ):
-                    maximum = latest_by_role_and_dimensions.get(
-                        (
-                            METRIC_ROLE_STORAGE_MAX,
-                            tuple(sorted(series.dimensions.items())),
-                        )
-                    )
-                    latest_used = float(trend["latest"])
-                    if maximum is not None and maximum > latest_used:
-                        estimated_days_to_limit = (
-                            maximum - latest_used
-                        ) / float(trend["trend_slope_per_day"])
-                    forecast_value = trend.get("forecast_value")
-                    if maximum is not None and isinstance(
-                        forecast_value, (int, float)
-                    ):
-                        forecast_utilization_percent = (
-                            float(forecast_value) / maximum * 100
-                        )
-                elif (
-                    observation.semantic_role
-                    == METRIC_ROLE_STORAGE_UTILIZATION
-                    and trend is not None
-                    and isinstance(trend.get("forecast_value"), (int, float))
-                ):
-                    forecast_utilization_percent = float(
-                        trend["forecast_value"]
-                    )
-                dimensions = ", ".join(
-                    f"{key}={value}"
-                    for key, value in sorted(series.dimensions.items())
-                )
-                rows.append(
-                    (
-                        observation.metric_code,
-                        dimensions or "-",
-                        points[-1].value,
-                        (
-                            round(sum(numeric_values) / len(numeric_values), 4)
-                            if numeric_values
-                            else None
-                        ),
-                        round(max(numeric_values), 4)
-                        if numeric_values
-                        else None,
-                        observation.unit,
-                        observation.window_start.isoformat(),
-                        observation.window_end.isoformat(),
-                        round(observation.coverage_ratio, 4),
-                        (
-                            round(float(trend["first"]), 4)
-                            if trend is not None
-                            else None
-                        ),
-                        (
-                            round(float(trend["minimum"]), 4)
-                            if trend is not None
-                            else None
-                        ),
-                        (
-                            round(float(trend["change"]), 4)
-                            if trend is not None
-                            else None
-                        ),
-                        (
-                            round(float(trend["change_per_day"]), 4)
-                            if trend is not None
-                            else None
-                        ),
-                        (
-                            round(
-                                float(trend["trend_slope_per_day"]), 4
-                            )
-                            if trend is not None
-                            else None
-                        ),
-                        (
-                            round(
-                                float(trend["positive_change_ratio"]), 4
-                            )
-                            if trend is not None
-                            else None
-                        ),
-                        (
-                            int(trend["sample_count"])
-                            if trend is not None
-                            else len(numeric_values)
-                        ),
-                        (
-                            int(trend["representative_sample_count"])
-                            if trend is not None
-                            else 0
-                        ),
-                        (
-                            round(float(trend["elapsed_days"]), 4)
-                            if trend is not None
-                            else None
-                        ),
-                        forecast_confidence,
-                        (
-                            round(float(trend["forecast_horizon_days"]), 2)
-                            if trend is not None
-                            and "forecast_horizon_days" in trend
-                            else None
-                        ),
-                        (
-                            round(float(trend["forecast_change"]), 4)
-                            if trend is not None
-                            and "forecast_change" in trend
-                            else None
-                        ),
-                        (
-                            round(float(trend["forecast_value"]), 4)
-                            if trend is not None
-                            and "forecast_value" in trend
-                            else None
-                        ),
-                        (
-                            round(forecast_utilization_percent, 4)
-                            if forecast_utilization_percent is not None
-                            else None
-                        ),
-                        (
-                            round(estimated_days_to_limit, 2)
-                            if estimated_days_to_limit is not None
-                            else None
-                        ),
-                        observation.semantic_role,
-                        observation.value_kind,
-                        json.dumps(
-                            daily_points,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
-                    )
-                )
+        from aiops_agent.application.diagnosis.monitoring_calculations import build_monitoring_rows
+        rows, warnings, series_computations = build_monitoring_rows(
+            artifact_id=artifact_id, result=result, forecast_horizon_days=forecast_horizon_days,
+        )
         if not rows:
             return None
         columns = (
@@ -1596,6 +1359,7 @@ class DbaEvidenceAssessmentHandler:
             {"name": "semantic_role", "logical_type": "STRING"},
             {"name": "value_kind", "logical_type": "STRING"},
             {"name": "daily_points", "logical_type": "STRING"},
+            {"name": "sample_p95", "logical_type": "DECIMAL"},
         )
         visualizations = AIOpsChartSelectionPolicy.compile(
             profile_id=visualization_profile_id,
@@ -1616,10 +1380,11 @@ class DbaEvidenceAssessmentHandler:
             columns=columns,
             rows=tuple(rows),
             row_count=len(rows),
-            truncated=any(item.truncated for item in result.observations),
+            truncated=any(item.truncated for item in result.observations) or any("BUDGET_EXCEEDED" in item for item in warnings),
             warnings=tuple(dict.fromkeys(warnings)),
             visualizations=visualizations,
             provenance=monitoring_provenance(result),
+            series_computations=series_computations,
         )
 
 _HTML_REPORT_TOOLS = {
@@ -2100,9 +1865,7 @@ class DbaAnswerComposeHandler:
             evidence_payload.append(
                 {
                     "label": label,
-                    **fact.model_dump(
-                        mode="json", exclude={"visualizations"}
-                    ),
+                    **self._compose_evidence_payload(fact),
                 }
             )
         yield DbaAnswerProgress(
@@ -2386,7 +2149,8 @@ class DbaAnswerComposeHandler:
 
     @classmethod
     def _compose_evidence_payload(cls, fact: TurnEvidenceFact) -> dict[str, Any]:
-        payload = fact.model_dump(mode="json", exclude={"visualizations"})
+        payload = fact.model_dump(mode="json", exclude={"visualizations", "series_computations"})
+        payload["series_computations"] = [item.model_dump(mode="json", exclude={"samples"}) for item in fact.series_computations]
         if fact.tool_id in _INHERITED_EVIDENCE_TOOLS:
             payload = cls._canonicalize_inherited_evidence_refs(
                 payload,

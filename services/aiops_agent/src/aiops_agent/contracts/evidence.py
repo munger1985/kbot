@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_serializer
 
 from aiops_agent.domain.evidence.events import (
     SignalEventStatus,
@@ -111,8 +111,12 @@ class MetricPoint(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     observed_at: UtcDatetime
-    value: float | str | bool | None
+    value: int | float | str | bool | None
     quality: Literal["GOOD", "INVALID", "STALE", "ESTIMATED"] = "GOOD"
+
+    @field_serializer("value", when_used="json")
+    def exact_json_value(self, value):
+        return str(value) if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 9007199254740991 else value
 
 
 class MetricSeries(BaseModel):
