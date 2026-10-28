@@ -502,6 +502,8 @@ _HIDDEN_REPORT_DIMENSIONS = {
     "binding_id", "instance", "job", "source_id", "target_key",
 }
 _METRIC_FIELD_DISPLAY_NAMES = {
+    "dimensions": "指标维度",
+    "history_resolution": "历史采样粒度",
     "container_id": "容器 ID",
     "max_workarea_avg_active_seconds": "工作区平均活跃时间最大值（秒）",
     "total_executions": "工作区操作次数",

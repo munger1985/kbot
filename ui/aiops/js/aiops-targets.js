@@ -184,7 +184,7 @@
     const presentation = {
       ALERTMANAGER: ["target_key label 值", "必须与告警中的 target_key 完全一致。"],
       LOKI: ["target_key label 值", "必须与日志流中的 target_key 完全一致。"],
-      OEM: ["OEM Target Name", "填写 OEM 中唯一的 Target Name。"],
+      OEM: ["OEM Target GUID", "填写 OEM 中 32 位十六进制 Target GUID，不是 Target Name。"],
     }[source.source_type] || ["监控 Label 值", "填写监控系统中唯一标识当前数据库的值。"];
     monitorLocatorLabel.textContent = presentation[0];
     monitorLocatorHelp.textContent = presentation[1];

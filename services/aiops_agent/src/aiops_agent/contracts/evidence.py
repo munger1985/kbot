@@ -275,6 +275,9 @@ class NativeMetricSamples(BaseModel):
     source_id: str
     metric_name: str
     native_value_type: str
+    source_type: Literal["ZABBIX", "OEM"] = "ZABBIX"
+    history_resolution: Literal["RAW", "PROVIDER_MANAGED"] = "RAW"
+    sample_dimensions: tuple[dict[str, str], ...] = Field(default=(), max_length=1000)
     sample_kind: Literal["NUMERIC", "TEXT", "LOG"] = "NUMERIC"
     sample_metadata: tuple[NativeHistoryMetadata, ...] = Field(default=(), max_length=1000)
     source_version: str = Field(min_length=1)
@@ -289,6 +292,25 @@ class NativeMetricSamples(BaseModel):
 
     @model_validator(mode="after")
     def validate_samples(self):
+        if self.source_type == "OEM" and self.history_resolution != "PROVIDER_MANAGED":
+            raise ValueError("OEM留存层聚合不可声明为原始采样")
+        if self.source_type == "OEM" and (
+            self.sample_kind != "NUMERIC" or self.native_value_type != "NUMBER"
+            or self.sample_metadata or self.pagination is not None
+        ):
+            raise ValueError("OEM仅返回有界数值序列，不伪造日志或原生续取回执")
+        if self.source_type == "ZABBIX" and (self.history_resolution != "RAW" or self.sample_dimensions):
+            raise ValueError("Zabbix精确Item历史不携带OEM分组维度或留存聚合声明")
+        if (self.sample_dimensions and len(self.sample_dimensions) != len(self.points)) or (
+            self.source_type == "OEM" and len(self.sample_dimensions) != len(self.points)
+        ):
+            raise ValueError("原生指标维度必须逐条对应采样")
+        if any(len(labels) > 16 or any(
+            not key or len(key) > 64 or len(value) > 256
+            or any(ord(char) < 32 or ord(char) == 127 for char in key)
+            for key, value in labels.items()
+        ) for labels in self.sample_dimensions):
+            raise ValueError("原生指标维度超出有界预算")
         if self.pagination is not None and (
             sum(self.pagination.returned_page_rows) != len(self.points)
             or self.truncated != (self.pagination.stop_reason != "EXHAUSTED")

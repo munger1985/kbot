@@ -1132,3 +1132,32 @@ Oracle 已补充完整 DBID/实例/容器/SQL_ID/子游标/计划哈希的现有
 MySQL 管理口未取得有效认证；没有读取或打印密码，没有改账户、权限或采集配置。
 Ammolite 开发日志服务可达，但当前部署代码不等于本轮新提交；未部署、未重启，
 不把这些读检查写成新版本生产闭环已通过。
+
+### OEM 原生长尾指标取证（2026-10-28）
+
+OEM 使用13.5官方只读接口：先按绑定的32位Target GUID读取Target身份，
+通过 `targets/{targetId}/metricGroups?include=metrics` 发现目录；
+通过精确组元数据和 `metricTimeSeries` 读取历史数值。
+不访问模型输入URL、不跟随响应链接或HTTP重定向，不推定关联主机权限。
+
+复用 `monitor.discover_metrics` 与 `monitor.query_native_metric`、现有绑定授权、
+Task/Run预算及正式ObservationSet。目录不受显示Profile限制，但仍要求
+Source和Binding授权；不自动升级旧Source或Binding权限。
+OEM数值历史必须有 `metric.query_range`，不能借用Zabbix的 `item.history`。
+只有实际Prometheus来源才暴露PromQL；OEM不提供当前Zabbix时间游标分页合同。
+
+精确名称由编码后的组/指标组成，避免跨组同名误匹配。保留分组键、单位、精确数字字符串，
+同一时点不同挂载点不合并。毫秒API边界向外取整后按冻结微秒窗口过滤，保留半开区间。
+响应有后页或达到行上限时明确截断，字节超限形成缺口，不伪装全量或覆盖率。
+
+官方接口可能按实际留存自动返回原始、小时均值或日均值；目录未提供实际留存配置时
+保持 `PROVIDER_MANAGED`，不据请求时长猜粒度，也不标记为原始执行样本或窗口增量。
+逐样本维度、聚合边界警告和来源质量标记进入模型输入及报告/案例原件重放；
+删除警告、篡改维度或把目录误作性能数值均不能通过来源复核。
+
+两端监控源编辑提供OEM账号密码输入和GUID提示，沿用受管凭据加密存储。
+编辑时双空保持原凭据，单空拒绝，密码不裁剪、不回显，不携带其他来源残留令牌。
+这不是OEM完整监控UI、Incident接口或既有标准Provider映射的验收；真实OMS、
+账号权限及留存质量仍需独立验证，不以官方文档或HTTP替身测试冒充线上接入完成。
+
+接口依据：[Oracle OEM 13.5官方OpenAPI](https://docs.oracle.com/en/enterprise-manager/cloud-control/enterprise-manager-cloud-control/13.5/emrest/openapi.json)。

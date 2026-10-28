@@ -43,9 +43,9 @@
       capabilities: ["告警事件接收", "活动事件查询", "指标时序查询"],
     },
     OEM: {
-      placeholder: "https://oem.internal/em/websvcs/restful",
-      help: "Oracle Enterprise Manager REST API 根地址。",
-      capabilities: ["事件查询", "指标时序查询"],
+      placeholder: "https://oem.internal/em/api",
+      help: "OEM 13.5 官方 REST API 地址；目标映射使用 32 位 Target GUID，历史数据可能按留存聚合。",
+      capabilities: ["原生指标目录发现", "精确指标历史（可能含留存聚合）"],
     },
   };
 
@@ -59,7 +59,9 @@
     endpoint.placeholder = presentation.placeholder;
     endpoint.required = !isAlertmanager;
     document.getElementById("source-endpoint-help").textContent = presentation.help;
-    document.getElementById("source-token-field").hidden = isAlertmanager && !endpoint.value.trim();
+    document.getElementById("source-token-field").hidden = type === "OEM" || (isAlertmanager && !endpoint.value.trim());
+    document.getElementById("source-oem-username-field").hidden = type !== "OEM";
+    document.getElementById("source-oem-password-field").hidden = type !== "OEM";
     document.getElementById("source-webhook-field").hidden = !receivesWebhook || creatingAlertmanager;
     document.getElementById("source-webhook-create-note").hidden = !creatingAlertmanager;
     document.getElementById("source-webhook-key-section").hidden = !(receivesWebhook && editing);
@@ -92,7 +94,15 @@
       throw new Error("Alertmanager 必须填写访问地址或 Webhook Secret。");
     }
     const credentials = {};
-    if (form.elements.token.value) {
+    if (type === "OEM") {
+      const username = form.elements.oem_username.value.trim();
+      const password = form.elements.oem_password.value;
+      if (username || password) {
+        if (!username || !password) throw new Error("OEM 用户名和密码需要同时填写；编辑时同时留空保持原凭据。");
+        credentials.username = username;
+        credentials.password = password;
+      }
+    } else if (form.elements.token.value) {
       credentials.token = form.elements.token.value;
     }
     const payload = {
@@ -194,6 +204,8 @@
         await KBotAIOpsPages.reload();
         return;
       }
+      form.elements.oem_username.value = "";
+      form.elements.oem_password.value = "";
       document.getElementById("diagnostic-source-dialog").close();
       shell.toast(
         saved.connectivity_check_pending

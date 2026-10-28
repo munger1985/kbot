@@ -58,7 +58,8 @@ def available_tools(
         },
         "returns": ["normalized_statement", "execution_count", "total_duration_microseconds", "mean_duration_microseconds"],
     }
-    if CAPABILITY_METRIC_QUERY_RANGE in capabilities.available_source_capabilities:
+    if any(str(source.source_type) == "PROMETHEUS" and source.enabled
+        and CAPABILITY_METRIC_QUERY_RANGE in source.capabilities for source in capabilities.source_snapshots):
         tools[("monitor.query_range", "1.0.0")] = {
             "tool_id": "monitor.query_range",
             "version": "1.0.0",
@@ -76,25 +77,30 @@ def available_tools(
             },
         }
     if any(
-        str(source.source_type) in {"PROMETHEUS", "ZABBIX"} and source.enabled
+        str(source.source_type) in {"PROMETHEUS", "ZABBIX", "OEM"} and source.enabled
         and CAPABILITY_METRIC_DISCOVERY in source.capabilities
         for source in capabilities.source_snapshots
     ):
         tools[("monitor.discover_metrics", "1.0.0")] = {
-            "tool_id": "monitor.discover_metrics", "version": "1.0.0", "tool_class": "PROMETHEUS",
-            "description": "发现已授权绑定目标的原生指标名、单位和可得元数据，不受显示 Profile 限制。目录不代表采样覆盖；未知类型保持未知。Prometheus 用 query_range，Zabbix 精确 Item 用 query_native_metric。",
+            "tool_id": "monitor.discover_metrics", "version": "1.0.0", "tool_class": "MONITORING",
+            "description": "发现已授权绑定目标的原生指标名、单位和可得元数据，不受显示 Profile 限制。目录不代表采样覆盖；未知类型保持未知。Prometheus用query_range；Zabbix精确Item或OEM精确组/指标用query_native_metric。OEM只读绑定Target GUID，不推定关联主机权限。",
             "input": {"scope": "DATABASE 或 HOST（仅已绑定主机）", "window_seconds": "60 到 3600 秒", "limit": "1 到 100"},
         }
-    if any(str(source.source_type) == "ZABBIX" and source.enabled
+    if any(str(source.source_type) in {"ZABBIX", "OEM"} and source.enabled
            and ({CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_ITEM_HISTORY} & set(source.capabilities))
+           and (str(source.source_type) != "OEM" or CAPABILITY_METRIC_QUERY_RANGE in source.capabilities)
            for source in capabilities.source_snapshots):
         tools[("monitor.query_native_metric", "1.0.0")] = {
             "tool_id": "monitor.query_native_metric", "version": "1.0.0", "tool_class": "MONITORING",
-            "description": "读取绑定 Zabbix Host 的精确 Item 历史；数值使用 metric.query_range，文本/日志另需 item.history 授权。不接受 URL、Host 或 SQL。长窗口按结果/字节限额截断，不自动改用趋势聚合，不推定 counter/gauge 语义。",
-            "input": {"metric_name": "已发现或已核验的精确 Item key", "window_seconds": "60 到 5184000 秒", "limit": "1 到 1000"},
+            "description": "读取绑定Zabbix Host精确Item历史或OEM绑定Target GUID的精确组/指标。数值需metric.query_range；仅Zabbix文本/日志另需item.history。不接受URL、Host或SQL。OEM保留分组键，可能按留存返回小时/日均值，不能视为原始采样或窗口增量；OEM不支持当前分页合同。",
+            "input": {"metric_name": "已发现或已核验的精确Item key或OEM编码后的组/指标", "window_seconds": "60 到 5184000 秒", "limit": "1 到 1000"},
             "pagination_policy": {"page_size": "1 到 200", "max_pages": "2 到 4", "max_rows": 800,
-                "description": "动作顶层 pagination 触发原生 history.get 时间边界重叠续取；需 evidence_need 和 decision_impact。原始纳秒去重；保留总结果/字节与 Run 期限，不代表一致快照。"},
+                "description": "仅Zabbix支持。动作顶层 pagination 触发原生 history.get 时间边界重叠续取；需 evidence_need 和 decision_impact。原始纳秒去重；保留总结果/字节与 Run 期限，不代表一致快照。"},
         }
+        if not any(str(source.source_type) == "ZABBIX" and source.enabled
+            and ({CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_ITEM_HISTORY} & set(source.capabilities))
+            for source in capabilities.source_snapshots):
+            tools[("monitor.query_native_metric", "1.0.0")].pop("pagination_policy")
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
         tools[("loki.query_range", "1.0.0")] = {
             "tool_id": "loki.query_range",

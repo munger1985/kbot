@@ -13,9 +13,10 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
+from .oem_native import OEMNativeMetrics
 
 
-class OEMAdapter(BaseDiagnosticSourceAdapter):
+class OEMAdapter(OEMNativeMetrics, BaseDiagnosticSourceAdapter):
     async def query_events(
         self, request: EventEvidenceRequest
     ) -> EventEvidenceResult:

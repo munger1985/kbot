@@ -103,6 +103,7 @@ class DiagnosticSourceAdapterCatalog:
                     CAPABILITY_HEALTH_CHECK,
                     CAPABILITY_EVENT_QUERY,
                     CAPABILITY_METRIC_QUERY_RANGE,
+                    CAPABILITY_METRIC_DISCOVERY,
                 }
             ),
             adapter_type=OEMAdapter,

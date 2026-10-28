@@ -40,6 +40,7 @@ def native_metric_provenance(samples):
         source_version=samples.source_version, content_hash=samples.response_sha256,
         window_start=samples.window_start, window_end=samples.window_end,
         quality_flags=("PHYSICAL_IDENTITY_UNKNOWN", "NATIVE_ORIGIN_COARSE",
+                       *(("PROVIDER_RETENTION_ROLLUP_POSSIBLE",) if samples.history_resolution == "PROVIDER_MANAGED" else ()),
                        "COUNTER_SEMANTICS_UNKNOWN" if samples.sample_kind == "NUMERIC" else "NON_NUMERIC_HISTORY",
                        *(("SOURCE_NOT_SNAPSHOT_CONSISTENT", f"PAGINATION_{samples.pagination.stop_reason}") if samples.pagination is not None else ()),
                        *(("TRUNCATED",) if samples.truncated else ())),

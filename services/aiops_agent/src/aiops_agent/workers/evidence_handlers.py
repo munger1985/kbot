@@ -220,7 +220,7 @@ class EvidenceObserveHandler:
                     detail="指标目录发现未在该监控绑定中授权，不扩大来源权限",
                 ))
                 continue
-            if source["source_type"] not in {"PROMETHEUS", "ZABBIX"}:
+            if source["source_type"] not in {"PROMETHEUS", "ZABBIX", "OEM"}:
                 gaps.append(ObservationGap(
                     source_id=source["source_id"], binding_id=binding_id,
                     code="SOURCE_QUERY_UNSUPPORTED", detail="当前来源未实现指标目录发现",
@@ -232,14 +232,23 @@ class EvidenceObserveHandler:
                     raise ValueError("冻结指标发现参数无效")
                 end = _parse_time(window["end"])
                 adapter = self._diagnostic_sources.create(source_context, capability=CAPABILITY_METRIC_DISCOVERY)
-                metric_catalogs.append(await adapter.discover_metrics(MetricsDiscoveryRequest(
+                discovery_request = MetricsDiscoveryRequest(
                     action_id=item["action_id"], target_id=context.target_id, binding_id=binding_id,
                     source_locator_key=snapshot["source_locator_key"],
                     host_target_key=snapshot["source_locator"].get("host_target_key"), scope=item["scope"],
                     window_start=end - timedelta(seconds=item["window_seconds"]), window_end=end,
                     limit=item["limit"], max_response_bytes=min(262144, monitoring["max_response_bytes"]),
                     trace_id=context.trace_id,
-                )))
+                )
+                catalog = await adapter.discover_metrics(discovery_request)
+                if (str(catalog.target_id) != str(discovery_request.target_id)
+                    or str(catalog.binding_id) != str(discovery_request.binding_id)
+                    or str(catalog.source_id) != str(source["source_id"])
+                    or catalog.action_id != discovery_request.action_id or catalog.scope != discovery_request.scope
+                    or catalog.window_start != discovery_request.window_start or catalog.window_end != discovery_request.window_end
+                    or len(catalog.entries) > discovery_request.limit):
+                    raise SourceResultMismatch("指标目录不符合冻结绑定、窗口或结果预算")
+                metric_catalogs.append(catalog)
             except Exception as exc:
                 gaps.append(ObservationGap(
                     source_id=source["source_id"], binding_id=binding_id,
@@ -248,16 +257,18 @@ class EvidenceObserveHandler:
                     retryable=bool(getattr(exc, "retryable", False)),
                 ))
         for item in monitoring.get("native_metric_queries", ())[:4]:
-            if source["source_type"] != "ZABBIX":
+            if source["source_type"] not in {"ZABBIX", "OEM"}:
                 continue
             try:
                 allowed = set(snapshot["effective_capabilities"])
                 if not {CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_ITEM_HISTORY} & allowed:
                     raise ValueError("绑定未授权历史指标查询")
+                if source["source_type"] == "OEM" and CAPABILITY_METRIC_QUERY_RANGE not in allowed:
+                    raise ValueError("OEM数值历史必须显式授权metric.query_range")
                 if set(item) - {"action_id", "metric_name", "window_seconds", "limit", "pagination"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 5184000:
                     raise ValueError("冻结原生指标查询无效")
                 end = _parse_time(window["end"])
-                text_authorized = CAPABILITY_ITEM_HISTORY in allowed
+                text_authorized = source["source_type"] == "ZABBIX" and CAPABILITY_ITEM_HISTORY in allowed
                 capability = CAPABILITY_ITEM_HISTORY if text_authorized else CAPABILITY_METRIC_QUERY_RANGE
                 adapter = self._diagnostic_sources.create(source_context, capability=capability)
                 native_request = NativeMetricQueryRequest(
@@ -273,6 +284,7 @@ class EvidenceObserveHandler:
                 if (samples.target_id != native_request.target_id or samples.binding_id != native_request.binding_id
                     or str(samples.source_id) != str(source["source_id"]) or samples.action_id != native_request.action_id
                     or samples.metric_name != item["metric_name"]
+                    or samples.source_type != source["source_type"]
                     or samples.window_start != native_request.window_start or samples.window_end != native_request.window_end
                     or len(samples.points) > item["limit"]):
                     raise SourceResultMismatch("原生历史结果不符合本轮绑定或冻结查询")
