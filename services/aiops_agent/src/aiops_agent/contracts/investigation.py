@@ -255,6 +255,9 @@ class InvestigationRecord(BaseModel):
         if len({graph.database_type for graph in self.sql_graphs}) > 1:
             raise ValueError("同一 Target 的对象图不能混合数据库引擎")
         for graph in self.sql_graphs:
+            for reference in graph.references:
+                if any(item.evidence_ref not in refs for item in reference.evidence_refs):
+                    raise ValueError("对象引用、解析上下文与候选必须引用本记录冻结的观测")
             for edge in graph.relationships:
                 if edge.anchor.evidence_ref not in refs or edge.related.evidence_ref not in refs:
                     raise ValueError("对象关系必须引用本记录冻结的观测")

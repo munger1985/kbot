@@ -719,6 +719,11 @@ content = """
 必须保留 task_frame.completion_requirements，并优先补齐其中尚未满足的义务；不得把已取得的
 其他证据当作明确交付物的替代品，也不得再次安排同一 tool_id 和完全相同输入的动作。
 从剩余问题和可区分的假设出发，不把“补齐某几个固定指标”作为重规划目标。
+sql_evidence_bundle 的对象图 references 保留未限定对象名、原生上下文、可见候选及版本化 lookup 请求。
+只在对象身份会影响原因或处置时选择 lookup；它不是执行授权，仍须经过工具策略，不无变化重复查询。
+CONTEXT_REQUIRED 即使只有一个目录候选也不能当作已解析；PG 历史 search_path、Oracle 私有/PUBLIC 同义词
+优先级不能用诊断连接环境替代。MySQL NATIVE_DEFAULT_SCHEMA 只界定 Digest 原生默认数据库下的语法候选，
+不排除临时表遮蔽。未知环境应按可用匹配计划或明确补证继续，不自动执行被诊断 SQL。
 可以直接切换或联合可用来源；同源事实不伪装独立互证。新动作必须能改变原因判断或措施选择；
 说明预期支持/反证、成本及停止条件。不可追补的历史和权限缺口不重复重试，预算不足时收敛部分结果。
 若需要区分当前短时现象，且工具声明 sampling_policy，可将一次性查询升级为一组有界 action.sampling：
@@ -767,6 +772,9 @@ CAPABILITY_UNAVAILABLE、UNSAFE 中选择，不得创建组合状态或同义状
 clarification_question 必须是一句可直接展示给用户的具体追问；其他状态中
 clarification_question 必须为 null。
 单 SQL 诊断依据 sql_evidence_bundle 的实际 Subject 和关联证据判断。
+对象图 references 区分显式 Schema、MySQL 原生默认数据库与待补解析上下文；candidates 仅是可见目录候选。
+未限定名称不能直接跳过；若身份会影响当前判断，可通过 lookup 补取有界目录或匹配计划证据。
+唯一候选不证明历史解析，诊断账号的当前 Schema/search_path 不能代替业务环境；该缺口不自动否定其他充分证据。
 对象/全库活动不能单独归因到指定 SQL；区分资源消耗来源与竞争受害者。
 无计划不自动判失败；阻塞、死锁、重试或外部竞争等可有其他直接证据。
 仅有累计画像但用户要求根因时为 PARTIAL；有证据的机制与条件化处置可满足目标，不要求所有可能证据齐全。
@@ -978,6 +986,9 @@ parameter_types 只说明已隔离参数的类型；禁止猜绑定值、重放 
 块命中不能证明重复扫描；对象扫描次数不能直接归因该 SQL；plan_count=0 不等于没有计划。
 分区父表估计为 0 不等于全表为空或统计陈旧。缺少基线不能仅凭平均耗时判断延迟异常，
 但明确错误、阻塞不依赖 SLO 才能确认。区分调用放大与单次退化，按证据解释机制。
+对象图 references 中 CONTEXT_REQUIRED 的目录候选不能当作已解析对象，即使只有一个候选；
+PG 历史 search_path 与 Oracle 同义词优先级不猜测。NATIVE_DEFAULT_SCHEMA 只表示 MySQL Digest
+原生默认数据库下的语法候选，不能排除临时表遮蔽或 DDL；目录关系不等于运行时访问。
 
 累计统计不是请求窗口；全局 stats_reset 不是单条语句确定起点；累计 max、百分位不能相减。
 使用已提供事实、明确口径，不发明窗口增量、CPU 比例、收益、参数值或数值。

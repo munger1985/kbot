@@ -47,6 +47,7 @@ async def validate_investigation_sources(*, uow, run, payload):
             record.validate_access_gaps(tuple(TurnEvidenceGap.model_validate(item) for item in payload.get("evidence_gaps", ())))
         graphs = record.sql_graphs if record is not None else ()
         used = {ref.evidence_ref for graph in graphs for edge in graph.relationships for ref in (edge.anchor, edge.related)}
+        used.update(ref.evidence_ref for graph in graphs for reference in graph.references for ref in reference.evidence_refs)
         used.update(fact.evidence_ref for fact in facts if fact.object_access or fact.pagination is not None)
         used.update(fact.evidence_ref for fact in facts if fact.sql_plan is not None or fact.tool_id in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID})
         used.update(plan.anchor_ref for plan in (record.sql_plan_assessments if record is not None else ()) if plan.anchor_ref is not None)

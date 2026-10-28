@@ -10,6 +10,8 @@ from aiops_agent.orchestration.diagnosis import (
     AIOpsPromptRegistry,
 )
 from aiops_agent.ports.model import AIOpsModelPort, StructuredModelResult
+from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle
+from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from platform_core.contracts.aiops import InvestigationPlanningOutput
 from platform_core.contracts.aiops import CompactPlanningOutput
 
@@ -274,6 +276,11 @@ class InvestigationReasoner:
                 "task_frame": task_frame,
                 "prior_plan": prior_plan,
                 "assessment": assessment,
+                "sql_evidence_bundle": build_sql_evidence_bundle(
+                    task_frame=task_frame,
+                    database_type=str(target_context.get("database_type") or target_context.get("db_type") or "").upper(),
+                    evidence=tuple(TurnEvidenceFact.model_validate(item) for item in assessment.get("evidence", ())),
+                ),
                 "available_tools": list(available_tools),
                 "available_playbooks": list(available_playbooks),
                 "planning_constraints": {

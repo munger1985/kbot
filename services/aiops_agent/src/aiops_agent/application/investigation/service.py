@@ -1439,6 +1439,7 @@ class TurnPlanningService:
                 "db.sql.object_statistics",
                 "db.sql.object_indexes",
                 "db.sql.object_dependencies",
+                "db.sql.object_candidates",
             )
         if subject["subject_type"] == "MYSQL_DIGEST":
             return (
@@ -1452,6 +1453,7 @@ class TurnPlanningService:
                 "db.instance.parameters",
                 "db.sql.object_indexes",
                 "db.sql.object_dependencies",
+                "db.sql.object_candidates",
             )
         return (
             "db.postgresql.statement.subjects",
@@ -1465,6 +1467,7 @@ class TurnPlanningService:
             "db.instance.parameters",
             "db.sql.object_indexes",
             "db.sql.object_dependencies",
+            "db.sql.object_candidates",
         )
 
     @classmethod

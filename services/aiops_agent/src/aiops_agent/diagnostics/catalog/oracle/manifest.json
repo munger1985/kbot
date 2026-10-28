@@ -1,6 +1,7 @@
 {
   "catalog_version": "oracle-baseline.v1",
   "tools": [
+    {"tool_id":"db.sql.object_candidates","version":"1.0.0","measurement_semantics":"CURRENT_ACTIVITY","db_type":"ORACLE","variant":"oracle_object_candidates","description":"按精确对象名在当前容器 ALL_OBJECTS 中有界发现可见表、视图、物化视图及同义词；可指定 OWNER。只读目录，不调用 NAME_RESOLVE、不重放 SQL。唯一候选不证明历史解析；parsing_schema_name 不足以推断私有/PUBLIC 同义词优先级，不跨容器或 DB Link 展开。","supported_version_min":12,"supported_version_max_exclusive":27,"parameters":[{"name":"table_name","type":"string","max_length":128},{"name":"schema_name","type":"string","max_length":128,"required":false,"default":""},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"native_object_id","logical_type":"STRING"},{"name":"container_id","logical_type":"INTEGER"}],"template_ref":"sql/object_candidates.sql","template_sha256":"d24f8b76a84e850682f3ec3987056c227cfa66d22e8d1db5ad74cec65d2ac1bc","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id": "db.oracle.statement.plan",
       "measurement_semantics": "CURRENT_ACTIVITY",

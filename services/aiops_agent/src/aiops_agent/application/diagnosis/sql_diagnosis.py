@@ -231,6 +231,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "draft_is_not_execution_authority": True,
             "syntactic_reference_is_not_runtime_access": True,
             "catalog_index_is_not_plan_usage": True,
+            "catalog_candidates_are_not_name_resolution": True,
+            "diagnostic_environment_is_not_application_environment": True,
         },
     }
 

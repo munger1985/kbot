@@ -136,6 +136,7 @@ _PRIMARY_COLUMN_LABELS = {
     "digest": "Digest", "query_id": "Query ID",
     "plan_hash_value": "计划哈希", "session_id": "会话", "username": "用户",
     "database_name": "数据库", "schema_name": "数据库",
+    "table_name": "对象名称", "relation_kind": "对象类型", "native_object_id": "原生对象标识",
     "executions": "执行次数", "execution_count": "执行次数",
     "session_count": "会话数", "elapsed_seconds": "总耗时（秒）",
     "maximum_query_seconds": "最长执行（秒）", "cpu_seconds": "CPU（秒）",

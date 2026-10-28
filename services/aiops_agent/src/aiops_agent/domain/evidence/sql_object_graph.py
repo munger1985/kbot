@@ -4,8 +4,11 @@ from datetime import datetime
 from collections import deque
 
 from sqlglot import exp, parse
+from sqlglot.optimizer.scope import traverse_scope
 
-from aiops_agent.contracts.sql_object_graph import SqlObjectGraph, SqlObjectRelationship
+from aiops_agent.contracts.sql_object_graph import (
+    SqlObjectGraph, SqlObjectRelationship, SqlObjectReference, SqlObjectCatalogCandidate, SqlObjectCatalogLookup,
+)
 from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference
 
 
@@ -18,37 +21,91 @@ _IDENTITIES = {"POSTGRESQL": "query_id", "MYSQL": "digest", "ORACLE": "sql_id"}
 _SCOPES = {"POSTGRESQL": ("system_identifier", "database_oid"),
            "MYSQL": ("server_uuid",), "ORACLE": ("dbid", "container_id")}
 _DEPENDENCY_TOOL = "db.sql.object_dependencies"
+_CANDIDATES_TOOL = "db.sql.object_candidates"
 _PLAN_TOOLS = {"db.sql.execution_plan", "db.oracle.statement.plan"}
-_CATALOG_TOOLS = {"db.sql.object_indexes", "db.sql.object_statistics", _DEPENDENCY_TOOL}
+_CATALOG_TOOLS = {"db.sql.object_indexes", "db.sql.object_statistics", _DEPENDENCY_TOOL, _CANDIDATES_TOOL}
 _DIMENSIONS = ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value", "container_id", "dbid")
 
 
-def explicit_relation_names(sql, database_type):
-    """只接收完整单语句中显式二段名称；引号保留大小写，未知默认 Schema 不猜。"""
-    if not isinstance(sql, str) or not sql.strip() or len(sql) > 12000 or sql.rstrip().endswith(("...", "…")):
-        return ()
+def _inspect_relation_names(sql, database_type):
+    """保留未限定名称，按词法作用域排除 CTE；不解析 SQL 字符串、函数或远端名称。"""
+    if not isinstance(sql, str) or not sql.strip():
+        return (), False
+    if len(sql) > 12000 or sql.rstrip().endswith(("...", "…")):
+        return (), True
     try:
         statements = parse(sql, read={"POSTGRESQL": "postgres", "MYSQL": "mysql", "ORACLE": "oracle"}[database_type])
         if len(statements) != 1 or statements[0] is None:
-            return ()
+            return (), False
+        statement = statements[0]
+        if not isinstance(statement, (exp.Query, exp.Insert, exp.Update, exp.Delete, exp.Merge)):
+            return (), False
+        scoped = {}
+        for scope in traverse_scope(statement):
+            for table in scope.tables:
+                scoped[id(table)] = isinstance(scope.sources.get(table.alias_or_name), exp.Table)
+        # DML 的目标不在 Query Scope 中；遇到 CTE 同名目标保守保留未知，不推断可更新性。
+        cte_names = {cte.alias_or_name.casefold() for cte in statement.find_all(exp.CTE)}
+
+        def identifier_name(identifier):
+            name = identifier.name
+            return name if identifier.args.get("quoted") else (
+                name.lower() if database_type == "POSTGRESQL" else name.upper() if database_type == "ORACLE" else name)
+
+        def recursive_cte_reference(table):
+            owner = table.parent
+            while owner is not None:
+                block = owner.args.get("with_")
+                if block is not None and block.args.get("recursive") and any(
+                    isinstance(cte.args.get("alias"), exp.TableAlias)
+                    and isinstance(cte.args["alias"].this, exp.Identifier)
+                    and identifier_name(cte.args["alias"].this) == identifier_name(table.this)
+                    for cte in block.expressions
+                ):
+                    return True
+                owner = owner.parent
+            return False
+
         names = set()
-        for table in statements[0].find_all(exp.Table):
-            if table.catalog or not table.db or not all(isinstance(table.args.get(key), exp.Identifier) for key in ("this", "db")):
+        for table in statement.find_all(exp.Table):
+            if (table.catalog or scoped.get(id(table)) is False
+                    or not isinstance(table.this, exp.Identifier)
+                    or table.db and not isinstance(table.args.get("db"), exp.Identifier)):
+                continue
+            if (id(table) not in scoped and not table.db and table.name.casefold() in cte_names
+                    or table.parent is statement and table.arg_key == "tables"):
+                continue
+            # sqlglot 的顺序 Scope 构造不能识别所有递归 WITH 前向引用；按实际祖先词法块补齐。
+            if not table.db and recursive_cte_reference(table):
                 continue
             values = []
             for key in ("db", "this"):
-                identifier = table.args[key]
+                identifier = table.args.get(key)
+                if identifier is None:
+                    values.append(None)
+                    continue
                 name = identifier.name
-                if not identifier.args.get("quoted"):
-                    name = name.lower() if database_type == "POSTGRESQL" else name.upper() if database_type == "ORACLE" else name
-                values.append(name)
-            if all(0 < len(value) <= 256 for value in values):
+                if database_type == "ORACLE" and not identifier.args.get("quoted") and "@" in name:
+                    values = []
+                    break
+                values.append(identifier_name(identifier))
+            if len(values) == 2 and values[1] and all(value is None or 0 < len(value) <= 256 for value in values):
                 names.add(tuple(values))
             if len(names) > 32:
-                return ()
-        return tuple(sorted(names))
+                return (), True
+        return tuple(sorted(names, key=lambda item: (item[0] or "", item[1]))), False
     except Exception:
-        return ()
+        return (), False
+
+
+def relation_names(sql, database_type):
+    """返回有界名称集合；图生产者另保留预算/截断状态。"""
+    return _inspect_relation_names(sql, database_type)[0]
+
+
+def explicit_relation_names(sql, database_type):
+    """显式二段名称仍可由原调用方单独读取；未限定名称不猜默认 Schema。"""
+    return tuple(item for item in relation_names(sql, database_type) if item[0] is not None)
 
 
 def _rows(fact):
@@ -107,6 +164,7 @@ def build_sql_object_graph(*, database_type, subject, evidence):
     facts = tuple(fact for fact in evidence[:64] if fact.trust_level == "SOURCE_VERIFIED"
                   and fact.source_id != "prior_turn.sql_observation")
     relationships = []
+    references = []
     catalog_relationships = []
     dependency_rows = []
     remote_nodes = set()
@@ -185,14 +243,49 @@ def build_sql_object_graph(*, database_type, subject, evidence):
             if fact.tool_id in _TEXT_TOOLS[database_type]:
                 for field in ("normalized_statement", "digest_text", "sql_text"):
                     sql = row.get(field)
-                    if not isinstance(sql, str) or len(sql) > 12000:
+                    if not isinstance(sql, str):
                         continue
                     if sql not in parsed_texts:
                         if len(parsed_texts) >= 16:
                             truncated = True
                             continue
-                        parsed_texts[sql] = explicit_relation_names(sql, database_type)
-                    candidates.extend(("SQL_TEXT_REFERENCES_OBJECT", field, schema, relation) for schema, relation in parsed_texts[sql])
+                        parsed_texts[sql], text_bounded = _inspect_relation_names(sql, database_type)
+                        truncated = truncated or text_bounded
+                    for schema, relation in parsed_texts[sql]:
+                        resolution, context_ref = "EXPLICIT_SCHEMA", None
+                        if schema is None:
+                            resolution = "CONTEXT_REQUIRED"
+                            default = row.get("schema_name")
+                            # MySQL Digest 原生保留默认数据库；其他引擎的连接环境不能替代原解析环境。
+                            if database_type == "MYSQL" and isinstance(default, str) and 0 < len(default) <= 256:
+                                schema, resolution = default, "NATIVE_DEFAULT_SCHEMA"
+                                context_ref = EvidenceFieldReference(evidence_ref=fact.evidence_ref, row_index=index, field="schema_name")
+                        matches = [item for item in catalog if item[5] == relation
+                                   and (schema is None or item[4] == schema)
+                                   and _comparable(fact, row, item[0], item[2], database_type)]
+                        discovered = tuple(SqlObjectCatalogCandidate(schema_name=item[4], relation_name=item[5],
+                            catalog_ref=EvidenceFieldReference(evidence_ref=item[0].evidence_ref, row_index=item[1], field=item[3]))
+                            for item in matches if item[0].tool_id == _CANDIDATES_TOOL)
+                        if len(discovered) > 16:
+                            truncated = True
+                        reference = SqlObjectReference(
+                            anchor=EvidenceFieldReference(evidence_ref=fact.evidence_ref, row_index=index, field=field),
+                            relation_name=relation, schema_name=schema, resolution=resolution, context_ref=context_ref,
+                            candidates=discovered[:16],
+                            lookup=None if discovered or max(len(relation), len(schema or "")) > {
+                                "POSTGRESQL": 63, "MYSQL": 64, "ORACLE": 128}[database_type] else SqlObjectCatalogLookup(input={
+                                "table_name": relation, "schema_name": schema or "", "limit": 40}),
+                            limitation=("未限定名称需要原语句解析环境或匹配计划；目录唯一候选也不能证明历史 search_path、同义词优先级或实际访问。"
+                                if schema is None else "名称与原生默认数据库只界定语法候选；临时表遮蔽、DDL 及历史解析仍需核验，不证明实际访问。"
+                                if resolution == "NATIVE_DEFAULT_SCHEMA" else "显式名称及当前目录只界定语法对象，不证明运行时访问或历史对象生命周期。"))
+                        if reference not in references:
+                            if len(references) < 64:
+                                references.append(reference)
+                            else:
+                                truncated = True
+                        if schema is not None:
+                            candidates.append(("SQL_TEXT_DEFAULT_SCHEMA_CANDIDATE" if resolution == "NATIVE_DEFAULT_SCHEMA"
+                                else "SQL_TEXT_REFERENCES_OBJECT", field, schema, relation))
             elif row.get("object_owner") and row.get("object_name"):
                 candidates.append(("PLAN_ROW_REFERENCES_OBJECT", "object_name", row["object_owner"], row["object_name"]))
             for kind, field, schema, relation in candidates:
@@ -201,6 +294,7 @@ def build_sql_object_graph(*, database_type, subject, evidence):
                         continue
                     append(kind, fact, index, field, other, other_index, other_field, schema, relation,
                            "语法明确引用该对象；不证明执行时扫描、索引使用或对象累计活动由该 SQL 造成。" if kind == "SQL_TEXT_REFERENCES_OBJECT" else
+                           "Digest 原生默认数据库下的语法候选；不排除临时表遮蔽或 DDL，不证明实际访问或扫描。" if kind == "SQL_TEXT_DEFAULT_SCHEMA_CANDIDATE" else
                            "匹配 SQL/游标/计划的目录计划行；不是指定绑定参数的实际执行计划或实际行数。")
     # 逐字段追踪对象端点：同一依赖行的源、目标不能因共用行号而被误认成同一个对象。
     nodes = {(item[0].evidence_ref, item[1], item[3]): item for item in catalog}
@@ -270,8 +364,8 @@ def build_sql_object_graph(*, database_type, subject, evidence):
         if len(relationships) >= 128 and queue:
             truncated = True
             break
-    return SqlObjectGraph(database_type=database_type, subject=subject, relationships=tuple(relationships),
-        truncated=truncated, limitations=("仅覆盖可核验物理数据库范围内的显式名称、当前目录及最多四层已采集视图/同义词依赖；未解析默认 Schema、运行时动态 SQL和代表参数。",
+    return SqlObjectGraph(database_type=database_type, subject=subject, references=tuple(references), relationships=tuple(relationships),
+        truncated=truncated, limitations=("仅覆盖可核验物理数据库范围内的语法名称、MySQL 原生默认数据库、当前目录及最多四层已采集依赖；PG 历史 search_path、Oracle 同义词优先级、运行时动态 SQL和代表参数不猜测。",
             "未建立关系不代表 SQL 未访问对象；缺失、未解析或范围未知不能作为否定证据。",
             *(("可达目录含远端引用；只保留原始记录，不跨 DB Link、外部服务器或未知物理范围展开。",) if remote_references else ())))
 
