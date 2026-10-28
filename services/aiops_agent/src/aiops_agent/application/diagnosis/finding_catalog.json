@@ -189,6 +189,7 @@
       "severity": "MEDIUM",
       "object_kind": "WAIT_CLASS",
       "identity_fields": [
+        "container_id",
         "wait_class"
       ],
       "required_columns": [
@@ -197,6 +198,7 @@
         "foreground_waited_seconds"
       ],
       "field_columns": [
+        "container_id",
         "wait_class",
         "total_waits",
         "time_waited_seconds",

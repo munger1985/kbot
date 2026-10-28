@@ -500,6 +500,14 @@ _HIDDEN_REPORT_DIMENSIONS = {
     "binding_id", "instance", "job", "source_id", "target_key",
 }
 _METRIC_FIELD_DISPLAY_NAMES = {
+    "container_id": "容器 ID",
+    "max_workarea_avg_active_seconds": "工作区平均活跃时间最大值（秒）",
+    "total_executions": "工作区操作次数",
+    "optimal_executions": "工作区最优执行次数",
+    "onepass_executions": "工作区单次通过次数",
+    "multipasses_executions": "工作区多次通过次数",
+    "last_temp_mb": "各工作区最近临时段最大值（MiB）",
+    "max_temp_mb": "各工作区历史临时段最大值（MiB）",
     "plan_line_id": "计划节点", "parent_id": "父节点", "operation": "访问操作", "options": "操作选项",
     "object_owner": "对象所有者", "object_name": "对象名", "object_type": "对象类型",
     "cardinality": "估算行数", "cost": "优化器成本（非耗时）",

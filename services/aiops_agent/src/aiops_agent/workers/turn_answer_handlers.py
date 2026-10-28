@@ -2209,6 +2209,10 @@ class DbaAnswerComposeHandler:
     def _compose_evidence_payload(cls, fact: TurnEvidenceFact) -> dict[str, Any]:
         payload = fact.model_dump(mode="json", exclude={"visualizations", "series_computations"})
         payload["series_computations"] = [item.model_dump(mode="json", exclude={"samples"}) for item in fact.series_computations]
+        from aiops_agent.application.diagnosis.native_measurements import native_table_projection
+        native_values = native_table_projection(fact.provenance, columns=fact.columns, rows=fact.rows)
+        if native_values is not None:
+            payload["native_measurements"] = native_values
         if fact.tool_id in _INHERITED_EVIDENCE_TOOLS:
             payload = cls._canonicalize_inherited_evidence_refs(
                 payload,

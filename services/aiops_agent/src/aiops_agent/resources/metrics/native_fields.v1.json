@@ -1,6 +1,373 @@
 {
   "schema_version": "NATIVE_FIELD_MAPPINGS.v1",
   "profiles": {
+    "pg_stat_wal_14": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_wal",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"wal_records","native_columns":["wal_records"],"native_unit":"record","observed_unit":"record","kind":"ADDITIVE_COUNTER","unit":"record","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_fpi","native_columns":["wal_fpi"],"native_unit":"full_page_image","observed_unit":"full_page_image","kind":"ADDITIVE_COUNTER","unit":"full_page_image","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_bytes","native_columns":["wal_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_buffers_full","native_columns":["wal_buffers_full"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_write","native_columns":["wal_write"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_sync","native_columns":["wal_sync"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_write_time_ms","native_columns":["wal_write_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"wal_sync_time_ms","native_columns":["wal_sync_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_wal_18": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_wal",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"wal_records","native_columns":["wal_records"],"native_unit":"record","observed_unit":"record","kind":"ADDITIVE_COUNTER","unit":"record","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_fpi","native_columns":["wal_fpi"],"native_unit":"full_page_image","observed_unit":"full_page_image","kind":"ADDITIVE_COUNTER","unit":"full_page_image","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_bytes","native_columns":["wal_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"wal_buffers_full","native_columns":["wal_buffers_full"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_bgwriter_12": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_bgwriter",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"checkpoints_timed","native_columns":["checkpoints_timed"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoints_requested","native_columns":["checkpoints_req"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoint_write_time_ms","native_columns":["checkpoint_write_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"checkpoint_sync_time_ms","native_columns":["checkpoint_sync_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"buffers_checkpoint","native_columns":["buffers_checkpoint"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"buffers_clean","native_columns":["buffers_clean"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"buffers_backend","native_columns":["buffers_backend"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"buffers_alloc","native_columns":["buffers_alloc"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"maxwritten_clean","native_columns":["maxwritten_clean"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"buffers_backend_fsync","native_columns":["buffers_backend_fsync"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_checkpointer_17": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_checkpointer",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"checkpoints_timed","native_columns":["num_timed"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoints_requested","native_columns":["num_requested"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"restartpoints_timed","native_columns":["restartpoints_timed"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"restartpoints_requested","native_columns":["restartpoints_req"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"restartpoints_done","native_columns":["restartpoints_done"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoint_write_time_ms","native_columns":["write_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"checkpoint_sync_time_ms","native_columns":["sync_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"buffers_checkpoint","native_columns":["buffers_written"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_checkpointer_18": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_checkpointer",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"checkpoints_timed","native_columns":["num_timed"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoints_requested","native_columns":["num_requested"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"restartpoints_timed","native_columns":["restartpoints_timed"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"restartpoints_requested","native_columns":["restartpoints_req"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"restartpoints_done","native_columns":["restartpoints_done"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoint_write_time_ms","native_columns":["write_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"checkpoint_sync_time_ms","native_columns":["sync_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"buffers_checkpoint","native_columns":["buffers_written"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"checkpoints_done","native_columns":["num_done"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"slru_written","native_columns":["slru_written"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_io_16": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_io",
+      "dimensions": {"backend_type":"backend_type","object":"object_type","context":"io_context"},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"reads","native_columns":["reads"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"writes","native_columns":["writes"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"writebacks","native_columns":["writebacks"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"extends","native_columns":["extends"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"fsyncs","native_columns":["fsyncs"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"hits","native_columns":["hits"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"evictions","native_columns":["evictions"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"reuses","native_columns":["reuses"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"read_time_ms","native_columns":["read_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"write_time_ms","native_columns":["write_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"writeback_time_ms","native_columns":["writeback_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"extend_time_ms","native_columns":["extend_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"fsync_time_ms","native_columns":["fsync_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"read_bytes","native_columns":["reads","op_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"PRODUCT","native_operand_units":["io_operation","byte_per_io_operation"]},
+        {"column":"write_bytes","native_columns":["writes","op_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"PRODUCT","native_operand_units":["io_operation","byte_per_io_operation"]},
+        {"column":"extend_bytes","native_columns":["extends","op_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"PRODUCT","native_operand_units":["io_operation","byte_per_io_operation"]}
+      ]
+    },
+    "pg_stat_io_18": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_io",
+      "dimensions": {"backend_type":"backend_type","object":"object_type","context":"io_context"},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"reads","native_columns":["reads"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"writes","native_columns":["writes"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"writebacks","native_columns":["writebacks"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"extends","native_columns":["extends"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"fsyncs","native_columns":["fsyncs"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"hits","native_columns":["hits"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"evictions","native_columns":["evictions"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"reuses","native_columns":["reuses"],"native_unit":"postgresql_block","observed_unit":"postgresql_block","kind":"ADDITIVE_COUNTER","unit":"postgresql_block","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"read_time_ms","native_columns":["read_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"write_time_ms","native_columns":["write_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"writeback_time_ms","native_columns":["writeback_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"extend_time_ms","native_columns":["extend_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"fsync_time_ms","native_columns":["fsync_time"],"native_unit":"millisecond","observed_unit":"millisecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.001","projection":"IDENTITY"},
+        {"column":"read_bytes","native_columns":["read_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"write_bytes","native_columns":["write_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"extend_bytes","native_columns":["extend_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_archiver": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_archiver",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"archived_count","native_columns":["archived_count"],"native_unit":"wal_file","observed_unit":"wal_file","kind":"ADDITIVE_COUNTER","unit":"wal_file","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"failed_count","native_columns":["failed_count"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_database_conflicts": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_database_conflicts",
+      "dimensions": {"datid":"database_oid"},
+      "reset_scope": "DATABASE_STATISTICS",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"tablespace_conflicts","native_columns":["confl_tablespace"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"lock_conflicts","native_columns":["confl_lock"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"snapshot_conflicts","native_columns":["confl_snapshot"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"buffer_pin_conflicts","native_columns":["confl_bufferpin"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"deadlock_conflicts","native_columns":["confl_deadlock"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_database_temp": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_database",
+      "dimensions": {"datid":"database_oid"},
+      "reset_scope": "DATABASE_STATISTICS",
+      "reset_context_columns": ["stats_reset"],
+      "fields": [
+        {"column":"temp_files","native_columns":["temp_files"],"native_unit":"file","observed_unit":"file","kind":"ADDITIVE_COUNTER","unit":"file","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"temp_bytes","native_columns":["temp_bytes"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_user_tables": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_user_tables",
+      "dimensions": {"relid":"relation_oid"},
+      "reset_scope": "OBJECT_STATISTICS",
+      "reset_context_columns": [],
+      "connection_dimensions": {"datid":"database_oid"},
+      "fields": [
+        {"column":"seq_scan","native_columns":["seq_scan"],"native_unit":"scan","observed_unit":"scan","kind":"ADDITIVE_COUNTER","unit":"scan","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"idx_scan","native_columns":["idx_scan"],"native_unit":"scan","observed_unit":"scan","kind":"ADDITIVE_COUNTER","unit":"scan","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"seq_tup_read","native_columns":["seq_tup_read"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"idx_tup_fetch","native_columns":["idx_tup_fetch"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"n_live_tup","native_columns":["n_live_tup"],"native_unit":"row","observed_unit":"row","kind":"GAUGE","unit":"row","scale_to_canonical":"1","projection":"IDENTITY","estimated":true},
+        {"column":"n_dead_tup","native_columns":["n_dead_tup"],"native_unit":"row","observed_unit":"row","kind":"GAUGE","unit":"row","scale_to_canonical":"1","projection":"IDENTITY","estimated":true},
+        {"column":"n_mod_since_analyze","native_columns":["n_mod_since_analyze"],"native_unit":"row","observed_unit":"row","kind":"GAUGE","unit":"row","scale_to_canonical":"1","projection":"IDENTITY","estimated":true},
+        {"column":"n_tup_ins","native_columns":["n_tup_ins"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"n_tup_upd","native_columns":["n_tup_upd"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"n_tup_del","native_columns":["n_tup_del"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"n_tup_hot_upd","native_columns":["n_tup_hot_upd"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"vacuum_count","native_columns":["vacuum_count"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"autovacuum_count","native_columns":["autovacuum_count"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"analyze_count","native_columns":["analyze_count"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"autoanalyze_count","native_columns":["autoanalyze_count"],"native_unit":"event","observed_unit":"event","kind":"ADDITIVE_COUNTER","unit":"event","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "pg_stat_user_tables_object": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_user_tables",
+      "dimensions": {"relid":"relation_oid"},
+      "reset_scope": "OBJECT_STATISTICS",
+      "reset_context_columns": [],
+      "connection_dimensions": {"datid":"database_oid"},
+      "fields": [
+        {"column":"seq_scan","native_columns":["seq_scan"],"native_unit":"scan","observed_unit":"scan","kind":"ADDITIVE_COUNTER","unit":"scan","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"idx_scan","native_columns":["idx_scan"],"native_unit":"scan","observed_unit":"scan","kind":"ADDITIVE_COUNTER","unit":"scan","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"seq_tup_read","native_columns":["seq_tup_read"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"idx_tup_fetch","native_columns":["idx_tup_fetch"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"n_live_tup","native_columns":["n_live_tup"],"native_unit":"row","observed_unit":"row","kind":"GAUGE","unit":"row","scale_to_canonical":"1","projection":"IDENTITY","estimated":true},
+        {"column":"n_dead_tup","native_columns":["n_dead_tup"],"native_unit":"row","observed_unit":"row","kind":"GAUGE","unit":"row","scale_to_canonical":"1","projection":"IDENTITY","estimated":true},
+        {"column":"n_mod_since_analyze","native_columns":["n_mod_since_analyze"],"native_unit":"row","observed_unit":"row","kind":"GAUGE","unit":"row","scale_to_canonical":"1","projection":"IDENTITY","estimated":true}
+      ]
+    },
+    "pg_stat_user_indexes": {
+      "database_type": "POSTGRESQL",
+      "relation": "pg_catalog.pg_stat_user_indexes",
+      "dimensions": {"relid":"relation_oid","indexrelid":"index_oid"},
+      "reset_scope": "OBJECT_STATISTICS",
+      "reset_context_columns": [],
+      "connection_dimensions": {"datid":"database_oid"},
+      "fields": [
+        {"column":"idx_scan","native_columns":["idx_scan"],"native_unit":"scan","observed_unit":"scan","kind":"ADDITIVE_COUNTER","unit":"scan","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"idx_tup_read","native_columns":["idx_tup_read"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"idx_tup_fetch","native_columns":["idx_tup_fetch"],"native_unit":"row","observed_unit":"row","kind":"ADDITIVE_COUNTER","unit":"row","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "mysql_global_status": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.global_status",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["uptime_seconds"],
+      "fields": [
+        {"column":"uptime_seconds","native_columns":["VARIABLE_VALUE"],"native_unit":"second","observed_unit":"second","kind":"GAUGE","unit":"second","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Uptime"]]},
+        {"column":"questions","native_columns":["VARIABLE_VALUE"],"native_unit":"statement","observed_unit":"statement","kind":"ADDITIVE_COUNTER","unit":"statement","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Questions"]]},
+        {"column":"commits","native_columns":["VARIABLE_VALUE"],"native_unit":"transaction","observed_unit":"transaction","kind":"ADDITIVE_COUNTER","unit":"transaction","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Com_commit"]]},
+        {"column":"rollbacks","native_columns":["VARIABLE_VALUE"],"native_unit":"transaction","observed_unit":"transaction","kind":"ADDITIVE_COUNTER","unit":"transaction","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Com_rollback"]]},
+        {"column":"threads_connected","native_columns":["VARIABLE_VALUE"],"native_unit":"thread","observed_unit":"thread","kind":"GAUGE","unit":"thread","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Threads_connected"]]},
+        {"column":"threads_running","native_columns":["VARIABLE_VALUE"],"native_unit":"thread","observed_unit":"thread","kind":"GAUGE","unit":"thread","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Threads_running"]]},
+        {"column":"temp_disk_tables","native_columns":["VARIABLE_VALUE"],"native_unit":"table","observed_unit":"table","kind":"ADDITIVE_COUNTER","unit":"table","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Created_tmp_disk_tables"]]},
+        {"column":"full_table_scans","native_columns":["VARIABLE_VALUE"],"native_unit":"scan","observed_unit":"scan","kind":"ADDITIVE_COUNTER","unit":"scan","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Select_scan"]]}
+      ]
+    },
+    "mysql_throughput_status": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.global_status",
+      "dimensions": {},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": ["uptime_seconds"],
+      "fields": [
+        {"column":"uptime_seconds","native_columns":["VARIABLE_VALUE"],"native_unit":"second","observed_unit":"second","kind":"GAUGE","unit":"second","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Uptime"]]},
+        {"column":"questions","native_columns":["VARIABLE_VALUE"],"native_unit":"statement","observed_unit":"statement","kind":"ADDITIVE_COUNTER","unit":"statement","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Questions"]]},
+        {"column":"threads_running","native_columns":["VARIABLE_VALUE"],"native_unit":"thread","observed_unit":"thread","kind":"GAUGE","unit":"thread","scale_to_canonical":"1","projection":"IDENTITY","native_dimensions":[["VARIABLE_NAME","Threads_running"]]}
+      ]
+    },
+    "mysql_table_io": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.table_io_waits_summary_by_table",
+      "dimensions": {"OBJECT_SCHEMA":"object_schema","OBJECT_NAME":"object_name"},
+      "reset_scope": "PERFORMANCE_SCHEMA_SUMMARY",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"count_read","native_columns":["COUNT_READ"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_write","native_columns":["COUNT_WRITE"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"read_latency_picoseconds","native_columns":["SUM_TIMER_READ"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"},
+        {"column":"write_latency_picoseconds","native_columns":["SUM_TIMER_WRITE"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"}
+      ]
+    },
+    "mysql_table_hotspots": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.table_io_waits_summary_by_table",
+      "dimensions": {"OBJECT_SCHEMA":"object_schema","OBJECT_NAME":"object_name"},
+      "reset_scope": "PERFORMANCE_SCHEMA_SUMMARY",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"count_read","native_columns":["COUNT_READ"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_write","native_columns":["COUNT_WRITE"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"read_latency_picoseconds","native_columns":["SUM_TIMER_READ"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"},
+        {"column":"write_latency_picoseconds","native_columns":["SUM_TIMER_WRITE"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"},
+        {"column":"count_fetch","native_columns":["COUNT_FETCH"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_insert","native_columns":["COUNT_INSERT"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_update","native_columns":["COUNT_UPDATE"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_delete","native_columns":["COUNT_DELETE"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "mysql_index_io": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.table_io_waits_summary_by_index_usage",
+      "dimensions": {"OBJECT_SCHEMA":"object_schema","OBJECT_NAME":"object_name","INDEX_NAME":"index_name"},
+      "reset_scope": "PERFORMANCE_SCHEMA_SUMMARY",
+      "reset_context_columns": [],
+      "nullable_dimensions": ["INDEX_NAME"],
+      "fields": [
+        {"column":"count_read","native_columns":["COUNT_READ"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_write","native_columns":["COUNT_WRITE"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"read_latency_picoseconds","native_columns":["SUM_TIMER_READ"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"},
+        {"column":"write_latency_picoseconds","native_columns":["SUM_TIMER_WRITE"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"}
+      ]
+    },
+    "mysql_file_io": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.file_summary_by_event_name",
+      "dimensions": {"EVENT_NAME":"event_name"},
+      "reset_scope": "PERFORMANCE_SCHEMA_SUMMARY",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"count_read","native_columns":["COUNT_READ"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"count_write","native_columns":["COUNT_WRITE"],"native_unit":"io_operation","observed_unit":"io_operation","kind":"ADDITIVE_COUNTER","unit":"io_operation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"read_latency_picoseconds","native_columns":["SUM_TIMER_READ"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"},
+        {"column":"write_latency_picoseconds","native_columns":["SUM_TIMER_WRITE"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY"},
+        {"column":"bytes_read","native_columns":["SUM_NUMBER_OF_BYTES_READ"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"bytes_written","native_columns":["SUM_NUMBER_OF_BYTES_WRITE"],"native_unit":"byte","observed_unit":"byte","kind":"ADDITIVE_COUNTER","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "mysql_memory": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.memory_summary_global_by_event_name",
+      "dimensions": {"EVENT_NAME":"event_name"},
+      "reset_scope": "PERFORMANCE_SCHEMA_SUMMARY",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"current_count_used","native_columns":["CURRENT_COUNT_USED"],"native_unit":"allocation","observed_unit":"allocation","kind":"GAUGE","unit":"allocation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"current_number_of_bytes_used","native_columns":["CURRENT_NUMBER_OF_BYTES_USED"],"native_unit":"byte","observed_unit":"byte","kind":"GAUGE","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"high_count_used","native_columns":["HIGH_COUNT_USED"],"native_unit":"allocation","observed_unit":"allocation","kind":"MAXIMUM","unit":"allocation","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"high_number_of_bytes_used","native_columns":["HIGH_NUMBER_OF_BYTES_USED"],"native_unit":"byte","observed_unit":"byte","kind":"MAXIMUM","unit":"byte","scale_to_canonical":"1","projection":"IDENTITY"}
+      ]
+    },
+    "mysql_wait_class": {
+      "database_type": "MYSQL",
+      "relation": "performance_schema.events_waits_summary_global_by_event_name",
+      "dimensions": {"EVENT_NAME_PREFIX_2":"wait_class"},
+      "reset_scope": "PERFORMANCE_SCHEMA_SUMMARY",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"wait_count","native_columns":["COUNT_STAR"],"native_unit":"wait","observed_unit":"wait","kind":"ADDITIVE_COUNTER","unit":"wait","scale_to_canonical":"1","projection":"IDENTITY","aggregation":"SUM"},
+        {"column":"total_wait_picoseconds","native_columns":["SUM_TIMER_WAIT"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY","aggregation":"SUM"},
+        {"column":"max_wait_picoseconds","native_columns":["MAX_TIMER_WAIT"],"native_unit":"picosecond","observed_unit":"picosecond","kind":"MAXIMUM","unit":"second","scale_to_canonical":"0.000000000001","projection":"IDENTITY","aggregation":"MAX"}
+      ]
+    },
+    "oracle_system_wait_class": {
+      "database_type": "ORACLE",
+      "relation": "SYS.V_$SYSTEM_WAIT_CLASS",
+      "dimensions": {"WAIT_CLASS":"wait_class","con_id":"container_id"},
+      "reset_scope": "INSTANCE_STATISTICS",
+      "reset_context_columns": [],
+      "connection_dimensions": {"inst_id":"instance_number"},
+      "fields": [
+        {"column":"total_waits","native_columns":["TOTAL_WAITS"],"native_unit":"wait","observed_unit":"wait","kind":"ADDITIVE_COUNTER","unit":"wait","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"total_waits_fg","native_columns":["TOTAL_WAITS_FG"],"native_unit":"wait","observed_unit":"wait","kind":"ADDITIVE_COUNTER","unit":"wait","scale_to_canonical":"1","projection":"IDENTITY"},
+        {"column":"time_waited_seconds","native_columns":["TIME_WAITED"],"native_unit":"centisecond","observed_unit":"second","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"1","projection":"ROUNDED"},
+        {"column":"foreground_waited_seconds","native_columns":["TIME_WAITED_FG"],"native_unit":"centisecond","observed_unit":"second","kind":"ADDITIVE_COUNTER","unit":"second","scale_to_canonical":"1","projection":"ROUNDED"}
+      ]
+    },
+    "oracle_sql_workarea": {
+      "database_type": "ORACLE",
+      "relation": "SYS.GV_$SQL_WORKAREA",
+      "dimensions": {"inst_id":"instance_id","con_id":"container_id","sql_id":"sql_id"},
+      "reset_scope": "CURSOR_LIFETIME",
+      "reset_context_columns": [],
+      "fields": [
+        {"column":"total_executions","native_columns":["TOTAL_EXECUTIONS"],"native_unit":"workarea_execution","observed_unit":"workarea_execution","kind":"ADDITIVE_COUNTER","unit":"workarea_execution","scale_to_canonical":"1","projection":"IDENTITY","aggregation":"SUM"},
+        {"column":"optimal_executions","native_columns":["OPTIMAL_EXECUTIONS"],"native_unit":"workarea_execution","observed_unit":"workarea_execution","kind":"ADDITIVE_COUNTER","unit":"workarea_execution","scale_to_canonical":"1","projection":"IDENTITY","aggregation":"SUM"},
+        {"column":"onepass_executions","native_columns":["ONEPASS_EXECUTIONS"],"native_unit":"workarea_execution","observed_unit":"workarea_execution","kind":"ADDITIVE_COUNTER","unit":"workarea_execution","scale_to_canonical":"1","projection":"IDENTITY","aggregation":"SUM"},
+        {"column":"multipasses_executions","native_columns":["MULTIPASSES_EXECUTIONS"],"native_unit":"workarea_execution","observed_unit":"workarea_execution","kind":"ADDITIVE_COUNTER","unit":"workarea_execution","scale_to_canonical":"1","projection":"IDENTITY","aggregation":"SUM"},
+        {"column":"max_workarea_avg_active_seconds","native_columns":["ACTIVE_TIME"],"native_unit":"centisecond","observed_unit":"second","kind":"GAUGE","unit":"second","scale_to_canonical":"1","projection":"ROUNDED","aggregation":"MAX"}
+      ]
+    },
     "pg_stat_statements_12": {
       "database_type": "POSTGRESQL",
       "relation": "pg_stat_statements",
@@ -295,6 +662,29 @@
     }
   },
   "bindings": [
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.wal.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_wal_14_17","template_sha256":"2bbe9a2cd3b70c3b76191e2a26b46b3fb0314cab02a37221726ec4988b591cb3","profile":"pg_stat_wal_14","output_columns":[["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"],["wal_buffers_full","INTEGER"],["wal_write","INTEGER"],["wal_sync","INTEGER"],["wal_write_time_ms","DECIMAL"],["wal_sync_time_ms","DECIMAL"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.wal.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_wal_18_plus","template_sha256":"95ff6f68fd72a538f53838534fa026ee9a7390559b88428abd1a542ead76e1d4","profile":"pg_stat_wal_18","output_columns":[["wal_records","INTEGER"],["wal_fpi","INTEGER"],["wal_bytes","DECIMAL"],["wal_buffers_full","INTEGER"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.checkpoint.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_bgwriter_12_16","template_sha256":"6628d1cb24ef6e6d964793e61efd480bd2d0b0810be347dbba6b17197e747255","profile":"pg_stat_bgwriter_12","output_columns":[["checkpoints_timed","INTEGER"],["checkpoints_requested","INTEGER"],["checkpoint_write_time_ms","DECIMAL"],["checkpoint_sync_time_ms","DECIMAL"],["buffers_checkpoint","INTEGER"],["buffers_clean","INTEGER"],["maxwritten_clean","INTEGER"],["buffers_backend","INTEGER"],["buffers_backend_fsync","INTEGER"],["buffers_alloc","INTEGER"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.checkpoint.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_checkpointer_17","template_sha256":"80c82a1e5c66ef1a9e8b041b86608568c5892ea61a6e7cdc5eb365dfd6d5ad69","profile":"pg_stat_checkpointer_17","output_columns":[["checkpoints_timed","INTEGER"],["checkpoints_requested","INTEGER"],["restartpoints_timed","INTEGER"],["restartpoints_requested","INTEGER"],["restartpoints_done","INTEGER"],["checkpoint_write_time_ms","DECIMAL"],["checkpoint_sync_time_ms","DECIMAL"],["buffers_checkpoint","INTEGER"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.checkpoint.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_checkpointer_18_plus","template_sha256":"36bf6b47726a1eb64cdaa3e9e187b83aacf86dfa5e2bc23c336e3630a9caf368","profile":"pg_stat_checkpointer_18","output_columns":[["checkpoints_timed","INTEGER"],["checkpoints_requested","INTEGER"],["checkpoints_done","INTEGER"],["restartpoints_timed","INTEGER"],["restartpoints_requested","INTEGER"],["restartpoints_done","INTEGER"],["checkpoint_write_time_ms","DECIMAL"],["checkpoint_sync_time_ms","DECIMAL"],["buffers_checkpoint","INTEGER"],["slru_written","INTEGER"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.io.summary","tool_version":"1.0.0","variant":"postgresql_pg_stat_io_16_17","template_sha256":"a3b482ffdaacc3124f238df0448bd52b1f1af1a49f9616e982a40060fa6b7566","profile":"pg_stat_io_16","output_columns":[["backend_type","STRING"],["object_type","STRING"],["io_context","STRING"],["reads","INTEGER"],["read_bytes","DECIMAL"],["read_time_ms","DECIMAL"],["writes","INTEGER"],["write_bytes","DECIMAL"],["write_time_ms","DECIMAL"],["writebacks","INTEGER"],["writeback_time_ms","DECIMAL"],["extends","INTEGER"],["extend_bytes","DECIMAL"],["extend_time_ms","DECIMAL"],["hits","INTEGER"],["evictions","INTEGER"],["reuses","INTEGER"],["fsyncs","INTEGER"],["fsync_time_ms","DECIMAL"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.io.summary","tool_version":"1.0.0","variant":"postgresql_pg_stat_io_18_plus","template_sha256":"6dc8e008a391b65fd021b90601d60e8cbded900119754a817430ad010c9ff31b","profile":"pg_stat_io_18","output_columns":[["backend_type","STRING"],["object_type","STRING"],["io_context","STRING"],["reads","INTEGER"],["read_bytes","DECIMAL"],["read_time_ms","DECIMAL"],["writes","INTEGER"],["write_bytes","DECIMAL"],["write_time_ms","DECIMAL"],["writebacks","INTEGER"],["writeback_time_ms","DECIMAL"],["extends","INTEGER"],["extend_bytes","DECIMAL"],["extend_time_ms","DECIMAL"],["hits","INTEGER"],["evictions","INTEGER"],["reuses","INTEGER"],["fsyncs","INTEGER"],["fsync_time_ms","DECIMAL"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.archiver.status","tool_version":"1.0.0","variant":"postgresql_pg_stat_archiver_12_plus","template_sha256":"15a1ac3cbebeb8be03b0cbce388401151b6179548d53f8040c12803510d55344","profile":"pg_stat_archiver","output_columns":[["archive_mode","STRING"],["archive_command_configured","STRING"],["archived_count","INTEGER"],["last_archived_wal","STRING"],["last_archived_time","DATETIME"],["failed_count","INTEGER"],["last_failed_wal","STRING"],["last_failed_time","DATETIME"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.standby.conflicts","tool_version":"1.0.0","variant":"postgresql_pg_stat_database_conflicts_12_plus","template_sha256":"1a2233eb222636e0d89296d40daa3c86d383dab2abe94b2315fcf493124a6546","profile":"pg_stat_database_conflicts","output_columns":[["database_oid","INTEGER"],["database_name","STRING"],["tablespace_conflicts","INTEGER"],["lock_conflicts","INTEGER"],["snapshot_conflicts","INTEGER"],["buffer_pin_conflicts","INTEGER"],["deadlock_conflicts","INTEGER"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.temp.usage","tool_version":"1.0.0","variant":"postgresql_pg_stat_database_temp_12_plus","template_sha256":"c6b7c185ae07a1516c3e841696ed1ab391fe6fb6ac05060aabeffb5d99382ac0","profile":"pg_stat_database_temp","output_columns":[["database_oid","INTEGER"],["database_name","STRING"],["temp_files","INTEGER"],["temp_bytes","INTEGER"],["stats_reset","DATETIME"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.table.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_user_tables_12_plus","template_sha256":"384e2c46e14ddad392094499b96fe33a8a4d3d06da39bb5c64df1594942329b1","profile":"pg_stat_user_tables","output_columns":[["relation_oid","INTEGER"],["schema_name","STRING"],["table_name","STRING"],["seq_scan","INTEGER"],["seq_tup_read","INTEGER"],["idx_scan","INTEGER"],["idx_tup_fetch","INTEGER"],["n_tup_ins","INTEGER"],["n_tup_upd","INTEGER"],["n_tup_del","INTEGER"],["n_tup_hot_upd","INTEGER"],["n_live_tup","INTEGER"],["n_dead_tup","INTEGER"],["n_mod_since_analyze","INTEGER"],["last_vacuum","DATETIME"],["last_autovacuum","DATETIME"],["last_analyze","DATETIME"],["last_autoanalyze","DATETIME"],["vacuum_count","INTEGER"],["autovacuum_count","INTEGER"],["analyze_count","INTEGER"],["autoanalyze_count","INTEGER"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.sql.object_statistics","tool_version":"1.0.0","variant":"postgresql_relation_statistics_12_plus","template_sha256":"426efa066e3e711f29d030bd577925aff1da4a8fdeebfdf44fc40898e583a6bd","profile":"pg_stat_user_tables_object","output_columns":[["relation_oid","INTEGER"],["schema_name","STRING"],["relation_name","STRING"],["seq_scan","INTEGER"],["seq_tup_read","INTEGER"],["idx_scan","INTEGER"],["idx_tup_fetch","INTEGER"],["n_live_tup","INTEGER"],["n_dead_tup","INTEGER"],["n_mod_since_analyze","INTEGER"],["last_analyze","DATETIME"],["last_autoanalyze","DATETIME"],["total_bytes","INTEGER"]]},
+    {"database_type":"POSTGRESQL","tool_id":"db.postgresql.index.statistics","tool_version":"1.0.0","variant":"postgresql_pg_stat_user_indexes_12_plus","template_sha256":"dd5c4dafd910286999cf3c939f9a26632f84b99052976460af92b65afdaf747a","profile":"pg_stat_user_indexes","output_columns":[["relation_oid","INTEGER"],["index_oid","INTEGER"],["schema_name","STRING"],["table_name","STRING"],["index_name","STRING"],["idx_scan","INTEGER"],["idx_tup_read","INTEGER"],["idx_tup_fetch","INTEGER"],["index_bytes","INTEGER"],["is_unique","BOOLEAN"],["is_valid","BOOLEAN"],["is_ready","BOOLEAN"],["is_live","BOOLEAN"]]},
+    {"database_type":"MYSQL","tool_id":"db.instance.performance","tool_version":"1.0.0","variant":"mysql_8_global_status","template_sha256":"4f2781a4251ce3136aa06e9811e8aa8d3383e8ccae434360e08fb7d1db2bfff6","profile":"mysql_global_status","output_columns":[["server_uuid","STRING"],["uptime_seconds","INTEGER"],["questions","INTEGER"],["commits","INTEGER"],["rollbacks","INTEGER"],["threads_connected","INTEGER"],["threads_running","INTEGER"],["temp_disk_tables","INTEGER"],["full_table_scans","INTEGER"]]},
+    {"database_type":"MYSQL","tool_id":"db.mysql.instance.throughput","tool_version":"1.0.0","variant":"mysql_8_global_status","template_sha256":"1102015f6003123df6b225b7c5e39c5105515a4c57fff7308b86d32cd703c7cd","profile":"mysql_throughput_status","output_columns":[["questions","INTEGER"],["uptime_seconds","INTEGER"],["questions_per_second","DECIMAL"],["threads_running","INTEGER"]]},
+    {"database_type":"MYSQL","tool_id":"db.sql.object_statistics","tool_version":"1.0.0","variant":"mysql_8_table_io","template_sha256":"451b5c05da0dbf091bbc7c2108e9410a4ad090b452dfc9dee7982ac6a53f7a49","profile":"mysql_table_io","output_columns":[["object_schema","STRING"],["object_name","STRING"],["count_read","INTEGER"],["count_write","INTEGER"],["read_latency_picoseconds","DECIMAL"],["write_latency_picoseconds","DECIMAL"]]},
+    {"database_type":"MYSQL","tool_id":"db.mysql.table.hotspots","tool_version":"1.0.0","variant":"mysql_8_table_io","template_sha256":"5c20791e3600ec2835153d68d53ea4c551332f3993ec07d2af08da60145db88b","profile":"mysql_table_hotspots","output_columns":[["object_schema","STRING"],["object_name","STRING"],["count_read","INTEGER"],["count_write","INTEGER"],["read_latency_picoseconds","DECIMAL"],["write_latency_picoseconds","DECIMAL"],["count_fetch","INTEGER"],["count_insert","INTEGER"],["count_update","INTEGER"],["count_delete","INTEGER"]]},
+    {"database_type":"MYSQL","tool_id":"db.index.health","tool_version":"1.0.0","variant":"mysql_8_index_usage","template_sha256":"01f8fca409e4f4908076a109d5647ef616567c668278824fa81ce11a77a48ff2","profile":"mysql_index_io","output_columns":[["object_schema","STRING"],["object_name","STRING"],["index_name","STRING"],["count_read","INTEGER"],["count_write","INTEGER"],["read_latency_picoseconds","DECIMAL"],["write_latency_picoseconds","DECIMAL"]]},
+    {"database_type":"MYSQL","tool_id":"db.mysql.io.summary","tool_version":"1.0.0","variant":"mysql_8_file_io","template_sha256":"9fe467aa9ca83c28f1d2605a2d8ccf345ee445b11f3a2fbde0f635ccb25c6988","profile":"mysql_file_io","output_columns":[["event_name","STRING"],["count_read","INTEGER"],["count_write","INTEGER"],["bytes_read","INTEGER"],["bytes_written","INTEGER"],["read_latency_picoseconds","DECIMAL"],["write_latency_picoseconds","DECIMAL"]]},
+    {"database_type":"MYSQL","tool_id":"db.memory.summary","tool_version":"1.0.0","variant":"mysql_8_performance_schema","template_sha256":"04b9c48461e44dcd018874c81bcc5cebc81aada9cb3147ca80028ba147041884","profile":"mysql_memory","output_columns":[["event_name","STRING"],["current_count_used","INTEGER"],["current_number_of_bytes_used","INTEGER"],["high_count_used","INTEGER"],["high_number_of_bytes_used","INTEGER"]]},
+    {"database_type":"MYSQL","tool_id":"db.wait.class_summary","tool_version":"1.0.0","variant":"mysql_8_performance_schema","template_sha256":"4ff49fdd56e26affbb70136cc06842f511d47c50c540f3b66468afcdfb48cf93","profile":"mysql_wait_class","output_columns":[["wait_class","STRING"],["event_count","INTEGER"],["wait_count","INTEGER"],["total_wait_picoseconds","DECIMAL"],["max_wait_picoseconds","DECIMAL"]]},
+    {"database_type":"ORACLE","tool_id":"db.wait.class_summary","tool_version":"1.1.0","variant":"oracle_19_plus_wait_class","template_sha256":"080aeb9b4397def0e0507cb9a121d9a13fdd3dd8dd36d259f704469a0f82186f","profile":"oracle_system_wait_class","output_columns":[["container_id","INTEGER"],["wait_class","STRING"],["total_waits","INTEGER"],["time_waited_seconds","DECIMAL"],["total_waits_fg","INTEGER"],["foreground_waited_seconds","DECIMAL"]]},
+    {"database_type":"ORACLE","tool_id":"db.oracle.performance.heavy_sort_sql","tool_version":"1.1.0","variant":"oracle_19_plus_sql_workarea","template_sha256":"4bfb6acde21dd061a442ea386f352e838e15f95d5f51786e7748524e825b0947","profile":"oracle_sql_workarea","output_columns":[["instance_id","INTEGER"],["container_id","INTEGER"],["sql_id","STRING"],["total_executions","INTEGER"],["optimal_executions","INTEGER"],["onepass_executions","INTEGER"],["multipasses_executions","INTEGER"],["last_temp_mb","DECIMAL"],["max_temp_mb","DECIMAL"],["max_workarea_avg_active_seconds","DECIMAL"]]},
     {
       "database_type": "POSTGRESQL",
       "tool_id": "db.postgresql.statement.subjects",

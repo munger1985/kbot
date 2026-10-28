@@ -13,6 +13,7 @@ from aiops_agent.playbooks import canonical_hash
 
 MAPPING_PATH = Path(__file__).resolve().parents[2] / "resources/metrics/native_fields.v1.json"
 MAX_NATIVE_SERIES = 64
+MAX_MODEL_NATIVE_VALUES = 256
 
 
 class NativeMappingProfile(BaseModel):
@@ -33,6 +34,9 @@ class NativeMappingProfile(BaseModel):
                 or self.dimensions.keys() & self.connection_dimensions.keys()
                 or len({item.column for item in self.fields}) != len(self.fields)):
             raise ValueError("原生字段映射的维度或输出重复")
+        row_keys = self.dimensions.keys() | self.connection_dimensions.keys()
+        if any(row_keys & dict(item.native_dimensions).keys() for item in self.fields):
+            raise ValueError("字段固定维度不能覆盖逐行或连接维度")
         return self
 
 
@@ -91,6 +95,17 @@ def _dimension_value(value, *, nullable=False):
     return True, result
 
 
+def _mapping_definition(profile):
+    """语义摘要忽略无作用的空注解；扩充目录不能撤销未改变的既有映射。"""
+    result = profile.model_dump(mode="json")
+    for field in result["fields"]:
+        for name, empty in (("native_dimensions", []), ("native_operand_units", []),
+                            ("aggregation", "NONE"), ("estimated", False)):
+            if field[name] == empty:
+                field.pop(name)
+    return result
+
+
 def database_native_lineage(observation, physical_identity):
     """输出列、引擎、工具版本和模板摘要全部匹配后，才给出本地已审计语义。"""
     _, bindings = native_mapping_catalog()
@@ -103,7 +118,7 @@ def database_native_lineage(observation, physical_identity):
     binding, profile = match
     mapping_sha256 = canonical_hash({
         "schema_version": "NATIVE_FIELD_MAPPINGS.v1",
-        "binding": binding.model_dump(mode="json"), "profile": profile.model_dump(mode="json"),
+        "binding": binding.model_dump(mode="json"), "profile": _mapping_definition(profile),
     })
     columns = tuple((item.name, item.logical_type) for item in observation.columns)
     if columns != binding.output_columns or observation.row_count != len(observation.rows):
@@ -158,9 +173,12 @@ def native_counter_origins(provenance, *, row_index, column):
     row_dbid = dict(series.dimensions).get("dbid")
     if lineage.database_type == "ORACLE" and row_dbid is not None and row_dbid != physical.get("dbid"):
         return ()
+    dimensions = tuple(sorted((*series.dimensions, *field.native_dimensions)))
+    if len(dict(dimensions)) != len(dimensions):
+        return ()
     return tuple("native-counter:" + canonical_hash({
         "database": anchor, "relation": lineage.relation, "column": native,
-        "dimensions": series.dimensions,
+        "dimensions": dimensions,
     }) for native in field.native_columns)
 
 
@@ -178,8 +196,35 @@ def native_row_projection(provenance, *, row_index, row):
         result[field.column] = {
             "value": str(value) if value is not None else None,
             "unit": field.unit, "kind": field.kind,
-            "quality": "MISSING" if row[field.column] is None else "INVALID" if value is None else "ROUNDED" if field.projection == "ROUNDED" else "OBSERVED_VALUE_CONVERSION",
+            "quality": "MISSING" if row[field.column] is None else "INVALID" if value is None else "ESTIMATED" if field.estimated else "ROUNDED" if field.projection == "ROUNDED" else "OBSERVED_VALUE_CONVERSION",
+            "projection": field.projection, "aggregation": field.aggregation,
+            "native_dimensions": field.native_dimensions,
             "native_origin_ids": native_counter_origins(provenance, row_index=row_index, column=field.column),
             "comparable_window_verified": False,
         }
     return result
+
+
+def native_table_projection(provenance, *, columns, rows):
+    """为任意 DBA 问题提供有界程序换算；未映射字段仍在原证据中，不猜其语义。"""
+    if provenance is None or provenance.native_lineage is None:
+        return None
+    names = tuple(column["name"] for column in columns)
+    projected, count, truncated = [], 0, len(rows) > MAX_NATIVE_SERIES
+    for index, row in enumerate(rows[:MAX_NATIVE_SERIES]):
+        if len(row) != len(names):
+            truncated = True
+            continue
+        values = native_row_projection(provenance, row_index=index, row=dict(zip(names, row, strict=True)))
+        remaining = MAX_MODEL_NATIVE_VALUES - count
+        if len(values) > remaining:
+            values = dict(tuple(values.items())[:remaining])
+            truncated = True
+        if values:
+            projected.append({"row_index": index, "values": values})
+            count += len(values)
+        if count == MAX_MODEL_NATIVE_VALUES:
+            truncated = truncated or index + 1 < len(rows)
+            break
+    return {"rows": projected, "measurement_count": count, "truncated": truncated,
+            "verification_scope": "MAPPED_FIELDS_ONLY", "comparable_window_verified": False}

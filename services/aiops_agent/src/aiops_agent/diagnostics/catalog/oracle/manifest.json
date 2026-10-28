@@ -430,7 +430,7 @@
     },
     {
       "tool_id": "db.oracle.performance.heavy_sort_sql",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "db_type": "ORACLE",
       "variant": "oracle_19_plus_sql_workarea",
       "supported_version_min": 19,
@@ -444,6 +444,7 @@
       ],
       "output_columns": [
         {"name": "instance_id", "logical_type": "INTEGER", "nullable": false},
+        {"name": "container_id", "logical_type": "INTEGER", "nullable": false},
         {"name": "sql_id", "logical_type": "STRING", "nullable": false},
         {"name": "total_executions", "logical_type": "INTEGER", "nullable": false},
         {"name": "optimal_executions", "logical_type": "INTEGER", "nullable": false},
@@ -451,10 +452,10 @@
         {"name": "multipasses_executions", "logical_type": "INTEGER", "nullable": false},
         {"name": "last_temp_mb", "logical_type": "DECIMAL", "nullable": false},
         {"name": "max_temp_mb", "logical_type": "DECIMAL", "nullable": false},
-        {"name": "active_seconds", "logical_type": "DECIMAL", "nullable": false}
+        {"name": "max_workarea_avg_active_seconds", "logical_type": "DECIMAL", "nullable": true}
       ],
       "template_ref": "sql/sql_heavy_sort.sql",
-      "template_sha256": "88e7391f9d7d0819a464174608a58dc02afb8b5022eea659484da9016ab66aa2",
+      "template_sha256": "4bfb6acde21dd061a442ea386f352e838e15f95d5f51786e7748524e825b0947",
       "timeout_seconds": 20,
       "max_rows": 100,
       "max_bytes": 1048576,
@@ -2047,7 +2048,7 @@
     },
     {
       "tool_id": "db.wait.class_summary",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "db_type": "ORACLE",
       "variant": "oracle_19_plus_wait_class",
       "supported_version_min": 19,
@@ -2061,6 +2062,7 @@
       ],
       "parameters": [],
       "output_columns": [
+        {"name": "container_id", "logical_type": "INTEGER", "nullable": false},
         {
           "name": "wait_class",
           "logical_type": "STRING",
@@ -2088,7 +2090,7 @@
         }
       ],
       "template_ref": "sql/wait_class_summary.sql",
-      "template_sha256": "c5bf9d09100eae71701bb9000ed40d9cd07797966e0e971df99666dafd01da11",
+      "template_sha256": "080aeb9b4397def0e0507cb9a121d9a13fdd3dd8dd36d259f704469a0f82186f",
       "timeout_seconds": 20,
       "max_rows": 16,
       "max_bytes": 262144,

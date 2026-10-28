@@ -359,7 +359,7 @@
           ],
           "trend_required": true,
           "zero_row_status": "GAP",
-          "report_columns": ["wait_class", "total_waits_fg", "foreground_waited_seconds"]
+          "report_columns": ["container_id", "wait_class", "total_waits_fg", "foreground_waited_seconds"]
         },
         {
           "check_id": "oracle.performance.heavy_sort_sql",
@@ -376,7 +376,7 @@
           ],
           "trend_required": true,
           "zero_row_status": "CLEAR",
-          "report_columns": ["instance_id", "sql_id", "total_executions", "onepass_executions", "multipasses_executions", "last_temp_mb", "max_temp_mb"]
+          "report_columns": ["instance_id", "container_id", "sql_id", "total_executions", "onepass_executions", "multipasses_executions", "last_temp_mb", "max_temp_mb", "max_workarea_avg_active_seconds"]
         },
         {
           "check_id": "oracle.performance.core_parameters",

@@ -1,6 +1,7 @@
 """逐字段原生来源必须接通正式证据、单位换算、报告和案例复核，不能自动升级可比性。"""
 
 import asyncio
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -11,7 +12,11 @@ import sqlglot
 from sqlglot import exp
 
 from aiops_agent.application.diagnosis.investigation_record import freeze_investigation
-from aiops_agent.application.diagnosis.native_measurements import native_mapping_catalog, native_counter_origins
+from aiops_agent.application.diagnosis import compile_findings
+from aiops_agent.application.display_dictionary import display_field_name
+from aiops_agent.application.diagnosis.native_measurements import (
+    NativeMappingProfile, native_mapping_catalog, native_counter_origins, native_row_projection, native_table_projection,
+)
 from aiops_agent.application.diagnosis.provenance import database_provenance, monitoring_provenance
 from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle
@@ -22,7 +27,7 @@ from aiops_agent.diagnostics import DiagnosticRegistry
 from aiops_agent.domain.evidence.native_measurements import canonical_native_value
 from aiops_agent.domain.measurements import independent_origin_groups
 from aiops_agent.playbooks import canonical_hash
-from aiops_agent.workers.turn_answer_handlers import DbaEvidenceAssessmentHandler
+from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler, DbaEvidenceAssessmentHandler
 from platform_core.contracts.aiops.executor import DatabaseColumn, DatabaseObservation
 from platform_core.identity import uuid7
 
@@ -71,23 +76,54 @@ def tool_artifact(observation, run_id):
         trust_level="SOURCE_VERIFIED", payload_json=body, content_hash=canonical_hash(body))
 
 
+@dataclass(frozen=True)
+class Projection:
+    columns: tuple[str, ...]
+    scale: Decimal = Decimal(1)
+    rounded: bool = False
+    operation: str = "IDENTITY"
+    aggregation: str = "NONE"
+    dimensions: tuple[tuple[str, str], ...] = ()
+
+
 def projected_expression(node):
     """只用于目录验收：核对实际模板的投影、输入和常数比例，不校验目标库 Schema。"""
     if isinstance(node, (exp.Alias, exp.Paren)):
         return projected_expression(node.this)
     if isinstance(node, exp.Column):
-        return (node.name.lower(),), Decimal(1), False
+        return Projection((node.name.lower(),))
+    if isinstance(node, exp.Cast) and node.args["to"].this in {exp.DataType.Type.BIGINT, exp.DataType.Type.DECIMAL}:
+        return projected_expression(node.this)
+    if isinstance(node, exp.Max) and isinstance(node.this, exp.Case):
+        case = node.this
+        if len(case.args.get("ifs") or ()) != 1 or case.args.get("this") is not None or case.args.get("default") is not None:
+            raise ValueError("状态项必须是单个无默认值的条件透视")
+        branch = case.args["ifs"][0]
+        condition = branch.this
+        if (not isinstance(condition, exp.EQ) or not isinstance(condition.this, exp.Column)
+                or condition.this.name.lower() != "variable_name"
+                or not isinstance(condition.expression, exp.Literal) or not condition.expression.is_string
+                or not isinstance(branch.args["true"], exp.Column) or branch.args["true"].name.lower() != "variable_value"):
+            raise ValueError("状态项选择器或来源列不匹配")
+        return Projection(("variable_value",), dimensions=(("variable_name", condition.expression.this),))
+    if isinstance(node, (exp.Sum, exp.Max)):
+        result = projected_expression(node.this)
+        assert result.aggregation == "NONE"
+        return replace(result, aggregation="SUM" if isinstance(node, exp.Sum) else "MAX")
     if isinstance(node, exp.Round):
-        columns, scale, _ = projected_expression(node.this)
-        return columns, scale, True
+        return replace(projected_expression(node.this), rounded=True)
     if isinstance(node, exp.Div) and isinstance(node.expression, exp.Literal):
-        columns, scale, rounded = projected_expression(node.this)
-        return columns, scale / Decimal(node.expression.this), rounded
-    if isinstance(node, exp.Add):
-        left, lscale, lround = projected_expression(node.this)
-        right, rscale, rround = projected_expression(node.expression)
-        assert lscale == rscale
-        return (*left, *right), lscale, lround or rround
+        result = projected_expression(node.this)
+        return replace(result, scale=result.scale / Decimal(node.expression.this))
+    if isinstance(node, (exp.Add, exp.Mul)):
+        left, right = projected_expression(node.this), projected_expression(node.expression)
+        assert not left.dimensions and not right.dimensions
+        assert left.aggregation == right.aggregation == "NONE"
+        if isinstance(node, exp.Add):
+            assert left.scale == right.scale
+        return Projection((*left.columns, *right.columns),
+            scale=left.scale if isinstance(node, exp.Add) else left.scale * right.scale,
+            rounded=left.rounded or right.rounded, operation="SUM" if isinstance(node, exp.Add) else "PRODUCT")
     raise ValueError("模板存在未声明的数值投影")
 
 
@@ -97,6 +133,26 @@ def test_every_mapping_pins_an_actual_catalog_template_and_its_native_expression
         db_type=binding.database_type, variant=binding.variant, template_sha256=binding.template_sha256)
     assert tuple((column.name, column.logical_type) for column in tool.definition.output_columns) == binding.output_columns
     tree = sqlglot.parse_one(tool.sql, read={"POSTGRESQL": "postgres", "MYSQL": "mysql", "ORACLE": "oracle"}[binding.database_type])
+    relations = {".".join(part.name.lower() for part in table.parts) for table in tree.find_all(exp.Table)}
+    def relation_key(name):
+        key = name.lower()
+        if binding.database_type == "POSTGRESQL":
+            return key.removeprefix("pg_catalog.")
+        if binding.database_type == "ORACLE":
+            return key.removeprefix("sys.").replace("gv_$", "gv$", 1).replace("v_$", "v$", 1)
+        return key
+    assert relation_key(profile.relation) in {relation_key(name) for name in relations}
+    for native, column in profile.dimensions.items():
+        if column not in dict(binding.output_columns):
+            continue
+        expressions = [projection.this if isinstance(projection, exp.Alias) else projection
+            for select in tree.find_all(exp.Select) for projection in select.expressions
+            if projection.alias_or_name.lower() == column.lower()]
+        if native == "EVENT_NAME_PREFIX_2":
+            assert any(item == sqlglot.parse_one("SUBSTRING_INDEX(event_name, '/', 2)", read="mysql") for item in expressions)
+        else:
+            # 身份的文本转换不改变原生列；数值字段的 CAST 则由上面的严格表达式核查。
+            assert any((item.this if isinstance(item, exp.Cast) else item).name.lower() == native.lower() for item in expressions)
     for field in profile.fields:
         candidates = []
         for select in tree.find_all(exp.Select):
@@ -107,19 +163,24 @@ def test_every_mapping_pins_an_actual_catalog_template_and_its_native_expression
                     except ValueError:
                         pass
         expected = tuple(column.lower() for column in field.native_columns)
-        matches = [(columns, scale, rounded) for columns, scale, rounded in candidates if columns == expected]
+        matches = [item for item in candidates if item.columns == expected]
         assert matches, (binding.variant, field.column, candidates)
-        _, scale, rounded = matches[-1]
-        native_scale = Decimal("0.001") if field.unit == "second" and binding.database_type == "POSTGRESQL" else Decimal("0.000001") if field.unit == "second" and binding.database_type == "ORACLE" else Decimal("0.000000000001") if field.unit == "second" else Decimal(1)
-        assert scale * field.scale_to_canonical == native_scale
+        projection = matches[-1]
         if field.unit == "second":
-            assert field.native_unit == {"POSTGRESQL": "millisecond", "MYSQL": "picosecond", "ORACLE": "microsecond"}[binding.database_type]
-            unit_scales = {"second": Decimal(1), "millisecond": Decimal("0.001"), "microsecond": Decimal("0.000001"), "picosecond": Decimal("0.000000000001")}
+            unit_scales = {"second": Decimal(1), "centisecond": Decimal("0.01"), "millisecond": Decimal("0.001"), "microsecond": Decimal("0.000001"), "picosecond": Decimal("0.000000000001")}
+            assert projection.scale * field.scale_to_canonical == unit_scales[field.native_unit]
             assert unit_scales[field.observed_unit] == field.scale_to_canonical
         else:
+            assert projection.scale * field.scale_to_canonical == 1
             assert field.native_unit == field.observed_unit == field.unit
-        assert rounded == (field.projection == "ROUNDED")
-        assert (len(field.native_columns) > 1) == (field.projection == "SUM")
+        assert projection.rounded == (field.projection == "ROUNDED")
+        assert projection.operation == ("IDENTITY" if field.projection == "ROUNDED" else field.projection)
+        assert projection.aggregation == field.aggregation
+        assert projection.dimensions == tuple((key.lower(), value) for key, value in field.native_dimensions)
+        if field.projection == "PRODUCT":
+            assert field.native_operand_units == ("io_operation", "byte_per_io_operation")
+        if field.aggregation != "NONE":
+            assert any(select.args.get("group") is not None for select in tree.find_all(exp.Select))
     lineage = database_provenance(observation_for(tool)).native_lineage
     assert lineage is not None and lineage.fields == profile.fields
     assert not lineage.comparable_window_verified and not lineage.exporter_identity_verified
@@ -356,3 +417,224 @@ def test_native_source_replay_preserves_mysql_current_digest_sample_delta_semant
         payload["evidence"][0]["measurement_semantics"] = "CUMULATIVE_SINCE_LOAD"
         assert not await validate_investigation_sources(uow=uow, run=run, payload=payload)
     asyncio.run(run_test())
+
+
+def test_expanding_metadata_does_not_revoke_the_previous_unchanged_statement_mapping():
+    lineage = database_provenance(observation_for(tool_for("POSTGRESQL"))).native_lineage
+    assert lineage.mapping_sha256 == "04442b350025814de26c7b1f38c2d80de5cd75f2b40ef0758685e8dd4d485896"
+
+
+def test_mysql_pivot_dimensions_separate_counters_and_join_the_same_status_from_two_tools():
+    instance = database_provenance(observation_for(tool_for("MYSQL", tool_id="db.instance.performance")))
+    throughput = database_provenance(observation_for(tool_for("MYSQL", tool_id="db.mysql.instance.throughput")))
+    fields = {field.column: field for field in instance.native_lineage.fields}
+    assert fields["questions"].native_columns == fields["commits"].native_columns == ("VARIABLE_VALUE",)
+    assert fields["questions"].native_dimensions == (("VARIABLE_NAME", "Questions"),)
+    assert fields["commits"].native_dimensions == (("VARIABLE_NAME", "Com_commit"),)
+    identities = [native_counter_origins(instance, row_index=0, column=column) for column in fields]
+    assert all(identities) and len(set(identities)) == len(fields)
+    assert native_counter_origins(instance, row_index=0, column="questions") == native_counter_origins(throughput, row_index=0, column="questions")
+    assert fields["threads_running"].kind == fields["uptime_seconds"].kind == "GAUGE"
+    assert "questions_per_second" not in {item.column for item in throughput.native_lineage.fields}
+    assert not throughput.native_lineage.comparable_window_verified
+
+
+@pytest.mark.parametrize("sql", [
+    "MAX(CASE WHEN variable_name = 'Com_commit' THEN variable_value END)",
+    "MAX(CASE WHEN variable_name = 'Questions' THEN variable_value ELSE '0' END)",
+    "MAX(CASE WHEN other_name = 'Questions' THEN variable_value END)",
+    "MAX(CASE WHEN variable_name = 'Questions' THEN other_value END)",
+    "MAX(CASE WHEN variable_name = 'Questions' THEN variable_value WHEN variable_name = 'Com_commit' THEN variable_value END)",
+])
+def test_pivot_expression_verifier_does_not_ignore_selectors_or_default_values(sql):
+    try:
+        result = projected_expression(sqlglot.parse_one(sql, read="mysql"))
+    except ValueError:
+        return
+    assert result.dimensions != (("variable_name", "Questions"),)
+
+
+@pytest.mark.parametrize("column", ["seq_scan", "seq_tup_read", "idx_scan", "idx_tup_fetch", "n_live_tup", "n_dead_tup", "n_mod_since_analyze"])
+def test_pg_object_aliases_keep_the_same_native_table_scope_and_other_databases_do_not(column):
+    table = tool_for("POSTGRESQL", tool_id="db.postgresql.table.statistics")
+    objects = tool_for("POSTGRESQL", tool_id="db.sql.object_statistics")
+    provenance = database_provenance(observation_for(table, values={"relation_oid": 42}))
+    alias = database_provenance(observation_for(objects, values={"relation_oid": 42}))
+    assert native_counter_origins(provenance, row_index=0, column=column) == native_counter_origins(alias, row_index=0, column=column)
+    observed = observation_for(table, values={"relation_oid": 42})
+    physical = {**observed.provenance["instance_identity"], "database_oid": "999"}
+    other_database = database_provenance(observed.model_copy(update={"provenance": {"identity_scope": "SAME_CONNECTION_CURRENT", "instance_identity": physical}}))
+    assert native_counter_origins(provenance, row_index=0, column=column) != native_counter_origins(other_database, row_index=0, column=column)
+
+
+def test_pg_estimates_stay_estimated_and_io_product_retains_both_native_inputs():
+    tables = tool_for("POSTGRESQL", tool_id="db.postgresql.table.statistics")
+    provenance = database_provenance(observation_for(tables))
+    projected = native_row_projection(provenance, row_index=0, row={"n_live_tup": 0, "n_dead_tup": None, "n_mod_since_analyze": 12, "seq_scan": 1})
+    assert projected["n_live_tup"]["value"] == "0" and projected["n_live_tup"]["quality"] == "ESTIMATED"
+    assert projected["n_dead_tup"]["value"] is None and projected["n_dead_tup"]["quality"] == "MISSING"
+    assert projected["n_mod_since_analyze"]["kind"] == "GAUGE"
+    assert projected["seq_scan"]["kind"] == "ADDITIVE_COUNTER"
+    io = tool_for("POSTGRESQL", tool_id="db.postgresql.io.summary", variant="postgresql_pg_stat_io_16_17")
+    provenance = database_provenance(observation_for(io))
+    fields = {field.column: field for field in provenance.native_lineage.fields}
+    assert fields["read_bytes"].native_columns == ("reads", "op_bytes")
+    assert fields["read_bytes"].native_operand_units == ("io_operation", "byte_per_io_operation")
+    assert fields["read_bytes"].projection == "PRODUCT"
+    assert set(native_counter_origins(provenance, row_index=0, column="reads")) <= set(native_counter_origins(provenance, row_index=0, column="read_bytes"))
+    assert native_row_projection(provenance, row_index=0, row={"read_bytes": 24576})["read_bytes"]["value"] == "24576"
+
+
+@pytest.mark.parametrize("column", ["temp_files", "temp_bytes"])
+def test_pg_temp_and_database_statistics_use_the_same_canonical_native_relation(column):
+    database = database_provenance(observation_for(tool_for("POSTGRESQL", tool_id="db.postgresql.database.statistics")))
+    temp = database_provenance(observation_for(tool_for("POSTGRESQL", tool_id="db.postgresql.temp.usage")))
+    assert database.native_lineage.relation == temp.native_lineage.relation == "pg_catalog.pg_stat_database"
+    assert native_counter_origins(database, row_index=0, column=column) == native_counter_origins(temp, row_index=0, column=column)
+
+
+def test_mysql_null_index_is_a_native_no_index_bucket_and_table_aliases_remain_same_origin():
+    tool = tool_for("MYSQL", tool_id="db.index.health")
+    no_index = database_provenance(observation_for(tool, values={"index_name": None}))
+    index = database_provenance(observation_for(tool, values={"index_name": "primary"}))
+    assert ("INDEX_NAME", None) in no_index.native_lineage.series[0].dimensions
+    assert not no_index.native_lineage.series[0].missing_dimensions
+    assert native_counter_origins(no_index, row_index=0, column="count_read")
+    assert native_counter_origins(no_index, row_index=0, column="count_read") != native_counter_origins(index, row_index=0, column="count_read")
+    table = database_provenance(observation_for(tool_for("MYSQL", tool_id="db.mysql.table.hotspots")))
+    objects = database_provenance(observation_for(tool_for("MYSQL", tool_id="db.sql.object_statistics")))
+    assert native_counter_origins(table, row_index=0, column="count_read") == native_counter_origins(objects, row_index=0, column="count_read")
+
+
+def test_mysql_wait_groups_and_memory_high_watermarks_are_not_window_counters():
+    wait = database_provenance(observation_for(tool_for("MYSQL", tool_id="db.wait.class_summary"), values={"wait_class": "wait/io"}))
+    fields = {field.column: field for field in wait.native_lineage.fields}
+    assert wait.native_lineage.series[0].dimensions == (("EVENT_NAME_PREFIX_2", "wait/io"),)
+    assert fields["wait_count"].aggregation == fields["total_wait_picoseconds"].aggregation == "SUM"
+    assert fields["max_wait_picoseconds"].aggregation == "MAX" and fields["max_wait_picoseconds"].kind == "MAXIMUM"
+    memory = database_provenance(observation_for(tool_for("MYSQL", tool_id="db.memory.summary")))
+    fields = {field.column: field for field in memory.native_lineage.fields}
+    assert fields["current_number_of_bytes_used"].kind == "GAUGE"
+    assert fields["high_number_of_bytes_used"].kind == "MAXIMUM"
+    assert not wait.native_lineage.comparable_window_verified and not memory.native_lineage.comparable_window_verified
+
+
+def test_oracle_centisecond_wait_and_average_workarea_time_have_distinct_semantics_and_containers():
+    waits = tool_for("ORACLE", tool_id="db.wait.class_summary")
+    provenance = database_provenance(observation_for(waits))
+    field = next(field for field in provenance.native_lineage.fields if field.column == "time_waited_seconds")
+    assert field.native_unit == "centisecond" and field.observed_unit == "second"
+    assert canonical_native_value(field, "1.234") == Decimal("1.234")
+    assert "con_id AS container_id" in waits.sql
+    other = database_provenance(observation_for(waits, values={"container_id": 4}))
+    assert native_counter_origins(provenance, row_index=0, column="total_waits") != native_counter_origins(other, row_index=0, column="total_waits")
+    workarea = tool_for("ORACLE", tool_id="db.oracle.performance.heavy_sort_sql")
+    field = next(field for field in database_provenance(observation_for(workarea)).native_lineage.fields if field.column == "max_workarea_avg_active_seconds")
+    assert field.native_unit == "centisecond" and field.kind == "GAUGE" and field.aggregation == "MAX"
+    counts = next(field for field in database_provenance(observation_for(workarea)).native_lineage.fields if field.column == "total_executions")
+    assert counts.unit == "workarea_execution" and counts.aggregation == "SUM"
+    assert "ROUND(MAX(w.active_time) / 100, 3)" in workarea.sql
+    assert "GROUP BY w.inst_id, w.con_id, w.sql_id" in workarea.sql
+    assert "SUM(w.active_time)" not in workarea.sql and "active_seconds" not in {column.name for column in workarea.definition.output_columns}
+
+
+def test_oracle_wait_findings_do_not_merge_the_same_wait_class_from_different_containers():
+    async def run_test():
+        run_id, target_id = uuid7(), uuid7()
+        tool = tool_for("ORACLE", tool_id="db.wait.class_summary")
+        first = observation_for(tool, target=target_id, values={"container_id": 3, "wait_class": "User I/O", "foreground_waited_seconds": 4000})
+        second = observation_for(tool, target=target_id, values={"container_id": 4, "wait_class": "User I/O", "foreground_waited_seconds": 4000})
+        rows = (first.rows[0], second.rows[0])
+        observed = first.model_copy(update={"rows": rows, "row_count": 2, "result_sha256": canonical_hash(rows),
+            "provenance": {"identity_scope": "SAME_CONNECTION_CURRENT", "instance_identity": {**first.provenance["instance_identity"], "container_id": "1"}}})
+        artifact = tool_artifact(observed, run_id)
+        assessment = await DbaEvidenceAssessmentHandler().execute(SimpleNamespace(
+            input_artifacts=({"schema_version": artifact.schema_version, "artifact_id": artifact.artifact_id, "payload": artifact.payload_json},),
+            plan_snapshot={"answer_context": {"task_frame": {}}}, trigger_type="CHAT"))
+        compilation = compile_findings(assessment.evidence, database_type="ORACLE", target_id=str(target_id))
+        assert len(compilation.findings) == 2
+        assert len({item.finding_id for item in compilation.findings}) == 2
+        assert {item.fields["container_id"] for item in compilation.findings} == {3, 4}
+    asyncio.run(run_test())
+
+
+@pytest.mark.parametrize("column,expected", [
+    ("container_id", "容器 ID"),
+    ("max_workarea_avg_active_seconds", "工作区平均活跃时间最大值（秒）"),
+    ("total_executions", "工作区操作次数"),
+    ("last_temp_mb", "各工作区最近临时段最大值（MiB）"),
+])
+def test_native_workarea_and_container_report_columns_have_accurate_chinese_labels(column, expected):
+    assert display_field_name(column) == expected
+
+
+@pytest.mark.parametrize("updates", [
+    {"native_dimensions": (("VARIABLE_NAME", "Questions"), ("VARIABLE_NAME", "Com_commit"))},
+    {"native_dimensions": (("VARIABLE_NAME", "Questions\n"),)},
+    {"native_dimensions": (("", "Questions"),)},
+    {"projection": "PRODUCT", "native_columns": ("reads", "op_bytes")},
+    {"projection": "IDENTITY", "native_operand_units": ("byte",)},
+    {"aggregation": "MAX"}, {"estimated": True},
+])
+def test_invalid_or_unsafe_native_scope_and_numeric_semantics_are_rejected(updates):
+    field = dict(column="count", native_columns=("count",), native_unit="event", observed_unit="event", unit="event", scale_to_canonical="1", kind="ADDITIVE_COUNTER")
+    with pytest.raises(ValueError):
+        NativeFieldLineage.model_validate({**field, **updates})
+
+
+def test_profile_does_not_allow_fixed_field_dimensions_to_override_row_identity():
+    _, bindings = native_mapping_catalog()
+    _, profile = next((binding, profile) for binding, profile in bindings.values() if binding.tool_id == "db.instance.performance" and binding.database_type == "MYSQL")
+    with pytest.raises(ValueError):
+        NativeMappingProfile.model_validate({**profile.model_dump(), "dimensions": {"VARIABLE_NAME": "server_uuid"}})
+
+
+@pytest.mark.parametrize("binding,profile", BINDINGS, ids=[binding.variant + ":" + binding.tool_id for binding, _ in BINDINGS])
+@pytest.mark.parametrize("tamper", [False, True])
+def test_all_pinned_counter_families_reach_general_diagnosis_and_replay_their_original_source(binding, profile, tamper):
+    async def run_test():
+        run = SimpleNamespace(ops_run_id=uuid7(), target_id=uuid7())
+        tool = REGISTRY.resolve_exact(tool_id=binding.tool_id, tool_version=binding.tool_version,
+            db_type=binding.database_type, variant=binding.variant, template_sha256=binding.template_sha256)
+        observed = observation_for(tool, target=run.target_id)
+        artifact = tool_artifact(observed, run.ops_run_id)
+        assessment = await DbaEvidenceAssessmentHandler().execute(SimpleNamespace(
+            input_artifacts=({"schema_version": artifact.schema_version, "artifact_id": artifact.artifact_id, "payload": artifact.payload_json},),
+            plan_snapshot={"answer_context": {"task_frame": {}}}, trigger_type="CHAT"))
+        fact, = assessment.evidence
+        model_input = DbaAnswerComposeHandler._compose_evidence_payload(fact)
+        projection = model_input["native_measurements"]
+        assert projection["measurement_count"] == len(profile.fields) and not projection["truncated"]
+        assert len(projection["rows"]) == 1 and projection["rows"][0]["row_index"] == 0
+        assert model_input["rows"] == fact.model_dump(mode="json")["rows"]
+        assert not projection["comparable_window_verified"]
+        assert set(projection["rows"][0]["values"]) == {item.column for item in profile.fields}
+        draft = DiagnosisAnswerDraft.model_validate({"claims": [{"claim_id": "c1", "kind": "INTERPRETATION", "subject": "统计口径",
+            "statement": "按原生单位和维度判断；当前尚未证明窗口连续性。", "level": "UNKNOWN", "applicable_time": NOW.isoformat(),
+            "reasoning": "单位与身份不能替代时间覆盖证据。", "limitations": ["尚未取得可比窗口。"]}], "goal_satisfied": False})
+        context = SimpleNamespace(run_id=run.ops_run_id, target_id=run.target_id, task_id=uuid7(), plan_snapshot={"answer_context": {"task_frame": {}}})
+        record = freeze_investigation(draft=draft, evidence=(fact,), context=context)
+        payload = {"evidence": [fact.model_dump(mode="json")], "investigation_record": record.model_dump(mode="json")}
+        normalized = normalize_report_source(schema_version="AIOPS_TURN_RESULT.v1", payload=payload, source_kind="DIAGNOSIS")
+        assert normalized["investigation_record"]["observations"][0]["provenance"]["native_lineage"]["fields"] == fact.provenance.native_lineage.model_dump(mode="json")["fields"]
+        if tamper:
+            for item in (payload["evidence"][0], payload["investigation_record"]["observations"][0]):
+                item["provenance"]["native_lineage"]["fields"][0]["native_dimensions"] = [["INVENTED", "value"]]
+        uow = SimpleNamespace(runs=SimpleNamespace(get_artifact=AsyncMock(return_value=artifact)))
+        assert await validate_investigation_sources(uow=uow, run=run, payload=payload) == (not tamper)
+        uow.runs.get_artifact.assert_awaited()
+    asyncio.run(run_test())
+
+
+def test_general_model_native_projection_has_an_explicit_shared_value_budget_and_keeps_raw_evidence():
+    tool = tool_for("POSTGRESQL", tool_id="db.postgresql.io.summary", variant="postgresql_pg_stat_io_16_17")
+    observed = observation_for(tool)
+    observed = observed.model_copy(update={"rows": observed.rows * 100, "row_count": 100})
+    provenance = database_provenance(observed)
+    columns = tuple(column.model_dump() for column in observed.columns)
+    projection = native_table_projection(provenance, columns=columns, rows=observed.rows)
+    assert projection["truncated"] and projection["measurement_count"] == 256
+    assert sum(len(row["values"]) for row in projection["rows"]) == 256
+    assert observed.row_count == len(observed.rows) == 100
+    assert not projection["comparable_window_verified"]
+    assert native_table_projection(None, columns=columns, rows=observed.rows) is None

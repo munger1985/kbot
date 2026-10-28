@@ -19,7 +19,11 @@ class NativeFieldLineage(BaseModel):
     kind: Literal["ADDITIVE_COUNTER", "GAUGE", "MAXIMUM", "CUMULATIVE_AVERAGE"]
     unit: str = Field(min_length=1, max_length=64)
     scale_to_canonical: Decimal
-    projection: Literal["IDENTITY", "SUM", "ROUNDED"] = "IDENTITY"
+    projection: Literal["IDENTITY", "SUM", "PRODUCT", "ROUNDED"] = "IDENTITY"
+    native_dimensions: tuple[tuple[str, str], ...] = Field(default=(), max_length=8)
+    native_operand_units: tuple[str, ...] = Field(default=(), max_length=8)
+    aggregation: Literal["NONE", "SUM", "MAX"] = "NONE"
+    estimated: bool = False
 
     @model_validator(mode="after")
     def validate_scale(self):
@@ -29,10 +33,29 @@ class NativeFieldLineage(BaseModel):
             raise ValueError("原生单位换算比例无效或超出预算")
         if len(self.native_columns) != len(set(self.native_columns)):
             raise ValueError("原生字段映射不能重复计算同一计数器")
-        if self.projection == "SUM" and len(self.native_columns) < 2:
-            raise ValueError("原生求和必须保留多个输入")
-        if self.projection != "SUM" and len(self.native_columns) != 1:
-            raise ValueError("非求和字段必须映射唯一原生输入")
+        composite = self.projection in {"SUM", "PRODUCT"}
+        if composite and len(self.native_columns) < 2:
+            raise ValueError("原生复合投影必须保留多个输入")
+        if not composite and len(self.native_columns) != 1:
+            raise ValueError("非复合字段必须映射唯一原生输入")
+        if self.projection == "PRODUCT":
+            if len(self.native_operand_units) != len(self.native_columns):
+                raise ValueError("原生乘积必须逐项声明输入单位")
+        elif self.native_operand_units:
+            raise ValueError("非乘积字段不接受额外输入单位")
+        keys = [key for key, _ in self.native_dimensions]
+        if len(keys) != len(set(keys)) or any(
+            not value or len(value) > 256 or any(ord(char) < 32 for char in value)
+            for pair in self.native_dimensions for value in pair
+        ):
+            raise ValueError("字段原生维度重复、无效或超出预算")
+        if any(not unit or len(unit) > 64 or any(ord(char) < 32 for char in unit)
+               for unit in self.native_operand_units):
+            raise ValueError("原生输入单位无效")
+        if self.aggregation == "MAX" and self.kind not in {"MAXIMUM", "GAUGE"}:
+            raise ValueError("分组最大值不能声明为可加计数器")
+        if self.estimated and self.kind != "GAUGE":
+            raise ValueError("估计数值不能声明为精确累计计数器")
         return self
 
 
@@ -66,7 +89,8 @@ class NativeMeasurementLineage(BaseModel):
     relation: str = Field(min_length=1, max_length=256)
     fields: tuple[NativeFieldLineage, ...] = Field(min_length=1, max_length=128)
     series: tuple[NativeSeriesScope, ...] = Field(max_length=64)
-    reset_scope: Literal["DATABASE_STATISTICS", "STATEMENT_ENTRY", "CURSOR_LIFETIME"]
+    reset_scope: Literal["DATABASE_STATISTICS", "STATEMENT_ENTRY", "CURSOR_LIFETIME",
+                         "INSTANCE_STATISTICS", "OBJECT_STATISTICS", "PERFORMANCE_SCHEMA_SUMMARY"]
     reset_context_columns: tuple[str, ...] = Field(max_length=8)
     series_truncated: bool
     comparable_window_verified: Literal[False] = False

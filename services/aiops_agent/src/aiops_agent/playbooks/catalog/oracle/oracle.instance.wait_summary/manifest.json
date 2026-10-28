@@ -1,7 +1,7 @@
 {
   "schema_version": "DBA_PLAYBOOK_MANIFEST.v1",
   "playbook_id": "oracle.instance.wait_summary",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "database_types": ["ORACLE"],
   "version_range": {"minimum": "19", "maximum": "26"},
   "supported_intents": ["OBSERVE", "INSPECT", "DIAGNOSE"],
@@ -17,7 +17,7 @@
   "limits": {"max_rows": 20, "timeout_seconds": 20, "max_attempts": 2, "cost_units": 1},
   "tool_dag": [
     {"step_id": "identity", "tool_id": "db.instance.identity", "tool_version": "1.0.0", "depends_on": [], "input": {}},
-    {"step_id": "wait_classes", "tool_id": "db.wait.class_summary", "tool_version": "1.0.0", "depends_on": ["identity"], "input": {}}
+    {"step_id": "wait_classes", "tool_id": "db.wait.class_summary", "tool_version": "1.1.0", "depends_on": ["identity"], "input": {}}
   ],
   "output_schema": "oracle.instance.wait_summary.output.v1",
   "measurement_semantics": "CUMULATIVE_SINCE_LOAD",
