@@ -1,22 +1,24 @@
 """代表参数安全提交与撤回；保护材料与执行审批严格分离。"""
 
 from datetime import UTC, datetime, timedelta
+from dataclasses import asdict
 import json
 from uuid import UUID
 
 from aiops_agent.application.errors import AIOpsApplicationError, resource_not_found, state_conflict, validation_failed
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.domain.evidence.sql_plan_material import parse_sql_plan_material, SqlPlanMaterialInvalid
+from aiops_agent.domain.evidence.sql_plan_capture import inspect_plan_capture, source_sql_text
 from aiops_agent.domain.sql_subjects import normalize_sql_subject, SQL_STATISTICS_TOOLS
 from aiops_agent.entities import OpsArtifactEntity
 from aiops_agent.playbooks import canonical_hash
 from platform_core.contracts.aiops.sql_plan_material import (
-    SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialSubmit, SqlPlanMaterialView,
+    SqlPlanCapturePreflight, SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialSubmit, SqlPlanMaterialView,
 )
 from platform_core.identity import uuid7
 
 
-MATERIAL_SCHEMA = "SQL_PLAN_MATERIAL_RECEIPT.v1"
+MATERIAL_SCHEMA = "SQL_PLAN_MATERIAL_RECEIPT.v2"
 MATERIAL_PREFIX = "sql-plan-material:"
 _REQUIRED = {
     "POSTGRESQL": ("query_id", "database_oid", "user_oid"),
@@ -158,6 +160,12 @@ class SqlPlanMaterialService:
                 if item.step_id == command.step_id and item.row_index == command.row_index), None)
             if source is None:
                 raise state_conflict("所选 SQL 原始证据已不可用或统计身份不完整，请重新取证")
+            native = next(item for item in source_artifact.payload_json["tool_outcomes"] if item["step_id"] == source.step_id)["observation"]
+            fields = dict(zip((column["name"].lower() for column in native["columns"]), native["rows"][source.row_index], strict=True))
+            inspection = inspect_plan_capture(
+                database_type=target.db_type, sql=source_sql_text(fields, target.db_type),
+                parameter_count=len(protected["parameters"]))
+            preflight = SqlPlanCapturePreflight.model_validate(asdict(inspection))
             active = 0
             for receipt in receipts:
                 view = await self._view(uow=uow, scope=scope, run=run, artifact=receipt, now=now, access=access)
@@ -169,6 +177,7 @@ class SqlPlanMaterialService:
                 "ops_run_id": str(run.ops_run_id), "actor_id": str(scope.actor_id),
                 "source": source.model_dump(mode="json"), "source_hash": source_artifact.content_hash,
                 "parameter_count": len(protected["parameters"]), "created_at": now.isoformat(),
+                "capture_preflight": preflight.model_dump(mode="json"),
                 "expires_at": (now + timedelta(seconds=command.ttl_seconds)).isoformat(), **access,
             }
             await self._vault.seal(uow=uow, scope=scope, material_id=command.submission_id,
@@ -191,6 +200,7 @@ class SqlPlanMaterialService:
     def _public(self, run, payload, state):
         return SqlPlanMaterialView(material_id=payload["material_id"], ops_run_id=run.ops_run_id,
             source=payload["source"], parameter_count=payload["parameter_count"],
+            capture_preflight=payload["capture_preflight"] if state == "STORED" else None,
             created_at=payload["created_at"], expires_at=payload["expires_at"], state=state)
 
     async def _view(self, *, uow, scope, run, artifact, now, access):

@@ -4,6 +4,20 @@
   function sourceLabel(source) {
     return `${source.database_type} · ${JSON.stringify(source.subject)} · ${source.step_id} 第 ${source.row_index + 1} 行`;
   }
+  function preflightLabel(material) {
+    if (material.state !== "STORED" || !material.capture_preflight) return "材料已失效，预检结果不可用于当前采集";
+    const reasons = {
+      DATABASE_TYPE_UNSUPPORTED: "数据库类型不支持", SOURCE_SQL_TEXT_MISSING: "缺少原始 SQL 文本",
+      SOURCE_SQL_LENGTH_EXCEEDED: "SQL 文本超过预检上限", SINGLE_STATEMENT_REQUIRED: "必须为单条语句",
+      ESTIMATE_SELECT_ONLY: "当前估算路径仅接受 SELECT", SOURCE_SQL_COMPLEXITY_EXCEEDED: "SQL 复杂度超过预检上限",
+      SIDE_EFFECT_OR_LOCK_FORBIDDEN: "包含写入或锁定语义", NATIVE_BIND_STYLE_REQUIRED: "绑定格式无法安全对应",
+      NAMED_BIND_MAPPING_REQUIRED: "缺少命名绑定与材料位置的明确映射", PARAMETER_LAYOUT_INCOMPLETE: "参数位置不连续或超过上限",
+      PARAMETER_COUNT_MISMATCH: "原始 SQL 与材料参数数量不匹配", SOURCE_SQL_NOT_REPLAYABLE: "原始 SQL 无法完整解析",
+    };
+    return material.capture_preflight.status === "BLOCKED"
+      ? "提交时预检未通过：" + material.capture_preflight.reason_codes.map((code) => reasons[code] || "无法安全采集").join("；")
+      : "提交时静态预检完成；仍待数据库核验与独立审批，未授权执行";
+  }
   function mount(panel, run, appApi) {
     if (!["COMPLETED", "PARTIAL"].includes(run.status)) return;
     const escape = KBotAIOpsShell.escape;
@@ -51,6 +65,7 @@
         if (materialResult.status === "rejected") throw materialResult.reason;
         const labels = { STORED: "保护保存，未授权执行", EXPIRED: "已过期", REVOKED: "已撤回", UNAVAILABLE: "来源或授权已变化" };
         list.innerHTML = (materialResult.value.items || []).map((material) => `<p>${escape(material.parameter_count)}个参数 · ${escape(labels[material.state] || material.state)} · 到期 ${escape(material.expires_at)}
+          <span>${escape(preflightLabel(material))}</span>
           ${material.state === "REVOKED" ? "" : `<button type="button" data-revoke-material="${escape(material.material_id)}">撤回并清除在线密文</button>`}</p>`).join("") || "<p>尚未保存材料。</p>";
         if (!sources.length) list.insertAdjacentHTML("afterbegin", "<p>没有可用的完整 SQL 统计行；目标或权限变化后仍可撤回已有材料。</p>");
       } catch (_) { if (active()) KBotAIOpsShell.toast("无法读取计划材料状态，请刷新后重试"); }

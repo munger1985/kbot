@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import ssl
 from typing import Any
 
@@ -12,14 +11,13 @@ import asyncpg
 from loguru import logger
 
 from aiops_agent.diagnostics.registry import ResolvedDiagnosticTool
+from aiops_agent.domain.evidence.sql_bindings import postgresql_named_bindings, SqlBindingInvalid
 from aiops_agent.executor.tls_profiles import TLSProfileError, TLSProfileResolver
 from aiops_agent.executor.readonly_lifecycle import observe_termination
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import DiagnosticConnectionProfile, DiagnosticLimits
 from .base import DiagnosticDriverError, DriverQueryResult
 from .pagination import read_paged_rows
-
-_NAMED_BIND = re.compile(r"(?<!:):([a-z][a-z0-9_]*)\b", re.IGNORECASE)
 
 
 async def _cancel_owned_connection(connection):
@@ -117,15 +115,12 @@ class PostgreSQLDiagnosticDriver:
             )
         except TLSProfileError as exc:
             raise DiagnosticDriverError("TLS_PROFILE_INVALID") from exc
-        names: list[str] = []
-
-        def bind(match):
-            name = match.group(1)
-            if name not in names:
-                names.append(name)
-            return f"${names.index(name) + 1}"
-
-        sql = _NAMED_BIND.sub(bind, sql)
+        try:
+            sql, names = postgresql_named_bindings(sql)
+        except SqlBindingInvalid:
+            raise DiagnosticDriverError("QUERY_BIND_INVALID") from None
+        if set(parameters) != set(names):
+            raise DiagnosticDriverError("QUERY_BIND_INVALID")
         connection = None
         try:
             async with asyncio.timeout(20):
