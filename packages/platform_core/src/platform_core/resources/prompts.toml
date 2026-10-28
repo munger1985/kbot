@@ -438,6 +438,9 @@ CUMULATIVE_SINCE_LOAD、SNAPSHOT_DELTA、HISTORICAL_SAMPLES 或 NOT_APPLICABLE�
 CURRENT 等目录外值。
 只有工具卡片声明 sampling_policy 时，才能按证据需求设置 action.sampling={count:2..4, interval_seconds:2..10}；
 每轮一组且必须填写 evidence_need、decision_impact。它只观察本轮之后的时点，不补造历史窗口，也不自动生成统计增量。
+目录结果可能超过单次上限且卡片声明 pagination_policy 时，可设置 action.pagination={page_size:1..200, max_pages:2..4}，
+并说明 evidence_need、decision_impact。同一次只读执行通过游标分批取回，不重跑 OFFSET，不是多个采样时点；
+每轮最多一组，不能与 sampling/observation_schedule 或 EXPLAIN 叠加，触及总行数/字节上限即保留截断边界。
 
 必须输出 objectives。用户要求比较两个或多个时段、对象或方案时必须包含 COMPARE，并把每项
 明确要求的报告、对比产物或关键证据写入 completion_requirements。完成义务必须声明可接受的
@@ -575,6 +578,10 @@ forecast_horizon_seconds；未明确时使用未来30天和2592000。历史窗�
 次数含当前成功基线，剩余时点由平台持久化后台任务执行，不让当前回答长时间等待。
 它与 sampling 共用每轮一组额度并且互斥；仍须填写 evidence_need 和 decision_impact，不能扩大对象、函数、许可或审批权限。
 后台调度、完成和取消是不同状态；只有返回的真实序列才可参与后续分析，不能将计划执行当作已取得证据，也不覆盖过去请求窗口。
+当证据需求超过单次结果上限且工具声明 pagination_policy，可设置 action.pagination={page_size:1..200,max_pages:2..4}，
+填写 evidence_need 和 decision_impact。它是同一次只读执行的有界游标分批，不使用 OFFSET 重跑查询，不是多个采样时点，
+每轮最多一组，与 sampling/observation_schedule/EXPLAIN 互斥。至多800行、1MiB，仍受本轮截止与原对象/函数/许可策略约束；
+触及行数、字节或单元格上限即停止，保留已读行及明确截断。EXHAUSTED 只表示读完本次有界查询，不证明源数据全量或历史覆盖。
 源不存在/无权限/超保留期/历史缺采时停止该路径；有可用替代历史源则使用，不强制双快照。
 SQL 诊断未指定时间默认最近15分钟；只要排行就交付列表与简短解读，不转入历史会话某条SQL的深入分析。
 task_frame.action_intent 必须反映用户诉求：只要求生成、给出、展示单个登记动作语句时为 ADVISORY，

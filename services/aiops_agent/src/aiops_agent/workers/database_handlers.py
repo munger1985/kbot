@@ -609,7 +609,7 @@ class DynamicQueryInvocationHandler:
             output_schema="DYNAMIC_DATABASE_OBSERVATION.v1",
             measurement_semantics=invocation["measurement_semantics"],
             presentation_kind="TABLE",
-            status="SUCCEEDED" if succeeded else "FAILED",
+            status="PARTIAL" if succeeded and observation.pagination is not None and observation.truncated else "SUCCEEDED" if succeeded else "FAILED",
             tool_outcomes=(
                 ToolOutcome(
                     step_id=invocation["action_id"],

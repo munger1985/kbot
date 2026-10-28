@@ -5337,6 +5337,30 @@
         "title": "DiagnosticObservationSchedule",
         "type": "object"
       },
+      "DiagnosticPagination": {
+        "additionalProperties": false,
+        "description": "同一次只读查询的有界游标分批，不重跑查询或生成新的采样时点。",
+        "properties": {
+          "max_pages": {
+            "maximum": 4.0,
+            "minimum": 2.0,
+            "title": "Max Pages",
+            "type": "integer"
+          },
+          "page_size": {
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page_size",
+          "max_pages"
+        ],
+        "title": "DiagnosticPagination",
+        "type": "object"
+      },
       "DiagnosticQueryApprovalDecision": {
         "additionalProperties": false,
         "properties": {
@@ -20130,6 +20154,16 @@
             "minimum": 1.0,
             "title": "Ordinal",
             "type": "integer"
+          },
+          "pagination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosticPagination"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "parameters": {
             "anyOf": [

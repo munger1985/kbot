@@ -108,6 +108,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             followup_run_id=str(fact.followup_run_id) if fact.followup_run_id else None,
             provenance=fact.provenance, derivations=fact.derivations,
             object_access=fact.object_access,
+            pagination=fact.pagination,
             calculation_graphs=fact.calculation_graphs,
             series_computations=fact.series_computations,
         ) for fact in evidence),

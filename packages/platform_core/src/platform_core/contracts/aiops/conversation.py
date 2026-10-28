@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
-from .investigation import DiagnosticSampling, DiagnosticObservationSchedule
+from .investigation import DiagnosticSampling, DiagnosticObservationSchedule, DiagnosticPagination
 
 from .types import (
     AIOpsContract,
@@ -367,6 +367,7 @@ class TurnInvestigationActionView(AIOpsContract):
     optional: bool = False
     sampling: DiagnosticSampling | None = None
     observation_schedule: DiagnosticObservationSchedule | None = None
+    pagination: DiagnosticPagination | None = None
     execution_mode: str = Field(pattern=r"^(AUTO_EXECUTE|APPROVAL_REQUIRED)$")
     status: str = Field(min_length=1, max_length=24)
     sql_text: str | None = Field(default=None, min_length=1, max_length=20000)

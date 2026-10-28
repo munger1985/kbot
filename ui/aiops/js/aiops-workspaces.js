@@ -412,10 +412,11 @@
       const dependency = values(action.depends_on).length ? ` · 依赖 ${values(action.depends_on).join("、")}` : "";
       const sampling = action.sampling ? ` · 按需采样 ${action.sampling.count} 次，间隔至少 ${action.sampling.interval_seconds} 秒（不是历史窗口）` : "";
       const scheduled = action.observation_schedule ? ` · 后台未来观察 ${action.observation_schedule.count} 次（含本次基线），间隔至少 ${action.observation_schedule.interval_seconds} 秒` : "";
+      const pagination = action.pagination ? ` · 同次查询分批，每页最多 ${action.pagination.page_size} 行、最多 ${action.pagination.max_pages} 页` : "";
       const query = action.sql_text
         ? `<details class="ops-plan-query"><summary>查看待执行 SQL 与参数</summary><pre><code>${esc(action.sql_text)}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(action.parameters || {}, null, 2))}</code></pre></details>`
         : "";
-      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(displayText(action.tool_class || action.tool_id || "DIAGNOSTIC", dictionary))} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}${esc(sampling)}${esc(scheduled)}</small>${query}</li>`;
+      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(displayText(action.tool_class || action.tool_id || "DIAGNOSTIC", dictionary))} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}${esc(sampling)}${esc(scheduled)}${esc(pagination)}</small>${query}</li>`;
     }).join("");
     const actionsHtml = actions.length ? `<div class="ops-plan-actions"><strong>取证步骤</strong><ol>${rows}</ol></div>` : `<p class="ops-plan-empty">现有材料已足够，本轮不需要调用额外诊断工具。</p>`;
     return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划与判断依据</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header>${frameHtml}${hypothesisHtml}${actionsHtml}</section>`;

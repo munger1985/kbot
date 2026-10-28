@@ -11,6 +11,7 @@ from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
     DiagnosticConnectionProfile,
     DiagnosticLimits,
+    DiagnosticPaginationObservation,
 )
 
 
@@ -29,6 +30,7 @@ class DriverQueryResult:
     db_version: str
     database_types: tuple[str, ...] = ()
     instance_identity: tuple[tuple[str, str], ...] = ()
+    pagination: DiagnosticPaginationObservation | None = None
 
 
 class ReadonlyDatabaseDriver(Protocol):

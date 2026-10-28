@@ -15,6 +15,7 @@ from aiops_agent.executor.tls_profiles import TLSProfileError, TLSProfileResolve
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import DiagnosticConnectionProfile, DiagnosticLimits
 from .base import DiagnosticDriverError, DriverQueryResult
+from .pagination import read_paged_rows
 
 _NAMED_BIND = re.compile(r"(?<!:):([a-z][a-z0-9_]*)\b", re.IGNORECASE)
 
@@ -130,14 +131,19 @@ class PostgreSQLDiagnosticDriver:
                 str(getattr(item.type, "name", ""))
                 for item in attributes
             )
-            cursor = statement.cursor(
-                *(parameters[name] for name in names),
-                prefetch=min(limits.max_result_rows + 1, 100),
-            )
-            rows, truncated = await _read_bounded_rows(
-                cursor,
-                limits=limits,
-            )
+            pagination = None
+            if limits.pagination is not None:
+                # command_timeout 只限制一次 fetch；整组分页仍须共享同一语句时限。
+                async with asyncio.timeout(limits.statement_timeout_seconds):
+                    cursor = await statement.cursor(*(parameters[name] for name in names))
+                    rows, pagination = await read_paged_rows(fetch_page=cursor.fetch, limits=limits)
+                truncated = pagination.stop_reason != "EXHAUSTED"
+            else:
+                cursor = statement.cursor(
+                    *(parameters[name] for name in names),
+                    prefetch=min(limits.max_result_rows + 1, 100),
+                )
+                rows, truncated = await _read_bounded_rows(cursor, limits=limits)
             await transaction.rollback()
             from aiops_agent.executor.identity import observe_postgresql_identity
             instance_identity = await observe_postgresql_identity(connection)
@@ -148,6 +154,7 @@ class PostgreSQLDiagnosticDriver:
                 db_version=str(version),
                 database_types=database_types,
                 instance_identity=instance_identity,
+                pagination=pagination,
             )
         except asyncio.CancelledError:
             # 取消时不等待正常关闭握手，禁止未完成查询占用连接或迟到返回。

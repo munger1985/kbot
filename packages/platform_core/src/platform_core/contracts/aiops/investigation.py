@@ -293,6 +293,13 @@ class InvestigationHypothesis(AIOpsContract):
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=24)
 
 
+class DiagnosticPagination(AIOpsContract):
+    """同一次只读查询的有界游标分批，不重跑查询或生成新的采样时点。"""
+
+    page_size: int = Field(ge=1, le=200, strict=True)
+    max_pages: int = Field(ge=2, le=4, strict=True)
+
+
 class DiagnosticSampling(AIOpsContract):
     """本轮低成本只读追加采样，不补造过去窗口。"""
 
@@ -323,9 +330,17 @@ class InvestigationAction(AIOpsContract):
     stop_condition: str | None = Field(default=None, max_length=1000)
     sampling: DiagnosticSampling | None = None
     observation_schedule: DiagnosticObservationSchedule | None = None
+    pagination: DiagnosticPagination | None = None
 
     @model_validator(mode="after")
     def validate_sampling_purpose(self):
+        if self.pagination is not None:
+            if self.sampling is not None or self.observation_schedule is not None:
+                raise ValueError("游标分页不能与追加采样或后台观察叠加")
+            if self.tool_id not in {"db.oracle.readonly_query", "db.postgresql.readonly_query", "db.mysql.readonly_query"}:
+                raise ValueError("游标分页只适用于受控动态数据库查询")
+            if not self.evidence_need or not self.evidence_need.strip() or not self.decision_impact or not self.decision_impact.strip():
+                raise ValueError("游标分页必须说明证据需求及其对判断的作用")
         if self.sampling is not None and self.observation_schedule is not None:
             raise ValueError("短时采样与持久化未来观察不能同时使用")
         if (self.sampling is not None or self.observation_schedule is not None) and (

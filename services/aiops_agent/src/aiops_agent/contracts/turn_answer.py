@@ -18,7 +18,7 @@ from platform_core.contracts.aiops import (
     InvestigationAssessment,
 )
 from platform_core.contracts.aiops.playbooks import PresentationPreference
-from platform_core.contracts.aiops.executor import ObjectAccessObservation
+from platform_core.contracts.aiops.executor import ObjectAccessObservation, DiagnosticPaginationObservation
 from platform_core.contracts.visualization import ChartSpec
 
 
@@ -47,12 +47,18 @@ class TurnEvidenceFact(BaseModel):
     visualizations: tuple[ChartSpec, ...] = ()
     provenance: EvidenceProvenance | None = None
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
+    pagination: DiagnosticPaginationObservation | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.pagination is not None and (
+            sum(self.pagination.returned_page_rows) != self.row_count or self.row_count != len(self.rows)
+            or self.truncated != (self.pagination.stop_reason != "EXHAUSTED")
+        ):
+            raise ValueError("证据分页范围与原始结果不一致")
         if sum(len(item.samples) for item in self.series_computations) > 8192:
             raise ValueError("监控计算总输入超出预算")
         indexes = [item.row_index for item in self.series_computations]

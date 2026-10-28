@@ -232,6 +232,12 @@ def available_tools(
         }
     for tool in tools.values():
         if tool.get("tool_class") in {"ORACLE_SQL_DYNAMIC", "POSTGRESQL_SQL_DYNAMIC", "MYSQL_SQL_DYNAMIC"}:
+            tool["pagination_policy"] = {
+                "mode": "SINGLE_EXECUTION_CURSOR", "page_size": "1..200", "max_pages": "2..4",
+                "max_rows": 800, "max_bytes": 1048576, "max_groups_per_round": 1,
+                "not_multiple_observations": True, "source_completeness": "UNKNOWN",
+                "cannot_combine_with_sampling_or_schedule": True,
+            }
             tool["sampling_policy"] = {
                 "count": "2..4", "interval_seconds": "2..10", "max_groups_per_round": 1,
                 "max_rows_per_sample": 200, "max_bytes_per_sample": 131072,
@@ -296,6 +302,8 @@ def compact_tool_cards(tools: tuple[dict, ...]) -> tuple[dict, ...]:
             card["sampling_policy"] = dict(tool["sampling_policy"])
         if tool.get("observation_schedule_policy") is not None:
             card["observation_schedule_policy"] = dict(tool["observation_schedule_policy"])
+        if tool.get("pagination_policy") is not None:
+            card["pagination_policy"] = dict(tool["pagination_policy"])
         if tool.get("discovery_tool_id"):
             card["discovery_tool_id"] = str(tool["discovery_tool_id"])
         cards.append(card)

@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
+from .investigation import DiagnosticPagination
+
 from .types import (
     AIOpsContract,
     EXECUTOR_SCHEMA_VERSION,
@@ -48,6 +50,31 @@ class DiagnosticLimits(AIOpsContract):
     max_result_bytes: int = Field(gt=0, le=100 * 1024 * 1024)
     max_columns: int = Field(default=128, gt=0, le=1024)
     max_cell_chars: int = Field(default=32768, gt=0, le=1_000_000)
+    pagination: DiagnosticPagination | None = None
+
+    @model_validator(mode="after")
+    def validate_pagination_limit(self):
+        if self.pagination is not None and self.max_result_rows > self.pagination.page_size * self.pagination.max_pages:
+            raise ValueError("游标分页不能扩大总行数预算")
+        return self
+
+
+class DiagnosticPaginationObservation(AIOpsContract):
+    """分批取回描述查询结果的读取范围，不声明源数据全量或历史窗口。"""
+
+    mode: Literal["SINGLE_EXECUTION_CURSOR"] = "SINGLE_EXECUTION_CURSOR"
+    requested: DiagnosticPagination
+    returned_page_rows: tuple[int, ...] = Field(max_length=4)
+    stop_reason: Literal["EXHAUSTED", "ROW_LIMIT", "BYTE_LIMIT", "CELL_LIMIT"]
+    source_completeness: Literal["UNKNOWN"] = "UNKNOWN"
+
+    @model_validator(mode="after")
+    def validate_page_counts(self):
+        if len(self.returned_page_rows) > self.requested.max_pages or any(type(count) is not int or not 1 <= count <= self.requested.page_size for count in self.returned_page_rows):
+            raise ValueError("游标分页的实际页数或行数超过冻结上限")
+        if any(count != self.requested.page_size for count in self.returned_page_rows[:-1]):
+            raise ValueError("游标分页仅最后一页可不足一页")
+        return self
 
 
 class DiagnosticExecutionGrant(AIOpsContract):
@@ -276,6 +303,16 @@ class DatabaseObservation(AIOpsContract):
     warnings: tuple[str, ...] = ()
     provenance: JsonObject = Field(default_factory=dict)
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
+    pagination: DiagnosticPaginationObservation | None = None
+
+    @model_validator(mode="after")
+    def validate_pagination_observation(self):
+        if self.pagination is not None:
+            if sum(self.pagination.returned_page_rows) != self.row_count or self.row_count != len(self.rows):
+                raise ValueError("游标分页摘要与原始结果行数不一致")
+            if self.truncated != (self.pagination.stop_reason != "EXHAUSTED"):
+                raise ValueError("游标分页不能将超限结果标记为完整读取")
+        return self
 
 
 class ReadDiagnosticResult(AIOpsContract):

@@ -100,6 +100,7 @@ def safe_plan_projection(
             "optional": bool(raw_action.get("optional", False)),
             "sampling": dict(raw_action["sampling"]) if raw_action.get("sampling") else None,
             "observation_schedule": dict(raw_action["observation_schedule"]) if raw_action.get("observation_schedule") else None,
+            "pagination": dict(raw_action["pagination"]) if raw_action.get("pagination") else None,
             "execution_mode": decisions.get(action_id, "AUTO_EXECUTE"),
             "status": statuses.get(action_id, "PLANNED"),
         }

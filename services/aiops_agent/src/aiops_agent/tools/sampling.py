@@ -4,6 +4,9 @@ from platform_core.contracts.aiops.investigation import DiagnosticSampling, Diag
 
 
 def validate_sampling_plan(actions):
+    paged = [action for action in actions if getattr(action, "pagination", None) is not None and not getattr(action, "deferred", False)]
+    if len(paged) > 1:
+        raise ValueError("每轮最多一组有界游标分页")
     sampled = [action for action in actions if getattr(action, "sampling", None) is not None and not getattr(action, "deferred", False)]
     if len(sampled) > 1:
         raise ValueError("每轮最多一组按需数据库采样")

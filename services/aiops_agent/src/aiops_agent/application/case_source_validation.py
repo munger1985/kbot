@@ -59,7 +59,7 @@ async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None):
             artifact = root
             payload = dict(root.payload_json or {})
         record = payload.get("investigation_record")
-        if record or any(item.get("followup_run_id") for item in payload.get("evidence", ())):
+        if record or any(item.get("followup_run_id") or item.get("pagination") for item in payload.get("evidence", ())):
             from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
             if not await validate_investigation_sources(uow=uow, run=run, payload=payload):
                 return False

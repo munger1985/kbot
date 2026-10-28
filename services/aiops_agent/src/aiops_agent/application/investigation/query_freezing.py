@@ -23,7 +23,7 @@ from aiops_agent.monitoring import (
     PromQueryPolicy,
     PromQueryPolicySnapshot,
 )
-from aiops_agent.tools.sampling import freeze_dynamic_sampling, freeze_observation_schedule
+from aiops_agent.tools.sampling import freeze_dynamic_sampling, freeze_observation_schedule, validate_sampling_plan
 
 
 _DYNAMIC_TOOL_IDS = {
@@ -35,6 +35,10 @@ _DYNAMIC_TOOL_IDS = {
 
 def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=()):
     """规划端先验证并规范化动态 SQL，再冻结供 Executor 重放。"""
+    try:
+        validate_sampling_plan(investigation.plan.actions)
+    except ValueError as exc:
+        raise InvestigationPlanValidationError(str(exc)) from exc
     normalized_database_type = str(database_type).upper()
     tool_id = _DYNAMIC_TOOL_IDS.get(normalized_database_type)
     if normalized_database_type == "ORACLE":
@@ -77,12 +81,26 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
             raise InvestigationPlanValidationError(
                 "动态查询 sql 或 parameters 类型无效"
             )
+        pagination = action.pagination
+        query_snapshot = snapshot
+        if pagination is not None:
+            from platform_core.contracts.aiops.investigation import DiagnosticPagination
+            pagination = DiagnosticPagination.model_validate(pagination)
+            query_snapshot = snapshot.model_copy(
+                update={"max_rows": pagination.page_size * pagination.max_pages + 1},
+            )
+        # 每项动作独立冻结，不能继承前项分页扩大的结果上限。
+        query_policy = type(policy)(query_snapshot)
         try:
-            validated = policy.validate(sql, parameters)
+            validated = query_policy.validate(sql, parameters)
         except DynamicQueryRejected as exc:
             raise InvestigationPlanValidationError(
                 f"动态查询未通过策略：{exc.code}；{exc}"
             ) from exc
+        if pagination is not None and (getattr(validated, "explain", False)
+            or getattr(validated, "execution_decision", "AUTO_EXECUTE") != "AUTO_EXECUTE"
+            or action.sampling is not None or action.observation_schedule is not None):
+            raise InvestigationPlanValidationError("游标分页不能叠加采样或用于需要审批的计划查询")
         try:
             sampling = freeze_dynamic_sampling(action, validated)
             schedule = freeze_observation_schedule(action)
@@ -106,7 +124,7 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
                 "tool_id": tool_id,
                 "database_type": normalized_database_type,
                 "required_privileges": required_privileges,
-                "policy_snapshot": snapshot.model_dump(mode="json"),
+                "policy_snapshot": query_snapshot.model_dump(mode="json"),
                 "validated_query": validated.model_dump(mode="json"),
                 "sampling": sampling,
                 "observation_schedule": schedule,
@@ -116,6 +134,9 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
                     "max_result_bytes": 131072 if sampling or schedule else 1048576,
                     "max_columns": 64,
                     "max_cell_chars": 32768,
+                    **({"pagination": pagination.model_dump(mode="json"),
+                        "max_result_rows": min(validated.max_rows, pagination.page_size * pagination.max_pages)}
+                        if pagination is not None else {}),
                 },
             }
         )

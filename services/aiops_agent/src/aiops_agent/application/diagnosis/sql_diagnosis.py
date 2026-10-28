@@ -157,6 +157,7 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "truncated": fact.truncated or len(fact.rows) > 40,
             "warnings": list(fact.warnings),
             "object_access": [item.model_dump(mode="json") for item in fact.object_access],
+            "pagination": fact.pagination.model_dump(mode="json") if fact.pagination is not None else None,
             "lineage": {"artifact_id": str(fact.artifact_id), "step_id": fact.step_id,
                 "provenance": fact.provenance.model_dump(mode="json") if fact.provenance else None},
             "derivations": [item.model_dump(mode="json") for item in fact.derivations],

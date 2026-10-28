@@ -71,6 +71,12 @@ class DbaToolResult(BaseModel):
     @model_validator(mode="after")
     def validate_sampled_outcomes(self):
         """正式证据重放时也复核采样摘要，不接受伪造的完成数。"""
+        paged = [item.observation for item in self.tool_outcomes if item.observation is not None and item.observation.pagination is not None]
+        if paged:
+            if len(self.tool_outcomes) != 1 or len(paged) != 1 or self.sampling is not None or self.observation_series is not None:
+                raise ValueError("同次游标分页只产生一个观察，不能包装成采样或多个独立来源")
+            if self.status != ("PARTIAL" if paged[0].truncated else "SUCCEEDED"):
+                raise ValueError("分页截断结果不能包装成完整成功")
         if self.sampling is not None and self.observation_series is not None:
             raise ValueError("不能同时声明短时与持久化采样摘要")
         series = self.sampling or self.observation_series

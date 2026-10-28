@@ -243,6 +243,7 @@ async def validate_future_observation_facts(*, uow, run, payload):
                 or fact.row_count != observation.row_count or fact.truncated != observation.truncated
                 or fact.columns != tuple(column.model_dump(mode="json") for column in observation.columns)
                 or fact.provenance != database_provenance(observation) or fact.object_access != observation.object_access
+                or fact.pagination != observation.pagination
                 or fact.model_dump(mode="json")["rows"] != fact.model_copy(update={"rows": observation.rows}).model_dump(mode="json")["rows"]):
                 return False
     except (ValueError, TypeError, KeyError, AttributeError):

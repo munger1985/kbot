@@ -709,6 +709,7 @@ class DbaEvidenceAssessmentHandler:
                             )),
                             provenance=database_provenance(observation),
                             object_access=observation.object_access,
+                            pagination=observation.pagination,
                         )
                     )
                 if outcome.gap is not None:

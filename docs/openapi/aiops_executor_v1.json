@@ -94,6 +94,16 @@
             "title": "Object Access",
             "type": "array"
           },
+          "pagination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosticPaginationObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "parameters_sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Parameters Sha256",
@@ -183,6 +193,76 @@
           "parameters_sha256"
         ],
         "title": "DatabaseObservation",
+        "type": "object"
+      },
+      "DiagnosticPagination": {
+        "additionalProperties": false,
+        "description": "同一次只读查询的有界游标分批，不重跑查询或生成新的采样时点。",
+        "properties": {
+          "max_pages": {
+            "maximum": 4.0,
+            "minimum": 2.0,
+            "title": "Max Pages",
+            "type": "integer"
+          },
+          "page_size": {
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Page Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page_size",
+          "max_pages"
+        ],
+        "title": "DiagnosticPagination",
+        "type": "object"
+      },
+      "DiagnosticPaginationObservation": {
+        "additionalProperties": false,
+        "description": "分批取回描述查询结果的读取范围，不声明源数据全量或历史窗口。",
+        "properties": {
+          "mode": {
+            "const": "SINGLE_EXECUTION_CURSOR",
+            "default": "SINGLE_EXECUTION_CURSOR",
+            "title": "Mode",
+            "type": "string"
+          },
+          "requested": {
+            "$ref": "#/components/schemas/DiagnosticPagination"
+          },
+          "returned_page_rows": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 4,
+            "title": "Returned Page Rows",
+            "type": "array"
+          },
+          "source_completeness": {
+            "const": "UNKNOWN",
+            "default": "UNKNOWN",
+            "title": "Source Completeness",
+            "type": "string"
+          },
+          "stop_reason": {
+            "enum": [
+              "EXHAUSTED",
+              "ROW_LIMIT",
+              "BYTE_LIMIT",
+              "CELL_LIMIT"
+            ],
+            "title": "Stop Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "returned_page_rows",
+          "stop_reason"
+        ],
+        "title": "DiagnosticPaginationObservation",
         "type": "object"
       },
       "DynamicReadDiagnosticRequest": {

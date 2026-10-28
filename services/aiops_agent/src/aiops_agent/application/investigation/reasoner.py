@@ -306,13 +306,14 @@ class InvestigationReasoner:
                 canonical_input(dict(action.get("input") or {})),
                 action.get("sampling") is not None,
                 action.get("observation_schedule") is not None,
+                action.get("pagination") is not None,
             )
             for action in prior_plan.get("actions", ())
         }
         repeated = tuple(
             action.action_id
             for action in output.plan.actions
-            if (action.tool_id, canonical_input(dict(action.input)), action.sampling is not None, action.observation_schedule is not None)
+            if (action.tool_id, canonical_input(dict(action.input)), action.sampling is not None, action.observation_schedule is not None, action.pagination is not None)
             in prior_calls
         )
         if repeated:

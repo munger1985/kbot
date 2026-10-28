@@ -9,12 +9,21 @@ from collections.abc import Mapping
 from platform_core.contracts.aiops.investigation import InvestigationPlan
 
 
-def action_fingerprint(tool_id: str, input_payload: Mapping | None, *, sampled: bool = False, scheduled: bool = False) -> str:
+def action_fingerprint(tool_id: str, input_payload: Mapping | None, *, sampled: bool = False, scheduled: bool = False, paged: bool = False) -> str:
     """按工具和规范化输入生成稳定动作指纹。"""
+    normalized = dict(input_payload or {})
+    if paged and isinstance(normalized.get("sql"), str):
+        from sqlglot import parse_one
+        dialect = {"db.oracle.readonly_query": "oracle", "db.postgresql.readonly_query": "postgres", "db.mysql.readonly_query": "mysql"}.get(str(tool_id))
+        if dialect is not None:
+            statement = parse_one(normalized["sql"], read=dialect)
+            statement.set("limit", None)
+            normalized["sql"] = statement.sql(dialect=dialect, comments=False)
     encoded = json.dumps(
         {
             "tool_id": str(tool_id),
-            "input": dict(input_payload or {}),
+            "input": normalized,
+            **({"result_mode": "CURSOR_PAGED"} if paged else {}),
             **({"observation_mode": "FUTURE_SERIES" if scheduled else "BOUNDED_SERIES"} if sampled or scheduled else {}),
         },
         ensure_ascii=False,
@@ -58,6 +67,7 @@ def execution_action_fingerprints(
                 },
                 sampled=invocation.get("sampling") is not None,
                 scheduled=invocation.get("observation_schedule") is not None,
+                paged=dict(invocation.get("limits") or {}).get("pagination") is not None,
             )
         )
     return tuple(dict.fromkeys(fingerprints))
@@ -72,7 +82,7 @@ def plan_action_fingerprints(plan_payload: Mapping | None) -> tuple[str, ...]:
     except (TypeError, ValueError):
         return ()
     return tuple(
-        action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None, scheduled=action.observation_schedule is not None)
+        action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None, scheduled=action.observation_schedule is not None, paged=action.pagination is not None)
         for action in plan.actions
         if not action.deferred
     )
@@ -89,7 +99,7 @@ def drop_repeated_plan_actions(
         action.action_id
         for action in plan.actions
         if not action.deferred
-        and action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None, scheduled=action.observation_schedule is not None) in executed
+        and action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None, scheduled=action.observation_schedule is not None, paged=action.pagination is not None) in executed
     }
     if not removed:
         return plan, ()

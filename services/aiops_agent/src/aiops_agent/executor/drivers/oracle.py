@@ -125,6 +125,9 @@ class OracleDiagnosticDriver:
             connection.module = "kbot-aiops-db-executor"
             connection.action = operation_id
             cursor = connection.cursor()
+            if limits.pagination is not None:
+                cursor.arraysize = limits.pagination.page_size
+                cursor.prefetchrows = 0
             try:
                 async with asyncio.timeout(
                     limits.statement_timeout_seconds
@@ -146,15 +149,33 @@ class OracleDiagnosticDriver:
                         self._database_type_name(item)
                         for item in database_type_codes
                     )
-                    rows = await cursor.fetchmany(limits.max_result_rows + 1)
-                    row_truncated = len(rows) > limits.max_result_rows
-                    materialized_rows, cell_truncated = (
-                        await self._materialize_supported_values(
-                            rows[: limits.max_result_rows],
-                            database_type_codes=database_type_codes,
-                            max_cell_chars=limits.max_cell_chars,
+                    pagination = None
+                    if limits.pagination is not None:
+                        from .pagination import read_paged_rows
+
+                        async def materialize_row(row):
+                            values, clipped = await self._materialize_supported_values(
+                                (row,), database_type_codes=database_type_codes,
+                                max_cell_chars=limits.max_cell_chars,
+                            )
+                            return values[0], clipped
+
+                        materialized_rows, pagination = await read_paged_rows(
+                            fetch_page=cursor.fetchmany, limits=limits, materialize_row=materialize_row,
                         )
-                    )
+                        rows = materialized_rows
+                        row_truncated = pagination.stop_reason != "EXHAUSTED"
+                        cell_truncated = False
+                    else:
+                        rows = await cursor.fetchmany(limits.max_result_rows + 1)
+                        row_truncated = len(rows) > limits.max_result_rows
+                        materialized_rows, cell_truncated = (
+                            await self._materialize_supported_values(
+                                rows[: limits.max_result_rows],
+                                database_type_codes=database_type_codes,
+                                max_cell_chars=limits.max_cell_chars,
+                            )
+                        )
                 logger.debug(
                     "Oracle 诊断查询完成：tool_id={} duration_ms={} rows={}",
                     operation_id,
@@ -173,6 +194,7 @@ class OracleDiagnosticDriver:
                     db_version=str(connection.version),
                     database_types=database_types,
                     instance_identity=instance_identity,
+                    pagination=pagination,
                 )
                 return result
             finally:

@@ -177,6 +177,8 @@ class DiagnosticExecutorService:
             )
 
     def _effective_limits(self, requested, definition) -> DiagnosticLimits:
+        if requested.pagination is not None:
+            raise DiagnosticGrantError("GRANT_LIMIT_INVALID", "固定目录工具不支持扩展分页上限")
         if (
             requested.statement_timeout_seconds
             > self._hard_limits.statement_timeout_seconds

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
+from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -26,6 +27,21 @@ from .base import (
     MutationDriverError,
     MutationDriverResult,
 )
+from .pagination import read_paged_rows
+
+
+@asynccontextmanager
+async def _diagnostic_cursor(connection, *, paged):
+    """流式游标用独占连接释放；不在关闭时排空超出预算的剩余结果。"""
+    if not paged:
+        async with connection.cursor() as cursor:
+            yield cursor
+        return
+    cursor = await connection.cursor(aiomysql.SSCursor)
+    try:
+        yield cursor
+    finally:
+        connection.close()
 
 
 def _mysql_bound_sql(sql: str) -> str:
@@ -182,7 +198,12 @@ class MySQLDiagnosticDriver:
                     connect_timeout=20,
                     ssl=ssl_context,
                 )
-            async with connection.cursor() as cursor:
+            pagination = None
+            instance_identity = ()
+            if limits.pagination is not None:
+                from aiops_agent.executor.identity import observe_mysql_connection_identity
+                instance_identity = await observe_mysql_connection_identity(connection)
+            async with _diagnostic_cursor(connection, paged=limits.pagination is not None) as cursor:
                 async with asyncio.timeout(
                     limits.statement_timeout_seconds
                 ):
@@ -219,17 +240,23 @@ class MySQLDiagnosticDriver:
                         columns = tuple(
                             str(item[0]).lower() for item in cursor.description
                         )
-                        rows = await cursor.fetchmany(limits.max_result_rows + 1)
-                        truncated = len(rows) > limits.max_result_rows
-            await connection.rollback()
-            from aiops_agent.executor.identity import observe_mysql_connection_identity
-            instance_identity = await observe_mysql_connection_identity(connection)
+                        if limits.pagination is not None:
+                            rows, pagination = await read_paged_rows(fetch_page=cursor.fetchmany, limits=limits)
+                            truncated = pagination.stop_reason != "EXHAUSTED"
+                        else:
+                            rows = await cursor.fetchmany(limits.max_result_rows + 1)
+                            truncated = len(rows) > limits.max_result_rows
+            if limits.pagination is None:
+                await connection.rollback()
+                from aiops_agent.executor.identity import observe_mysql_connection_identity
+                instance_identity = await observe_mysql_connection_identity(connection)
             return DriverQueryResult(
                 columns=columns,
                 rows=tuple(tuple(row) for row in rows[: limits.max_result_rows]),
                 truncated=truncated,
                 db_version=str(connection.get_server_info()),
                 instance_identity=instance_identity,
+                pagination=pagination,
             )
         except TimeoutError as exc:
             raise DiagnosticDriverError("TIMEOUT", retryable=True) from exc

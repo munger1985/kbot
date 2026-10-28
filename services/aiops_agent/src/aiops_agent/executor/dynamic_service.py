@@ -129,6 +129,8 @@ class DynamicDiagnosticExecutorService:
                     "动态查询与 Grant 冻结内容不匹配",
                 )
             limits = self._effective_limits(grant.limits, validated.max_rows)
+            if limits.pagination is not None and getattr(validated, "explain", False):
+                raise DiagnosticGrantError("GRANT_LIMIT_INVALID", "计划采集不支持游标分页")
             async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
                 issued = await self._control_plane.issue_credential(
                     request.grant, trace_id=grant.trace_id
@@ -266,6 +268,7 @@ class DynamicDiagnosticExecutorService:
             max_result_bytes=requested.max_result_bytes,
             max_columns=requested.max_columns,
             max_cell_chars=requested.max_cell_chars,
+            pagination=requested.pagination,
         )
 
     @staticmethod
@@ -294,6 +297,14 @@ class DynamicDiagnosticExecutorService:
                 "动态查询输出列与 Grant 冻结投影不一致",
             )
         rows = tuple(tuple(row) for row in raw.rows)
+        if limits.pagination is not None:
+            if raw.pagination is None or raw.pagination.requested != limits.pagination or len(rows) > limits.max_result_rows:
+                raise DynamicOutputValidationError("OUTPUT_SCHEMA_INVALID", "分页结果缺少匹配的冻结预算")
+        elif raw.pagination is not None:
+            raise DynamicOutputValidationError("OUTPUT_SCHEMA_INVALID", "未授权的分页结果")
+        if raw.pagination is not None and (sum(raw.pagination.returned_page_rows) != len(rows)
+            or raw.truncated != (raw.pagination.stop_reason != "EXHAUSTED")):
+            raise DynamicOutputValidationError("OUTPUT_SCHEMA_INVALID", "分页摘要与原始结果不一致")
         logical_types = tuple(
             DynamicDiagnosticExecutorService._column_type(
                 tuple(row[index] for row in rows),
@@ -362,7 +373,12 @@ class DynamicDiagnosticExecutorService:
             truncated=raw.truncated,
             result_sha256=canonical_sha256(body),
             parameters_sha256=grant.parameters_sha256,
-            warnings=("RESULT_TRUNCATED",) if raw.truncated else (),
+            warnings=(
+                *(("RESULT_TRUNCATED",) if raw.truncated else ()),
+                *((f"同次只读执行游标分批：实际返回 {len(raw.pagination.returned_page_rows)}/{raw.pagination.requested.max_pages} 页，共 {len(normalized_rows)} 行；停止原因 {raw.pagination.stop_reason}；不是多个采样时点，读完有界查询不证明源数据全量",)
+                  if raw.pagination is not None else ()),
+            ),
+            pagination=raw.pagination,
             provenance={
                 "executor_policy": (
                     "oracle-dynamic-readonly.v1"

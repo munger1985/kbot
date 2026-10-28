@@ -9,6 +9,7 @@ import pytest
 
 from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
 from aiops_agent.executor.drivers import DiagnosticDriverError
+from platform_core.contracts.aiops.executor import DiagnosticLimits
 
 
 def deadline(seconds):
@@ -61,7 +62,7 @@ def test_caller_cancellation_propagates_instead_of_becoming_success_or_internal_
                 entered.set()
                 await asyncio.Event().wait()
         task = asyncio.create_task(query())
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=2)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -111,9 +112,10 @@ def test_postgresql_driver_cancellation_terminates_connection(monkeypatch):
                 tls_profile_ref=None, tls_enabled=False),
             secret=SimpleNamespace(values={"username": "diag", "password": "hidden"}),
             sql="SELECT datname FROM pg_stat_database", parameters={},
-            limits=SimpleNamespace(statement_timeout_seconds=1), trace_id="test-cancel",
+            limits=DiagnosticLimits(statement_timeout_seconds=1, max_result_rows=200,
+                max_result_bytes=131072), trace_id="test-cancel",
         ))
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=2)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -146,9 +148,10 @@ def test_oracle_cancel_or_query_error_skips_rollback_and_closes(monkeypatch, can
                 tls_profile_ref=None, tls_enabled=False),
             secret=SimpleNamespace(values={"username": "diag", "password": "hidden"}),
             sql="SELECT sid FROM v$session", parameters={},
-            limits=SimpleNamespace(statement_timeout_seconds=1), trace_id="test-cancel",
+            limits=DiagnosticLimits(statement_timeout_seconds=1, max_result_rows=200,
+                max_result_bytes=131072), trace_id="test-cancel",
         ))
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), timeout=2)
         if cancelled:
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
