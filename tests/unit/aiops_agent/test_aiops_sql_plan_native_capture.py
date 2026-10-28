@@ -12,6 +12,7 @@ from aiops_agent.domain.evidence.sql_plan_replay import SqlPlanReplayRejected
 from aiops_agent.executor.drivers.postgresql import PostgreSQLDiagnosticDriver
 from aiops_agent.executor.readonly_lifecycle import collect_termination
 from aiops_agent.executor.sql_plan_native import NativeSqlPlanCaptureDriver
+from aiops_agent.executor.drivers.sql_plan_catalog import PG_RELATIONS, PG_SAFETY, MYSQL_RELATION, MYSQL_COLUMNS, MYSQL_INDEXES, ORACLE_RELATION, ORACLE_COLUMNS, ORACLE_INDEXES, ORACLE_POLICIES, ORACLE_EXTERNAL
 from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureExchange
 from tests.unit.aiops_agent.test_aiops_sql_plan_replay import material, exchange, PRIVATE
 
@@ -41,6 +42,17 @@ def postgresql(monkeypatch, *, oid=25, close_error=None, plan=None):
         prepare=AsyncMock(return_value=statement), fetchval=AsyncMock(return_value=25),
         close=AsyncMock(side_effect=close_error), terminate=Mock())
     connect = AsyncMock(return_value=connection)
+    async def fetch(sql, *args):
+        if sql == PG_RELATIONS:
+            return [("123", "mes", "t", "r", False, False)]
+        return connection.fetch.return_value
+    async def fetchrow(sql, *args):
+        if sql == PG_SAFETY:
+            return dict.fromkeys(("unsafe_columns", "unsafe_dependencies", "unsafe_indexes", "shadow_functions", "shadow_operators", "unsafe_casts"), False)
+        return connection.fetchrow.return_value
+    connection.fetch.side_effect = fetch
+    connection.fetchrow.side_effect = fetchrow
+    connection.fetchval.side_effect = lambda sql, *args: ["pg_catalog", "mes"] if "current_schemas" in sql else 25
     monkeypatch.setattr("aiops_agent.executor.sql_plan_native.asyncpg.connect", connect)
     monkeypatch.setattr("aiops_agent.executor.sql_plan_native.observe_postgresql_identity",
         AsyncMock(return_value=(("database_oid", "123"),)))
@@ -82,7 +94,7 @@ def test_postgresql_settings_are_keyed_records_not_positional_dictionaries(monke
     document["execution_context"]["settings"] = {"TimeZone": "UTC"}
     original["protected_document"] = json.dumps(document)
     assert call(driver().capture(SqlPlanCaptureExchange.model_validate(original)))[0]
-    assert connection.fetch.call_args.args[1] == ["TimeZone"]
+    assert any(args.args[1] == ["TimeZone"] for args in connection.fetch.call_args_list)
 
 
 @pytest.mark.parametrize("change", ["CONTEXT", "IDENTITY", "SQL_TYPE", "RAW_PLAN"])
@@ -138,6 +150,10 @@ class MySQLCursor:
         self.executed.append((sql, parameters))
         if sql == "SELECT DATABASE(), CURRENT_USER()":
             self.result = [("app", "reader@%")]
+        elif sql == MYSQL_RELATION:
+            self.result = [("BASE TABLE", "InnoDB", "")]
+        elif sql in (MYSQL_COLUMNS, MYSQL_INDEXES):
+            self.result = [(0,)]
         elif sql.startswith("EXPLAIN FORMAT=JSON "):
             self.result = [(json.dumps({"query_block": {"table": {"table_name": "t", "access_type": "ALL",
                 "rows_examined_per_scan": 10, "attached_condition": PRIVATE}}}),)]
@@ -194,7 +210,12 @@ class OracleCursor:
         if self.plan:
             return [(0, None, "SELECT STATEMENT", None, None, None, None, 1, 1),
                 (1, 0, "TABLE ACCESS", "FULL", "MES", "T", "TABLE", 1, 1)]
-        if "ALL_TABLES" in self.executed[-1][0]:
+        sql = self.executed[-1][0]
+        if sql == ORACLE_RELATION:
+            return [("N", "NO", "N", None, "TABLE", None)]
+        if sql in (ORACLE_COLUMNS, ORACLE_INDEXES, ORACLE_POLICIES, ORACLE_EXTERNAL):
+            return [(0,)]
+        if "ALL_TABLES" in sql:
             return [("Y",)] if self.available else []
         return [("app", "mes", "reader")]
 
@@ -221,6 +242,8 @@ def test_oracle_explicit_temporary_plan_table_typed_binds_separate_read_cursor_a
     assert "INTO SYS.PLAN_TABLE$ FOR SELECT ID FROM MES.T WHERE CODE=:plan_bind_1" in sql
     assert binds == {"plan_bind_1": PRIVATE} and PRIVATE not in sql
     assert first.setinputsizes.called and not plan.setinputsizes.called
+    assert first.executed[0][0].endswith("FROM SYS.DUAL")
+    assert any("FROM SYS.ALL_TABLES WHERE" in sql for sql, _ in first.executed)
     assert plan.executed[0][1]["statement_id"] in sql
     assert first.closed and plan.closed
     assert connection.rollback.await_count == 2

@@ -19,6 +19,7 @@ from aiops_agent.executor.drivers.mysql import _mysql_bound_sql
 from aiops_agent.executor.drivers.mysql_cancellation import OwnedMySQLExecution
 from aiops_agent.executor.identity import observe_postgresql_identity, observe_mysql_connection_identity, observe_oracle_identity
 from aiops_agent.executor.readonly_lifecycle import observe_termination
+from aiops_agent.executor.drivers.sql_plan_catalog import validate_postgresql_catalog, validate_mysql_catalog, validate_oracle_catalog
 
 
 def check_context(document, *, database, schema, role, search_path=None, settings=None):
@@ -89,12 +90,16 @@ class NativeSqlPlanCaptureDriver:
             async with asyncio.timeout(exchanged.statement_timeout_seconds):
                 transaction = connection.transaction(readonly=True)
                 await transaction.start()
-                row = await connection.fetchrow("SELECT current_database(), current_schema(), current_user, current_schemas(false)")
+                effective_path = await connection.fetchval("SELECT pg_catalog.current_schemas(true)")
+                if not effective_path or effective_path[0] != "pg_catalog":
+                    raise SqlPlanReplayRejected("PLAN_CATALOG_SEARCH_PATH_UNSAFE")
+                row = await connection.fetchrow("SELECT pg_catalog.current_database(), pg_catalog.current_schema(), current_user, pg_catalog.current_schemas(false)")
                 requested = document["execution_context"].get("settings", {})
                 settings = await connection.fetch("SELECT name, setting FROM pg_catalog.pg_settings WHERE name=ANY($1::text[])", list(requested))
                 check_context(document, database=row[0], schema=row[1], role=row[2], search_path=list(row[3]),
                     settings={item["name"]: item["setting"] for item in settings})
                 identity = check_identity(exchanged.source_identity, await observe_postgresql_identity(connection))
+                await validate_postgresql_catalog(connection, replay)
                 statement = await connection.prepare("EXPLAIN (FORMAT JSON, VERBOSE TRUE, COSTS TRUE, SETTINGS FALSE) " + replay.sql)
                 inferred = statement.get_parameters()
                 if len(inferred) != len(replay.native_types):
@@ -161,6 +166,7 @@ class NativeSqlPlanCaptureDriver:
             if document["execution_context"].get("settings"):
                 raise SqlPlanReplayRejected("PLAN_CONTEXT_SETTINGS_UNSUPPORTED")
             check_context(document, database=row[0], schema=row[0], role=row[1])
+            await validate_mysql_catalog(cursor, replay)
             ownership.ensure_active()
             await cursor.execute("EXPLAIN FORMAT=JSON " + _mysql_bound_sql(replay.sql),
                 {"plan_bind_" + str(index): value for index, value in enumerate(replay.parameters, start=1)})
@@ -188,14 +194,15 @@ class NativeSqlPlanCaptureDriver:
             async with asyncio.timeout(exchanged.statement_timeout_seconds):
                 cursor = connection.cursor()
                 try:
-                    await cursor.execute("SELECT SYS_CONTEXT('USERENV','CON_NAME'), SYS_CONTEXT('USERENV','CURRENT_SCHEMA'), SYS_CONTEXT('USERENV','SESSION_USER') FROM DUAL")
+                    await cursor.execute("SELECT SYS_CONTEXT('USERENV','CON_NAME'), SYS_CONTEXT('USERENV','CURRENT_SCHEMA'), SYS_CONTEXT('USERENV','SESSION_USER') FROM SYS.DUAL")
                     row = (await cursor.fetchmany(1))[0]
                     if document["execution_context"].get("settings"):
                         raise SqlPlanReplayRejected("PLAN_CONTEXT_SETTINGS_UNSUPPORTED")
                     check_context(document, database=row[0], schema=row[1], role=row[2])
                     identity = check_identity(exchanged.source_identity, await observe_oracle_identity(connection))
+                    await validate_oracle_catalog(cursor, replay, schema=row[1])
                     # 显式使用Oracle自带临时计划表，不能解析到用户创建的同名表/触发器。
-                    await cursor.execute("SELECT temporary FROM ALL_TABLES WHERE owner='SYS' AND table_name='PLAN_TABLE$'")
+                    await cursor.execute("SELECT temporary FROM SYS.ALL_TABLES WHERE owner='SYS' AND table_name='PLAN_TABLE$'")
                     available = await cursor.fetchmany(2)
                     if len(available) != 1 or tuple(available[0]) != ("Y",):
                         raise SqlPlanReplayRejected("PLAN_ORACLE_TEMP_TABLE_UNAVAILABLE")

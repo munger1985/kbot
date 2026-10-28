@@ -1,6 +1,6 @@
 """隔离 DB Executor 的内部只读诊断入口。"""
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from aiops_agent.api.dependencies import require_service_scope
 from aiops_agent.actions import MutationGrantError
@@ -13,9 +13,26 @@ from platform_core.contracts.aiops.executor import (
     ReadDiagnosticRequest,
     ReadDiagnosticResult,
 )
+from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureExecute, SqlPlanCaptureResult
 
 
 router = APIRouter(prefix="/internal/v1/db-executor", tags=["DB Executor"])
+
+
+@router.post("/sql-plan-captures", response_model=SqlPlanCaptureResult)
+async def execute_plan_capture(payload: SqlPlanCaptureExecute, request: Request, response: Response) -> SqlPlanCaptureResult:
+    """只接收专用签名Grant；不能从普通SELECT通道转入。"""
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        require_service_scope(request, "db-executor.plan-capture")
+    except HTTPException as exc:
+        exc.headers = {**(exc.headers or {}), "Cache-Control": "no-store"}
+        raise
+    try:
+        return await request.app.state.sql_plan_capture_executor.execute(payload)
+    except DiagnosticGrantError as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code, "message": "计划采集授权无效或已过期"},
+            headers={"Cache-Control": "no-store"}) from None
 
 
 @router.post("/diagnostics", response_model=ReadDiagnosticResult)

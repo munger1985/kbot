@@ -29,6 +29,8 @@ from aiops_agent.executor import (
 )
 from aiops_agent.executor.tls_profiles import TLSProfileResolver
 from aiops_agent.executor.access_observations import QueryAccessObservations
+from aiops_agent.executor.sql_plan_capture import SqlPlanCaptureExecutor
+from aiops_agent.executor.sql_plan_native import NativeSqlPlanCaptureDriver
 from aiops_agent.executor.drivers import (
     MySQLDiagnosticDriver,
     MySQLMutationDriver,
@@ -151,6 +153,14 @@ def create_aiops_executor(
         app.state.service_identity_codec = create_service_identity_codec()
         app.state.diagnostic_executor = diagnostic_executor
         app.state.dynamic_diagnostic_executor = dynamic_diagnostic_executor
+        app.state.sql_plan_capture_executor = SqlPlanCaptureExecutor(
+            grant_codec=create_diagnostic_grant_codec(resolved),
+            control_plane=AIOpsExecutionClient(base_url=resolved.clients.aiops_api.base_url,
+                audience=resolved.clients.aiops_api.audience, caller_service=config.service_name,
+                timeout_seconds=resolved.clients.aiops_api.timeout_seconds, session=client_session),
+            driver=NativeSqlPlanCaptureDriver(postgresql_driver=postgresql_driver),
+            readonly_semaphore=readonly_semaphore,
+        )
         app.state.mutation_executor = mutation_executor
         await runtime.start()
         logger.info(
@@ -180,6 +190,7 @@ def create_aiops_executor(
                 "kbot-aiops-worker": frozenset(
                     {
                         "db-executor.diagnostic",
+                        "db-executor.plan-capture",
                         "db-executor.mutation",
                         "db-executor.status.read",
                     }

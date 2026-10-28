@@ -81,6 +81,28 @@ def test_native_bindings_are_not_interpolated_and_cte_names_are_not_base_objects
     assert replay.sql == (expected or sql) and PRIVATE not in replay.sql
     assert replay.parameters == (PRIVATE,)
     assert PRIVATE not in repr(replay)
+    assert replay.relations == (("MES", "T"),) if engine == "ORACLE" else replay.relations == (("mes", "t"),)
+
+
+def test_native_function_spellings_and_operators_are_preserved_for_catalog_validation():
+    replay = compile_sql_plan_replay(database_type="POSTGRESQL",
+        sql="SELECT date_trunc($1, observed_at), avg(+value), max(~counter) FROM mes.t WHERE value>=1 GROUP BY 1",
+        document=material(("text", "hour")), allowed_objects=("mes.t",))
+    assert replay.functions == ("avg", "date_trunc", "max")
+    assert {"+", "~"}.issubset(replay.operators)
+    assert ">=" in replay.operators and {"=", "<", ">"}.issubset(replay.operators)
+
+
+@pytest.mark.parametrize("engine,sql", [
+    ("ORACLE", "SELECT date_trunc('hour', x) FROM MES.T"),
+    ("MYSQL", "SELECT date_trunc('hour', x) FROM mes.t"),
+    ("POSTGRESQL", "SELECT x COLLATE mes.private_collation FROM mes.t"),
+    ("POSTGRESQL", "SELECT * FROM mes.t TABLESAMPLE custom_sampler(1)"),
+    ("ORACLE", "SELECT /*+ dynamic_sampling(10) */ * FROM MES.T"),
+])
+def test_sqlglot_aliases_cannot_authorize_non_native_functions_or_custom_collations(engine, sql):
+    with pytest.raises(SqlPlanReplayRejected):
+        compile_sql_plan_replay(database_type=engine, sql=sql, document=material(), allowed_objects=("mes.t",))
 
 
 @pytest.mark.parametrize("engine,sql", [
@@ -94,6 +116,8 @@ def test_native_bindings_are_not_interpolated_and_cte_names_are_not_base_objects
     ("POSTGRESQL", "SELECT 'x'::mes.private_type FROM mes.t"),
     ("ORACLE", 'SELECT * FROM "mes"."t"'),
     ("ORACLE", "SELECT * FROM MES.T@remote"),
+    ("ORACLE", "SELECT MES.S.NEXTVAL FROM MES.T"),
+    ("ORACLE", "SELECT MES.PKG.VALUE FROM MES.T"),
     ("MYSQL", "SELECT SLEEP(1) FROM mes.t"),
     ("MYSQL", "SELECT * FROM other.mes.t"),
 ])

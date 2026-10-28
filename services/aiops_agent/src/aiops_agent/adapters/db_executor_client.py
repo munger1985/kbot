@@ -12,6 +12,7 @@ from platform_core.contracts.aiops.executor import (
     ReadDiagnosticRequest,
     ReadDiagnosticResult,
 )
+from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureExecute, SqlPlanCaptureResult
 from platform_core.security import (
     build_scoped_internal_auth_headers,
     create_service_auth_context,
@@ -51,10 +52,25 @@ class DatabaseExecutorClient:
             base_url.rstrip("/")
             + "/internal/v1/db-executor/dynamic-diagnostics"
         )
+        self._plan_capture_url = base_url.rstrip("/") + "/internal/v1/db-executor/sql-plan-captures"
         self._audience = audience
         self._caller = caller_service
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session = session
+
+    async def execute_plan_capture(self, request: SqlPlanCaptureExecute, *, trace_id: str) -> SqlPlanCaptureResult:
+        """独立scope与入口；不重试，不传原SQL、参数或凭据。"""
+        headers = build_scoped_internal_auth_headers(audience=self._audience, caller_service=self._caller,
+            scopes=("db-executor.plan-capture",),
+            context=create_service_auth_context(caller_service=self._caller, trace_id=trace_id))
+        try:
+            async with self._session.post(self._plan_capture_url, headers=headers,
+                json=request.model_dump(mode="json"), timeout=self._timeout) as response:
+                if response.status >= 400:
+                    raise DatabaseExecutorClientError("计划采集执行入口本次不可用")
+                return SqlPlanCaptureResult.model_validate(await response.json())
+        except (aiohttp.ClientError, TimeoutError, ValueError):
+            raise DatabaseExecutorClientError("计划采集执行入口本次不可用") from None
 
     async def execute_diagnostic(
         self, request: ReadDiagnosticRequest, *, trace_id: str

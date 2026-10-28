@@ -208,7 +208,7 @@ class SqlPlanCaptureExecutionService:
                     ("target_id", "actor_id", "agent_id", "agent_version_id"))):
                 raise ExecutionFenceError("PLAN_CAPTURE_RESULT_INVALID")
             scope = owner_scope(source)
-            _, protected = await self._captures._vault.get(uow=uow, scope=scope, request_id=result.request_id)
+            protected_row, protected = await self._captures._vault.get(uow=uow, scope=scope, request_id=result.request_id)
             execution = dict((protected or {}).get("execution") or {})
             lease = await uow.resources.get_lease(receipt.lease_id, lock=True)
             now = self._clock()
@@ -228,19 +228,29 @@ class SqlPlanCaptureExecutionService:
                 or (result.status == "SUCCEEDED" and result.captured_at > lease.execution_deadline_at)):
                 raise ExecutionFenceError("PLAN_CAPTURE_RESULT_INVALID")
             payload = result.model_dump(mode="json")
+            digest = canonical_hash(payload)
+            if execution.get("result_sha256") not in (None, digest):
+                raise ExecutionFenceError("PLAN_CAPTURE_RESULT_CONFLICT")
             for owner, key in ((run.ops_run_id, RESULT_KEY), (source.ops_run_id, RESULT_KEY + ":" + str(result.request_id))):
                 prior = await uow.runs.get_artifact_by_key(ops_run_id=owner, artifact_key=key)
                 if prior is not None:
                     if prior.content_hash != canonical_hash(payload) or prior.payload_json != payload:
                         raise ExecutionFenceError("PLAN_CAPTURE_RESULT_CONFLICT")
+                    if owner == run.ops_run_id:
+                        run.final_artifact_id = prior.artifact_id
                     continue
-                await uow.runs.add_artifact(OpsArtifactEntity(artifact_id=uuid7(), ops_run_id=owner,
+                saved = await uow.runs.add_artifact(OpsArtifactEntity(artifact_id=uuid7(), ops_run_id=owner,
                     ops_task_id=None, artifact_key=key, artifact_type="EVIDENCE", schema_version=RESULT_SCHEMA,
                     payload_json=payload, content_hash=canonical_hash(payload),
                     byte_size=len(json.dumps(payload, ensure_ascii=False).encode()),
                     provenance_json={"producer": "aiops-db-executor", "verification": "EXECUTOR_REPORTED",
                         "source_run_id": str(source.ops_run_id), "approval_sha256": info["approval_sha256"]},
                     trust_level="SOURCE_VERIFIED", security_level=info["security_level"]))
+                if owner == run.ops_run_id:
+                    # 独立回执即使遇到Worker失联/取消也保留为交付物；绝不重开终态或自报整个Run成功。
+                    run.final_artifact_id = saved.artifact_id
+            self._captures._vault.update(row=protected_row, scope=scope,
+                payload={**protected, "execution": {**execution, "result_sha256": digest}})
             await uow.commit()
             return result
 
@@ -257,9 +267,18 @@ async def validate_capture_completion(*, uow, run, task, artifact):
         or result.database_type != info.get("database_type")):
         raise state_conflict("计划采集结果不属于本运行")
     recorded = await uow.runs.get_artifact_by_key(ops_run_id=run.ops_run_id, artifact_key=RESULT_KEY)
-    if result.status == "SUCCEEDED" and (
-        recorded is None or recorded.schema_version != RESULT_SCHEMA or recorded.trust_level != "SOURCE_VERIFIED"
-        or recorded.content_hash != canonical_hash(recorded.payload_json) or recorded.payload_json != artifact.payload_json
-        or dict(recorded.provenance_json or {}).get("verification") != "EXECUTOR_REPORTED"
-    ):
+    minimum_level = info.get("security_level")
+    if type(minimum_level) is not int or not 0 <= minimum_level <= 999:
+        raise state_conflict("计划采集缺少冻结的源密级")
+    # 通用Worker默认密级为1；任何回显/失败副本都不能低于原始SQL证据。
+    artifact.security_level = max(getattr(artifact, "security_level", 0), minimum_level)
+    valid = (recorded is not None and recorded.schema_version == RESULT_SCHEMA and recorded.trust_level == "SOURCE_VERIFIED"
+        and recorded.security_level >= minimum_level
+        and recorded.content_hash == canonical_hash(recorded.payload_json)
+        and dict(recorded.provenance_json or {}).get("verification") == "EXECUTOR_REPORTED"
+        and dict(recorded.provenance_json or {}).get("approval_sha256") == info.get("approval_sha256")
+        and dict(recorded.payload_json or {}).get("capture_run_id") == str(run.ops_run_id)
+        and dict(recorded.payload_json or {}).get("request_id") == info.get("request_id"))
+    if result.status == "SUCCEEDED" and (not valid or recorded.payload_json != artifact.payload_json):
         raise state_conflict("计划采集缺少可复核的隔离执行器回传")
+    return recorded if valid else None

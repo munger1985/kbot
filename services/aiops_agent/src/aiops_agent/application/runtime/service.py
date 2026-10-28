@@ -14,6 +14,7 @@ from aiops_agent.domain.operations.budget import (
     ExecutionBudgetError, ensure_run_resumable, pause_task_budget, resume_task_budget,
     sync_run_budget, task_deadline,
 )
+from aiops_agent.application.sql_plan_execution import WORKFLOW as PLAN_CAPTURE_WORKFLOW, validate_capture_completion
 
 from aiops_agent.application.changes.effect_followup import schedule_effect_followup
 from aiops_agent.application.investigation.future_observation import (
@@ -2057,6 +2058,7 @@ class AIOpsRuntimeService:
                     security_level=command.artifact.security_level,
                 )
             )
+            capture_report = await validate_capture_completion(uow=uow, run=run, task=task, artifact=artifact)
             await schedule_future_observation(uow=uow, run=run, task=task, artifact=artifact, now=now)
             for generated_payload in generated_runbook_artifacts:
                 artifact_id = str(generated_payload["artifact_id"])
@@ -2216,7 +2218,7 @@ class AIOpsRuntimeService:
             ):
                 completed_status = (
                     DomainOpsRunStatus.PARTIAL
-                    if run.workflow_kind == FOLLOWUP_WORKFLOW and artifact.payload_json.get("status") != "SUCCEEDED"
+                    if run.workflow_kind in {FOLLOWUP_WORKFLOW, PLAN_CAPTURE_WORKFLOW} and artifact.payload_json.get("status") != "SUCCEEDED"
                     else DomainOpsRunStatus.COMPLETED
                 )
                 ensure_run_transition(
@@ -2224,7 +2226,7 @@ class AIOpsRuntimeService:
                     completed_status,
                 )
                 run.status = completed_status.value
-                final_artifact = artifact
+                final_artifact = capture_report or artifact
                 if artifact.schema_version == "ACTION_VERIFICATION.v1":
                     final_artifact = (
                         await self._publish_comparison_report(

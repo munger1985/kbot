@@ -24,6 +24,9 @@ class SqlPlanReplay:
     sql: str = field(repr=False)
     parameters: tuple = field(repr=False)
     native_types: tuple[str, ...]
+    relations: tuple[tuple[str, str], ...] = field(repr=False)
+    functions: tuple[str, ...]
+    operators: tuple[str, ...]
 
 
 # 只列已实现的内置函数族；不把用户函数或包函数因名字近似而当成纯函数。
@@ -32,6 +35,24 @@ _SAFE_FUNCTIONS = frozenset({
     "EXTRACT", "FLOOR", "GREATEST", "LEAST", "LENGTH", "LOWER", "MAX", "MIN", "NULLIF", "ROUND",
     "SUM", "TRIM", "UPPER", "SUBSTRING", "STR_POSITION", "STDDEV", "VARIANCE",
 })
+# 语法树的标准函数名不一定是原生名字；例如PG的date_trunc解析为TIMESTAMP_TRUNC。
+# 只接受各引擎确实提供的拼写，随后仍须在原连接核对实际目录及覆盖风险。
+_NATIVE_FUNCTIONS = {
+    "POSTGRESQL": frozenset({"abs", "avg", "cast", "ceil", "ceiling", "coalesce", "count", "date",
+        "date_trunc", "extract", "floor", "greatest", "least", "length", "char_length", "character_length",
+        "lower", "max", "min", "nullif", "round", "sum", "trim", "btrim", "upper", "substring", "substr",
+        "position", "strpos", "stddev", "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp"}),
+    "MYSQL": frozenset({"abs", "avg", "cast", "ceil", "ceiling", "coalesce", "count", "date", "extract",
+        "floor", "greatest", "least", "length", "char_length", "character_length", "lower", "max", "min",
+        "nullif", "round", "sum", "trim", "upper", "substring", "substr", "position", "locate",
+        "stddev", "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp"}),
+    "ORACLE": frozenset({"abs", "avg", "cast", "ceil", "coalesce", "count", "extract", "floor",
+        "greatest", "least", "length", "lower", "max", "min", "nullif", "round", "sum", "trim", "upper",
+        "substr", "instr", "stddev", "variance"}),
+}
+_OPERATORS = {"eq": "=", "neq": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<=",
+    "add": "+", "sub": "-", "mul": "*", "div": "/", "mod": "%", "dpipe": "||",
+    "like": "~~", "ilike": "~~*", "bitwiseand": "&", "bitwiseor": "|", "bitwisexor": "#"}
 _STRINGS = {
     "POSTGRESQL": {"text", "varchar", "bpchar", "name", "uuid"},
     "MYSQL": {"char", "varchar", "text", "tinytext", "mediumtext", "longtext"},
@@ -137,16 +158,51 @@ def compile_sql_plan_replay(*, database_type, sql, document, allowed_objects):
         named_sql = "".join(parts)
         parser = Dialect.get_or_raise(dialect).parser(error_level=ErrorLevel.RAISE, error_message_context=0)
         tree = parser.parse(Dialect.get_or_raise(dialect).tokenize(named_sql), named_sql)[0]
+        functions = set()
+        operators = {"=", "<", ">"}  # 排序、分组和索引路径也可能使用比较操作符。
+        # 通用解析器可能消去一元+，不能据此漏掉原生操作符的实际求值入口。
+        for token in Dialect.get_or_raise(dialect).tokenize(named_sql):
+            spelling = named_sql[token.start:token.end + 1]
+            if re.fullmatch(r"[+*/<>=~!@#%^&|`?\-]+", spelling):
+                operators.add(spelling)
+        if any(isinstance(node, exp.Neg) for node in tree.walk()):
+            operators.add("-")
+        for node in tree.find_all(exp.Binary):
+            if isinstance(node, (exp.And, exp.Or, exp.Is)):
+                continue
+            if node.key not in _OPERATORS:
+                raise SqlPlanReplayRejected("PLAN_OPERATOR_NOT_ALLOWED")
+            operators.add(_OPERATORS[node.key])
+            if node.key in {"like", "ilike"}:
+                operators.add("!" + _OPERATORS[node.key])
         for node in tree.find_all(exp.Func):
             if isinstance(node, (exp.Case, exp.Connector, exp.If)):
                 continue
             name = node.name.upper() if isinstance(node, exp.Anonymous) else node.sql_name().upper()
             if name not in _SAFE_FUNCTIONS or isinstance(node.parent, exp.Dot):
                 raise SqlPlanReplayRejected("PLAN_FUNCTION_NOT_ALLOWED")
+            start, end = node.meta.get("start"), node.meta.get("end")
+            spelling = (named_sql[start:end + 1] if isinstance(start, int) and isinstance(end, int)
+                else node.sql(dialect=dialect).split("(", 1)[0]).strip().lower()
+            if spelling not in _NATIVE_FUNCTIONS[database_type]:
+                raise SqlPlanReplayRejected("PLAN_FUNCTION_NOT_ALLOWED")
+            functions.add(spelling)
+        if any(isinstance(node, exp.Collate) for node in tree.walk()):
+            raise SqlPlanReplayRejected("PLAN_COLLATION_NOT_ALLOWED")
+        if any(isinstance(node, (exp.TableSample, exp.Hint)) for node in tree.walk()):
+            raise SqlPlanReplayRejected("PLAN_PARSE_EXTENSION_NOT_ALLOWED")
         if any(dtype.this == exp.DataType.Type.USERDEFINED for dtype in tree.find_all(exp.DataType)):
             raise SqlPlanReplayRejected("PLAN_NATIVE_TYPE_UNSUPPORTED")
         approved = set(allowed_objects)
+        relations = set()
         for scope in traverse_scope(tree):
+            visible, parent = set(scope.selected_sources), scope.parent
+            while parent is not None:
+                visible.update(parent.selected_sources)
+                parent = parent.parent
+            # 库名/包名/序列伪列不能借Column节点绕过函数和基础对象检查。
+            if any(column.table and column.table not in visible for column in scope.columns):
+                raise SqlPlanReplayRejected("PLAN_OBJECT_SCOPE_UNRESOLVED")
             for _, source in scope.selected_sources.values():
                 if not isinstance(source, exp.Table):
                     continue
@@ -162,6 +218,15 @@ def compile_sql_plan_replay(*, database_type, sql, document, allowed_objects):
                         for part in (source.args["db"], source.this))
                 if reference not in approved:
                     raise SqlPlanReplayRejected("PLAN_OBJECT_SCOPE_DENIED")
+                parts = (source.args["db"], source.this)
+                if database_type == "POSTGRESQL":
+                    relations.add(tuple(part.name if part.args.get("quoted") else part.name.lower() for part in parts))
+                elif database_type == "ORACLE":
+                    relations.add(tuple(part.name if part.args.get("quoted") else part.name.upper() for part in parts))
+                else:
+                    relations.add(tuple(part.name for part in parts))
+        if not relations or len(relations) > 32:
+            raise SqlPlanReplayRejected("PLAN_CATALOG_OBJECT_LIMIT")
         native_types, values = [], []
         for index, parameter in enumerate(parameters, start=1):
             if parameter["position"] != index:
@@ -171,7 +236,8 @@ def compile_sql_plan_replay(*, database_type, sql, document, allowed_objects):
             native_types.append(name)
         # PostgreSQL保留原生$n并按位置传参；另外两库只做词法绑定替换，不插入原值。
         return SqlPlanReplay(sql=sql if database_type == "POSTGRESQL" else named_sql,
-            parameters=tuple(values), native_types=tuple(native_types))
+            parameters=tuple(values), native_types=tuple(native_types), relations=tuple(sorted(relations)),
+            functions=tuple(sorted(functions)), operators=tuple(sorted(operators)))
     except SqlPlanReplayRejected:
         raise
     except (ValueError, TypeError, KeyError, InvalidOperation, RecursionError, OverflowError, SqlglotError):

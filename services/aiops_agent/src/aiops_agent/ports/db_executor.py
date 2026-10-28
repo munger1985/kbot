@@ -7,6 +7,7 @@ from platform_core.contracts.aiops.executor import (
     ReadDiagnosticRequest,
     ReadDiagnosticResult,
 )
+from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureExecute, SqlPlanCaptureResult
 
 
 class DatabaseExecutorClientError(RuntimeError):
@@ -25,6 +26,10 @@ class DatabaseExecutorClientError(RuntimeError):
 
 
 class DatabaseExecutorClientPort(Protocol):
+    async def execute_plan_capture(
+        self, request: SqlPlanCaptureExecute, *, trace_id: str
+    ) -> SqlPlanCaptureResult: ...
+
     async def execute_diagnostic(
         self, request: ReadDiagnosticRequest, *, trace_id: str
     ) -> ReadDiagnosticResult: ...

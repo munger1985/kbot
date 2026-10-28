@@ -286,6 +286,12 @@ def create_runtime_handler_registry(
             )
         )
     if db_executor_client is not None and diagnostic_grant_codec is not None:
+        from .sql_plan_capture import SqlPlanCaptureHandler
+        manifests.append(HandlerManifest(handler_id="sql.plan-capture", version="1",
+            output_schema_version="SQL_PLAN_CAPTURE_RESULT.v1", idempotent=False,
+            implementation=SqlPlanCaptureHandler(executor_client=db_executor_client, grant_codec=diagnostic_grant_codec,
+                grant_issuer=diagnostic_grant_issuer or "", grant_audience=diagnostic_grant_audience or "",
+                grant_ttl_seconds=diagnostic_grant_ttl_seconds)))
         from .database_handlers import (
             DatabaseAggregateHandler,
             DatabaseDiagnosticHandler,
