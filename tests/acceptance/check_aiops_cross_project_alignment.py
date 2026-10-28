@@ -41,6 +41,11 @@ SHARED_CONTRACTS = (
     Path("services/aiops_agent/src/aiops_agent/application/diagnosis/source_validation.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/sql_object_graph.py"),
     Path("services/aiops_agent/src/aiops_agent/domain/evidence/sql_object_graph.py"),
+    Path("tests/unit/aiops_agent/test_aiops_object_dependencies.py"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/contracts.py"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/postgresql/sql/object_dependencies.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/mysql/sql/object_dependencies.sql"),
+    Path("services/aiops_agent/src/aiops_agent/diagnostics/catalog/oracle/sql/object_dependencies.sql"),
     Path("services/aiops_agent/src/aiops_agent/executor/access_observations.py"),
     Path("services/aiops_agent/src/aiops_agent/domain/evidence/native_origin.py"),
     Path("services/aiops_agent/src/aiops_agent/executor/identity.py"),
@@ -359,11 +364,14 @@ def _contract_alignment(root: Path, peer: Path) -> tuple[dict[str, Any], list[st
         local_bytes = local_path.read_bytes()
         peer_bytes = peer_path.read_bytes()
         byte_equal = local_bytes == peer_bytes
-        ast_equal = ast.dump(
-            _tree(local_path), annotate_fields=True, include_attributes=False
-        ) == ast.dump(
-            _tree(peer_path), annotate_fields=True, include_attributes=False
-        )
+        # SQL 等固定工件逐字节比较；不把它们送入 Python AST，也不伪造 AST 校验成功。
+        ast_equal = None
+        if relative.suffix == ".py":
+            ast_equal = ast.dump(
+                _tree(local_path), annotate_fields=True, include_attributes=False
+            ) == ast.dump(
+                _tree(peer_path), annotate_fields=True, include_attributes=False
+            )
         results[str(relative)] = {
             "byte_equal": byte_equal,
             "ast_equal": ast_equal,
@@ -372,7 +380,7 @@ def _contract_alignment(root: Path, peer: Path) -> tuple[dict[str, Any], list[st
         }
         if not byte_equal:
             violations.append(f"共享合同字节不一致: {relative}")
-        if not ast_equal:
+        if ast_equal is False:
             violations.append(f"共享合同 AST 不一致: {relative}")
     return results, violations
 

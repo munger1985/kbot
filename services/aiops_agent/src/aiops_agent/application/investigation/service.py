@@ -1437,6 +1437,8 @@ class TurnPlanningService:
                 "db.sql.execution_plan",
                 "db.sql.object_statistics",
                 "db.sql.display_cursor",
+                "db.sql.object_indexes",
+                "db.sql.object_dependencies",
             )
         if subject["subject_type"] == "MYSQL_DIGEST":
             return (
@@ -1448,6 +1450,8 @@ class TurnPlanningService:
                 "db.mysql.statistics.health",
                 "db.mysql.lock.current",
                 "db.instance.parameters",
+                "db.sql.object_indexes",
+                "db.sql.object_dependencies",
             )
         return (
             "db.postgresql.statement.subjects",
@@ -1459,6 +1463,8 @@ class TurnPlanningService:
             "db.postgresql.lock.tree",
             "db.transaction.long_running",
             "db.instance.parameters",
+            "db.sql.object_indexes",
+            "db.sql.object_dependencies",
         )
 
     @classmethod

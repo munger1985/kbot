@@ -268,6 +268,18 @@ class DiagnosticExecutorService:
             ],
             "rows": normalized_rows,
         }
+        # Top N 是请求本身的排名范围；目录枚举达到上限时则不能宣称已列全。
+        # 未读取额外行不能断言一定还有记录，保守标为可能截断并保留原因。
+        enumeration_limit = None
+        if tool.definition.limit_semantics == "BOUNDED_ENUMERATION":
+            parameter = next(item for item in tool.definition.parameters if item.name == "limit")
+            enumeration_limit = request.parameters.get("limit", parameter.default)
+        enumeration_boundary = (
+            tool.definition.limit_semantics == "BOUNDED_ENUMERATION"
+            and type(enumeration_limit) is int and enumeration_limit > 0
+            and len(normalized_rows) >= enumeration_limit
+        )
+        truncated = raw.truncated or enumeration_boundary
         return DatabaseObservation(
             executor_request_id=request.executor_request_id,
             target_id=grant.target_id,
@@ -290,10 +302,11 @@ class DiagnosticExecutorService:
             ),
             rows=tuple(normalized_rows),
             row_count=len(normalized_rows),
-            truncated=raw.truncated,
+            truncated=truncated,
             result_sha256=canonical_sha256(body),
             parameters_sha256=grant.parameters_sha256,
-            warnings=("RESULT_TRUNCATED",) if raw.truncated else (),
+            warnings=(("RESULT_TRUNCATED",) if truncated else ())
+                + (("ENUMERATION_LIMIT_REACHED",) if enumeration_boundary else ()),
             provenance={
                 "executor_policy": "readonly-catalog.v1",
                 "catalog_hash": grant.capability_snapshot_hash,

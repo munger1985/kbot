@@ -1,6 +1,7 @@
 {
   "catalog_version": "oracle-baseline.v1",
   "tools": [
+    {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_dependencies","description":"精确读取指定 OWNER/视图、物化视图或同义词的可见直接依赖，仅查 ALL_DEPENDENCIES/ALL_SYNONYMS。不猜默认 Schema/PUBLIC 优先级；远端引用标为 REMOTE，禁止跨 DB Link 追查。按已核实本地对象最多展开四层，不还原动态 SQL或实际扫描。","supported_version_min":12,"supported_version_max_exclusive":24,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":128},{"name":"table_name","type":"string","max_length":128},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"0e1807aaabf6f90b5752d5cb2bec70c36df8e039cc7be968e1a0aba2d9d6ef05","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_indexes_19_plus",
       "description":"按指定 owner 和表查询当前用户可见索引列；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",

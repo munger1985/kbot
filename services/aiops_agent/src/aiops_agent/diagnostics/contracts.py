@@ -73,6 +73,7 @@ class DiagnosticToolDefinition(BaseModel):
     max_rows: int = Field(gt=0, le=10000)
     max_bytes: int = Field(gt=0, le=20 * 1024 * 1024)
     cost_level: Literal["LOW", "MEDIUM", "HIGH"]
+    limit_semantics: Literal["TOP_N", "BOUNDED_ENUMERATION"] = "TOP_N"
 
     @model_validator(mode="after")
     def validate_definition(self) -> "DiagnosticToolDefinition":
@@ -81,6 +82,10 @@ class DiagnosticToolDefinition(BaseModel):
         names = [item.name for item in self.parameters]
         if len(names) != len(set(names)):
             raise ValueError("参数名称不能重复")
+        if self.limit_semantics == "BOUNDED_ENUMERATION":
+            limit = next((item for item in self.parameters if item.name == "limit"), None)
+            if limit is None or limit.type != "integer" or limit.minimum is None or limit.minimum < 1:
+                raise ValueError("有界目录枚举必须声明正整数 limit 参数")
         columns = [item.name for item in self.output_columns]
         if len(columns) != len(set(columns)):
             raise ValueError("输出列名称不能重复")

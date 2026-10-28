@@ -10,7 +10,9 @@ from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference
 class SqlObjectRelationship(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal["SQL_TEXT_REFERENCES_OBJECT", "PLAN_ROW_REFERENCES_OBJECT", "CATALOG_INDEX_ON", "CATALOG_DESCENDANT_OF"]
+    kind: Literal["SQL_TEXT_REFERENCES_OBJECT", "PLAN_ROW_REFERENCES_OBJECT", "CATALOG_INDEX_ON",
+                  "CATALOG_DESCENDANT_OF", "CATALOG_VIEW_DEPENDS_ON", "CATALOG_SYNONYM_REFERENCES",
+                  "CATALOG_NAME_MATCH"]
     anchor: EvidenceFieldReference
     related: EvidenceFieldReference
     schema_name: str = Field(min_length=1, max_length=256)

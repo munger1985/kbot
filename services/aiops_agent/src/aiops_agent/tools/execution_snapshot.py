@@ -112,6 +112,7 @@ class ToolExecutionSnapshotBuilder:
                 "version": definition.version,
                 "tool_class": "ORACLE_SQL",
                 "access_status": "UNKNOWN",
+                "limit_semantics": definition.limit_semantics,
                 "required_privileges": list(definition.required_privileges),
                 "required_capabilities": list(definition.required_capabilities),
                 "description": (

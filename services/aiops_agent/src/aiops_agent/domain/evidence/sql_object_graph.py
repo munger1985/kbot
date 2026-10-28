@@ -1,6 +1,7 @@
 """有界生成并重放 SQL 与原生目录对象的关系；不猜 search_path 或运行时扫描方式。"""
 
 from datetime import datetime
+from collections import deque
 
 from sqlglot import exp, parse
 
@@ -16,7 +17,8 @@ _TEXT_TOOLS = {
 _IDENTITIES = {"POSTGRESQL": "query_id", "MYSQL": "digest", "ORACLE": "sql_id"}
 _SCOPES = {"POSTGRESQL": ("system_identifier", "database_oid"),
            "MYSQL": ("server_uuid",), "ORACLE": ("dbid", "container_id")}
-_CATALOG_TOOLS = {"db.sql.object_indexes", "db.sql.object_statistics"}
+_DEPENDENCY_TOOL = "db.sql.object_dependencies"
+_CATALOG_TOOLS = {"db.sql.object_indexes", "db.sql.object_statistics", _DEPENDENCY_TOOL}
 _DIMENSIONS = ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value", "container_id", "dbid")
 
 
@@ -100,6 +102,9 @@ def build_sql_object_graph(*, database_type, subject, evidence):
                   and fact.source_id != "prior_turn.sql_observation")
     relationships = []
     catalog_relationships = []
+    dependency_rows = []
+    remote_nodes = set()
+    remote_references = False
     truncated = len(evidence) > 64 or any(fact.truncated or len(fact.rows) > 40 for fact in facts)
 
     def append(kind, left, left_index, left_field, right, right_index, right_field, schema, relation, limitation):
@@ -114,6 +119,7 @@ def build_sql_object_graph(*, database_type, subject, evidence):
             schema_name=schema, relation_name=relation, limitation=limitation)
         if edge not in destination:
             destination.append(edge)
+        return edge
 
     catalog = []
     for fact in facts:
@@ -129,6 +135,19 @@ def build_sql_object_graph(*, database_type, subject, evidence):
                 catalog.append((fact, index, row, field, schema, relation))
             else:
                 truncated = True
+                continue
+            if fact.tool_id == _DEPENDENCY_TOOL:
+                if row.get("reference_scope") == "REMOTE":
+                    remote_nodes.add((fact.evidence_ref, index, field))
+                elif row.get("reference_scope") == "LOCAL":
+                    target_schema, target_name = row.get("dependency_schema_name"), row.get("dependency_name")
+                    kind = row.get("relation_kind")
+                    if (kind in {"VIEW", "MATERIALIZED VIEW", "SYNONYM"}
+                            and (kind != "SYNONYM" or database_type == "ORACLE")
+                            and all(isinstance(value, str) and 0 < len(value) <= 256 for value in (target_schema, target_name))
+                            and _comparable(fact, row, fact, row, database_type)):
+                        dependency_rows.append((fact, index, row, schema, relation, target_schema, target_name, kind))
+                continue
             if fact.tool_id != "db.sql.object_indexes" or not _comparable(fact, row, fact, row, database_type):
                 continue
             if row.get("index_name"):
@@ -177,24 +196,78 @@ def build_sql_object_graph(*, database_type, subject, evidence):
                     append(kind, fact, index, field, other, other_index, other_field, schema, relation,
                            "语法明确引用该对象；不证明执行时扫描、索引使用或对象累计活动由该 SQL 造成。" if kind == "SQL_TEXT_REFERENCES_OBJECT" else
                            "匹配 SQL/游标/计划的目录计划行；不是指定绑定参数的实际执行计划或实际行数。")
-    # 只冻结由指定 SQL 的已核验名称/计划连接到的对象分量，不带入无关表的索引关系。
-    reachable = {(edge.related.evidence_ref, edge.related.row_index) for edge in relationships}
-    for edge in catalog_relationships:
-        if edge.kind == "CATALOG_DESCENDANT_OF" and (edge.related.evidence_ref, edge.related.row_index) in reachable:
-            if len(relationships) < 128:
-                relationships.append(edge)
-                reachable.add((edge.anchor.evidence_ref, edge.anchor.row_index))
-            else:
-                truncated = True
-    for edge in catalog_relationships:
-        if edge.kind == "CATALOG_INDEX_ON" and (edge.related.evidence_ref, edge.related.row_index) in reachable:
-            if len(relationships) < 128:
-                relationships.append(edge)
-            else:
-                truncated = True
+    # 逐字段追踪对象端点：同一依赖行的源、目标不能因共用行号而被误认成同一个对象。
+    nodes = {(item[0].evidence_ref, item[1], item[3]): item for item in catalog}
+    source_rows = {(fact.evidence_ref, index): (fact, row) for fact in facts for index, row in _rows(fact)}
+    queue = deque()
+    for edge in relationships:
+        node = nodes.get((edge.related.evidence_ref, edge.related.row_index, edge.related.field))
+        source = source_rows.get((edge.anchor.evidence_ref, edge.anchor.row_index))
+        if node is not None and source is not None:
+            queue.append((node, source[0], source[1], 0))
+    expanded = set()
+
+    def retain(edge):
+        nonlocal truncated
+        if edge in relationships:
+            return True
+        if len(relationships) >= 128:
+            truncated = True
+            return False
+        relationships.append(edge)
+        return True
+
+    def link(kind, left, right, limitation):
+        return retain(SqlObjectRelationship(kind=kind,
+            anchor=EvidenceFieldReference(evidence_ref=left[0].evidence_ref, row_index=left[1], field=left[3]),
+            related=EvidenceFieldReference(evidence_ref=right[0].evidence_ref, row_index=right[1], field=right[3]),
+            schema_name=right[4], relation_name=right[5], limitation=limitation))
+
+    while queue:
+        node, origin, origin_row, depth = queue.popleft()
+        fact, index, row, field, schema, relation = node
+        key = (origin.evidence_ref, schema, relation)
+        if key in expanded:
+            continue
+        expanded.add(key)
+        # 每一跳仍与最初的观测比较，不能靠连续五分钟的中转无限延伸时间范围。
+        matches = [item for item in catalog if item[4:] == (schema, relation)
+                   and _comparable(fact, row, item[0], item[2], database_type)
+                   and _comparable(origin, origin_row, item[0], item[2], database_type)]
+        for matched in matches:
+            if matched[:2] != node[:2] or matched[3] != field:
+                if not link("CATALOG_NAME_MATCH", node, matched,
+                            "同一核验物理范围与近时点的目录名称匹配；不保证 DDL 期间对象生命周期不变，不证明运行时访问。"):
+                    break
+            reference = (matched[0].evidence_ref, matched[1], matched[3])
+            if reference in remote_nodes:
+                remote_references = True
+            for edge in catalog_relationships:
+                if (edge.related.evidence_ref, edge.related.row_index, edge.related.field) != reference:
+                    continue
+                if not retain(edge):
+                    break
+                if edge.kind == "CATALOG_DESCENDANT_OF":
+                    child = nodes.get((edge.anchor.evidence_ref, edge.anchor.row_index, edge.anchor.field))
+                    if child is not None:
+                        queue.append((child, origin, origin_row, depth))
+            for other, other_index, mapped, source_schema, source_name, target_schema, target_name, kind in dependency_rows:
+                if (other.evidence_ref, other_index, "table_name") != reference:
+                    continue
+                if depth >= 4:
+                    truncated = True
+                    continue
+                target = (other, other_index, mapped, "dependency_name", target_schema, target_name)
+                if link("CATALOG_SYNONYM_REFERENCES" if kind == "SYNONYM" else "CATALOG_VIEW_DEPENDS_ON", matched, target,
+                        "原生目录记录的本地依赖；不证明实际扫描、参数适配、视图已内联或物化结果已刷新，不能还原动态 SQL。"):
+                    queue.append((target, origin, origin_row, depth + 1))
+        if len(relationships) >= 128 and queue:
+            truncated = True
+            break
     return SqlObjectGraph(database_type=database_type, subject=subject, relationships=tuple(relationships),
-        truncated=truncated, limitations=("仅覆盖可核验物理数据库范围内的显式名称及当前目录；未解析默认 Schema、动态 SQL、视图展开和代表参数。",
-            "未建立关系不代表 SQL 未访问对象；缺失、未解析或范围未知不能作为否定证据。"))
+        truncated=truncated, limitations=("仅覆盖可核验物理数据库范围内的显式名称、当前目录及最多四层已采集视图/同义词依赖；未解析默认 Schema、运行时动态 SQL和代表参数。",
+            "未建立关系不代表 SQL 未访问对象；缺失、未解析或范围未知不能作为否定证据。",
+            *(("可达目录含远端引用；只保留原始记录，不跨 DB Link、外部服务器或未知物理范围展开。",) if remote_references else ())))
 
 
 def replay_sql_object_graph(graph, evidence):

@@ -102,7 +102,8 @@ def test_oracle_starter_builds_a_typed_single_sql_subject():
     planner = object.__new__(TurnPlanningService)
     planner._record_planning_route = AsyncMock()
     available = tuple({"tool_id": item} for item in
-                      ("db.sql.cursor_details", "db.sql.execution_plan", "db.sql.object_statistics", "db.sql.display_cursor"))
+                      ("db.sql.cursor_details", "db.sql.execution_plan", "db.sql.object_statistics", "db.sql.display_cursor",
+                       "db.sql.object_indexes", "db.sql.object_dependencies"))
     investigation, _, _, _ = asyncio.run(planner._plan_conversation_starter(context=context, available_tools=available, available_playbooks=()))
     assert investigation.task_frame.subject_ref == {"subject_type": "ORACLE_SQL_ID", "sql_id": "6tjx7su0q5ttj"}
 

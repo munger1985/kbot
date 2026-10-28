@@ -1,6 +1,7 @@
 {
   "catalog_version": "mysql-baseline.v1",
   "tools": [
+    {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"MYSQL","variant":"mysql_object_dependencies","description":"按精确 Schema/视图读取 VIEW_TABLE_USAGE 的直接依赖，仅适用于提供此目录的 MySQL 8.0.13+；目录缺失/权限不足报告缺口，不读业务行。按已核实对象逐层取证，最多四层；零行不证明无依赖，不代表实际扫描。","supported_version_min":8,"supported_version_max_exclusive":10,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":64},{"name":"table_name","type":"string","max_length":64},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"20a3b4900361a54d4de33136cadeba2b95cc2df1440b2169a705c3ded6a2a325","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"MYSQL","variant":"mysql_object_indexes_8_plus",
       "description":"按指定 schema 和表查询可见索引列；不提供函数索引表达式；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",
