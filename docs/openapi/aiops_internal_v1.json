@@ -11505,6 +11505,77 @@
         "title": "ProposalView",
         "type": "object"
       },
+      "ReadonlyExecutionFenceReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "execution_deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Deadline At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EXECUTION_GRANT_INVALID",
+                  "EXECUTION_AUTHORIZATION_REVOKED",
+                  "EXECUTION_CANCELLED",
+                  "EXECUTION_LEASE_INVALID",
+                  "EXECUTION_DEADLINE_EXCEEDED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "allowed",
+          "checked_at"
+        ],
+        "title": "ReadonlyExecutionFenceReceipt",
+        "type": "object"
+      },
+      "ReadonlyExecutionFenceRequest": {
+        "additionalProperties": false,
+        "description": "执行端携原始签名与秘密回执核对当前授权，不接受自报 Task 身份。",
+        "properties": {
+          "grant": {
+            "maxLength": 32768,
+            "minLength": 64,
+            "title": "Grant",
+            "type": "string"
+          },
+          "resource_lease": {
+            "$ref": "#/components/schemas/ResourceLeaseReceipt"
+          }
+        },
+        "required": [
+          "grant",
+          "resource_lease"
+        ],
+        "title": "ReadonlyExecutionFenceRequest",
+        "type": "object"
+      },
       "RecordManualResultCommand": {
         "additionalProperties": false,
         "properties": {
@@ -27682,6 +27753,48 @@
         "summary": "Reject Proposal",
         "tags": [
           "AIOps Changes"
+        ]
+      }
+    },
+    "/internal/v1/aiops/readonly-executions:check": {
+      "post": {
+        "description": "只向 Executor 返回当前执行围栏，不签发新的授权或连接材料。",
+        "operationId": "check_readonly_execution_internal_v1_aiops_readonly_executions_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadonlyExecutionFenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadonlyExecutionFenceReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Readonly Execution",
+        "tags": [
+          "AIOps Executions"
         ]
       }
     },

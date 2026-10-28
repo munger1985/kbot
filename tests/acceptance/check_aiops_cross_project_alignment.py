@@ -13,6 +13,11 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/executor/drivers/mysql_cancellation.py"),
+    Path("tests/unit/aiops_agent/test_aiops_mysql_query_cancellation.py"),
+    Path("services/aiops_agent/src/aiops_agent/executor/execution_fence.py"),
+    Path("tests/unit/aiops_agent/test_aiops_execution_fence.py"),
+    Path("tests/support/aiops_resources.py"),
     Path("services/aiops_agent/src/aiops_agent/domain/operations/budget.py"),
     Path("tests/unit/aiops_agent/test_aiops_run_wait_budget.py"),
     Path("services/aiops_agent/src/aiops_agent/adapters/diagnostic_sources/pagination.py"),

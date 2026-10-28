@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aiops_agent.diagnostics.grants import DiagnosticGrantError
-from platform_core.contracts.aiops.executor import CredentialIssueResponse, ResourceLeaseReceipt
+from platform_core.contracts.aiops.executor import CredentialIssueResponse, ResourceLeaseReceipt, ReadonlyExecutionFenceReceipt
 
 
 def resource_receipt(grant):
@@ -24,6 +24,10 @@ def bind_resource_control(control, codec):
             resource_lease=resource_receipt(grant))
     control.issue_credential.side_effect = issue
     control.release_resource = AsyncMock()
+    async def check(_token, receipt, *, trace_id):
+        return ReadonlyExecutionFenceReceipt(allowed=True, checked_at=receipt.execution_deadline_at - timedelta(microseconds=1),
+            execution_deadline_at=receipt.execution_deadline_at)
+    control.check_readonly_execution = AsyncMock(side_effect=check)
     return control
 
 

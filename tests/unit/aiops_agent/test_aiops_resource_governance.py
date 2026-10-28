@@ -21,7 +21,7 @@ from aiops_agent.executor.drivers import DiagnosticDriverError
 from aiops_agent.executor.resource_admission import readonly_credentials
 from aiops_agent.repositories.resource_governance import ResourceGovernanceRepository
 from aiops_agent.workers.resource_admission import ResourceBoundSourceHandler
-from platform_core.contracts.aiops.executor import CredentialIssueResponse, DiagnosticExecutionGrant
+from platform_core.contracts.aiops.executor import CredentialIssueResponse, DiagnosticExecutionGrant, ReadonlyExecutionFenceReceipt
 from platform_core.identity import uuid7
 from tests.support.aiops_resources import resource_receipt, resource_repository
 import aiops_agent.resource_admission as admission_module
@@ -357,7 +357,8 @@ def test_executor_never_queries_without_receipt_or_releases_uncertain_execution(
         if mode == "expired": receipt = receipt.model_copy(update={"execution_deadline_at": now() - timedelta(seconds=1)})
         control = SimpleNamespace(issue_credential=AsyncMock(return_value=CredentialIssueResponse(
             username="readonly", password="hidden", resource_lease=None if mode == "missing" else receipt)),
-            release_resource=AsyncMock())
+            release_resource=AsyncMock(), check_readonly_execution=AsyncMock(return_value=ReadonlyExecutionFenceReceipt(
+                allowed=True, checked_at=now(), execution_deadline_at=grant.expires_at)))
         if mode == "quota":
             control.issue_credential.side_effect = AIOpsExecutionClientError("RESOURCE_QUOTA_TARGET_EXHAUSTED")
         driver = AsyncMock()

@@ -398,6 +398,29 @@ class ResourceReleaseReceipt(AIOpsContract):
     released: Literal[True] = True
 
 
+class ReadonlyExecutionFenceRequest(AIOpsContract):
+    """执行端携原始签名与秘密回执核对当前授权，不接受自报 Task 身份。"""
+    grant: str = Field(min_length=64, max_length=32768, repr=False)
+    resource_lease: ResourceLeaseReceipt = Field(repr=False)
+
+
+class ReadonlyExecutionFenceReceipt(AIOpsContract):
+    allowed: bool
+    reason: Literal["EXECUTION_GRANT_INVALID", "EXECUTION_AUTHORIZATION_REVOKED",
+        "EXECUTION_CANCELLED", "EXECUTION_LEASE_INVALID", "EXECUTION_DEADLINE_EXCEEDED"] | None = None
+    checked_at: UtcDatetime
+    execution_deadline_at: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_execution_fence(self):
+        if self.allowed:
+            if self.reason is not None or self.execution_deadline_at is None or self.execution_deadline_at <= self.checked_at:
+                raise ValueError("有效执行围栏必须有未来期限且不能包含拒绝原因")
+        elif self.reason is None or self.execution_deadline_at is not None:
+            raise ValueError("拒绝执行必须包含原因且不能提供新的有效期限")
+        return self
+
+
 class CredentialIssueResponse(AIOpsContract):
     username: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=4096)

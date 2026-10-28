@@ -424,6 +424,7 @@ def create_aiops_api(
                         "aiops.execution.callback",
                         "aiops.credentials.issue",
                         "aiops.resources.release",
+                        "aiops.readonly.check",
                     }
                 ),
                 "kbot-model-embedding": frozenset({"model.references"}),

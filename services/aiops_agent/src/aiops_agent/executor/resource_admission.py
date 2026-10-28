@@ -8,6 +8,7 @@ from loguru import logger
 
 from aiops_agent.adapters.aiops_execution_client import AIOpsExecutionClientError
 from aiops_agent.executor.drivers import DiagnosticDriverError
+from aiops_agent.executor.execution_fence import readonly_execution_fence
 from aiops_agent.resource_admission import RETRYABLE_RESOURCE_CODES, wait_for_resource
 from platform_core.contracts.aiops.executor import ResourceLeaseReceipt
 
@@ -28,7 +29,9 @@ async def readonly_credentials(control_plane, *, token, grant):
     if remaining <= 0:
         raise DiagnosticDriverError("EXECUTION_DEADLINE_EXCEEDED")
     try:
-        async with asyncio.timeout(remaining):
+        async with asyncio.timeout(remaining), readonly_execution_fence(
+            control_plane, token=token, grant=grant, receipt=receipt,
+        ):
             yield issued
             if datetime.now(timezone.utc) >= receipt.execution_deadline_at:
                 raise DiagnosticDriverError("EXECUTION_DEADLINE_EXCEEDED")

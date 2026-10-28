@@ -14,6 +14,8 @@ from platform_core.contracts.aiops.executor import (
     MutationClaimRequest,
     ResourceLeaseReceipt,
     ResourceReleaseReceipt,
+    ReadonlyExecutionFenceRequest,
+    ReadonlyExecutionFenceReceipt,
 )
 from platform_core.contracts.aiops.internal import EventReceipt
 from platform_core.security import (
@@ -80,6 +82,11 @@ class AIOpsExecutionClient:
         return await self._post(path="/internal/v1/aiops/resources:release",
             payload=receipt.model_dump(mode="json"), scope="aiops.resources.release",
             trace_id=trace_id, response_type=ResourceReleaseReceipt)
+
+    async def check_readonly_execution(self, grant: str, receipt: ResourceLeaseReceipt, *, trace_id: str) -> ReadonlyExecutionFenceReceipt:
+        return await self._post(path="/internal/v1/aiops/readonly-executions:check",
+            payload=ReadonlyExecutionFenceRequest(grant=grant, resource_lease=receipt).model_dump(mode="json"),
+            scope="aiops.readonly.check", trace_id=trace_id, response_type=ReadonlyExecutionFenceReceipt)
 
     async def _post(
         self,

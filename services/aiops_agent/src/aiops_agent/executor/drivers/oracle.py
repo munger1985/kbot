@@ -203,10 +203,17 @@ class OracleDiagnosticDriver:
             if connection is not None:
                 try:
                     connection.cancel()
+                    logger.info("Oracle 只读查询清理：termination_status=CANCEL_REQUESTED")
                 except oracledb.Error:
-                    pass
+                    logger.warning("Oracle 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
             raise
         except TimeoutError as exc:
+            if connection is not None:
+                try:
+                    connection.cancel()
+                    logger.info("Oracle 只读查询清理：termination_status=CANCEL_REQUESTED")
+                except oracledb.Error:
+                    logger.warning("Oracle 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
             error_code = (
                 "TARGET_CONNECTION_TIMEOUT"
                 if phase == "CONNECT"

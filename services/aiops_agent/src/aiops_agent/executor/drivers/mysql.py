@@ -28,10 +28,11 @@ from .base import (
     MutationDriverResult,
 )
 from .pagination import read_paged_rows
+from .mysql_cancellation import OwnedMySQLExecution
 
 
 @asynccontextmanager
-async def _diagnostic_cursor(connection, *, paged):
+async def _diagnostic_cursor(connection, *, paged, owner):
     """流式游标用独占连接释放；不在关闭时排空超出预算的剩余结果。"""
     if not paged:
         async with connection.cursor() as cursor:
@@ -41,7 +42,8 @@ async def _diagnostic_cursor(connection, *, paged):
     try:
         yield cursor
     finally:
-        connection.close()
+        if not owner.stopping:
+            connection.close()
 
 
 def _mysql_bound_sql(sql: str) -> str:
@@ -176,6 +178,31 @@ class MySQLDiagnosticDriver:
         sql_template: str, variant: str, parameters: dict[str, Any],
         limits: DiagnosticLimits, trace_id: str,
     ) -> DriverQueryResult:
+        owner = OwnedMySQLExecution()
+
+        async def operation(ownership):
+            return await self._execute_owned(profile=profile, secret=secret,
+                sql_template=sql_template, variant=variant, parameters=parameters,
+                limits=limits, trace_id=trace_id, owner=ownership)
+
+        async def open_control_connection():
+            # 只在本查询取消时建立一次同凭据清理连接，不获得额外数据库权限。
+            return await aiomysql.connect(
+                host=profile.host, port=profile.port, user=secret.values["username"],
+                password=secret.values["password"], db=profile.database, autocommit=True,
+                connect_timeout=2, ssl=ssl.create_default_context() if profile.tls_enabled else None,
+            )
+
+        try:
+            return await owner.run(operation, open_control_connection=open_control_connection)
+        except TimeoutError as exc:
+            raise DiagnosticDriverError("TIMEOUT", retryable=owner.termination_confirmed) from exc
+
+    async def _execute_owned(
+        self, *, profile: DiagnosticConnectionProfile, secret: ResolvedSecret,
+        sql_template: str, variant: str, parameters: dict[str, Any],
+        limits: DiagnosticLimits, trace_id: str, owner: OwnedMySQLExecution,
+    ) -> DriverQueryResult:
         username = secret.values.get("username")
         password = secret.values.get("password")
         if not username or not password:
@@ -200,14 +227,16 @@ class MySQLDiagnosticDriver:
                 )
             pagination = None
             instance_identity = ()
-            if limits.pagination is not None:
-                from aiops_agent.executor.identity import observe_mysql_connection_identity
-                instance_identity = await observe_mysql_connection_identity(connection)
-            async with _diagnostic_cursor(connection, paged=limits.pagination is not None) as cursor:
-                async with asyncio.timeout(
+            from aiops_agent.executor.identity import observe_mysql_connection_identity
+            instance_identity = await observe_mysql_connection_identity(connection)
+            owner.attach(connection, instance_identity)
+            async with _diagnostic_cursor(connection, paged=limits.pagination is not None, owner=owner) as cursor:
+                async with owner.statement_window(
                     limits.statement_timeout_seconds
                 ):
+                    owner.ensure_active()
                     await cursor.execute("START TRANSACTION READ ONLY")
+                    owner.ensure_active()
                     await cursor.execute(
                         "SET SESSION MAX_EXECUTION_TIME=%s",
                         (limits.statement_timeout_seconds * 1000,),
@@ -217,7 +246,8 @@ class MySQLDiagnosticDriver:
                         samples = []
                         for sample in range(2):
                             if sample:
-                                await asyncio.sleep(_TOP_SQL_SAMPLE_SECONDS)
+                                await owner.pause(_TOP_SQL_SAMPLE_SECONDS)
+                            owner.ensure_active()
                             await cursor.execute(sql, parameters)
                             columns = tuple(
                                 str(item[0]).lower() for item in cursor.description
@@ -236,6 +266,7 @@ class MySQLDiagnosticDriver:
                         )
                         columns = _TOP_SQL_RESULT_COLUMNS
                     else:
+                        owner.ensure_active()
                         await cursor.execute(sql, parameters)
                         columns = tuple(
                             str(item[0]).lower() for item in cursor.description
@@ -247,9 +278,8 @@ class MySQLDiagnosticDriver:
                             rows = await cursor.fetchmany(limits.max_result_rows + 1)
                             truncated = len(rows) > limits.max_result_rows
             if limits.pagination is None:
+                owner.ensure_active()
                 await connection.rollback()
-                from aiops_agent.executor.identity import observe_mysql_connection_identity
-                instance_identity = await observe_mysql_connection_identity(connection)
             return DriverQueryResult(
                 columns=columns,
                 rows=tuple(tuple(row) for row in rows[: limits.max_result_rows]),
@@ -272,6 +302,8 @@ class MySQLDiagnosticDriver:
                 mapped = "QUERY_COLUMN_INVALID"
             elif code in {1049, 2003, 2005, 2013}:
                 mapped = "TARGET_UNREACHABLE"
+            elif code in {1205, 3024}:
+                mapped = "TIMEOUT"
             else:
                 mapped = "EXECUTOR_INTERNAL_ERROR"
             raise DiagnosticDriverError(
@@ -280,7 +312,7 @@ class MySQLDiagnosticDriver:
             ) from exc
         finally:
             if connection is not None:
-                connection.close()
+                await owner.finish(connection)
 
 
 class MySQLMutationDriver:

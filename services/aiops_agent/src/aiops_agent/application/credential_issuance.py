@@ -2,12 +2,12 @@
 
 from datetime import UTC, datetime
 import hashlib
-import secrets
 
 from aiops_agent.diagnostics.grants import DiagnosticGrantError
 from aiops_agent.actions import MutationGrantError
 from aiops_agent.entities import InboxEntity
 from aiops_agent.application.resource_governance import reserve_readonly_resource
+from aiops_agent.application.execution_fence import ExecutionFenceError, validate_diagnostic_fence
 from aiops_agent.domain.operations.budget import task_deadline
 from platform_core.identity import uuid7
 from platform_core.contracts.aiops.executor import CredentialIssueResponse
@@ -49,30 +49,17 @@ class CredentialIssuanceService:
             assert uow.inbox is not None and uow.targets is not None
             assert uow.managed_credentials is not None
             if kind == "DIAGNOSTIC":
-                from aiops_agent.application.investigation.future_observation import FOLLOWUP_WORKFLOW, followup_access_error
-                run = await uow.runs.get_run(ops_run_id=grant.run_id, lock=True)
-                if (run is None or str(run.domain_id) != str(grant.domain_id)
-                    or str(run.target_id) != str(grant.target_id)
-                    or run.cancel_requested_at is not None
-                    or (run.deadline_at is not None and run.deadline_at <= datetime.now(UTC))
-                    or str(run.status) in {"CANCELLED", "CANCELLING", "FAILED", "COMPLETED", "PARTIAL", "EXPIRED"}):
+                try:
+                    run, task, target = await validate_diagnostic_fence(uow=uow, grant=grant, now=datetime.now(UTC))
+                except ExecutionFenceError as exc:
+                    raise CredentialIssueError("CREDENTIAL_GRANT_INVALID") from exc
+            else:
+                target = await uow.targets.get_scoped(
+                    target_id=grant.target_id, domain_id=int(grant.domain_id), lock=True,
+                )
+                if (target is None or int(target.row_version) != int(target_version)
+                    or target.execution_credential_id != credential_id):
                     raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")
-                if run.workflow_kind == FOLLOWUP_WORKFLOW:
-                    if await followup_access_error(uow=uow, run=run, now=datetime.now(UTC)):
-                        raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")
-                task = await uow.runs.get_task(ops_task_id=grant.task_id, lock=True)
-                if (task is None or str(task.ops_run_id) != str(run.ops_run_id)
-                    or str(task.status) != "RUNNING" or task.lease_token is None
-                    or task.lease_until is None or task.lease_until <= datetime.now(UTC)
-                    or task.started_at is None
-                    or not secrets.compare_digest(hashlib.sha256(str(task.lease_token).encode()).hexdigest(), grant.lease_token_hash)):
-                    raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")
-            target = await uow.targets.get_scoped(target_id=grant.target_id, domain_id=int(grant.domain_id), lock=True)
-            if target is None or int(target.row_version) != int(target_version):
-                raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")
-            current_id = target.diagnostic_credential_id if kind == "DIAGNOSTIC" else target.execution_credential_id
-            if current_id != credential_id:
-                raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")
             existing = await uow.inbox.get_by_message(source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, lock=True)
             if existing is not None:
                 raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")

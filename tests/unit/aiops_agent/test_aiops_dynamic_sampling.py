@@ -32,6 +32,7 @@ import aiops_agent.workers.database_handlers as database_module
 import aiops_agent.workers.sampling as sampling_module
 import aiops_agent.executor.dynamic_service as executor_module
 import aiops_agent.executor.resource_admission as resource_module
+import aiops_agent.executor.execution_fence as fence_module
 
 
 QUERIES = {
@@ -147,7 +148,7 @@ def clock(monkeypatch):
         Clock.current += timedelta(seconds=seconds)
         await sleep(0)
 
-    for module in (database_module, sampling_module, executor_module, resource_module):
+    for module in (database_module, sampling_module, executor_module, resource_module, fence_module):
         monkeypatch.setattr(module, "datetime", Clock)
     monkeypatch.setattr(sampling_module.asyncio, "sleep", advance)
     return Clock

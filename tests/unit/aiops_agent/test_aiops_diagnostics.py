@@ -107,6 +107,9 @@ class _TimeoutConnection:
     def cursor(self):
         return self._cursor
 
+    def cancel(self):
+        return None
+
     async def rollback(self):
         return None
 

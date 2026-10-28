@@ -9,6 +9,7 @@ import ssl
 from typing import Any
 
 import asyncpg
+from loguru import logger
 
 from aiops_agent.diagnostics.registry import ResolvedDiagnosticTool
 from aiops_agent.executor.tls_profiles import TLSProfileError, TLSProfileResolver
@@ -18,6 +19,23 @@ from .base import DiagnosticDriverError, DriverQueryResult
 from .pagination import read_paged_rows
 
 _NAMED_BIND = re.compile(r"(?<!:):([a-z][a-z0-9_]*)\b", re.IGNORECASE)
+
+
+async def _cancel_owned_connection(connection):
+    """asyncpg 以原后端密钥发送取消并等待协议关闭；超宽限仅标记未知。"""
+    try:
+        # close 会等候已经发出的 CancelRequest/ReadyForQuery，再关闭原后端连接。
+        # 不能先 terminate，否则会丢掉驱动待发送的取消请求及服务端回执。
+        async with asyncio.timeout(2):
+            await connection.close()
+        logger.info("PostgreSQL 只读查询清理：termination_status=OWN_CONNECTION_CLOSE_ACKNOWLEDGED")
+    except asyncio.CancelledError:
+        connection.terminate()
+        logger.warning("PostgreSQL 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
+        raise
+    except Exception:
+        connection.terminate()
+        logger.warning("PostgreSQL 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
 
 
 class PostgreSQLDiagnosticDriver:
@@ -113,11 +131,12 @@ class PostgreSQLDiagnosticDriver:
                     timeout=20,
                     command_timeout=limits.statement_timeout_seconds,
                     server_settings={
-                        "application_name": "kbot-aiops-diagnostic"
+                        "application_name": "kbot-aiops-diagnostic",
+                        "statement_timeout": str(limits.statement_timeout_seconds * 1000),
                     },
                 )
             version = await connection.fetchval("SHOW server_version")
-            # 独占连接显式管理事务；取消时直接 terminate，不先等待上下文自动回滚。
+            # 独占连接显式管理事务；取消时走原后端密钥协议，不等待事务自动回滚。
             transaction = connection.transaction(readonly=True)
             await transaction.start()
             statement = await connection.prepare(sql)
@@ -157,14 +176,13 @@ class PostgreSQLDiagnosticDriver:
                 pagination=pagination,
             )
         except asyncio.CancelledError:
-            # 取消时不等待正常关闭握手，禁止未完成查询占用连接或迟到返回。
             if connection is not None:
-                connection.terminate()
+                await _cancel_owned_connection(connection)
                 connection = None
             raise
         except TimeoutError as exc:
             if connection is not None:
-                connection.terminate()
+                await _cancel_owned_connection(connection)
                 connection = None
             raise DiagnosticDriverError("TIMEOUT", retryable=True) from exc
         except DiagnosticDriverError:

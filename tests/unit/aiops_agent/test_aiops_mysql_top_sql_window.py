@@ -135,7 +135,7 @@ class MySQLTopSqlDriverTest(unittest.TestCase):
         connection.rollback = AsyncMock()
         connection.get_server_info.return_value = "8.4"
         with patch("aiops_agent.executor.drivers.mysql.aiomysql.connect", new=AsyncMock(return_value=connection)), patch(
-            "aiops_agent.executor.drivers.mysql.asyncio.sleep", new=AsyncMock()
+            "aiops_agent.executor.drivers.mysql.OwnedMySQLExecution.pause", new=AsyncMock()
         ) as sleep:
             result = asyncio.run(MySQLDiagnosticDriver().execute(
                 profile=DiagnosticConnectionProfile(host="localhost", port=3306, tls_enabled=False),

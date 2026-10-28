@@ -240,7 +240,7 @@ def test_three_native_drivers_use_one_query_and_bounded_cursor(monkeypatch, engi
     else:
         cursor = SimpleNamespace(execute=AsyncMock(), fetchmany=paged, description=(("SESSION_ID",),), close=AsyncMock())
         connection = SimpleNamespace(cursor=AsyncMock(return_value=cursor), close=Mock(),
-            rollback=AsyncMock(), get_server_info=Mock(return_value="8.4"))
+            rollback=AsyncMock(), get_server_info=Mock(return_value="8.4"), thread_id=lambda: 17)
         monkeypatch.setattr("aiops_agent.executor.drivers.mysql.aiomysql.connect", AsyncMock(return_value=connection))
         monkeypatch.setattr("aiops_agent.executor.identity.observe_mysql_connection_identity", AsyncMock(return_value=()))
         driver = MySQLDiagnosticDriver()
@@ -271,7 +271,7 @@ def test_native_mysql_paging_closes_connection_on_cancellation(monkeypatch):
     cursor = SimpleNamespace(close=AsyncMock())
     connection = SimpleNamespace(cursor=AsyncMock(return_value=cursor), close=Mock())
     async def run():
-        async with _diagnostic_cursor(connection, paged=True):
+        async with _diagnostic_cursor(connection, paged=True, owner=SimpleNamespace(stopping=False)):
             raise asyncio.CancelledError
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(run())

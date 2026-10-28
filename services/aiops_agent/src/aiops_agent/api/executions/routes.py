@@ -18,6 +18,8 @@ from platform_core.contracts.aiops.executor import (
     MutationClaimRequest,
 )
 from aiops_agent.application.credential_issuance import CredentialIssuanceService, CredentialIssueError
+from aiops_agent.application.execution_fence import ReadonlyExecutionFenceService
+from platform_core.contracts.aiops.executor import ReadonlyExecutionFenceRequest, ReadonlyExecutionFenceReceipt
 from aiops_agent.application.resource_governance import ResourceGovernanceService, ResourceAdmissionError
 from platform_core.contracts.aiops.executor import ResourceLeaseReceipt, ResourceReleaseReceipt
 from platform_core.contracts.aiops.internal import EventReceipt
@@ -99,3 +101,15 @@ async def release_resource(body: ResourceLeaseReceipt, request: Request) -> Reso
     except ResourceAdmissionError as exc:
         raise HTTPException(status_code=403, detail={"code": exc.code}) from exc
     return ResourceReleaseReceipt()
+
+
+@event_router.post("/readonly-executions:check", response_model=ReadonlyExecutionFenceReceipt)
+async def check_readonly_execution(body: ReadonlyExecutionFenceRequest, request: Request) -> ReadonlyExecutionFenceReceipt:
+    """只向 Executor 返回当前执行围栏，不签发新的授权或连接材料。"""
+    require_service_scope(request, "aiops.readonly.check")
+    service = ReadonlyExecutionFenceService(
+        uow_factory=request.app.state.configuration_service._uow_factory,
+        diagnostic_codec=request.app.state.diagnostic_grant_codec,
+        audience="kbot-aiops-db-executor",
+    )
+    return await service.check(body)

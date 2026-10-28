@@ -119,8 +119,8 @@ def test_postgresql_driver_cancellation_terminates_connection(monkeypatch):
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        connection.terminate.assert_called_once()
-        connection.close.assert_not_awaited()
+        connection.terminate.assert_not_called()
+        connection.close.assert_awaited_once()
     asyncio.run(run())
 
 
@@ -160,6 +160,7 @@ def test_oracle_cancel_or_query_error_skips_rollback_and_closes(monkeypatch, can
         else:
             with pytest.raises(DiagnosticDriverError, match="QUERY_TIMEOUT"):
                 await task
+            connection.cancel.assert_called_once()
         cursor.close.assert_called_once()
         connection.rollback.assert_not_awaited()
         connection.close.assert_awaited_once()

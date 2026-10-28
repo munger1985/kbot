@@ -612,11 +612,12 @@ def test_persisted_dynamic_points_use_real_freezer_worker_grants_and_executor(en
     import aiops_agent.executor.dynamic_service as executor_module
     import aiops_agent.executor.diagnostic_deadline as deadline_module
     import aiops_agent.executor.resource_admission as resource_module
+    import aiops_agent.executor.execution_fence as fence_module
     import aiops_agent.diagnostics.grants as grant_module
     from jose import jwt
     from aiops_agent.workers.handlers import create_runtime_handler_registry
 
-    for module in (dynamic_tests, database_module, executor_module, deadline_module, resource_module, grant_module, jwt):
+    for module in (dynamic_tests, database_module, executor_module, deadline_module, resource_module, fence_module, grant_module, jwt):
         monkeypatch.setattr(module, "Clock" if module is dynamic_tests else "datetime", Clock)
 
     async def run():

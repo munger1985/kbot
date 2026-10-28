@@ -173,11 +173,11 @@ def test_optional_probe_skips_when_cleanup_reserve_would_consume_primary_budget(
 
 
 @pytest.mark.parametrize("failure", ["query", "cursor_cleanup"])
-def test_mysql_optional_probe_failure_after_rollback_does_not_discard_primary_rows(monkeypatch, failure):
+def test_mysql_optional_identity_failure_before_query_does_not_discard_primary_rows(monkeypatch, failure):
     from aiops_agent.executor.drivers.mysql import MySQLDiagnosticDriver
     primary = SimpleNamespace(description=(("value",),), execute=AsyncMock(), fetchmany=AsyncMock(return_value=[(7,)]))
     probe = SimpleNamespace(execute=AsyncMock(), fetchmany=AsyncMock(return_value=[(MYSQL_UUID,)]))
-    connection = SimpleNamespace(rollback=AsyncMock(), close=Mock(), get_server_info=lambda: "8.4")
+    connection = SimpleNamespace(rollback=AsyncMock(), close=Mock(), get_server_info=lambda: "8.4", thread_id=lambda: 17)
     if failure == "query":
         probe.execute.side_effect = TimeoutError()
 
@@ -186,13 +186,13 @@ def test_mysql_optional_probe_failure_after_rollback_does_not_discard_primary_ro
             self.cursor = cursor
         async def __aenter__(self):
             if self.cursor is probe:
-                connection.rollback.assert_awaited_once()
+                connection.rollback.assert_not_awaited()
             return self.cursor
         async def __aexit__(self, *args):
             if self.cursor is probe and failure == "cursor_cleanup":
                 raise ConnectionError("可选游标已断开")
 
-    connection.cursor = Mock(side_effect=[CursorContext(primary), CursorContext(probe)])
+    connection.cursor = Mock(side_effect=[CursorContext(probe), CursorContext(primary)])
     monkeypatch.setattr("aiops_agent.executor.drivers.mysql.aiomysql.connect", AsyncMock(return_value=connection))
     raw = asyncio.run(MySQLDiagnosticDriver().execute_dynamic(
         profile=SimpleNamespace(host="db.internal", port=3306, database="app", tls_enabled=False, tls_profile_ref=None),
