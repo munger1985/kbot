@@ -215,6 +215,7 @@ async def revalidate_future_observation_inputs(*, uow, run_id, artifacts, select
 async def validate_future_observation_facts(*, uow, run, payload):
     """即使没有 Finding/对象图，报告或案例引用后台时点也必须重放原始来源。"""
     from aiops_agent.application.diagnosis.provenance import database_provenance
+    from aiops_agent.application.diagnosis.sql_plans import database_cursor_plan
     from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 
     sources = {}
@@ -243,6 +244,7 @@ async def validate_future_observation_facts(*, uow, run, payload):
                 or fact.row_count != observation.row_count or fact.truncated != observation.truncated
                 or fact.columns != tuple(column.model_dump(mode="json") for column in observation.columns)
                 or fact.provenance != database_provenance(observation) or fact.object_access != observation.object_access
+                or fact.sql_plan != database_cursor_plan(observation)[0]
                 or fact.pagination != observation.pagination
                 or fact.model_dump(mode="json")["rows"] != fact.model_copy(update={"rows": observation.rows}).model_dump(mode="json")["rows"]):
                 return False

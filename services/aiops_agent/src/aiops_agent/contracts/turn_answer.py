@@ -58,12 +58,20 @@ class TurnEvidenceFact(BaseModel):
 
     @model_validator(mode="after")
     def validate_series_budget(self):
-        if self.sql_plan is not None and (
+        if self.sql_plan is not None and self.sql_plan.origin == "USER_UPLOAD" and (
             self.trust_level != "USER_PROVIDED" or self.tool_id != "artifact.sql_plan.import"
             or self.measurement_semantics != "NOT_APPLICABLE" or self.provenance is not None
             or self.row_count != len(self.sql_plan.nodes) or self.row_count != len(self.rows) or self.truncated
         ):
             raise ValueError("导入计划必须保留人工来源和完整安全投影，不能自证数据库来源")
+        if self.sql_plan is not None and self.sql_plan.origin == "DATABASE_CURSOR" and (
+            self.trust_level != "SOURCE_VERIFIED" or self.tool_id != "db.oracle.statement.plan"
+            or self.measurement_semantics != "CURRENT_ACTIVITY" or self.provenance is None
+            or self.sql_plan.observed_at != self.captured_at or self.row_count != len(self.sql_plan.nodes)
+            or self.row_count != len(self.rows) or self.truncated
+            or self.sql_plan.physical_identity != dict(self.provenance.physical_identity)
+        ):
+            raise ValueError("缓存计划必须与受控工具、行数、采集时间和原生来源一致")
         if self.source_pagination is not None and (
             self.pagination is not None or sum(self.source_pagination.returned_page_rows) != self.row_count
             or self.row_count != len(self.rows)

@@ -35,6 +35,7 @@ from aiops_agent.application.diagnosis import (
 )
 from aiops_agent.application.display_dictionary import (
     dictionary_for_payload,
+    display_field_name,
     display_name,
     display_text,
 )
@@ -42,7 +43,7 @@ from aiops_agent.application.investigation.projection import direct_list_result_
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref
-from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact
+from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, database_cursor_plan
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
@@ -667,6 +668,7 @@ class DbaEvidenceAssessmentHandler:
                 if is_turn_evidence_outcome(result, outcome):
                     observation = outcome.observation
                     assert observation is not None
+                    sql_plan, plan_warnings = database_cursor_plan(observation)
                     facts.append(
                         TurnEvidenceFact(
                             evidence_ref=(
@@ -693,7 +695,7 @@ class DbaEvidenceAssessmentHandler:
                             row_count=observation.row_count,
                             truncated=observation.truncated,
                             followup_run_id=dict(dict(artifact.get("provenance") or {}).get("future_observation_source") or {}).get("background_run_id"),
-                            warnings=(*observation.warnings, *(
+                            warnings=(*observation.warnings, *plan_warnings, *(
                                 (f"本轮按需采样：实际完成 {result.sampling.completed_count}/{result.sampling.requested.count} 次；间隔至少 {result.sampling.requested.interval_seconds} 秒；仅代表实际采集时点，不覆盖请求的历史窗口",)
                                 if result.sampling is not None else ()
                             ), *(
@@ -704,6 +706,7 @@ class DbaEvidenceAssessmentHandler:
                                 if dict(dict(artifact.get("provenance") or {}).get("future_observation_source") or {}).get("search_truncated") else ()
                             )),
                             provenance=database_provenance(observation),
+                            sql_plan=sql_plan,
                             object_access=observation.object_access,
                             pagination=observation.pagination,
                         )
@@ -2932,16 +2935,16 @@ class DbaAnswerComposeHandler:
                     and fact is not top_sql_primary
                 ):
                     primary["presentation_role"] = "SUPPORTING"
-                if primary is not None:
+                if primary is not None or fact.tool_id in {"db.oracle.statement.plan", "db.oracle.statement.bind_metadata"}:
                     columns = [
                         {
                             **column,
                             "label": "已执行（秒）"
-                            if primary["result_kind"] == "CURRENT_SQL_LIST"
+                            if primary and primary["result_kind"] == "CURRENT_SQL_LIST"
                             and str(column.get("name") or "").lower() == "elapsed_seconds"
                             else _PRIMARY_COLUMN_LABELS.get(
                                 str(column.get("name") or "").lower(),
-                                str(column.get("name") or ""),
+                                display_field_name(column.get("name") or "") if fact.tool_id in {"db.oracle.statement.plan", "db.oracle.statement.bind_metadata"} else str(column.get("name") or ""),
                             ),
                         }
                         for column in columns

@@ -28,6 +28,61 @@ def _match(declared, expected, required):
     return "DECLARED_MATCH" if all(key in declared and key in expected for key in required) else "INCOMPLETE"
 
 
+def cursor_physical_match(document_physical, expected_physical, document_subject, subject):
+    """Root 可读取其他容器；不能把本地连接启动代次借给 RAC 的另一个实例。"""
+    if not document_physical or not expected_physical:
+        return "INCOMPLETE"
+    for physical, identity in ((document_physical, document_subject), (expected_physical, subject)):
+        if not all(key in identity for key in ("dbid", "container_id", "inst_id")):
+            return "INCOMPLETE"
+        if "dbid" not in physical:
+            return "INCOMPLETE"
+        if not _same(physical["dbid"], identity["dbid"]):
+            return "MISMATCH"
+        if "container_id" not in physical:
+            return "INCOMPLETE"
+        if str(physical["container_id"]) != "1" and not _same(physical["container_id"], identity["container_id"]):
+            return "MISMATCH"
+        if "instance_number" not in physical or not _same(physical["instance_number"], identity["inst_id"]):
+            return "INCOMPLETE"
+    keys = ("dbid", "instance_number", "instance_started_at")
+    match = _match(document_physical, expected_physical, keys)
+    return "SOURCE_MATCH" if match == "DECLARED_MATCH" else match
+
+
+def _near(left, right):
+    try:
+        a = datetime.fromisoformat(left.replace("Z", "+00:00"))
+        b = datetime.fromisoformat(right.replace("Z", "+00:00"))
+        return a.tzinfo is not None and b.tzinfo is not None and abs((a - b).total_seconds()) <= 300
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _bind_refs(document, subject, evidence, anchor):
+    if anchor is None:
+        return ()
+    results = []
+    for fact in evidence:
+        if (fact.tool_id != "db.oracle.statement.bind_metadata" or fact.trust_level != "SOURCE_VERIFIED"
+            or fact.measurement_semantics != "CURRENT_ACTIVITY" or fact.source_id == "prior_turn.sql_observation"
+            or fact.truncated or fact.row_count == 0 or fact.provenance is None
+            or not _near(fact.captured_at, document.observed_at)):
+            continue
+        names = [str(column.get("name") or "").lower() for column in fact.columns]
+        if len(names) != len(set(names)):
+            continue
+        if not all(len(row) == len(names) and _match(dict(zip(names, row, strict=True)), subject, _SUBJECT_KEYS["ORACLE"]) == "DECLARED_MATCH" for row in fact.rows):
+            continue
+        physical = dict(fact.provenance.physical_identity)
+        if cursor_physical_match(document.physical_identity, physical, document.subject, subject) != "SOURCE_MATCH":
+            continue
+        results.append(fact.evidence_ref)
+        if len(results) == 4:
+            break
+    return tuple(results)
+
+
 def assess_sql_plans(*, database_type, subject, evidence):
     anchors = []
     required = _SUBJECT_KEYS[database_type]
@@ -53,26 +108,43 @@ def assess_sql_plans(*, database_type, subject, evidence):
     anchor = anchors[0] if anchors else None
     expected_physical = dict(anchor.provenance.physical_identity) if anchor and anchor.provenance else {}
     results = []
-    # 每主体最多四份计划；仍保留原始附件清单，不声称检索了所有计划。
-    for fact in [item for item in evidence if item.sql_plan is not None][:4]:
+    # 每主体优先保留匹配材料；其他主体的前四份不能挤掉当前主体的有效计划。
+    plans = [item for item in evidence if item.sql_plan is not None]
+    plans.sort(key=lambda item: (
+        item.sql_plan.database_type != database_type,
+        _match(item.sql_plan.subject, subject, required) != "DECLARED_MATCH",
+    ))
+    for fact in plans[:4]:
         document = fact.sql_plan
+        native = document.origin == "DATABASE_CURSOR"
         identity_match = _match(document.subject, subject, required) if document.database_type == database_type else "MISMATCH"
         physical_match = _match(document.physical_identity, expected_physical, _PHYSICAL_KEYS[database_type]) if document.database_type == database_type else "MISMATCH"
+        if native and document.database_type == database_type:
+            identity_match = "SOURCE_MATCH" if identity_match == "DECLARED_MATCH" else identity_match
+            physical_match = cursor_physical_match(document.physical_identity, expected_physical, document.subject, subject)
         time_relation = "UNKNOWN"
-        if anchor and document.declared_captured_at:
+        plan_time = document.observed_at if native else document.declared_captured_at
+        if anchor and plan_time:
             try:
-                age = abs((datetime.fromisoformat(anchor.captured_at.replace("Z", "+00:00")) - datetime.fromisoformat(document.declared_captured_at)).total_seconds())
-                time_relation = "DECLARED_NEAR_OBSERVATION" if age <= 300 else "HISTORICAL_OR_DIFFERENT_TIME"
+                age = abs((datetime.fromisoformat(anchor.captured_at.replace("Z", "+00:00")) - datetime.fromisoformat(plan_time)).total_seconds())
+                time_relation = ("SOURCE_NEAR_OBSERVATION" if native else "DECLARED_NEAR_OBSERVATION") if age <= 300 else "HISTORICAL_OR_DIFFERENT_TIME"
             except (ValueError, TypeError):
                 pass
         results.append(SqlPlanAssessment(evidence_ref=fact.evidence_ref, anchor_ref=anchor.evidence_ref if anchor else None, database_type=database_type,
+            origin=document.origin,
             subject=subject, identity_match=identity_match, physical_match=physical_match, time_relation=time_relation,
-            runtime_statistics=document.runtime_statistics, node_count=len(document.nodes), limitations=(
+            bind_metadata_refs=_bind_refs(document, subject, evidence, anchor) if native and identity_match == physical_match == "SOURCE_MATCH" and time_relation == "SOURCE_NEAR_OBSERVATION" else (),
+            runtime_statistics=document.runtime_statistics, node_count=len(document.nodes), limitations=((
+                "已核验的数据库来源仅证明缓存计划或 LAST 行源；采集时点不等于执行时点，不自证过去指定执行或参数。",
+                "绑定元数据仅为位置、类型、采集标记及原生时间；不是绑定值或代表性证明。",
+                "Root 的行容器需显式核验；RAC 远端实例不可借用本地连接启动代次。",
+                "缺失或零启动行源不能当作实际执行；LAST 各节点也不保证来自一个可定位的完整执行。",
+            ) if native else (
                 "来源为用户材料；身份或时间声明一致不等于来源已核验，不可据此确认生产访问路径或原因。",
                 "参数仅保留类型；代表性、环境以及与某次执行的绑定关系均未核验。",
                 "估算行数偏差按引擎的每循环/每启动语义计算；零循环或零估算不计算比率。",
                 "每主体最多投影四份已有计划；计划缺失或不匹配不阻断其他诊断。",
-            )))
+            ))))
     return tuple(results)
 
 

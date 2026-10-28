@@ -226,7 +226,8 @@ def _parse(raw):
             if depth > 32 or row["id"] in visited:
                 _reject()
             visited.add(row["id"])
-            measured = metrics(row, {"cardinality": "estimated_rows", "cost": "optimizer_cost", "last_starts": "actual_starts", "last_output_rows": "actual_rows_total", "last_elapsed_time": "actual_elapsed_time_us"})
+            measured = metrics(row, {"cardinality": "estimated_rows", "cost": "optimizer_cost", "last_starts": "actual_starts", "last_output_rows": "actual_rows_total", "last_elapsed_time": "actual_elapsed_time_us",
+                "last_cr_buffer_gets": "actual_consistent_gets", "last_disk_reads": "actual_disk_reads", "last_disk_writes": "actual_disk_writes"})
             if Decimal(measured.get("actual_starts", "0")) > 0 and "actual_rows_total" in measured:
                 with localcontext() as context:
                     context.prec = 28

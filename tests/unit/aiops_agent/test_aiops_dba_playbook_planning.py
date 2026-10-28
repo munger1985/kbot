@@ -3104,9 +3104,6 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         self.assertEqual(
             [
                 "db.sql.cursor_details",
-                "db.sql.execution_plan",
-                "db.sql.object_statistics",
-                "db.sql.display_cursor",
             ],
             [item.tool_id for item in output.plan.actions],
         )

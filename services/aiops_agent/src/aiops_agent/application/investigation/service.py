@@ -1434,9 +1434,9 @@ class TurnPlanningService:
         if subject["subject_type"] == "ORACLE_SQL_ID":
             return (
                 "db.sql.cursor_details",
-                "db.sql.execution_plan",
+                "db.oracle.statement.plan",
+                "db.oracle.statement.bind_metadata",
                 "db.sql.object_statistics",
-                "db.sql.display_cursor",
                 "db.sql.object_indexes",
                 "db.sql.object_dependencies",
             )
@@ -1581,28 +1581,16 @@ class TurnPlanningService:
                 MeasurementSemantics.CUMULATIVE_SINCE_LOAD,
                 False,
             ),
-            (
-                "完整执行计划、对象、估算基数和谓词",
-                "db.sql.execution_plan",
-                {"sql_id": subject_value, "limit": 500},
-                MeasurementSemantics.CURRENT_ACTIVITY,
-                False,
-            ),
-            (
-                "执行计划所访问表的统计信息状态",
-                "db.sql.object_statistics",
-                {"sql_id": subject_value},
-                MeasurementSemantics.CURRENT_ACTIVITY,
-                False,
-            ),
-            (
-                "DBMS_XPLAN ALLSTATS LAST 格式化执行计划",
-                "db.sql.display_cursor",
-                {"sql_id": subject_value},
-                MeasurementSemantics.CURRENT_ACTIVITY,
-                True,
-            ),
             )
+            cursor_keys = ("sql_id", "dbid", "inst_id", "container_id", "child_number", "plan_hash_value")
+            if all(key in subject for key in cursor_keys):
+                cursor_input = {key: subject[key] for key in cursor_keys}
+                action_specs += (
+                    ("精确游标的缓存计划和 LAST 行源统计", "db.oracle.statement.plan", cursor_input,
+                        MeasurementSemantics.CURRENT_ACTIVITY, True),
+                    ("精确游标的绑定位置和类型元数据（不读取值）", "db.oracle.statement.bind_metadata", cursor_input,
+                        MeasurementSemantics.CURRENT_ACTIVITY, True),
+                )
         elif subject["subject_type"] == "MYSQL_DIGEST":
             schema_name = str(subject.get("schema_name") or "")
             action_specs = (

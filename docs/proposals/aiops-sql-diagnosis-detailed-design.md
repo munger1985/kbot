@@ -372,12 +372,46 @@ MySQL 普通 JSON 保持估算口径，优化器成本不当作毫秒，表名�
 Oracle 索引对象不误投影为表名。解析的运行统计按 NONE/PARTIAL/PRESENT 保存。
 逐节点证据使用中文列标签，并保留原生字段含义。
 
-每主体有界核对前四份已有计划，匹配结果进入 SQL Evidence Bundle 和不可变调查记录；
+每主体有界核对至多四份已有计划，优先保留该完整主体的匹配计划，不能被其他主体的前四份材料挤掉；
+匹配结果进入 SQL Evidence Bundle 和不可变调查记录；
 多 SQL 请求分别核验，不能继承第一条 SQL 的结果。记录冻结计划材料与数据库身份锚点引用，
 报告/案例重算匹配并回查同 Run 原始 USER_UPLOAD_EXTRACT/DBA_TOOL_RESULT、
 哈希、信任、时间、节点和行值，不接受一份自述一致的副本。
 人工计划支持具体待核验假设；不能凭上传计划确认生产访问路径或根因。
 此增量不关闭代表参数安全使用、独立审批的计划采集、运行时动态对象和真实三库验收。
+
+### 5.4 Oracle 完整游标的现有缓存计划与绑定元数据
+
+`db.oracle.statement.plan@1.0.0` 和 `db.oracle.statement.bind_metadata@1.0.0`
+只读取 Oracle 19–26 现有动态性能视图，不调用 EXPLAIN、DBMS_XPLAN、AWR，不重放 SQL。
+两个工具均要求 sql_id/dbid/inst_id/container_id/child_number/plan_hash_value 六维必填；
+只给 SQL_ID 时先由 cursor_details 枚举统计主体，不将其他实例/容器/子游标计划混用。
+精确身份齐全时基线可读取两个工具，完整调查仍按问题选择所有已授权证据，不把计划设为万能前提。
+
+计划读取 GV$SQL_PLAN_STATISTICS_ALL 的节点、目录对象、估算和可得 LAST 行源，
+不读取谓词、projection、SQL 或绑定值。最多读取129行，结构化文档最多128节点；
+触及枚举边界、混合身份或树/数值损坏时保留数据库原件和明确缺口，不生成完整计划投影。
+绑定元数据使用 GV$SQL_BIND_CAPTURE 与 GV$SQL，按实例、容器、SQL、子游标及 child_address 连接，
+再核对六维身份；最多65行，不读绑定名、VALUE_STRING、VALUE_ANYDATA。
+last_captured 保留数据库无时区原生时间，不擅自解释为 UTC 或指定执行时间。
+两工具各10秒，分别256 KiB及128 KiB，沿用签名 Grant、当前凭据和持续授权围栏。
+目录声明 CURRENT_ACTIVITY 观测口径，规划器或 Playbook 不能将其改标为历史窗口/累计统计；
+错误在冻结执行前拒绝，不等待取证完成后才丢失结果。
+
+正式 Worker 从原始 DatabaseObservation 重建 origin=DATABASE_CURSOR 的安全文档，
+observed_at 为采集时间，与上传计划的 declared_captured_at 分开。完整身份和同连接物理来源匹配时
+可给 SOURCE_MATCH，但 production_execution_verified 仍为 false，代表参数仍为 UNVERIFIED。
+Root 连接仅在行显式带 CON_ID 时关联对应容器；远端 RAC 实例不能借用本地连接启动代次。
+绑定元数据只在同游标、非截断、同物理范围和五分钟内关联；LAST 与 bind capture 不是同次执行证明。
+
+LAST 输出行数按 starts 归一与估算比较；各节点统计不保证可定位为某个完整指定执行。
+缺少 LAST 不否认缓存估算计划，零行不当作没有业务执行。报告、案例及未来观察复用均重新读取
+原始工具 Artifact 并重建安全文档与匹配结果；删除/篡改派生计划或绑定引用不能自证。
+用户上传仍是 USER_PROVIDED，不可通过改 origin 获得数据库信任。
+
+2026-10-28 Oracle 19.3 管理通道只读检查，原模板从同一现有完整游标读取17行计划、2行绑定元数据。
+真实17行计划通过安全解析生成17节点，运行统计 NONE；不补造实际行源。
+此结果不代替 Agent PDB 绑定凭据、真实模型和浏览器验收；未改权限、Schema、采集开关或线上 Prompt。
 
 ## 6. 可发现的信息资源与受控查询
 

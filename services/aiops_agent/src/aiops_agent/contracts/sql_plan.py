@@ -23,11 +23,12 @@ class SqlPlanDocument(BaseModel):
 
     schema_version: Literal["SQL_PLAN_DOCUMENT.v1"] = "SQL_PLAN_DOCUMENT.v1"
     database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
-    origin: Literal["USER_UPLOAD"] = "USER_UPLOAD"
+    origin: Literal["USER_UPLOAD", "DATABASE_CURSOR"] = "USER_UPLOAD"
     native_format: Literal["POSTGRESQL_EXPLAIN_JSON", "MYSQL_EXPLAIN_JSON", "ORACLE_PLAN_ROWS"]
     subject: dict[str, str | bool | None] = Field(default_factory=dict, max_length=8)
     physical_identity: dict[str, str] = Field(default_factory=dict, max_length=8)
     declared_captured_at: str | None = Field(default=None, max_length=64)
+    observed_at: str | None = Field(default=None, max_length=64)
     parameter_types: tuple[Literal["NULL", "BOOLEAN", "NUMBER", "STRING", "ARRAY", "OBJECT"], ...] = Field(default=(), max_length=64)
     parameter_values_available: Literal[False] = False
     runtime_statistics: Literal["NONE", "PARTIAL", "PRESENT"] = "NONE"
@@ -45,6 +46,13 @@ class SqlPlanDocument(BaseModel):
         expected = {"POSTGRESQL": "POSTGRESQL_EXPLAIN_JSON", "MYSQL": "MYSQL_EXPLAIN_JSON", "ORACLE": "ORACLE_PLAN_ROWS"}
         if self.native_format != expected[self.database_type]:
             raise ValueError("计划原生格式与引擎不一致")
+        if self.origin == "DATABASE_CURSOR" and (
+            self.database_type != "ORACLE" or self.declared_captured_at is not None
+            or self.observed_at is None or self.parameter_types
+        ):
+            raise ValueError("缓存计划仅能绑定受控 Oracle 观测，不可携带人工声明时间或绑定原值")
+        if self.origin == "USER_UPLOAD" and self.observed_at is not None:
+            raise ValueError("人工计划不能自行声明数据库来源采集时间")
         return self
 
 
@@ -55,11 +63,22 @@ class SqlPlanAssessment(BaseModel):
     anchor_ref: str | None = None
     database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
     subject: dict[str, str | int | bool | None] = Field(max_length=16)
-    identity_match: Literal["DECLARED_MATCH", "MISMATCH", "INCOMPLETE"]
-    physical_match: Literal["DECLARED_MATCH", "MISMATCH", "INCOMPLETE"]
-    time_relation: Literal["DECLARED_NEAR_OBSERVATION", "HISTORICAL_OR_DIFFERENT_TIME", "UNKNOWN"]
+    origin: Literal["USER_UPLOAD", "DATABASE_CURSOR"] = "USER_UPLOAD"
+    identity_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "MISMATCH", "INCOMPLETE"]
+    physical_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "MISMATCH", "INCOMPLETE"]
+    time_relation: Literal["DECLARED_NEAR_OBSERVATION", "SOURCE_NEAR_OBSERVATION", "HISTORICAL_OR_DIFFERENT_TIME", "UNKNOWN"]
     runtime_statistics: Literal["NONE", "PARTIAL", "PRESENT"]
     representative_parameters: Literal["UNVERIFIED"] = "UNVERIFIED"
     production_execution_verified: Literal[False] = False
     node_count: int = Field(ge=1, le=128)
+    bind_metadata_refs: tuple[str, ...] = Field(default=(), max_length=4)
     limitations: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def validate_origin(self):
+        if self.origin == "USER_UPLOAD" and (
+            "SOURCE_MATCH" in {self.identity_match, self.physical_match}
+            or self.time_relation == "SOURCE_NEAR_OBSERVATION" or self.bind_metadata_refs
+        ):
+            raise ValueError("人工计划不能升级数据库来源或绑定捕获关系")
+        return self

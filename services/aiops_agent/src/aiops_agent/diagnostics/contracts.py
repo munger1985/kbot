@@ -73,6 +73,7 @@ class DiagnosticToolDefinition(BaseModel):
     max_rows: int = Field(gt=0, le=10000)
     max_bytes: int = Field(gt=0, le=20 * 1024 * 1024)
     cost_level: Literal["LOW", "MEDIUM", "HIGH"]
+    measurement_semantics: Literal["CURRENT_ACTIVITY", "CUMULATIVE_SINCE_LOAD", "SNAPSHOT_DELTA", "HISTORICAL_SAMPLES", "NOT_APPLICABLE"] | None = None
     limit_semantics: Literal["TOP_N", "BOUNDED_ENUMERATION"] = "TOP_N"
 
     @model_validator(mode="after")

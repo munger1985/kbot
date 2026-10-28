@@ -1,6 +1,288 @@
 {
   "catalog_version": "oracle-baseline.v1",
   "tools": [
+    {
+      "tool_id": "db.oracle.statement.plan",
+      "measurement_semantics": "CURRENT_ACTIVITY",
+      "description": "按 DBID、实例、容器、SQL_ID、子游标和计划哈希读取现有缓存计划及 LAST 行源统计；不执行 SQL，不证明代表参数或某次生产执行。",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_exact_cursor_plan_statistics",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "GV_$SQL_PLAN_STATISTICS_ALL",
+        "V_$DATABASE"
+      ],
+      "parameters": [
+        {
+          "name": "sql_id",
+          "type": "string",
+          "max_length": 13
+        },
+        {
+          "name": "dbid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "inst_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "name": "container_id",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "child_number",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "plan_hash_value",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 129,
+          "default": 129,
+          "required": false
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "dbid",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "inst_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "container_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "sql_id",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "child_number",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "plan_hash_value",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "plan_line_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "parent_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "operation",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "options",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "object_owner",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "object_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "object_type",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "cardinality",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "cost",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "last_starts",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "last_output_rows",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "last_elapsed_time",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "last_cr_buffer_gets",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "last_disk_reads",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "last_disk_writes",
+          "logical_type": "INTEGER"
+        }
+      ],
+      "template_ref": "sql/statement_plan.sql",
+      "template_sha256": "410f2fe4f316d26b6509de39258b15415d86dd6dd3cf4cfd0e24858eb8c56abd",
+      "timeout_seconds": 10,
+      "max_rows": 129,
+      "max_bytes": 262144,
+      "cost_level": "LOW",
+      "limit_semantics": "BOUNDED_ENUMERATION"
+    },
+    {
+      "tool_id": "db.oracle.statement.bind_metadata",
+      "measurement_semantics": "CURRENT_ACTIVITY",
+      "description": "按完整游标身份读取绑定位置、数据库类型、采集标记及原生采集时间；不读取绑定名、VALUE_STRING 或 VALUE_ANYDATA，不证明代表参数。",
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "variant": "oracle_19_plus_exact_cursor_bind_metadata",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "required_entitlements": [],
+      "required_privileges": [
+        "GV_$SQL_BIND_CAPTURE",
+        "GV_$SQL",
+        "V_$DATABASE"
+      ],
+      "parameters": [
+        {
+          "name": "sql_id",
+          "type": "string",
+          "max_length": 13
+        },
+        {
+          "name": "dbid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "inst_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "name": "container_id",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "child_number",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "plan_hash_value",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65,
+          "default": 65,
+          "required": false
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "dbid",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "inst_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "container_id",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "sql_id",
+          "logical_type": "STRING",
+          "nullable": false
+        },
+        {
+          "name": "child_number",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "plan_hash_value",
+          "logical_type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "bind_position",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "datatype_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "was_captured",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "last_captured",
+          "logical_type": "DATETIME"
+        }
+      ],
+      "template_ref": "sql/statement_bind_metadata.sql",
+      "template_sha256": "fc4d59a3aacd4a1912f1bf39c590b532634a04f88b423beb55bfb41fa03081a4",
+      "timeout_seconds": 10,
+      "max_rows": 65,
+      "max_bytes": 131072,
+      "cost_level": "LOW",
+      "limit_semantics": "BOUNDED_ENUMERATION"
+    },
     {"tool_id":"db.sql.object_dependencies","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_dependencies","description":"精确读取指定 OWNER/视图、物化视图或同义词的可见直接依赖，仅查 ALL_DEPENDENCIES/ALL_SYNONYMS。不猜默认 Schema/PUBLIC 优先级；远端引用标为 REMOTE，禁止跨 DB Link 追查。按已核实本地对象最多展开四层，不还原动态 SQL或实际扫描。","supported_version_min":12,"supported_version_max_exclusive":24,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[{"name":"schema_name","type":"string","max_length":128},{"name":"table_name","type":"string","max_length":128},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"dependency_schema_name","logical_type":"STRING"},{"name":"dependency_name","logical_type":"STRING"},{"name":"dependency_kind","logical_type":"STRING"},{"name":"reference_scope","logical_type":"STRING"}],"template_ref":"sql/object_dependencies.sql","template_sha256":"0e1807aaabf6f90b5752d5cb2bec70c36df8e039cc7be968e1a0aba2d9d6ef05","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"ORACLE","variant":"oracle_object_indexes_19_plus",

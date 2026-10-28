@@ -18,6 +18,7 @@ _IDENTITIES = {"POSTGRESQL": "query_id", "MYSQL": "digest", "ORACLE": "sql_id"}
 _SCOPES = {"POSTGRESQL": ("system_identifier", "database_oid"),
            "MYSQL": ("server_uuid",), "ORACLE": ("dbid", "container_id")}
 _DEPENDENCY_TOOL = "db.sql.object_dependencies"
+_PLAN_TOOLS = {"db.sql.execution_plan", "db.oracle.statement.plan"}
 _CATALOG_TOOLS = {"db.sql.object_indexes", "db.sql.object_statistics", _DEPENDENCY_TOOL}
 _DIMENSIONS = ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value", "container_id", "dbid")
 
@@ -76,6 +77,11 @@ def _physical_scope(fact, row, engine):
     if engine == "ORACLE" and physical["container_id"] in {"0", "1"} and "container_id" not in row:
         # Root 的 GV$SQL 可混有其他容器；缺 CON_ID 时不能拿当前连接容器替代游标容器。
         return None
+    if engine == "ORACLE" and physical["container_id"] == "1" and "container_id" in row:
+        container = str(row["container_id"])
+        if not container.isdigit():
+            return None
+        physical["container_id"] = container
     # PG 语句统计可读取其他数据库，连接数据库身份不能替代该行的数据库身份。
     if any(key in row and str(row[key]) != str(physical[key]) for key in keys):
         return None
@@ -166,7 +172,7 @@ def build_sql_object_graph(*, database_type, subject, evidence):
     parsed_texts = {}
     anchors = 0
     for fact in facts:
-        if fact.tool_id not in _TEXT_TOOLS[database_type] and not (database_type == "ORACLE" and fact.tool_id == "db.sql.execution_plan"):
+        if fact.tool_id not in _TEXT_TOOLS[database_type] and not (database_type == "ORACLE" and fact.tool_id in _PLAN_TOOLS):
             continue
         for index, row in _rows(fact):
             if not _subject_row(row, subject, database_type):

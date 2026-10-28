@@ -131,6 +131,8 @@ class ToolExecutionSnapshotBuilder:
             }
             if definition.discovery_tool_id:
                 card["discovery_tool_id"] = definition.discovery_tool_id
+            if definition.measurement_semantics is not None:
+                card["measurement_semantics"] = definition.measurement_semantics
             if definition.cost_level == "LOW":
                 card["observation_schedule_policy"] = {
                     "count_including_current_baseline": "2..4", "interval_seconds": "30..900",
@@ -197,7 +199,7 @@ class ToolExecutionSnapshotBuilder:
             raise LookupError(
                 f"诊断工具无法按当前能力唯一解析：{action.tool_id}"
             )
-        return self._tools.resolve(
+        resolved = self._tools.resolve(
             tool_id=action.tool_id,
             tool_version=str(matches[0]["version"]),
             db_type=str(capabilities.database_type),
@@ -205,6 +207,9 @@ class ToolExecutionSnapshotBuilder:
             capabilities=set(capabilities.target_capabilities) | set(matches[0].get("required_capabilities", ())),
             entitlements=set(capabilities.entitlements),
         )
+        if resolved.definition.measurement_semantics is not None and str(action.measurement_semantics) != resolved.definition.measurement_semantics:
+            raise ValueError(f"工具 {action.tool_id} 的观测口径必须使用目录声明：{resolved.definition.measurement_semantics}")
+        return resolved
 
     def build(
         self,
@@ -246,6 +251,8 @@ class ToolExecutionSnapshotBuilder:
                     entitlements=set(capabilities.entitlements),
                 )
                 definition = resolved.definition
+                if definition.measurement_semantics is not None and str(item.measurement_semantics) != definition.measurement_semantics:
+                    raise PlaybookCatalogError(f"Playbook 观测口径与工具目录不一致：{definition.tool_id}")
                 self._validate_manifest_requirements(
                     manifest=manifest,
                     tool_id=definition.tool_id,

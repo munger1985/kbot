@@ -263,6 +263,8 @@ class InvestigationRecord(BaseModel):
                 graph.database_type == plan.database_type and graph.subject == plan.subject for graph in self.sql_graphs
             ):
                 raise ValueError("计划核验必须绑定本记录的材料与 SQL 主体")
+            if not set(plan.bind_metadata_refs) <= refs:
+                raise ValueError("计划绑定元数据必须引用本记录原始观察")
         claim_ids = {item.claim_id for item in self.claims}
         if any(not set(goal.claim_refs) <= claim_ids for goal in self.goal_assessments):
             raise ValueError("目标完成状态引用了不存在的主张")
