@@ -105,6 +105,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             tool_id=fact.tool_id, source_id=fact.source_id, captured_at=fact.captured_at,
             measurement_semantics=str(fact.measurement_semantics), trust_level=fact.trust_level,
             row_count=fact.row_count, truncated=fact.truncated,
+            followup_run_id=str(fact.followup_run_id) if fact.followup_run_id else None,
             provenance=fact.provenance, derivations=fact.derivations,
             object_access=fact.object_access,
             calculation_graphs=fact.calculation_graphs,

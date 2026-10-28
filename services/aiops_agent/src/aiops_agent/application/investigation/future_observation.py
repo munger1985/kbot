@@ -66,7 +66,7 @@ async def followup_access_error(*, uow, run, now, for_execution=True):
             policy = await uow.policies.get_scoped(policy_id=UUID(str(policy_id)), domain_id=run.domain_id)
             frozen_policy = dict(run.policy_snapshot_json or {})
             if (policy is None or policy.status != "ACTIVE"
-                or not dict(policy.rules_json or {}).get("readonly_database_enabled", True)
+                or not dict(policy.rules_json or {}).get("readonly_database_enabled", False)
                 or policy.policy_hash != frozen_policy.get("policy_hash")):
                 return "FOLLOWUP_ACCESS_CHANGED"
     except (KeyError, ValueError, TypeError, AttributeError):

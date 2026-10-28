@@ -8,9 +8,12 @@ from aiops_agent.contracts.investigation import InvestigationRecord
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact, TurnEvidenceGap
 from aiops_agent.playbooks import canonical_hash
+from aiops_agent.application.investigation.future_observation_evidence import validate_future_observation_facts
 
 
 async def validate_investigation_sources(*, uow, run, payload):
+    if not await validate_future_observation_facts(uow=uow, run=run, payload=payload):
+        return False
     if not await validate_monitoring_trace_sources(uow=uow, run=run, payload=payload):
         return False
     record_payload = payload.get("investigation_record") or {}

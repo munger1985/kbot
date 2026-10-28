@@ -4828,9 +4828,8 @@ class AIOpsRuntimeService:
             },
             facts=tuple(
                 dict(item) if source_kind == "INSPECTION" else {
-                    "fact_id": item.get("fact_id"),
+                    **dict(item),
                     "summary": item.get("fact_summary") or item.get("summary"),
-                    "trust_level": item.get("trust_level"),
                 }
                 for item in source.get("facts", ())
                 if isinstance(item, dict)
@@ -9653,7 +9652,7 @@ class AIOpsRuntimeService:
             if item.task_key in required
         }
         artifacts = await uow.runs.list_artifacts(ops_run_id=run_id)
-        return tuple(
+        selected = tuple(
             LeasedArtifact(
                 artifact_id=item.artifact_id,
                 artifact_key=item.artifact_key,
@@ -9673,6 +9672,9 @@ class AIOpsRuntimeService:
                 or str(item.artifact_id) in required
             )
         )
+
+        from aiops_agent.application.investigation.future_observation_evidence import revalidate_future_observation_inputs
+        return await revalidate_future_observation_inputs(uow=uow, run_id=run_id, artifacts=artifacts, selected=selected)
 
     def _task_lease(
         self, run, task, artifacts, *, lease_token: UUID

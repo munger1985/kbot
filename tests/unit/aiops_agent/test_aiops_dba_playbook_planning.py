@@ -1602,6 +1602,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         empty = SimpleNamespace(
             resolved_uploads=(),
             source_run_evidence=None,
+            future_observation_evidence=(),
         )
         self.assertEqual(
             ("turn-user-input:1", "turn-input-analysis:1"),
@@ -1610,6 +1611,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
         with_upload = SimpleNamespace(
             resolved_uploads=(SimpleNamespace(item_no=1),),
             source_run_evidence=None,
+            future_observation_evidence=(),
         )
         self.assertEqual(
             (

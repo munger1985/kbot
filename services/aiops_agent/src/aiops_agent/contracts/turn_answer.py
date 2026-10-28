@@ -42,6 +42,7 @@ class TurnEvidenceFact(BaseModel):
     rows: tuple[tuple[Any, ...], ...]
     row_count: int = Field(ge=0)
     truncated: bool = False
+    followup_run_id: str | None = None
     warnings: tuple[str, ...] = ()
     visualizations: tuple[ChartSpec, ...] = ()
     provenance: EvidenceProvenance | None = None

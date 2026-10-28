@@ -120,7 +120,7 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
             fact = TurnEvidenceFact.model_validate(raw)
         except (ValidationError, TypeError, ValueError):
             continue
-        if fact.trust_level != "SOURCE_VERIFIED":
+        if fact.trust_level != "SOURCE_VERIFIED" or fact.followup_run_id is not None:
             continue
         rows = tuple(tuple(row) for row, mapped in zip(fact.rows, _row_dicts(fact), strict=True) if any(_matches(mapped, subject, spec[1]) for subject, spec in matches)) if all(len(row) == len(fact.columns) for row in fact.rows) else ()
         if not rows:
@@ -199,7 +199,7 @@ def build_sql_evidence_answer(
                 dimensions = [f"{key}={row[key]}" for key in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value") if row.get(key) is not None]
                 scope = f"（{'，'.join(dimensions)}）" if dimensions else ""
                 descriptions.append(f"记录 {index}{scope}：" + "，".join(values) + "。")
-        origin = "历史观测" if fact.source_id == "prior_turn.sql_observation" else "本轮观测"
+        origin = "后台观察" if fact.followup_run_id is not None else "历史观测" if fact.source_id == "prior_turn.sql_observation" else "本轮观测"
         analysis = f"已取得与指定 SQL 匹配的累计统计（{origin}，采集时间 {fact.captured_at}）。" + "\n\n" + "\n\n".join(descriptions)
         if fact.source_id == "prior_turn.sql_observation":
             analysis += "\n\n历史数据来自同一逻辑 Target，不能单凭此确认实际实例未切换。"

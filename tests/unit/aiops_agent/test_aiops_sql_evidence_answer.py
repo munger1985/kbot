@@ -217,7 +217,7 @@ def test_prior_link_through_planning_assessment_and_answer():
     scope = {key: str(uuid7()) for key in scope_keys if key in OpsRunEntity.__table__.columns}
     prior_run_id, run_id, turn_id, previous_id, conversation_id = (uuid7() for _ in range(5))
     context = SimpleNamespace(**scope, turn_id=turn_id, ops_run_id=run_id, resolved_uploads=(),
-                              source_run_evidence=None, recovery_assurance={},
+                              source_run_evidence=None, recovery_assurance={}, future_observation_evidence=(),
                               database_execution={"target_row_version": 1})
     target_snapshot = {"target": {"row_version": 1, "db_type": "POSTGRESQL"}}
     current_run = SimpleNamespace(**scope, status="RUNNING", ops_run_id=run_id, plan_snapshot_json=target_snapshot)

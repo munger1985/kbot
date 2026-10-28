@@ -38,6 +38,11 @@ from aiops_agent.application.investigation.discovery_binding import (
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.direct_list import add_top_sql_reference
 from aiops_agent.application.investigation.prior_sql_evidence import load_prior_sql_evidence
+from aiops_agent.application.investigation.future_observation_evidence import (
+    ARTIFACT_TYPE as FUTURE_EVIDENCE_TYPE,
+    load_future_observation_evidence,
+    validate_reused_future_observation,
+)
 from aiops_agent.application.investigation.prior_investigation import load_parent_investigation
 from aiops_agent.application.investigation.query_freezing import (
     prepare_attachment_searches,
@@ -432,6 +437,7 @@ class TurnPlanningService:
             context = replace(context, prior_sql_evidence=await self._load_prior_sql_evidence(
                 context, task_frame=investigation.task_frame.model_dump(mode="json"),
             ))
+        context = replace(context, future_observation_evidence=await self._load_future_observation_evidence(context))
         compiled = self._task_compiler.compile(
             playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
@@ -1966,6 +1972,51 @@ class TurnPlanningService:
                 return None
             return await load_prior_sql_evidence(uow=uow, turn=turn, run=run, task_frame=task_frame)
 
+    async def _load_future_observation_evidence(self, context: TurnPlanningContext) -> tuple[dict, ...]:
+        """后台采样不触发无人授权的新调查；在后续用户 Turn 中有界复用。"""
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(domain_id=context.domain_id, turn_id=context.turn_id)
+            run = await uow.runs.get_run(ops_run_id=context.ops_run_id)
+            if turn is None or run is None or run.status != "RUNNING":
+                return ()
+            return await load_future_observation_evidence(
+                uow=uow, turn=turn, run=run, prior_sql=context.prior_sql_evidence,
+            )
+
+    async def _persist_future_observation_evidence(self, *, uow, run, turn, entries):
+        """与本轮计划同事务冻结可重放来源，并登记真实采集时间。"""
+        artifacts = []
+        for entry in entries:
+            artifact = self._artifact(
+                ops_run_id=run.ops_run_id, artifact_key=entry["artifact_key"],
+                artifact_type=FUTURE_EVIDENCE_TYPE, schema_version="DBA_TOOL_RESULT.v1",
+                payload=entry["payload"], producer="aiops.future-observation-linker",
+                trust_level="SOURCE_VERIFIED",
+            )
+            artifact.provenance_json = entry["provenance"]
+            artifact.security_level = entry["security_level"]
+            if not await validate_reused_future_observation(uow=uow, run=run, artifact=artifact, turn=turn):
+                artifact.schema_version = "FUTURE_OBSERVATION_UNAVAILABLE.v1"
+                artifact.payload_json = {"code": "FOLLOWUP_SOURCE_UNAVAILABLE"}
+                artifact.content_hash = canonical_hash(artifact.payload_json)
+                artifact.byte_size = len(json.dumps(artifact.payload_json).encode())
+            await uow.runs.add_artifact(artifact)
+            artifacts.append(artifact)
+            if artifact.schema_version == "DBA_TOOL_RESULT.v1":
+                from aiops_agent.contracts.tool_execution import DbaToolResult
+                result = DbaToolResult.model_validate(artifact.payload_json)
+                await uow.turns.add_evidence(OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(), turn_id=turn.turn_id, artifact_id=artifact.artifact_id,
+                    source_kind="RUN", evidence_kind="FUTURE_OBSERVATION", confidence=1,
+                    evidence_role="CONTEXT", measurement_semantics=str(result.measurement_semantics),
+                    observed_at=result.observation_series.finished_at,
+                    window_start_at=result.observation_series.started_at,
+                    window_end_at=result.observation_series.finished_at,
+                    freshness_status="UNKNOWN", usage_reason="同会话后台观察的实际时点，不代表当前值或过去请求窗口",
+                    linked_by=run.actor_id,
+                ))
+        return tuple(artifacts)
+
     @staticmethod
     def _initial_user_evidence_keys(
         context: TurnPlanningContext,
@@ -1975,6 +2026,7 @@ class TurnPlanningService:
         return (
             "turn-user-input:1",
             "turn-input-analysis:1",
+            *(item["artifact_key"] for item in context.future_observation_evidence),
             *(
                 f"turn-upload-extract:{upload.item_no}"
                 for upload in context.resolved_uploads
@@ -4524,6 +4576,10 @@ class TurnPlanningService:
             ):
                 if artifact is not None:
                     await uow.runs.add_artifact(artifact)
+
+            await self._persist_future_observation_evidence(
+                uow=uow, run=run, turn=turn, entries=context.future_observation_evidence,
+            )
 
             revision = OpsInvestigationRevisionEntity(
                 revision_id=uuid7(),

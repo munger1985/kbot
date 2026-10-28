@@ -90,7 +90,7 @@ async def load_prior_sql_evidence(*, uow, turn, run, task_frame: dict) -> dict |
             continue
         for fact in assessment.evidence:
             if (fact.trust_level != "SOURCE_VERIFIED" or fact.tool_id not in _SQL_TOOLS
-                or fact.source_id == "prior_turn.sql_observation"
+                or fact.source_id == "prior_turn.sql_observation" or fact.followup_run_id is not None
                 or fact.presentation_kind not in {"TABLE", "TABLE_AND_CHART"}):
                 continue
             names = [str(column.get("name") or "").lower() for column in fact.columns]

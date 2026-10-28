@@ -204,7 +204,7 @@ def _primary_result_metadata(
         "presentation_role": "PRIMARY",
         "result_kind": result_kind,
         "title": title,
-        "measurement_note": note,
+        "measurement_note": ("后台观察（保留原采集时间，非当前值）：" + note) if fact.followup_run_id is not None else note,
         "identifier_columns": list(spec["identifier_columns"]),
         "follow_up_label": spec["follow_up_label"],
     }
@@ -221,6 +221,7 @@ def _top_sql_primary_fact(
         fact for fact in evidence
         if fact.tool_id in _PRIMARY_RESULT_SPECS["TOP_SQL_LIST"]["tool_ids"]
         and fact.presentation_kind in {"TABLE", "TABLE_AND_CHART"}
+        and fact.followup_run_id is None
     ]
 
     def priority(fact: TurnEvidenceFact) -> int:
@@ -237,6 +238,8 @@ def _top_sql_primary_fact(
 
 def _measurement_boundaries(assessment: DbaSufficiencyAssessment) -> list[str]:
     boundaries: list[str] = []
+    if any(fact.followup_run_id is not None for fact in assessment.evidence):
+        boundaries.append("后台观察保留原始采集时间，仅代表实际时点；不能用来断言当前状态或补造过去请求窗口，差分仍须身份、重置及口径可比性核验。")
     if any(fact.tool_id in {"db.postgresql.statement.details", "db.postgresql.statement.subjects"} for fact in assessment.evidence):
         boundaries.append(
             "pg_stat_statements_info 的 stats_reset 是全局重置时间，并非单条 SQL 的统计起点；"
@@ -320,6 +323,11 @@ class DbaEvidenceAssessmentHandler:
         )
         for artifact in context.input_artifacts:
             schema_version = artifact.get("schema_version")
+            if schema_version == "FUTURE_OBSERVATION_UNAVAILABLE.v1":
+                database_gap_found = True
+                gaps.append(TurnEvidenceGap(source_id="evidence.future_observation", step_id="future.observation", code="FOLLOWUP_SOURCE_UNAVAILABLE",
+                    detail="后台观察的当前授权或原始来源已变化，未沿用旧结果；需要在当前权限下重新取证。", retryable=False))
+                continue
             if schema_version == "TOP_SQL_WINDOW_RESULT.v1":
                 result = dict(dict(artifact.get("payload") or {}).get("result") or {})
                 artifact_id = str(artifact["artifact_id"])
@@ -688,9 +696,16 @@ class DbaEvidenceAssessmentHandler:
                             rows=observation.rows,
                             row_count=observation.row_count,
                             truncated=observation.truncated,
+                            followup_run_id=dict(dict(artifact.get("provenance") or {}).get("future_observation_source") or {}).get("background_run_id"),
                             warnings=(*observation.warnings, *(
                                 (f"本轮按需采样：实际完成 {result.sampling.completed_count}/{result.sampling.requested.count} 次；间隔至少 {result.sampling.requested.interval_seconds} 秒；仅代表实际采集时点，不覆盖请求的历史窗口",)
                                 if result.sampling is not None else ()
+                            ), *(
+                                (f"后台未来观察：实际完成 {result.observation_series.completed_count}/{result.observation_series.requested.count} 次；仅代表原采集时点，不能当作当前值或补造过去请求窗口，未自动计算差分",)
+                                if result.observation_series is not None else ()
+                            ), *(
+                                ("后台观察历史搜索达到轮次、事实、行数或字节上限，不保证覆盖完整会话",)
+                                if dict(dict(artifact.get("provenance") or {}).get("future_observation_source") or {}).get("search_truncated") else ()
                             )),
                             provenance=database_provenance(observation),
                             object_access=observation.object_access,
@@ -994,7 +1009,7 @@ class DbaEvidenceAssessmentHandler:
                 if direct_kind == "TOP_SQL_LIST"
                 else _PRIMARY_RESULT_SPECS[direct_kind]["tool_ids"]
             )
-            if not any(fact.tool_id in required_tool_ids for fact in facts):
+            if not any(fact.tool_id in required_tool_ids and fact.followup_run_id is None for fact in facts):
                 reasons.append("未取得本次功能入口所要求的主结果")
                 if status == SufficiencyStatus.ANSWERABLE:
                     status = SufficiencyStatus.PARTIAL if facts else SufficiencyStatus.NEEDS_EVIDENCE

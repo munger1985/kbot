@@ -143,6 +143,7 @@ class InvestigationObservation(BaseModel):
     trust_level: Literal["SOURCE_VERIFIED", "USER_PROVIDED", "MODEL_INFERENCE"]
     row_count: int = Field(ge=0)
     truncated: bool
+    followup_run_id: str | None = None
     provenance: EvidenceProvenance | None = None
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     derivations: tuple[DerivedMeasurement, ...] = ()
