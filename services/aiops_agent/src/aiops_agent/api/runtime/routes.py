@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from platform_core.contracts.aiops.sql_plan_capture import SqlPlanCaptureRequest, SqlPlanCaptureDecision, SqlPlanCapturePage, SqlPlanCaptureView
+from platform_core.contracts.aiops.sql_plan_execution import SqlPlanCaptureStart, SqlPlanCaptureExecutionView
+from platform_core.http_cache import NoStoreAPIRoute
 
 from platform_core.contracts.aiops.sql_plan_material import (
     SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialSubmit, SqlPlanMaterialView,
@@ -63,7 +65,7 @@ from platform_core.contracts.aiops.public import (
 )
 
 
-router = APIRouter(prefix="/internal/v1/aiops", tags=["AIOps Runtime"])
+router = APIRouter(prefix="/internal/v1/aiops", tags=["AIOps Runtime"], route_class=NoStoreAPIRoute)
 
 
 def get_service(request: Request) -> AIOpsRuntimeService:
@@ -347,6 +349,31 @@ async def revoke_sql_plan_capture(run_id: UUID, request_id: UUID, request: Reque
     require_service_scope(request, "aiops.run")
     response.headers["Cache-Control"] = "no-store"
     return await request.app.state.sql_plan_capture_service.revoke(scope=_query_scope(request, context), run_id=run_id, request_id=request_id, agent_ids=_agent_filter(context))
+
+@router.post("/runs/{run_id}/sql-plan-captures/{request_id}/start", response_model=SqlPlanCaptureView)
+async def start_sql_plan_capture(run_id: UUID, request_id: UUID, body: SqlPlanCaptureStart, request: Request, response: Response, context: Auth):
+    require_service_scope(request, "aiops.run")
+    response.headers["Cache-Control"] = "no-store"
+    return await request.app.state.sql_plan_capture_execution_service.start(
+        scope=_query_scope(request, context), run_id=run_id, request_id=request_id, command=body, agent_ids=_agent_filter(context))
+
+
+@router.get("/runs/{run_id}/sql-plan-captures/{request_id}/execution", response_model=SqlPlanCaptureExecutionView)
+async def get_sql_plan_capture_execution(run_id: UUID, request_id: UUID, request: Request, response: Response, context: Auth):
+    require_service_scope(request, "aiops.run")
+    response.headers["Cache-Control"] = "no-store"
+    return await request.app.state.sql_plan_capture_execution_service.status(
+        scope=_query_scope(request, context), run_id=run_id, request_id=request_id, agent_ids=_agent_filter(context))
+
+
+@router.post("/runs/{run_id}/sql-plan-captures/{request_id}/cancel", response_model=SqlPlanCaptureExecutionView)
+async def cancel_sql_plan_capture(run_id: UUID, request_id: UUID, request: Request, response: Response, context: Auth):
+    require_service_scope(request, "aiops.run")
+    response.headers["Cache-Control"] = "no-store"
+    return await request.app.state.sql_plan_capture_execution_service.cancel(
+        scope=_query_scope(request, context), run_id=run_id, request_id=request_id,
+        runtime=request.app.state.aiops_runtime_service, agent_ids=_agent_filter(context))
+
 
 @router.get("/runs/{run_id}/sql-plan-material-sources", response_model=list[SqlPlanMaterialSource])
 async def list_sql_plan_material_sources(run_id: UUID, request: Request, response: Response, context: Auth):

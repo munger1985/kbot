@@ -15479,6 +15479,68 @@
         "title": "SqlPlanCaptureExecute",
         "type": "object"
       },
+      "SqlPlanCaptureExecutionView": {
+        "additionalProperties": false,
+        "description": "后台状态与权威安全结果；审批过期不抹除已采集的证据。",
+        "properties": {
+          "can_cancel": {
+            "title": "Can Cancel",
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "capture_run_id": {
+            "format": "uuid",
+            "title": "Capture Run Id",
+            "type": "string"
+          },
+          "notice": {
+            "default": "仅为估算计划，不证明原解析环境、参数代表性或生产实际执行；请求取消不代表数据库已经终止。",
+            "title": "Notice",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "CANCEL_REQUESTED",
+              "TERMINAL"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SqlPlanCaptureResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_status": {
+            "$ref": "#/components/schemas/OpsRunStatus"
+          }
+        },
+        "required": [
+          "request_id",
+          "capture_run_id",
+          "run_status",
+          "phase",
+          "cancel_requested",
+          "can_cancel"
+        ],
+        "title": "SqlPlanCaptureExecutionView",
+        "type": "object"
+      },
       "SqlPlanCapturePage": {
         "additionalProperties": false,
         "properties": {
@@ -15797,6 +15859,21 @@
           "captured_at"
         ],
         "title": "SqlPlanCaptureResult",
+        "type": "object"
+      },
+      "SqlPlanCaptureStart": {
+        "additionalProperties": false,
+        "properties": {
+          "request_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_sha256"
+        ],
+        "title": "SqlPlanCaptureStart",
         "type": "object"
       },
       "SqlPlanCaptureView": {
@@ -30010,6 +30087,59 @@
         ]
       }
     },
+    "/internal/v1/aiops/runs/{run_id}/sql-plan-captures/{request_id}/cancel": {
+      "post": {
+        "operationId": "cancel_sql_plan_capture_internal_v1_aiops_runs__run_id__sql_plan_captures__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlPlanCaptureExecutionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Sql Plan Capture",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
     "/internal/v1/aiops/runs/{run_id}/sql-plan-captures/{request_id}/decision": {
       "post": {
         "operationId": "decide_sql_plan_capture_internal_v1_aiops_runs__run_id__sql_plan_captures__request_id__decision_post",
@@ -30068,6 +30198,122 @@
           }
         },
         "summary": "Decide Sql Plan Capture",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/runs/{run_id}/sql-plan-captures/{request_id}/execution": {
+      "get": {
+        "operationId": "get_sql_plan_capture_execution_internal_v1_aiops_runs__run_id__sql_plan_captures__request_id__execution_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlPlanCaptureExecutionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sql Plan Capture Execution",
+        "tags": [
+          "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/runs/{run_id}/sql-plan-captures/{request_id}/start": {
+      "post": {
+        "operationId": "start_sql_plan_capture_internal_v1_aiops_runs__run_id__sql_plan_captures__request_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlPlanCaptureStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlPlanCaptureView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Sql Plan Capture",
         "tags": [
           "AIOps Runtime"
         ]

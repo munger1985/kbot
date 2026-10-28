@@ -14,6 +14,14 @@ class SqlPlanCapturePolicy(AIOpsContract):
     require_distinct_approver: bool = Field(default=True, strict=True)
     max_statement_timeout_seconds: int = Field(default=5, ge=1, le=10, strict=True)
 
+    @model_validator(mode="after")
+    def validate_object_scope(self):
+        if (len(set(self.allowed_objects)) != len(self.allowed_objects)
+            or any(not name or name != name.strip() or len(name) > 256
+                or any(ord(char) < 32 for char in name) for name in self.allowed_objects)):
+            raise ValueError("计划采集对象范围必须为不重复的有效对象名称")
+        return self
+
 
 class SqlPlanCaptureRequest(AIOpsContract):
     request_id: UUIDv7

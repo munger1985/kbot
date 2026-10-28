@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import Field, SecretStr, model_validator
 
 from .executor import DiagnosticConnectionProfile, ResourceLeaseReceipt
-from .types import AIOpsContract, UUIDv7, UtcDatetime
+from .types import AIOpsContract, UUIDv7, UtcDatetime, OpsRunStatus
 
 
 def _physical_identity(database_type, identity):
@@ -164,3 +164,32 @@ class SqlPlanCaptureResult(AIOpsContract):
 class SqlPlanCaptureReport(AIOpsContract):
     result: SqlPlanCaptureResult
     resource_lease: ResourceLeaseReceipt = Field(repr=False)
+
+
+class SqlPlanCaptureExecutionView(AIOpsContract):
+    """后台状态与权威安全结果；审批过期不抹除已采集的证据。"""
+
+    request_id: UUIDv7
+    capture_run_id: UUIDv7
+    run_status: OpsRunStatus
+    phase: Literal["QUEUED", "RUNNING", "CANCEL_REQUESTED", "TERMINAL"]
+    cancel_requested: bool
+    can_cancel: bool
+    result: SqlPlanCaptureResult | None = None
+    notice: str = "仅为估算计划，不证明原解析环境、参数代表性或生产实际执行；请求取消不代表数据库已经终止。"
+
+    @model_validator(mode="after")
+    def validate_reference(self):
+        if self.result is not None and (self.result.request_id != self.request_id
+            or self.result.capture_run_id != self.capture_run_id):
+            raise ValueError("采集结果与后台运行引用不一致")
+        if self.can_cancel and (self.cancel_requested or self.run_status in {
+            OpsRunStatus.COMPLETED, OpsRunStatus.PARTIAL, OpsRunStatus.FAILED,
+            OpsRunStatus.CANCELLED, OpsRunStatus.EXPIRED}):
+            raise ValueError("终态或已请求取消的采集不能重复取消")
+        terminal = self.run_status in {OpsRunStatus.COMPLETED, OpsRunStatus.PARTIAL,
+            OpsRunStatus.FAILED, OpsRunStatus.CANCELLED, OpsRunStatus.EXPIRED}
+        if (terminal != (self.phase == "TERMINAL")
+            or not terminal and self.cancel_requested != (self.phase == "CANCEL_REQUESTED")):
+            raise ValueError("采集阶段与终态或取消状态不一致")
+        return self

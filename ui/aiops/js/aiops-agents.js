@@ -211,6 +211,10 @@
       showResult("请至少绑定一个运维知识库。", "bad");
       return false;
     }
+    if (step === 3 && form.elements.capture_enabled.checked && !form.elements.capture_objects.value.trim()) {
+      showResult("开启计划采集前请明确允许对象范围。", "bad");
+      return false;
+    }
     if (step === 4 && form.elements.status.value === "ACTIVE") {
       const missing = [];
       if (!form.elements.planner_model_id.value) missing.push("规划模型");
@@ -324,6 +328,10 @@
     setChecked("knowledge_source_kinds", ["MANUAL", "DIAGNOSIS_CASE"]);
     form.elements.knowledge_enabled.checked = true;
     form.elements.auto_alert_enabled.checked = true;
+    form.elements.capture_enabled.checked = false;
+    form.elements.capture_distinct.checked = true;
+    form.elements.capture_objects.value = "";
+    form.elements.capture_timeout.value = "5";
     form.elements.max_security_level.value = "3";
     form.elements.maximum_references.value = "8";
     const activeBases = knowledgeBases.filter((item) => item.status === "ACTIVE");
@@ -356,6 +364,11 @@
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
     form.elements.auto_observe_min_target_level.value = String(editing.auto_observe_min_target_level || 1);
     form.elements.alert_cooldown_minutes.value = String(editing.alert_cooldown_minutes ?? 15);
+    const capture = editing.sql_plan_capture || {};
+    form.elements.capture_enabled.checked = capture.enabled === true;
+    form.elements.capture_objects.value = values(capture.allowed_objects).join("\n");
+    form.elements.capture_distinct.checked = capture.require_distinct_approver !== false;
+    form.elements.capture_timeout.value = String(capture.max_statement_timeout_seconds ?? 5);
     const policy = editing.knowledge_policy || {};
     form.elements.knowledge_enabled.checked = policy.enabled !== false;
     form.elements.max_security_level.value = String(policy.max_security_level || 3);
@@ -403,6 +416,12 @@
         maximum_references: Number(form.elements.maximum_references.value || 8),
       },
       controlled_action_execution: values(editing?.controlled_action_execution),
+      sql_plan_capture: {
+        enabled: form.elements.capture_enabled.checked,
+        allowed_objects: form.elements.capture_objects.value.split("\n").map((name) => name.trim()).filter(Boolean),
+        require_distinct_approver: form.elements.capture_distinct.checked,
+        max_statement_timeout_seconds: Number(form.elements.capture_timeout.value),
+      },
       auto_alert_enabled: form.elements.auto_alert_enabled.checked,
       auto_observe_min_severity: form.elements.auto_observe_min_severity.value,
       auto_observe_min_target_level: Number(form.elements.auto_observe_min_target_level.value || 1),

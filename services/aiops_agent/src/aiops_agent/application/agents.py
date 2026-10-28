@@ -18,6 +18,7 @@ from aiops_agent.entities import (
 from aiops_agent.application.configuration.common import sha256_json
 from aiops_agent.tools.capabilities import target_capability_names
 from platform_core.contracts.aiops import AIOpsCapability, AgentKnowledgePolicy
+from platform_core.contracts.aiops.sql_plan_capture import SqlPlanCapturePolicy
 from platform_core.identity import uuid7
 
 
@@ -171,6 +172,7 @@ class ResourceControlledActionExecution(_Model):
 
 
 class CreateAIOpsAgentCommand(_Model):
+    sql_plan_capture: SqlPlanCapturePolicy = Field(default_factory=SqlPlanCapturePolicy)
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
@@ -210,6 +212,7 @@ class CreateAIOpsAgentCommand(_Model):
 
 
 class UpdateAIOpsAgentCommand(_Model):
+    sql_plan_capture: SqlPlanCapturePolicy | None = None
     domain_id: int = Field(ge=1)
     agent_id: UUID
     expected_row_version: int = Field(ge=1)
@@ -516,6 +519,9 @@ class AIOpsAgentService:
                 exclude={"domain_id", "agent_id", "expected_row_version", "actor_id"},
                 exclude_unset=True,
             )
+            if changes.get("sql_plan_capture") is None:
+                # 可选更新的空值不删除既有授权范围；停用须提交显式禁用策略。
+                changes.pop("sql_plan_capture", None)
             effective_business_system_ids = tuple(
                 changes.get("allowed_business_system_ids", tuple(current_business_systems))
             )
@@ -525,6 +531,7 @@ class AIOpsAgentService:
                 if policy
             ]
             effective = {
+                "sql_plan_capture": changes.get("sql_plan_capture", current_rules.get("sql_plan_capture", {})),
                 "domain_id": command.domain_id,
                 "allowed_business_system_ids": effective_business_system_ids,
                 "capabilities": changes.get(
@@ -568,6 +575,7 @@ class AIOpsAgentService:
                 effective,
             )
             version_fields = {
+                "sql_plan_capture",
                 "allowed_business_system_ids",
                 "capabilities",
                 "knowledge_policy",
@@ -1024,6 +1032,7 @@ class AIOpsAgentService:
     ) -> PolicyEntity:
         now = datetime.now(UTC)
         rules = {
+            "sql_plan_capture": SqlPlanCapturePolicy.model_validate(values.get("sql_plan_capture", {})).model_dump(mode="json"),
             "schema_version": "ops.policy.v1",
             "readonly_database_enabled": True,
             "auto_alert_enabled": bool(values.get("auto_alert_enabled", True)),
@@ -1164,6 +1173,7 @@ class AIOpsAgentService:
         )
         rules = dict(policy.rules_json or {}) if policy is not None else {}
         return {
+            "sql_plan_capture": SqlPlanCapturePolicy.model_validate(rules.get("sql_plan_capture", {})).model_dump(mode="json"),
             "agent_id": str(agent.agent_id),
             "domain_id": str(agent.domain_id),
             "display_name": agent.display_name,

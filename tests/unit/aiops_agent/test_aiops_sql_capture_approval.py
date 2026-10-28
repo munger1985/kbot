@@ -209,9 +209,9 @@ def test_public_and_internal_capture_endpoints_exist_and_main_route_permissions_
     for app in (create_internal_contract_app(), create_aiops_public_contract_app()):
         schema = app.openapi()
         routes = {path: value for path, value in schema["paths"].items() if "/runs/{run_id}/sql-plan-capture" in path}
-        assert len(routes) == 4
-        assert sum("get" in value for value in routes.values()) == 2
-        assert sum("post" in value for value in routes.values()) == 2
+        assert len(routes) == 7
+        assert sum("get" in value for value in routes.values()) == 3
+        assert sum("post" in value for value in routes.values()) == 4
         assert sum("delete" in value for value in routes.values()) == 1
     if hasattr(ops, "AIOPS_ROUTE_PERMISSIONS"):
         for name in ("list_sql_plan_material_sources", "list_sql_plan_materials", "submit_sql_plan_material", "revoke_sql_plan_material",

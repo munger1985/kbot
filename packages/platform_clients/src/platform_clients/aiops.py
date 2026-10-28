@@ -1621,6 +1621,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
     async def revoke_sql_plan_capture(self, run_id: UUID, request_id: UUID, *, auth_context: AuthContext):
         return await self._json("DELETE", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}", auth_context=auth_context)
 
+    async def start_sql_plan_capture(self, run_id: UUID, request_id: UUID, command, *, auth_context: AuthContext):
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/start", auth_context=auth_context, payload=command)
+
+    async def get_sql_plan_capture_execution(self, run_id: UUID, request_id: UUID, *, auth_context: AuthContext):
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/execution", auth_context=auth_context)
+
+    async def cancel_sql_plan_capture(self, run_id: UUID, request_id: UUID, *, auth_context: AuthContext):
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-captures/{request_id}/cancel", auth_context=auth_context, payload={})
+
     async def list_sql_plan_material_sources(self, run_id: UUID, *, auth_context: AuthContext):
         return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-material-sources", auth_context=auth_context)
 

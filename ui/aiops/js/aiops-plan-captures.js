@@ -7,7 +7,7 @@
     const root = document.createElement("details");
     root.className = "ops-panel-body";
     root.innerHTML = `<summary>计划采集独立审批</summary>
-      <p>仅审批估算计划风险。不授权 ANALYZE、业务 SQL 或数据库变更；专用执行任务尚未接通，审批后不会立即采集。</p>
+      <p>独立审批后，由申请人显式发起后台估算采集。不执行原业务 SQL 或 ANALYZE；估算结果不证明原解析环境、参数代表性或生产实际执行。</p>
       ${options.canReview ? '<button type="button" data-review-mode>切换审批视图</button>' : ""}
       <p data-capture-availability></p><form class="ops-form" data-capture-request>
       <label>通过静态预检的保护材料<select name="capture_material"><option value="">请选择材料</option></select></label>
@@ -25,9 +25,27 @@
     const ackOracle = root.querySelector('[name="ack_oracle"]');
     const base = appApi + "/runs/" + encodeURIComponent(run.ops_run_id);
     let captures = [];
+    let executions = {};
     let busy = false;
     let reviewMode = false;
     const active = () => document.contains(root);
+    function executionMarkup(item) {
+      if (reviewMode || !item.capture_scheduled) return "";
+      const entry = executions[item.request_id];
+      if (!entry) return "<p>暂不能读取采集状态或结果，请刷新；来源或访问授权变化时不会展示旧结果。</p>";
+      const terminal = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED"].includes(entry.run_status);
+      const labels = { CREATED: "已创建", QUEUED: "等待执行", RUNNING: "采集中", COMPLETED: "后台任务已完成", PARTIAL: "部分完成", FAILED: "采集失败", CANCELLED: "后台任务已取消", EXPIRED: "后台任务已超时" };
+      let html = `<p>${escape(entry.phase === "QUEUED" ? "等待后台领取，尚未开始采集" : entry.cancel_requested && !terminal ? "已请求取消，等待终止确认" : labels[entry.run_status] || entry.run_status)}</p>`;
+      if (entry.can_cancel) html += `<button type="button" data-capture-id="${escape(item.request_id)}" data-capture-action="CANCEL">请求取消采集</button>`;
+      const result = entry.result;
+      if (!result) return html;
+      if (result.status === "FAILED") return html + `<p>估算未取得可用结果：${escape(result.error_code)}</p>`;
+      return html + `<p>估算计划 · 采集于 ${escape(result.captured_at)}。不是实际执行计划，不含参数原值或谓词。</p>
+        ${item.oracle_plan_table_write ? "<p>Oracle 参数窥探未证明。</p>" : ""}
+        <div class="ops-table-wrap" tabindex="0" aria-label="估算计划节点，可横向滚动"><table class="ops-table"><thead><tr><th>节点 / 父节点</th><th>操作</th><th>对象 / 索引</th><th>估算指标</th></tr></thead><tbody>
+        ${result.nodes.map((node) => `<tr><td>${escape(node.node_id)} / ${escape(node.parent_id ?? "—")}</td><td>${escape(node.operation)}</td><td>${escape([node.schema_name, node.relation_name].filter(Boolean).join("."))} ${escape(node.index_name || "")}</td><td>${escape(JSON.stringify(node.metrics))}</td></tr>`).join("")}
+        </tbody></table></div>`;
+    }
     function setBusy(value) {
       busy = value;
       root.querySelectorAll("button, input, select").forEach((element) => { element.disabled = value; });
@@ -46,6 +64,14 @@
         if (!active()) return;
         if (result.status === "rejected") throw result.reason;
         const page = result.value;
+        executions = {};
+        if (!reviewMode) {
+          const scheduled = page.items.filter((item) => item.capture_scheduled);
+          const statuses = await Promise.allSettled(scheduled.map((item) => KBotAIOpsAuth.request(
+            base + "/sql-plan-captures/" + encodeURIComponent(item.request_id) + "/execution", { cache: "no-store" })));
+          if (!active()) return;
+          scheduled.forEach((item, index) => { executions[item.request_id] = statuses[index].status === "fulfilled" ? statuses[index].value : null; });
+        }
         form.elements.capture_timeout.max = String(page.max_statement_timeout_seconds ?? 5);
         form.elements.capture_timeout.value = String(Math.min(5, page.max_statement_timeout_seconds ?? 5));
         captures = page.items;
@@ -60,24 +86,27 @@
         const eligible = materials.status === "fulfilled" ? materials.value.items.filter((item) => item.state === "STORED" && item.capture_preflight?.status === "AWAITING_DATABASE_VALIDATION") : [];
         selector.innerHTML = '<option value="">请选择材料</option>' + eligible.map((item) => `<option value="${escape(item.material_id)}">${escape(item.material_id)}</option>`).join("");
         const labels = { PENDING: "待独立审批", APPROVED: "已审批，尚未调度采集", REJECTED: "已驳回", REVOKED: "已撤回", EXPIRED: "已过期", UNAVAILABLE: "来源或授权已失效" };
-        list.innerHTML = captures.map((item) => `<section class="ops-panel-body"><strong>${escape(labels[item.state] || item.state)}</strong>
+        list.innerHTML = captures.map((item) => `<section class="ops-panel-body"><strong>${escape(item.capture_scheduled ? "已调度估算采集" : labels[item.state] || item.state)}</strong>
+          ${item.capture_scheduled ? `<p>审批当前状态：${escape(labels[item.state] || item.state)} · 后台运行 ${escape(item.capture_run_id)}</p>` : ""}
           <p>${escape(item.source.database_type)} · ${escape(JSON.stringify(item.source.subject))}</p>
           <p>允许对象：${escape(item.allowed_objects.join("、"))} · 语句时限 ${escape(item.statement_timeout_seconds)}秒 · 审批到期 ${escape(item.expires_at)}</p>
           <p>申请人 ${escape(item.requested_by)}${item.decided_by ? " · 审批人 " + escape(item.decided_by) : ""}</p>
           ${page.can_review && item.state === "PENDING" ? `<button type="button" data-capture-id="${escape(item.request_id)}" data-capture-action="APPROVE">批准估算风险，不执行</button><button type="button" data-capture-id="${escape(item.request_id)}" data-capture-action="REJECT">驳回</button>` : ""}
+          ${!page.can_review && item.state === "APPROVED" && !item.capture_scheduled ? `<button type="button" data-capture-id="${escape(item.request_id)}" data-capture-action="START">发起估算采集</button>` : ""}
+          ${executionMarkup(item)}
           ${!page.can_review && ["PENDING", "APPROVED", "EXPIRED", "UNAVAILABLE"].includes(item.state) ? `<button type="button" data-capture-id="${escape(item.request_id)}" data-capture-action="REVOKE">撤回采集请求</button>` : ""}</section>`).join("");
       } catch (_) {
         if (active()) { list.textContent = "无法读取计划采集审批，请刷新后重试"; captures = []; form.hidden = true; root.querySelector("[data-capture-review]").hidden = true; }
       } finally { if (active()) setBusy(false); }
     }
-    async function mutate(suffix, method, body) {
+    async function mutate(suffix, method, body, message = "计划采集审批状态已更新，未执行数据库 SQL") {
       setBusy(true);
       try {
         await KBotAIOpsAuth.request(base + suffix, { method, ...(body ? { body: JSON.stringify(body) } : {}) });
         if (!active()) return;
-        KBotAIOpsShell.toast("计划采集审批状态已更新，未执行数据库 SQL");
+        KBotAIOpsShell.toast(message);
         await load();
-      } catch (_) { if (active()) KBotAIOpsShell.toast("计划采集审批未更新，请刷新后重试"); }
+      } catch (_) { if (active()) KBotAIOpsShell.toast("计划采集操作未完成，请刷新确认状态后重试"); }
       finally { if (active()) setBusy(false); }
     }
     root.addEventListener("toggle", () => { if (root.open && !busy) void load(); });
@@ -98,6 +127,8 @@
       const item = captures.find((entry) => entry.request_id === button.dataset.captureId);
       const action = button.dataset.captureAction;
       const path = "/sql-plan-captures/" + encodeURIComponent(item.request_id);
+      if (action === "START") { void mutate(path + "/start", "POST", { request_sha256: item.request_sha256 }, "已调度后台估算采集；执行前仍将复核当前授权"); return; }
+      if (action === "CANCEL") { void mutate(path + "/cancel", "POST", undefined, "已提交取消请求；请刷新状态确认后台及数据库终止情况"); return; }
       if (action === "REVOKE") { void mutate(path, "DELETE"); return; }
       void mutate(path + "/decision", "POST", { request_sha256: item.request_sha256, decision: action,
         acknowledge_estimate_only: action === "APPROVE" && ackEstimate.checked,
