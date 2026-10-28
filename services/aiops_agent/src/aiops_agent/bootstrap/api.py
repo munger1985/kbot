@@ -189,6 +189,11 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory,
             vault=SqlPlanMaterialVault(cipher=credential_cipher),
         )
+        from aiops_agent.application.sql_plan_captures import SqlPlanCaptureService
+        app.state.sql_plan_capture_service = SqlPlanCaptureService(
+            uow_factory=runtime.uow_factory, materials=app.state.sql_plan_material_service,
+            approval_enabled=resolved.management.agent_execution_enabled,
+        )
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
             model_client=model_client,

@@ -9,6 +9,7 @@
   let futureRefreshTimer = null;
   let lifecycleRunId = "";
   let terminalLifecycleRefreshes = 0;
+  let currentAccess = null;
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]] },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
@@ -1306,6 +1307,7 @@
       if (page === "run-detail") {
         panel.innerHTML += `${readonlyLifecycleHtml(data)}<div class="ops-actions"><button type="button" data-refresh-run>刷新详情</button></div>`;
         window.KBotAIOpsPlanMaterials.mount(panel, data, appApi);
+        window.KBotAIOpsPlanCaptures.mount(panel, data, appApi, { canReview: new Set(currentAccess?.permissions || []).has("aiops:proposal:approve") });
         panel.querySelector("[data-refresh-run]").onclick = () => { terminalLifecycleRefreshes = 0; return renderDetail("run-detail"); };
         scheduleRunRefresh(data, panel);
       }
@@ -1329,6 +1331,7 @@
     catch (error) { panel.innerHTML = `<div class="ops-error">${shell.escape(error.message)}</div>`; }
   }
   shell.ready.then((access) => {
+    currentAccess = access;
     document.querySelectorAll("header.ops-head button:not([onclick]):not([data-write-ready])").forEach((button) => {
       button.disabled = true;
       button.title = "该写操作将在对应配置表单接入后开放";

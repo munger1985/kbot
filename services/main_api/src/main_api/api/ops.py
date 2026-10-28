@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from platform_core.contracts.aiops.sql_plan_capture import SqlPlanCaptureRequest, SqlPlanCaptureDecision, SqlPlanCapturePage, SqlPlanCaptureView
+
 from platform_core.contracts.aiops.sql_plan_material import (
     SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialSubmit, SqlPlanMaterialView,
 )
@@ -157,6 +159,8 @@ def _route_permissions() -> dict[str, str]:
     permissions: dict[str, str] = {}
     groups = {
         "aiops:use": {
+            "list_sql_plan_material_sources", "list_sql_plan_materials", "submit_sql_plan_material", "revoke_sql_plan_material",
+            "list_sql_plan_captures", "request_sql_plan_capture", "revoke_sql_plan_capture",
             "list_notification_subscriptions", "upsert_notification_subscription",
             "disable_notification_subscription", "get_report", "generate_report",
             "edit_report", "get_report_presentation", "download_report_pdf",
@@ -190,6 +194,7 @@ def _route_permissions() -> dict[str, str]:
             "review_recovery_drill",
         },
         "aiops:proposal:approve": {
+            "list_sql_plan_capture_reviews", "decide_sql_plan_capture",
             "reject_proposal", "approve_proposal", "record_manual_result",
             "get_effect_verification", "freeze_effect_plan", "evaluate_effect_plan",
         },
@@ -986,6 +991,36 @@ async def get_ops_run(
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
 
+
+
+@router.get("/runs/{run_id}/sql-plan-captures", response_model=SqlPlanCapturePage)
+async def list_sql_plan_captures(run_id: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).list_sql_plan_captures(run_id, auth_context=request.state.auth_context)
+
+
+@router.get("/runs/{run_id}/sql-plan-capture-reviews", response_model=SqlPlanCapturePage)
+async def list_sql_plan_capture_reviews(run_id: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).list_sql_plan_capture_reviews(run_id, auth_context=request.state.auth_context)
+
+
+@router.post("/runs/{run_id}/sql-plan-captures", response_model=SqlPlanCaptureView, status_code=201)
+async def request_sql_plan_capture(run_id: UUID, body: SqlPlanCaptureRequest, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).request_sql_plan_capture(run_id, body.model_dump(mode="json"), auth_context=request.state.auth_context)
+
+
+@router.post("/runs/{run_id}/sql-plan-captures/{request_id}/decision", response_model=SqlPlanCaptureView)
+async def decide_sql_plan_capture(run_id: UUID, request_id: UUID, body: SqlPlanCaptureDecision, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).decide_sql_plan_capture(run_id, request_id, body.model_dump(mode="json"), auth_context=request.state.auth_context)
+
+
+@router.delete("/runs/{run_id}/sql-plan-captures/{request_id}", response_model=SqlPlanCaptureView)
+async def revoke_sql_plan_capture(run_id: UUID, request_id: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).revoke_sql_plan_capture(run_id, request_id, auth_context=request.state.auth_context)
 
 @router.get("/runs/{run_id}/sql-plan-material-sources", response_model=list[SqlPlanMaterialSource])
 async def list_sql_plan_material_sources(run_id: UUID, request: Request, response: Response):
