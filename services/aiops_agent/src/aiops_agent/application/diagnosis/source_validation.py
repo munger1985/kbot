@@ -16,7 +16,7 @@ async def validate_investigation_sources(*, uow, run, payload):
     record_payload = payload.get("investigation_record") or {}
     if not isinstance(record_payload, dict):
         return False
-    if record_payload.get("sql_object_graph") is None:
+    if record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs"):
         return True
     try:
         record = InvestigationRecord.model_validate(record_payload)
@@ -24,7 +24,13 @@ async def validate_investigation_sources(*, uow, run, payload):
         if record.target_id != str(run.target_id) or record.run_id != str(run.ops_run_id):
             return False
         record.validate_observations(facts)
-        used = {ref.evidence_ref for edge in record.sql_object_graph.relationships for ref in (edge.anchor, edge.related)}
+        used = {ref.evidence_ref for graph in record.sql_graphs for edge in graph.relationships for ref in (edge.anchor, edge.related)}
+        # 多主体图可能没有可建立的对象边；其已确认语句判断仍须回查原工具，而非仅信任冻结副本。
+        used.update(ref.evidence_ref for claim in record.claims
+                    for ref in (*claim.evidence_fields, *claim.counterevidence_fields)
+                    if any(fact.evidence_ref == ref.evidence_ref and fact.tool_id.startswith("db.")
+                           and fact.trust_level == "SOURCE_VERIFIED" and fact.source_id != "prior_turn.sql_observation"
+                           for fact in facts))
         sources = {}
         for fact in facts:
             if fact.evidence_ref not in used:
@@ -48,7 +54,7 @@ async def validate_investigation_sources(*, uow, run, payload):
             observation = outcomes[0].observation
             if (fact.evidence_ref != f"artifact:{identity}#{fact.step_id}"
                 or str(observation.target_id) != str(run.target_id)
-                or observation.db_type != record.sql_object_graph.database_type
+                or observation.db_type not in {graph.database_type for graph in record.sql_graphs}
                 or fact.captured_at != observation.captured_at.isoformat()
                 or fact.row_count != observation.row_count or fact.truncated != observation.truncated
                 or fact.columns != tuple(column.model_dump(mode="json") for column in observation.columns)

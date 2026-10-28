@@ -1192,7 +1192,7 @@
       const primary = payload.presentation_role === "PRIMARY";
       const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST", "SQL_SUBJECT_CANDIDATES", "SQL_SUBJECT_COMPARISON"].includes(payload.result_kind);
       const orderedColumns = columns.map((column, index) => ({ column, index }))
-        .filter(({ column }) => !topSql || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
+        .filter(({ column }) => !topSql || payload.result_kind === "SQL_SUBJECT_COMPARISON" || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);
       const rows = values(payload.rows);
       const actionHead = primary ? "<th>操作</th>" : "";

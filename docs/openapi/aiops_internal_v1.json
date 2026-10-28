@@ -17998,7 +17998,7 @@
           },
           "diagnostic_profile": {
             "default": "GENERAL",
-            "pattern": "^(GENERAL|SINGLE_SQL_PERFORMANCE)$",
+            "pattern": "^(GENERAL|SINGLE_SQL_PERFORMANCE|SQL_COMPARISON)$",
             "title": "Diagnostic Profile",
             "type": "string"
           },

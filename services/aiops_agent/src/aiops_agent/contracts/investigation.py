@@ -184,6 +184,11 @@ class InvestigationRecord(BaseModel):
     claim_revisions: tuple[ClaimRevision, ...] = ()
     runbook: ImplementationRunbook | None = None
     sql_object_graph: SqlObjectGraph | None = None
+    sql_subject_graphs: tuple[SqlObjectGraph, ...] = Field(default=(), max_length=20)
+
+    @property
+    def sql_graphs(self) -> tuple[SqlObjectGraph, ...]:
+        return (self.sql_object_graph,) if self.sql_object_graph is not None else self.sql_subject_graphs
 
     @model_validator(mode="after")
     def validate_record(self):
@@ -201,8 +206,16 @@ class InvestigationRecord(BaseModel):
         for claim in draft.claims:
             if any(item.evidence_ref not in refs for item in (*claim.evidence_fields, *claim.counterevidence_fields)):
                 raise ValueError("主张必须引用本记录冻结的观测")
-        if self.sql_object_graph is not None:
-            for edge in self.sql_object_graph.relationships:
+        if self.sql_object_graph is not None and self.sql_subject_graphs:
+            raise ValueError("单主体根图与多主体图不能同时存在")
+        from aiops_agent.playbooks import canonical_hash
+        subjects = [canonical_hash(graph.subject) for graph in self.sql_graphs]
+        if len(subjects) != len(set(subjects)):
+            raise ValueError("同一完整 SQL 主体不能重复冻结对象图")
+        if len({graph.database_type for graph in self.sql_graphs}) > 1:
+            raise ValueError("同一 Target 的对象图不能混合数据库引擎")
+        for graph in self.sql_graphs:
+            for edge in graph.relationships:
                 if edge.anchor.evidence_ref not in refs or edge.related.evidence_ref not in refs:
                     raise ValueError("对象关系必须引用本记录冻结的观测")
         claim_ids = {item.claim_id for item in self.claims}
@@ -246,6 +259,6 @@ class InvestigationRecord(BaseModel):
             for key in InvestigationObservation.model_fields:
                 if str(getattr(observation, key)) != str(getattr(fact, key)):
                     raise ValueError("调查记录与原观测的身份、时间、口径或信任标记不一致")
-        if self.sql_object_graph is not None:
-            from aiops_agent.domain.evidence.sql_object_graph import replay_sql_object_graph
-            replay_sql_object_graph(self.sql_object_graph, evidence)
+        from aiops_agent.domain.evidence.sql_object_graph import replay_sql_object_graph
+        for graph in self.sql_graphs:
+            replay_sql_object_graph(graph, evidence)

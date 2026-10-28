@@ -1036,7 +1036,19 @@ class DbaEvidenceAssessmentHandler:
                         detail=question, retryable=False,
                     )),
                 })
-            if task_frame.get("diagnostic_profile") == "SINGLE_SQL_PERFORMANCE" and (not bundle or not any(
+            if bundle and bundle.get("requests") and not bundle["subject_resolution"]["requests_complete"]:
+                incomplete = [request for request in bundle["requests"] if request["status"] not in {"RESOLVED", "COMPARISON"} or request["truncated"] or not request["subject_ids"]]
+                gap = TurnEvidenceGap(
+                    source_id="sql.comparison", step_id="sql.comparison", code="SQL_COMPARISON_INCOMPLETE",
+                    detail="请求的 SQL 尚未全部取得完整且无歧义的主体证据；已取得的 SQL 仍可分别诊断，不能声明整体比较完成。"
+                        + "；".join(str(request["subject_ref"]) + "：" + request["status"] for request in incomplete),
+                    retryable=False,
+                )
+                return combined.model_copy(update={
+                    "status": SufficiencyStatus.PARTIAL if value.status == SufficiencyStatus.ANSWERABLE else value.status,
+                    "gaps": (*combined.gaps, gap),
+                })
+            if task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and (not bundle or not any(
                 observation["trust_level"] == "SOURCE_VERIFIED" and row["role"] == "SUBJECT"
                 for observation in bundle["observations"] for row in observation["records"]
             )):
@@ -1129,7 +1141,7 @@ class DbaEvidenceAssessmentHandler:
         window_gaps = tuple(
             gap for gap in gaps if gap.source_id == "workload.sql.top_window"
         )
-        if window_gaps and task_frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE" and assessed_status in {
+        if window_gaps and task_frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and assessed_status in {
             SufficiencyStatus.ANSWERABLE,
             SufficiencyStatus.PARTIAL,
             SufficiencyStatus.NEEDS_EVIDENCE,
@@ -1678,7 +1690,7 @@ class DbaAnswerComposeHandler:
         self, context: TaskExecutionContext, assessment: DbaSufficiencyAssessment,
     ) -> AIOpsTurnResult | None:
         task_frame = dict(self._answer_context(context).get("task_frame") or {})
-        if task_frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE":
+        if task_frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"}:
             return None
         bundle = build_sql_evidence_bundle(
             task_frame=task_frame, database_type=self._database_type(context),
@@ -2627,7 +2639,7 @@ class DbaAnswerComposeHandler:
     @staticmethod
     def _sql_candidate_blocks(assessment, context, *, comparison=False):
         frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
-        if frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE" or not comparison and assessment.status != SufficiencyStatus.NEEDS_CLARIFICATION:
+        if frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} or not comparison and assessment.status != SufficiencyStatus.NEEDS_CLARIFICATION:
             return ()
         bundle = build_sql_evidence_bundle(
             task_frame=frame, database_type=DbaAnswerComposeHandler._database_type(context),
@@ -2637,27 +2649,41 @@ class DbaAnswerComposeHandler:
             return ()
         resolution = bundle["subject_resolution"]
         source_ref = next((str(item["artifact_id"]) for item in context.input_artifacts if item.get("schema_version") == "DBA_SUFFICIENCY.v1" and item.get("artifact_id")), None)
-        fact = next(item for item in assessment.evidence if item.evidence_ref == resolution["candidates"][0]["evidence_ref"])
-        indices = [item["row_index"] for item in resolution["candidates"]]
-        wanted = {"query_id", "sql_id", "digest", "database_oid", "database_name", "user_oid", "username", "top_level", "schema_name", "inst_id", "container_id", "child_number", "plan_hash_value", "normalized_statement", "sql_text", "digest_text"}
+        facts = {item.evidence_ref: item for item in assessment.evidence}
+        entries = [(facts[item["evidence_ref"]], item["row_index"]) for item in resolution["candidates"]]
+        wanted = {"query_id", "sql_id", "digest", "database_oid", "database_name", "user_oid", "username", "top_level", "schema_name", "dbid", "inst_id", "container_id", "child_number", "plan_hash_value", "normalized_statement", "sql_text", "digest_text"}
         if comparison:
-            wanted |= {"dbid", "execution_count", "executions", "total_exec_time_ms", "mean_exec_time_ms",
+            wanted |= {"execution_count", "executions", "total_exec_time_ms", "mean_exec_time_ms",
                        "total_latency_picoseconds", "average_latency_picoseconds", "elapsed_seconds", "cpu_seconds",
                        "shared_blks_hit", "shared_blks_read", "buffer_gets", "disk_reads"}
-        columns = [(index, column) for index, column in enumerate(fact.columns) if str(column.get("name") or "").lower() in wanted]
+        columns = {}
+        for fact, _ in entries:
+            for column in fact.columns:
+                name = str(column.get("name") or "").lower()
+                if name in wanted:
+                    columns.setdefault(name, {**column, "name": name, "label": _PRIMARY_COLUMN_LABELS.get(name, name)})
+        for name, label in (("observation_captured_at", "采集时间"), ("observation_semantics", "统计口径")):
+            columns[name] = {"name": name, "label": label, "logical_type": "STRING"}
+        rows = []
+        for fact, index in entries:
+            mapped = {str(column.get("name") or "").lower(): value for column, value in zip(fact.columns, fact.rows[index], strict=True)}
+            mapped.update(observation_captured_at=fact.captured_at, observation_semantics={
+                "CUMULATIVE_SINCE_LOAD": "统计累计值", "SNAPSHOT_DELTA": "窗口增量", "CURRENT_ACTIVITY": "当前活动快照",
+            }.get(str(fact.measurement_semantics), str(fact.measurement_semantics)))
+            rows.append(exact_wire([mapped.get(name) for name in columns]))
         return (TurnAnswerBlock(
             block_type=AnswerBlockType.TABLE, schema_version="AIOPS_TABLE_BLOCK.v1",
             payload={
-                "title": "SQL 统计主体对比" if comparison else "选择 SQL 统计主体", "presentation_role": "PRIMARY",
+                "title": "SQL 独立主体对比" if comparison else "选择 SQL 统计主体", "presentation_role": "PRIMARY",
                 "result_kind": "SQL_SUBJECT_COMPARISON" if comparison else "SQL_SUBJECT_CANDIDATES",
                 "follow_up_label": "仅诊断此主体" if comparison else "选择并诊断",
-                "columns": [{**column, "label": _PRIMARY_COLUMN_LABELS.get(str(column["name"]).lower(), str(column["name"]))} for _, column in columns],
-                "rows": [exact_wire([fact.rows[row_index][index] for index, _ in columns]) for row_index in indices],
-                "row_selections": [selection_ref(artifact_id=source_ref, fact=fact, row_index=index) for index in indices] if source_ref else [],
-                "row_count": len(indices), "truncated": resolution["truncated"],
-                "captured_at": fact.captured_at, "measurement_semantics": str(fact.measurement_semantics),
+                "columns": list(columns.values()), "rows": rows,
+                "row_selections": [selection_ref(artifact_id=source_ref, fact=fact, row_index=index) for fact, index in entries] if source_ref else [],
+                "row_count": len(entries), "truncated": resolution["truncated"],
+                "captured_at": max((fact.captured_at for fact, _ in entries), default=None),
+                "measurement_semantics": str(entries[0][0].measurement_semantics) if entries and len({str(fact.measurement_semantics) for fact, _ in entries}) == 1 else "NOT_APPLICABLE",
                 "measurement_note": resolution["limitation"],
-            }, evidence_refs=(fact.evidence_ref,),
+            }, evidence_refs=tuple(dict.fromkeys(fact.evidence_ref for fact, _ in entries)),
         ),)
 
     @staticmethod

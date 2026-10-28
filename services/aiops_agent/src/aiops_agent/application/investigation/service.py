@@ -428,7 +428,7 @@ class TurnPlanningService:
             investigation,
             workflow_kind=str(context.workflow_kind or ""),
         )
-        if investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE:
+        if investigation.task_frame.diagnostic_profile in {DiagnosticProfile.SINGLE_SQL_PERFORMANCE, DiagnosticProfile.SQL_COMPARISON}:
             context = replace(context, prior_sql_evidence=await self._load_prior_sql_evidence(
                 context, task_frame=investigation.task_frame.model_dump(mode="json"),
             ))
@@ -437,7 +437,7 @@ class TurnPlanningService:
             monitoring_binding_ids=monitoring_binding_ids,
             log_binding_ids=log_binding_ids,
             user_evidence_artifact_keys=self._initial_user_evidence_keys(
-                context, include_prior_sql=(investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE)
+                context, include_prior_sql=(investigation.task_frame.diagnostic_profile in {DiagnosticProfile.SINGLE_SQL_PERFORMANCE, DiagnosticProfile.SQL_COMPARISON})
             ),
             include_change=(
                 investigation.task_frame.action_intent != ActionIntent.NONE
@@ -1169,7 +1169,7 @@ class TurnPlanningService:
         )
         compact = routed.output
         profile_tool_ids = (
-            () if compact.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
+            () if compact.diagnostic_profile in {DiagnosticProfile.SINGLE_SQL_PERFORMANCE, DiagnosticProfile.SQL_COMPARISON}
             else self._profile_tool_ids(compact, context.target_context)
         )
         available_tool_ids = {
@@ -1224,8 +1224,10 @@ class TurnPlanningService:
         single_sql_subject = self._single_sql_subject(
             compact, context.target_context
         )
+        comparison_sql_subjects = self._comparison_sql_subjects(compact, context.target_context)
         profile_incomplete = (
-            (
+            (compact.diagnostic_profile == DiagnosticProfile.SQL_COMPARISON and comparison_sql_subjects is None)
+            or (
                 compact.diagnostic_profile
                 == DiagnosticProfile.SINGLE_SQL_PERFORMANCE
                 and single_sql_subject is None
@@ -1256,13 +1258,14 @@ class TurnPlanningService:
             CompactPlanningMode.FULL_INVESTIGATION
             if compact_route_incomplete
             else CompactPlanningMode.FULL_INVESTIGATION
-            if single_sql_subject is not None
+            if single_sql_subject is not None or comparison_sql_subjects is not None
             else compact.planning_mode
         )
         public_summary = compact.public_reasoning_summary
-        if single_sql_subject is not None:
-            compact = compact.model_copy(update={"subject_ref": single_sql_subject})
-            public_summary = "已确定单 SQL 对象，将按问题和可用证据形成诊断计划"
+        if single_sql_subject is not None or comparison_sql_subjects is not None:
+            normalized = single_sql_subject if single_sql_subject is not None else {"subjects": list(comparison_sql_subjects)}
+            compact = compact.model_copy(update={"subject_ref": normalized})
+            public_summary = "已确定 SQL 诊断对象，将按各自完整主体形成独立取证与比较计划"
             # 不用固定基线替代诊断；目录外受控观察也必须可被规划器选择。
             selected_tools = available_tools
             selected_playbooks = available_playbooks
@@ -1335,7 +1338,7 @@ class TurnPlanningService:
                 selected_playbooks,
                 route_snapshot,
             )
-        if single_sql_subject is None and not compact_route_incomplete and compact.planning_mode in {
+        if single_sql_subject is None and comparison_sql_subjects is None and not compact_route_incomplete and compact.planning_mode in {
             CompactPlanningMode.READ_ONLY_LOOKUP,
             CompactPlanningMode.CONTROLLED_ACTION,
         }:
@@ -1519,89 +1522,18 @@ class TurnPlanningService:
         )
 
     @staticmethod
-    def _single_sql_subject(
-        compact, target_context: dict
-    ) -> dict[str, Any] | None:
-        if (
-            compact.diagnostic_profile
-            != DiagnosticProfile.SINGLE_SQL_PERFORMANCE
-        ):
+    def _single_sql_subject(compact, target_context: dict) -> dict[str, Any] | None:
+        if compact.diagnostic_profile != DiagnosticProfile.SINGLE_SQL_PERFORMANCE:
             return None
-        subject_type = str(
-            compact.subject_ref.get("subject_type") or ""
-        ).strip().upper()
-        db_type = str(target_context.get("db_type") or "").strip().upper()
-        if subject_type == "ORACLE_SQL_ID" and db_type in {"", "ORACLE"}:
-            sql_id = str(
-                compact.subject_ref.get("sql_id") or ""
-            ).strip().lower()
-            if len(sql_id) == 13 and sql_id.isalnum():
-                subject = {
-                    "subject_type": subject_type,
-                    "sql_id": sql_id,
-                }
-                for key in ("dbid", "inst_id", "container_id", "child_number", "plan_hash_value"):
-                    if key not in compact.subject_ref:
-                        continue
-                    raw = compact.subject_ref[key]
-                    if isinstance(raw, bool) or not re.fullmatch(r"0|[1-9][0-9]{0,19}", str(raw)):
-                        return None
-                    value = int(raw)
-                    if value > 2**64 - 1 or (key in {"dbid", "inst_id"} and value == 0):
-                        return None
-                    subject[key] = value
-                return subject
-        if subject_type == "MYSQL_DIGEST" and db_type in {"", "MYSQL"}:
-            digest = str(
-                compact.subject_ref.get("digest") or ""
-            ).strip().upper()
-            if len(digest) == 64 and all(
-                char in "0123456789ABCDEF" for char in digest
-            ):
-                subject = {
-                    "subject_type": subject_type,
-                    "digest": digest,
-                }
-                if "schema_name" in compact.subject_ref:
-                    schema_name = compact.subject_ref["schema_name"]
-                    if schema_name is not None and (not isinstance(schema_name, str) or not schema_name or len(schema_name) > 64):
-                        return None
-                    subject["schema_name"] = schema_name
-                return subject
+        from aiops_agent.domain.sql_subjects import normalize_sql_subject
+        return normalize_sql_subject(compact.subject_ref, str(target_context.get("db_type") or "").strip().upper())
+
+    @staticmethod
+    def _comparison_sql_subjects(compact, target_context: dict) -> tuple[dict, ...] | None:
+        if compact.diagnostic_profile != DiagnosticProfile.SQL_COMPARISON:
             return None
-        if subject_type == "POSTGRESQL_QUERY_ID" and db_type in {
-            "",
-            "POSTGRESQL",
-        }:
-            query_id = str(
-                compact.subject_ref.get("query_id") or ""
-            ).strip()
-            if not re.fullmatch(r"-?(?:0|[1-9][0-9]{0,18})", query_id):
-                return None
-            query_id_value = int(query_id)
-            if not -(2**63) <= query_id_value <= 2**63 - 1:
-                return None
-            subject: dict[str, Any] = {
-                "subject_type": subject_type,
-                "query_id": query_id,
-            }
-            if "database_oid" in compact.subject_ref:
-                raw = compact.subject_ref["database_oid"]
-                if isinstance(raw, bool) or not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw)) or int(raw) > 2**32 - 1:
-                    return None
-                subject["database_oid"] = int(raw)
-            if compact.subject_ref.get("user_oid") is not None:
-                raw = compact.subject_ref["user_oid"]
-                if isinstance(raw, bool) or not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw)) or int(raw) > 2**32 - 1:
-                    return None
-                subject["user_oid"] = int(raw)
-            if compact.subject_ref.get("top_level") is not None:
-                top_level = compact.subject_ref["top_level"]
-                if not isinstance(top_level, bool):
-                    return None
-                subject["top_level"] = top_level
-            return subject
-        return None
+        from aiops_agent.domain.sql_subjects import normalize_sql_comparison
+        return normalize_sql_comparison(compact.subject_ref, str(target_context.get("db_type") or "").strip().upper())
 
     @staticmethod
     def _single_sql_subject_value(subject: dict[str, Any]) -> str:
@@ -4566,7 +4498,7 @@ class TurnPlanningService:
                     ops_run_id=run.ops_run_id, artifact_key="turn-prior-sql-evidence:1",
                     artifact_type="PRIOR_TURN_SQL_EVIDENCE", schema_version="PRIOR_TURN_SQL_EVIDENCE.v1",
                     payload=context.prior_sql_evidence, producer="aiops.prior-turn-linker", trust_level="SOURCE_VERIFIED",
-                ) if context.prior_sql_evidence and investigation.task_frame.diagnostic_profile == DiagnosticProfile.SINGLE_SQL_PERFORMANCE else None
+                ) if context.prior_sql_evidence and investigation.task_frame.diagnostic_profile in {DiagnosticProfile.SINGLE_SQL_PERFORMANCE, DiagnosticProfile.SQL_COMPARISON} else None
             )
             recovery_assurance_artifact = (
                 self._artifact(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, _subject
+from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, sql_subject_specs
 from aiops_agent.contracts.turn_answer import DbaSufficiencyAssessment
 from aiops_agent.playbooks import canonical_hash
 
@@ -24,10 +24,9 @@ async def load_prior_sql_evidence(*, uow, turn, run, task_frame: dict) -> dict |
     """每次重验当前授权和来源哈希；仅原样继承匹配主体的行，不生成窗口差分。"""
     snapshot = dict(run.plan_snapshot_json or {})
     frozen = dict(snapshot.get("target") or {})
-    match = _subject(task_frame, str(frozen.get("db_type") or "").upper())
-    if match is None:
+    matches = sql_subject_specs(task_frame, str(frozen.get("db_type") or "").upper())
+    if not matches:
         return None
-    subject, (_, identity, _) = match
     target = await uow.targets.get_scoped(target_id=run.target_id, domain_id=run.domain_id)
     if (target is None or str(target.status) != "ENABLED"
         or str(target.row_version) != str(frozen.get("row_version"))
@@ -98,7 +97,7 @@ async def load_prior_sql_evidence(*, uow, turn, run, task_frame: dict) -> dict |
             if len(names) != len(set(names)):
                 continue
             indices = [index for index, row in enumerate(fact.rows[:MAX_ROWS])
-                       if len(row) == len(names) and _matches(dict(zip(names, row, strict=True)), subject, identity)]
+                       if len(row) == len(names) and any(_matches(dict(zip(names, row, strict=True)), subject, spec[1]) for subject, spec in matches)]
             if not indices:
                 continue
             key = (str(fact.artifact_id), fact.step_id)

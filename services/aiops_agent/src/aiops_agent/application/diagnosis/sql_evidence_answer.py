@@ -56,8 +56,9 @@ def _captured_at(fact: TurnEvidenceFact) -> float:
 
 
 def _matches(row: dict[str, Any], subject: dict[str, Any], identity: str) -> bool:
-    expected = str(subject.get(identity) or "").strip()
-    if not expected or str(row.get(identity) or "").strip().casefold() != expected.casefold():
+    expected = str(subject.get(identity) if subject.get(identity) is not None else "").strip()
+    actual = str(row.get(identity) if row.get(identity) is not None else "").strip()
+    if not expected or actual.casefold() != expected.casefold():
         return False
     for dimension in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value", "container_id", "dbid"):
         if dimension not in subject:
@@ -88,19 +89,31 @@ def _subject(task_frame: dict, database_type: str) -> tuple[dict, tuple[str, str
     return subject, spec
 
 
+def sql_subject_specs(task_frame: dict, database_type: str) -> tuple:
+    """比较请求共享搜索和投影预算，不为每个主体复制整轮证据。"""
+    if task_frame.get("diagnostic_profile") != "SQL_COMPARISON":
+        single = _subject(task_frame, database_type)
+        return (single,) if single else ()
+    if database_type not in _SUBJECTS or str(task_frame.get("action_intent") or "NONE") != "NONE":
+        return ()
+    from aiops_agent.domain.sql_subjects import normalize_sql_comparison
+    subjects = normalize_sql_comparison(task_frame.get("subject_ref") or {}, database_type)
+    return tuple((subject, _SUBJECTS[database_type]) for subject in subjects) if subjects else ()
+
+
 def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict, database_type: str = "") -> tuple[TurnEvidenceFact, ...]:
     """仅把历史中同一 SQL 的来源观测作为带原采集时间的上下文。"""
-    if task_frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE":
+    if task_frame.get("diagnostic_profile") not in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"}:
         return ()
     raw_subject = task_frame.get("subject_ref") or {}
     if not database_type and isinstance(raw_subject, dict):
+        if task_frame.get("diagnostic_profile") == "SQL_COMPARISON":
+            entries = raw_subject.get("subjects")
+            raw_subject = entries[0] if isinstance(entries, (list, tuple)) and entries and isinstance(entries[0], dict) else {}
         database_type = next((key for key, value in _SUBJECTS.items() if value[0] == raw_subject.get("subject_type")), "")
-    match = _subject(task_frame, database_type)
-    if match is None:
+    matches = sql_subject_specs(task_frame, database_type)
+    if not matches:
         return ()
-    subject, spec = match
-    subject_type = spec[0]
-    identity = spec[1]
     result = []
     for index, raw in enumerate(payload.get("facts") or ()):
         try:
@@ -109,7 +122,7 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
             continue
         if fact.trust_level != "SOURCE_VERIFIED":
             continue
-        rows = tuple(tuple(row) for row, mapped in zip(fact.rows, _row_dicts(fact), strict=True) if _matches(mapped, subject, identity)) if all(len(row) == len(fact.columns) for row in fact.rows) else ()
+        rows = tuple(tuple(row) for row, mapped in zip(fact.rows, _row_dicts(fact), strict=True) if any(_matches(mapped, subject, spec[1]) for subject, spec in matches)) if all(len(row) == len(fact.columns) for row in fact.rows) else ()
         if not rows:
             continue
         result.append(TurnEvidenceFact.model_validate({**fact.model_dump(mode="python"),
@@ -130,6 +143,22 @@ def build_sql_evidence_answer(
     *, task_frame: dict[str, Any], database_type: str, evidence: tuple[TurnEvidenceFact, ...],
 ) -> SqlEvidenceAnswer | None:
     """只处理结构化单 SQL 任务；不同账号、数据库及游标不合并。"""
+    if task_frame.get("diagnostic_profile") == "SQL_COMPARISON":
+        matches = sql_subject_specs(task_frame, database_type)
+        if not matches:
+            return None
+        answers = [(subject, build_sql_evidence_answer(
+            task_frame={**task_frame, "diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": subject},
+            database_type=database_type, evidence=evidence,
+        )) for subject, _ in matches]
+        return SqlEvidenceAnswer(
+            analysis="\n\n".join("SQL " + str(subject[next(key for key in ("query_id", "digest", "sql_id") if key in subject)]) + "：\n\n" + answer.analysis
+                for subject, answer in answers),
+            solution=answers[0][1].solution + "\n\n当前仅提供逐条已核验摘要，跨 SQL 的原因比较和方案尚未完成。",
+            evidence_refs=tuple(dict.fromkeys(ref for _, answer in answers for ref in answer.evidence_refs)),
+            has_statistics=any(answer.has_statistics for _, answer in answers),
+            historical_only=all(answer.historical_only for _, answer in answers if answer.has_statistics),
+        )
     match = _subject(task_frame, database_type)
     if match is None:
         return None

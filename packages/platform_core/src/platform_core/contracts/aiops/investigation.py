@@ -124,6 +124,7 @@ class DiagnosticProfile(StrEnum):
 
     GENERAL = "GENERAL"
     SINGLE_SQL_PERFORMANCE = "SINGLE_SQL_PERFORMANCE"
+    SQL_COMPARISON = "SQL_COMPARISON"
 
 
 class ImplementationProfile(StrEnum):
@@ -260,6 +261,12 @@ class TaskFrame(AIOpsContract):
 
     @model_validator(mode="after")
     def validate_objectives(self) -> "TaskFrame":
+        if self.diagnostic_profile == DiagnosticProfile.SQL_COMPARISON:
+            subjects = self.subject_ref.get("subjects")
+            if self.action_intent != ActionIntent.NONE or self.implementation_profile != ImplementationProfile.NONE:
+                raise ValueError("SQL 比较只负责诊断，不授权执行变更")
+            if not isinstance(subjects, list) or not 2 <= len(subjects) <= 4 or TaskObjective.COMPARE not in self.objectives:
+                raise ValueError("SQL 比较必须明确两至四个请求并保留 COMPARE 目标")
         if len(set(self.objectives)) != len(self.objectives):
             raise ValueError("任务目标不能重复")
         requirement_ids = tuple(
@@ -448,7 +455,8 @@ class CompactPlanningOutput(AIOpsContract):
     )
     diagnostic_profile: DiagnosticProfile = Field(
         description=(
-            "SINGLE_SQL_PERFORMANCE表示围绕一个明确SQL_ID执行完整SQL性能基线；"
+            "SINGLE_SQL_PERFORMANCE表示围绕类型化的Oracle SQL_ID、MySQL Digest或PG query_id诊断；"
+            "SQL_COMPARISON表示同一Target内比较2至4个独立SQL请求，分别取证、诊断并比较；"
             "其他问题使用GENERAL。"
         )
     )
@@ -463,7 +471,9 @@ class CompactPlanningOutput(AIOpsContract):
     )
     subject_ref: JsonObject = Field(
         description=(
-            "结构化调查对象；单SQL性能分析必须提供sql_id，其他问题为空对象。"
+            "结构化调查对象；单SQL性能分析必须提供subject_type以及对应的"
+            "sql_id、digest或query_id；SQL_COMPARISON使用subjects数组，每项为同引擎类型化SQL身份，"
+            "2至4项，不得重复或范围重叠。其他问题为空对象。"
         )
     )
     problem_statement: str = Field(min_length=1, max_length=2000)

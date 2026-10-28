@@ -415,7 +415,7 @@ class TurnTaskFrameView(AIOpsContract):
     )
     diagnostic_profile: str = Field(
         default="GENERAL",
-        pattern=r"^(GENERAL|SINGLE_SQL_PERFORMANCE)$",
+        pattern=r"^(GENERAL|SINGLE_SQL_PERFORMANCE|SQL_COMPARISON)$",
     )
     evidence_source_strategy: str = Field(
         default="DATABASE_FIRST",

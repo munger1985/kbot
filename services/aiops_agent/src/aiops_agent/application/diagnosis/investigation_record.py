@@ -117,13 +117,18 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
     from aiops_agent.application.implementation.diagnostic_runbook import compile_diagnostic_runbook
     capability = dict(context.plan_snapshot.get("capability_snapshot") or {})
     database = dict(dict(context.plan_snapshot.get("investigation_execution") or {}).get("database") or {})
-    if frame.get("diagnostic_profile") == "SINGLE_SQL_PERFORMANCE":
+    if frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"}:
         from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle
         from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
         bundle = build_sql_evidence_bundle(task_frame=frame,
             database_type=str(capability.get("database_type") or database.get("db_type") or ""), evidence=evidence)
         if bundle and bundle.get("object_graph") is not None:
             record = record.model_copy(update={"sql_object_graph": SqlObjectGraph.model_validate(bundle["object_graph"])})
+        elif bundle:
+            graphs = tuple(SqlObjectGraph.model_validate(item["object_graph"]) for item in bundle["subjects"] if item.get("object_graph") is not None)
+            record = record.model_copy(update={"sql_subject_graphs": graphs})
+        record = type(record).model_validate(record.model_dump(mode="python"))
+        record.validate_observations(evidence)
     runbook = compile_diagnostic_runbook(
         record, database_type=str(capability.get("database_type") or database.get("db_type") or ""),
         database_version=capability.get("database_version"),
@@ -133,7 +138,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
 
 def sql_investigation_draft(draft, subject, subjects=()):
     """保留 SQL 专项校验的输出，但不从自由正文猜测原因类型。"""
-    labels = {item["subject_id"]: subject + "（" + "，".join(f"{key}={value}" for key, value in item["dimensions"].items()) + "）"
+    labels = {item["subject_id"]: "SQL " + str(next((item["subject_ref"][key] for key in ("query_id", "digest", "sql_id") if key in item["subject_ref"]), subject)) + "（" + "，".join(f"{key}={value}" for key, value in item["dimensions"].items()) + "）"
               for item in subjects}
     return DiagnosisAnswerDraft(
         claims=tuple(InvestigationClaim(

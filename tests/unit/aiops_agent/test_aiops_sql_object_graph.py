@@ -185,12 +185,19 @@ def test_graph_limits_rows_and_relationships_without_hiding_truncation():
     replay_sql_object_graph(graph, (text, indexes))
 
 
-@pytest.mark.parametrize("tamper", ["none", "missing", "hash", "run", "trust", "rows", "identity", "target", "step", "duplicate"])
-def test_report_and_case_gate_reopens_original_tool_artifacts_not_just_self_consistent_rows(tamper):
+@pytest.mark.parametrize("with_object_relations", [False, True])
+@pytest.mark.parametrize("comparison", [False, True])
+@pytest.mark.parametrize("tamper", ["none", "missing", "hash", "run", "trust", "rows", "identity", "target", "step", "duplicate", "second_rows"])
+def test_report_and_case_gate_reopens_original_tool_artifacts_not_just_self_consistent_rows(tamper, comparison, with_object_relations):
     subject, text, indexes = scenario()
+    if not with_object_relations:
+        text = text.model_copy(update={"rows": ((*text.rows[0][:-1], "SELECT 1"),)})
     run = SimpleNamespace(ops_run_id=uuid7(), target_id=uuid7())
     artifacts, evidence = {}, []
-    for item in (text, indexes):
+    items = [text, indexes]
+    if comparison:
+        items.append(fact("POSTGRESQL", text.tool_id, {**subject, "query_id": "42", "normalized_statement": "SELECT * FROM mes.orders WHERE id = 2" if with_object_relations else "SELECT 2"}))
+    for item in items:
         observation = DatabaseObservation(executor_request_id=uuid7(), target_id=run.target_id,
             tool_id=item.tool_id, tool_version="1.0.0", variant="pg-test", template_sha256="a" * 64,
             db_type="POSTGRESQL", db_version="16", capability_snapshot_hash="b" * 64,
@@ -219,8 +226,22 @@ def test_report_and_case_gate_reopens_original_tool_artifacts_not_just_self_cons
         "capability_snapshot": {"database_type": "POSTGRESQL"},
         "answer_context": {"task_frame": {"diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": subject}}})
     record = freeze_investigation(draft=draft, evidence=tuple(evidence), context=context)
-    assert record.sql_object_graph.relationships
-    original = artifacts[str(first.artifact_id)]
+    if comparison:
+        second_claim = draft.claims[0].model_copy(update={
+            "claim_id": "c2", "evidence_fields": (draft.claims[0].evidence_fields[0].model_copy(update={"evidence_ref": evidence[-1].evidence_ref}),),
+        })
+        draft = draft.model_copy(update={"claims": (*draft.claims, second_claim)})
+        frame = context.plan_snapshot["answer_context"]["task_frame"]
+        frame.update(diagnostic_profile="SQL_COMPARISON", subject_ref={"subjects": [
+            {"subject_type": "POSTGRESQL_QUERY_ID", **subject},
+            {"subject_type": "POSTGRESQL_QUERY_ID", **subject, "query_id": "42"},
+        ]})
+        record = freeze_investigation(draft=draft, evidence=tuple(evidence), context=context)
+        assert record.sql_object_graph is None and len(record.sql_subject_graphs) == 2
+        assert all(bool(graph.relationships) == with_object_relations for graph in record.sql_subject_graphs)
+    else:
+        assert bool(record.sql_object_graph.relationships) == with_object_relations
+    original = artifacts[str(evidence[-1].artifact_id if comparison and tamper == "second_rows" else first.artifact_id)]
     outcome = original.payload_json["tool_outcomes"][0]
     if tamper == "missing":
         artifacts.pop(str(first.artifact_id))
@@ -230,7 +251,7 @@ def test_report_and_case_gate_reopens_original_tool_artifacts_not_just_self_cons
         original.ops_run_id = uuid7()
     elif tamper == "trust":
         original.trust_level = "USER_PROVIDED"
-    elif tamper == "rows":
+    elif tamper in {"rows", "second_rows"}:
         outcome["observation"]["rows"][0][-1] = "SELECT * FROM mes.unrelated"
     elif tamper == "identity":
         outcome["observation"]["provenance"]["instance_identity"]["system_identifier"] = "other"

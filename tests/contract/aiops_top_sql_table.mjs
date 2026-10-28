@@ -93,6 +93,7 @@ const comparisonTable = context.testTable.answerBlockHtml({
 assert.match(comparisonTable, /ops-primary-result is-top-sql/);
 assert.ok(comparisonTable.includes('data-sql-selection="opaque-original-row-ref"'));
 assert.ok(comparisonTable.includes("仅诊断此主体"));
+assert.ok(comparisonTable.includes(`title="${digest}"`));
 assert.ok(comparisonTable.includes(`title="${escape(sql)}"`));
 assert.ok(!comparisonTable.includes(sql));
 
