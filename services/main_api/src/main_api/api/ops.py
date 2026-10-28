@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from platform_core.contracts.aiops.sql_plan_material import (
+    SqlPlanMaterialPage, SqlPlanMaterialSource, SqlPlanMaterialSubmit, SqlPlanMaterialView,
+)
+
 import asyncio
 import json
 from datetime import datetime
@@ -982,6 +986,29 @@ async def get_ops_run(
     response.headers["ETag"] = f'"rv-{result.row_version}"'
     return result
 
+
+@router.get("/runs/{run_id}/sql-plan-material-sources", response_model=list[SqlPlanMaterialSource])
+async def list_sql_plan_material_sources(run_id: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).list_sql_plan_material_sources(run_id, auth_context=request.state.auth_context)
+
+
+@router.get("/runs/{run_id}/sql-plan-materials", response_model=SqlPlanMaterialPage)
+async def list_sql_plan_materials(run_id: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).list_sql_plan_materials(run_id, auth_context=request.state.auth_context)
+
+
+@router.post("/runs/{run_id}/sql-plan-materials", response_model=SqlPlanMaterialView, status_code=201, openapi_extra={"x-sensitive-input": True})
+async def submit_sql_plan_material(run_id: UUID, body: SqlPlanMaterialSubmit, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).submit_sql_plan_material(run_id, body, auth_context=request.state.auth_context)
+
+
+@router.delete("/runs/{run_id}/sql-plan-materials/{material_id}", response_model=SqlPlanMaterialView)
+async def revoke_sql_plan_material(run_id: UUID, material_id: UUID, request: Request, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return await _client(request).revoke_sql_plan_material(run_id, material_id, auth_context=request.state.auth_context)
 
 @router.get("/runs/{run_id}/result", response_model=OpsRunResult)
 async def get_ops_run_result(

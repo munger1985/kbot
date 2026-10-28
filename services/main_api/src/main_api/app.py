@@ -545,13 +545,15 @@ def create_main_api_app(
         request: Request,
         exc: RequestValidationError,
     ):
+        # 敏感材料端点连未知字段名、校验消息也不回显或写日志。
+        sensitive_input = bool((getattr(request.scope.get("route"), "openapi_extra", None) or {}).get("x-sensitive-input"))
         field_errors = [
             {
                 "location": list(item.get("loc", ())),
                 "message": item.get("msg", "字段无效"),
                 "type": item.get("type", "value_error"),
             }
-            for item in exc.errors()
+            for item in (() if sensitive_input else exc.errors())
         ]
         request_id = request.headers.get("X-Request-ID") or "-"
         logger.warning(

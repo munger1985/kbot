@@ -8,6 +8,7 @@ from pathlib import Path
 
 import aiohttp
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from loguru import logger
 
@@ -181,6 +182,12 @@ def create_aiops_api(
         managed_credential_service = AIOpsManagedCredentialService(
             uow_factory=runtime.uow_factory,
             cipher=credential_cipher,
+        )
+        from aiops_agent.application.sql_plan_materials import SqlPlanMaterialService
+        from aiops_agent.application.sql_plan_material_vault import SqlPlanMaterialVault
+        app.state.sql_plan_material_service = SqlPlanMaterialService(
+            uow_factory=runtime.uow_factory,
+            vault=SqlPlanMaterialVault(cipher=credential_cipher),
         )
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
@@ -454,6 +461,22 @@ def create_aiops_api(
     app.include_router(workload_artifact_router)
     app.include_router(work_item_router)
     app.include_router(responsibility_group_router)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # 类型错误也可能携带参数原值；所有 AIOps 内部请求均不回显 input、ctx 或底层解析错误。
+        del exc
+        context = getattr(request.state, "auth_context", None)
+        return JSONResponse(
+            status_code=422, media_type="application/problem+json",
+            content={
+                "type": "urn:kbot:error:aiops-request-invalid",
+                "title": "AIOps 请求字段校验失败", "status": 422,
+                "code": "AIOPS_REQUEST_INVALID", "detail": "请求字段不符合 AIOps 契约",
+                "request_id": getattr(context, "request_id", None) or request.headers.get("X-Request-ID") or "unknown",
+                "retryable": False,
+            },
+        )
 
     @app.exception_handler(AIOpsApplicationError)
     async def application_error_handler(

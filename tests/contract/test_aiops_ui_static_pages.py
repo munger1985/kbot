@@ -114,7 +114,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(20, len(scripts))
+        self.assertEqual(21, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -124,6 +124,16 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
                 check=False, capture_output=True, text=True,
             )
             self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_plan_material_has_isolated_input_and_lifecycle_controls(self):
+        page = (AIOPS_ROOT / "run-detail.html").read_text(encoding="utf-8")
+        self.assertLess(page.index("aiops-plan-materials.js"), page.index("aiops-pages.js"))
+        source = (AIOPS_ROOT / "js" / "aiops-plan-materials.js").read_text(encoding="utf-8")
+        for required in ("sql-plan-material-sources", "sql-plan-materials", "protected_document",
+                         "KBotAIOpsAuth.uuid7()", "input.value = \"\"", "不触发 EXPLAIN", "撤回并清除在线密文"):
+            self.assertIn(required, source)
+        for forbidden in ("sessionStorage", "localStorage", "console.", "/uploads", "textarea"):
+            self.assertNotIn(forbidden, source)
 
     def test_dashboard_is_the_action_first_aiops_workbench(self):
         page = (AIOPS_ROOT / "dashboard.html").read_text(encoding="utf-8")

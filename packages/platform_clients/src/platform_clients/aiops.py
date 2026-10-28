@@ -1605,6 +1605,22 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+
+    async def list_sql_plan_material_sources(self, run_id: UUID, *, auth_context: AuthContext):
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-material-sources", auth_context=auth_context)
+
+    async def list_sql_plan_materials(self, run_id: UUID, *, auth_context: AuthContext):
+        return await self._json("GET", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-materials", auth_context=auth_context)
+
+    async def submit_sql_plan_material(self, run_id: UUID, command, *, auth_context: AuthContext):
+        # SecretStr 的默认序列化是掩码；仅在受信服务传输边界显式取值，不记录载荷。
+        payload = command.model_dump(mode="json", exclude={"protected_document"})
+        payload["protected_document"] = command.protected_document.get_secret_value()
+        return await self._json("POST", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-materials",
+            auth_context=auth_context, payload=payload)
+
+    async def revoke_sql_plan_material(self, run_id: UUID, material_id: UUID, *, auth_context: AuthContext):
+        return await self._json("DELETE", f"{INTERNAL_API_V1}/aiops/runs/{run_id}/sql-plan-materials/{material_id}", auth_context=auth_context)
     async def get_dashboard(
         self, *, auth_context: AuthContext
     ) -> dict[str, Any]:

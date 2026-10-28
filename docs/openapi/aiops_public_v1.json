@@ -11219,6 +11219,211 @@
         "title": "SourceBindingPatch",
         "type": "object"
       },
+      "SqlPlanMaterialPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SqlPlanMaterialView"
+            },
+            "maxItems": 16,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SqlPlanMaterialPage",
+        "type": "object"
+      },
+      "SqlPlanMaterialSource": {
+        "additionalProperties": false,
+        "properties": {
+          "database_type": {
+            "enum": [
+              "POSTGRESQL",
+              "MYSQL",
+              "ORACLE"
+            ],
+            "title": "Database Type",
+            "type": "string"
+          },
+          "row_index": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Row Index",
+            "type": "integer"
+          },
+          "source_artifact_id": {
+            "format": "uuid",
+            "title": "Source Artifact Id",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          },
+          "subject": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 8,
+            "title": "Subject",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source_artifact_id",
+          "step_id",
+          "row_index",
+          "database_type",
+          "subject"
+        ],
+        "title": "SqlPlanMaterialSource",
+        "type": "object"
+      },
+      "SqlPlanMaterialSubmit": {
+        "additionalProperties": false,
+        "properties": {
+          "protected_document": {
+            "format": "password",
+            "maxLength": 65536,
+            "minLength": 2,
+            "title": "Protected Document",
+            "type": "string",
+            "writeOnly": true
+          },
+          "row_index": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Row Index",
+            "type": "integer"
+          },
+          "source_artifact_id": {
+            "format": "uuid",
+            "title": "Source Artifact Id",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          },
+          "submission_id": {
+            "format": "uuid",
+            "title": "Submission Id",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "default": 900,
+            "maximum": 1800.0,
+            "minimum": 60.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id",
+          "source_artifact_id",
+          "step_id",
+          "row_index",
+          "protected_document"
+        ],
+        "title": "SqlPlanMaterialSubmit",
+        "type": "object"
+      },
+      "SqlPlanMaterialView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "environment": {
+            "const": "USER_DECLARED_UNVERIFIED",
+            "default": "USER_DECLARED_UNVERIFIED",
+            "title": "Environment",
+            "type": "string"
+          },
+          "execution_authorized": {
+            "const": false,
+            "default": false,
+            "title": "Execution Authorized",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "material_id": {
+            "format": "uuid",
+            "title": "Material Id",
+            "type": "string"
+          },
+          "notice": {
+            "default": "仅保护保存材料，不触发 EXPLAIN、不重放业务 SQL；仍需独立风险审批及采集能力。",
+            "title": "Notice",
+            "type": "string"
+          },
+          "ops_run_id": {
+            "format": "uuid",
+            "title": "Ops Run Id",
+            "type": "string"
+          },
+          "parameter_count": {
+            "maximum": 64.0,
+            "minimum": 0.0,
+            "title": "Parameter Count",
+            "type": "integer"
+          },
+          "representative_parameters": {
+            "const": "USER_DECLARED_UNVERIFIED",
+            "default": "USER_DECLARED_UNVERIFIED",
+            "title": "Representative Parameters",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SqlPlanMaterialSource"
+          },
+          "state": {
+            "enum": [
+              "STORED",
+              "EXPIRED",
+              "REVOKED",
+              "UNAVAILABLE"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "material_id",
+          "ops_run_id",
+          "source",
+          "parameter_count",
+          "created_at",
+          "expires_at",
+          "state"
+        ],
+        "title": "SqlPlanMaterialView",
+        "type": "object"
+      },
       "TargetConnectionTest": {
         "additionalProperties": false,
         "properties": {
@@ -20121,6 +20326,201 @@
           }
         },
         "summary": "Get Ops Run Result",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/runs/{run_id}/sql-plan-material-sources": {
+      "get": {
+        "operationId": "list_sql_plan_material_sources_api_v1_apps_aiops_runs__run_id__sql_plan_material_sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SqlPlanMaterialSource"
+                  },
+                  "title": "Response List Sql Plan Material Sources Api V1 Apps Aiops Runs  Run Id  Sql Plan Material Sources Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sql Plan Material Sources",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/runs/{run_id}/sql-plan-materials": {
+      "get": {
+        "operationId": "list_sql_plan_materials_api_v1_apps_aiops_runs__run_id__sql_plan_materials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlPlanMaterialPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sql Plan Materials",
+        "tags": [
+          "AIOps"
+        ]
+      },
+      "post": {
+        "operationId": "submit_sql_plan_material_api_v1_apps_aiops_runs__run_id__sql_plan_materials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlPlanMaterialSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlPlanMaterialView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Sql Plan Material",
+        "tags": [
+          "AIOps"
+        ],
+        "x-sensitive-input": true
+      }
+    },
+    "/api/v1/apps/aiops/runs/{run_id}/sql-plan-materials/{material_id}": {
+      "delete": {
+        "operationId": "revoke_sql_plan_material_api_v1_apps_aiops_runs__run_id__sql_plan_materials__material_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlPlanMaterialView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Sql Plan Material",
         "tags": [
           "AIOps"
         ]

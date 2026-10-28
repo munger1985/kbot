@@ -17,6 +17,16 @@
       || `ui-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  function uuid7() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    let stamp = BigInt(Date.now());
+    for (let index = 5; index >= 0; index -= 1) { bytes[index] = Number(stamp & 255n); stamp >>= 8n; }
+    bytes[6] = (bytes[6] & 15) | 112;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const value = Array.from(bytes, (entry) => entry.toString(16).padStart(2, "0")).join("");
+    return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+  }
+
   function load() {
     try {
       return JSON.parse(sessionStorage.getItem(storageKey) || "null");
@@ -200,5 +210,5 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  globalThis.KBotAIOpsAuth = { clear, load, login, request, requestBlob, stream, download, uuid };
+  globalThis.KBotAIOpsAuth = { clear, load, login, request, requestBlob, stream, download, uuid, uuid7 };
 })();

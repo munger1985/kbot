@@ -1305,6 +1305,7 @@
           : `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
       if (page === "run-detail") {
         panel.innerHTML += `${readonlyLifecycleHtml(data)}<div class="ops-actions"><button type="button" data-refresh-run>刷新详情</button></div>`;
+        window.KBotAIOpsPlanMaterials.mount(panel, data, appApi);
         panel.querySelector("[data-refresh-run]").onclick = () => { terminalLifecycleRefreshes = 0; return renderDetail("run-detail"); };
         scheduleRunRefresh(data, panel);
       }
