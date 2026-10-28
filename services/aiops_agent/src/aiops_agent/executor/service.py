@@ -21,6 +21,9 @@ from aiops_agent.executor.drivers import (
     ReadonlyDatabaseDriver,
 )
 from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
+from aiops_agent.executor.access_observations import (
+    CACHED_ACCESS_DENIAL, QueryAccessObservations, catalog_object_group,
+)
 from aiops_agent.adapters.aiops_execution_client import AIOpsExecutionClient
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
@@ -42,6 +45,7 @@ class DiagnosticExecutorService:
         drivers: tuple[ReadonlyDatabaseDriver, ...],
         hard_limits: DiagnosticLimits,
         concurrency: int,
+        access_observations: QueryAccessObservations | None = None,
     ):
         self._registry = registry
         self._grant_codec = grant_codec
@@ -49,11 +53,14 @@ class DiagnosticExecutorService:
         self._drivers = {driver.db_type: driver for driver in drivers}
         self._hard_limits = hard_limits
         self._semaphore = asyncio.Semaphore(concurrency)
+        self._access_observations = access_observations if access_observations is not None else QueryAccessObservations()
 
     async def execute(
         self, request: ReadDiagnosticRequest
     ) -> ReadDiagnosticResult:
         tool_id = "UNKNOWN"
+        access_key = None
+        object_group = ()
         try:
             grant = self._grant_codec.verify(request.grant)
             tool_id = grant.tool_id
@@ -80,6 +87,11 @@ class DiagnosticExecutorService:
                 )
             async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
                 issued = await self._control_plane.issue_credential(request.grant, trace_id=grant.trace_id)
+                access_key = self._access_observations.key(grant, issued=issued, query_sha256=grant.template_sha256)
+                cached_access = self._access_observations.get(access_key)
+                if cached_access is not None and cached_access.state == "DENIED":
+                    return self._gap(request, CACHED_ACCESS_DENIAL, retryable=False)
+                object_group = catalog_object_group(tool.sql, grant.db_type)
                 secret = ResolvedSecret(values={"username": issued.username, "password": issued.password}, fingerprint="issued")
                 started = datetime.now(UTC)
                 raw = await driver.execute(
@@ -102,12 +114,18 @@ class DiagnosticExecutorService:
                 ),
                 limits=limits,
             )
+            access = self._access_observations.remember(access_key, state="SUCCEEDED", objects=object_group)
+            observation = observation.model_copy(update={"provenance": {
+                **observation.provenance, "access_observation": access.public_metadata(),
+            }})
             return ReadDiagnosticResult(
                 executor_request_id=request.executor_request_id,
                 status="SUCCEEDED",
                 observation=observation,
             )
         except DiagnosticDriverError as exc:
+            if exc.code == "PRIVILEGE_MISSING" and access_key is not None:
+                self._access_observations.remember(access_key, state="DENIED", objects=object_group)
             logger.warning(
                 "数据库只读诊断未取得结果：tool_id={} code={} retryable={}",
                 tool_id,

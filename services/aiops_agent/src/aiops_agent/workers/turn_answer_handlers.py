@@ -2714,7 +2714,7 @@ class DbaAnswerComposeHandler:
                     f"（{display_name(gap.code)}）"
                 )
             request_codes = {gap.code for gap, _ in manual_requests}
-            permission_codes = {"AUTH_FAILED", "PRIVILEGE_MISSING"}
+            permission_codes = {"AUTH_FAILED", "PRIVILEGE_MISSING", "PRIVILEGE_PROBE_CACHED_DENIAL"}
             output_codes = {
                 "OUTPUT_COLUMNS_MISMATCH",
                 "OUTPUT_COLUMN_LIMIT_EXCEEDED",
@@ -2746,7 +2746,7 @@ class DbaAnswerComposeHandler:
                     continue
                 privileges = tuple(tool.get("required_privileges", ()))
                 lines.extend(["", f"#### {tool['tool_id']}"])
-                if gap.code == "PRIVILEGE_MISSING":
+                if gap.code in {"PRIVILEGE_MISSING", "PRIVILEGE_PROBE_CACHED_DENIAL"}:
                     lines.append(
                         f"所需对象权限：`{', '.join(privileges)}`"
                         if privileges

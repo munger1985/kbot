@@ -27,6 +27,7 @@ from aiops_agent.diagnostics.grants import (
 )
 from aiops_agent.executor.drivers import DiagnosticDriverError
 from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
+from aiops_agent.executor.access_observations import CACHED_ACCESS_DENIAL, QueryAccessObservations
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
     DatabaseColumn,
@@ -67,6 +68,7 @@ class DynamicDiagnosticExecutorService:
         drivers,
         hard_limits: DiagnosticLimits,
         concurrency: int,
+        access_observations: QueryAccessObservations | None = None,
     ) -> None:
         self._grant_codec = grant_codec
         self._control_plane = control_plane
@@ -75,10 +77,13 @@ class DynamicDiagnosticExecutorService:
             raise ValueError("动态诊断 Executor 的 Driver 集合无效")
         self._hard_limits = hard_limits
         self._semaphore = asyncio.Semaphore(concurrency)
+        self._access_observations = access_observations if access_observations is not None else QueryAccessObservations()
 
     async def execute(
         self, request: DynamicReadDiagnosticRequest
     ) -> ReadDiagnosticResult:
+        access_key = None
+        object_group = ()
         try:
             grant = self._grant_codec.verify_dynamic(request.grant)
             if canonical_sha256(request.parameters) != grant.parameters_sha256:
@@ -122,6 +127,11 @@ class DynamicDiagnosticExecutorService:
                 issued = await self._control_plane.issue_credential(
                     request.grant, trace_id=grant.trace_id
                 )
+                access_key = self._access_observations.key(grant, issued=issued, query_sha256=grant.query_sha256)
+                cached_access = self._access_observations.get(access_key)
+                if cached_access is not None and cached_access.state == "DENIED":
+                    return self._gap(request, CACHED_ACCESS_DENIAL, retryable=False)
+                object_group = validated.referenced_objects
                 secret = ResolvedSecret(
                     values={
                         "username": issued.username,
@@ -152,6 +162,10 @@ class DynamicDiagnosticExecutorService:
                 ),
                 limits=limits,
             )
+            access = self._access_observations.remember(access_key, state="SUCCEEDED", objects=object_group)
+            observation = observation.model_copy(update={"provenance": {
+                **observation.provenance, "access_observation": access.public_metadata(),
+            }})
             return ReadDiagnosticResult(
                 executor_request_id=request.executor_request_id,
                 status="SUCCEEDED",
@@ -162,6 +176,8 @@ class DynamicDiagnosticExecutorService:
         except DynamicQueryRejected as exc:
             raise DiagnosticGrantError(exc.code, str(exc)) from exc
         except DiagnosticDriverError as exc:
+            if exc.code == "PRIVILEGE_MISSING" and access_key is not None:
+                self._access_observations.remember(access_key, state="DENIED", objects=object_group)
             logger.warning(
                 "数据库动态只读诊断未取得结果："
                 "executor_request_id={} run_id={} task_id={} trace_id={} "

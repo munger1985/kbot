@@ -27,6 +27,7 @@ from aiops_agent.executor import (
     MutationExecutorService,
 )
 from aiops_agent.executor.tls_profiles import TLSProfileResolver
+from aiops_agent.executor.access_observations import QueryAccessObservations
 from aiops_agent.executor.drivers import (
     MySQLDiagnosticDriver,
     MySQLMutationDriver,
@@ -57,6 +58,7 @@ def create_aiops_executor(
         )
         registry = create_diagnostic_registry(resolved)
         action_registry = ActionRegistry.load()
+        access_observations = QueryAccessObservations()
         client_session = aiohttp.ClientSession()
         oracle_driver = OracleDiagnosticDriver()
         postgresql_driver = PostgreSQLDiagnosticDriver(
@@ -65,6 +67,7 @@ def create_aiops_executor(
             )
         )
         diagnostic_executor = DiagnosticExecutorService(
+            access_observations=access_observations,
             registry=registry,
             grant_codec=create_diagnostic_grant_codec(resolved),
             control_plane=AIOpsExecutionClient(
@@ -89,6 +92,7 @@ def create_aiops_executor(
             concurrency=config.readonly_concurrency,
         )
         dynamic_diagnostic_executor = DynamicDiagnosticExecutorService(
+            access_observations=access_observations,
             grant_codec=create_diagnostic_grant_codec(resolved),
             control_plane=AIOpsExecutionClient(
                 base_url=resolved.clients.aiops_api.base_url,

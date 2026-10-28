@@ -3877,6 +3877,7 @@ class AIOpsRuntimeService:
         source_access_codes = {
             "AUTH_FAILED",
             "PRIVILEGE_MISSING",
+            "PRIVILEGE_PROBE_CACHED_DENIAL",
             "CONNECTION_FAILED",
             "SOURCE_UNREACHABLE",
             "TIMEOUT",

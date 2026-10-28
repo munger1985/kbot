@@ -409,6 +409,7 @@ _DISPLAY_NAMES = {
     "BLOCKING_ABSENT": "阻塞关系已消失",
     "AUTH_FAILED": "数据库认证失败",
     "PRIVILEGE_MISSING": "数据库只读账号缺少所需权限",
+    "PRIVILEGE_PROBE_CACHED_DENIAL": "近期权限拒绝的短期缓存，未重复查库",
     "OUTPUT_COLUMNS_MISMATCH": "查询结果列与诊断合同不一致",
     "OUTPUT_COLUMN_LIMIT_EXCEEDED": "查询结果列数超过安全上限",
     "OUTPUT_VALUE_TYPE_UNSUPPORTED": "查询结果包含不支持的数据类型",

@@ -53,6 +53,7 @@ def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
     """将执行错误转换为不会误判权限的用户可读说明。"""
     details = {
         "PRIVILEGE_MISSING": "Target 只读凭据缺少该查询所需的对象权限",
+        "PRIVILEGE_PROBE_CACHED_DENIAL": "近 30 秒内，同一凭据、Target 版本及完全相同查询曾被拒绝；本次未重复查库，这不是当前权限重验，缓存到期后可重新检查",
         "AUTH_FAILED": "Target 只读凭据认证失败",
         "TARGET_UNREACHABLE": "Target 数据库当前无法建立只读连接",
         "TIMEOUT": "受控只读查询执行超时",
