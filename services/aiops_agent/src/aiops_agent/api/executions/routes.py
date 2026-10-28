@@ -100,6 +100,18 @@ async def issue_credential(body: CredentialIssueRequest, request: Request) -> Cr
         existing = await uow.inbox.get_by_message(source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, lock=True)
         if existing is not None:
             raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
+        if kind == "DIAGNOSTIC":
+            from aiops_agent.application.investigation.future_observation import FOLLOWUP_WORKFLOW, followup_access_error
+            run = await uow.runs.get_run(ops_run_id=grant.run_id)
+            if (run is None or str(run.domain_id) != str(grant.domain_id)
+                or str(run.target_id) != str(grant.target_id)
+                or run.cancel_requested_at is not None
+                or (run.deadline_at is not None and run.deadline_at <= datetime.now(UTC))
+                or str(run.status) in {"CANCELLED", "CANCELLING", "FAILED", "COMPLETED", "PARTIAL", "EXPIRED"}):
+                raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
+            if run.workflow_kind == FOLLOWUP_WORKFLOW:
+                if await followup_access_error(uow=uow, run=run, now=datetime.now(UTC)):
+                    raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
         target = await uow.targets.get_scoped(target_id=grant.target_id, domain_id=int(grant.domain_id), lock=True)
         if target is None or int(target.row_version) != int(target_version):
             raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})

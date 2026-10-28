@@ -4795,6 +4795,30 @@
         "title": "DiagnosisClosureCommand",
         "type": "object"
       },
+      "DiagnosticObservationSchedule": {
+        "additionalProperties": false,
+        "description": "持久化未来观察计划；基线计入次数，不追补过去历史。",
+        "properties": {
+          "count": {
+            "maximum": 4.0,
+            "minimum": 2.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "interval_seconds": {
+            "maximum": 900.0,
+            "minimum": 30.0,
+            "title": "Interval Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "interval_seconds"
+        ],
+        "title": "DiagnosticObservationSchedule",
+        "type": "object"
+      },
       "DiagnosticProgressEvent": {
         "additionalProperties": false,
         "properties": {
@@ -17410,6 +17434,16 @@
           "measurement_semantics": {
             "$ref": "#/components/schemas/MeasurementSemantics"
           },
+          "observation_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosticObservationSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "optional": {
             "default": false,
             "title": "Optional",
@@ -18476,7 +18510,8 @@
           "INSPECTION",
           "CHAT_TURN",
           "CHANGE",
-          "VERIFICATION"
+          "VERIFICATION",
+          "EVIDENCE_FOLLOWUP"
         ],
         "title": "WorkflowKind",
         "type": "string"

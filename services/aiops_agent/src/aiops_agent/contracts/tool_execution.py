@@ -6,7 +6,7 @@ from typing import Literal
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from platform_core.contracts.aiops.investigation import DiagnosticSampling
+from platform_core.contracts.aiops.investigation import DiagnosticSampling, DiagnosticObservationSchedule
 
 from aiops_agent.contracts.artifacts.database import EvidenceGap
 from platform_core.contracts.aiops.playbooks import PresentationPreference
@@ -46,6 +46,12 @@ class DiagnosticSamplingSummary(BaseModel):
         return self
 
 
+class DiagnosticObservationSeriesSummary(DiagnosticSamplingSummary):
+    """跨进程恢复的未来观察摘要，不声明过去窗口已覆盖。"""
+
+    requested: DiagnosticObservationSchedule
+
+
 class DbaToolResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -60,16 +66,20 @@ class DbaToolResult(BaseModel):
     status: Literal["SUCCEEDED", "PARTIAL", "FAILED"]
     tool_outcomes: tuple[ToolOutcome, ...]
     sampling: DiagnosticSamplingSummary | None = None
+    observation_series: DiagnosticObservationSeriesSummary | None = None
 
     @model_validator(mode="after")
     def validate_sampled_outcomes(self):
         """正式证据重放时也复核采样摘要，不接受伪造的完成数。"""
-        if self.sampling is not None:
+        if self.sampling is not None and self.observation_series is not None:
+            raise ValueError("不能同时声明短时与持久化采样摘要")
+        series = self.sampling or self.observation_series
+        if series is not None:
             completed = sum(item.status == "SUCCEEDED" and item.observation is not None for item in self.tool_outcomes)
-            if completed != self.sampling.completed_count:
+            if completed != series.completed_count:
                 raise ValueError("追加采样摘要与原始观测次数不一致")
             expected = (
-                "SUCCEEDED" if self.sampling.stop_reason == "COMPLETE"
+                "SUCCEEDED" if series.stop_reason == "COMPLETE"
                 else "PARTIAL" if completed else "FAILED"
             )
             if self.status != expected:

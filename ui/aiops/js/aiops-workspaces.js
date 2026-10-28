@@ -411,10 +411,11 @@
       const evidence = action.expected_evidence_kind ? ` · 预期证据 ${displayText(action.expected_evidence_kind, dictionary)}` : "";
       const dependency = values(action.depends_on).length ? ` · 依赖 ${values(action.depends_on).join("、")}` : "";
       const sampling = action.sampling ? ` · 按需采样 ${action.sampling.count} 次，间隔至少 ${action.sampling.interval_seconds} 秒（不是历史窗口）` : "";
+      const scheduled = action.observation_schedule ? ` · 后台未来观察 ${action.observation_schedule.count} 次（含本次基线），间隔至少 ${action.observation_schedule.interval_seconds} 秒` : "";
       const query = action.sql_text
         ? `<details class="ops-plan-query"><summary>查看待执行 SQL 与参数</summary><pre><code>${esc(action.sql_text)}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(action.parameters || {}, null, 2))}</code></pre></details>`
         : "";
-      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(displayText(action.tool_class || action.tool_id || "DIAGNOSTIC", dictionary))} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}${esc(sampling)}</small>${query}</li>`;
+      return `<li data-plan-action="${esc(action.action_id)}"><span>${esc(action.question || "执行诊断步骤")}</span><small>${esc(displayText(action.tool_class || action.tool_id || "DIAGNOSTIC", dictionary))} · ${esc(mode)} · ${esc(status)}${esc(evidence)}${esc(dependency)}${esc(sampling)}${esc(scheduled)}</small>${query}</li>`;
     }).join("");
     const actionsHtml = actions.length ? `<div class="ops-plan-actions"><strong>取证步骤</strong><ol>${rows}</ol></div>` : `<p class="ops-plan-empty">现有材料已足够，本轮不需要调用额外诊断工具。</p>`;
     return `<section class="ops-investigation-plan" data-plan-revision="${esc(plan.revision_no || 1)}"><header><strong>调查计划与判断依据</strong><span>第 ${esc(plan.revision_no || 1)} 版 · ${actions.length} 个步骤</span></header>${frameHtml}${hypothesisHtml}${actionsHtml}</section>`;
@@ -1547,10 +1548,12 @@
     const evidence = turnEvidenceHtml(answerBlocks, turn.evidence_gaps, turn.display_dictionary);
     const orchestration = turnOrchestrationHtml(turn);
     const plan = investigationPlanHtml(turn.investigation_plan, turn.display_dictionary);
+    const future = values(turn.events).filter((item) => item.event_type === "evidence.future_observation.scheduled")
+      .map((item) => `<section class="ops-context-banner"><p>已安排后台未来观察，不影响本轮回答；不会补造过去窗口。</p><a href="./run-detail.html?id=${esc(encodeURIComponent(item.payload.background_run_id))}">查看进度、结果或取消采样</a></section>`).join("");
     const answer = assistant || blocks || evidence ? `<article class="ops-message agent"><div class="ops-avatar">AI</div><div class="ops-message-body ops-result-markdown"><div class="ops-message-content">${blocks || markdown.render(displayText(assistant?.payload?.text || "", turn.display_dictionary))}</div>${evidence}</div></article>` : "";
     const settled = ["COMPLETED", "PARTIAL", "CANCELLED"].includes(turn.status);
     const progress = settled && !turn.error_message ? "" : `<div class="ops-context-banner ops-progress" data-turn-progress="${esc(turn.turn_id)}">${esc(displayText(turn.error_message || `当前状态：${turn.status}`, turn.display_dictionary))}</div>`;
-    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${answer}`;
+    return `${user ? messageHtml("USER", user.payload?.text || "", shell.fmt(user.created_at), imageAttachmentsHtml(turn.conversation_id, turn)) : ""}${orchestration}${plan}${progress}${future}${answer}`;
   }
 
   async function renderConversation(conversation, turns) {

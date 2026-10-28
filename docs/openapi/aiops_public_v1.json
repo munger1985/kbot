@@ -14394,7 +14394,8 @@
           "INSPECTION",
           "CHAT_TURN",
           "CHANGE",
-          "VERIFICATION"
+          "VERIFICATION",
+          "EVIDENCE_FOLLOWUP"
         ],
         "title": "WorkflowKind",
         "type": "string"

@@ -107,6 +107,7 @@ class WorkflowKind(StrEnum):
     CHAT_TURN = "CHAT_TURN"
     CHANGE = "CHANGE"
     VERIFICATION = "VERIFICATION"
+    EVIDENCE_FOLLOWUP = "EVIDENCE_FOLLOWUP"
 
 
 class RootCauseGrade(StrEnum):

@@ -384,6 +384,7 @@ class RuntimeTerminalFailureTest(unittest.IsolatedAsyncioTestCase):
             ops_run_id=run_id,
             status="FAILED",
             error_code="FIRST_FAILURE",
+            workflow_kind="CHAT_TURN",
             error_message="首个失败原因",
             completed_at=now,
             row_version=1,

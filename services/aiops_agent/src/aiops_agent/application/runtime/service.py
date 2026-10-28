@@ -11,6 +11,9 @@ from typing import Any
 from uuid import UUID
 
 from aiops_agent.application.changes.effect_followup import schedule_effect_followup
+from aiops_agent.application.investigation.future_observation import (
+    FOLLOWUP_WORKFLOW, followup_access_error, future_observation_payload, preserve_future_observation, schedule_future_observation,
+)
 
 from sqlalchemy.exc import IntegrityError
 
@@ -1809,10 +1812,21 @@ class AIOpsRuntimeService:
             artifacts = await self._input_artifacts(
                 uow, run_id=run.ops_run_id, task=task
             )
+            future_error = (
+                await followup_access_error(uow=uow, run=run, now=now)
+                if run.workflow_kind == FOLLOWUP_WORKFLOW else None
+            )
             await uow.commit()
-            return self._task_lease(
+            lease = self._task_lease(
                 run, task, artifacts, lease_token=lease_token
             )
+            if run.workflow_kind == FOLLOWUP_WORKFLOW:
+                lease = lease.model_copy(update={"plan_snapshot": {
+                    **lease.plan_snapshot,
+                    "future_observation_access_error": future_error,
+                    "future_observation_due_at": task.available_at.isoformat(),
+                }})
+            return lease
 
     async def _project_turn_task_started(self, *, uow, run, task) -> None:
         """把后台 Task 领取投影为用户可见阶段，并同步 Tool 运行状态。"""
@@ -2038,6 +2052,7 @@ class AIOpsRuntimeService:
                     security_level=command.artifact.security_level,
                 )
             )
+            await schedule_future_observation(uow=uow, run=run, task=task, artifact=artifact, now=now)
             for generated_payload in generated_runbook_artifacts:
                 artifact_id = str(generated_payload["artifact_id"])
                 generated_content = str(generated_payload["content"])
@@ -2143,7 +2158,34 @@ class AIOpsRuntimeService:
                     "trace_id": command.trace_id,
                 },
             )
+            if (run.workflow_kind == FOLLOWUP_WORKFLOW and task.handler_id == "dba.future-point.invoke"
+                and (artifact.payload_json.get("status") != "SUCCEEDED"
+                    or any(dict(item.get("observation") or {}).get("truncated")
+                        for item in artifact.payload_json.get("tool_outcomes", ())))):
+                self._block_unreachable(tasks, failed_key=task.task_key)
+                await preserve_future_observation(uow=uow, run=run, now=now, reason="FOLLOWUP_STOPPED")
+                ensure_run_transition(DomainOpsRunStatus(run.status), DomainOpsRunStatus.PARTIAL)
+                run.status, run.completed_at = DomainOpsRunStatus.PARTIAL.value, now
+                event = await uow.runs.append_event(
+                    ops_run_id=run.ops_run_id, event_type="run.partial",
+                    event_key=f"run:{run.ops_run_id}:terminal", visibility="USER",
+                    payload_json={"status": "PARTIAL", "final_artifact_id": str(run.final_artifact_id),
+                        "public_summary": "未来观察出现缺口，已停止后续采样并保留实际时点", "trace_id": command.trace_id},
+                )
+                await self._add_outbox(
+                    uow, aggregate_id=run.ops_run_id, event_type="OPS_RUN_COMPLETED",
+                    idempotency_key=f"run:{run.ops_run_id}:completed",
+                    payload={"ops_run_id": str(run.ops_run_id), "artifact_id": str(run.final_artifact_id)},
+                    trace_id=command.trace_id, now=now,
+                )
+                await uow.commit()
+                return self._mutation_receipt(run, task, int(event.sequence_no), artifact.artifact_id)
             released = self._release_successors(tasks, now=now)
+            if run.workflow_kind == FOLLOWUP_WORKFLOW:
+                interval = int(run.plan_snapshot_json["future_observation"]["requested"]["interval_seconds"])
+                for successor in released:
+                    if successor.handler_id == "dba.future-point.invoke":
+                        successor.available_at = max(successor.available_at, now + timedelta(seconds=interval))
             for successor in released:
                 await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
@@ -2166,11 +2208,16 @@ class AIOpsRuntimeService:
                 item.status == DomainOpsTaskStatus.SUCCEEDED.value
                 for item in tasks
             ):
+                completed_status = (
+                    DomainOpsRunStatus.PARTIAL
+                    if run.workflow_kind == FOLLOWUP_WORKFLOW and artifact.payload_json.get("status") != "SUCCEEDED"
+                    else DomainOpsRunStatus.COMPLETED
+                )
                 ensure_run_transition(
                     DomainOpsRunStatus(run.status),
-                    DomainOpsRunStatus.COMPLETED,
+                    completed_status,
                 )
-                run.status = DomainOpsRunStatus.COMPLETED.value
+                run.status = completed_status.value
                 final_artifact = artifact
                 if artifact.schema_version == "ACTION_VERIFICATION.v1":
                     final_artifact = (
@@ -2242,11 +2289,11 @@ class AIOpsRuntimeService:
                     )
                 event = await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
-                    event_type="run.completed",
+                    event_type="run.partial" if completed_status == DomainOpsRunStatus.PARTIAL else "run.completed",
                     event_key=f"run:{run.ops_run_id}:terminal",
                     visibility="USER",
                     payload_json={
-                        "status": DomainOpsRunStatus.COMPLETED.value,
+                        "status": completed_status.value,
                         "final_artifact_id": str(
                             final_artifact.artifact_id
                         ),
@@ -2629,6 +2676,10 @@ class AIOpsRuntimeService:
         """有已持久化事实时在原事务内产生唯一部分结果，不再消耗外部执行预算。"""
         from aiops_agent.application.diagnosis.deadline_result import deadline_result
 
+        if run.workflow_kind == FOLLOWUP_WORKFLOW:
+            return await preserve_future_observation(
+                uow=uow, run=run, now=now, reason="FOLLOWUP_DEADLINE_EXCEEDED",
+            )
         if run.workflow_kind != "CHAT_TURN":
             return False
         link = await uow.turns.get_run_link_by_ops_run_id(ops_run_id=run.ops_run_id)
@@ -2784,6 +2835,13 @@ class AIOpsRuntimeService:
         now: datetime,
     ) -> None:
         result = DbaToolResult.model_validate(payload)
+        future = dict(getattr(artifact, "provenance_json", None) or {}).get("future_observation") or {}
+        if future.get("status") == "SCHEDULED":
+            await self._append_turn_event(
+                uow, turn, event_type="evidence.future_observation.scheduled",
+                payload={"background_run_id": future["background_run_id"], "requested": future["requested"],
+                    "public_summary": "已安排后台未来观察；可查看进度、已采集结果或取消，不覆盖过去窗口"},
+            )
         invocation = await uow.turns.get_playbook_invocation_by_task(
             ops_task_id=task.ops_task_id,
             lock=True,
@@ -6101,6 +6159,7 @@ class AIOpsRuntimeService:
             )
             if not retry:
                 self._block_unreachable(tasks, failed_key=task.task_key)
+                await preserve_future_observation(uow=uow, run=run, now=now, reason=command.error_code)
                 if command.error_code == "RUN_DEADLINE_EXCEEDED" and DomainOpsRunStatus(run.status) not in TERMINAL_RUN_STATUSES:
                     if await self._project_deadline_partial(uow=uow, run=run, now=now):
                         ensure_run_transition(DomainOpsRunStatus(run.status), DomainOpsRunStatus.PARTIAL)
@@ -6223,6 +6282,7 @@ class AIOpsRuntimeService:
                 },
             )
             if not running:
+                await preserve_future_observation(uow=uow, run=run, now=now, reason="FOLLOWUP_CANCELLED")
                 ensure_run_transition(
                     DomainOpsRunStatus(run.status),
                     DomainOpsRunStatus.CANCELLED,
@@ -6699,6 +6759,7 @@ class AIOpsRuntimeService:
                         # 到期的执行中 Task 仍需在此处收敛。终态 Run 不可
                         # 再迁移；否则事务会回滚并永久重复处理同一 Task。
                         if run.status != DomainOpsRunStatus.CANCELLED.value:
+                            await preserve_future_observation(uow=uow, run=run, now=now, reason="FOLLOWUP_CANCELLED")
                             ensure_run_transition(
                                 DomainOpsRunStatus(run.status),
                                 DomainOpsRunStatus.CANCELLED,
@@ -6760,6 +6821,7 @@ class AIOpsRuntimeService:
                         self._block_unreachable(
                             tasks, failed_key=task.task_key
                         )
+                        await preserve_future_observation(uow=uow, run=run, now=now, reason="WORKER_LEASE_EXPIRED")
                         ensure_run_transition(
                             DomainOpsRunStatus(run.status),
                             DomainOpsRunStatus.FAILED,
@@ -7104,6 +7166,12 @@ class AIOpsRuntimeService:
                 if artifact is not None
                 else None
             )
+            if run.workflow_kind == FOLLOWUP_WORKFLOW:
+                payload = await future_observation_payload(
+                    uow=uow, run=run, now=await uow.runs.database_now(), artifact=artifact,
+                )
+                if payload is None:
+                    raise state_conflict("未来观察的来源或当前授权无法重放，未返回原始查询结果")
             if payload is not None:
                 payload["display_dictionary"] = dictionary_for_payload(payload)
 
@@ -9732,7 +9800,7 @@ class AIOpsRuntimeService:
                     DomainOpsTaskStatus.READY,
                 )
                 item.status = DomainOpsTaskStatus.READY.value
-                item.available_at = now
+                item.available_at = max(item.available_at, now) if item.available_at is not None else now
                 released.append(item)
         return released
 

@@ -1664,7 +1664,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
             'progress.insertAdjacentHTML("beforebegin", messageHtml("AGENT", ""))',
             workspace,
         )
-        self.assertIn("${plan}${progress}${answer}", workspace)
+        self.assertIn("${plan}${progress}${future}${answer}", workspace)
         self.assertIn("enqueueAnswerDelta", workspace)
         self.assertIn("waitForTyping", workspace)
         self.assertIn("evidenceDetails", workspace)

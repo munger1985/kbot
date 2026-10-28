@@ -90,6 +90,7 @@ class AIOpsRunResultTest(unittest.TestCase):
         now = datetime.now(UTC)
         run = SimpleNamespace(
             ops_run_id=run_id,
+            workflow_kind="ALERT_DIAGNOSIS",
             status="COMPLETED",
             root_cause_level="PROBABLE",
             final_artifact_id=artifact_id,
@@ -143,6 +144,7 @@ class AIOpsRunResultTest(unittest.TestCase):
         run_id = uuid7()
         run = SimpleNamespace(
             ops_run_id=run_id,
+            workflow_kind="ALERT_DIAGNOSIS",
             status="COMPLETED",
             root_cause_level="INCONCLUSIVE",
             final_artifact_id=uuid7(),

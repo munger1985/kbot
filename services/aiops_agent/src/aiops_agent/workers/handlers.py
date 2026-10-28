@@ -221,6 +221,11 @@ def create_runtime_handler_registry(
             )
         )
     database_diagnostic_handler = None
+    from .future_observation import FutureObservationPointHandler, FutureObservationSeriesHandler
+    manifests.append(HandlerManifest(
+        handler_id="dba.future-series.assemble", version="1", output_schema_version="DBA_TOOL_RESULT.v1",
+        idempotent=True, implementation=FutureObservationSeriesHandler(),
+    ))
     if diagnostic_source_registry is not None and secret_store is not None:
         from .evidence_handlers import (
             EvidenceObserveHandler,
@@ -322,6 +327,13 @@ def create_runtime_handler_registry(
                     output_schema_version="DBA_TOOL_RESULT.v1",
                     idempotent=True,
                     implementation=dynamic_query_handler,
+                ),
+                HandlerManifest(
+                    handler_id="dba.future-point.invoke", version="1", output_schema_version="DBA_TOOL_RESULT.v1",
+                    idempotent=True, implementation=FutureObservationPointHandler(
+                        direct_handler=DbaDiagnosticToolHandler(database_handler=database_diagnostic_handler),
+                        dynamic_handler=dynamic_query_handler,
+                    ),
                 ),
                 HandlerManifest(
                     handler_id="dba.evidence.assess",

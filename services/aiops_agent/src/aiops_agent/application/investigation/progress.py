@@ -9,13 +9,13 @@ from collections.abc import Mapping
 from platform_core.contracts.aiops.investigation import InvestigationPlan
 
 
-def action_fingerprint(tool_id: str, input_payload: Mapping | None, *, sampled: bool = False) -> str:
+def action_fingerprint(tool_id: str, input_payload: Mapping | None, *, sampled: bool = False, scheduled: bool = False) -> str:
     """按工具和规范化输入生成稳定动作指纹。"""
     encoded = json.dumps(
         {
             "tool_id": str(tool_id),
             "input": dict(input_payload or {}),
-            **({"observation_mode": "BOUNDED_SERIES"} if sampled else {}),
+            **({"observation_mode": "FUTURE_SERIES" if scheduled else "BOUNDED_SERIES"} if sampled or scheduled else {}),
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -40,7 +40,8 @@ def execution_action_fingerprints(
         tool_id = str(tool.get("tool_id") or "")
         if tool_id:
             fingerprints.append(
-                action_fingerprint(tool_id, tool.get("parameters"), sampled=invocation.get("sampling") is not None)
+                action_fingerprint(tool_id, tool.get("parameters"), sampled=invocation.get("sampling") is not None,
+                    scheduled=invocation.get("observation_schedule") is not None)
             )
     for invocation in dict(execution.get("dynamic_invocations") or {}).values():
         if not isinstance(invocation, Mapping):
@@ -56,6 +57,7 @@ def execution_action_fingerprints(
                     "parameters": dict(validated.get("parameters") or {}),
                 },
                 sampled=invocation.get("sampling") is not None,
+                scheduled=invocation.get("observation_schedule") is not None,
             )
         )
     return tuple(dict.fromkeys(fingerprints))
@@ -70,7 +72,7 @@ def plan_action_fingerprints(plan_payload: Mapping | None) -> tuple[str, ...]:
     except (TypeError, ValueError):
         return ()
     return tuple(
-        action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None)
+        action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None, scheduled=action.observation_schedule is not None)
         for action in plan.actions
         if not action.deferred
     )
@@ -87,7 +89,7 @@ def drop_repeated_plan_actions(
         action.action_id
         for action in plan.actions
         if not action.deferred
-        and action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None) in executed
+        and action_fingerprint(action.tool_id, action.input, sampled=action.sampling is not None, scheduled=action.observation_schedule is not None) in executed
     }
     if not removed:
         return plan, ()

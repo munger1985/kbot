@@ -354,6 +354,8 @@ class AIOpsTaskWorker:
                     "payload": item.payload,
                     "content_hash": item.content_hash,
                     "provenance": dict(item.provenance),
+                    "trust_level": item.trust_level,
+                    "security_level": item.security_level,
                 }
                 for item in lease.input_artifacts
             ),

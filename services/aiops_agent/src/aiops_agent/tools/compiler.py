@@ -250,8 +250,8 @@ class InvestigationTaskCompiler:
                     input_artifact_keys=dependencies,
                     # 固定目录中包含原生 AWR/ASH 报告等长查询；具体数据库
                     # 语句仍由 Executor 按冻结 Tool 限制收紧。
-                    timeout_seconds=60 if getattr(action, "sampling", None) is not None else 300,
-                    max_attempts=1 if getattr(action, "sampling", None) is not None else 2,
+                    timeout_seconds=60 if getattr(action, "sampling", None) is not None else 15 if getattr(action, "observation_schedule", None) is not None else 300,
+                    max_attempts=1 if getattr(action, "sampling", None) is not None or getattr(action, "observation_schedule", None) is not None else 2,
                     priority=47,
                 )
             )
@@ -270,8 +270,8 @@ class InvestigationTaskCompiler:
                     output_schema_version="DBA_TOOL_RESULT.v1",
                     depends_on=dependencies,
                     input_artifact_keys=dependencies,
-                    timeout_seconds=60 if getattr(action, "sampling", None) is not None else 45,
-                    max_attempts=1 if getattr(action, "sampling", None) is not None else 3,
+                    timeout_seconds=60 if getattr(action, "sampling", None) is not None else 15 if getattr(action, "observation_schedule", None) is not None else 45,
+                    max_attempts=1 if getattr(action, "sampling", None) is not None or getattr(action, "observation_schedule", None) is not None else 3,
                     priority=48,
                 )
             )

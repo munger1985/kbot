@@ -239,6 +239,13 @@ def available_tools(
                 "semantics": "CURRENT_ACTIVITY or CUMULATIVE_SINCE_LOAD; not requested historical window",
                 "query_policy": "UNCHANGED_AUTHORIZED_DIAGNOSTIC_SELECT_ONLY",
             }
+            tool["observation_schedule_policy"] = {
+                "count_including_current_baseline": "2..4", "interval_seconds": "30..900",
+                "shares_one_group_per_round_with_sampling": True,
+                "execution": "PERSISTED_FUTURE_RUN_ONLY_AFTER_SUCCESSFUL_BASELINE",
+                "max_rows_per_point": 200, "max_bytes_per_point": 131072, "max_statement_seconds": 5,
+                "not_requested_historical_window": True,
+            }
             tool["database_access"]["object_access_probe"] = {
                 "execution": "SAME_AUTHORIZED_READONLY_QUERY_TOOL",
                 "shape": "SELECT explicit_columns FROM one_authorized_object WHERE 1=0",
@@ -287,6 +294,8 @@ def compact_tool_cards(tools: tuple[dict, ...]) -> tuple[dict, ...]:
             card["database_access"] = dict(tool["database_access"])
         if tool.get("sampling_policy") is not None:
             card["sampling_policy"] = dict(tool["sampling_policy"])
+        if tool.get("observation_schedule_policy") is not None:
+            card["observation_schedule_policy"] = dict(tool["observation_schedule_policy"])
         if tool.get("discovery_tool_id"):
             card["discovery_tool_id"] = str(tool["discovery_tool_id"])
         cards.append(card)

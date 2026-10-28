@@ -300,6 +300,13 @@ class DiagnosticSampling(AIOpsContract):
     interval_seconds: int = Field(ge=2, le=10, strict=True)
 
 
+class DiagnosticObservationSchedule(AIOpsContract):
+    """持久化未来观察计划；基线计入次数，不追补过去历史。"""
+
+    count: int = Field(ge=2, le=4, strict=True)
+    interval_seconds: int = Field(ge=30, le=900, strict=True)
+
+
 class InvestigationAction(AIOpsContract):
     action_id: str = Field(pattern=r"^a[0-9]+$")
     question: str = Field(min_length=1, max_length=2000)
@@ -315,10 +322,13 @@ class InvestigationAction(AIOpsContract):
     decision_impact: str | None = Field(default=None, max_length=2000)
     stop_condition: str | None = Field(default=None, max_length=1000)
     sampling: DiagnosticSampling | None = None
+    observation_schedule: DiagnosticObservationSchedule | None = None
 
     @model_validator(mode="after")
     def validate_sampling_purpose(self):
-        if self.sampling is not None and (
+        if self.sampling is not None and self.observation_schedule is not None:
+            raise ValueError("短时采样与持久化未来观察不能同时使用")
+        if (self.sampling is not None or self.observation_schedule is not None) and (
             not self.evidence_need or not self.evidence_need.strip()
             or not self.decision_impact or not self.decision_impact.strip()
         ):

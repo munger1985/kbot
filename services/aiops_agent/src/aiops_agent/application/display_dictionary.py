@@ -159,6 +159,7 @@ _DISPLAY_NAMES = {
     "CHAT_TURN": "对话诊断",
     "CHANGE": "受控变更",
     "VERIFICATION": "效果验证",
+    "EVIDENCE_FOLLOWUP": "后台未来观察",
     "OBSERVE": "观测",
     "DIAGNOSE": "诊断",
     "EXPLAIN": "解释",

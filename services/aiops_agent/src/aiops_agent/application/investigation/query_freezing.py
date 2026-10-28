@@ -23,7 +23,7 @@ from aiops_agent.monitoring import (
     PromQueryPolicy,
     PromQueryPolicySnapshot,
 )
-from aiops_agent.tools.sampling import freeze_dynamic_sampling
+from aiops_agent.tools.sampling import freeze_dynamic_sampling, freeze_observation_schedule
 
 
 _DYNAMIC_TOOL_IDS = {
@@ -85,6 +85,7 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
             ) from exc
         try:
             sampling = freeze_dynamic_sampling(action, validated)
+            schedule = freeze_observation_schedule(action)
         except ValueError as exc:
             raise InvestigationPlanValidationError(str(exc)) from exc
         actions.append(
@@ -108,10 +109,11 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
                 "policy_snapshot": snapshot.model_dump(mode="json"),
                 "validated_query": validated.model_dump(mode="json"),
                 "sampling": sampling,
+                "observation_schedule": schedule,
                 "limits": {
-                    "statement_timeout_seconds": 5 if sampling else 20,
+                    "statement_timeout_seconds": 5 if sampling or schedule else 20,
                     "max_result_rows": validated.max_rows,
-                    "max_result_bytes": 131072 if sampling else 1048576,
+                    "max_result_bytes": 131072 if sampling or schedule else 1048576,
                     "max_columns": 64,
                     "max_cell_chars": 32768,
                 },

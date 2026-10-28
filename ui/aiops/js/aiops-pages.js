@@ -6,6 +6,7 @@
     && value !== "" && Number.isFinite(Number(value));
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
+  let futureRefreshTimer = null;
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]] },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
@@ -83,7 +84,7 @@
       return shell.escape({ DAILY: "每天", WEEKLY: "每周", CRON: "灵活周期" }[value] || value || "—");
     }
     if (type === "workflow") {
-      return shell.escape({ CHAT_TURN: "智能诊断", ALERT_DIAGNOSIS: "告警诊断", INSPECTION: "日常巡检", CHANGE: "受控变更", VERIFICATION: "结果验证" }[value] || value || "—");
+      return shell.escape({ CHAT_TURN: "智能诊断", ALERT_DIAGNOSIS: "告警诊断", INSPECTION: "日常巡检", CHANGE: "受控变更", VERIFICATION: "结果验证", EVIDENCE_FOLLOWUP: "后台未来观察" }[value] || value || "—");
     }
     if (type === "trigger") {
       return shell.escape({ CHAT: "对话发起", API: "接口触发", ROOT: "根任务", ALERT: "监控告警", SCHEDULE: "巡检计划" }[value] || value || "—");
@@ -1221,7 +1222,44 @@
     });
   }
 
+  async function renderFutureObservation(run, panel) {
+    const terminal = new Set(["COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED"]);
+    const result = await KBotAIOpsAuth.request(`${appApi}/runs/${encodeURIComponent(run.ops_run_id)}/result`);
+    const body = result.payload || {};
+    const summary = body.observation_series;
+    const points = (body.tool_outcomes || []).map((point) => {
+      if (point.gap) return point.gap.code === "FOLLOWUP_PENDING"
+        ? '<p class="ops-muted">等待后续采样时点，已完成的观察保留如下。</p>'
+        : `<p class="ops-error">${shell.escape(point.gap.detail)}（${shell.escape(point.gap.code)}）</p>`;
+      const observation = point.observation;
+      if (!observation) return "";
+      const valueText = (value) => value === null || value === undefined ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value);
+      return `<section class="ops-panel-body"><h3>${shell.escape(shell.fmt(observation.captured_at))} · ${shell.escape(observation.row_count)} 行${observation.truncated ? " · 已截断" : ""}</h3><div class="ops-table-wrap"><table class="ops-table"><thead><tr>${observation.columns.map((column) => `<th>${shell.escape(column.name)}</th>`).join("")}</tr></thead><tbody>${observation.rows.map((row) => `<tr>${row.map((value) => `<td><span class="ops-future-cell" tabindex="0" title="${shell.escape(valueText(value))}">${shell.escape(valueText(value))}</span></td>`).join("")}</tr>`).join("")}</tbody></table></div>${observation.row_count ? "" : "<p>此采集时点没有匹配记录；不是未执行查询。</p>"}</section>`;
+    }).join("");
+    panel.innerHTML = `<div class="ops-panel-body"><h2>后台未来观察 · ${cell(run, ["status", "", "run-status"])}</h2><p>${summary ? `已采集 ${shell.escape(summary.completed_count)}/${shell.escape(summary.requested.count)} 次，间隔至少 ${shell.escape(summary.requested.interval_seconds)} 秒。` : "等待后续采样，页面会自动更新。"}仅代表实际采集时点，不覆盖过去请求窗口，未自动计算差分。</p>${points}<div class="ops-actions">${terminal.has(run.status) ? "" : '<button type="button" data-cancel-future>取消后续采样</button>'}<button type="button" data-refresh-future>刷新</button></div></div>`;
+    panel.querySelector("[data-refresh-future]").onclick = () => renderDetail("run-detail");
+    const cancel = panel.querySelector("[data-cancel-future]");
+    if (cancel) cancel.onclick = async () => {
+      if (!confirm("取消后续采样？已采集的原始结果仍保留。")) return;
+      cancel.disabled = true;
+      try {
+        await KBotAIOpsAuth.request(`${appApi}/runs/${encodeURIComponent(run.ops_run_id)}/commands`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command_id: KBotAIOpsAuth.uuid(), idempotency_key: KBotAIOpsAuth.uuid(),
+            ops_run_id: run.ops_run_id, command: { command_type: "CANCEL_RUN", expected_row_version: run.row_version } }),
+        });
+        shell.toast("已请求取消后续采样，已采集结果仍保留");
+        await renderDetail("run-detail");
+      } catch (error) { shell.toast(error.message); cancel.disabled = false; }
+    };
+    window.clearTimeout(futureRefreshTimer);
+    if (!terminal.has(run.status)) futureRefreshTimer = window.setTimeout(() => {
+      if (document.contains(panel)) renderDetail("run-detail");
+    }, 3000);
+  }
+
   async function renderDetail(page) {
+    window.clearTimeout(futureRefreshTimer);
     const id = new URLSearchParams(location.search).get("id");
     const paths = { "run-detail": "/runs/", "report-detail": "/reports/", "target-detail": "/targets/", "diagnostic-source-detail": "/diagnostic-sources/", "inspection-plan-detail": "/inspection-plans/" };
     const panel = document.getElementById("ops-detail");
@@ -1232,6 +1270,10 @@
         return;
       }
       const data = await KBotAIOpsAuth.request(appApi + paths[page] + encodeURIComponent(id));
+      if (page === "run-detail" && data.workflow_kind === "EVIDENCE_FOLLOWUP") {
+        await renderFutureObservation(data, panel);
+        return;
+      }
       panel.innerHTML = page === "target-detail"
         ? targetOverviewHtml(data)
         : page === "diagnostic-source-detail"

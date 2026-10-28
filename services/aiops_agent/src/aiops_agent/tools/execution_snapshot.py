@@ -20,7 +20,7 @@ from platform_core.contracts.aiops.playbooks import (
 )
 
 from .compiler import CompiledInvestigationPlan
-from .sampling import freeze_sampling, validate_sampling_plan
+from .sampling import freeze_sampling, freeze_observation_schedule, validate_sampling_plan
 
 
 class ToolExecutionSnapshotBuilder:
@@ -131,6 +131,13 @@ class ToolExecutionSnapshotBuilder:
             if definition.discovery_tool_id:
                 card["discovery_tool_id"] = definition.discovery_tool_id
             if definition.cost_level == "LOW":
+                card["observation_schedule_policy"] = {
+                    "count_including_current_baseline": "2..4", "interval_seconds": "30..900",
+                    "shares_one_group_per_round_with_sampling": True,
+                    "execution": "PERSISTED_FUTURE_RUN_ONLY_AFTER_SUCCESSFUL_BASELINE",
+                    "max_rows_per_point": 200, "max_bytes_per_point": 131072, "max_statement_seconds": 5,
+                    "not_requested_historical_window": True,
+                }
                 card["sampling_policy"] = {
                     "count": "2..4", "interval_seconds": "2..10", "max_groups_per_round": 1,
                     "max_rows_per_sample": 200, "max_bytes_per_sample": 131072,
@@ -351,6 +358,7 @@ class ToolExecutionSnapshotBuilder:
             )
             definition = resolved.definition
             sampling = freeze_sampling(action, definition, self._tools.validate_parameters(resolved, dict(action.input)))
+            schedule = freeze_observation_schedule(action)
             direct_invocations[task_key] = {
                 "action_id": action.action_id,
                 "question": action.question,
@@ -358,6 +366,7 @@ class ToolExecutionSnapshotBuilder:
                 "presentation_kind": "TABLE",
                 "catalog_hash": self._tools.catalog_hash,
                 "sampling": sampling,
+                "observation_schedule": schedule,
                 "execution_condition": (
                     TOP_SQL_REFERENCE_CONDITION
                     if getattr(action, "optional", False)
@@ -390,10 +399,10 @@ class ToolExecutionSnapshotBuilder:
                     ],
                     "limits": {
                         "statement_timeout_seconds": (
-                            min(5, definition.timeout_seconds) if sampling else definition.timeout_seconds
+                            min(5, definition.timeout_seconds) if sampling or schedule else definition.timeout_seconds
                         ),
-                        "max_result_rows": min(200, definition.max_rows) if sampling else definition.max_rows,
-                        "max_result_bytes": min(131072, definition.max_bytes) if sampling else definition.max_bytes,
+                        "max_result_rows": min(200, definition.max_rows) if sampling or schedule else definition.max_rows,
+                        "max_result_bytes": min(131072, definition.max_bytes) if sampling or schedule else definition.max_bytes,
                         "max_columns": 128,
                         "max_cell_chars": 32768,
                     },
