@@ -270,8 +270,8 @@ class InvestigationTaskCompiler:
                     output_schema_version="DBA_TOOL_RESULT.v1",
                     depends_on=dependencies,
                     input_artifact_keys=dependencies,
-                    timeout_seconds=45,
-                    max_attempts=3,
+                    timeout_seconds=60 if getattr(action, "sampling", None) is not None else 45,
+                    max_attempts=1 if getattr(action, "sampling", None) is not None else 3,
                     priority=48,
                 )
             )

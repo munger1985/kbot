@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from platform_core.contracts.aiops.investigation import DiagnosticSampling
 
 from aiops_agent.contracts.artifacts.database import EvidenceGap
@@ -29,10 +29,21 @@ class DiagnosticSamplingSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     requested: DiagnosticSampling
-    completed_count: int = Field(ge=0, le=4)
+    completed_count: int = Field(ge=0, le=4, strict=True)
     started_at: datetime
     finished_at: datetime
     stop_reason: Literal["COMPLETE", "QUERY_GAP", "BUDGET_EXHAUSTED", "RESULT_LIMIT", "INVALID_SAMPLE_TIME"]
+
+    @model_validator(mode="after")
+    def validate_sampling_summary(self):
+        """摘要必须保留真实次数与带时区的观察区间。"""
+        if self.started_at.tzinfo is None or self.finished_at.tzinfo is None or self.finished_at < self.started_at:
+            raise ValueError("追加采样观察区间无效")
+        if self.completed_count > self.requested.count:
+            raise ValueError("追加采样实际次数不能超过请求次数")
+        if self.stop_reason == "COMPLETE" and self.completed_count != self.requested.count:
+            raise ValueError("追加采样未完成全部时点，不能标记完成")
+        return self
 
 
 class DbaToolResult(BaseModel):
@@ -49,6 +60,24 @@ class DbaToolResult(BaseModel):
     status: Literal["SUCCEEDED", "PARTIAL", "FAILED"]
     tool_outcomes: tuple[ToolOutcome, ...]
     sampling: DiagnosticSamplingSummary | None = None
+
+    @model_validator(mode="after")
+    def validate_sampled_outcomes(self):
+        """正式证据重放时也复核采样摘要，不接受伪造的完成数。"""
+        if self.sampling is not None:
+            completed = sum(item.status == "SUCCEEDED" and item.observation is not None for item in self.tool_outcomes)
+            if completed != self.sampling.completed_count:
+                raise ValueError("追加采样摘要与原始观测次数不一致")
+            expected = (
+                "SUCCEEDED" if self.sampling.stop_reason == "COMPLETE"
+                else "PARTIAL" if completed else "FAILED"
+            )
+            if self.status != expected:
+                raise ValueError("追加采样状态与原始观测不一致")
+            request_ids = [item.observation.executor_request_id for item in self.tool_outcomes if item.observation is not None]
+            if len(set(request_ids)) != len(request_ids):
+                raise ValueError("追加采样不能复用同一次执行结果")
+        return self
 
 
 def is_turn_evidence_outcome(

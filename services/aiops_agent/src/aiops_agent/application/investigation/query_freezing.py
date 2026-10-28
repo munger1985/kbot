@@ -23,6 +23,7 @@ from aiops_agent.monitoring import (
     PromQueryPolicy,
     PromQueryPolicySnapshot,
 )
+from aiops_agent.tools.sampling import freeze_dynamic_sampling
 
 
 _DYNAMIC_TOOL_IDS = {
@@ -82,6 +83,10 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
             raise InvestigationPlanValidationError(
                 f"动态查询未通过策略：{exc.code}；{exc}"
             ) from exc
+        try:
+            sampling = freeze_dynamic_sampling(action, validated)
+        except ValueError as exc:
+            raise InvestigationPlanValidationError(str(exc)) from exc
         actions.append(
             action.model_copy(
                 update={
@@ -102,10 +107,11 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
                 "required_privileges": required_privileges,
                 "policy_snapshot": snapshot.model_dump(mode="json"),
                 "validated_query": validated.model_dump(mode="json"),
+                "sampling": sampling,
                 "limits": {
-                    "statement_timeout_seconds": 20,
+                    "statement_timeout_seconds": 5 if sampling else 20,
                     "max_result_rows": validated.max_rows,
-                    "max_result_bytes": 1048576,
+                    "max_result_bytes": 131072 if sampling else 1048576,
                     "max_columns": 64,
                     "max_cell_chars": 32768,
                 },

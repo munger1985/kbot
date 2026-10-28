@@ -232,6 +232,13 @@ def available_tools(
         }
     for tool in tools.values():
         if tool.get("tool_class") in {"ORACLE_SQL_DYNAMIC", "POSTGRESQL_SQL_DYNAMIC", "MYSQL_SQL_DYNAMIC"}:
+            tool["sampling_policy"] = {
+                "count": "2..4", "interval_seconds": "2..10", "max_groups_per_round": 1,
+                "max_rows_per_sample": 200, "max_bytes_per_sample": 131072,
+                "max_statement_seconds": 5, "max_group_seconds": 60,
+                "semantics": "CURRENT_ACTIVITY or CUMULATIVE_SINCE_LOAD; not requested historical window",
+                "query_policy": "UNCHANGED_AUTHORIZED_DIAGNOSTIC_SELECT_ONLY",
+            }
             tool["database_access"]["object_access_probe"] = {
                 "execution": "SAME_AUTHORIZED_READONLY_QUERY_TOOL",
                 "shape": "SELECT explicit_columns FROM one_authorized_object WHERE 1=0",

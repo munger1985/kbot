@@ -25,7 +25,7 @@ from platform_core.contracts.aiops.executor import DatabaseObservation, ReadDiag
 from platform_core.contracts.aiops.investigation import DiagnosticSampling, InvestigationAction, InvestigationPlan
 from platform_core.contracts.aiops.playbooks import DbaCapabilitySnapshot
 from platform_core.identity import uuid7
-import aiops_agent.workers.tool_handlers as handler_module
+import aiops_agent.workers.sampling as handler_module
 
 
 NOW = datetime(2026, 10, 28, 6, tzinfo=timezone.utc)
@@ -53,12 +53,13 @@ def test_sampling_contract_rejects_coercion_and_out_of_budget_counts(data):
         DiagnosticSampling.model_validate(data)
 
 
-def test_sampling_requires_a_reason_and_does_not_expand_dynamic_or_historical_tools():
+def test_sampling_requires_a_reason_and_does_not_expand_historical_tools():
     with pytest.raises(ValidationError, match="证据需求"):
         action(evidence_need=" ")
-    for tool in ("db.postgresql.readonly_query", "monitor.query_range", "workload.sql.top_window"):
+    for tool in ("monitor.query_range", "workload.sql.top_window"):
         with pytest.raises(ValueError, match="低成本"):
             validate_sampling_plan((action(tool_id=tool),))
+    validate_sampling_plan((action(tool_id="db.postgresql.readonly_query"),))
     with pytest.raises(ValueError, match="口径"):
         validate_sampling_plan((action(measurement_semantics="SNAPSHOT_DELTA"),))
     with pytest.raises(ValueError, match="一组"):
@@ -183,7 +184,7 @@ def test_samples_use_distinct_execution_slots_keep_raw_evidence_and_original_sem
     assert sampled.sampling.finished_at == NOW + timedelta(seconds=4)
 
 
-@pytest.mark.parametrize("failure", ["privilege", "truncation", "stale", "late", "request_reuse"])
+@pytest.mark.parametrize("failure", ["privilege", "truncation", "stale", "late", "request_reuse", "wrong_target", "wrong_tool"])
 def test_sample_failures_stop_further_calls_and_keep_completed_points(clock, failure):
     async def run():
         ctx = context()
@@ -205,6 +206,10 @@ def test_sample_failures_stop_further_calls_and_keep_completed_points(clock, fai
                 return result(ctx, captured_at=NOW)
             if failure == "request_reuse":
                 return result(ctx, executor_request_id=first.observation.executor_request_id)
+            if failure == "wrong_target":
+                return result(ctx, target_id=uuid7())
+            if failure == "wrong_tool":
+                return result(ctx, tool_id="db.sql.top_current")
             return result(ctx, truncated=True)
 
         database = SimpleNamespace(execute=AsyncMock(side_effect=execute))

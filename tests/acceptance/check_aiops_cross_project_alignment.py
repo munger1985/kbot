@@ -33,6 +33,7 @@ SHARED_CONTRACTS = (
     Path("services/aiops_agent/src/aiops_agent/contracts/turn_budget.py"),
     Path("services/aiops_agent/src/aiops_agent/application/turn_budget.py"),
     Path("services/aiops_agent/src/aiops_agent/tools/sampling.py"),
+    Path("services/aiops_agent/src/aiops_agent/workers/sampling.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/tool_execution.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/calculation.py"),
     Path("services/aiops_agent/src/aiops_agent/domain/calculation.py"),

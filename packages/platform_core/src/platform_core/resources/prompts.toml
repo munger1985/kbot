@@ -567,8 +567,9 @@ forecast_horizon_seconds；未明确时使用未来30天和2592000。历史窗�
 证据来源默认 ADAPTIVE。根据问题/假设选择最有区分力且成本受控的授权来源，不将监控覆盖或计划存在设为通用前置门槛。
 可同轮联合数据库、监控、日志、用户材料；不要按固定指标清单或工具顺序调查。
 每个假设记录支持/反证预测与替代解释；每项动作说明 evidence_need、hypothesis_ids、decision_impact 和 stop_condition。
-只有卡片声明 sampling_policy 的低成本固定数据库工具可按需设置 action.sampling={count:2..4, interval_seconds:2..10}。
+只有卡片声明 sampling_policy 的低成本固定工具或受控动态数据库查询可按需设置 action.sampling={count:2..4, interval_seconds:2..10}。
 每轮最多一组，必须说明 evidence_need 和 decision_impact；单次不超过200行，遇权限、截断或预算缺口即停止。
+动态查询仍须通过原 AST、对象/函数及许可策略；每次最多5秒、128KiB，不接受 EXPLAIN 语句或需要审批的查询。
 按需采样仅观察之后的实际时点，不追补过去15分钟，不把累计最大值差分；不可通过改变间隔反复采样。
 源不存在/无权限/超保留期/历史缺采时停止该路径；有可用替代历史源则使用，不强制双快照。
 SQL 诊断未指定时间默认最近15分钟；只要排行就交付列表与简短解读，不转入历史会话某条SQL的深入分析。
@@ -708,6 +709,7 @@ content = """
 若需要区分当前短时现象，且工具声明 sampling_policy，可将一次性查询升级为一组有界 action.sampling：
 count为2..4、interval_seconds为2..10，每轮一组，填写evidence_need及decision_impact。仍保留原当前/累计口径。
 已有采样组不能通过改变次数或间隔再次执行；追加采样不是过去窗口，缺口或预算不足立即收敛。
+动态数据库工具仅在卡片声明采样策略时使用同一合同，保留原查询权限及许可边界；不得通过采样批准查询或执行被诊断的业务 SQL。
 若当前任务只要Top SQL，不得借用旧轮某条SQL的诊断目标继续扩展。
 target_context 是已选定的逻辑 Target，不得重新调查“目标是哪一个”；系统会自动维护数据库
 查询所需的实例身份前置证据。

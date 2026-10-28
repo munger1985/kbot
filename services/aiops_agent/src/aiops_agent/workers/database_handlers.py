@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -41,6 +42,7 @@ from platform_core.identity import uuid7
 
 from .errors import RetryableTaskError
 from .handlers import TaskExecutionContext, investigation_task_identity
+from .sampling import run_diagnostic_samples
 
 
 def _utc(value: str) -> datetime:
@@ -368,6 +370,34 @@ class DynamicQueryInvocationHandler:
         invocation = dict(
             execution["dynamic_invocations"][context.task_key]
         )
+        if invocation.get("sampling") is not None:
+            async def execute_sample(index):
+                result = await self._execute_once(
+                    replace(context, max_attempts=1), invocation,
+                    execution_key_suffix=f":sample:{index}",
+                )
+                return result.tool_outcomes[0]
+
+            outcomes, summary = await run_diagnostic_samples(
+                context=context, sampling=invocation["sampling"], tool_id=invocation["tool_id"],
+                tool_version="1.0.0", step_id=invocation["action_id"], limits=invocation["limits"],
+                execute_sample=execute_sample,
+            )
+            return DbaToolResult(
+                source_type="TOOL", source_id=invocation["tool_id"], source_version="1.0.0",
+                definition_hash=invocation["validated_query"]["policy_sha256"],
+                output_schema="DYNAMIC_DATABASE_OBSERVATION.v1",
+                measurement_semantics=invocation["measurement_semantics"], presentation_kind="TABLE",
+                status="SUCCEEDED" if summary.stop_reason == "COMPLETE" else "PARTIAL" if summary.completed_count else "FAILED",
+                tool_outcomes=outcomes, sampling=summary,
+            )
+        return await self._execute_once(context, invocation)
+
+    async def _execute_once(self, context, invocation, *, execution_key_suffix=""):
+        """每个采样时点独立重验授权，不复用前次 Grant 或查询结果。"""
+        if execution_key_suffix not in {"", ":sample:1", ":sample:2", ":sample:3", ":sample:4"}:
+            raise ValueError("动态数据库请求的采样身份无效")
+        execution = context.plan_snapshot["investigation_execution"]
         database = dict(execution["database"])
         validated = dict(invocation["validated_query"])
         database_type = str(database["db_type"])
@@ -461,7 +491,7 @@ class DynamicQueryInvocationHandler:
             sql=validated["normalized_sql"],
             parameters=parameters,
             idempotency_key=(
-                f"{context.task_id}:{context.attempt}:{tool_id}"
+                f"{context.task_id}:{context.attempt}:{tool_id}{execution_key_suffix}"
             ),
         )
         try:

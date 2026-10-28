@@ -71,6 +71,7 @@ class DynamicDiagnosticExecutorService:
         hard_limits: DiagnosticLimits,
         concurrency: int,
         access_observations: QueryAccessObservations | None = None,
+        readonly_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._grant_codec = grant_codec
         self._control_plane = control_plane
@@ -78,7 +79,7 @@ class DynamicDiagnosticExecutorService:
         if not {"ORACLE", "POSTGRESQL"} <= set(self._drivers) or set(self._drivers) - {"ORACLE", "POSTGRESQL", "MYSQL"}:
             raise ValueError("动态诊断 Executor 的 Driver 集合无效")
         self._hard_limits = hard_limits
-        self._semaphore = asyncio.Semaphore(concurrency)
+        self._semaphore = readonly_semaphore if readonly_semaphore is not None else asyncio.Semaphore(concurrency)
         self._access_observations = access_observations if access_observations is not None else QueryAccessObservations()
 
     async def execute(

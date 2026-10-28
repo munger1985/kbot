@@ -1,6 +1,7 @@
 """AIOps DB Executor Bootstrap。"""
 
 from contextlib import asynccontextmanager
+import asyncio
 from pathlib import Path
 
 import aiohttp
@@ -59,6 +60,8 @@ def create_aiops_executor(
         registry = create_diagnostic_registry(resolved)
         action_registry = ActionRegistry.load()
         access_observations = QueryAccessObservations()
+        # 固定、动态、采样与后台只读请求共享进程并发，不能各自占满同一配置额度。
+        readonly_semaphore = asyncio.Semaphore(config.readonly_concurrency)
         client_session = aiohttp.ClientSession()
         oracle_driver = OracleDiagnosticDriver()
         postgresql_driver = PostgreSQLDiagnosticDriver(
@@ -68,6 +71,7 @@ def create_aiops_executor(
         )
         diagnostic_executor = DiagnosticExecutorService(
             access_observations=access_observations,
+            readonly_semaphore=readonly_semaphore,
             registry=registry,
             grant_codec=create_diagnostic_grant_codec(resolved),
             control_plane=AIOpsExecutionClient(
@@ -93,6 +97,7 @@ def create_aiops_executor(
         )
         dynamic_diagnostic_executor = DynamicDiagnosticExecutorService(
             access_observations=access_observations,
+            readonly_semaphore=readonly_semaphore,
             grant_codec=create_diagnostic_grant_codec(resolved),
             control_plane=AIOpsExecutionClient(
                 base_url=resolved.clients.aiops_api.base_url,

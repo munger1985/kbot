@@ -47,13 +47,14 @@ class DiagnosticExecutorService:
         hard_limits: DiagnosticLimits,
         concurrency: int,
         access_observations: QueryAccessObservations | None = None,
+        readonly_semaphore: asyncio.Semaphore | None = None,
     ):
         self._registry = registry
         self._grant_codec = grant_codec
         self._control_plane = control_plane
         self._drivers = {driver.db_type: driver for driver in drivers}
         self._hard_limits = hard_limits
-        self._semaphore = asyncio.Semaphore(concurrency)
+        self._semaphore = readonly_semaphore if readonly_semaphore is not None else asyncio.Semaphore(concurrency)
         self._access_observations = access_observations if access_observations is not None else QueryAccessObservations()
 
     async def execute(

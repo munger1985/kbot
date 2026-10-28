@@ -55,6 +55,7 @@ def execution_action_fingerprints(
                     "sql": validated.get("normalized_sql"),
                     "parameters": dict(validated.get("parameters") or {}),
                 },
+                sampled=invocation.get("sampling") is not None,
             )
         )
     return tuple(dict.fromkeys(fingerprints))

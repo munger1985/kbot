@@ -40,7 +40,7 @@ def clock_cache(capacity=1024):
                                   monotonic=lambda: clock.monotonic), clock
 
 
-def harness(engine="POSTGRESQL", dynamic=False):
+def harness(engine="POSTGRESQL", dynamic=False, *, readonly_semaphore=None):
     cache, clock = clock_cache()
     codec = DiagnosticGrantCodec(secret="a" * 32, issuer="test-worker", audience="test-executor")
     registry = DiagnosticRegistry.load()
@@ -87,7 +87,7 @@ def harness(engine="POSTGRESQL", dynamic=False):
     driver = SimpleNamespace(db_type=engine, execute=AsyncMock(return_value=result), execute_dynamic=AsyncMock(return_value=result))
     control = SimpleNamespace(issue_credential=AsyncMock(return_value=SimpleNamespace(username="private-user", password="private-password")))
     kwargs = dict(grant_codec=codec, control_plane=control, hard_limits=limits,
-                  concurrency=1, access_observations=cache)
+                  concurrency=1, access_observations=cache, readonly_semaphore=readonly_semaphore)
     if dynamic:
         drivers = tuple(driver if key == engine else SimpleNamespace(db_type=key) for key in ("POSTGRESQL", "MYSQL", "ORACLE"))
         service = DynamicDiagnosticExecutorService(**kwargs, drivers=drivers)
@@ -114,6 +114,71 @@ def harness(engine="POSTGRESQL", dynamic=False):
         service=service, request=request, query_request=query_request,
         codec=codec, snapshot=snapshot if dynamic else None, policy=policy if dynamic else None,
         method=driver.execute_dynamic if dynamic else driver.execute)
+
+
+@pytest.mark.parametrize("first_dynamic", [False, True])
+def test_fixed_and_dynamic_queries_share_capacity_before_credential_redemption(first_dynamic):
+    async def run():
+        shared = asyncio.Semaphore(1)
+        first = harness(dynamic=first_dynamic, readonly_semaphore=shared)
+        second = harness(dynamic=not first_dynamic, readonly_semaphore=shared)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = first.method.return_value
+
+        async def blocked(**kwargs):
+            entered.set()
+            await release.wait()
+            return original
+
+        first.method.side_effect = blocked
+        running = asyncio.create_task(first.service.execute(first.request()))
+        await asyncio.wait_for(entered.wait(), 1)
+        waiting = asyncio.create_task(second.service.execute(second.request()))
+        await asyncio.sleep(0)
+        second.control.issue_credential.assert_not_awaited()
+        second.method.assert_not_awaited()
+        release.set()
+        one, two = await asyncio.wait_for(asyncio.gather(running, waiting), 1)
+        assert one.status == two.status == "SUCCEEDED"
+        assert shared._value == 1
+        assert first.service._semaphore is second.service._semaphore
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("waiting_dynamic", [False, True])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_shared_capacity_queue_cancellation_or_deadline_never_takes_credentials(waiting_dynamic, cancel):
+    async def run():
+        shared = asyncio.Semaphore(1)
+        first = harness(dynamic=not waiting_dynamic, readonly_semaphore=shared)
+        second = harness(dynamic=waiting_dynamic, readonly_semaphore=shared)
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = first.method.return_value
+
+        async def blocked(**kwargs):
+            entered.set()
+            await release.wait()
+            return original
+
+        first.method.side_effect = blocked
+        running = asyncio.create_task(first.service.execute(first.request()))
+        await asyncio.wait_for(entered.wait(), 1)
+        grant = second.grant.model_copy(update={"expires_at": datetime.now(UTC) + timedelta(seconds=1 if cancel else 0.03)})
+        waiting = asyncio.create_task(second.service.execute(second.request(grant)))
+        if cancel:
+            await asyncio.sleep(0)
+            waiting.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiting
+        else:
+            result = await asyncio.wait_for(waiting, 1)
+            assert result.error_code == "EXECUTION_DEADLINE_EXCEEDED"
+        second.control.issue_credential.assert_not_awaited()
+        second.method.assert_not_awaited()
+        release.set()
+        assert (await asyncio.wait_for(running, 1)).status == "SUCCEEDED"
+        assert shared._value == 1
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize("engine", ["POSTGRESQL", "MYSQL", "ORACLE"])
