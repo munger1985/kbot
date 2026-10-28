@@ -194,6 +194,34 @@ class MetricObservation(BaseModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
+class DiscoveredMetric(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1, max_length=256)
+    label_names: tuple[str, ...] = Field(default=(), max_length=128)
+    metric_type: str = "UNKNOWN"
+    help_text: str | None = None
+
+
+class MetricDiscoveryResult(BaseModel):
+    """限定目标与窗口的目录，不是数值采样或全量覆盖证明。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action_id: str
+    target_id: str
+    binding_id: str
+    source_id: str
+    scope: Literal["DATABASE", "HOST"]
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    captured_at: UtcDatetime
+    entries: tuple[DiscoveredMetric, ...] = Field(default=(), max_length=100)
+    truncated: bool = False
+    response_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    warnings: tuple[str, ...] = ()
+
+
 class ObservationSet(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -202,6 +230,14 @@ class ObservationSet(BaseModel):
     binding_id: str
     source_id: str
     observations: tuple[MetricObservation, ...] = ()
+    metric_catalogs: tuple[MetricDiscoveryResult, ...] = Field(default=(), max_length=1)
     active_alerts: tuple[dict[str, Any], ...] = ()
     gaps: tuple[ObservationGap, ...] = ()
     collected_at: UtcDatetime
+
+    @model_validator(mode="after")
+    def validate_catalog_scope(self):
+        for catalog in self.metric_catalogs:
+            if str(catalog.target_id) != str(self.target_id) or str(catalog.binding_id) != str(self.binding_id) or str(catalog.source_id) != str(self.source_id):
+                raise ValueError("指标目录与冻结的目标、绑定和来源不一致")
+        return self

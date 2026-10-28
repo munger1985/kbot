@@ -47,7 +47,7 @@ class InspectionReportPublishingTest(unittest.TestCase):
         )
 
         self.assertEqual("READY", source["status"])
-        self.assertEqual("CONFIRMED", source["root_cause"]["effective_level"])
+        self.assertEqual("INCONCLUSIVE", source["root_cause"]["effective_level"])
         self.assertEqual(("修复连接释放逻辑",), source["executed_actions"])
         self.assertEqual("RESOLVED", source["verification"]["result"])
         self.assertEqual(

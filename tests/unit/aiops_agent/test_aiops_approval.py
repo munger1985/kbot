@@ -179,7 +179,7 @@ class ApprovalServiceTest(unittest.TestCase):
             row_version=3,
             db_type="ORACLE",
             version_code="19.0.0",
-            capabilities_json={"capabilities": []},
+            capabilities_json={"capabilities": ["session_management"]},
             environment="PROD",
             endpoint_json={
                 "host": "oracle.internal",

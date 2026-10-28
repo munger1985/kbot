@@ -892,6 +892,7 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             {
                 "ad_hoc_prometheus_queries": [],
                 "ad_hoc_log_queries": [],
+                "metric_discoveries": [],
             },
             source_queries,
         )
@@ -1108,6 +1109,7 @@ class DynamicQueryPlanningRepairTest(unittest.IsolatedAsyncioTestCase):
             {
                 "ad_hoc_prometheus_queries": [],
                 "ad_hoc_log_queries": [],
+                "metric_discoveries": [],
             },
             source_queries,
         )

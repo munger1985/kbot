@@ -80,14 +80,6 @@ class ToolExecutionSnapshotBuilder:
         if match is None:
             return ()
         major = int(match.group(0))
-        configured_privileges = set(capabilities.privileges)
-        normalized_privileges = {
-            str(value).strip().upper() for value in configured_privileges
-        }
-        dictionary_access = (
-            str(capabilities.database_type) == "ORACLE"
-            and "SELECT ANY DICTIONARY" in normalized_privileges
-        )
         discovered = []
         for item in self._tools.tools:
             definition = item.definition
@@ -99,17 +91,14 @@ class ToolExecutionSnapshotBuilder:
                 < definition.supported_version_max_exclusive
             ):
                 continue
-            if not set(definition.required_capabilities) <= set(
-                capabilities.target_capabilities
-            ):
-                continue
+            if not set(definition.required_capabilities) <= set(capabilities.target_capabilities):
+                # 固定目录仅包含已离线验证的受控只读工具。未知访问能力可按需探测，
+                # 但商业许可仍为硬门禁，实际权限由目标库执行反馈，绝不写成已具备。
+                if "DB_READONLY" not in capabilities.target_capabilities:
+                    continue
             if not set(definition.required_entitlements) <= set(
                 capabilities.entitlements
             ):
-                continue
-            if configured_privileges and not dictionary_access and not set(
-                definition.required_privileges
-            ) <= configured_privileges:
                 continue
             output_names = tuple(
                 column.name for column in definition.output_columns
@@ -121,6 +110,9 @@ class ToolExecutionSnapshotBuilder:
                 "tool_id": definition.tool_id,
                 "version": definition.version,
                 "tool_class": "ORACLE_SQL",
+                "access_status": "UNKNOWN",
+                "required_privileges": list(definition.required_privileges),
+                "required_capabilities": list(definition.required_capabilities),
                 "description": (
                     f"{purpose}；"
                     f"返回字段：{', '.join(output_names)}"
@@ -193,7 +185,7 @@ class ToolExecutionSnapshotBuilder:
             tool_version=str(matches[0]["version"]),
             db_type=str(capabilities.database_type),
             db_version=capabilities.database_version or "",
-            capabilities=set(capabilities.target_capabilities),
+            capabilities=set(capabilities.target_capabilities) | set(matches[0].get("required_capabilities", ())),
             entitlements=set(capabilities.entitlements),
         )
 

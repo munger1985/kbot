@@ -2947,17 +2947,18 @@ class TurnPlanningService:
                 )
             )
 
-        for tool_id in ("monitor.query_range", "loki.query_range"):
+        for tool_id in ("monitor.query_range", "loki.query_range", "monitor.discover_metrics"):
             action_ids = [
                 action.action_id
                 for action in source_actions
                 if action.tool_id == tool_id
                 and action.action_id in normalized_actions
             ]
-            for action_id in action_ids[4:]:
+            for action_id in action_ids[(1 if tool_id == "monitor.discover_metrics" else 4):]:
                 normalized_actions.pop(action_id, None)
                 rejected_reasons[action_id] = (
-                    "同类临时监控查询超过单轮 4 条限制"
+                    "指标目录发现超过单轮 1 次限制" if tool_id == "monitor.discover_metrics"
+                    else "同类临时监控查询超过单轮 4 条限制"
                 )
 
         rejected_ids = set(rejected_reasons)
@@ -3373,7 +3374,7 @@ class TurnPlanningService:
                     action.action_id,
                     (None, None),
                 )
-                if action.tool_id == "monitor.query_range":
+                if action.tool_id in {"monitor.query_range", "monitor.discover_metrics"}:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
@@ -4785,7 +4786,7 @@ class TurnPlanningService:
                 playbook_invocation_id = (
                     playbook_context[1] if playbook_context else None
                 )
-                if action.tool_id == "monitor.query_range":
+                if action.tool_id in {"monitor.query_range", "monitor.discover_metrics"}:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id

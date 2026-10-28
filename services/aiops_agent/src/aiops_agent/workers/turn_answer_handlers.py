@@ -39,9 +39,12 @@ from aiops_agent.application.display_dictionary import (
 )
 from aiops_agent.application.investigation.projection import direct_list_result_kind
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
-from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, render_sql_diagnosis, validate_sql_diagnosis
+from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
+from aiops_agent.application.diagnosis.investigation_record import (
+    freeze_investigation, render_investigation, sql_investigation_draft,
+)
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -501,6 +504,21 @@ class DbaEvidenceAssessmentHandler:
                 continue
             if schema_version == "OBSERVATION_SET.v1":
                 result = ObservationSet.model_validate(artifact["payload"])
+                for index, catalog in enumerate(result.metric_catalogs):
+                    facts.append(TurnEvidenceFact(
+                        evidence_ref=f"artifact:{artifact['artifact_id']}#metric-catalog/{index}",
+                        artifact_id=str(artifact["artifact_id"]), source_id=str(catalog.source_id),
+                        step_id=catalog.action_id, tool_id="monitor.discover_metrics",
+                        trust_level="SOURCE_VERIFIED", measurement_semantics="NOT_APPLICABLE",
+                        presentation_kind="TABLE", captured_at=catalog.captured_at.isoformat(),
+                        columns=tuple({"name": name} for name in (
+                            "metric_name", "label_names", "metric_type", "window_start", "window_end",
+                        )),
+                        rows=tuple((entry.name, ", ".join(entry.label_names), entry.metric_type,
+                            catalog.window_start.isoformat(), catalog.window_end.isoformat()) for entry in catalog.entries),
+                        row_count=len(catalog.entries), truncated=catalog.truncated,
+                        warnings=catalog.warnings,
+                    ))
                 fact = self._monitoring_fact(
                     artifact_id=str(artifact["artifact_id"]),
                     result=result,
@@ -1631,39 +1649,63 @@ class DbaAnswerComposeHandler:
                 ),
                 target_id=str(context.target_id or "") or None,
             )
-            prompt = await self._prompts.resolve(
-                "diagnosis_answer_compose",
-                frozen_prompts=dict(answer_context["prompts"]),
-            )
-            result = await self._model.generate_structured(
-                purpose="aiops.dba-diagnosis-answer-compose",
-                output_model=DiagnosisAnswerDraft,
-                model_snapshot=dict(answer_context["model"]),
-                prompt_ref={**prompt.ref(), "content": prompt.content},
-                input_payload=self._diagnosis_model_input(
-                    context=context,
-                    assessment=assessment,
-                    compilation=compilation,
-                    proposal_summary=proposal_summary,
-                ),
-                deadline=self._deadline(context.deadline_at),
-                idempotency_key=(
-                    f"turn:{context.run_id}:diagnosis-answer:{context.attempt}"
-                ),
-            )
-            draft = DiagnosisAnswerDraft.model_validate(result.output)
-            self._validate_evidence_refs(draft.evidence_refs, assessment)
+            receipt = None
+            try:
+                if self._model is None or self._prompts is None:
+                    raise ValueError("诊断模型或 Prompt 未配置")
+                prompt = await self._prompts.resolve(
+                    "diagnosis_answer_compose",
+                    frozen_prompts=dict(answer_context["prompts"]),
+                )
+                result = await self._model.generate_structured(
+                    purpose="aiops.dba-diagnosis-answer-compose",
+                    output_model=DiagnosisAnswerDraft,
+                    model_snapshot=dict(answer_context["model"]),
+                    prompt_ref={**prompt.ref(), "content": prompt.content},
+                    input_payload=self._diagnosis_model_input(
+                        context=context,
+                        assessment=assessment,
+                        compilation=compilation,
+                        proposal_summary=proposal_summary,
+                    ),
+                    deadline=self._deadline(context.deadline_at),
+                    idempotency_key=(
+                        f"turn:{context.run_id}:diagnosis-answer:{context.attempt}"
+                    ),
+                )
+                draft = DiagnosisAnswerDraft.model_validate(result.output)
+                record = freeze_investigation(
+                    draft=draft, evidence=assessment.evidence, context=context, gaps=assessment.gaps,
+                )
+                receipt = result.receipt.model_dump(mode="json")
+            except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
+                logger.warning("诊断回答未通过校验，保留已采集证据：task_id={} error_type={}", context.task_id, type(exc).__name__)
+                draft = DiagnosisAnswerDraft(
+                    claims=({
+                        "claim_id": "c1", "kind": "INTERPRETATION", "subject": "当前调查",
+                        "statement": "本次已采集的证据仍可查看，但原因判断与处置方案尚未完成。",
+                        "level": "UNKNOWN", "applicable_time": "本轮采集范围",
+                        "reasoning": "诊断生成未通过证据校验或模型服务不可用。",
+                        "limitations": ("不能据此确认根因或声称问题已解决。",),
+                    },),
+                    unresolved_questions=("需基于已有证据重新形成可核验判断；无需因此重跑数据库取证。",),
+                    goal_satisfied=False,
+                )
+                record = freeze_investigation(
+                    draft=draft, evidence=assessment.evidence, context=context, gaps=assessment.gaps,
+                )
+            analysis_markdown, solution_markdown, evidence_refs = render_investigation(record)
             blocks = self._assemble_blocks(
                 context=context,
                 assessment=assessment,
                 compilation=compilation,
-                analysis_markdown=draft.analysis_markdown,
-                solution_markdown=draft.solution_markdown,
-                evidence_refs=draft.evidence_refs,
+                analysis_markdown=analysis_markdown,
+                solution_markdown=solution_markdown,
+                evidence_refs=evidence_refs,
             )
             status = (
                 "COMPLETED"
-                if assessment.status == SufficiencyStatus.ANSWERABLE
+                if draft.goal_satisfied and assessment.status == SufficiencyStatus.ANSWERABLE
                 else "PARTIAL"
             )
             return AIOpsTurnResult(
@@ -1673,7 +1715,8 @@ class DbaAnswerComposeHandler:
                 evidence=assessment.evidence,
                 evidence_gaps=assessment.gaps,
                 assessment_reasons=assessment.reasons,
-                model_receipt=result.receipt.model_dump(mode="json"),
+                model_receipt=receipt,
+                investigation_record=record,
             )
 
         prompt = await self._prompts.resolve(
@@ -1843,8 +1886,13 @@ class DbaAnswerComposeHandler:
         else:
             fallback_reason = "诊断模型未配置；本次仅提供已核验画像，不能视为已完成根因分析。"
         if draft is not None:
-            analysis, solution, refs = render_sql_diagnosis(draft)
+            record = freeze_investigation(
+                draft=sql_investigation_draft(draft, "SQL " + str(bundle["subject"].get("query_id") or bundle["subject"].get("sql_id") or bundle["subject"].get("digest") or "当前选定语句")),
+                evidence=assessment.evidence, context=context, gaps=assessment.gaps,
+            )
+            analysis, solution, refs = render_investigation(record)
         else:
+            record = None
             answer = build_sql_evidence_answer(
                 task_frame=task_frame, database_type=self._database_type(context), evidence=assessment.evidence,
             )
@@ -1877,6 +1925,7 @@ class DbaAnswerComposeHandler:
             sufficiency_status=assessment.status, blocks=tuple(blocks),
             evidence=assessment.evidence, evidence_gaps=assessment.gaps,
             assessment_reasons=reasons, model_receipt=receipt,
+            investigation_record=record,
         )
 
     async def execute_stream(self, context: TaskExecutionContext):
@@ -1951,13 +2000,23 @@ class DbaAnswerComposeHandler:
             )
             return
         if self._is_diagnosis_turn(context):
-            async for item in self._stream_diagnosis(
-                context=context,
-                assessment=assessment,
-                answer_context=answer_context,
-                proposal_summary=proposal_summary,
-            ):
-                yield item
+            # 先冻结和校验全部判断，再发送正文，避免错误根因已流到浏览器。
+            yield DbaAnswerProgress(
+                event_type="thinking.delta", event_key="answer-thinking:validate",
+                payload={"delta": "正在校验证据判断并生成分析与方案"},
+            )
+            result = await self.execute(context)
+            markdown = "\n\n".join(
+                ({"ANALYSIS_MARKDOWN": "## 分析结论\n", "SOLUTION_MARKDOWN": "## 处理建议\n"}.get(str(block.block_type), "") + str(block.payload.get("markdown") or ""))
+                for block in result.blocks
+                if str(block.block_type) in {"MARKDOWN", "ANALYSIS_MARKDOWN", "SOLUTION_MARKDOWN"}
+            )
+            for index, delta in enumerate(self._answer_deltas(markdown), start=1):
+                yield DbaAnswerProgress(
+                    event_type="answer.delta", event_key=f"answer-delta:{index}",
+                    payload={"chunk_index": index, "delta": delta},
+                )
+            yield result.model_copy(update={"answer_streamed": True})
             return
 
         prompt = await self._prompts.resolve(
@@ -2085,95 +2144,6 @@ class DbaAnswerComposeHandler:
                 "output_sha256": self._hash(answer),
                 "duration_ms": int((time.monotonic() - started) * 1000),
             },
-        )
-
-    async def _stream_diagnosis(
-        self,
-        *,
-        context: TaskExecutionContext,
-        assessment: DbaSufficiencyAssessment,
-        answer_context: dict[str, Any],
-        proposal_summary: dict[str, Any] | None,
-    ):
-        compilation = compile_findings(
-            assessment.evidence,
-            database_type=str(
-                dict(context.plan_snapshot.get("target") or {}).get(
-                    "db_type",
-                    dict(
-                        context.plan_snapshot.get("capability_snapshot") or {}
-                    ).get("database_type", "ORACLE"),
-                )
-            ),
-            target_id=str(context.target_id or "") or None,
-        )
-        prompt = await self._prompts.resolve(
-            "diagnosis_answer_stream",
-            frozen_prompts=dict(answer_context["prompts"]),
-        )
-        yield DbaAnswerProgress(
-            event_type="thinking.delta",
-            event_key="answer-thinking:compose",
-            payload={
-                "delta": "正在基于已验证证据组织分析和方案",
-                "public_summary": "正在组织诊断分析和方案",
-            },
-        )
-        result = await self._model.generate_structured(
-            purpose="aiops.dba-diagnosis-answer-stream",
-            output_model=DiagnosisAnswerDraft,
-            model_snapshot=dict(answer_context["model"]),
-            prompt_ref={**prompt.ref(), "content": prompt.content},
-            input_payload=self._diagnosis_model_input(
-                context=context,
-                assessment=assessment,
-                compilation=compilation,
-                proposal_summary=proposal_summary,
-            ),
-            deadline=self._deadline(context.deadline_at),
-            idempotency_key=(
-                f"turn:{context.run_id}:diagnosis-answer-stream:{context.attempt}"
-            ),
-        )
-        draft = DiagnosisAnswerDraft.model_validate(result.output)
-        self._validate_evidence_refs(draft.evidence_refs, assessment)
-        analysis_markdown = display_text(draft.analysis_markdown)
-        solution_markdown = display_text(draft.solution_markdown)
-        markdown = "\n\n".join(
-            item
-            for item in (
-                analysis_markdown.strip(),
-                solution_markdown.strip(),
-            )
-            if item
-        )
-        for index, delta in enumerate(self._answer_deltas(markdown), start=1):
-            yield DbaAnswerProgress(
-                event_type="answer.delta",
-                event_key=f"answer-delta:{index}",
-                payload={"chunk_index": index, "delta": delta},
-            )
-        blocks = self._assemble_blocks(
-            context=context,
-            assessment=assessment,
-            compilation=compilation,
-            analysis_markdown=analysis_markdown,
-            solution_markdown=solution_markdown,
-            evidence_refs=draft.evidence_refs,
-        )
-        yield AIOpsTurnResult(
-            status=(
-                "COMPLETED"
-                if assessment.status == SufficiencyStatus.ANSWERABLE
-                else "PARTIAL"
-            ),
-            sufficiency_status=assessment.status,
-            blocks=tuple(blocks),
-            evidence=assessment.evidence,
-            evidence_gaps=assessment.gaps,
-            assessment_reasons=assessment.reasons,
-            answer_streamed=True,
-            model_receipt=result.receipt.model_dump(mode="json"),
         )
 
     def _assemble_blocks(

@@ -15,6 +15,7 @@ from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
+    CAPABILITY_METRIC_DISCOVERY,
 )
 
 
@@ -149,6 +150,7 @@ class MonitoringSnapshotBuilder:
             binding_id = str(monitor.target_source_binding_id)
             if (
                 CAPABILITY_EVENT_QUERY in effective
+                or CAPABILITY_METRIC_DISCOVERY in effective
                 or (
                     CAPABILITY_METRIC_QUERY_RANGE in effective
                     and bool(selected_codes)

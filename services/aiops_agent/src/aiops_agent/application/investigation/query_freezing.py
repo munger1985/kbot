@@ -127,7 +127,21 @@ def prepare_source_queries(investigation):
     actions = []
     prom_queries = []
     log_queries = []
+    metric_discoveries = []
     for action in investigation.plan.actions:
+        if action.tool_id == "monitor.discover_metrics":
+            payload = dict(action.input)
+            scope = payload.get("scope", "DATABASE")
+            window = payload.get("window_seconds", 900)
+            limit = payload.get("limit", 50)
+            if set(payload) - {"scope", "window_seconds", "limit"} or scope not in {"DATABASE", "HOST"}:
+                raise InvestigationPlanValidationError("指标发现只允许选择绑定目标的数据库或主机范围")
+            if type(window) is not int or not 60 <= window <= 3600 or type(limit) is not int or not 1 <= limit <= 100:
+                raise InvestigationPlanValidationError("指标发现窗口或结果上限越界")
+            normalized = {"scope": scope, "window_seconds": window, "limit": limit}
+            actions.append(action.model_copy(update={"input": normalized}))
+            metric_discoveries.append({"action_id": action.action_id, **normalized})
+            continue
         if action.tool_id not in {
             "monitor.query_range",
             "loki.query_range",
@@ -174,6 +188,8 @@ def prepare_source_queries(investigation):
     updated_plan = investigation.plan.model_copy(
         update={"actions": tuple(actions)}
     )
+    if len(metric_discoveries) > 1:
+        raise InvestigationPlanValidationError("单轮指标目录发现最多一次")
     if len(prom_queries) > 4 or len(log_queries) > 4:
         raise InvestigationPlanValidationError(
             "单轮临时 PromQL 或 LogQL 查询不能超过 4 条"
@@ -181,6 +197,7 @@ def prepare_source_queries(investigation):
     return (
         investigation.model_copy(update={"plan": updated_plan}),
         {
+            "metric_discoveries": metric_discoveries,
             "ad_hoc_prometheus_queries": prom_queries,
             "ad_hoc_log_queries": log_queries,
         },

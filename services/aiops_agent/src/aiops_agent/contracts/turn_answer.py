@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from aiops_agent.contracts.investigation import DiagnosisAnswerDraft, InvestigationRecord
+
 from platform_core.contracts.aiops import (
     AnswerBlockType,
     MeasurementSemantics,
@@ -81,19 +83,6 @@ class DbaAnswerDraft(BaseModel):
     evidence_refs: tuple[str, ...] = ()
 
 
-class DiagnosisAnswerDraft(BaseModel):
-    """诊断 Turn 模型只写分析和方案，不得改写 Finding 字段。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal["DBA_DIAGNOSIS_ANSWER_DRAFT.v1"] = (
-        "DBA_DIAGNOSIS_ANSWER_DRAFT.v1"
-    )
-    analysis_markdown: str = Field(min_length=1, max_length=32000)
-    solution_markdown: str = Field(min_length=1, max_length=32000)
-    evidence_refs: tuple[str, ...] = ()
-
-
 class TurnAnswerBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,11 +104,14 @@ class AIOpsTurnResult(BaseModel):
     assessment_reasons: tuple[str, ...] = ()
     answer_streamed: bool = False
     model_receipt: dict[str, Any] | None = None
+    investigation_record: InvestigationRecord | None = None
 
     @model_validator(mode="after")
     def validate_result(self) -> "AIOpsTurnResult":
         if not self.blocks:
             raise ValueError("Turn 回答至少包含一个展示块")
+        if self.investigation_record is not None:
+            self.investigation_record.validate_observations(self.evidence)
         return self
 
 

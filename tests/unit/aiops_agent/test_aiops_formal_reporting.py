@@ -790,7 +790,7 @@ class FormalReportingTest(unittest.TestCase):
             missing_turns=[{"code": "MISSING_FINAL_RESULT", "turn_no": 3}],
         )
         self.assertEqual("PARTIAL", result["status"])
-        self.assertEqual("CONFIRMED", result["root_cause"]["effective_level"])
+        self.assertEqual("INCONCLUSIVE", result["root_cause"]["effective_level"])
         self.assertEqual(4, len(result["facts"]))
         self.assertEqual(2, len(result["evidence_refs"]))
         self.assertEqual(3, result["conversation"]["turn_count"])

@@ -31,6 +31,7 @@ CAPABILITY_CHANGE_QUERY = "change.query"
 CAPABILITY_WORKLOAD_QUERY = "workload.query"
 CAPABILITY_ACTION_EXECUTE = "action.execute"
 CAPABILITY_INSTANCE_DISCOVERY = "instance.discover"
+CAPABILITY_METRIC_DISCOVERY = "metric.discover"
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,32 @@ class SourceHealthResult(BaseModel):
     adapter_id: str
     adapter_version: str
     discovered_capabilities: tuple[str, ...] = ()
+
+
+class MetricsDiscoveryRequest(BaseModel):
+    """定位来自已冻结绑定，模型只能选择数据库或已绑定主机范围。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action_id: str = Field(pattern=r"^a[0-9]+$")
+    target_id: str
+    binding_id: str
+    source_locator_key: str = Field(min_length=1, max_length=512)
+    host_target_key: str | None = Field(default=None, max_length=512)
+    scope: Literal["DATABASE", "HOST"] = "DATABASE"
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    limit: int = Field(default=50, ge=1, le=100)
+    max_response_bytes: int = Field(default=262144, ge=1024, le=1048576)
+    trace_id: str
+
+    @field_validator("window_end")
+    @classmethod
+    def validate_window(cls, value, info):
+        start = info.data.get("window_start")
+        if start is not None and not 0 < (value - start).total_seconds() <= 3600:
+            raise ValueError("指标目录发现窗口必须大于零且不超过一小时")
+        return value
 
 
 class InstanceDiscoveryRequest(BaseModel):

@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis, render_sql_diagnosis
+from aiops_agent.application.diagnosis.investigation_record import render_investigation, sql_investigation_draft
+from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref, decode_selection, resolve_sql_selection, subject_from_row
 from aiops_agent.application.turns import ConversationTurnService
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
@@ -97,6 +98,14 @@ def test_context_cannot_self_certify_sql_causality(kind):
         validate_sql_diagnosis(diagnosis(fact, field=field), bundle)
 
 
+def render_draft(draft):
+    converted = sql_investigation_draft(draft, "SQL 当前语句")
+    return render_investigation(SimpleNamespace(
+        claims=converted.claims, recommendations=converted.recommendations,
+        unresolved_questions=converted.unresolved_questions,
+    ))
+
+
 def test_no_plan_does_not_prevent_session_and_lock_diagnosis():
     sql = observation()
     locks = observation(names=("blocked_pid", "blocking_pid", "wait_event"), rows=((42, 99, "transactionid"),), tool_id="db.postgresql.lock.tree")
@@ -105,17 +114,17 @@ def test_no_plan_does_not_prevent_session_and_lock_diagnosis():
     assert bundle["observations"][1]["records"][0]["role"] == "RELATED_SESSION"
     draft = diagnosis(sql)
     validate_sql_diagnosis(draft, bundle)
-    analysis, solution, refs = render_sql_diagnosis(draft)
+    analysis, solution, refs = render_draft(draft)
     assert "Finding" not in analysis
-    assert f"时间口径：{sql.captured_at}" in analysis
-    assert "适用条件" in solution and "回滚或停止" in solution and refs == (sql.evidence_ref,)
+    assert sql.captured_at in analysis
+    assert "适用条件" in solution and "停止或回退" in solution and refs == (sql.evidence_ref,)
 
 
 def test_context_is_visible_and_user_material_is_not_verified_fact():
     fact = observation()
     bundle = build_sql_evidence_bundle(task_frame=task_frame(), database_type="POSTGRESQL", evidence=(fact,))
     draft = diagnosis(fact, scope="CONTEXT")
-    assert "背景·有证据支持" in render_sql_diagnosis(draft)[0]
+    assert "数据库背景" in render_draft(draft)[0]
     bundle["observations"][0]["trust_level"] = "USER_PROVIDED"
     with pytest.raises(ValueError):
         validate_sql_diagnosis(draft, bundle)
@@ -140,7 +149,7 @@ def test_repair_and_draft_never_become_execution_authority():
     draft = diagnosis(observation(), draft_sql="CREATE INDEX candidate ON example(id)")
     with pytest.raises(ValidationError):
         draft.model_validate({**draft.model_dump(), "recommendations": [{**draft.recommendations[0].model_dump(), "requires_approval": False}]})
-    assert "待审批草案" in render_sql_diagnosis(draft)[1]
+    assert "待验证草案" in render_draft(draft)[1]
 
 
 def test_single_sql_calls_structured_diagnosis_and_never_redisplays_top_list():

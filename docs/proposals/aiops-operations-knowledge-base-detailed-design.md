@@ -2,8 +2,15 @@
 
 2026-10-28 后续目标遵循
 [DBA Agent 能力、回答、报告与案例统一设计](aiops-dba-agent-capability-redesign.md)
-第 15、16 节，尚未实施。本文 Registry/KC 分工、版本治理与权限边界继续保留；
-第 7 节的旧案例资格及 v1 示例是原实现基线，不再作为所有场景的目标门槛。
+第 15、16 节，首批来源与资格修正已实现，但整体尚未完成或通过真实验收。
+本文 Registry/KC 分工、版本治理与权限边界继续保留；第 7 节的旧案例资格及 v1 示例
+是原实现基线，不再作为当前全部资格规则。准确范围见
+[实施状态与发布检查](../operations/aiops-dba-agent-implementation.md)。
+
+当前会话入口已接入最新 AIOPS_TURN_RESULT 的冻结调查记录，并校验 Run/Target 归属；
+报告参考候选不再统一要求 INCIDENT、READY、CONFIRMED，但必须保留有效判断的记录与证据引用。
+人工收口、恢复勾选和不同前后证据不产生 VERIFIED；本批候选默认为 DIAGNOSTIC_REFERENCE。
+四类用途、完整效果验证及撤回传播仍是后续目标，不能把下文原 v1 示例当作已实现的新合同。
 
 ## 2026-10-28 案例能力目标
 

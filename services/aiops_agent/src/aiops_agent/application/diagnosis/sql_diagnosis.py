@@ -140,32 +140,3 @@ def validate_sql_diagnosis(draft: SqlDiagnosisDraft, bundle: dict) -> None:
             raise ValueError("对象或数据库背景证据不能单独升级为该 SQL 已确认的事实或原因")
     if draft.goal_satisfied and not any(item.level in {"OBSERVED", "SUPPORTED"} for item in draft.conclusions):
         raise ValueError("只有假设时不能声明诊断目标已经完成")
-
-
-def render_sql_diagnosis(draft: SqlDiagnosisDraft) -> tuple[str, str, tuple[str, ...]]:
-    """正文不介绍 Finding 状态，建议草案不连接执行通道。"""
-    levels = {"OBSERVED": "已确认", "SUPPORTED": "有证据支持", "HYPOTHESIS": "待验证", "UNKNOWN": "无法判断"}
-    analysis = [draft.summary]
-    refs = []
-    for item in draft.conclusions:
-        scope = "背景·" if item.scope == "CONTEXT" else ""
-        analysis.append(f"{scope}{levels[item.level]}：{item.statement}\n\n{item.reasoning}\n\n时间口径：{item.applicable_time}")
-        if item.alternatives:
-            analysis.append("其他解释：" + "；".join(item.alternatives))
-        if item.limitations:
-            analysis.append("适用边界：" + "；".join(item.limitations))
-        for field in item.evidence_fields:
-            refs.append(field.evidence_ref)
-    solutions = []
-    for item in draft.recommendations:
-        parts = [item.action, "适用条件：" + "；".join(item.preconditions),
-                 "风险：" + "；".join(item.risks), "验证：" + "；".join(item.validation),
-                 "回滚或停止：" + item.rollback_or_stop]
-        if item.requires_approval:
-            parts.append("此项为待确认/审批建议，本轮未执行。")
-        if item.draft_sql:
-            parts.append("待验证、待审批草案（不可直接视为已批准执行）：\n\n```sql\n" + item.draft_sql + "\n```")
-        solutions.append("\n\n".join(parts))
-    if draft.unresolved_questions:
-        solutions.append("仍影响判断的问题：" + "；".join(draft.unresolved_questions))
-    return "\n\n".join(analysis), "\n\n".join(solutions), tuple(dict.fromkeys(refs))

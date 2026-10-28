@@ -2,8 +2,10 @@
 
 修订日期：2026-10-28。
 
-状态：根据本轮代码审计形成的目标设计与实施验收基线，尚未实现、部署或通过真实三库验收。
+状态：目标设计与实施验收基线；P0 正确性核心和 P1 指标发现首批代码已实现，
+尚未整体完成、部署或通过真实三库验收。
 本文件不是已发布 API、数据库 Schema 或当前线上能力说明。Ammolite Cube 与 KBot4 同步维护。
+实际范围与剩余项见[实施状态与发布检查](../operations/aiops-dba-agent-implementation.md)。
 
 ## 1. 设计决策与文档关系
 
@@ -241,7 +243,8 @@ consumer 与复制 channel 差异。观察类型不适用时可用其他证据�
 ## 10. 统一调查结果合同
 
 目标新增 `DBA_INVESTIGATION_RECORD.v1` 作为不可变 Artifact，复用现有存储与访问边界。
-这是待实现领域合同，不是新增对外接口，也不要求为每个子结构新建数据库表。
+首批严格合同已嵌入 Turn 结果 Artifact；下列完整领域结构仍是目标态，
+不是新增对外接口，也不要求为每个子结构新建数据库表。
 
 ```text
 record_id / revision / previous_revision / schema_version

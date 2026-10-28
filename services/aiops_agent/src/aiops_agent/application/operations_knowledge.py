@@ -144,18 +144,20 @@ def _diagnosis_case_eligibility(
     reasons: list[dict[str, str]] = []
     if not bool(report.is_current):
         reasons.append({"code": "REPORT_NOT_CURRENT", "message": "来源报告不是当前版本"})
-    if str(report.status or "").upper() != "READY":
+    if str(report.status or "").upper() not in {"READY", "PARTIAL"}:
         reasons.append({"code": "REPORT_NOT_READY", "message": "来源报告尚未形成完整诊断结论"})
-    if str(report.report_type or "").upper() != "INCIDENT":
-        reasons.append({"code": "REPORT_NOT_DIAGNOSIS", "message": "巡检、性能和普通分析报告不能直接成为历史案例"})
-    if str(scope.get("source_kind") or "").upper() not in {"CHAT", "ALERT"}:
-        reasons.append({"code": "SOURCE_NOT_DIAGNOSIS", "message": "报告来源不是交互诊断或告警诊断"})
-    if str(scope.get("root_cause_grade") or "").upper() != "CONFIRMED":
-        reasons.append({"code": "ROOT_CAUSE_NOT_CONFIRMED", "message": "根因尚未确认"})
+    if str(scope.get("source_kind") or "").upper() not in {"CHAT", "ALERT", "INSPECTION"}:
+        reasons.append({"code": "SOURCE_NOT_DIAGNOSIS", "message": "来源不是可追溯调查"})
     if not str(scope.get("diagnosis_rationale") or "").strip():
         reasons.append({"code": "ROOT_CAUSE_SUMMARY_MISSING", "message": "缺少可发布的根因说明"})
     if not evidence_refs:
         reasons.append({"code": "EVIDENCE_MISSING", "message": "缺少可追溯诊断证据"})
+    if not any(
+        isinstance(item, dict) and item.get("record_id") and item.get("claim_id")
+        and item.get("evidence_refs") and item.get("level") in {"OBSERVED", "SUPPORTED"}
+        for item in report_content.get("facts", ())
+    ):
+        reasons.append({"code": "INVESTIGATION_RECORD_MISSING", "message": "缺少带来源记录的有效判断；自由正文不能自动升级为案例事实"})
     return {"eligible": not reasons, "reasons": reasons}
 
 
@@ -182,15 +184,18 @@ def _prepare_case_revision(
     if not root_summary:
         raise AIOpsApplicationError(
             code="AIOPS_DIAGNOSIS_CASE_INVALID",
-            message="案例必须保留已确认根因",
+            message="案例必须保留可追溯的调查结论",
             status_code=422,
         )
     base_root = dict(base_profile.root_cause)
     root_cause.update({
         "summary": root_summary,
-        "confidence": "HIGH",
+        "confidence": base_root.get("confidence", "UNKNOWN"),
+        "effective_level": base_root.get("effective_level", "INCONCLUSIVE"),
         "evidence_refs": list(base_root.get("evidence_refs") or ()),
     })
+    if root_summary != str(base_root.get("summary") or "").strip():
+        root_cause.update({"confidence": "UNKNOWN", "effective_level": "INCONCLUSIVE", "trust_level": "USER_PROVIDED"})
     base_actions = list(base_profile.actions)
     actions: list[dict[str, Any]] = []
     for index, value in enumerate(submitted.actions):
@@ -206,13 +211,14 @@ def _prepare_case_revision(
     verification = dict(base_profile.verification)
     before_refs = {str(item) for item in verification.get("before_refs") or ()}
     after_refs = {str(item) for item in verification.get("after_refs") or ()}
+    # 引用不同与人工勾选恢复不能证明可比效果；只继承已冻结的受控验证。
     verified = bool(
-        str(verification.get("result") or "").upper() in {"RESOLVED", "IMPROVED"}
-        and actions
-        and all(item["evidence_refs"] for item in actions)
-        and before_refs
-        and after_refs
-        and before_refs.isdisjoint(after_refs)
+        base_profile.case_kind == "VERIFIED_RESOLUTION"
+        and verification.get("controlled_verification_ref")
+        and root_summary == str(base_root.get("summary") or "").strip()
+        and [item["summary"] for item in actions] == [str(item.get("summary") or "").strip() for item in base_actions]
+        and actions and all(item["evidence_refs"] for item in actions)
+        and before_refs and after_refs and before_refs.isdisjoint(after_refs)
     )
     return DiagnosisCaseProfile(
         case_kind="VERIFIED_RESOLUTION" if verified else "DIAGNOSTIC_REFERENCE",
@@ -248,11 +254,11 @@ def _diagnosis_case_markdown(*, title: str, profile: DiagnosisCaseProfile) -> by
         f"- 平台：{environment.get('platform') or '未限定'}",
         f"- 拓扑：{environment.get('topology') or '未限定'}",
         "",
-        "## 根因",
+        "## 调查结论与原因判断",
         "",
         str(profile.root_cause.get("summary") or ""),
         "",
-        "## 已执行动作",
+        "## 登记的处置动作",
         "",
         *([f"- {item}" for item in actions if item] or ["未记录已执行动作，仅作为诊断参考。"]),
         "",
@@ -1284,14 +1290,25 @@ class OperationsKnowledgeService:
                 if run is None or run.status not in {"COMPLETED", "PARTIAL"} or run.final_artifact_id is None:
                     continue
                 artifact = await uow.runs.get_artifact(artifact_id=run.final_artifact_id)
-                if artifact is None or artifact.schema_version not in {"DIAGNOSIS_REPORT_DRAFT.v1", "REPORT_CONTENT.v1"}:
+                if artifact is None or artifact.schema_version != "AIOPS_TURN_RESULT.v1":
                     continue
-                source = normalize_report_source(schema_version=artifact.schema_version, payload=dict(artifact.payload_json or {}), source_kind="CHAT")
-                if str(dict(source.get("root_cause") or {}).get("effective_level") or "").upper() == "CONFIRMED":
-                    confirmed = (turn, run, artifact, source)
+                if not dict(artifact.payload_json or {}).get("investigation_record"):
                     break
+                record = dict(artifact.payload_json["investigation_record"])
+                if (
+                    str(record.get("target_id")) != str(run.target_id)
+                    or str(record.get("run_id")) != str(run.ops_run_id)
+                ):
+                    break
+                source = normalize_report_source(schema_version=artifact.schema_version, payload=dict(artifact.payload_json or {}), source_kind="CHAT")
+                if source.get("evidence_refs") and any(
+                    item.get("level") in {"OBSERVED", "SUPPORTED"} and item.get("evidence_refs")
+                    for item in source.get("facts", ())
+                ):
+                    confirmed = (turn, run, artifact, source)
+                break
             if confirmed is None:
-                reasons.append({"code": "ROOT_CAUSE_NOT_CONFIRMED", "message": "当前会话没有形成已确认根因"})
+                reasons.append({"code": "INVESTIGATION_RECORD_MISSING", "message": "当前会话没有可追溯的结构化调查记录"})
                 return {
                     "eligible": False, "reasons": reasons,
                     "conversation_id": str(conversation_id),
@@ -1341,13 +1358,15 @@ class OperationsKnowledgeService:
                 "display_name": conversation.title or "诊断案例候选",
                 "included_turn_ids": [str(turn.turn_id)],
                 "symptoms": list(dict.fromkeys(symptoms)),
-                "root_cause_summary": rationale, "root_cause_grade": "CONFIRMED",
+                "root_cause_summary": rationale, "root_cause_grade": str(dict(source.get("root_cause") or {}).get("effective_level") or "INCONCLUSIVE"),
                 "environment": environment, "evidence_candidates": candidates,
                 "existing_asset_id": str(existing[0].asset_id) if existing else None,
             }
             return {**public, "_context": {
                 "run_id": UUID(str(run.ops_run_id)),
                 "target_id": UUID(str(run.target_id)),
+                "root_cause_grade": str(dict(source.get("root_cause") or {}).get("effective_level") or "INCONCLUSIVE"),
+                "investigation_record": dict(source.get("investigation_record") or {}),
                 "root_artifact_id": UUID(str(root_artifact.artifact_id)),
                 "root_ops_task_id": (
                     UUID(str(root_artifact.ops_task_id))
@@ -1410,17 +1429,18 @@ class OperationsKnowledgeService:
             command=command, allowed_ids=internal["evidence_ids"],
             allowed_action_ids=internal["action_evidence_ids"],
         )
-        verified = bool(command.verification_result in {"RESOLVED", "IMPROVED"} and actions and action_refs and before_refs and after_refs)
+        # 人工收口不能代替受控同口径验证。
+        verified = False
         profile = DiagnosisCaseProfile(
             case_kind="VERIFIED_RESOLUTION" if verified else "DIAGNOSTIC_REFERENCE",
             problem_signature={"problem_class": "INCIDENT", "component": None, "error_codes": [], "normalized_symptoms": list(symptoms), "signal_names": []},
             environment=dict(internal["environment"]),
-            root_cause={"summary": root_cause_summary, "confidence": "HIGH", "evidence_refs": [str(internal["root_artifact_id"])]},
+            root_cause={"summary": root_cause_summary, "confidence": "UNKNOWN", "effective_level": internal["root_cause_grade"], "trust_level": "USER_PROVIDED", "evidence_refs": [str(internal["root_artifact_id"])]},
             actions=tuple({"summary": summary, "evidence_refs": list(action_refs)} for summary in actions),
-            verification={"result": command.verification_result, "before_refs": sorted(before_refs), "after_refs": sorted(after_refs), "guardrail_refs": []},
+            verification={"result": command.verification_result, "method": "USER_REPORTED", "before_refs": sorted(before_refs), "after_refs": sorted(after_refs), "guardrail_refs": []},
             applicability=tuple(str(item).strip() for item in command.applicability if str(item).strip()),
             contraindications=tuple(str(item).strip() for item in command.contraindications if str(item).strip()),
-            source={"conversation_id": str(conversation_id), "turn_ids": preview["included_turn_ids"], "run_ids": [str(internal["run_id"])]},
+            source={"conversation_id": str(conversation_id), "turn_ids": preview["included_turn_ids"], "run_ids": [str(internal["run_id"])], "investigation_record_id": internal["investigation_record"].get("record_id"), "investigation_revision": internal["investigation_record"].get("revision")},
         )
         closure = DiagnosisClosure(
             conversation_id=conversation_id, source_turn_ids=command.included_turn_ids,
@@ -2593,14 +2613,8 @@ class OperationsKnowledgeService:
             verification = dict(scope.get("verification") or {})
             before_refs = tuple(str(item) for item in verification.get("before_refs") or ())
             after_refs = tuple(str(item) for item in verification.get("after_refs") or ())
-            has_independent_verification = bool(
-                before_refs and after_refs and set(before_refs).isdisjoint(after_refs)
-            )
-            case_kind = (
-                "VERIFIED_RESOLUTION"
-                if report.result in {"RESOLVED", "IMPROVED"} and recorded_actions and has_independent_verification
-                else "DIAGNOSTIC_REFERENCE"
-            )
+            # 正式报告 READY 和不同引用不足以证明措施有效。
+            case_kind = "DIAGNOSTIC_REFERENCE"
             profile = DiagnosisCaseProfile(
                 case_kind=case_kind,
                 problem_signature={
@@ -2621,7 +2635,8 @@ class OperationsKnowledgeService:
                 },
                 root_cause={
                     "summary": root_cause_summary,
-                    "confidence": "HIGH",
+                    "confidence": "UNKNOWN",
+                    "effective_level": str(scope.get("root_cause_grade") or "INCONCLUSIVE"),
                     "evidence_refs": evidence_refs,
                 },
                 actions=recorded_actions,
@@ -3444,8 +3459,8 @@ class OperationsKnowledgeService:
                         status_code=409,
                     )
                 profile = DiagnosisCaseProfile.model_validate(version.profile_json)
-                if profile.root_cause.get("confidence") != "HIGH" or not profile.root_cause.get("evidence_refs"):
-                    raise self._state_conflict("案例缺少已确认根因或根因证据")
+                if not profile.root_cause.get("evidence_refs"):
+                    raise self._state_conflict("案例缺少可追溯调查证据")
                 version.status = "REVIEW_REQUIRED"
                 if asset.current_version_id is None:
                     asset.status = "REVIEW_REQUIRED"

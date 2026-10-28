@@ -49,6 +49,7 @@ class DocumentationLayoutTest(unittest.TestCase):
         )
         self.assertEqual(
             {
+                "aiops-dba-agent-implementation.md",
                 "aiops-initialization.md",
                 "aiops-network-boundary.md",
                 "aiops-observability-manual-deployment.md",

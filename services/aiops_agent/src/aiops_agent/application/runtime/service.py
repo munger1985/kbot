@@ -7855,11 +7855,16 @@ class AIOpsRuntimeService:
                 report_task = candidate_task
                 break
             if closure_artifact is not None:
-                source_override = normalize_report_source(
+                closure_source = normalize_report_source(
                     schema_version=closure_artifact.schema_version,
                     payload=dict(closure_artifact.payload_json or {}),
                     source_kind="CHAT",
                 )
+                # 人工收口作为附录，不覆盖多轮调查正文和后续反证。
+                source_override["facts"] = (*source_override.get("facts", ()), *closure_source.get("facts", ()))
+                source_override["closure_artifact_id"] = str(closure_artifact.artifact_id)
+                source_override["verification"] = closure_source.get("verification", {})
+                source_override["executed_actions"] = closure_source.get("executed_actions", ())
                 source_override["conversation"] = {
                     **dict(source_override.get("conversation") or {}),
                     "title": conversation.title,
@@ -7948,10 +7953,10 @@ class AIOpsRuntimeService:
         recommendations: list[str] = []
         reasons: list[str] = []
         questions: list[str] = []
-        grade_rank = {"INCONCLUSIVE": 0, "POSSIBLE": 1, "PROBABLE": 2, "CONFIRMED": 3}
+        root_assessments: list[dict[str, str]] = []
         effective_grade = "INCONCLUSIVE"
         ready = not missing_turns
-        for turn, run, artifact in source_rows:
+        for turn, run, artifact in sorted(source_rows, key=lambda row: int(row[0].turn_no)):
             source = normalize_report_source(
                 schema_version=artifact.schema_version,
                 payload=dict(artifact.payload_json or {}),
@@ -7972,8 +7977,9 @@ class AIOpsRuntimeService:
             ready = ready and source.get("status") == "READY"
             root = dict(source.get("root_cause") or {})
             grade = str(root.get("effective_level") or "INCONCLUSIVE")
-            if grade_rank.get(grade, 0) > grade_rank[effective_grade]:
-                effective_grade = grade
+            root_assessments.append({"turn_id": str(turn.turn_id), "effective_level": grade})
+            # 多轮不能取最高等级掩盖反证；没有显式修订关联时保留各轮判断。
+            effective_grade = grade if len(root_assessments) == 1 else "INCONCLUSIVE"
             solution = dict(source.get("solution") or {})
             recommendations.extend(
                 str(item)
@@ -8030,7 +8036,7 @@ class AIOpsRuntimeService:
         })
         return {
             "status": "READY" if ready and not gaps else "PARTIAL",
-            "root_cause": {"effective_level": effective_grade},
+            "root_cause": {"effective_level": effective_grade, "turn_assessments": root_assessments},
             "diagnosis_rationale": rationale,
             "facts": tuple(facts),
             "gaps": tuple(gaps),

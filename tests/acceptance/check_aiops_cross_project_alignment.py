@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
     Path("packages/platform_core/src/platform_core/contracts/aiops/orchestration.py"),
     Path("packages/platform_core/src/platform_core/contracts/aiops/conversation.py"),
+    Path("services/aiops_agent/src/aiops_agent/contracts/investigation.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/diagnosis/investigation_record.py"),
 )
 AGENT_APPLICATION = Path(
     "services/aiops_agent/src/aiops_agent/application/agents.py"
@@ -47,6 +49,8 @@ ALIGNED_AIOPS_PROMPTS = {
     "aiops_agent.turn_router",
     "aiops_agent.compact_planner",
     "aiops_agent.investigation_planner",
+    "aiops_agent.diagnosis_answer_compose",
+    "aiops_agent.sql_diagnosis",
 }
 
 AGENT_OPENAPI_FIELDS = {

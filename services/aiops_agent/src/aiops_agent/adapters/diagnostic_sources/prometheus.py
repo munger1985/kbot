@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 
 import aiohttp
@@ -16,10 +17,13 @@ from aiops_agent.ports.diagnostic_source import (
     InstanceDiscoveryRequest,
     InstanceDiscoveryResult,
     MetricsEvidenceRequest,
+    MetricsDiscoveryRequest,
     MetricsEvidenceResult,
     SourceHealthRequest,
     SourceHealthResult,
 )
+
+from aiops_agent.contracts.evidence import DiscoveredMetric, MetricDiscoveryResult
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
 
@@ -35,6 +39,54 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
         "MYSQL": ("mysql_up", "mysql", "target_key"),
         "POSTGRESQL": ("pg_up", "postgres", "target_key"),
     }
+
+    async def discover_metrics(self, request: MetricsDiscoveryRequest) -> MetricDiscoveryResult:
+        """只访问绑定目标的系列目录，字节与结果规模均有界。"""
+        if request.scope == "HOST":
+            if not request.host_target_key:
+                raise DiagnosticSourceAdapterError("SOURCE_TARGET_MAPPING_MISSING", "未绑定主机，不能发现其他主机指标")
+            locators = (("target_key", request.host_target_key),)
+        else:
+            locators = (("instance", request.source_locator_key), ("target_key", request.source_locator_key))
+        selectors = ['{' + label + '="' + _escape_prometheus_label(locator) + '"}' for label, locator in locators]
+        async with self._session.get(
+            f"{self._endpoint().rstrip('/')}/api/v1/series",
+            headers=self._headers(), params={
+                "match[]": selectors, "start": request.window_start.timestamp(),
+                "end": request.window_end.timestamp(), "limit": 1001,
+            }, timeout=self._timeout,
+        ) as response:
+            payload, digest = await self._response_json(response, max_bytes=request.max_response_bytes)
+        if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(payload.get("data"), list):
+            raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "指标目录响应格式无效")
+        names: dict[str, set[str]] = {}
+        raw = payload["data"]
+        if len(raw) > 1000:
+            raw = raw[:1000]
+        for series in raw:
+            if not isinstance(series, dict) or not any(series.get(label) == locator for label, locator in locators):
+                raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "指标目录返回了绑定范围以外的系列")
+            name = series.get("__name__")
+            if not isinstance(name, str) or not re.fullmatch(r"[a-zA-Z_:][a-zA-Z0-9_:]{0,255}", name):
+                continue
+            labels = {key for key in series if key != "__name__" and isinstance(key, str) and len(key) <= 128}
+            names.setdefault(name, set()).update(labels)
+        truncated = (
+            len(payload["data"]) >= 1000 or len(names) > request.limit
+            or any(len(labels) > 128 for labels in names.values())
+            or bool(payload.get("warnings"))
+        )
+        return MetricDiscoveryResult(
+            action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
+            source_id=self.context.source_id, scope=request.scope,
+            window_start=request.window_start, window_end=request.window_end,
+            captured_at=datetime.now(UTC), response_sha256=digest,
+            entries=tuple(DiscoveredMetric(name=name, label_names=tuple(sorted(names[name])[:128]))
+                          for name in sorted(names)[:request.limit]),
+            truncated=truncated,
+            warnings=("系列目录只能说明请求窗口曾可见；不能证明当前有采样。类型、单位和帮助信息尚未核验。",
+                      *(("目录达到上限或源返回警告，不代表完整指标清单。",) if truncated else ())),
+        )
 
     async def discover_instances(
         self, request: InstanceDiscoveryRequest

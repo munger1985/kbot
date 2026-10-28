@@ -24,6 +24,8 @@ from aiops_agent.ports.diagnostic_source import (
     LogEvidenceRequest,
     LogSourceLocator,
     MetricsEvidenceRequest,
+    MetricsDiscoveryRequest,
+    CAPABILITY_METRIC_DISCOVERY,
 )
 from aiops_agent.monitoring import (
     LogQueryPolicy,
@@ -163,6 +165,7 @@ class EvidenceObserveHandler:
         ]
         credentials: dict[str, str] = {}
         observations = ()
+        metric_catalogs = []
         active_alerts = ()
         try:
             if source.get("secret_ref"):
@@ -204,6 +207,41 @@ class EvidenceObserveHandler:
                 gaps=tuple(gaps),
                 collected_at=datetime.now(UTC),
             )
+        for item in monitoring.get("metric_discoveries", ()):
+            if CAPABILITY_METRIC_DISCOVERY not in snapshot["effective_capabilities"]:
+                gaps.append(ObservationGap(
+                    source_id=source["source_id"], binding_id=binding_id,
+                    code="METRIC_DISCOVERY_NOT_AUTHORIZED",
+                    detail="指标目录发现未在该监控绑定中授权，不扩大来源权限",
+                ))
+                continue
+            if source["source_type"] != "PROMETHEUS":
+                gaps.append(ObservationGap(
+                    source_id=source["source_id"], binding_id=binding_id,
+                    code="SOURCE_QUERY_UNSUPPORTED", detail="当前来源未实现指标目录发现",
+                ))
+                continue
+            try:
+                # 执行端重验冻结参数；定位只来自当前绑定，不读取模型指定的地址或标签。
+                if set(item) != {"action_id", "scope", "window_seconds", "limit"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 3600:
+                    raise ValueError("冻结指标发现参数无效")
+                end = _parse_time(window["end"])
+                adapter = self._diagnostic_sources.create(source_context, capability=CAPABILITY_METRIC_DISCOVERY)
+                metric_catalogs.append(await adapter.discover_metrics(MetricsDiscoveryRequest(
+                    action_id=item["action_id"], target_id=context.target_id, binding_id=binding_id,
+                    source_locator_key=snapshot["source_locator_key"],
+                    host_target_key=snapshot["source_locator"].get("host_target_key"), scope=item["scope"],
+                    window_start=end - timedelta(seconds=item["window_seconds"]), window_end=end,
+                    limit=item["limit"], max_response_bytes=min(262144, monitoring["max_response_bytes"]),
+                    trace_id=context.trace_id,
+                )))
+            except Exception as exc:
+                gaps.append(ObservationGap(
+                    source_id=source["source_id"], binding_id=binding_id,
+                    code=getattr(exc, "code", "METRIC_DISCOVERY_FAILED"),
+                    detail="指标目录本次发现未完成，不能猜测缺失指标或将其视为零",
+                    retryable=bool(getattr(exc, "retryable", False)),
+                ))
         if CAPABILITY_METRIC_QUERY_RANGE in snapshot[
             "effective_capabilities"
         ]:
@@ -406,6 +444,7 @@ class EvidenceObserveHandler:
             binding_id=binding_id,
             source_id=source["source_id"],
             observations=observations,
+            metric_catalogs=tuple(metric_catalogs),
             active_alerts=active_alerts,
             gaps=tuple(gaps),
             collected_at=datetime.now(UTC),

@@ -12,6 +12,7 @@ from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_RECEIVE,
     CAPABILITY_HEALTH_CHECK,
     CAPABILITY_INSTANCE_DISCOVERY,
+    CAPABILITY_METRIC_DISCOVERY,
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
     DiagnosticSourceAdapterDescriptor,
@@ -61,6 +62,7 @@ class DiagnosticSourceAdapterCatalog:
                     CAPABILITY_METRIC_QUERY_RANGE,
                     CAPABILITY_EVENT_QUERY,
                     CAPABILITY_INSTANCE_DISCOVERY,
+                    CAPABILITY_METRIC_DISCOVERY,
                 }
             ),
             adapter_type=PrometheusAdapter,

@@ -1340,7 +1340,7 @@ class InvestigationFailureProjectionTest(unittest.IsolatedAsyncioTestCase):
             [item.tool_id for item in uow.tool_invocations],
         )
         self.assertEqual(
-            ["oracle.sql.healthcheck"],
+            [],
             snapshot["planning_route"]["selected_playbook_ids"],
         )
 
@@ -3669,14 +3669,14 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         )
 
         self.assertIn("DB_READONLY", snapshot.target_capabilities)
-        self.assertIn(
+        self.assertNotIn(
             "dynamic_performance_views", snapshot.target_capabilities
         )
-        self.assertIn("dba_catalog_views", snapshot.target_capabilities)
-        self.assertIn("replication_views", snapshot.target_capabilities)
+        self.assertNotIn("dba_catalog_views", snapshot.target_capabilities)
+        self.assertNotIn("replication_views", snapshot.target_capabilities)
         self.assertIn("DB_SQL_STATS", snapshot.target_capabilities)
-        self.assertIn("CREATE SESSION", snapshot.privileges)
-        self.assertIn("SELECT ANY DICTIONARY", snapshot.privileges)
+        self.assertNotIn("CREATE SESSION", snapshot.privileges)
+        self.assertNotIn("SELECT ANY DICTIONARY", snapshot.privileges)
         diagnostics = DiagnosticRegistry.load()
         registry = PlaybookRegistry.load(
             allowed_tools=frozenset(
@@ -3754,7 +3754,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                 "db.mysql.connection.utilization",
                 "db.mysql.instance.throughput",
             }
-            .isdisjoint(discovered)
+            .issubset(discovered)
         )
 
     def test_registry_hash_is_independent_of_registration_order(self) -> None:

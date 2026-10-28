@@ -20,6 +20,7 @@ from aiops_agent.diagnostics import (
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
+    CAPABILITY_METRIC_DISCOVERY,
 )
 from aiops_agent.playbooks import PlaybookRegistry
 from aiops_agent.tools import ToolExecutionSnapshotBuilder
@@ -72,6 +73,16 @@ def available_tools(
                 "query": "带 Target 占位符的 PromQL",
                 "window_seconds": "60 到 5184000 秒",
             },
+        }
+    if any(
+        str(source.source_type) == "PROMETHEUS" and source.enabled
+        and CAPABILITY_METRIC_DISCOVERY in source.capabilities
+        for source in capabilities.source_snapshots
+    ):
+        tools[("monitor.discover_metrics", "1.0.0")] = {
+            "tool_id": "monitor.discover_metrics", "version": "1.0.0", "tool_class": "PROMETHEUS",
+            "description": "发现已授权绑定目标在指定窗口可见的指标名与标签名，不受显示 Profile 限制。目录不代表当前数值，类型/帮助未核验；结果有界且可能截断。先发现再按实际名称查询，不能猜指标。",
+            "input": {"scope": "DATABASE 或 HOST（仅已绑定主机）", "window_seconds": "60 到 3600 秒", "limit": "1 到 100"},
         }
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
         tools[("loki.query_range", "1.0.0")] = {
@@ -329,6 +340,7 @@ def build_playbook_plan(registry: PlaybookRegistry) -> DbaPlaybookPlan:
 
 SPECIAL_PLAN_TOOL_IDS = {
     "monitor.query_range",
+    "monitor.discover_metrics",
     "loki.query_range",
     "db.oracle.readonly_query",
     "db.postgresql.readonly_query",

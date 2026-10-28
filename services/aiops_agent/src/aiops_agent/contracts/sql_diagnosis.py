@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class EvidenceFieldReference(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     evidence_ref: str = Field(min_length=1, max_length=512)
     row_index: int = Field(ge=0)
@@ -16,7 +16,7 @@ class EvidenceFieldReference(BaseModel):
 
 
 class SqlConclusion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     conclusion_id: str = Field(pattern=r"^c[0-9]+$")
     statement: str = Field(min_length=1, max_length=3000)
@@ -38,7 +38,7 @@ class SqlConclusion(BaseModel):
 
 
 class SqlRecommendation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     recommendation_id: str = Field(pattern=r"^r[0-9]+$")
     conclusion_ids: tuple[str, ...] = Field(min_length=1, max_length=12)
@@ -61,7 +61,7 @@ class SqlRecommendation(BaseModel):
 class SqlDiagnosisDraft(BaseModel):
     """模型可以提出新原因，但不得越过证据与执行边界。"""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["SQL_DIAGNOSTIC_ASSESSMENT.v1"] = "SQL_DIAGNOSTIC_ASSESSMENT.v1"
     summary: str = Field(min_length=1, max_length=2000)

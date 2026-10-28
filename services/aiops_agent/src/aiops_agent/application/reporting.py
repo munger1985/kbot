@@ -1185,7 +1185,7 @@ def normalize_report_source(
         verification = dict(profile.get("verification") or {})
         return {
             "status": "READY",
-            "root_cause": {"effective_level": "CONFIRMED"},
+            "root_cause": {"effective_level": str(root_cause.get("effective_level") or "INCONCLUSIVE")},
             "diagnosis_rationale": str(root_cause.get("summary") or ""),
             "facts": tuple({
                 "kind": "diagnosis_closure",
@@ -1238,22 +1238,52 @@ def normalize_report_source(
             ),
         }
     if schema_version == "AIOPS_TURN_RESULT.v1":
-        markdown = "\n\n".join(
-            str(dict(block).get("payload", {}).get("markdown") or "")
-            for block in payload.get("blocks", ())
-            if str(dict(block).get("block_type")) == "MARKDOWN"
-        ).strip()
-        evidence = []
+        from aiops_agent.application.diagnosis.investigation_record import investigation_report_source
+        from aiops_agent.contracts.investigation import InvestigationRecord
+
+        evidence = tuple(dict.fromkeys(
+            str(ref) for block in payload.get("blocks", ())
+            for ref in dict(block).get("evidence_refs", ())
+        ))
+        if payload.get("investigation_record") is not None:
+            record = InvestigationRecord.model_validate(payload["investigation_record"])
+            # 再验不可变记录与本结果证据一致，报告不能接受游离主张。
+            from aiops_agent.application.diagnosis.investigation_record import validate_diagnosis
+            from aiops_agent.contracts.investigation import DiagnosisAnswerDraft
+            from aiops_agent.contracts.turn_answer import TurnEvidenceFact
+            facts = tuple(TurnEvidenceFact.model_validate(item) for item in payload.get("evidence", ()))
+            record.validate_observations(facts)
+            validate_diagnosis(DiagnosisAnswerDraft(
+                claims=record.claims, recommendations=record.recommendations,
+                goal_satisfied=False,
+            ), facts)
+            source = investigation_report_source(record)
+            if payload.get("status") != "COMPLETED":
+                source["status"] = "PARTIAL"
+            source["gaps"] = (*source["gaps"], *payload.get("evidence_gaps", ()))
+            return source
+        body, solutions = [], []
         for block in payload.get("blocks", ()):
-            evidence.extend(dict(block).get("evidence_refs") or ())
+            kind = str(dict(block).get("block_type"))
+            markdown = str(dict(block).get("payload", {}).get("markdown") or "").strip()
+            if kind in {"MARKDOWN", "ANALYSIS_MARKDOWN"} and markdown:
+                body.append(markdown)
+            elif kind == "SOLUTION_MARKDOWN" and markdown:
+                solutions.append(markdown)
+        gaps = list(payload.get("evidence_gaps", ()))
+        if not body:
+            gaps.append({"code": "REPORT_BODY_MISSING", "detail": "源结果未包含可报告的分析正文"})
+        available = {str(item.get("evidence_ref")) for item in payload.get("evidence", ())}
+        if not set(evidence) <= available:
+            gaps.append({"code": "REPORT_REFERENCE_MISSING", "detail": "正文引用不在冻结证据集合"})
         return {
-            "status": "READY" if payload.get("status") == "COMPLETED" else "PARTIAL",
+            "status": "READY" if payload.get("status") == "COMPLETED" and body and not gaps else "PARTIAL",
             "root_cause": {"effective_level": "INCONCLUSIVE"},
-            "diagnosis_rationale": markdown or "Agent 未生成可用于汇报的文字结论。",
+            "diagnosis_rationale": "\n\n".join(body) or "源结果正文缺失，报告内容尚未完整。",
             "facts": (),
-            "gaps": tuple(payload.get("evidence_gaps", ())),
-            "solution": {},
-            "evidence_refs": tuple(evidence),
+            "gaps": tuple(gaps),
+            "solution": {"long_term_remediations": tuple(solutions)},
+            "evidence_refs": evidence,
         }
     if schema_version == "REPORT_CONTENT.v1":
         scope = dict(payload.get("scope") or {})

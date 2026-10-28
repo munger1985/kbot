@@ -25,7 +25,6 @@ PROMPT_KEYS = {
     "answer_stream": "aiops_agent.answer_stream",
     "diagnosis_answer_compose": "aiops_agent.diagnosis_answer_compose",
     "sql_diagnosis": "aiops_agent.sql_diagnosis",
-    "diagnosis_answer_stream": "aiops_agent.diagnosis_answer_stream",
     "image_evidence_extract": "aiops_agent.image_evidence_extract",
     "knowledge_tag_classify": "aiops_agent.knowledge_tag_classify",
     "knowledge_answer_compose": "aiops_agent.knowledge_answer_compose",
@@ -48,7 +47,6 @@ TURN_PROMPT_IDS = (
     "answer_stream",
     "diagnosis_answer_compose",
     "sql_diagnosis",
-    "diagnosis_answer_stream",
 )
 
 

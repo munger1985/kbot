@@ -265,7 +265,7 @@ def normalize_evidence_artifacts(
                 if item.get("code")
             )
         elif schema == "OBSERVATION_SET.v1":
-            source_group = f"monitor:{artifact_id}"
+            source_group = f"monitor:{target_id}"
             for metric_index, metric in enumerate(
                 payload.get("observations", [])
             ):
@@ -523,7 +523,7 @@ def normalize_evidence_artifacts(
                 continue
             observation = payload["observation"]
             prefix = artifact.get("_pointer_prefix", "")
-            source_group = f"database:{artifact_id}:{prefix or '/'}"
+            source_group = f"database:{target_id}"
             columns = [
                 item["name"] for item in observation.get("columns", [])
             ]

@@ -86,10 +86,28 @@ class _AnswerModel:
         self.calls.append(kwargs)
         output_model = kwargs.get("output_model") or DbaAnswerDraft
         if output_model is DiagnosisAnswerDraft:
+            facts = kwargs["input_payload"]["sufficiency"]["evidence"]
+            fact = next((item for item in facts if item["rows"] and item["columns"]), None)
+            refs = (self.evidence_refs or (fact["evidence_ref"],)) if fact else ()
             output = DiagnosisAnswerDraft(
-                analysis_markdown="表空间 USERS 使用率偏高。",
-                solution_markdown="按容量方案处理，不加文件。",
-                evidence_refs=self.evidence_refs,
+                claims=({
+                    "claim_id": "c1", "kind": "INTERPRETATION", "subject": "当前 Target",
+                    "statement": "表空间 USERS 使用率偏高。", "level": "SUPPORTED" if refs else "HYPOTHESIS",
+                    "applicable_time": fact["captured_at"] if fact else "尚未确认",
+                    "evidence_fields": tuple({
+                        "evidence_ref": ref, "row_index": 0,
+                        "field": fact["columns"][0]["name"] if fact else "value",
+                    } for ref in refs),
+                    "reasoning": "根据本轮批准观测判断。", "limitations": ("仅适用于当前观测范围。",),
+                },),
+                recommendations=({
+                    "recommendation_id": "r1", "conclusion_ids": ("c1",),
+                    "action": "按容量方案处理，不加文件。", "intent": "VERIFY",
+                    "preconditions": ("先核对目标身份。",), "risks": ("避免影响业务。",),
+                    "validation": ("比较同口径证据。",), "rollback_or_stop": "证据不匹配则停止。",
+                    "requires_approval": False,
+                },),
+                goal_satisfied=bool(refs),
             )
         else:
             output = DbaAnswerDraft(

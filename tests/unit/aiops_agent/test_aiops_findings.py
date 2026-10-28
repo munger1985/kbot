@@ -120,10 +120,28 @@ class _AnswerModel:
         self.calls.append(kwargs)
         output_model = kwargs.get("output_model") or DbaAnswerDraft
         if output_model is DiagnosisAnswerDraft:
+            facts = kwargs["input_payload"]["sufficiency"]["evidence"]
+            fact = next((item for item in facts if item["rows"] and item["columns"]), None)
+            refs = (self.evidence_refs or (fact["evidence_ref"],)) if fact else ()
             output = DiagnosisAnswerDraft(
-                analysis_markdown="持有会话 12 阻塞等待会话 88。",
-                solution_markdown="先确认持有会话事务，再决定是否中断。",
-                evidence_refs=self.evidence_refs,
+                claims=({
+                    "claim_id": "c1", "kind": "INTERPRETATION", "subject": "当前 Target",
+                    "statement": "持有会话 12 阻塞等待会话 88。", "level": "SUPPORTED" if refs else "HYPOTHESIS",
+                    "applicable_time": fact["captured_at"] if fact else "尚未确认",
+                    "evidence_fields": tuple({
+                        "evidence_ref": ref, "row_index": 0,
+                        "field": fact["columns"][0]["name"] if fact else "value",
+                    } for ref in refs),
+                    "reasoning": "根据本轮批准观测判断。", "limitations": ("仅适用于当前观测范围。",),
+                },),
+                recommendations=({
+                    "recommendation_id": "r1", "conclusion_ids": ("c1",),
+                    "action": "先确认持有会话事务，再决定是否中断。", "intent": "VERIFY",
+                    "preconditions": ("先核对目标身份。",), "risks": ("避免影响业务。",),
+                    "validation": ("比较同口径证据。",), "rollback_or_stop": "证据不匹配则停止。",
+                    "requires_approval": False,
+                },),
+                goal_satisfied=bool(refs),
             )
         else:
             output = DbaAnswerDraft(
@@ -1077,11 +1095,11 @@ class DiagnosisComposeTest(unittest.TestCase):
         self.assertEqual(1, len(cards))
         self.assertEqual(88, cards[0]["fields"]["waiting_session_id"])
         self.assertEqual("TX", cards[0]["fields"]["lock_type"])
-        self.assertEqual(
+        self.assertIn(
             "持有会话 12 阻塞等待会话 88。",
             result.blocks[1].payload["markdown"],
         )
-        self.assertEqual(
+        self.assertIn(
             "先确认持有会话事务，再决定是否中断。",
             result.blocks[2].payload["markdown"],
         )
@@ -1283,42 +1301,29 @@ class DiagnosisComposeTest(unittest.TestCase):
             )
         )
 
-    def test_diagnosis_stream_uses_structured_draft_not_heading_split(self) -> None:
+    def test_diagnosis_stream_validates_before_first_answer_delta(self) -> None:
         fact = _lock_fact()
         model = _AnswerModel(evidence_refs=(fact.evidence_ref,))
-        handler = DbaAnswerComposeHandler(
-            model_client=model,
-            prompts=_TestPrompts(),
-        )
+        handler = DbaAnswerComposeHandler(model_client=model, prompts=_TestPrompts())
 
         async def collect():
-            return [
-                item
-                async for item in handler.execute_stream(
-                    _context(artifacts=(_sufficiency_artifact((fact,)),))
-                )
-            ]
+            stream = handler.execute_stream(_context(artifacts=(_sufficiency_artifact((fact,)),)))
+            thinking = await anext(stream)
+            first_delta = await anext(stream)
+            self.assertEqual(1, len(model.calls))
+            self.assertEqual(0, model.stream_calls)
+            self.assertEqual("thinking.delta", thinking.event_type)
+            self.assertEqual("answer.delta", first_delta.event_type)
+            return [thinking, first_delta, *[item async for item in stream]]
 
         items = asyncio.run(collect())
-        self.assertEqual(0, model.stream_calls)
-        self.assertEqual(
-            "aiops.dba-diagnosis-answer-stream",
-            model.calls[0]["purpose"],
-        )
-        self.assertIs(DiagnosisAnswerDraft, model.calls[0]["output_model"])
-        self.assertTrue(
-            any(getattr(item, "event_type", "") == "answer.delta" for item in items[:-1])
-        )
-        final = items[-1]
-        self.assertEqual(
-            [
-                AnswerBlockType.FINDING_CARDS,
-                AnswerBlockType.ANALYSIS_MARKDOWN,
-                AnswerBlockType.SOLUTION_MARKDOWN,
-            ],
-            [item.block_type for item in final.blocks[:3]],
-        )
-
+        result = items[-1]
+        self.assertIsNotNone(result.investigation_record)
+        self.assertEqual((fact.evidence_ref,), result.blocks[1].evidence_refs)
+        text = "".join(item.payload["delta"] for item in items[:-1] if item.event_type == "answer.delta")
+        self.assertIn("## 分析结论", text)
+        self.assertIn("## 处理建议", text)
+        self.assertIn("持有会话 12", text)
 
     def test_readonly_tablespace_answer_skips_fact_confirmation(self) -> None:
         fact = _tablespace_fact()

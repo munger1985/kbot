@@ -72,14 +72,32 @@ class _AnswerModel:
         digest = "a" * 64
         output_model = kwargs.get("output_model") or DbaAnswerDraft
         if output_model is DiagnosisAnswerDraft:
+            facts = kwargs["input_payload"]["sufficiency"]["evidence"]
+            fact = next((item for item in facts if item["rows"] and item["columns"]), None)
+            refs = (self.evidence_refs or (fact["evidence_ref"],)) if fact else ()
             output = DiagnosisAnswerDraft(
-                analysis_markdown=(
+                claims=({
+                    "claim_id": "c1", "kind": "INTERPRETATION", "subject": "当前 Target",
+                    "statement": (
                     "阻塞由持有会话引起，等待会话无法继续提交。"
-                ),
-                solution_markdown=(
+                ), "level": "SUPPORTED" if refs else "HYPOTHESIS",
+                    "applicable_time": fact["captured_at"] if fact else "尚未确认",
+                    "evidence_fields": tuple({
+                        "evidence_ref": ref, "row_index": 0,
+                        "field": fact["columns"][0]["name"] if fact else "value",
+                    } for ref in refs),
+                    "reasoning": "根据本轮批准观测判断。", "limitations": ("仅适用于当前观测范围。",),
+                },),
+                recommendations=({
+                    "recommendation_id": "r1", "conclusion_ids": ("c1",),
+                    "action": (
                     "建议先确认持有会话事务，再决定是否中断等待会话。"
-                ),
-                evidence_refs=self.evidence_refs,
+                ), "intent": "VERIFY",
+                    "preconditions": ("先核对目标身份。",), "risks": ("避免影响业务。",),
+                    "validation": ("比较同口径证据。",), "rollback_or_stop": "证据不匹配则停止。",
+                    "requires_approval": False,
+                },),
+                goal_satisfied=bool(refs),
             )
         else:
             output = DbaAnswerDraft(
@@ -2607,13 +2625,19 @@ class DbaTurnAnswerTest(unittest.TestCase):
                 },
             )
         )
-        handler = DbaAnswerComposeHandler(
-            model_client=_AnswerModel(evidence_refs=("artifact:other#fact",)),
-            prompts=_TestPrompts(),
-        )
-
-        with self.assertRaisesRegex(ValueError, "批准证据之外"):
-            asyncio.run(handler.execute(context))
+        for model, prompts in (
+            (_AnswerModel(evidence_refs=("artifact:other#fact",)), _TestPrompts()),
+            (None, _TestPrompts()),
+            (_AnswerModel(evidence_refs=()), None),
+            (_AnswerModel(evidence_refs=()), SimpleNamespace(resolve=AsyncMock(side_effect=LookupError("Prompt 不可用")))),
+        ):
+            with self.subTest(model_configured=model is not None, prompt_configured=prompts is not None):
+                handler = DbaAnswerComposeHandler(model_client=model, prompts=prompts)
+                result = asyncio.run(handler.execute(context))
+                self.assertEqual("PARTIAL", result.status)
+                self.assertEqual(assessment.evidence, result.evidence)
+                self.assertEqual("UNKNOWN", result.investigation_record.claims[0].level)
+                self.assertFalse(result.investigation_record.claims[0].evidence_fields)
 
     def test_inherited_source_run_exposes_only_current_evidence_ref(self) -> None:
         artifact_id = str(uuid7())

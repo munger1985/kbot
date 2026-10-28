@@ -171,15 +171,6 @@ def assess_root_cause(
         for ref in supporting_refs
         if all_refs[ref].trust_level == "SOURCE_VERIFIED"
     )
-    groups = {
-        all_refs[ref].source_group_id for ref in verified_supporting_refs
-    }
-    direct_tests = sum(
-        1
-        for item in supported
-        for result in item.test_results
-        if result.outcome == "SUPPORTS" and result.strength == "DIRECT"
-    )
     quality_flags = {
         flag
         for ref in supporting_refs
@@ -197,23 +188,18 @@ def assess_root_cause(
     }:
         ceiling = "POSSIBLE"
         reasons.append("关键证据存在质量缺口")
-    elif (
-        len(groups) >= 2
-        and direct_tests >= 2
-        and not counter_refs
-        and not any(
-            item.remaining_gaps
-            for item in assessment.hypothesis_assessments
-            if item.status == "SUPPORTED"
-        )
+    elif counter_refs:
+        ceiling = "POSSIBLE"
+        reasons.append("存在未消解反证，不能升级原因强度")
+    elif any(
+        result.outcome == "SUPPORTS" and result.strength == "DIRECT"
+        for item in supported for result in item.test_results
     ):
-        ceiling = "CONFIRMED"
-    elif len(groups) >= 2 and direct_tests >= 1 and not counter_refs:
         ceiling = "PROBABLE"
-        reasons.append("尚缺完整的直接致因闭环验证")
+        reasons.append("原因具有支持线索；模型的直接测试声明不构成已确认致因闭环")
     else:
         ceiling = "POSSIBLE"
-        reasons.append("证据独立性或区分性测试不足")
+        reasons.append("尚缺匹配对象、时间与机制的区分性证据")
     suggested = assessment.suggested_root_cause_level
     if primary is None:
         suggested = "INCONCLUSIVE"

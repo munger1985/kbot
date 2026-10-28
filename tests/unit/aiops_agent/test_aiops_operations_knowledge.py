@@ -131,11 +131,11 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
                 allowed_action_ids={action_id},
             )
 
-    def test_only_complete_incident_diagnosis_is_case_eligible(self):
+    def test_traceable_inspection_can_be_diagnostic_reference(self):
         report = SimpleNamespace(
             is_current=True, status="READY", report_type="INCIDENT"
         )
-        content = {"scope": {
+        content = {"facts": [{"record_id": "record-1", "claim_id": "c1", "level": "OBSERVED", "evidence_refs": ["e-1"]}], "scope": {
             "source_kind": "CHAT",
             "root_cause_grade": "CONFIRMED",
             "diagnosis_rationale": "连接耗尽由泄漏引起",
@@ -147,10 +147,8 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
         result = _diagnosis_case_eligibility(
             report=report, report_content=content, evidence_refs=["e-1"]
         )
-        self.assertFalse(result["eligible"])
-        self.assertIn("REPORT_NOT_DIAGNOSIS", {
-            item["code"] for item in result["reasons"]
-        })
+        self.assertTrue(result["eligible"])
+        self.assertEqual([], result["reasons"])
 
     def test_case_revision_inherits_evidence_and_recalculates_case_kind(self):
         base = DiagnosisCaseProfile(

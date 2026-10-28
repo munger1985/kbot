@@ -137,6 +137,7 @@ class InvestigationTaskCompiler:
             if action.tool_id
             not in {
                 "monitor.query_range",
+                "monitor.discover_metrics",
                 "loki.query_range",
                 "db.oracle.readonly_query",
                 "db.postgresql.readonly_query",
@@ -176,7 +177,7 @@ class InvestigationTaskCompiler:
             if item.action_id is not None
         }
         for action in investigation_actions:
-            if action.tool_id == "monitor.query_range":
+            if action.tool_id in {"monitor.query_range", "monitor.discover_metrics"}:
                 action_task_keys[action.action_id] = tuple(monitoring_keys)
             elif action.tool_id == "loki.query_range":
                 action_task_keys[action.action_id] = tuple(log_keys)
