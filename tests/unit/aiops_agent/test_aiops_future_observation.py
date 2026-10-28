@@ -1,6 +1,7 @@
 """持久化未来观察的冻结、调度、原始产物重放、失效和部分结果回归。"""
 
 import asyncio
+import hashlib
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -56,7 +57,7 @@ class Store:
         self.rows[row.ops_run_id] = row
         return row
 
-    async def get_run(self, *, ops_run_id):
+    async def get_run(self, *, ops_run_id, lock=False):
         return self.rows.get(ops_run_id)
 
     async def add_artifact(self, row):
@@ -544,6 +545,7 @@ def test_running_and_cancelled_series_are_replayed_from_raw_artifacts_not_summar
 
 @pytest.mark.parametrize("change", ["none", "cancel", "deadline", "target", "agent"])
 def test_credential_exchange_rechecks_revocation_after_claim_before_reading_secret(change):
+    from tests.support.aiops_resources import resource_repository
     from unittest.mock import Mock
     from fastapi import HTTPException
     from aiops_agent.api.executions.routes import issue_credential
@@ -554,7 +556,13 @@ def test_credential_exchange_rechecks_revocation_after_claim_before_reading_secr
         uow, source, _, _, background = await scheduled()
         stamp = datetime.now(timezone.utc)
         background.deadline_at = stamp + timedelta(seconds=120)
+        task = SimpleNamespace(ops_task_id=uuid7(), ops_run_id=background.ops_run_id,
+            status="RUNNING", lease_token=uuid7(), lease_until=stamp + timedelta(seconds=120),
+            started_at=stamp, timeout_seconds=120)
+        uow.runs.get_task = AsyncMock(return_value=task)
+        uow.resources = resource_repository(stamp)
         grant = SimpleNamespace(grant_id=uuid7(), run_id=background.ops_run_id,
+            task_id=task.ops_task_id, lease_token_hash=hashlib.sha256(str(task.lease_token).encode()).hexdigest(),
             tenant_id=source.tenant_id, domain_id=source.domain_id, target_id=source.target_id,
             target_row_version=2, diagnostic_credential_id=uow.targets.get_scoped.return_value.diagnostic_credential_id,
             audience="kbot-aiops-db-executor", expires_at=stamp + timedelta(seconds=60))
@@ -574,6 +582,7 @@ def test_credential_exchange_rechecks_revocation_after_claim_before_reading_secr
         secrets = SimpleNamespace(read=AsyncMock(return_value={"username": "test", "password": "not-a-real-secret"}))
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             diagnostic_grant_codec=SimpleNamespace(verify=Mock(return_value=grant)),
+            mutation_grant_codec=SimpleNamespace(),
             configuration_service=SimpleNamespace(_uow_factory=Factory()), managed_credential_service=secrets,
         )), state=SimpleNamespace(service_identity=ServiceIdentity(
             issuer="test", subject=grant.audience, audience="aiops-agent", scopes=("aiops.credentials.issue",),
@@ -599,11 +608,12 @@ def test_persisted_dynamic_points_use_real_freezer_worker_grants_and_executor(en
     import aiops_agent.workers.database_handlers as database_module
     import aiops_agent.executor.dynamic_service as executor_module
     import aiops_agent.executor.diagnostic_deadline as deadline_module
+    import aiops_agent.executor.resource_admission as resource_module
     import aiops_agent.diagnostics.grants as grant_module
     from jose import jwt
     from aiops_agent.workers.handlers import create_runtime_handler_registry
 
-    for module in (dynamic_tests, database_module, executor_module, deadline_module, grant_module, jwt):
+    for module in (dynamic_tests, database_module, executor_module, deadline_module, resource_module, grant_module, jwt):
         monkeypatch.setattr(module, "Clock" if module is dynamic_tests else "datetime", Clock)
 
     async def run():

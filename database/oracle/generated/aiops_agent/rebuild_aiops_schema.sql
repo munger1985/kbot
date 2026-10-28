@@ -1927,8 +1927,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    50 AS SCHEMA_VERSION,
-    'aiops-oracle-v50-unified-agent-only' AS CONTRACT_VERSION
+    51 AS SCHEMA_VERSION,
+    'aiops-oracle-v51-resource-governance' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3291,6 +3291,45 @@ CREATE INDEX IX_OPS_WI_ACTIVITY_ITEM
 
 -- ===== 结束规范 DDL：012_ops_work_items.sql =====
 
+-- ===== 开始规范 DDL：013_ops_resource_governance.sql =====
+
+-- 跨进程只读取证共享准入；池锁只用于微事务，不跨目标库或 HTTP 调用持锁。
+CREATE TABLE KBOT_OPS_RESOURCE_POOL (
+    POOL_KEY VARCHAR2(32 CHAR) PRIMARY KEY,
+    GLOBAL_LIMIT NUMBER(10) NOT NULL,
+    TARGET_LIMIT NUMBER(10) NOT NULL,
+    SOURCE_LIMIT NUMBER(10) NOT NULL,
+    CLEANUP_GRACE_SECONDS NUMBER(10) NOT NULL
+);
+
+CREATE TABLE KBOT_OPS_RESOURCE_LEASE (
+    LEASE_ID RAW(16) PRIMARY KEY,
+    POOL_KEY VARCHAR2(32 CHAR) NOT NULL,
+    RUN_ID RAW(16) NOT NULL,
+    TARGET_ID RAW(16) NOT NULL,
+    SOURCE_KIND VARCHAR2(16 CHAR) NOT NULL,
+    SOURCE_ID RAW(16) NOT NULL,
+    RELEASE_TOKEN_HASH VARCHAR2(64 CHAR) NOT NULL,
+    ACQUIRED_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+    EXECUTION_DEADLINE_AT TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+    HELD_UNTIL TIMESTAMP(6) WITH TIME ZONE NOT NULL,
+    RELEASED_AT TIMESTAMP(6) WITH TIME ZONE
+);
+
+CREATE INDEX IX_OPS_RESOURCE_LEASE_ACTIVE ON KBOT_OPS_RESOURCE_LEASE (POOL_KEY, HELD_UNTIL);
+CREATE INDEX IX_OPS_RESOURCE_LEASE_TARGET ON KBOT_OPS_RESOURCE_LEASE (TARGET_ID, HELD_UNTIL);
+CREATE INDEX IX_OPS_RESOURCE_LEASE_SOURCE ON KBOT_OPS_RESOURCE_LEASE (SOURCE_KIND, SOURCE_ID, HELD_UNTIL);
+
+-- ===== 结束规范 DDL：013_ops_resource_governance.sql =====
+
+-- 仅初始化缺失的基础设施策略，不覆盖已有额度，不初始化管理员或业务数据。
+MERGE INTO KBOT_OPS_RESOURCE_POOL pool
+USING (SELECT 'READONLY' AS pool_key FROM DUAL) seed
+ON (pool.pool_key = seed.pool_key)
+WHEN NOT MATCHED THEN INSERT
+    (pool_key, global_limit, target_limit, source_limit, cleanup_grace_seconds)
+VALUES (seed.pool_key, 8, 2, 4, 30);
+
 PROMPT === 正在验证 AIOps Schema ===
 
 DECLARE
@@ -3324,6 +3363,8 @@ BEGIN
     SELECT COUNT(*)
       INTO l_missing_table_count
       FROM TABLE(sys.odcivarchar2list(
+          'KBOT_OPS_RESOURCE_POOL',
+          'KBOT_OPS_RESOURCE_LEASE',
           'KBOT_OPS_TARGET',
           'KBOT_OPS_TARGET_FACT',
           'KBOT_OPS_POLICY',
@@ -3550,7 +3591,7 @@ BEGIN
       INTO l_component, l_schema_version, l_contract_version
       FROM KBOT_V_OPS_SCHEMA_VERSION;
 
-    IF l_table_count <> 77 OR l_view_count <> 10 THEN
+    IF l_table_count <> 79 OR l_view_count <> 10 THEN
         raise_application_error(
             -20001,
             'AIOps 对象数量错误：表=' || l_table_count || '，视图=' || l_view_count
@@ -3576,7 +3617,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 50 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 51 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3589,8 +3630,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 50
-       OR l_contract_version <> 'aiops-oracle-v50-unified-agent-only' THEN
+       OR l_schema_version <> 51
+       OR l_contract_version <> 'aiops-oracle-v51-resource-governance' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3599,8 +3640,8 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：77 张表、10 个视图，Schema Version '
-        || '50，合同 aiops-oracle-v50-unified-agent-only。'
+        '验证通过：79 张表、10 个视图，Schema Version '
+        || '51，合同 aiops-oracle-v51-resource-governance。'
     );
 END;
 /

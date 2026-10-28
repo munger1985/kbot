@@ -29,6 +29,7 @@ from platform_core.contracts.aiops.executor import (
     ReadDiagnosticRequest,
 )
 from platform_core.identity import uuid7
+from tests.support.aiops_resources import bind_resource_control
 
 
 NOW = datetime(2026, 10, 28, tzinfo=UTC)
@@ -86,6 +87,7 @@ def harness(engine="POSTGRESQL", dynamic=False, *, readonly_semaphore=None):
                                   rows=(), truncated=False, db_version="16")
     driver = SimpleNamespace(db_type=engine, execute=AsyncMock(return_value=result), execute_dynamic=AsyncMock(return_value=result))
     control = SimpleNamespace(issue_credential=AsyncMock(return_value=SimpleNamespace(username="private-user", password="private-password")))
+    bind_resource_control(control, codec)
     kwargs = dict(grant_codec=codec, control_plane=control, hard_limits=limits,
                   concurrency=1, access_observations=cache, readonly_semaphore=readonly_semaphore)
     if dynamic:

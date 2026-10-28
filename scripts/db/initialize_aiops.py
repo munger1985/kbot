@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from platform_core.config import get_settings
 from platform_core.database.oracle import create_database_runtime
-from scripts.db.apply_oracle_schema import split_oracle_statements
+from scripts.db.apply_oracle_schema import split_oracle_statements, seed_aiops_resource_pool
 
 
 BOOTSTRAP_SQL = (
@@ -175,6 +175,7 @@ async def initialize_aiops(
         async with runtime.engine.connect() as connection:
             if not check_only:
                 try:
+                    await seed_aiops_resource_pool(connection)
                     for statement in load_aiops_bootstrap_statements():
                         if statement.strip().upper() == "COMMIT":
                             await connection.commit()

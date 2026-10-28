@@ -10,6 +10,7 @@ from .monitoring import SituationRepository, DiagnosticSourceRepository
 from .notification import NotificationSubscriptionRepository
 from .knowledge import OperationsKnowledgeRepository
 from .runtime import OpsRunRepository
+from .resource_governance import ResourceGovernanceRepository
 from .target import PolicyRepository, TargetRepository
 from .recovery import RecoveryRepository
 from .business_system import BusinessSystemRepository
@@ -17,6 +18,7 @@ from .workload import WorkloadRepository
 from .work_item import WorkItemRepository
 
 __all__ = [
+    "ResourceGovernanceRepository",
     "ConversationRepository",
     "TurnRepository",
     "AIOpsAgentExecutionBinding",

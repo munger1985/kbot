@@ -319,7 +319,10 @@ def create_aiops_api(
             timeout_seconds=resolved.clients.db_executor.timeout_seconds,
             session=client_session,
         )
+        from aiops_agent.application.resource_governance import ResourceGovernanceService
+
         handler_registry = create_runtime_handler_registry(
+            resource_governance=ResourceGovernanceService(uow_factory=runtime.uow_factory),
             diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
             db_executor_client=db_executor_client,
@@ -420,6 +423,7 @@ def create_aiops_api(
                         "aiops.execution.claim",
                         "aiops.execution.callback",
                         "aiops.credentials.issue",
+                        "aiops.resources.release",
                     }
                 ),
                 "kbot-model-embedding": frozenset({"model.references"}),

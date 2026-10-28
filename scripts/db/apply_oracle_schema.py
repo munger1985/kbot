@@ -992,6 +992,14 @@ async def _validate_schema(
         raise RuntimeError(f"AIOps Schema 版本错误：{tuple(schema_version)}")
 
 
+async def seed_aiops_resource_pool(connection: AsyncConnection) -> None:
+    """部署事务初始化共享资源池，不覆盖已存在的运维策略。"""
+    path = ROOT / "database/oracle/bootstrap/aiops/resource_pool.sql"
+    for statement in split_oracle_statements(path.read_text(encoding="utf-8")):
+        await connection.exec_driver_sql(statement)
+    await connection.commit()
+
+
 async def apply_schema(
     *,
     dry_run: bool,
@@ -1082,6 +1090,8 @@ async def apply_schema(
                 expected_views=expected_views,
                 aiops_manifest=aiops_manifest,
             )
+            if aiops_manifest is not None:
+                await seed_aiops_resource_pool(connection)
             prompt_count = await sync_prompt_catalog(
                 connection,
                 selected_services=set(selection.ordered),

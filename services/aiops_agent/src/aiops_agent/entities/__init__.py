@@ -17,6 +17,7 @@ from .inspection import (
     SessionReportTemplateVersionEntity,
 )
 from .messaging import InboxEntity, OutboxEntity
+from .resource_governance import ResourcePoolEntity, ResourceLeaseEntity
 from .notification import NotificationSubscriptionEntity
 from .knowledge import (
     OperationsKnowledgeAssetEntity,
@@ -80,6 +81,8 @@ from .conversation import (
 )
 
 __all__ = [
+    "ResourcePoolEntity",
+    "ResourceLeaseEntity",
     "OpsAnswerBlockEntity",
     "OpsAnswerCitationEntity",
     "EvidenceRequestEntity",

@@ -944,6 +944,7 @@ def render_rebuild_sql() -> str:
     manifest, canonical_sections = _load_canonical_sections()
     sections = [HEADER.rstrip()]
     sections.extend(_render_canonical_sections(canonical_sections))
+    sections.append((ROOT / "database/oracle/bootstrap/aiops/resource_pool.sql").read_text(encoding="utf-8").rstrip())
     sections.append(_render_validation(manifest))
     sections.append("PROMPT === AIOps Schema 重建完成；启动服务后检查 AIOps /ready ===")
     return "\n\n".join(sections) + "\n"
@@ -954,6 +955,7 @@ def render_preserving_rebuild_sql() -> str:
     manifest, canonical_sections = _load_canonical_sections()
     sections = [_render_preserving_header(manifest, canonical_sections).rstrip()]
     sections.extend(_render_canonical_sections(canonical_sections))
+    sections.append((ROOT / "database/oracle/bootstrap/aiops/resource_pool.sql").read_text(encoding="utf-8").rstrip())
     sections.append(_render_restore_and_verify(canonical_sections))
     sections.append(_render_validation(manifest))
     sections.append(_render_backup_cleanup())

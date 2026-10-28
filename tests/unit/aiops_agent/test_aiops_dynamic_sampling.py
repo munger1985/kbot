@@ -27,9 +27,11 @@ from platform_core.contracts.aiops.executor import DiagnosticLimits
 from platform_core.contracts.aiops.investigation import DiagnosticSampling, InvestigationPlanningOutput
 from platform_core.contracts.aiops.playbooks import DbaCapabilitySnapshot
 from platform_core.identity import uuid7
+from tests.support.aiops_resources import bind_resource_control
 import aiops_agent.workers.database_handlers as database_module
 import aiops_agent.workers.sampling as sampling_module
 import aiops_agent.executor.dynamic_service as executor_module
+import aiops_agent.executor.resource_admission as resource_module
 
 
 QUERIES = {
@@ -145,7 +147,7 @@ def clock(monkeypatch):
         Clock.current += timedelta(seconds=seconds)
         await sleep(0)
 
-    for module in (database_module, sampling_module, executor_module):
+    for module in (database_module, sampling_module, executor_module, resource_module):
         monkeypatch.setattr(module, "datetime", Clock)
     monkeypatch.setattr(sampling_module.asyncio, "sleep", advance)
     return Clock
@@ -181,6 +183,7 @@ def wiring(engine, *, failure=None):
             raise asyncio.CancelledError
         return DriverQueryResult(columns=("session_id",), rows=((count,),), truncated=failure == "truncated" and count == 2, db_version="16")
 
+    bind_resource_control(control, codec)
     driver = SimpleNamespace(db_type=engine, execute_dynamic=AsyncMock(side_effect=raw))
     executor = DynamicDiagnosticExecutorService(
         grant_codec=codec, control_plane=control,

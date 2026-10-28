@@ -21,6 +21,7 @@ from aiops_agent.executor.drivers import (
     ReadonlyDatabaseDriver,
 )
 from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
+from aiops_agent.executor.resource_admission import readonly_credentials
 from aiops_agent.executor.access_observations import (
     CACHED_ACCESS_DENIAL, OBJECT_CACHED_ACCESS_DENIAL, QueryAccessObservations,
     catalog_object_group, object_read_scope,
@@ -90,8 +91,9 @@ class DiagnosticExecutorService:
                 return self._gap(
                     request, "VERSION_UNSUPPORTED", retryable=False
                 )
-            async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
-                issued = await self._control_plane.issue_credential(request.grant, trace_id=grant.trace_id)
+            async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at), readonly_credentials(
+                self._control_plane, token=request.grant, grant=grant
+            ) as issued:
                 access_key = self._access_observations.key(grant, issued=issued, query_sha256=grant.template_sha256)
                 scope_key = self._access_observations.scope_key(grant, issued=issued)
                 scope = object_read_scope(tool.sql, grant.db_type)

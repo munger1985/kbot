@@ -38,6 +38,7 @@ from platform_core.contracts.aiops.executor import (
     ReadDiagnosticRequest,
 )
 from platform_core.identity import uuid7
+from tests.support.aiops_resources import bind_resource_control
 from platform_core.security import build_scoped_internal_auth_headers
 
 
@@ -1090,6 +1091,7 @@ class DiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         control_plane.issue_credential.return_value = SimpleNamespace(
             username="private-user", password="hidden",
         )
+        bind_resource_control(control_plane, grants.codec)
         service = DiagnosticExecutorService(
             registry=DiagnosticRegistry.load(),
             grant_codec=grants.codec,

@@ -3150,6 +3150,16 @@
             "title": "Password",
             "type": "string"
           },
+          "resource_lease": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceLeaseReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "username": {
             "maxLength": 256,
             "minLength": 1,
@@ -12825,6 +12835,41 @@
         "title": "ResourceGraphValidationIssue",
         "type": "object"
       },
+      "ResourceLeaseReceipt": {
+        "additionalProperties": false,
+        "description": "执行租约的释放围栏；只有执行端收到，不能作为用户证据。",
+        "properties": {
+          "execution_deadline_at": {
+            "format": "date-time",
+            "title": "Execution Deadline At",
+            "type": "string"
+          },
+          "held_until": {
+            "format": "date-time",
+            "title": "Held Until",
+            "type": "string"
+          },
+          "lease_id": {
+            "format": "uuid",
+            "title": "Lease Id",
+            "type": "string"
+          },
+          "release_token": {
+            "maxLength": 64,
+            "minLength": 40,
+            "title": "Release Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_id",
+          "release_token",
+          "execution_deadline_at",
+          "held_until"
+        ],
+        "title": "ResourceLeaseReceipt",
+        "type": "object"
+      },
       "ResourceMonitoringInput": {
         "additionalProperties": false,
         "description": "数据库资源的监控映射；候选引用必须由服务端签发。",
@@ -13593,6 +13638,19 @@
           "row_version"
         ],
         "title": "ResourceRelationViewV2",
+        "type": "object"
+      },
+      "ResourceReleaseReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "released": {
+            "const": true,
+            "default": true,
+            "title": "Released",
+            "type": "boolean"
+          }
+        },
+        "title": "ResourceReleaseReceipt",
         "type": "object"
       },
       "ResourceTypeSummary": {
@@ -27998,6 +28056,48 @@
         "summary": "Generate User Report",
         "tags": [
           "AIOps Runtime"
+        ]
+      }
+    },
+    "/internal/v1/aiops/resources:release": {
+      "post": {
+        "description": "连接与响应流清理完成后释放，不重放已经过期的执行授权。",
+        "operationId": "release_resource_internal_v1_aiops_resources_release_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceLeaseReceipt"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceReleaseReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Release Resource",
+        "tags": [
+          "AIOps Executions"
         ]
       }
     },

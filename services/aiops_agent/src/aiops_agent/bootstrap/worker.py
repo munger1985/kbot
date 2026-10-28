@@ -229,7 +229,10 @@ def create_aiops_worker_probe(
             session=client_session,
         )
         workload_service = WorkloadService(uow_factory=runtime.uow_factory)
+        from aiops_agent.application.resource_governance import ResourceGovernanceService
+
         handler_registry = create_runtime_handler_registry(
+            resource_governance=ResourceGovernanceService(uow_factory=runtime.uow_factory),
             diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
             db_executor_client=db_executor_client,

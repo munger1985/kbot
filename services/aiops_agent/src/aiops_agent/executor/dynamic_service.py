@@ -27,6 +27,7 @@ from aiops_agent.diagnostics.grants import (
 )
 from aiops_agent.executor.drivers import DiagnosticDriverError
 from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
+from aiops_agent.executor.resource_admission import readonly_credentials
 from aiops_agent.executor.access_observations import (
     CACHED_ACCESS_DENIAL, OBJECT_CACHED_ACCESS_DENIAL, QueryAccessObservations, object_read_scope,
 )
@@ -131,10 +132,9 @@ class DynamicDiagnosticExecutorService:
             limits = self._effective_limits(grant.limits, validated.max_rows)
             if limits.pagination is not None and getattr(validated, "explain", False):
                 raise DiagnosticGrantError("GRANT_LIMIT_INVALID", "计划采集不支持游标分页")
-            async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
-                issued = await self._control_plane.issue_credential(
-                    request.grant, trace_id=grant.trace_id
-                )
+            async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at), readonly_credentials(
+                self._control_plane, token=request.grant, grant=grant
+            ) as issued:
                 access_key = self._access_observations.key(grant, issued=issued, query_sha256=grant.query_sha256)
                 scope_key = self._access_observations.scope_key(grant, issued=issued)
                 scope = object_read_scope(validated.normalized_sql, grant.db_type)

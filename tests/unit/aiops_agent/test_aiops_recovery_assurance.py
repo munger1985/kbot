@@ -131,7 +131,7 @@ class RecoveryAssuranceTest(unittest.IsolatedAsyncioTestCase):
 
     def test_schema_and_static_ui_use_database_resource_scope(self) -> None:
         manifest = json.loads((ROOT / "database/oracle/aiops_agent/schema_manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(50, manifest["schema_version"])
+        self.assertEqual(51, manifest["schema_version"])
         page = (ROOT / "ui/aiops/recovery-drills.html").read_text(encoding="utf-8")
         script = (ROOT / "ui/aiops/js/aiops-recovery-drills.js").read_text(encoding="utf-8")
         self.assertIn("数据库资源", page)

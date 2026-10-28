@@ -12,6 +12,8 @@ from platform_core.contracts.aiops.executor import (
     ExecutionStatusEvent,
     MutationClaimReceipt,
     MutationClaimRequest,
+    ResourceLeaseReceipt,
+    ResourceReleaseReceipt,
 )
 from platform_core.contracts.aiops.internal import EventReceipt
 from platform_core.security import (
@@ -73,6 +75,11 @@ class AIOpsExecutionClient:
 
     async def issue_credential(self, grant: str, *, trace_id: str) -> CredentialIssueResponse:
         return await self._post(path="/internal/v1/aiops/credentials:issue", payload=CredentialIssueRequest(grant=grant).model_dump(mode="json"), scope="aiops.credentials.issue", trace_id=trace_id, response_type=CredentialIssueResponse)
+
+    async def release_resource(self, receipt: ResourceLeaseReceipt, *, trace_id: str) -> ResourceReleaseReceipt:
+        return await self._post(path="/internal/v1/aiops/resources:release",
+            payload=receipt.model_dump(mode="json"), scope="aiops.resources.release",
+            trace_id=trace_id, response_type=ResourceReleaseReceipt)
 
     async def _post(
         self,

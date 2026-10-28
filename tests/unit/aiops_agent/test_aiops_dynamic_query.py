@@ -59,6 +59,7 @@ from platform_core.contracts.aiops.playbooks import (
     DbaPlaybookPlan,
 )
 from platform_core.identity import uuid7
+from tests.support.aiops_resources import bind_resource_control
 
 
 class OracleDynamicQueryPolicyTest(unittest.TestCase):
@@ -468,6 +469,7 @@ class DynamicDiagnosticExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
 
     def _service(self, control_plane, *, driver=None):
+        bind_resource_control(control_plane, self.codec)
         return DynamicDiagnosticExecutorService(
             grant_codec=self.codec,
             control_plane=control_plane,

@@ -39,6 +39,8 @@ from aiops_agent.entities import (
     OpsArtifactEntity,
     SignalEventEntity,
     OpsRunEntity,
+    ResourcePoolEntity,
+    ResourceLeaseEntity,
     OpsRunEventEntity,
     OpsTaskEntity,
     OutboxEntity,
@@ -71,6 +73,8 @@ from tests.support.oracle_preflight import require_oracle_listener
 
 
 AIOPS_ENTITY_CLASSES = (
+    ResourcePoolEntity,
+    ResourceLeaseEntity,
     AIOpsAgentEntity,
     AIOpsAgentVersionEntity,
     NotificationSubscriptionEntity,

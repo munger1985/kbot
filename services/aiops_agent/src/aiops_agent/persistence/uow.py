@@ -19,6 +19,7 @@ from aiops_agent.repositories import (
     InspectionRepository,
     DiagnosticSourceRepository,
     OpsRunRepository,
+    ResourceGovernanceRepository,
     OutboxRepository,
     NotificationSubscriptionRepository,
     OperationsKnowledgeRepository,
@@ -60,6 +61,7 @@ class AIOpsUnitOfWork:
         self.policies: PolicyRepository | None = None
         self.situations: SituationRepository | None = None
         self.runs: OpsRunRepository | None = None
+        self.resources: ResourceGovernanceRepository | None = None
         self.changes: ChangeRepository | None = None
         self.inspections: InspectionRepository | None = None
         self.inbox: InboxRepository | None = None
@@ -95,6 +97,7 @@ class AIOpsUnitOfWork:
         self.policies = PolicyRepository(self.session, guard)
         self.situations = SituationRepository(self.session, guard)
         self.runs = OpsRunRepository(self.session, guard)
+        self.resources = ResourceGovernanceRepository(self.session, guard)
         self.changes = ChangeRepository(self.session, guard)
         self.inspections = InspectionRepository(self.session, guard)
         self.inbox = InboxRepository(self.session, guard)
@@ -155,6 +158,7 @@ class AIOpsUnitOfWork:
             self.policies = None
             self.situations = None
             self.runs = None
+            self.resources = None
             self.changes = None
             self.inspections = None
             self.inbox = None

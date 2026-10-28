@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 50,
-  "contract_version": "aiops-oracle-v50-unified-agent-only",
+  "schema_version": 51,
+  "contract_version": "aiops-oracle-v51-resource-governance",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "c991b0e50f0455eb7af5b946b39323986d3e0691e3deea53135c75daa6c75110"
+      "sha256": "6b77f9b16933d82aadc0e19a4ba4400e9d6e86207ea158db71a294895687c84f"
     },
     {
       "name": "007_ops_agents.sql",
@@ -63,9 +63,16 @@
       "name": "012_ops_work_items.sql",
       "statements": 33,
       "sha256": "4066c0e0f95cb627ab49466e627c9ee71544fa2c08edb7f90f54fec012e6b977"
+    },
+    {
+      "name": "013_ops_resource_governance.sql",
+      "statements": 5,
+      "sha256": "caa65c81aa0d5866948df6827195f81fdb345f760fc0fb1056e6db796db24aec"
     }
   ],
   "tables": [
+    "KBOT_OPS_RESOURCE_POOL",
+    "KBOT_OPS_RESOURCE_LEASE",
     "KBOT_OPS_TARGET",
     "KBOT_OPS_TARGET_FACT",
     "KBOT_OPS_POLICY",

@@ -6,8 +6,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from datetime import UTC, datetime
-import hashlib
 
 from aiops_agent.api.changes.routes import get_service
 from aiops_agent.api.dependencies import require_service_scope
@@ -19,10 +17,9 @@ from platform_core.contracts.aiops.executor import (
     MutationClaimReceipt,
     MutationClaimRequest,
 )
-from aiops_agent.diagnostics.grants import DiagnosticGrantError
-from aiops_agent.actions import MutationGrantError
-from aiops_agent.entities import InboxEntity
-from platform_core.identity import uuid7
+from aiops_agent.application.credential_issuance import CredentialIssuanceService, CredentialIssueError
+from aiops_agent.application.resource_governance import ResourceGovernanceService, ResourceAdmissionError
+from platform_core.contracts.aiops.executor import ResourceLeaseReceipt, ResourceReleaseReceipt
 from platform_core.contracts.aiops.internal import EventReceipt
 
 
@@ -77,62 +74,28 @@ async def apply_execution_event(
 async def issue_credential(body: CredentialIssueRequest, request: Request) -> CredentialIssueResponse:
     """仅向已验证的 Executor 发放且消费一次连接材料。"""
     require_service_scope(request, "aiops.credentials.issue")
+    service = CredentialIssuanceService(
+        uow_factory=request.app.state.configuration_service._uow_factory,
+        diagnostic_codec=request.app.state.diagnostic_grant_codec,
+        mutation_codec=request.app.state.mutation_grant_codec,
+        credential_service=request.app.state.managed_credential_service,
+        audience="kbot-aiops-db-executor",
+    )
     try:
-        try:
-            grant = request.app.state.diagnostic_grant_codec.verify(body.grant)
-            kind, credential_id, target_version = "DIAGNOSTIC", grant.diagnostic_credential_id, grant.target_row_version
-        except DiagnosticGrantError:
-            try:
-                grant = request.app.state.diagnostic_grant_codec.verify_dynamic(body.grant)
-                kind, credential_id, target_version = "DIAGNOSTIC", grant.diagnostic_credential_id, grant.target_row_version
-            except DiagnosticGrantError:
-                grant = request.app.state.mutation_grant_codec.verify(body.grant)
-                kind, credential_id, target_version = "EXECUTION", grant.execution_credential_id, grant.target_version
-    except (DiagnosticGrantError, MutationGrantError) as exc:
-        raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"}) from exc
-    if grant.audience != "kbot-aiops-db-executor" or grant.expires_at <= datetime.now(UTC):
-        raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-    grant_hash = hashlib.sha256(str(grant.grant_id).encode()).hexdigest()
-    service = request.app.state.configuration_service
-    async with service._uow_factory() as uow:
-        assert uow.inbox is not None and uow.targets is not None
-        assert uow.managed_credentials is not None
-        existing = await uow.inbox.get_by_message(source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, lock=True)
-        if existing is not None:
-            raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-        if kind == "DIAGNOSTIC":
-            from aiops_agent.application.investigation.future_observation import FOLLOWUP_WORKFLOW, followup_access_error
-            run = await uow.runs.get_run(ops_run_id=grant.run_id)
-            if (run is None or str(run.domain_id) != str(grant.domain_id)
-                or str(run.target_id) != str(grant.target_id)
-                or run.cancel_requested_at is not None
-                or (run.deadline_at is not None and run.deadline_at <= datetime.now(UTC))
-                or str(run.status) in {"CANCELLED", "CANCELLING", "FAILED", "COMPLETED", "PARTIAL", "EXPIRED"}):
-                raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-            if run.workflow_kind == FOLLOWUP_WORKFLOW:
-                if await followup_access_error(uow=uow, run=run, now=datetime.now(UTC)):
-                    raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-        target = await uow.targets.get_scoped(target_id=grant.target_id, domain_id=int(grant.domain_id), lock=True)
-        if target is None or int(target.row_version) != int(target_version):
-            raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-        current_id = target.diagnostic_credential_id if kind == "DIAGNOSTIC" else target.execution_credential_id
-        if current_id != credential_id:
-            raise HTTPException(status_code=403, detail={"code": "CREDENTIAL_GRANT_INVALID"})
-        try:
-            values = await request.app.state.managed_credential_service.read(
-                uow=uow,
-                domain_id=int(grant.domain_id),
-                credential_id=credential_id,
-                credential_kind=f"target_{kind.lower()}",
-                external_key=grant.target_id,
-                lock=True,
-            )
-            username = values["username"]
-            password = values["password"]
-            if not isinstance(username, str) or not isinstance(password, str):
-                raise ValueError("数据库凭据字段缺失")
-        except (KeyError, ValueError) as exc:
-            raise PermissionError("凭据发放授权无效") from exc
-        await uow.inbox.add(InboxEntity(inbox_id=uuid7(), source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, message_type="CREDENTIAL_ISSUED", payload_json={}, payload_hash=grant_hash, status="PROCESSED", processed_at=datetime.now(UTC)))
-        await uow.commit()
-    return CredentialIssueResponse(username=username, password=password)
+        return await service.issue(body.grant)
+    except CredentialIssueError as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code}) from exc
+    except ResourceAdmissionError as exc:
+        raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
+
+
+@event_router.post("/resources:release", response_model=ResourceReleaseReceipt)
+async def release_resource(body: ResourceLeaseReceipt, request: Request) -> ResourceReleaseReceipt:
+    """连接与响应流清理完成后释放，不重放已经过期的执行授权。"""
+    require_service_scope(request, "aiops.resources.release")
+    service = ResourceGovernanceService(uow_factory=request.app.state.configuration_service._uow_factory)
+    try:
+        await service.release(body)
+    except ResourceAdmissionError as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code}) from exc
+    return ResourceReleaseReceipt()

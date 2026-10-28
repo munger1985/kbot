@@ -1,6 +1,7 @@
 """Oracle 全量建库工具的纯本地测试。"""
 
 import unittest
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -47,14 +48,23 @@ class OracleSchemaRunnerTest(unittest.TestCase):
                 for statement in statements
             )
         )
-        self.assertIn("FK_OPS_PROPOSAL_TURN", statements[-1].sql)
+        self.assertIn("IX_OPS_RESOURCE_LEASE_SOURCE", statements[-1].sql)
 
     def test_json_fields_use_oracle_native_json(self) -> None:
         sql = "\n".join(
             statement.sql for statement in load_schema_statements()
         )
-        self.assertEqual(132, sql.count(" JSON"))
-        self.assertNotRegex(sql, r"\b[A-Z0-9_]+_JSON\s+CLOB\b")
+        self.assertEqual(164, sql.count(" JSON"))
+        # 平台审计摘要在 Entity 中明确为 Text；其余 JSON 字段仍必须使用原生类型。
+        clob_fields = [
+            (str(item.script), re.findall(r"\b[A-Z0-9_]+_JSON\s+CLOB\b", item.sql))
+            for item in load_schema_statements()
+            if re.search(r"\b[A-Z0-9_]+_JSON\s+CLOB\b", item.sql)
+        ]
+        self.assertEqual(
+            [("database/oracle/main_api/001_access_control.sql", ["SUMMARY_JSON CLOB"])],
+            clob_fields,
+        )
         self.assertNotIn(" IS JSON", sql)
 
     def test_user_upload_content_role_is_allowed(self) -> None:

@@ -380,9 +380,28 @@ class CredentialIssueRequest(AIOpsContract):
     grant: str = Field(min_length=64, max_length=32768)
 
 
+class ResourceLeaseReceipt(AIOpsContract):
+    """执行租约的释放围栏；只有执行端收到，不能作为用户证据。"""
+    lease_id: UUIDv7
+    release_token: str = Field(min_length=40, max_length=64, repr=False)
+    execution_deadline_at: UtcDatetime
+    held_until: UtcDatetime
+
+    @model_validator(mode="after")
+    def validate_lease_window(self):
+        if self.held_until <= self.execution_deadline_at:
+            raise ValueError("资源租约必须包含清理保留时间")
+        return self
+
+
+class ResourceReleaseReceipt(AIOpsContract):
+    released: Literal[True] = True
+
+
 class CredentialIssueResponse(AIOpsContract):
     username: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=4096)
+    resource_lease: ResourceLeaseReceipt | None = None
 
 
 class MutationClaimReceipt(AIOpsContract):

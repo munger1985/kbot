@@ -150,6 +150,7 @@ def create_kernel_handler_registry() -> HandlerRegistry:
 def create_runtime_handler_registry(
     *,
     diagnostic_source_registry=None,
+    resource_governance=None,
     secret_store=None,
     db_executor_client=None,
     diagnostic_grant_codec=None,
@@ -233,6 +234,10 @@ def create_runtime_handler_registry(
             EvidenceScopeHandler,
             LogEvidenceHandler,
         )
+        from .resource_admission import ResourceBoundSourceHandler
+
+        if resource_governance is None:
+            raise ValueError("监控来源必须注入共享资源治理服务")
 
         manifests.extend(
             (
@@ -241,9 +246,13 @@ def create_runtime_handler_registry(
                     version="1",
                     output_schema_version="LOG_EVIDENCE_SET.v1",
                     idempotent=True,
-                    implementation=LogEvidenceHandler(
-                        diagnostic_source_registry=diagnostic_source_registry,
-                        secret_store=secret_store,
+                    implementation=ResourceBoundSourceHandler(
+                        handler=LogEvidenceHandler(
+                            diagnostic_source_registry=diagnostic_source_registry,
+                            secret_store=secret_store,
+                        ),
+                        governance=resource_governance,
+                        prefix="log:",
                     ),
                 ),
                 HandlerManifest(
@@ -258,9 +267,13 @@ def create_runtime_handler_registry(
                     version="1",
                     output_schema_version="OBSERVATION_SET.v1",
                     idempotent=True,
-                    implementation=EvidenceObserveHandler(
-                        diagnostic_source_registry=diagnostic_source_registry,
-                        secret_store=secret_store,
+                    implementation=ResourceBoundSourceHandler(
+                        handler=EvidenceObserveHandler(
+                            diagnostic_source_registry=diagnostic_source_registry,
+                            secret_store=secret_store,
+                        ),
+                        governance=resource_governance,
+                        prefix="observe:",
                     ),
                 ),
                 HandlerManifest(

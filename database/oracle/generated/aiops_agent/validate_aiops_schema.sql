@@ -23,6 +23,8 @@ BEGIN
     FOR missing_row IN (
         SELECT column_value AS object_name
           FROM TABLE(sys.odcivarchar2list(
+            'KBOT_OPS_RESOURCE_POOL',
+            'KBOT_OPS_RESOURCE_LEASE',
             'KBOT_OPS_TARGET',
             'KBOT_OPS_TARGET_FACT',
             'KBOT_OPS_POLICY',
@@ -117,6 +119,8 @@ BEGIN
         MINUS
         SELECT column_value AS object_name
           FROM TABLE(sys.odcivarchar2list(
+            'KBOT_OPS_RESOURCE_POOL',
+            'KBOT_OPS_RESOURCE_LEASE',
             'KBOT_OPS_TARGET',
             'KBOT_OPS_TARGET_FACT',
             'KBOT_OPS_POLICY',
@@ -205,7 +209,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_TABLES: AIOps 表集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表: 77 项。');
+        dbms_output.put_line('[通过] AIOps 表: 79 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -436,6 +440,9 @@ BEGIN
             'IX_OPS_REPORT_TASK',
             'IX_OPS_REPORT_TEMPLATE_SCOPE',
             'IX_OPS_RESOURCE_CODE',
+            'IX_OPS_RESOURCE_LEASE_ACTIVE',
+            'IX_OPS_RESOURCE_LEASE_SOURCE',
+            'IX_OPS_RESOURCE_LEASE_TARGET',
             'IX_OPS_RESOURCE_RESP_GROUP',
             'IX_OPS_RESOURCE_SCOPE',
             'IX_OPS_RESP_GROUP_SCOPE',
@@ -753,6 +760,9 @@ BEGIN
             'IX_OPS_REPORT_TASK',
             'IX_OPS_REPORT_TEMPLATE_SCOPE',
             'IX_OPS_RESOURCE_CODE',
+            'IX_OPS_RESOURCE_LEASE_ACTIVE',
+            'IX_OPS_RESOURCE_LEASE_SOURCE',
+            'IX_OPS_RESOURCE_LEASE_TARGET',
             'IX_OPS_RESOURCE_RESP_GROUP',
             'IX_OPS_RESOURCE_SCOPE',
             'IX_OPS_RESP_GROUP_SCOPE',
@@ -927,7 +937,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_INDEXES: AIOps 命名索引集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 命名索引: 298 项。');
+        dbms_output.put_line('[通过] AIOps 命名索引: 301 项。');
     END IF;
     l_issue_count := 0;
     FOR missing_row IN (
@@ -2247,6 +2257,22 @@ BEGIN
             'KBOT_OPS_RESOURCE_DISCOVERY_JOB|RESULT_JSON',
             'KBOT_OPS_RESOURCE_DISCOVERY_JOB|STARTED_AT',
             'KBOT_OPS_RESOURCE_DISCOVERY_JOB|STATUS',
+            'KBOT_OPS_RESOURCE_LEASE|ACQUIRED_AT',
+            'KBOT_OPS_RESOURCE_LEASE|EXECUTION_DEADLINE_AT',
+            'KBOT_OPS_RESOURCE_LEASE|HELD_UNTIL',
+            'KBOT_OPS_RESOURCE_LEASE|LEASE_ID',
+            'KBOT_OPS_RESOURCE_LEASE|POOL_KEY',
+            'KBOT_OPS_RESOURCE_LEASE|RELEASED_AT',
+            'KBOT_OPS_RESOURCE_LEASE|RELEASE_TOKEN_HASH',
+            'KBOT_OPS_RESOURCE_LEASE|RUN_ID',
+            'KBOT_OPS_RESOURCE_LEASE|SOURCE_ID',
+            'KBOT_OPS_RESOURCE_LEASE|SOURCE_KIND',
+            'KBOT_OPS_RESOURCE_LEASE|TARGET_ID',
+            'KBOT_OPS_RESOURCE_POOL|CLEANUP_GRACE_SECONDS',
+            'KBOT_OPS_RESOURCE_POOL|GLOBAL_LIMIT',
+            'KBOT_OPS_RESOURCE_POOL|POOL_KEY',
+            'KBOT_OPS_RESOURCE_POOL|SOURCE_LIMIT',
+            'KBOT_OPS_RESOURCE_POOL|TARGET_LIMIT',
             'KBOT_OPS_RESOURCE_RELATION|ATTRIBUTES_JSON',
             'KBOT_OPS_RESOURCE_RELATION|BUSINESS_SYSTEM_ID',
             'KBOT_OPS_RESOURCE_RELATION|CONFIRMATION_STATUS',
@@ -3486,6 +3512,22 @@ BEGIN
             'KBOT_OPS_RESOURCE_DISCOVERY_JOB|RESULT_JSON',
             'KBOT_OPS_RESOURCE_DISCOVERY_JOB|STARTED_AT',
             'KBOT_OPS_RESOURCE_DISCOVERY_JOB|STATUS',
+            'KBOT_OPS_RESOURCE_LEASE|ACQUIRED_AT',
+            'KBOT_OPS_RESOURCE_LEASE|EXECUTION_DEADLINE_AT',
+            'KBOT_OPS_RESOURCE_LEASE|HELD_UNTIL',
+            'KBOT_OPS_RESOURCE_LEASE|LEASE_ID',
+            'KBOT_OPS_RESOURCE_LEASE|POOL_KEY',
+            'KBOT_OPS_RESOURCE_LEASE|RELEASED_AT',
+            'KBOT_OPS_RESOURCE_LEASE|RELEASE_TOKEN_HASH',
+            'KBOT_OPS_RESOURCE_LEASE|RUN_ID',
+            'KBOT_OPS_RESOURCE_LEASE|SOURCE_ID',
+            'KBOT_OPS_RESOURCE_LEASE|SOURCE_KIND',
+            'KBOT_OPS_RESOURCE_LEASE|TARGET_ID',
+            'KBOT_OPS_RESOURCE_POOL|CLEANUP_GRACE_SECONDS',
+            'KBOT_OPS_RESOURCE_POOL|GLOBAL_LIMIT',
+            'KBOT_OPS_RESOURCE_POOL|POOL_KEY',
+            'KBOT_OPS_RESOURCE_POOL|SOURCE_LIMIT',
+            'KBOT_OPS_RESOURCE_POOL|TARGET_LIMIT',
             'KBOT_OPS_RESOURCE_RELATION|ATTRIBUTES_JSON',
             'KBOT_OPS_RESOURCE_RELATION|BUSINESS_SYSTEM_ID',
             'KBOT_OPS_RESOURCE_RELATION|CONFIRMATION_STATUS',
@@ -3957,7 +3999,7 @@ BEGIN
         dbms_output.put_line('[失败] AIOPS_SCHEMA_COLUMNS: AIOps 表列集合不一致，共 '
                              || l_issue_count || ' 项。');
     ELSE
-        dbms_output.put_line('[通过] AIOps 表列: 1222 项。');
+        dbms_output.put_line('[通过] AIOps 表列: 1238 项。');
     END IF;
 
     l_issue_count := 0;
@@ -4049,19 +4091,19 @@ BEGIN
           FROM KBOT_V_OPS_SCHEMA_VERSION;
 
         IF l_component <> 'AIOPS'
-           OR l_schema_version <> 50
-           OR l_contract_version <> 'aiops-oracle-v50-unified-agent-only' THEN
+           OR l_schema_version <> 51
+           OR l_contract_version <> 'aiops-oracle-v51-resource-governance' THEN
             l_error_count := l_error_count + 1;
             dbms_output.put_line(
                 '[失败] AIOps Schema 版本错误：当前='
                 || l_component || '/' || l_schema_version || '/'
                 || l_contract_version || '，期望=AIOPS/'
-                || '50/aiops-oracle-v50-unified-agent-only'
+                || '51/aiops-oracle-v51-resource-governance'
             );
         ELSE
             dbms_output.put_line(
-                '[通过] Schema 合同：AIOPS/50/'
-                || 'aiops-oracle-v50-unified-agent-only'
+                '[通过] Schema 合同：AIOPS/51/'
+                || 'aiops-oracle-v51-resource-governance'
             );
         END IF;
     EXCEPTION
@@ -4087,10 +4129,10 @@ BEGIN
     END IF;
 
     dbms_output.put_line(
-        '验证通过：77 张表、10 个视图、'
+        '验证通过：79 张表、10 个视图、'
         || '1 个属性图、'
-        || '298 个命名索引、258 个命名约束、'
-        || '1222 个表列；Schema 与当前规范一致。'
+        || '301 个命名索引、258 个命名约束、'
+        || '1238 个表列；Schema 与当前规范一致。'
     );
 END;
 /
