@@ -15,6 +15,8 @@ _DISPLAY_NAMES = {
     "MYSQL": "MySQL",
     "POSTGRESQL": "PostgreSQL",
     "artifact.sql_plan.import": "执行计划（用户材料）",
+    "evidence.sql_plan.controlled_estimate": "受控估算计划（非实际运行计划）",
+    "PLAN_CAPTURE_SOURCE_UNAVAILABLE": "估算计划来源或当前访问权已变化",
     "db.oracle.statement.plan": "Oracle 精确游标缓存计划",
     "db.oracle.statement.bind_metadata": "Oracle 游标绑定元数据（不含值）",
     "CURSOR_PLAN_SOURCE_UNSUPPORTED": "缓存计划来源版本或引擎不匹配",

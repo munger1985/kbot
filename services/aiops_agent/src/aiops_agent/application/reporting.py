@@ -1399,6 +1399,9 @@ def report_presentation(
                 f"{item.get('artifact_id', 'evidence')} · {item.get('content_hash', '未提供哈希')}"
                 for item in list(payload.get("evidence_refs") or ())
             ] or ["未记录可公开的证据索引。"]
+        if kind == "EVIDENCE_APPENDIX":
+            from aiops_agent.application.diagnosis.sql_plans import controlled_plan_appendix
+            body.extend(controlled_plan_appendix(scope.get("sql_plan_assessments", ())))
         if kind not in {"EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"}:
             edited = overrides.get(kind)
             if isinstance(edited, (list, tuple)) and edited:

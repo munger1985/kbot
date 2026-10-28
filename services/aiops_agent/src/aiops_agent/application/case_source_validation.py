@@ -4,7 +4,7 @@ from aiops_agent.playbooks import canonical_hash
 from aiops_agent.application.source_authorization import source_scope_is_current
 
 
-async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None):
+async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None, plan_capture_reader=None):
     relations = await uow.operations_knowledge.get_version_relations(asset_version_id=version_id)
     sources = relations.get("sources") or ()
     if not sources:
@@ -59,9 +59,10 @@ async def validate_case_sources(*, uow, domain_id, version_id, agent_id=None):
             artifact = root
             payload = dict(root.payload_json or {})
         record = payload.get("investigation_record")
-        if record or any(item.get("followup_run_id") or item.get("pagination") for item in payload.get("evidence", ())):
+        if record or any(item.get("followup_run_id") or item.get("pagination") or item.get("sql_plan")
+            or item.get("tool_id") == "evidence.sql_plan.controlled_estimate" for item in payload.get("evidence", ())):
             from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
-            if not await validate_investigation_sources(uow=uow, run=run, payload=payload):
+            if not await validate_investigation_sources(uow=uow, run=run, payload=payload, plan_capture_reader=plan_capture_reader):
                 return False
         if record:
             from aiops_agent.contracts.investigation import InvestigationRecord

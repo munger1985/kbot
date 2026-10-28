@@ -16,9 +16,9 @@ class SqlPlanCaptureVault:
     def __init__(self, *, material_vault):
         self._materials = material_vault
 
-    async def get(self, *, uow, scope, request_id):
+    async def get(self, *, uow, scope, request_id, lock=True):
         row = await uow.managed_credentials.find(**self._materials._scope(scope),
-            namespace=NAMESPACE, credential_kind=KIND, external_key=str(request_id), lock=True)
+            namespace=NAMESPACE, credential_kind=KIND, external_key=str(request_id), lock=lock)
         if row is None or row.status not in {"ACTIVE", "REVOKED"}:
             return None, None
         try:

@@ -43,7 +43,7 @@ from aiops_agent.application.investigation.projection import direct_list_result_
 from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
 from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle, exact_wire, validate_sql_diagnosis
 from aiops_agent.application.sql_selection import selection_ref
-from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, database_cursor_plan
+from aiops_agent.application.diagnosis.sql_plans import sql_plan_upload_fact, database_cursor_plan, controlled_estimate_fact
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
@@ -512,6 +512,17 @@ class DbaEvidenceAssessmentHandler:
                             row_count=1,
                         )
                     )
+                continue
+            if schema_version == "SQL_PLAN_CAPTURE_EVIDENCE.v1":
+                facts.append(controlled_estimate_fact(artifact))
+                continue
+            if schema_version == "SQL_PLAN_CAPTURE_UNAVAILABLE.v1":
+                gaps.append(TurnEvidenceGap(source_id="sql.plan_capture", step_id="controlled-estimate",
+                    code="PLAN_CAPTURE_SOURCE_UNAVAILABLE", detail="估算计划来源或当前访问权已变化，未沿用旧结果；其他可核验证据仍可继续诊断。", retryable=False))
+                continue
+            if schema_version == "SQL_PLAN_CAPTURE_SEARCH.v1":
+                gaps.append(TurnEvidenceGap(source_id="sql.plan_capture", step_id="controlled-estimate",
+                    code="PLAN_CAPTURE_SEARCH_INCOMPLETE", detail="历史计划搜索触及轮次或共享证据预算，未判定是否存在其他可复用计划；不能视为没有计划或要求重复采集同一材料。", retryable=False))
                 continue
             if schema_version == "USER_UPLOAD_EXTRACT.v1":
                 if (artifact.get("payload") or {}).get("extraction_error") == "SQL_PLAN_IMPORT_INVALID":
@@ -2972,7 +2983,8 @@ class DbaAnswerComposeHandler:
                         schema_version="AIOPS_TABLE_BLOCK.v1",
                         payload={
                             "title": (
-                                primary["title"] if primary else fact.tool_id
+                                primary["title"] if primary else (
+                                    display_name(fact.tool_id) if fact.tool_id == "evidence.sql_plan.controlled_estimate" else fact.tool_id)
                             ),
                             "columns": columns,
                             "rows": rows,

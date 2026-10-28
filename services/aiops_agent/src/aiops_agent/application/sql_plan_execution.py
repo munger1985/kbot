@@ -8,11 +8,13 @@ import secrets
 from uuid import UUID
 
 from aiops_agent.application.configuration.common import ConfigurationScope
-from aiops_agent.application.errors import AIOpsApplicationError, resource_not_found, state_conflict
+from aiops_agent.application.errors import AIOpsApplicationError, state_conflict
 from aiops_agent.application.execution_fence import ExecutionFenceError
 from aiops_agent.application.resource_governance import TERMINAL_RUN_STATES, reserve_readonly_resource, token_hash
 from aiops_agent.application.sql_plan_captures import PREFIX
-from aiops_agent.application.sql_plan_materials import MATERIAL_PREFIX, MATERIAL_SCHEMA, _source_rows
+from aiops_agent.application.sql_plan_results import (
+    HANDLER, RESULT_KEY, RESULT_SCHEMA, WORKFLOW, SqlPlanCaptureResultReader, task_binding as _task_binding,
+)
 from aiops_agent.domain.evidence.sql_plan_capture import source_sql_text
 from aiops_agent.domain.operations import normalize_task_type
 from aiops_agent.domain.operations.budget import task_deadline
@@ -22,18 +24,6 @@ from platform_core.contracts.aiops.sql_plan_execution import (
     SqlPlanCaptureExchange, SqlPlanCaptureResult, SqlPlanCaptureExecutionView,
 )
 from platform_core.identity import uuid7
-
-
-WORKFLOW = "SQL_PLAN_CAPTURE"
-RESULT_SCHEMA = "SQL_PLAN_CAPTURE_RESULT.v1"
-RESULT_KEY = "sql-plan-capture:result"
-HANDLER = "sql.plan-capture"
-
-
-def _task_binding(task):
-    return {name: getattr(task, name) for name in ("task_key", "task_type", "handler_id", "handler_version",
-        "input_schema_version", "output_schema_version", "depends_on_json", "input_artifacts_json",
-        "max_attempts", "timeout_seconds")}
 
 
 def owner_scope(run):
@@ -48,6 +38,7 @@ def owner_scope(run):
 class SqlPlanCaptureExecutionService:
     def __init__(self, *, captures, codec, credentials, audience, clock=None):
         self._captures = captures
+        self.results = SqlPlanCaptureResultReader(materials=captures._materials, vault=captures._vault)
         self._uow_factory = captures._uow_factory
         self._codec = codec
         self._credentials = credentials
@@ -105,83 +96,18 @@ class SqlPlanCaptureExecutionService:
             return self._captures._view(protected["request"], "APPROVED", protected["decision"], execution)
 
     async def _scheduled(self, *, uow, scope, source, request_id):
-        row, protected = await self._captures._vault.get(uow=uow, scope=scope, request_id=request_id)
-        request = dict((protected or {}).get("request") or {})
-        execution = dict((protected or {}).get("execution") or {})
-        if (request.get("ops_run_id") != str(source.ops_run_id)
-            or request.get("requested_by") != str(source.actor_id)
-            or request.get("request_id") != str(request_id)
-            or execution.get("source_run_id") != str(source.ops_run_id)
-            or execution.get("request_id") != str(request_id)):
-            # 在读取或锁定后台对象前拒绝跨源引用；不泄露他人请求是否存在。
-            raise resource_not_found("计划采集后台运行")
-        try:
-            capture_id, task_id = UUID(execution["capture_run_id"]), UUID(execution["capture_task_id"])
-        except (KeyError, ValueError, TypeError):
-            raise resource_not_found("计划采集后台运行") from None
-        run = await uow.runs.get_run(ops_run_id=capture_id, lock=True)
-        task = await uow.runs.get_task(ops_task_id=task_id, lock=True)
-        info = dict(getattr(run, "plan_snapshot_json", None) or {}).get("sql_plan_capture") or {}
-        if (run is None or task is None or run.workflow_kind != WORKFLOW
-            or self._captures._materials._vault._scope(source) != self._captures._materials._vault._scope(run)
-            or any(str(getattr(run, key)) != str(getattr(source, key)) for key in
-                ("target_id", "actor_id", "agent_id", "agent_version_id"))
-            or request.get("ops_run_id") != str(source.ops_run_id)
-            or request.get("request_id") != str(request_id)
-            or execution.get("source_run_id") != str(source.ops_run_id)
-            or execution.get("request_id") != str(request_id)
-            or info != {key: execution.get(key) for key in info}
-            or execution.get("plan_sha256") != canonical_hash(run.plan_snapshot_json)
-            or execution.get("task_sha256") != canonical_hash(_task_binding(task))
-            or task.ops_run_id != run.ops_run_id or task.handler_id != HANDLER
-            or execution.get("capture_task_id") != str(task.ops_task_id)
-            or run.deadline_at is None or execution.get("deadline_at") != run.deadline_at.isoformat()
-            or execution.get("approval_sha256") != canonical_hash({"request": request, "decision": protected["decision"]})
-            or str(run.source_result_artifact_id) != request.get("source", {}).get("source_artifact_id")):
-            raise state_conflict("计划采集后台引用无法复核")
-        return run, task, protected
+        return await self.results.scheduled(uow=uow, scope=scope, source=source, request_id=request_id)
 
     async def status(self, *, scope, run_id, request_id, agent_ids=()):
         async with self._uow_factory() as uow:
             source = await self._captures._run(uow, scope, run_id, owner=True, agent_ids=agent_ids)
-            # 不使用已过期的审批或代表参数作为结果读取权；仍复核当前Target/Agent只读访问。
-            target, _ = await self._captures._materials._access(uow, source)
-            run, task, protected = await self._scheduled(uow=uow, scope=scope, source=source, request_id=request_id)
-            frozen = protected["request"]
-            material = await uow.runs.get_artifact_by_key(ops_run_id=source.ops_run_id,
-                artifact_key=MATERIAL_PREFIX + frozen["material_id"])
-            original = await uow.runs.get_artifact(artifact_id=UUID(frozen["source"]["source_artifact_id"]))
-            if (material is None or material.schema_version != MATERIAL_SCHEMA
-                or material.content_hash != canonical_hash(material.payload_json)
-                or material.content_hash != frozen["material_receipt_hash"]
-                or material.payload_json.get("source") != frozen["source"]
-                or original is None or original.content_hash != material.payload_json.get("source_hash")
-                or original.security_level != frozen["security_level"]
-                or frozen["source"] not in [item.model_dump(mode="json") for item in _source_rows(original, source, target.db_type)]):
-                raise state_conflict("计划采集原始SQL来源无法复核")
-            artifact = await uow.runs.get_artifact_by_key(ops_run_id=run.ops_run_id, artifact_key=RESULT_KEY)
-            result = None
-            if artifact is not None:
-                execution = protected["execution"]
-                provenance = dict(artifact.provenance_json or {})
-                if (artifact.schema_version != RESULT_SCHEMA or artifact.trust_level != "SOURCE_VERIFIED"
-                    or artifact.ops_run_id != run.ops_run_id
-                    or artifact.security_level < protected["request"]["security_level"]
-                    or artifact.content_hash != canonical_hash(artifact.payload_json)
-                    or artifact.content_hash != execution.get("result_sha256")
-                    or provenance.get("producer") != "aiops-db-executor"
-                    or provenance.get("verification") != "EXECUTOR_REPORTED"
-                    or provenance.get("source_run_id") != str(source.ops_run_id)
-                    or provenance.get("approval_sha256") != execution["approval_sha256"]):
-                    raise state_conflict("计划采集结果无法独立复核")
-                result = SqlPlanCaptureResult.model_validate(artifact.payload_json)
-                if result.database_type != protected["request"]["source"]["database_type"]:
-                    raise state_conflict("计划采集结果引擎不一致")
+            verified = await self.results.read(uow=uow, scope=scope, source=source, request_id=request_id, lock=True)
+            run, task = verified.run, verified.task
             view = SqlPlanCaptureExecutionView(request_id=request_id, capture_run_id=run.ops_run_id,
                 phase=self._phase(run, task),
                 run_status=run.status, cancel_requested=run.cancel_requested_at is not None,
                 can_cancel=run.status not in TERMINAL_RUN_STATES and run.cancel_requested_at is None,
-                result=result)
+                result=verified.result)
             await uow.commit()
             return view
 

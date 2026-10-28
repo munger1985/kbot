@@ -192,6 +192,7 @@ class TurnPlanningService:
         monitoring_snapshot_builder=None,
         monitoring_profile_catalog=None,
         conversation_input_resolver: ConversationInputResolver | None = None,
+        plan_capture_reader=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._investigation_reasoner = investigation_reasoner
@@ -202,6 +203,7 @@ class TurnPlanningService:
         self._monitoring_snapshot_builder = monitoring_snapshot_builder
         self._monitoring_profile_catalog = monitoring_profile_catalog
         self._conversation_input_resolver = conversation_input_resolver
+        self._plan_capture_reader = plan_capture_reader
 
     async def execute(self, payload: dict) -> dict:
         """执行首轮规划，并把未预期异常转换为可审计的阶段错误。"""
@@ -438,6 +440,9 @@ class TurnPlanningService:
                 context, task_frame=investigation.task_frame.model_dump(mode="json"),
             ))
         context = replace(context, future_observation_evidence=await self._load_future_observation_evidence(context))
+        context = replace(context, sql_plan_capture_evidence=await self._load_sql_plan_capture_evidence(
+            context, task_frame=investigation.task_frame.model_dump(mode="json"),
+        ))
         compiled = self._task_compiler.compile(
             playbook_plan,
             monitoring_binding_ids=monitoring_binding_ids,
@@ -1980,6 +1985,52 @@ class TurnPlanningService:
                 uow=uow, turn=turn, run=run, prior_sql=context.prior_sql_evidence,
             )
 
+    async def _load_sql_plan_capture_evidence(self, context, *, task_frame):
+        from aiops_agent.application.investigation.sql_plan_evidence import load_sql_plan_capture_evidence
+        reader = getattr(self, "_plan_capture_reader", None)
+        if reader is None:
+            return ()
+        async with self._uow_factory() as uow:
+            turn = await uow.turns.get_turn(domain_id=context.domain_id, turn_id=context.turn_id)
+            run = await uow.runs.get_run(ops_run_id=context.ops_run_id)
+            if turn is None or run is None or run.status != "RUNNING":
+                return ()
+            return await load_sql_plan_capture_evidence(uow=uow, turn=turn, run=run, reader=reader,
+                task_frame=task_frame, prior_sql=context.prior_sql_evidence, future=context.future_observation_evidence)
+
+    async def _persist_sql_plan_capture_evidence(self, *, uow, run, turn, entries):
+        from aiops_agent.application.investigation.sql_plan_evidence import ARTIFACT_TYPE, SCHEMA, validate_reused_plan_capture
+        artifacts = []
+        for entry in entries:
+            if entry.get("schema_version") == "SQL_PLAN_CAPTURE_SEARCH.v1":
+                artifact = self._artifact(ops_run_id=run.ops_run_id, artifact_key=entry["artifact_key"],
+                    artifact_type="SQL_PLAN_CAPTURE_SEARCH", schema_version=entry["schema_version"],
+                    payload=entry["payload"], producer="aiops.sql-plan-capture-linker", trust_level="SOURCE_VERIFIED")
+                await uow.runs.add_artifact(artifact)
+                artifacts.append(artifact)
+                continue
+            artifact = self._artifact(ops_run_id=run.ops_run_id, artifact_key=entry["artifact_key"],
+                artifact_type=ARTIFACT_TYPE, schema_version=SCHEMA, payload=entry["payload"],
+                producer="aiops.sql-plan-capture-linker", trust_level="SOURCE_VERIFIED")
+            artifact.security_level = entry["security_level"]
+            if not await validate_reused_plan_capture(uow=uow, run=run, artifact=artifact, turn=turn,
+                reader=getattr(self, "_plan_capture_reader", None)):
+                artifact.schema_version = "SQL_PLAN_CAPTURE_UNAVAILABLE.v1"
+                artifact.payload_json = {"code": "PLAN_CAPTURE_SOURCE_UNAVAILABLE"}
+                artifact.content_hash = canonical_hash(artifact.payload_json)
+                artifact.byte_size = len(json.dumps(artifact.payload_json).encode())
+            await uow.runs.add_artifact(artifact)
+            artifacts.append(artifact)
+            if artifact.schema_version == SCHEMA:
+                await uow.turns.add_evidence(OpsTurnEvidenceEntity(
+                    turn_evidence_id=uuid7(), turn_id=turn.turn_id, artifact_id=artifact.artifact_id,
+                    source_kind="RUN", evidence_kind="SQL_PLAN_ESTIMATE", confidence=1,
+                    evidence_role="CONTEXT", measurement_semantics="NOT_APPLICABLE",
+                    observed_at=datetime.fromisoformat(entry["payload"]["document"]["observed_at"]),
+                    freshness_status="UNKNOWN", usage_reason="受控估算计划；不证明业务实际执行、原解析环境或参数代表性",
+                    linked_by=run.actor_id))
+        return tuple(artifacts)
+
     async def _persist_future_observation_evidence(self, *, uow, run, turn, entries):
         """与本轮计划同事务冻结可重放来源，并登记真实采集时间。"""
         artifacts = []
@@ -2024,6 +2075,7 @@ class TurnPlanningService:
             "turn-user-input:1",
             "turn-input-analysis:1",
             *(item["artifact_key"] for item in context.future_observation_evidence),
+            *(item["artifact_key"] for item in getattr(context, "sql_plan_capture_evidence", ())),
             *(
                 f"turn-upload-extract:{upload.item_no}"
                 for upload in context.resolved_uploads
@@ -4577,6 +4629,9 @@ class TurnPlanningService:
 
             await self._persist_future_observation_evidence(
                 uow=uow, run=run, turn=turn, entries=context.future_observation_evidence,
+            )
+            await self._persist_sql_plan_capture_evidence(
+                uow=uow, run=run, turn=turn, entries=getattr(context, "sql_plan_capture_evidence", ()),
             )
 
             revision = OpsInvestigationRevisionEntity(

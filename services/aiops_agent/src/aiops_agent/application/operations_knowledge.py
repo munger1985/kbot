@@ -534,6 +534,7 @@ class OperationsKnowledgeService:
         model_catalogs: dict[int, AIModelConfigClient] | None = None,
         structured_model=None,
         prompt_registry=None,
+        plan_capture_reader=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._kc = knowledge_core
@@ -541,6 +542,7 @@ class OperationsKnowledgeService:
         self._llm_model_catalog = self._model_catalogs.get(int(ModelCategory.LLM))
         self._structured_model = structured_model
         self._prompt_registry = prompt_registry
+        self._plan_capture_reader = plan_capture_reader
 
     @staticmethod
     def _actor(context: AuthContext) -> str:
@@ -1306,7 +1308,8 @@ class OperationsKnowledgeService:
                     break
                 record = dict(artifact.payload_json["investigation_record"])
                 from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
-                if not await validate_investigation_sources(uow=uow, run=run, payload=dict(artifact.payload_json or {})):
+                if not await validate_investigation_sources(uow=uow, run=run, payload=dict(artifact.payload_json or {}),
+                    plan_capture_reader=getattr(self, "_plan_capture_reader", None)):
                     break
                 if (
                     str(record.get("target_id")) != str(run.target_id)
@@ -1841,6 +1844,7 @@ class OperationsKnowledgeService:
                         raise self._state_conflict("效果报告内容哈希不一致")
                     profile = await profile_from_effect_report(
                         uow=uow, domain_id=domain_id, report=report, content=content, sources=report_sources,
+                        plan_capture_reader=getattr(self, "_plan_capture_reader", None),
                     )
                     if profile is not None:
                         result = {"eligible": True, "reasons": [], "case_kind": profile.case_kind}
@@ -2629,6 +2633,7 @@ class OperationsKnowledgeService:
             effect_profile = await profile_from_effect_report(
                 uow=uow, domain_id=domain_id, report=report,
                 content=report_content, sources=report_sources,
+                plan_capture_reader=getattr(self, "_plan_capture_reader", None),
             )
             eligibility = {"eligible": True} if effect_profile is not None else _diagnosis_case_eligibility(
                 report=report, report_content=report_content,
@@ -3503,7 +3508,8 @@ class OperationsKnowledgeService:
                     asset_version_id=asset_version_id
                 )
                 if asset.asset_kind == "DIAGNOSIS_CASE":
-                    if not await validate_case_sources(uow=uow, domain_id=domain_id, version_id=asset_version_id):
+                    if not await validate_case_sources(uow=uow, domain_id=domain_id, version_id=asset_version_id,
+                        plan_capture_reader=getattr(self, "_plan_capture_reader", None)):
                         raise self._state_conflict("案例来源已更正、撤权或无法核验，必须重新审核")
                     profile = DiagnosisCaseProfile.model_validate(version.profile_json)
                     if profile.redaction is None:
@@ -3689,6 +3695,7 @@ class OperationsKnowledgeService:
                     if not await validate_case_sources(
                         uow=uow, domain_id=domain_id,
                         version_id=version.asset_version_id, agent_id=agent_id,
+                        plan_capture_reader=getattr(self, "_plan_capture_reader", None),
                     ):
                         continue
                 if str(asset.asset_kind) == "DIAGNOSIS_CASE" and not await validate_case_effect(
@@ -3795,6 +3802,7 @@ class OperationsKnowledgeService:
             for asset, version, index in current_candidates:
                 if str(asset.asset_kind) == "DIAGNOSIS_CASE" and not await validate_case_sources(
                     uow=uow, domain_id=domain_id, version_id=version.asset_version_id, agent_id=agent_id,
+                    plan_capture_reader=getattr(self, "_plan_capture_reader", None),
                 ):
                     continue
                 if str(asset.asset_kind) == "DIAGNOSIS_CASE" and not await validate_case_effect(
@@ -3935,6 +3943,7 @@ class OperationsKnowledgeService:
                 return True
             valid = await validate_case_sources(
                 uow=uow, domain_id=domain_id, version_id=version.asset_version_id,
+                plan_capture_reader=getattr(self, "_plan_capture_reader", None),
             )
             if valid:
                 valid = await validate_case_effect(uow=uow, domain_id=domain_id, profile=version.profile_json)

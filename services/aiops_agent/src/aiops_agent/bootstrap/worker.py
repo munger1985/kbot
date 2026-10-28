@@ -141,10 +141,19 @@ def create_aiops_worker_probe(
             model_client=model_client,
             environment=resolved.environment,
         )
+        credential_cipher = ManagedCredentialCipher.from_environment()
         managed_credential_service = AIOpsManagedCredentialService(
             uow_factory=runtime.uow_factory,
-            cipher=ManagedCredentialCipher.from_environment(),
+            cipher=credential_cipher,
         )
+        from aiops_agent.application.sql_plan_materials import SqlPlanMaterialService
+        from aiops_agent.application.sql_plan_material_vault import SqlPlanMaterialVault
+        from aiops_agent.application.sql_plan_capture_vault import SqlPlanCaptureVault
+        from aiops_agent.application.sql_plan_results import SqlPlanCaptureResultReader
+        plan_material_vault = SqlPlanMaterialVault(cipher=credential_cipher)
+        plan_capture_reader = SqlPlanCaptureResultReader(
+            materials=SqlPlanMaterialService(uow_factory=runtime.uow_factory, vault=plan_material_vault),
+            vault=SqlPlanCaptureVault(material_vault=plan_material_vault))
         secret_store = ConfiguredSecretStore(
             managed_credentials=managed_credential_service,
         )
@@ -214,6 +223,7 @@ def create_aiops_worker_probe(
             session=client_session,
         )
         operations_knowledge_service = OperationsKnowledgeService(
+            plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
             knowledge_core=knowledge_core_client,
             model_catalogs=model_catalogs,
@@ -271,6 +281,7 @@ def create_aiops_worker_probe(
             max_response_bytes=resolved.monitoring.max_response_bytes,
         )
         runtime_service = AIOpsRuntimeService(
+            plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
             blueprint_registry=create_kernel_blueprint_registry(),
             handler_registry=handler_registry,
@@ -380,6 +391,7 @@ def create_aiops_worker_probe(
                     },
                 ),
                 turn_planning_service=TurnPlanningService(
+                    plan_capture_reader=plan_capture_reader,
                     uow_factory=runtime.uow_factory,
                     investigation_reasoner=InvestigationReasoner(
                         diagnosis_model_client,

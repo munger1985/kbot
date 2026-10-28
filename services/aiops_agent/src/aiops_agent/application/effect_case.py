@@ -14,7 +14,7 @@ from aiops_agent.contracts.investigation import InvestigationRecord
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 
 
-async def profile_from_effect_report(*, uow, domain_id, report, content, sources):
+async def profile_from_effect_report(*, uow, domain_id, report, content, sources, plan_capture_reader=None):
     if report.report_type != "COMPARISON" or not content.get("scope", {}).get("comparison_result_artifact_id"):
         return None
     if not report.is_current or report.status != "READY":
@@ -41,7 +41,7 @@ async def profile_from_effect_report(*, uow, domain_id, report, content, sources
     for source in (artifact, root, snapshot_artifact):
         if refs.get(str(source.artifact_id)) != source.content_hash or sha256_json(source.payload_json) != source.content_hash:
             raise state_conflict("效果案例的原始来源未纳入冻结报告")
-    if not await validate_investigation_sources(uow=uow, run=run, payload=root.payload_json):
+    if not await validate_investigation_sources(uow=uow, run=run, payload=root.payload_json, plan_capture_reader=plan_capture_reader):
         raise state_conflict("调查原始证据复核未通过")
     record = InvestigationRecord.model_validate(root.payload_json.get("investigation_record"))
     if record.run_id != str(run.ops_run_id) or record.target_id != str(run.target_id):

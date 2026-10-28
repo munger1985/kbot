@@ -41,6 +41,7 @@ class TurnPlanningContext:
     source_run_evidence: dict | None = None
     prior_sql_evidence: dict | None = None
     future_observation_evidence: tuple[dict, ...] = ()
+    sql_plan_capture_evidence: tuple[dict, ...] = ()
     parent_investigation: dict | None = None
     raw_uploads: tuple[ConversationUploadSource, ...] = ()
     resolved_uploads: tuple[ResolvedConversationUpload, ...] = ()

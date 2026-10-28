@@ -117,17 +117,36 @@ def assess_sql_plans(*, database_type, subject, evidence):
     for fact in plans[:4]:
         document = fact.sql_plan
         native = document.origin == "DATABASE_CURSOR"
+        estimate = document.origin == "CONTROLLED_ESTIMATE"
         identity_match = _match(document.subject, subject, required) if document.database_type == database_type else "MISMATCH"
         physical_match = _match(document.physical_identity, expected_physical, _PHYSICAL_KEYS[database_type]) if document.database_type == database_type else "MISMATCH"
         if native and document.database_type == database_type:
             identity_match = "SOURCE_MATCH" if identity_match == "DECLARED_MATCH" else identity_match
             physical_match = cursor_physical_match(document.physical_identity, expected_physical, document.subject, subject)
+        if estimate and document.database_type == database_type:
+            from aiops_agent.domain.evidence.sql_plan_capture import source_sql_text
+            from aiops_agent.playbooks import canonical_hash
+            # 完整统计主体相同仍不够；Query ID/Digest碰撞、截断或文本变化不得建立计划匹配。
+            source_texts = []
+            if anchor is not None:
+                names = [str(column.get("name") or "").lower() for column in anchor.columns]
+                for row in anchor.rows[:256]:
+                    if len(row) == len(names):
+                        fields = dict(zip(names, row, strict=True))
+                        if _match(fields, subject, required) == "DECLARED_MATCH":
+                            text = source_sql_text(fields, database_type)
+                            if text is not None:
+                                source_texts.append(canonical_hash(text))
+            if identity_match == "DECLARED_MATCH":
+                identity_match = ("SOURCE_MATCH" if source_texts and all(value == document.source_sql_sha256 for value in source_texts)
+                    else "MISMATCH" if source_texts else "INCOMPLETE")
+            physical_match = "SOURCE_MATCH" if physical_match == "DECLARED_MATCH" else physical_match
         time_relation = "UNKNOWN"
-        plan_time = document.observed_at if native else document.declared_captured_at
+        plan_time = document.observed_at if native or estimate else document.declared_captured_at
         if anchor and plan_time:
             try:
                 age = abs((datetime.fromisoformat(anchor.captured_at.replace("Z", "+00:00")) - datetime.fromisoformat(plan_time)).total_seconds())
-                time_relation = ("SOURCE_NEAR_OBSERVATION" if native else "DECLARED_NEAR_OBSERVATION") if age <= 300 else "HISTORICAL_OR_DIFFERENT_TIME"
+                time_relation = ("SOURCE_NEAR_OBSERVATION" if native or estimate else "DECLARED_NEAR_OBSERVATION") if age <= 300 else "HISTORICAL_OR_DIFFERENT_TIME"
             except (ValueError, TypeError):
                 pass
         results.append(SqlPlanAssessment(evidence_ref=fact.evidence_ref, anchor_ref=anchor.evidence_ref if anchor else None, database_type=database_type,
@@ -140,6 +159,11 @@ def assess_sql_plans(*, database_type, subject, evidence):
                 "Root 的行容器需显式核验；RAC 远端实例不可借用本地连接启动代次。",
                 "缺失或零启动行源不能当作实际执行；LAST 各节点也不保证来自一个可定位的完整执行。",
             ) if native else (
+                "来源为独立审批的受控估算；节点仅证明采集环境和所提交参数下的优化器估算，不证明生产实际路径。",
+                "原解析环境和参数代表性未核验；同主体、同SQL文本哈希、同物理身份或相近时点均不能代替运行时证明。",
+                "不能从估算计划生成实际行数偏差、实际耗时或根因确认；成本是优化器单位，不是毫秒。",
+                "Oracle来源游标标识不是本次估算计划哈希，估算不证明参数窥探；MySQL对象名可能是别名。",
+            ) if estimate else (
                 "来源为用户材料；身份或时间声明一致不等于来源已核验，不可据此确认生产访问路径或原因。",
                 "参数仅保留类型；代表性、环境以及与某次执行的绑定关系均未核验。",
                 "估算行数偏差按引擎的每循环/每启动语义计算；零循环或零估算不计算比率。",

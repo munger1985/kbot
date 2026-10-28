@@ -194,6 +194,9 @@ def create_aiops_api(
             uow_factory=runtime.uow_factory, materials=app.state.sql_plan_material_service,
             approval_enabled=resolved.management.agent_execution_enabled,
         )
+        from aiops_agent.application.sql_plan_results import SqlPlanCaptureResultReader
+        plan_capture_reader = SqlPlanCaptureResultReader(materials=app.state.sql_plan_material_service,
+            vault=app.state.sql_plan_capture_service._vault)
         agent_catalog = AIOpsAgentValidator(
             app.state.agent_service,
             model_client=model_client,
@@ -314,6 +317,7 @@ def create_aiops_api(
             session=client_session,
         )
         app.state.operations_knowledge_service = OperationsKnowledgeService(
+            plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
             knowledge_core=knowledge_core_client,
             model_catalogs=model_catalogs,
@@ -365,6 +369,7 @@ def create_aiops_api(
         app.state.diagnostic_source_secret_store = secret_store
         app.state.metric_catalog = metric_catalog
         app.state.aiops_runtime_service = AIOpsRuntimeService(
+            plan_capture_reader=plan_capture_reader,
             uow_factory=runtime.uow_factory,
             blueprint_registry=create_kernel_blueprint_registry(),
             handler_registry=handler_registry,

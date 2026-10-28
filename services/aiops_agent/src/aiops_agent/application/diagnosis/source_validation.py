@@ -12,11 +12,12 @@ from aiops_agent.playbooks import canonical_hash
 from aiops_agent.application.investigation.future_observation_evidence import validate_future_observation_facts
 from aiops_agent.application.diagnosis.source_history_validation import validate_source_history_facts
 from aiops_agent.application.diagnosis.sql_plans import (
-    sql_plan_upload_fact, database_cursor_plan, SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID,
+    sql_plan_upload_fact, database_cursor_plan, controlled_estimate_fact,
+    SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID, CONTROLLED_PLAN_TOOL_ID,
 )
 
 
-async def validate_investigation_sources(*, uow, run, payload):
+async def validate_investigation_sources(*, uow, run, payload, plan_capture_reader=None):
     if not await validate_source_history_facts(uow=uow, run=run, payload=payload):
         return False
     if not await validate_future_observation_facts(uow=uow, run=run, payload=payload):
@@ -28,7 +29,7 @@ async def validate_investigation_sources(*, uow, run, payload):
         return False
     if (record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs")
             and not record_payload.get("sql_plan_assessments")
-            and not any(item.get("sql_plan") or item.get("tool_id") in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID} for item in payload.get("evidence", ()))
+            and not any(item.get("sql_plan") or item.get("tool_id") in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID, CONTROLLED_PLAN_TOOL_ID} for item in payload.get("evidence", ()))
             and not record_payload.get("access_gaps")
             and not any(item.get("pagination") for item in payload.get("evidence", ()))
             and not any(item.get("source_pagination") for item in payload.get("evidence", ()))
@@ -55,7 +56,7 @@ async def validate_investigation_sources(*, uow, run, payload):
         used.update(fact.evidence_ref for fact in facts if fact.object_access or fact.pagination is not None)
         used.update(fact.evidence_ref for fact in facts if fact.provenance is not None and fact.provenance.native_lineage is not None)
         used.update(fact.evidence_ref for fact in facts if fact.tool_id in native_mapping_tool_ids() and fact.source_id != "prior_turn.sql_observation")
-        used.update(fact.evidence_ref for fact in facts if fact.sql_plan is not None or fact.tool_id in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID})
+        used.update(fact.evidence_ref for fact in facts if fact.sql_plan is not None or fact.tool_id in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID, CONTROLLED_PLAN_TOOL_ID})
         used.update(plan.anchor_ref for plan in (record.sql_plan_assessments if record is not None else ()) if plan.anchor_ref is not None)
         used.update(ref for plan in (record.sql_plan_assessments if record is not None else ()) for ref in plan.bind_metadata_refs)
         # 多主体图可能没有可建立的对象边；其已确认语句判断仍须回查原工具，而非仅信任冻结副本。
@@ -69,6 +70,16 @@ async def validate_investigation_sources(*, uow, run, payload):
             if fact.evidence_ref not in used:
                 continue
             identity = str(fact.artifact_id)
+            if fact.tool_id == CONTROLLED_PLAN_TOOL_ID or fact.sql_plan is not None and fact.sql_plan.origin == "CONTROLLED_ESTIMATE":
+                from aiops_agent.application.investigation.sql_plan_evidence import validate_reused_plan_capture
+                artifact = await uow.runs.get_artifact(artifact_id=UUID(identity))
+                if artifact is None or not await validate_reused_plan_capture(
+                    uow=uow, run=run, artifact=artifact, reader=plan_capture_reader):
+                    return False
+                expected = controlled_estimate_fact({"artifact_id": identity, "payload": artifact.payload_json})
+                if expected.model_dump(mode="json") != fact.model_dump(mode="json"):
+                    return False
+                continue
             if (fact.sql_plan is not None and fact.sql_plan.origin == "USER_UPLOAD") or fact.tool_id == SQL_PLAN_TOOL_ID:
                 artifact = await uow.runs.get_artifact(artifact_id=UUID(identity))
                 if (artifact is None or str(artifact.ops_run_id) != str(run.ops_run_id)

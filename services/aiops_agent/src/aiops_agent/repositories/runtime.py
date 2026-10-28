@@ -389,6 +389,16 @@ class OpsRunRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def list_plan_capture_results(self, *, ops_run_id: UUID, limit: int = 17) -> list[OpsArtifactEntity]:
+        """只取原诊断Run的有界权威计划回执镜像；应用层仍须独立复核。"""
+        self._check_active()
+        statement = (select(OpsArtifactEntity).where(
+            OpsArtifactEntity.ops_run_id == ops_run_id,
+            OpsArtifactEntity.schema_version == "SQL_PLAN_CAPTURE_RESULT.v1",
+            OpsArtifactEntity.artifact_key.startswith("sql-plan-capture:result:"),
+        ).order_by(OpsArtifactEntity.artifact_key.desc()).limit(min(max(limit, 1), 17)))
+        return list((await self._session.execute(statement)).scalars())
+
     async def list_effect_artifacts(self, *, domain_id, target_id, agent_id, actor_id, ops_run_id, proposal_id, limit=50):
         """限定域和目标；同 Agent 复核及本人生成的窗口仍需应用层逐条重验。"""
         self._check_active()

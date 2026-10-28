@@ -58,6 +58,15 @@ class TurnEvidenceFact(BaseModel):
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.tool_id == "evidence.sql_plan.controlled_estimate" or self.sql_plan is not None and self.sql_plan.origin == "CONTROLLED_ESTIMATE":
+            if (self.sql_plan is None or self.sql_plan.origin != "CONTROLLED_ESTIMATE"
+                or self.tool_id != "evidence.sql_plan.controlled_estimate" or self.source_id != "sql.plan_capture"
+                or self.trust_level != "SOURCE_VERIFIED" or self.measurement_semantics != "NOT_APPLICABLE"
+                or self.provenance is None or self.followup_run_id is not None
+                or self.sql_plan.observed_at != self.captured_at or self.row_count != len(self.sql_plan.nodes)
+                or self.row_count != len(self.rows) or self.truncated
+                or self.sql_plan.physical_identity != dict(self.provenance.physical_identity)):
+                raise ValueError("受控估算必须保留独立来源、完整节点和采集时点，不得伪装为实际运行")
         if self.sql_plan is not None and self.sql_plan.origin == "USER_UPLOAD" and (
             self.trust_level != "USER_PROVIDED" or self.tool_id != "artifact.sql_plan.import"
             or self.measurement_semantics != "NOT_APPLICABLE" or self.provenance is not None

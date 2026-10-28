@@ -153,7 +153,7 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "trust_level": fact.trust_level,
             "measurement_semantics": str(fact.measurement_semantics),
             "captured_at": fact.captured_at,
-            "historical": fact.source_id == "prior_turn.sql_observation" or fact.followup_run_id is not None,
+            "historical": fact.source_id in {"prior_turn.sql_observation", "sql.plan_capture"} or fact.followup_run_id is not None,
             "followup_run_id": str(fact.followup_run_id) if fact.followup_run_id else None,
             "columns": list(fact.columns),
             "records": records,
@@ -239,6 +239,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "catalog_index_is_not_plan_usage": True,
             "catalog_candidates_are_not_name_resolution": True,
             "diagnostic_environment_is_not_application_environment": True,
+            "controlled_estimate_is_not_production_execution": True,
+            "optimizer_cost_is_not_elapsed_time": True,
         },
     }
 

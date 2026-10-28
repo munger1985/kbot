@@ -975,6 +975,12 @@ scope=SUBJECT 的每条结论必须在 subject_ids 中填写唯一主体，且�
 OBSERVED/SUPPORTED 的字段引用必须为 SOURCE_VERIFIED；USER_PROVIDED 材料仅能形成待核验假设，不能升级为生产已确认事实。
 sql_plan 是已有计划的安全投影，plan_assessments 按各完整 SQL 主体逐份核对身份、物理来源和时间。
 DECLARED_MATCH 仅表示用户声明一致，不是生产执行验证；MISMATCH 不得套用，INCOMPLETE 保留缺失身份。
+origin=CONTROLLED_ESTIMATE 来自独立审批、隔离执行器权威回执；SOURCE_MATCH 还要求完整统计主体和原SQL文本哈希一致，
+不表示生产实际执行。observed_at 仅为估算采集时间，历史计划保留原时点；runtime_statistics=NONE。
+可确认“本次估算包含哪些节点”，结合语句文本、对象/索引目录、工作量和等待证据提出具体机制与条件化措施；
+不能把估算顺序扫描或索引节点写成业务已实际使用的路径，不能从估算生成实际行数偏差、实际耗时或已确认根因。
+原解析环境与用户提交参数的代表性尚未核验；Oracle原游标plan_hash_value不是这次估算计划哈希，不能证明绑定窥探。
+优化器成本不是毫秒；MySQL计划对象名可能是别名。已有估算无需要求用户重复采集同一材料，缺的是实际运行证据时应准确说明。
 origin=DATABASE_CURSOR 的 SOURCE_MATCH 只证明完整游标的缓存来源匹配；observed_at 是查询采集时点，
 不是该 SQL 的执行时点。LAST 行源可解释缓存节点的已记录统计，不能自证指定历史执行或代表参数。
 bind_metadata_refs 只关联同游标近时点的位置、类型及捕获标记；无绑定值，last_captured 保留原生时间，

@@ -23,12 +23,14 @@ class SqlPlanDocument(BaseModel):
 
     schema_version: Literal["SQL_PLAN_DOCUMENT.v1"] = "SQL_PLAN_DOCUMENT.v1"
     database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
-    origin: Literal["USER_UPLOAD", "DATABASE_CURSOR"] = "USER_UPLOAD"
+    origin: Literal["USER_UPLOAD", "DATABASE_CURSOR", "CONTROLLED_ESTIMATE"] = "USER_UPLOAD"
     native_format: Literal["POSTGRESQL_EXPLAIN_JSON", "MYSQL_EXPLAIN_JSON", "ORACLE_PLAN_ROWS"]
     subject: dict[str, str | bool | None] = Field(default_factory=dict, max_length=8)
     physical_identity: dict[str, str] = Field(default_factory=dict, max_length=8)
     declared_captured_at: str | None = Field(default=None, max_length=64)
     observed_at: str | None = Field(default=None, max_length=64)
+    source_sql_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    original_parse_context_verified: Literal[False] = False
     parameter_types: tuple[Literal["NULL", "BOOLEAN", "NUMBER", "STRING", "ARRAY", "OBJECT"], ...] = Field(default=(), max_length=64)
     parameter_values_available: Literal[False] = False
     runtime_statistics: Literal["NONE", "PARTIAL", "PRESENT"] = "NONE"
@@ -53,6 +55,15 @@ class SqlPlanDocument(BaseModel):
             raise ValueError("缓存计划仅能绑定受控 Oracle 观测，不可携带人工声明时间或绑定原值")
         if self.origin == "USER_UPLOAD" and self.observed_at is not None:
             raise ValueError("人工计划不能自行声明数据库来源采集时间")
+        if self.origin == "CONTROLLED_ESTIMATE":
+            from platform_core.contracts.aiops.sql_plan_execution import SqlPlanEstimateNode
+            if (self.observed_at is None or self.declared_captured_at is not None
+                or self.source_sql_sha256 is None or self.parameter_types or self.runtime_statistics != "NONE"):
+                raise ValueError("受控估算必须绑定原SQL哈希和实际采集时间，不能声明运行时统计或参数")
+            for node in self.nodes:
+                SqlPlanEstimateNode.model_validate(node.model_dump(exclude={"object_name_semantics"}))
+        elif self.source_sql_sha256 is not None:
+            raise ValueError("仅受控估算可以携带独立复核的原SQL哈希")
         return self
 
 
@@ -63,7 +74,7 @@ class SqlPlanAssessment(BaseModel):
     anchor_ref: str | None = None
     database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
     subject: dict[str, str | int | bool | None] = Field(max_length=16)
-    origin: Literal["USER_UPLOAD", "DATABASE_CURSOR"] = "USER_UPLOAD"
+    origin: Literal["USER_UPLOAD", "DATABASE_CURSOR", "CONTROLLED_ESTIMATE"] = "USER_UPLOAD"
     identity_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "MISMATCH", "INCOMPLETE"]
     physical_match: Literal["DECLARED_MATCH", "SOURCE_MATCH", "MISMATCH", "INCOMPLETE"]
     time_relation: Literal["DECLARED_NEAR_OBSERVATION", "SOURCE_NEAR_OBSERVATION", "HISTORICAL_OR_DIFFERENT_TIME", "UNKNOWN"]
@@ -81,4 +92,6 @@ class SqlPlanAssessment(BaseModel):
             or self.time_relation == "SOURCE_NEAR_OBSERVATION" or self.bind_metadata_refs
         ):
             raise ValueError("人工计划不能升级数据库来源或绑定捕获关系")
+        if self.origin == "CONTROLLED_ESTIMATE" and (self.runtime_statistics != "NONE" or self.bind_metadata_refs):
+            raise ValueError("估算计划不能升级为运行时计划或绑定捕获证明")
         return self
