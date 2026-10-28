@@ -109,6 +109,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             provenance=fact.provenance, derivations=fact.derivations,
             object_access=fact.object_access,
             pagination=fact.pagination,
+            source_pagination=fact.source_pagination,
             calculation_graphs=fact.calculation_graphs,
             series_computations=fact.series_computations,
         ) for fact in evidence),

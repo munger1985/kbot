@@ -294,7 +294,7 @@ class InvestigationHypothesis(AIOpsContract):
 
 
 class DiagnosticPagination(AIOpsContract):
-    """同一次只读查询的有界游标分批，不重跑查询或生成新的采样时点。"""
+    """有界结果分批；数据库用同执行游标，来源用原生时间边界续取。"""
 
     page_size: int = Field(ge=1, le=200, strict=True)
     max_pages: int = Field(ge=2, le=4, strict=True)
@@ -337,8 +337,9 @@ class InvestigationAction(AIOpsContract):
         if self.pagination is not None:
             if self.sampling is not None or self.observation_schedule is not None:
                 raise ValueError("游标分页不能与追加采样或后台观察叠加")
-            if self.tool_id not in {"db.oracle.readonly_query", "db.postgresql.readonly_query", "db.mysql.readonly_query"}:
-                raise ValueError("游标分页只适用于受控动态数据库查询")
+            if self.tool_id not in {"db.oracle.readonly_query", "db.postgresql.readonly_query", "db.mysql.readonly_query",
+                "monitor.query_native_metric", "loki.query_range"}:
+                raise ValueError("分页只适用于受控动态数据库查询、原生历史或 Loki 日志")
             if not self.evidence_need or not self.evidence_need.strip() or not self.decision_impact or not self.decision_impact.strip():
                 raise ValueError("游标分页必须说明证据需求及其对判断的作用")
         if self.sampling is not None and self.observation_schedule is not None:

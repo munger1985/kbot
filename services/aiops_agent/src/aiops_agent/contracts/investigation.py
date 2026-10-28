@@ -11,6 +11,7 @@ from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGo
 from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
 from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
+from aiops_agent.contracts.evidence import SourcePaginationObservation
 from aiops_agent.contracts.implementation import ImplementationRunbook
 from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
 from platform_core.contracts.aiops.executor import ObjectAccessObservation, DiagnosticPaginationObservation
@@ -147,12 +148,18 @@ class InvestigationObservation(BaseModel):
     provenance: EvidenceProvenance | None = None
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     pagination: DiagnosticPaginationObservation | None = None
+    source_pagination: SourcePaginationObservation | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.source_pagination is not None and (
+            self.pagination is not None or sum(self.source_pagination.returned_page_rows) != self.row_count
+            or self.truncated != (self.source_pagination.stop_reason != "EXHAUSTED")
+        ):
+            raise ValueError("调查来源分页与原始观察不一致")
         if self.pagination is not None and (
             sum(self.pagination.returned_page_rows) != self.row_count
             or self.truncated != (self.pagination.stop_reason != "EXHAUSTED")

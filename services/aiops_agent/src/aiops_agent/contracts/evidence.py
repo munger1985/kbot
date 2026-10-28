@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import re
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, field_serializer
 
@@ -147,6 +148,7 @@ class LogEvidenceEntry(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
     structured_fields: dict[str, str] = Field(default_factory=dict)
     entry_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    timestamp_ns: str | None = Field(default=None, pattern=r"^[0-9]{1,20}$")
 
 
 class LogEvidenceSet(BaseModel):
@@ -223,6 +225,45 @@ class NativeHistoryMetadata(BaseModel):
     log_event_id: str | None = Field(default=None, max_length=128)
 
 
+class SourcePaginationObservation(BaseModel):
+    """来源不提供一致快照；完整仅指本次有界枚举耗尽，不代表历史覆盖率。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    page_size: int = Field(ge=1, le=200, strict=True)
+    max_pages: int = Field(ge=2, le=4, strict=True)
+    result_limit: int = Field(ge=1, le=800, strict=True)
+    returned_page_rows: tuple[Annotated[int, Field(strict=True, ge=0, le=200)], ...] = Field(min_length=1, max_length=4)
+    response_hashes: tuple[str, ...] = Field(min_length=1, max_length=4)
+    stop_reason: Literal["EXHAUSTED", "ROW_LIMIT", "PAGE_LIMIT", "SOURCE_ERROR", "NON_PROGRESS"]
+    error_code: str | None = None
+    snapshot_consistency: Literal["NOT_GUARANTEED"] = "NOT_GUARANTEED"
+
+    @model_validator(mode="after")
+    def validate_budget(self):
+        if (len(self.returned_page_rows) > self.max_pages
+            or len(self.returned_page_rows) != len(self.response_hashes)
+            or self.result_limit > self.page_size * self.max_pages
+            or any(type(count) is not int or not 0 <= count <= self.page_size for count in self.returned_page_rows)
+            or sum(self.returned_page_rows) > self.result_limit
+            or any(not re.fullmatch(r"[a-f0-9]{64}", digest) for digest in self.response_hashes)):
+            raise ValueError("来源分页回执与冻结预算不一致")
+        if (self.stop_reason == "SOURCE_ERROR") != (self.error_code is not None):
+            raise ValueError("来源分页错误必须保留明确错误码")
+        if self.stop_reason == "ROW_LIMIT" and sum(self.returned_page_rows) != self.result_limit:
+            raise ValueError("行数上限回执必须达到冻结上限")
+        if self.stop_reason == "PAGE_LIMIT" and len(self.returned_page_rows) != self.max_pages:
+            raise ValueError("页数上限回执必须达到冻结页数")
+        return self
+
+
+def source_pagination_warning(summary):
+    return (
+        f"来源分批读取 {len(summary.returned_page_rows)} 页、{sum(summary.returned_page_rows)} 条；"
+        f"停止原因 {summary.stop_reason}。来源不提供一致快照，枚举耗尽不等于窗口采样覆盖完整。"
+    )
+
+
 class NativeMetricSamples(BaseModel):
     """原生历史采样；数字类型不推定为计数器，也不自动生成速率。"""
 
@@ -244,9 +285,15 @@ class NativeMetricSamples(BaseModel):
     points: tuple[tuple[UtcDatetime, str], ...] = Field(max_length=1000)
     truncated: bool = False
     response_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    pagination: SourcePaginationObservation | None = None
 
     @model_validator(mode="after")
     def validate_samples(self):
+        if self.pagination is not None and (
+            sum(self.pagination.returned_page_rows) != len(self.points)
+            or self.truncated != (self.pagination.stop_reason != "EXHAUSTED")
+        ):
+            raise ValueError("原生历史行数或截断状态与来源分页不一致")
         if self.sample_metadata and len(self.sample_metadata) != len(self.points):
             raise ValueError("原生历史元数据必须逐条对应采样")
         if self.sample_kind == "LOG" and len(self.sample_metadata) != len(self.points):

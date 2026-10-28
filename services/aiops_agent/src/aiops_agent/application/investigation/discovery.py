@@ -92,6 +92,8 @@ def available_tools(
             "tool_id": "monitor.query_native_metric", "version": "1.0.0", "tool_class": "MONITORING",
             "description": "读取绑定 Zabbix Host 的精确 Item 历史；数值使用 metric.query_range，文本/日志另需 item.history 授权。不接受 URL、Host 或 SQL。长窗口按结果/字节限额截断，不自动改用趋势聚合，不推定 counter/gauge 语义。",
             "input": {"metric_name": "已发现或已核验的精确 Item key", "window_seconds": "60 到 5184000 秒", "limit": "1 到 1000"},
+            "pagination_policy": {"page_size": "1 到 200", "max_pages": "2 到 4", "max_rows": 800,
+                "description": "动作顶层 pagination 触发原生 history.get 时间边界重叠续取；需 evidence_need 和 decision_impact。原始纳秒去重；保留总结果/字节与 Run 期限，不代表一致快照。"},
         }
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
         tools[("loki.query_range", "1.0.0")] = {
@@ -106,6 +108,8 @@ def available_tools(
                 "query": "${binding_selector} 加字面量过滤",
                 "window_seconds": "60 到 3600 秒",
             },
+            "pagination_policy": {"page_size": "1 到 200", "max_pages": "2 到 4", "max_rows": 800,
+                "description": "动作顶层 pagination，最多4次原生请求；同纳秒边界重叠续取，不跳过日志。每轮最多一组分页，达到预算明确截断。"},
         }
     if searchable_uploads:
         tools[("artifact.search", "1.0.0")] = {

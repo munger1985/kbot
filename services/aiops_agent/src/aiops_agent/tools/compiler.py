@@ -112,7 +112,7 @@ class InvestigationTaskCompiler:
                     input_schema_version="MONITOR_OBSERVE_INPUT.v1",
                     output_schema_version="OBSERVATION_SET.v1",
                     timeout_seconds=120,
-                    max_attempts=3,
+                    max_attempts=1 if any(action.tool_id == "monitor.query_native_metric" and action.pagination is not None for action in investigation_actions) else 3,
                     priority=45,
                 )
             )
@@ -129,7 +129,7 @@ class InvestigationTaskCompiler:
                     input_schema_version="DIAGNOSIS_SCOPE.v1",
                     output_schema_version="LOG_EVIDENCE_SET.v1",
                     timeout_seconds=120,
-                    max_attempts=3,
+                    max_attempts=1 if any(action.tool_id == "loki.query_range" and action.pagination is not None for action in investigation_actions) else 3,
                     priority=46,
                 )
             )

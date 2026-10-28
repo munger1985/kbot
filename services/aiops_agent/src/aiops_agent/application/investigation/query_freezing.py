@@ -151,6 +151,10 @@ def prepare_dynamic_queries(investigation, *, database_type: str, entitlements=(
 
 def prepare_source_queries(investigation):
     """校验并冻结模型提出的临时 PromQL 与 LogQL。"""
+    try:
+        validate_sampling_plan(investigation.plan.actions)
+    except ValueError as exc:
+        raise InvestigationPlanValidationError(str(exc)) from exc
     prom_policy = PromQueryPolicy(PromQueryPolicySnapshot())
     log_policy = LogQueryPolicy(LogQueryPolicySnapshot())
     actions = []
@@ -159,6 +163,15 @@ def prepare_source_queries(investigation):
     metric_discoveries = []
     native_metric_queries = []
     for action in investigation.plan.actions:
+        if action.pagination is not None:
+            from platform_core.contracts.aiops.investigation import DiagnosticPagination
+            if action.tool_id in {"monitor.query_native_metric", "loki.query_range"}:
+                pagination = DiagnosticPagination.model_validate(action.pagination)
+                if action.sampling is not None or action.observation_schedule is not None:
+                    raise InvestigationPlanValidationError("来源分页不能叠加采样或后台观察")
+                action = action.model_copy(update={"pagination": pagination})
+            elif not action.tool_id.startswith("db."):
+                raise InvestigationPlanValidationError("当前来源接口不提供安全分页，不能伪造游标")
         if action.tool_id == "monitor.query_native_metric":
             payload = dict(action.input)
             name = payload.get("metric_name")
@@ -172,7 +185,8 @@ def prepare_source_queries(investigation):
                 raise InvestigationPlanValidationError("原生指标查询只允许精确名称和有界窗口/结果数")
             normalized = {"metric_name": name, "window_seconds": window, "limit": limit}
             actions.append(action.model_copy(update={"input": normalized}))
-            native_metric_queries.append({"action_id": action.action_id, **normalized})
+            native_metric_queries.append({"action_id": action.action_id, **normalized,
+                **({"pagination": action.pagination.model_dump(mode="json")} if action.pagination is not None else {})})
             continue
         if action.tool_id == "monitor.discover_metrics":
             payload = dict(action.input)
@@ -228,6 +242,7 @@ def prepare_source_queries(investigation):
                 "question": action.question,
                 "measurement_semantics": action.measurement_semantics,
                 "validated_query": validated.model_dump(mode="json"),
+                **({"pagination": action.pagination.model_dump(mode="json")} if action.pagination is not None else {}),
             }
         )
     updated_plan = investigation.plan.model_copy(

@@ -14,6 +14,7 @@ from aiops_agent.contracts.evidence import (
     LogEvidenceSet,
     ObservationGap,
     ObservationSet,
+    source_pagination_warning,
 )
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
@@ -38,6 +39,7 @@ from aiops_agent.monitoring import (
     resolve_metric_definitions,
 )
 from aiops_agent.domain.evidence import METRIC_ROLE_AVAILABILITY
+from aiops_agent.domain.evidence.source_history import validate_source_page_receipt, SourceResultMismatch
 
 from .handlers import TaskExecutionContext, investigation_task_identity
 
@@ -252,22 +254,35 @@ class EvidenceObserveHandler:
                 allowed = set(snapshot["effective_capabilities"])
                 if not {CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_ITEM_HISTORY} & allowed:
                     raise ValueError("绑定未授权历史指标查询")
-                if set(item) != {"action_id", "metric_name", "window_seconds", "limit"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 5184000:
+                if set(item) - {"action_id", "metric_name", "window_seconds", "limit", "pagination"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 5184000:
                     raise ValueError("冻结原生指标查询无效")
                 end = _parse_time(window["end"])
                 text_authorized = CAPABILITY_ITEM_HISTORY in allowed
                 capability = CAPABILITY_ITEM_HISTORY if text_authorized else CAPABILITY_METRIC_QUERY_RANGE
                 adapter = self._diagnostic_sources.create(source_context, capability=capability)
-                native_metrics.append(await adapter.query_native_metric(
-                    NativeMetricQueryRequest(
-                        action_id=item["action_id"], target_id=context.target_id, binding_id=binding_id,
-                        source_locator_key=snapshot["source_locator_key"],
-                        window_start=end - timedelta(seconds=item["window_seconds"]), window_end=end,
-                        max_response_bytes=max(1024, min(262144, monitoring["max_response_bytes"]) // 6),
-                        trace_id=context.trace_id,
-                    ),
-                    metric_name=item["metric_name"], limit=item["limit"], allow_text=text_authorized,
-                ))
+                native_request = NativeMetricQueryRequest(
+                    action_id=item["action_id"], target_id=context.target_id, binding_id=binding_id,
+                    source_locator_key=snapshot["source_locator_key"],
+                    window_start=end - timedelta(seconds=item["window_seconds"]), window_end=end,
+                    max_response_bytes=max(1024, min(262144, monitoring["max_response_bytes"]) // 6),
+                    trace_id=context.trace_id,
+                    pagination=item.get("pagination"),
+                )
+                samples = await adapter.query_native_metric(native_request,
+                    metric_name=item["metric_name"], limit=item["limit"], allow_text=text_authorized)
+                if (samples.target_id != native_request.target_id or samples.binding_id != native_request.binding_id
+                    or str(samples.source_id) != str(source["source_id"]) or samples.action_id != native_request.action_id
+                    or samples.metric_name != item["metric_name"]
+                    or samples.window_start != native_request.window_start or samples.window_end != native_request.window_end
+                    or len(samples.points) > item["limit"]):
+                    raise SourceResultMismatch("原生历史结果不符合本轮绑定或冻结查询")
+                validate_source_page_receipt(summary=samples.pagination, requested=native_request.pagination,
+                    limit=item["limit"], row_count=len(samples.points), truncated=samples.truncated)
+                native_metrics.append(samples)
+                if samples.pagination is not None and samples.pagination.stop_reason != "EXHAUSTED":
+                    gaps.append(ObservationGap(source_id=source["source_id"], binding_id=binding_id,
+                        code=samples.pagination.error_code or f"SOURCE_PAGINATION_{samples.pagination.stop_reason}",
+                        detail=source_pagination_warning(samples.pagination)))
             except Exception as exc:
                 gaps.append(ObservationGap(
                     source_id=source["source_id"], binding_id=binding_id,
@@ -598,6 +613,8 @@ class LogEvidenceHandler:
                 1024, max_response_bytes // len(frozen_queries)
             )
             window_starts = []
+            source_queries = []
+            source_truncated = False
             for item in frozen_queries:
                 frozen = dict(item["validated_query"])
                 if item["action_id"] != "baseline":
@@ -640,24 +657,34 @@ class LogEvidenceHandler:
                     seconds=window_seconds
                 )
                 window_starts.append(query_start)
-                result = await adapter.query_logs(
-                    LogEvidenceRequest(
-                        target_id=context.target_id,
-                        binding_id=binding_id,
-                        source_locator_key=snapshot["source_locator_key"],
-                        selector_labels=locator.labels,
-                        line_filters=filters,
-                        window_start=query_start,
-                        window_end=query_end,
-                        max_entries=min(
-                            per_query_entries,
-                            int(frozen["max_entries"]),
-                        ),
-                        max_response_bytes=per_query_response_bytes,
-                        trace_id=context.trace_id,
-                    )
+                log_request = LogEvidenceRequest(
+                    target_id=context.target_id,
+                    binding_id=binding_id,
+                    source_locator_key=snapshot["source_locator_key"],
+                    selector_labels=locator.labels,
+                    line_filters=filters,
+                    window_start=query_start,
+                    window_end=query_end,
+                    max_entries=min(per_query_entries, int(frozen["max_entries"])),
+                    max_response_bytes=per_query_response_bytes,
+                    trace_id=context.trace_id,
+                    pagination=item.get("pagination"),
                 )
+                result = await adapter.query_logs(log_request)
+                if (result.target_id != log_request.target_id or result.binding_id != log_request.binding_id
+                    or str(result.source_id) != str(source["source_id"])
+                    or result.window_start != log_request.window_start or result.window_end != log_request.window_end
+                    or len(result.entries) > log_request.max_entries):
+                    raise SourceResultMismatch("日志结果不符合本轮绑定或冻结查询")
+                # 首次请求完全失败时 Adapter 只返回明确缺口，不伪造分页回执。
+                if result.entries or not result.gaps or result.provenance.get("source_pagination") is not None:
+                    validate_source_page_receipt(summary=result.provenance.get("source_pagination"),
+                        requested=log_request.pagination, limit=log_request.max_entries,
+                        row_count=len(result.entries), truncated=result.truncated)
                 gaps.extend(result.gaps)
+                source_truncated = source_truncated or result.truncated
+                source_queries.append({"action_id": item["action_id"], "provenance": result.provenance,
+                    "truncated": result.truncated})
                 for entry in result.entries:
                     entries_by_fingerprint[entry.entry_fingerprint] = entry
             if not window_starts:
@@ -695,16 +722,20 @@ class LogEvidenceHandler:
                 entries=entries,
                 gaps=tuple(gaps),
                 collected_at=datetime.now(UTC),
-                truncated=len(entries_by_fingerprint) > len(entries),
+                truncated=source_truncated or len(entries_by_fingerprint) > len(entries),
                 query_fingerprint=combined_hash,
                 provenance={
                     "query_hashes": query_hashes,
                     "query_policy": "bounded-logql.v1",
+                    "source_queries": source_queries,
                 },
             )
         except LookupError as exc:
             code = "SOURCE_QUERY_UNSUPPORTED"
             detail = str(exc)
+        except SourceResultMismatch:
+            code = "SOURCE_RESPONSE_INVALID"
+            detail = "日志来源结果未通过绑定或冻结预算复核"
         except (KeyError, TypeError, ValueError):
             code = "SOURCE_CONFIGURATION_INVALID"
             detail = "日志定位或查询预算配置无效"

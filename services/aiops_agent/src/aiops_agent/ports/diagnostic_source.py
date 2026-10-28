@@ -16,6 +16,7 @@ from aiops_agent.contracts.evidence import (
     ObservationGap,
 )
 from platform_core.contracts.aiops.types import DatabaseType, UtcDatetime
+from platform_core.contracts.aiops.investigation import DiagnosticPagination
 
 
 CAPABILITY_HEALTH_CHECK = "health.check"
@@ -143,6 +144,7 @@ class NativeMetricQueryRequest(BaseModel):
     window_end: UtcDatetime
     max_response_bytes: int = Field(default=262144, ge=1024, le=1048576)
     trace_id: str
+    pagination: DiagnosticPagination | None = None
 
     @field_validator("window_end")
     @classmethod
@@ -264,6 +266,7 @@ class LogEvidenceRequest(BaseModel):
     max_entries: int = Field(ge=1, le=5000)
     max_response_bytes: int = Field(ge=1024, le=20 * 1024 * 1024)
     trace_id: str
+    pagination: DiagnosticPagination | None = None
 
 
 class SignalWebhookRequest(BaseModel):

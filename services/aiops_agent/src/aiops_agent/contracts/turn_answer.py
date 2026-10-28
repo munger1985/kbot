@@ -10,6 +10,7 @@ from aiops_agent.contracts.investigation import DiagnosisAnswerDraft, Investigat
 from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
 from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
+from aiops_agent.contracts.evidence import SourcePaginationObservation
 
 from platform_core.contracts.aiops import (
     AnswerBlockType,
@@ -48,12 +49,19 @@ class TurnEvidenceFact(BaseModel):
     provenance: EvidenceProvenance | None = None
     object_access: tuple[ObjectAccessObservation, ...] = Field(default=(), max_length=1)
     pagination: DiagnosticPaginationObservation | None = None
+    source_pagination: SourcePaginationObservation | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.source_pagination is not None and (
+            self.pagination is not None or sum(self.source_pagination.returned_page_rows) != self.row_count
+            or self.row_count != len(self.rows)
+            or self.truncated != (self.source_pagination.stop_reason != "EXHAUSTED")
+        ):
+            raise ValueError("来源分页事实与原始行数或截断状态不一致")
         if self.pagination is not None and (
             sum(self.pagination.returned_page_rows) != self.row_count or self.row_count != len(self.rows)
             or self.truncated != (self.pagination.stop_reason != "EXHAUSTED")

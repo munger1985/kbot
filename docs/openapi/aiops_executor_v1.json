@@ -197,7 +197,7 @@
       },
       "DiagnosticPagination": {
         "additionalProperties": false,
-        "description": "同一次只读查询的有界游标分批，不重跑查询或生成新的采样时点。",
+        "description": "有界结果分批；数据库用同执行游标，来源用原生时间边界续取。",
         "properties": {
           "max_pages": {
             "maximum": 4.0,

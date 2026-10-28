@@ -21,7 +21,7 @@ from platform_core.identity import uuid7
 
 def request():
     end = datetime(2026, 10, 28, 4, tzinfo=timezone.utc)
-    return MetricsDiscoveryRequest(
+    return NativeMetricQueryRequest(
         action_id="a1", target_id=str(uuid7()), binding_id=str(uuid7()), source_locator_key="bound-host",
         window_start=end - timedelta(minutes=15), window_end=end, trace_id="test",
     )
@@ -47,7 +47,7 @@ def test_zabbix_discovery_is_explicitly_registered_and_does_not_guess_counter_ty
         ([{"hostid": "11", "host": "bound-host"}], "a" * 64),
         ([item()], "b" * 64),
     ])
-    result = asyncio.run(value.discover_metrics(request()))
+    result = asyncio.run(value.discover_metrics(MetricsDiscoveryRequest(**request().model_dump(exclude={"pagination"}))))
     assert result.entries[0].metric_type == "UNKNOWN"
     assert result.entries[0].native_value_type == "3" and result.entries[0].query_supported
     assert result.entries[0].unit is None
@@ -64,7 +64,7 @@ def test_discovery_does_not_advertise_unsupported_item_and_hash_covers_host_and_
             ([{"hostid": "11", "host": "bound-host"}], host_hash * 64),
             ([item(state="1")], "b" * 64),
         ])
-        result = asyncio.run(value.discover_metrics(request()))
+        result = asyncio.run(value.discover_metrics(MetricsDiscoveryRequest(**request().model_dump(exclude={"pagination"}))))
         assert not result.entries[0].query_supported
         hashes.append(result.response_sha256)
     assert hashes[0] != hashes[1]

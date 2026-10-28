@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -19,6 +20,7 @@ from aiops_agent.domain.evidence import (
 )
 from aiops_agent.ports.diagnostic_source import (
     MetricsDiscoveryRequest,
+    NativeMetricQueryRequest,
     CAPABILITY_ITEM_HISTORY,
     EventEvidenceRequest,
     EventEvidenceResult,
@@ -33,6 +35,7 @@ from aiops_agent.ports.diagnostic_source import (
 )
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
+from .pagination import SourcePageRow, read_source_pages
 
 
 _SEVERITY = {
@@ -144,7 +147,7 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
             warnings=("Item 元数据已读取；数值存储类型不证明 counter/gauge 语义，目录不证明请求窗口有采样。",),
         )
 
-    async def query_native_metric(self, request, *, metric_name, limit, allow_text=False):
+    async def query_native_metric(self, request: NativeMetricQueryRequest, *, metric_name, limit, allow_text=False):
         """精确重验 Host/Item；文本日志需额外授权，不猜单位或自动改用趋势聚合。"""
         self._remaining_response_bytes = request.max_response_bytes
         if not isinstance(metric_name, str) or not 0 < len(metric_name) <= 256 or any(ord(char) < 32 for char in metric_name):
@@ -171,55 +174,75 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
             raise DiagnosticSourceAdapterError("SOURCE_METRIC_TYPE_MISMATCH", "Item 类型不受支持或未启用")
         if not numeric and (not allow_text or CAPABILITY_ITEM_HISTORY not in self.context.declared_capabilities):
             raise DiagnosticSourceAdapterError("SOURCE_CAPABILITY_FORBIDDEN", "文本/日志历史需要来源与绑定显式授权 item.history")
-        history, digest = await self._rpc(
-            "history.get", {
+        pagination = request.pagination
+        pages = pagination.max_pages if pagination is not None else 1
+        def epoch_ns(stamp):
+            delta = stamp - datetime(1970, 1, 1, tzinfo=UTC)
+            return ((delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds) * 1000
+        start_ns, end_ns = epoch_ns(request.window_start), epoch_ns(request.window_end)
+        async def fetch_history(frontier, fetch_limit):
+            history, digest = await self._rpc("history.get", {
                 "output": ["itemid", "clock", "ns", "value", *(["timestamp", "source", "severity", "logeventid"] if value_type == "2" else [])], "history": int(value_type),
-                "itemids": [item["itemid"]], "time_from": int(request.window_start.timestamp()),
+                "itemids": [item["itemid"]], "time_from": frontier,
                 "time_till": int(request.window_end.timestamp()), "sortfield": ["clock", "ns"],
-                "sortorder": "ASC", "limit": limit + 1,
-            }, max_bytes=request.max_response_bytes // 2,
-        )
-        if not isinstance(history, list) or len(history) > limit + 1:
-            raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "历史响应格式无效")
-        points = []
-        metadata = []
-        for row in history:
-            if not isinstance(row, dict) or str(row.get("itemid")) != str(item["itemid"]):
-                raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "历史采样来自其他 Item")
-            try:
-                nanoseconds = int(row.get("ns", 0))
-                if not 0 <= nanoseconds <= 999999999:
-                    raise ValueError("纳秒偏移无效")
-                stamp = datetime.fromtimestamp(int(row["clock"]), tz=UTC) + timedelta(microseconds=nanoseconds // 1000)
-                value = row["value"]
-                if not isinstance(value, str) or len(value) > 8192 or not request.window_start <= stamp <= request.window_end:
-                    raise ValueError("采样时间或值无效")
-                if numeric:
-                    number = Decimal(value)
-                    if len(value) > 256 or not number.is_finite() or abs(number.as_tuple().exponent) > 1024:
-                        raise ValueError("采样数值无效")
-                    if value_type == "3" and (not value.isdecimal() or not 0 <= number <= 18446744073709551615):
-                        raise ValueError("无符号计数值无效")
-                metadata.append(NativeHistoryMetadata(
-                    nanoseconds=nanoseconds,
-                    log_timestamp_seconds=int(row["timestamp"]) if value_type == "2" and row.get("timestamp") is not None else None,
-                    log_source=row.get("source") if value_type == "2" else None,
-                    log_severity=str(row["severity"]) if value_type == "2" and row.get("severity") is not None else None,
-                    log_event_id=str(row["logeventid"]) if value_type == "2" and row.get("logeventid") is not None else None,
-                ))
-            except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError, OSError):
-                raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "原生历史采样的时间、值或元数据无效") from None
-            points.append((stamp, value))
+                "sortorder": "ASC", "limit": fetch_limit,
+            }, max_bytes=request.max_response_bytes // 2 // pages)
+            if not isinstance(history, list) or len(history) > fetch_limit:
+                raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "历史响应格式无效")
+            rows = []
+            for row in history:
+                if not isinstance(row, dict) or str(row.get("itemid")) != str(item["itemid"]):
+                    raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "历史采样来自其他 Item")
+                try:
+                    clock = int(row["clock"])
+                    nanoseconds = int(row.get("ns", 0))
+                    if not 0 <= nanoseconds <= 999999999:
+                        raise ValueError("纳秒偏移无效")
+                    stamp = datetime.fromtimestamp(clock, tz=UTC) + timedelta(microseconds=nanoseconds // 1000)
+                    value = row["value"]
+                    if (not isinstance(value, str) or len(value) > 8192
+                        or not int(request.window_start.timestamp()) <= clock <= int(request.window_end.timestamp())):
+                        raise ValueError("采样时间或值无效")
+                    if numeric:
+                        number = Decimal(value)
+                        if len(value) > 256 or not number.is_finite() or abs(number.as_tuple().exponent) > 1024:
+                            raise ValueError("采样数值无效")
+                        if value_type == "3" and (not value.isdecimal() or not 0 <= number <= 18446744073709551615):
+                            raise ValueError("无符号计数值无效")
+                    metadata = NativeHistoryMetadata(
+                        nanoseconds=nanoseconds,
+                        log_timestamp_seconds=int(row["timestamp"]) if value_type == "2" and row.get("timestamp") is not None else None,
+                        log_source=row.get("source") if value_type == "2" else None,
+                        log_severity=str(row["severity"]) if value_type == "2" and row.get("severity") is not None else None,
+                        log_event_id=str(row["logeventid"]) if value_type == "2" and row.get("logeventid") is not None else None,
+                    )
+                except (KeyError, TypeError, ValueError, InvalidOperation, OverflowError, OSError):
+                    raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "原生历史采样的时间、值或元数据无效") from None
+                rows.append(SourcePageRow(position=clock, order=nanoseconds, identity=f"{clock}:{nanoseconds}",
+                    content_hash=hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest(),
+                    value=(stamp, value, metadata), include=start_ns <= clock * 1000000000 + nanoseconds <= end_ns))
+            return rows, digest
+        summary = None
+        if pagination is not None:
+            values, summary = await read_source_pages(fetch_page=fetch_history, pagination=pagination,
+                result_limit=limit, start=int(request.window_start.timestamp()))
+            digests = summary.response_hashes
+            truncated = summary.stop_reason != "EXHAUSTED"
+        else:
+            rows, digest = await fetch_history(int(request.window_start.timestamp()), limit + 1)
+            values = tuple(row.value for row in rows[:limit] if row.include)
+            digests = (digest,)
+            truncated = len(rows) > limit
         return NativeMetricSamples(
             action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
             source_id=self.context.source_id, metric_name=metric_name,
             native_value_type=str(item["value_type"]), unit=(str(item.get("units") or "")[:64] or None) if numeric else None,
             sample_kind="NUMERIC" if numeric else "LOG" if value_type == "2" else "TEXT",
-            sample_metadata=tuple(metadata[:limit]),
+            sample_metadata=tuple(row[2] for row in values),
             source_version=f"{self.context.adapter_version}:{self.context.config_version}",
             window_start=request.window_start, window_end=request.window_end, captured_at=datetime.now(UTC),
-            points=tuple(points[:limit]), truncated=len(points) > limit,
-            response_sha256=hashlib.sha256(f"{host_hash}:{item_hash}:{digest}".encode()).hexdigest(),
+            points=tuple((row[0], row[1]) for row in values), truncated=truncated, pagination=summary,
+            response_sha256=hashlib.sha256(":".join((host_hash, item_hash, *digests)).encode()).hexdigest(),
         )
 
     async def discover_instances(

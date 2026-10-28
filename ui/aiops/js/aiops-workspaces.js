@@ -412,7 +412,8 @@
       const dependency = values(action.depends_on).length ? ` · 依赖 ${values(action.depends_on).join("、")}` : "";
       const sampling = action.sampling ? ` · 按需采样 ${action.sampling.count} 次，间隔至少 ${action.sampling.interval_seconds} 秒（不是历史窗口）` : "";
       const scheduled = action.observation_schedule ? ` · 后台未来观察 ${action.observation_schedule.count} 次（含本次基线），间隔至少 ${action.observation_schedule.interval_seconds} 秒` : "";
-      const pagination = action.pagination ? ` · 同次查询分批，每页最多 ${action.pagination.page_size} 行、最多 ${action.pagination.max_pages} 页` : "";
+      const paginationMode = String(action.tool_id || "").startsWith("db.") ? "同次查询分批" : "来源原生续取（非一致快照）";
+      const pagination = action.pagination ? ` · ${paginationMode}，每页最多 ${action.pagination.page_size} 行、最多 ${action.pagination.max_pages} 页` : "";
       const query = action.sql_text
         ? `<details class="ops-plan-query"><summary>查看待执行 SQL 与参数</summary><pre><code>${esc(action.sql_text)}</code></pre><strong>绑定参数</strong><pre><code>${esc(JSON.stringify(action.parameters || {}, null, 2))}</code></pre></details>`
         : "";

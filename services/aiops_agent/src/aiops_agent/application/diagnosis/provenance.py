@@ -35,6 +35,7 @@ def native_metric_provenance(samples):
         window_start=samples.window_start, window_end=samples.window_end,
         quality_flags=("PHYSICAL_IDENTITY_UNKNOWN", "NATIVE_ORIGIN_COARSE",
                        "COUNTER_SEMANTICS_UNKNOWN" if samples.sample_kind == "NUMERIC" else "NON_NUMERIC_HISTORY",
+                       *(("SOURCE_NOT_SNAPSHOT_CONSISTENT", f"PAGINATION_{samples.pagination.stop_reason}") if samples.pagination is not None else ()),
                        *(("TRUNCATED",) if samples.truncated else ())),
     )
 

@@ -9,9 +9,12 @@ from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact, TurnEvidenceGap
 from aiops_agent.playbooks import canonical_hash
 from aiops_agent.application.investigation.future_observation_evidence import validate_future_observation_facts
+from aiops_agent.application.diagnosis.source_history_validation import validate_source_history_facts
 
 
 async def validate_investigation_sources(*, uow, run, payload):
+    if not await validate_source_history_facts(uow=uow, run=run, payload=payload):
+        return False
     if not await validate_future_observation_facts(uow=uow, run=run, payload=payload):
         return False
     if not await validate_monitoring_trace_sources(uow=uow, run=run, payload=payload):
@@ -22,6 +25,8 @@ async def validate_investigation_sources(*, uow, run, payload):
     if (record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs")
             and not record_payload.get("access_gaps")
             and not any(item.get("pagination") for item in payload.get("evidence", ()))
+            and not any(item.get("source_pagination") for item in payload.get("evidence", ()))
+            and not any(item.get("source_pagination") for item in record_payload.get("observations", ()))
             and not any(item.get("pagination") for item in record_payload.get("observations", ()))
             and not any(item.get("object_access") for item in record_payload.get("observations", ()))
             and not any(item.get("object_access") for item in payload.get("evidence", ()))

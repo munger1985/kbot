@@ -18,6 +18,12 @@ const html = context.paginationTest.investigationPlanHtml({ actions: [{
 }] });
 assert.ok(html.includes("同次查询分批，每页最多 200 行、最多 4 页"));
 assert.ok(!html.includes("按需采样"));
+const sourceHtml = context.paginationTest.investigationPlanHtml({ actions: [{
+  action_id: "a1", question: "核对历史", tool_id: "monitor.query_native_metric",
+  pagination: { page_size: 100, max_pages: 3 },
+}] });
+assert.ok(sourceHtml.includes("来源原生续取（非一致快照），每页最多 100 行、最多 3 页"));
+assert.ok(!sourceHtml.includes("同次查询分批"));
 const unsafe = context.paginationTest.investigationPlanHtml({ actions: [{
   action_id: "a1", question: "<img src=x onerror=alert(1)>",
   pagination: { page_size: "<script>alert(1)</script>", max_pages: 4 },
