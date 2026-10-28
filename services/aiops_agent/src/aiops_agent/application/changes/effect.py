@@ -19,17 +19,28 @@ def _key(proposal_id, suffix):
     return f"comparison:proposal:{proposal_id}:{suffix}:business:v1"
 
 
-async def effect_source(*, uow, artifact_id, run, schema=None):
+async def effect_source(*, uow, artifact_id, run, schema=None, target_id=None):
     """重读来源及当前授权；调用方不能把上传内容伪装成库内观测。"""
     source = await uow.runs.get_artifact(artifact_id=artifact_id)
     source_run = await uow.runs.get_run_scoped(ops_run_id=source.ops_run_id, domain_id=run.domain_id) if source is not None else None
-    if source is None or source_run is None or str(source_run.target_id) != str(run.target_id):
+    expected_target = target_id or run.target_id
+    if source is None or source_run is None or str(source_run.target_id) != str(expected_target):
         raise resource_not_found("效果验证证据")
-    if str(source_run.agent_id) != str(run.agent_id):
+    if str(expected_target) != str(run.target_id):
+        if source.schema_version != "AIOPS_WORKLOAD_REPORT.v2" or source_run.workflow_kind != "WORKLOAD_REPORT" or str(source_run.actor_id) != str(run.actor_id):
+            raise resource_not_found("对照窗口证据")
+        active = await uow.agents.get(domain_id=run.domain_id, agent_id=run.agent_id)
+        if active is None or active.current_version_id is None or not await uow.agents.version_has_target(
+            agent_version_id=active.current_version_id, target_id=source_run.target_id,
+        ):
+            raise state_conflict("当前 Agent 已无对照目标权限")
+    if (str(source_run.agent_id) != str(run.agent_id)
+        or getattr(source_run, "workflow_kind", None) == "WORKLOAD_REPORT"
+        or (source.schema_version == "AIOPS_WORKLOAD_REPORT.v2" and str(source_run.ops_run_id) != str(run.ops_run_id))):
         # 周期快照报告属于 Target；只允许本人生成、当前 Agent 仍获授权的同目标窗口复用。
         if source.schema_version != "AIOPS_WORKLOAD_REPORT.v2" or source_run.workflow_kind != "WORKLOAD_REPORT" or str(source_run.actor_id) != str(run.actor_id):
             raise resource_not_found("效果验证证据")
-        target = await uow.targets.get_scoped(target_id=run.target_id, domain_id=run.domain_id)
+        target = await uow.targets.get_scoped(target_id=expected_target, domain_id=run.domain_id)
         frozen_target = dict((source_run.plan_snapshot_json or {}).get("target") or {})
         if target is None or target.status != "ENABLED" or str(target.row_version) != str(frozen_target.get("row_version")):
             raise state_conflict("窗口报告来源的 Target 配置已变化")
@@ -43,7 +54,7 @@ async def effect_source(*, uow, artifact_id, run, schema=None):
         if active is None or active.current_version_id is None:
             raise state_conflict("效果验证 Agent 已不可用")
         allowed_sources = await uow.agents.version_source_ids(
-            agent_version_id=active.current_version_id, target_id=run.target_id,
+            agent_version_id=active.current_version_id, target_id=expected_target,
         )
         used_sources = {str(item["source"]["source_id"]) for item in bindings}
         if not used_sources <= {str(value) for value in allowed_sources}:
@@ -71,10 +82,10 @@ class ChangeEffectVerification:
             raise state_conflict("Target 版本或状态已经改变，需重新调查")
         return run, proposal
 
-    async def get_effect_verification(self, *, proposal_id, domain_id, actor_id, agent_ids=()):
+    async def get_effect_verification(self, *, proposal_id, domain_id, actor_id, agent_ids=(), control_target_id=None):
         async with self._uow_factory() as uow:
             run, proposal = await self._effect_scope(uow, proposal_id, domain_id, actor_id, agent_ids=agent_ids)
-            return await self._effect_view(uow, run, proposal, candidates=True)
+            return await self._effect_view(uow, run, proposal, candidates=True, control_target_id=control_target_id)
 
     async def freeze_effect_plan(self, *, proposal_id, domain_id, actor_id, command, trace_id, agent_ids=()):
         async with self._uow_factory() as uow:
@@ -102,6 +113,11 @@ class ChangeEffectVerification:
             snapshot = await self._snapshot(uow, proposal)
             body = command.model_dump(mode="json")
             body.update({"baseline_hash": baseline.content_hash, "frozen_at": now.isoformat()})
+            from aiops_agent.application.changes.effect_controls import freeze_control_reports
+            control_freeze, control_sources = await freeze_control_reports(
+                uow=uow, run=run, command=command, baseline=baseline, now=now,
+            )
+            body.update(control_freeze)
             if command.auto_evaluate:
                 target = await uow.targets.get_scoped(
                     target_id=run.target_id, domain_id=domain_id,
@@ -124,7 +140,8 @@ class ChangeEffectVerification:
                 baseline_evidence_refs=(f"artifact:{baseline.artifact_id}",),
                 business_effect=body, result_rule_version="business-effect.v1",
             )
-            await self._effect_artifact(uow, run, proposal, _key(proposal_id, "plan"), "COMPARISON_PLAN.v1", plan.model_dump(mode="json"), {"request_hash": request_hash}, baseline.security_level)
+            security = max(int(item.security_level) for item in (baseline, *control_sources))
+            await self._effect_artifact(uow, run, proposal, _key(proposal_id, "plan"), "COMPARISON_PLAN.v1", plan.model_dump(mode="json"), {"request_hash": request_hash}, security)
             await uow.runs.append_event(ops_run_id=run.ops_run_id, ops_task_id=proposal.ops_task_id, event_type="comparison.business_plan.frozen", event_key=_key(proposal_id, "plan"), visibility="USER", payload_json={"proposal_id": str(proposal_id), "trace_id": trace_id})
             await uow.commit()
             return await self._effect_view(uow, run, proposal)
@@ -150,6 +167,15 @@ class ChangeEffectVerification:
             frozen = plan.business_effect.model_dump(mode="json")
             baseline = await effect_source(uow=uow, artifact_id=UUID(frozen["baseline_artifact_id"]), run=run, schema="AIOPS_WORKLOAD_REPORT.v2")
             after = await effect_source(uow=uow, artifact_id=command.after_artifact_id, run=run, schema="AIOPS_WORKLOAD_REPORT.v2")
+            control_sources = ()
+            if plan.business_effect.controlled_comparison is not None:
+                from aiops_agent.application.changes.effect_controls import load_control_reports
+                control_sources = await load_control_reports(
+                    uow=uow, run=run, control=plan.business_effect.controlled_comparison,
+                    frozen=frozen, after_artifact_id=command.control_after_artifact_id,
+                )
+            elif command.control_after_artifact_id is not None:
+                raise state_conflict("执行前未冻结对照，不能事后选择对照组")
             verification_artifact = await effect_source(uow=uow, artifact_id=command.verification_artifact_id, run=run, schema="ACTION_VERIFICATION.v1")
             verification = ActionVerification.model_validate(verification_artifact.payload_json)
             if str(verification.proposal_id) != str(proposal_id) or str(verification.source_run_id) != str(run.ops_run_id) or baseline.content_hash != frozen["baseline_hash"] or baseline.artifact_id == after.artifact_id:
@@ -177,21 +203,28 @@ class ChangeEffectVerification:
                     controlled_execution=controlled,
                     baseline_ref=f"artifact:{baseline.artifact_id}",
                     after_ref=f"artifact:{after.artifact_id}",
+                    control_reports={str(item.artifact_id): item.payload_json for item in control_sources},
+                    control_after_ref=str(command.control_after_artifact_id) if command.control_after_artifact_id else None,
                 )
                 _, after_end = validate_window_report(after.payload_json)
                 if after_end > now:
                     raise ValueError("验证窗口尚未结束")
+                for source in control_sources:
+                    if validate_window_report(source.payload_json)[1] > now:
+                        raise ValueError("对照窗口尚未结束")
             except (KeyError, TypeError, ValueError) as exc:
                 raise state_conflict(str(exc)) from None
-            artifacts = (plan_artifact, baseline, after, verification_artifact, receipt)
+            artifacts = (plan_artifact, baseline, after, verification_artifact, receipt, *control_sources)
             refs = tuple({"artifact_id": str(item.artifact_id), "content_hash": item.content_hash, "schema_version": item.schema_version} for item in artifacts)
             evaluated["gap_codes"] = tuple(sorted(set(evaluated["gap_codes"]) | set(verification.gap_codes)))
             if verification.gap_codes:
                 # 缺口不能抹掉已经测得的退化；仅阻断肯定效果及恢复结论。
                 if evaluated["result"] != "DEGRADED":
                     evaluated.update(result="INCONCLUSIVE", attribution_strength="UNKNOWN")
+                if evaluated.get("control_analysis"):
+                    evaluated["control_analysis"]["status"] = "NOT_SUPPORTED"
             after_start, after_end = validate_window_report(after.payload_json)
-            result = ComparisonResult(comparison_plan_artifact_id=str(plan_artifact.artifact_id), verification_artifact_id=str(verification_artifact.artifact_id), proposal_id=str(proposal_id), source_run_id=str(run.ops_run_id), source_result_artifact_id=str(receipt.artifact_id), baseline_start=plan.baseline_start, baseline_end=plan.baseline_end, after_start=after_start, after_end=after_end, primary_signals=evaluated["primary_signals"], guardrail_signals=evaluated["guardrail_signals"], load_signals=evaluated["load_signals"], measurements=evaluated["measurements"], measurement_artifact_refs=refs, execution_source=evaluated["execution_source"], gap_codes=evaluated["gap_codes"], evidence_hashes=tuple(item.content_hash for item in artifacts), result=evaluated["result"], rationale_codes=("FROZEN_BUSINESS_EFFECT_RECOMPUTED", "OBSERVATIONAL_ATTRIBUTION_LIMITED"), direct_effect={"VERIFIED": "ACHIEVED", "NOT_ACHIEVED": "NOT_ACHIEVED", "ADVERSE": "ADVERSE"}.get(verification.status, "UNKNOWN"), measured_effect=evaluated["measured_effect"], symptom_recovered=evaluated["symptom_recovered"], guardrails_passed=evaluated["guardrails_passed"], attribution_strength=evaluated["attribution_strength"], causal_limitations=evaluated["causal_limitations"])
+            result = ComparisonResult(comparison_plan_artifact_id=str(plan_artifact.artifact_id), verification_artifact_id=str(verification_artifact.artifact_id), proposal_id=str(proposal_id), source_run_id=str(run.ops_run_id), source_result_artifact_id=str(receipt.artifact_id), baseline_start=plan.baseline_start, baseline_end=plan.baseline_end, after_start=after_start, after_end=after_end, primary_signals=evaluated["primary_signals"], guardrail_signals=evaluated["guardrail_signals"], load_signals=evaluated["load_signals"], measurements=evaluated["measurements"], measurement_artifact_refs=refs, execution_source=evaluated["execution_source"], gap_codes=evaluated["gap_codes"], evidence_hashes=tuple(item.content_hash for item in artifacts), result=evaluated["result"], rationale_codes=("FROZEN_BUSINESS_EFFECT_RECOMPUTED", "MATCHED_CONTROL_SUPPORT" if evaluated["attribution_strength"] == "SUPPORTED" else "OBSERVATIONAL_ATTRIBUTION_LIMITED"), direct_effect={"VERIFIED": "ACHIEVED", "NOT_ACHIEVED": "NOT_ACHIEVED", "ADVERSE": "ADVERSE"}.get(verification.status, "UNKNOWN"), measured_effect=evaluated["measured_effect"], symptom_recovered=evaluated["symptom_recovered"], guardrails_passed=evaluated["guardrails_passed"], attribution_strength=evaluated["attribution_strength"], causal_limitations=evaluated["causal_limitations"], control_analysis=evaluated.get("control_analysis", {}))
             security = max(int(item.security_level) for item in artifacts)
             result_artifact = await self._effect_artifact(uow, run, proposal, result_key, "COMPARISON_RESULT.v1", result.model_dump(mode="json"), {"request_hash": request_hash}, security)
             report_id = await self._publish_effect_report(uow, run, proposal, result_artifact, refs, security, trace_id, now)
@@ -199,7 +232,7 @@ class ChangeEffectVerification:
             await uow.commit()
             return (await self._effect_view(uow, run, proposal)).model_copy(update={"report_id": report_id})
 
-    async def _effect_view(self, uow, run, proposal, candidates=False):
+    async def _effect_view(self, uow, run, proposal, candidates=False, control_target_id=None):
         plan = await uow.runs.get_artifact_by_key(ops_run_id=run.ops_run_id, artifact_key=_key(proposal.proposal_id, "plan"))
         result = await uow.runs.get_latest_effect_result(ops_run_id=run.ops_run_id, proposal_id=proposal.proposal_id)
         if plan:
@@ -211,6 +244,12 @@ class ChangeEffectVerification:
             baseline = await effect_source(uow=uow, artifact_id=UUID(frozen["baseline_artifact_id"]), run=run, schema="AIOPS_WORKLOAD_REPORT.v2")
             if baseline.content_hash != frozen["baseline_hash"]:
                 raise state_conflict("冻结的基线哈希已经改变")
+            if checked_plan.business_effect.controlled_comparison is not None:
+                from aiops_agent.application.changes.effect_controls import load_control_reports
+                await load_control_reports(
+                    uow=uow, run=run, control=checked_plan.business_effect.controlled_comparison,
+                    frozen=frozen,
+                )
         if result:
             await effect_source(uow=uow, artifact_id=result.artifact_id, run=run, schema="COMPARISON_RESULT.v1")
             for ref in ComparisonResult.model_validate(result.payload_json).measurement_artifact_refs:
@@ -218,30 +257,51 @@ class ChangeEffectVerification:
                 if source is None or source.content_hash != ref["content_hash"] or sha256_json(source.payload_json) != source.content_hash:
                     raise state_conflict("效果来源链已经改变")
                 if source.trust_level == "SOURCE_VERIFIED":
-                    await effect_source(uow=uow, artifact_id=source.artifact_id, run=run)
+                    source_target_id = None
+                    if plan and checked_plan.business_effect.controlled_comparison is not None:
+                        control = checked_plan.business_effect.controlled_comparison
+                        from aiops_agent.application.control_measurement import control_source_ids
+                        control_ids = {identity for identity, target in control_source_ids(control) if target}
+                        after_id = dict(result.payload_json.get("control_analysis") or {}).get("after_artifact_id")
+                        if after_id:
+                            control_ids.add(str(after_id))
+                        if str(source.artifact_id) in control_ids:
+                            source_target_id = control.target_id
+                    await effect_source(uow=uow, artifact_id=source.artifact_id, run=run, target_id=source_target_id)
                 elif source.schema_version != "USER_PROVIDED_ACTION_RESULT.v1" or source.trust_level != "USER_PROVIDED" or str(source.ops_run_id) != str(run.ops_run_id):
                     raise state_conflict("人工执行来源链不匹配")
         items = []
         if candidates:
-            for item in await uow.runs.list_effect_artifacts(domain_id=run.domain_id, target_id=run.target_id, agent_id=run.agent_id, actor_id=run.actor_id, ops_run_id=run.ops_run_id, proposal_id=proposal.proposal_id, limit=20):
-                try:
-                    await effect_source(uow=uow, artifact_id=item.artifact_id, run=run)
-                except AIOpsApplicationError:
-                    continue
-                payload = item.payload_json
-                if item.schema_version == "ACTION_VERIFICATION.v1" and str(payload.get("proposal_id")) != str(proposal.proposal_id):
-                    continue
-                options = []
-                if item.schema_version == "AIOPS_WORKLOAD_REPORT.v2":
-                    options = [{"metric": f"load.{key}", "statement_identity": {}} for key in (payload.get("load_dimension_semantics") or {})]
-                    options.extend({"metric": f"metric.{key}", "statement_identity": {}, "label": f"{value['metric_code']} · {value['dimension_key']} · {value['unit']}/s"} for key, value in (payload.get("native_window_metrics") or {}).items())
-                    for row in payload.get("top_statements", ()):
-                        identity = {key: row[key] for key in ("statement_identity_type", "statement_identity_value", "database_name", "user_identifier", "top_level") if key in row}
-                        if len(identity) == 5:
-                            if row.get("plan_hash_value"):
-                                identity["plan_hash_value"] = row["plan_hash_value"]
-                            options.extend({"metric": metric, "statement_identity": identity} for metric in ("statement.mean_duration_microseconds", "statement.rows_per_call", "statement.calls_per_second"))
-                items.append({"artifact_id": str(item.artifact_id), "schema_version": item.schema_version, "period_start": payload.get("period_start"), "period_end": payload.get("period_end"), "status": payload.get("status"), "metrics": options[:128], "metrics_truncated": len(options) > 128})
+            frozen_control = checked_plan.business_effect.controlled_comparison if plan else None
+            if frozen_control is not None:
+                if control_target_id is not None and str(control_target_id) != str(frozen_control.target_id):
+                    raise state_conflict("不能在冻结后替换对照目标")
+                control_target_id = frozen_control.target_id
+            candidate_targets = [run.target_id]
+            if control_target_id is not None:
+                from aiops_agent.application.changes.effect_controls import control_target
+                await control_target(uow=uow, run=run, target_id=control_target_id)
+                candidate_targets.append(control_target_id)
+            for candidate_target_id in candidate_targets:
+                for item in await uow.runs.list_effect_artifacts(domain_id=run.domain_id, target_id=candidate_target_id, agent_id=run.agent_id, actor_id=run.actor_id, ops_run_id=run.ops_run_id, proposal_id=proposal.proposal_id, limit=20):
+                    try:
+                        await effect_source(uow=uow, artifact_id=item.artifact_id, run=run, target_id=candidate_target_id)
+                    except AIOpsApplicationError:
+                        continue
+                    payload = item.payload_json
+                    if item.schema_version == "ACTION_VERIFICATION.v1" and str(payload.get("proposal_id")) != str(proposal.proposal_id):
+                        continue
+                    options = []
+                    if item.schema_version == "AIOPS_WORKLOAD_REPORT.v2":
+                        options = [{"metric": f"load.{key}", "statement_identity": {}} for key in (payload.get("load_dimension_semantics") or {})]
+                        options.extend({"metric": f"metric.{key}", "statement_identity": {}, "label": f"{value['metric_code']} · {value['dimension_key']} · {value['unit']}/s"} for key, value in (payload.get("native_window_metrics") or {}).items())
+                        for row in payload.get("top_statements", ()):
+                            identity = {key: row[key] for key in ("statement_identity_type", "statement_identity_value", "database_name", "user_identifier", "top_level") if key in row}
+                            if len(identity) == 5:
+                                if row.get("plan_hash_value"):
+                                    identity["plan_hash_value"] = row["plan_hash_value"]
+                                options.extend({"metric": metric, "statement_identity": identity} for metric in ("statement.mean_duration_microseconds", "statement.rows_per_call", "statement.calls_per_second"))
+                    items.append({"target_id": str(candidate_target_id), "artifact_id": str(item.artifact_id), "schema_version": item.schema_version, "period_start": payload.get("period_start"), "period_end": payload.get("period_end"), "status": payload.get("status"), "metrics": options[:128], "metrics_truncated": len(options) > 128})
         report = await uow.inspections.get_current_effect_report(ops_run_id=run.ops_run_id, report_key=f"comparison.business.{proposal.proposal_id}") if result else None
         automatic = await uow.runs.get_artifact_by_key(
             ops_run_id=run.ops_run_id,
@@ -271,6 +331,14 @@ class ChangeEffectVerification:
 
     async def _publish_effect_report(self, uow, run, proposal, artifact, refs, security, trace_id, now):
         result = ComparisonResult.model_validate(artifact.payload_json)
+        # 报告及案例沿同一调查与执行提案溯源，不从效果反推根因或重新生成动作。
+        for identity in (getattr(run, "final_artifact_id", None), getattr(proposal, "snapshot_artifact_id", None)):
+            if identity is not None and str(identity) not in {ref["artifact_id"] for ref in refs}:
+                source = await effect_source(uow=uow, artifact_id=identity, run=run)
+                if str(source.ops_run_id) != str(run.ops_run_id):
+                    raise state_conflict("效果报告的调查或执行提案不属于当前 Run")
+                refs = (*refs, {"artifact_id": str(source.artifact_id), "content_hash": source.content_hash, "schema_version": source.schema_version})
+                security = max(security, int(source.security_level))
         report_id = uuid7()
         key = f"comparison.business.{proposal.proposal_id}"
         prior = await uow.inspections.get_current_effect_report(
@@ -284,6 +352,10 @@ class ChangeEffectVerification:
             "DEGRADED": "效果或护栏出现退化，请按停止条件处理",
             "INCONCLUSIVE": "当前窗口或负载不可比，不能确认业务效果",
         }[result.result]
+        if result.attribution_strength == "SUPPORTED":
+            summary = "预登记匹配对照支持本次措施效果：主要效果达到、负载可比、护栏通过；不等于根因已确认"
+        elif result.control_analysis:
+            summary += "；匹配对照未达到支持归因的条件"
         template = resolve_system_template("system:comparison.business")
         facts = []
         for name, value in result.measurements.items():
@@ -293,6 +365,13 @@ class ChangeEffectVerification:
                 "summary": f"{name}（{value['metric']}）：基线 {value.get('baseline', '未知')}，"
                 f"处置后 {value.get('after', '未知')}，单位 {value.get('unit', '未知')}；"
                 f"冻结条件：{outcome}；公式：{value.get('formula', '不可计算')}。",
+            })
+        for name, value in result.control_analysis.get("signals", {}).items():
+            facts.append({
+                "kind": "control_measurement", "key": name, **value,
+                "summary": f"对照 {name}：前值 {value['control_before']}，后值 {value['control_after']}，"
+                f"单位 {value['unit']}；校正相对变化 {value['adjusted_relative_change']}；"
+                f"校正条件是否满足 {value['adjusted_passed']}。",
             })
         content = ReportContent(
             report_key=key, report_type="COMPARISON", ops_run_id=str(run.ops_run_id),
@@ -306,6 +385,8 @@ class ChangeEffectVerification:
                 "measured_effect": result.measured_effect,
                 "symptom_recovered": result.symptom_recovered,
                 "guardrails_passed": result.guardrails_passed,
+                "comparison_result_artifact_id": str(artifact.artifact_id),
+                "comparison_method": result.control_analysis.get("method", "OBSERVATIONAL"),
             },
             facts=tuple(facts), gaps=tuple({"code": code} for code in result.gap_codes),
             evidence_refs=(*refs, {

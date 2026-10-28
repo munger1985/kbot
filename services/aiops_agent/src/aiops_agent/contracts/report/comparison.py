@@ -86,3 +86,4 @@ class ComparisonResult(_ComparisonContract):
     load_signals: dict[str, bool | None] = Field(default_factory=dict)
     measurement_artifact_refs: tuple[dict[str, str], ...] = ()
     execution_source: Literal["SOURCE_VERIFIED", "USER_PROVIDED", "UNKNOWN"] = "UNKNOWN"
+    control_analysis: dict = Field(default_factory=dict)

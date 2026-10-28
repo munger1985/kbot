@@ -32,6 +32,8 @@ async def schedule_effect_followup(
         return False
     occurred_at = datetime.fromisoformat(str(receipt.payload_json["occurred_at"]).replace("Z", "+00:00"))
     interval = int(frozen["collection_interval_seconds"])
+    if frozen.get("controlled_comparison"):
+        interval = max(interval, int(frozen["control_collection_interval_seconds"]))
     start = occurred_at + timedelta(seconds=plan.settle_delay_seconds)
     # 各端点最多等待一次采集周期；预留两周期，不把不足的实际区间冒充完整窗口。
     end = start + timedelta(seconds=plan.after_window_seconds + 2 * interval)
@@ -98,11 +100,11 @@ class BusinessEffectFollowupService:
         )
         if plan.content_hash != payload["plan_hash"]:
             raise state_conflict("自动效果验证计划哈希变化")
-        return run, proposal
+        return run, proposal, ComparisonPlan.model_validate(plan.payload_json)
 
     async def execute(self, payload):
         async with self._uow_factory() as uow:
-            run, proposal = await self._scope(uow, payload)
+            run, proposal, plan = await self._scope(uow, payload)
             prior = await uow.runs.get_artifact_by_key(
                 ops_run_id=run.ops_run_id,
                 artifact_key=_key(proposal.proposal_id, "automatic-result"),
@@ -121,18 +123,35 @@ class BusinessEffectFollowupService:
                 "actor_id": run.actor_id, "target_id": run.target_id,
             }
             row_version = int(proposal.row_version)
+            control = plan.business_effect.controlled_comparison if plan.business_effect else None
+            if control is not None:
+                from aiops_agent.application.changes.effect_controls import load_control_reports
+                await load_control_reports(
+                    uow=uow, run=run, control=control,
+                    frozen=plan.business_effect.model_dump(mode="json"),
+                )
         report = await self._workloads.create_workload_report(
             **scope, period_start=datetime.fromisoformat(payload["period_start"]),
             period_end=datetime.fromisoformat(payload["period_end"]),
             idempotency_key=f"effect-after:{payload['proposal_id']}",
             trace_id="business-effect-followup",
         )
+        control_report = None
+        if control is not None:
+            control_report = await self._workloads.create_workload_report(
+                **{**scope, "target_id": control.target_id},
+                period_start=datetime.fromisoformat(payload["period_start"]),
+                period_end=datetime.fromisoformat(payload["period_end"]),
+                idempotency_key=f"effect-control-after:{payload['proposal_id']}",
+                trace_id="business-effect-followup",
+            )
         result = await self._changes.evaluate_effect_plan(
             proposal_id=UUID(payload["proposal_id"]), domain_id=scope["domain_id"],
             actor_id=scope["actor_id"], trace_id="business-effect-followup",
             command=EffectEvaluationCommand(
                 expected_row_version=row_version, after_artifact_id=report.artifact_id,
                 verification_artifact_id=payload["verification_artifact_id"],
+                control_after_artifact_id=control_report.artifact_id if control_report else None,
             ),
         )
         await self._finish(payload, status="COMPLETED", report_id=str(result.report_id))

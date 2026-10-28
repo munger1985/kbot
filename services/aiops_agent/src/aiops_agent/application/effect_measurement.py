@@ -119,7 +119,7 @@ def measurement(payload, rule):
     return calculated_measurement(payload, rule, source_ref="window-report")[:3]
 
 
-def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, controlled_execution, baseline_ref="baseline", after_ref="after"):
+def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, controlled_execution, baseline_ref="baseline", after_ref="after", control_reports=None, control_after_ref=None):
     """完整复算所有冻结条件；保留每项原值、公式与缺口。"""
     rules = tuple(EffectSignalRule.model_validate(item) for item in frozen["signals"])
     gaps, values = [], {}
@@ -182,7 +182,7 @@ def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, cont
     else:
         measured = "UNCHANGED"
     # 可比窗口改善仍是观察性结果；没有对照或隔离实验，不宣称排除所有混杂因素。
-    return {
+    result = {
         "measurements": values,
         "primary_signals": roles["PRIMARY"],
         "guardrail_signals": roles["GUARDRAIL"],
@@ -196,3 +196,12 @@ def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, cont
         "causal_limitations": ("没有隔离实验或对照组，不能排除并行发布、缓存预热等混杂因素",),
         "result": "RESOLVED" if measured == "IMPROVED" and symptom and direct_status == "VERIFIED" else measured,
     }
+    if frozen.get("controlled_comparison") is not None:
+        from aiops_agent.application.control_measurement import apply_control_comparison
+        result = apply_control_comparison(
+            result=result, frozen=frozen, baseline=baseline, after=after,
+            reports=control_reports or {}, control_after_ref=control_after_ref,
+            controlled_execution=controlled_execution, direct_status=direct_status,
+            baseline_ref=baseline_ref, after_ref=after_ref,
+        )
+    return result

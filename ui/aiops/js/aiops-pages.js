@@ -752,7 +752,7 @@
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
     const sourceLink = report.source_conversation_id ? `<a href="./chat.html?conversation=${encodeURIComponent(report.source_conversation_id)}">查看来源会话</a>` : "";
-    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${report.report_type === "INCIDENT" && report.status === "READY" ? '<button type="button" data-write-ready data-related-case hidden>查看关联案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
+    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${["INCIDENT", "COMPARISON"].includes(report.report_type) && report.status === "READY" ? '<button type="button" data-write-ready data-related-case hidden>查看关联案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
     const frozenTargetName = String(header.target_name || "").trim();
     const targetId = String(header.target_id || report.target_id || "").trim();
     const frozenTargetIsIdentifier = !frozenTargetName
@@ -812,7 +812,7 @@
     const boundary = monthly.evidence_boundary || {};
     const canEdit = String(versions?.items?.[0]?.report_id || "") === String(report.report_id);
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
-    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${report.report_type === "INCIDENT" && report.status === "READY" ? '<button type="button" data-write-ready data-related-case hidden>查看关联案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
+    const actionButtons = `${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${["INCIDENT", "COMPARISON"].includes(report.report_type) && report.status === "READY" ? '<button type="button" data-write-ready data-related-case hidden>查看关联案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button>`;
     const metadata = [
       ["报告时间", shell.fmt(header.report_time)], ["统计周期", `${shell.fmt(header.period_start)} 至 ${shell.fmt(header.period_end)}`],
       ["运维范围", header.scope_name || "未记录"], ["范围类型", header.scope_type === "BUSINESS_SYSTEM" ? "业务系统" : "运维目标"],
@@ -841,7 +841,7 @@
     const versionItems = (versions?.items || []).map((item) => `<option value="${shell.escape(item.report_id)}" ${String(item.report_id) === String(report.report_id) ? "selected" : ""}>v${shell.escape(item.report_version)} · ${shell.escape(shell.fmt(item.published_at))}</option>`).join("");
     const sourceLink = report.source_conversation_id
       ? `<a href="./chat.html?conversation=${encodeURIComponent(report.source_conversation_id)}">查看来源会话</a>` : "";
-    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(report.template_ref || data.template?.template_ref || "系统模板")} · 模板 v${shell.escape(report.template_version || data.template?.version || "1")} · 报告 v${shell.escape(report.report_version)} · ${shell.escape(data.status_display || reportDisplayText(data.status || "UNKNOWN"))}</p>${sourceLink}</div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${report.report_type === "INCIDENT" && report.status === "READY" ? '<button type="button" data-write-ready data-related-case hidden>查看关联案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}${reportMetadataHtml(data, report, target)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.display_name || reportDisplayText(section.kind || "章节"))}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
+    return `<article class="ops-report-presentation"><header class="ops-head"><div><h2 data-report-title>${shell.escape(data.title || report.title || "正式报告")}</h2><p>${shell.escape(data.template?.display_name || "报告模板")} · ${shell.escape(report.template_ref || data.template?.template_ref || "系统模板")} · 模板 v${shell.escape(report.template_version || data.template?.version || "1")} · 报告 v${shell.escape(report.report_version)} · ${shell.escape(data.status_display || reportDisplayText(data.status || "UNKNOWN"))}</p>${sourceLink}</div><div class="ops-actions">${canEdit ? '<button type="button" data-write-ready data-edit-report>编辑报告</button>' : ""}${["INCIDENT", "COMPARISON"].includes(report.report_type) && report.status === "READY" ? '<button type="button" data-write-ready data-related-case hidden>查看关联案例</button>' : ""}<button class="primary" type="button" data-write-ready data-download-report>下载 PDF</button></div></header>${leadershipBriefingHtml(data.leadership_briefing)}${reportMetadataHtml(data, report, target)}<section class="ops-panel"><div class="ops-panel-body"><label>历史版本 <select data-report-version>${versionItems}</select></label><p>历史版本可随时预览和重新下载；人工编辑会创建新版本，不会覆盖旧版。</p></div></section>${sections.map((section) => `<section class="ops-panel" data-report-section="${shell.escape(section.kind || "")}"><div class="ops-panel-head"><h3>${shell.escape(section.display_name || reportDisplayText(section.kind || "章节"))}${section.human_edited ? " · 人工编辑" : ""}</h3></div><div class="ops-panel-body" data-report-section-body><ul>${(section.items || []).map((item) => `<li>${shell.escape(reportDisplayText(item))}</li>`).join("")}</ul></div></section>`).join("")}</article>`;
   }
 
   function beginReportEdit(panel, data, report, versions) {
@@ -887,7 +887,7 @@
       KBotAIOpsAuth.request(appApi + `/reports/${encodedId}/presentation`),
       KBotAIOpsAuth.request(appApi + `/reports/${encodedId}/versions`),
       KBotAIOpsAuth.request(appApi + `/targets/${encodeURIComponent(report.target_id)}`).catch(() => null),
-      report.report_type === "INCIDENT" && report.status === "READY"
+      ["INCIDENT", "COMPARISON"].includes(report.report_type) && report.status === "READY"
         ? KBotAIOpsAuth.request(appApi + `/operations-knowledge/reports/${encodedId}/case-eligibility`).catch(() => null)
         : Promise.resolve(null),
     ]);
@@ -903,6 +903,17 @@
       relatedCaseButton.hidden = false;
       relatedCaseButton.onclick = () => {
         location.href = `./cases.html?asset_id=${encodeURIComponent(caseEligibility.existing_asset_id)}`;
+      };
+    } else if (relatedCaseButton && report.report_type === "COMPARISON" && caseEligibility?.eligible) {
+      relatedCaseButton.hidden = false;
+      relatedCaseButton.textContent = "生成待审核效果案例";
+      relatedCaseButton.onclick = async () => {
+        relatedCaseButton.disabled = true;
+        try {
+          const value = await KBotAIOpsAuth.request(appApi + `/operations-knowledge/reports/${encodedId}:extract-case`, { method: "POST" });
+          shell.toast("效果案例已进入审核流程，尚未发布");
+          location.href = `./cases.html?asset_id=${encodeURIComponent(value.asset.asset_id)}`;
+        } catch (error) { shell.toast(error.message); relatedCaseButton.disabled = false; }
       };
     } else if (relatedCaseButton) relatedCaseButton.remove();
     panel.querySelector("[data-report-version]").onchange = (event) => {

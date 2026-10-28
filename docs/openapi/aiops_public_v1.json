@@ -3064,6 +3064,101 @@
         "title": "DiagnosticSourceSummary",
         "type": "object"
       },
+      "EffectControlPair": {
+        "additionalProperties": false,
+        "properties": {
+          "control_artifact_id": {
+            "format": "uuid",
+            "title": "Control Artifact Id",
+            "type": "string"
+          },
+          "treatment_artifact_id": {
+            "format": "uuid",
+            "title": "Treatment Artifact Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "treatment_artifact_id",
+          "control_artifact_id"
+        ],
+        "title": "EffectControlPair",
+        "type": "object"
+      },
+      "EffectControlPlan": {
+        "additionalProperties": false,
+        "description": "预登记的匹配对照，不是随机试验，也不签发变更或采集授权。",
+        "properties": {
+          "alignment_tolerance_seconds": {
+            "default": 2,
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Alignment Tolerance Seconds",
+            "type": "integer"
+          },
+          "baseline_artifact_id": {
+            "format": "uuid",
+            "title": "Baseline Artifact Id",
+            "type": "string"
+          },
+          "control_stability_tolerance": {
+            "default": "0.1",
+            "pattern": "^0(?:\\.\\d{1,18})?$|^1(?:\\.0{1,18})?$",
+            "title": "Control Stability Tolerance",
+            "type": "string"
+          },
+          "method": {
+            "const": "MATCHED_CONTROL_RATIO.v1",
+            "default": "MATCHED_CONTROL_RATIO.v1",
+            "title": "Method",
+            "type": "string"
+          },
+          "minimum_statement_calls": {
+            "default": 30,
+            "maximum": 1000000.0,
+            "minimum": 30.0,
+            "title": "Minimum Statement Calls",
+            "type": "integer"
+          },
+          "pretrend_tolerance": {
+            "default": "0.1",
+            "pattern": "^0(?:\\.\\d{1,18})?$|^1(?:\\.0{1,18})?$",
+            "title": "Pretrend Tolerance",
+            "type": "string"
+          },
+          "prior_pairs": {
+            "items": {
+              "$ref": "#/components/schemas/EffectControlPair"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Prior Pairs",
+            "type": "array"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/EffectSignalRule"
+            },
+            "maxItems": 32,
+            "minItems": 3,
+            "title": "Signals",
+            "type": "array"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "baseline_artifact_id",
+          "prior_pairs",
+          "signals"
+        ],
+        "title": "EffectControlPlan",
+        "type": "object"
+      },
       "EffectEvaluationCommand": {
         "additionalProperties": false,
         "properties": {
@@ -3071,6 +3166,18 @@
             "format": "uuid",
             "title": "After Artifact Id",
             "type": "string"
+          },
+          "control_after_artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control After Artifact Id"
           },
           "expected_row_version": {
             "minimum": 1.0,
@@ -3110,6 +3217,16 @@
             "format": "uuid",
             "title": "Baseline Artifact Id",
             "type": "string"
+          },
+          "controlled_comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectControlPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "expected_row_version": {
             "minimum": 1.0,
@@ -18455,6 +18572,23 @@
               "format": "uuid",
               "title": "Proposal Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "control_target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Control Target Id"
             }
           }
         ],

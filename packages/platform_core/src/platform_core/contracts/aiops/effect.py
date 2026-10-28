@@ -39,6 +39,7 @@ class EffectPlanCommand(AIOpsContract):
     max_baseline_age_seconds: int = Field(default=3600, ge=60, le=604800)
     auto_evaluate: bool = True
     stop_conditions: tuple[str, ...] = Field(min_length=1, max_length=16)
+    controlled_comparison: "EffectControlPlan | None" = None
 
     @model_validator(mode="after")
     def validate_signals(self):
@@ -48,6 +49,43 @@ class EffectPlanCommand(AIOpsContract):
             raise ValueError("必须冻结主要效果、护栏和负载可比条件")
         if any(not item.strip() or len(item) > 1000 for item in self.stop_conditions):
             raise ValueError("停止条件不能为空或超长")
+        if self.controlled_comparison is not None:
+            controls = {item.key: item for item in self.controlled_comparison.signals}
+            if set(controls) != {item.key for item in self.signals}:
+                raise ValueError("对照组必须逐项对应全部效果、护栏及负载条件")
+            for rule in self.signals:
+                counterpart = controls[rule.key]
+                if (rule.role, rule.metric, rule.comparison, rule.threshold) != (
+                    counterpart.role, counterpart.metric, counterpart.comparison, counterpart.threshold,
+                ):
+                    raise ValueError("对照条件只能改变统计主体，不能事后更换指标口径或成功条件")
+        return self
+
+
+class EffectControlPair(AIOpsContract):
+    treatment_artifact_id: UUIDv7
+    control_artifact_id: UUIDv7
+
+
+class EffectControlPlan(AIOpsContract):
+    """预登记的匹配对照，不是随机试验，也不签发变更或采集授权。"""
+
+    method: Literal["MATCHED_CONTROL_RATIO.v1"] = "MATCHED_CONTROL_RATIO.v1"
+    target_id: UUIDv7
+    baseline_artifact_id: UUIDv7
+    prior_pairs: tuple[EffectControlPair, ...] = Field(min_length=2, max_length=8)
+    signals: tuple[EffectSignalRule, ...] = Field(min_length=3, max_length=32)
+    alignment_tolerance_seconds: int = Field(default=2, ge=0, le=60)
+    pretrend_tolerance: str = Field(default="0.1", pattern=r"^0(?:\.\d{1,18})?$|^1(?:\.0{1,18})?$")
+    control_stability_tolerance: str = Field(default="0.1", pattern=r"^0(?:\.\d{1,18})?$|^1(?:\.0{1,18})?$")
+    minimum_statement_calls: int = Field(default=30, ge=30, le=1000000)
+
+    @model_validator(mode="after")
+    def validate_pairs(self):
+        identities = [self.baseline_artifact_id]
+        identities.extend(value for pair in self.prior_pairs for value in (pair.treatment_artifact_id, pair.control_artifact_id))
+        if len(set(identities)) != len(identities) or len({item.key for item in self.signals}) != len(self.signals):
+            raise ValueError("对照窗口引用及条件名称不得重复")
         return self
 
 
@@ -57,11 +95,28 @@ class FrozenEffectPlan(EffectPlanCommand):
     baseline_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     frozen_at: UtcDatetime
     collection_interval_seconds: int | None = Field(default=None, ge=60, le=3600)
+    control_source_hashes: dict[str, str] = Field(default_factory=dict, max_length=17)
+    control_target_row_version: int | None = Field(default=None, ge=1)
+    control_collection_interval_seconds: int | None = Field(default=None, ge=60, le=3600)
 
     @model_validator(mode="after")
     def validate_collection(self):
         if self.auto_evaluate and self.collection_interval_seconds is None:
             raise ValueError("自动效果验证必须冻结已启用的采集周期")
+        control = self.controlled_comparison
+        if control is not None:
+            expected = {str(control.baseline_artifact_id)} | {
+                str(value) for pair in control.prior_pairs
+                for value in (pair.treatment_artifact_id, pair.control_artifact_id)
+            }
+            if str(self.baseline_artifact_id) in expected or set(self.control_source_hashes) != expected:
+                raise ValueError("冻结对照必须保留全部不同窗口的原始哈希")
+            if any(len(value) != 64 or any(char not in "0123456789abcdef" for char in value) for value in self.control_source_hashes.values()):
+                raise ValueError("对照证据哈希无效")
+            if self.control_target_row_version is None or (self.auto_evaluate and self.control_collection_interval_seconds is None):
+                raise ValueError("必须冻结对照目标版本及自动采集周期")
+        elif self.control_source_hashes or self.control_target_row_version is not None or self.control_collection_interval_seconds is not None:
+            raise ValueError("无对照计划时不得填写对照冻结信息")
         return self
 
 
@@ -69,6 +124,7 @@ class EffectEvaluationCommand(AIOpsContract):
     expected_row_version: int = Field(ge=1)
     after_artifact_id: UUIDv7
     verification_artifact_id: UUIDv7
+    control_after_artifact_id: UUIDv7 | None = None
 
 
 class EffectVerificationView(AIOpsContract):

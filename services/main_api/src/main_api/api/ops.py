@@ -1101,9 +1101,9 @@ async def list_proposals(
 
 
 @router.get("/proposals/{proposal_id}/effect", response_model=EffectVerificationView)
-async def get_effect_verification(proposal_id: UUID, request: Request):
+async def get_effect_verification(proposal_id: UUID, request: Request, control_target_id: UUID | None = None):
     payload = await _client(request).effect_verification_request(
-        proposal_id, auth_context=request.state.auth_context,
+        proposal_id, auth_context=request.state.auth_context, control_target_id=control_target_id,
     )
     return EffectVerificationView.model_validate(payload)
 

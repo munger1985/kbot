@@ -1833,6 +1833,21 @@ class OperationsKnowledgeService:
             result = _diagnosis_case_eligibility(
                 report=report, report_content=content, evidence_refs=evidence_refs,
             )
+            if report.report_type == "COMPARISON" and content.get("scope", {}).get("comparison_result_artifact_id"):
+                from aiops_agent.application.configuration.common import sha256_json
+                from aiops_agent.application.effect_case import profile_from_effect_report
+                try:
+                    if artifact.content_hash != report.content_hash or sha256_json(content) != artifact.content_hash:
+                        raise self._state_conflict("效果报告内容哈希不一致")
+                    profile = await profile_from_effect_report(
+                        uow=uow, domain_id=domain_id, report=report, content=content, sources=report_sources,
+                    )
+                    if profile is not None:
+                        result = {"eligible": True, "reasons": [], "case_kind": profile.case_kind}
+                except AIOpsApplicationError:
+                    result = {"eligible": False, "reasons": [{
+                        "code": "EFFECT_SOURCE_INVALID", "message": "效果来源复核未通过，不能生成已验证案例",
+                    }]}
             closure_artifact_id = dict(content.get("scope") or {}).get(
                 "closure_artifact_id"
             )
@@ -2583,6 +2598,9 @@ class OperationsKnowledgeService:
                     status_code=422,
                 )
             report_content = dict(artifact.payload_json or {})
+            from aiops_agent.application.configuration.common import sha256_json
+            if sha256_json(report_content) != artifact.content_hash:
+                raise self._state_conflict("报告原始内容哈希不一致")
             evidence_refs = [
                 str(item.get("artifact_id"))
                 for item in report_content.get("evidence_refs") or ()
@@ -2607,7 +2625,12 @@ class OperationsKnowledgeService:
                         "version": _version_view(closure_case[1]),
                         "replayed": True,
                     }
-            eligibility = _diagnosis_case_eligibility(
+            from aiops_agent.application.effect_case import profile_from_effect_report
+            effect_profile = await profile_from_effect_report(
+                uow=uow, domain_id=domain_id, report=report,
+                content=report_content, sources=report_sources,
+            )
+            eligibility = {"eligible": True} if effect_profile is not None else _diagnosis_case_eligibility(
                 report=report, report_content=report_content,
                 evidence_refs=evidence_refs,
             )
@@ -2617,7 +2640,7 @@ class OperationsKnowledgeService:
                     message="；".join(item["message"] for item in eligibility["reasons"]),
                     status_code=422,
                 )
-            root_cause_summary = str(scope["diagnosis_rationale"]).strip()
+            root_cause_summary = str(effect_profile.root_cause["summary"] if effect_profile is not None else scope["diagnosis_rationale"]).strip()
             target = await uow.targets.get_scoped(
                 target_id=report.target_id, domain_id=domain_id
             )
@@ -2670,7 +2693,7 @@ class OperationsKnowledgeService:
                     "content_hash": report.content_hash,
                 },
             )
-            profile = CaseRedactor().profile(profile)
+            profile = CaseRedactor().profile(effect_profile if effect_profile is not None else profile)
         collection = await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
         display_name, profile = await redact_case_for_index(
             title=report.title, profile=profile, collection=collection,

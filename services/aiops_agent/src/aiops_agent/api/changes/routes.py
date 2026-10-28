@@ -40,9 +40,9 @@ Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
 
 
 @router.get("/{proposal_id}/effect", response_model=EffectVerificationView)
-async def get_effect_verification(proposal_id: UUID, request: Request, service: Service, context: Auth):
+async def get_effect_verification(proposal_id: UUID, request: Request, service: Service, context: Auth, control_target_id: UUID | None = None):
     require_service_scope(request, "aiops.approve")
-    return await service.get_effect_verification(proposal_id=proposal_id, domain_id=_scope(request, context), actor_id=context.asserted_user_id or context.client_id, agent_ids=_agent_filter(context))
+    return await service.get_effect_verification(proposal_id=proposal_id, domain_id=_scope(request, context), actor_id=context.asserted_user_id or context.client_id, agent_ids=_agent_filter(context), control_target_id=control_target_id)
 
 
 @router.post("/{proposal_id}/effect-plan", response_model=EffectVerificationView)

@@ -128,95 +128,26 @@ async def _case_claims_still_current(*, uow, domain_id, run, artifact, record):
     return True
 
 async def validate_case_effect(*, uow, domain_id, profile):
-    """案例中的肯定效果必须来自受控比较产物，不能只信任 profile 标记。"""
+    """案例肯定效果必须从权威执行、冻结条件和原始对照窗口完整重放。"""
+    from uuid import UUID
     from aiops_agent.contracts.knowledge import DiagnosisCaseProfile
+    from aiops_agent.application.changes.effect_replay import replay_supported_effect
     try:
         profile = DiagnosisCaseProfile.model_validate(profile)
-    except ValueError:
-        return False
-    if profile.case_kind not in {"VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION"}:
-        return True
-    from uuid import UUID
-    from aiops_agent.contracts.report.comparison import ComparisonResult
-    reference = str(profile.verification.get("controlled_verification_ref") or "")
-    if not reference.startswith("artifact:") or "#" in reference:
-        return False
-    try:
-        identity = UUID(reference.removeprefix("artifact:"))
-    except ValueError:
-        return False
-    artifact = await uow.runs.get_artifact(artifact_id=str(identity))
-    if (artifact is None or artifact.schema_version != "COMPARISON_RESULT.v1"
-        or artifact.trust_level != "SOURCE_VERIFIED" or not isinstance(artifact.payload_json, dict)
-        or canonical_hash(artifact.payload_json) != artifact.content_hash):
-        return False
-    run = await uow.runs.get_run_scoped(ops_run_id=artifact.ops_run_id, domain_id=domain_id)
-    if run is None:
-        return False
-    try:
-        result = ComparisonResult.model_validate(artifact.payload_json)
-    except ValueError:
-        return False
-    if str(result.source_run_id) not in {str(value) for value in profile.source.get("run_ids", ())}:
-        return False
-    if not (
-        result.measured_effect == "IMPROVED" and result.guardrails_passed is True
-        and result.attribution_strength == "SUPPORTED" and not result.gap_codes
-        and result.primary_signals and all(value is True for value in result.primary_signals.values())
-        and result.guardrail_signals and all(value is True for value in result.guardrail_signals.values())
-        and result.evidence_hashes
-    ):
-        return False
-    if profile.case_kind == "VERIFIED_RESOLUTION" and result.symptom_recovered is not True:
-        return False
-    verification = await uow.runs.get_artifact(artifact_id=result.verification_artifact_id)
-    receipt = await uow.runs.get_artifact(artifact_id=result.source_result_artifact_id)
-    plan = await uow.runs.get_artifact(artifact_id=result.comparison_plan_artifact_id)
-    for source in (verification, receipt, plan):
-        if (source is None or not isinstance(source.payload_json, dict)
-            or canonical_hash(source.payload_json) != source.content_hash):
+        if profile.case_kind not in {"VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION"}:
+            return True
+        reference = str(profile.verification.get("controlled_verification_ref") or "")
+        if not reference.startswith("artifact:") or "#" in reference:
             return False
-        source_run = await uow.runs.get_run_scoped(ops_run_id=source.ops_run_id, domain_id=domain_id)
-        if source_run is None or str(source_run.target_id) != str(run.target_id):
+        artifact = await uow.runs.get_artifact(artifact_id=UUID(reference.removeprefix("artifact:")))
+        if artifact is None:
             return False
-        if str(source.payload_json.get("proposal_id")) != str(result.proposal_id):
+        run = await uow.runs.get_run_scoped(ops_run_id=artifact.ops_run_id, domain_id=domain_id)
+        if run is None or str(run.ops_run_id) not in {str(value) for value in profile.source.get("run_ids", ())}:
             return False
-    # 标记不能替代原始窗口复算；没有执行前冻结条件的比较不能背书已验证案例。
-    from datetime import datetime
-    from aiops_agent.application.effect_measurement import evaluate_effect
-    from aiops_agent.contracts.change import ActionVerification
-    from aiops_agent.contracts.report import ComparisonPlan
-    try:
-        checked_plan = ComparisonPlan.model_validate(plan.payload_json)
-        if checked_plan.business_effect is None or checked_plan.result_rule_version != "business-effect.v1":
+        result = await replay_supported_effect(uow=uow, run=run, artifact=artifact)
+        if result is None:
             return False
-        frozen = checked_plan.business_effect.model_dump(mode="json")
-        checked = {}
-        for ref in result.measurement_artifact_refs:
-            native = await uow.runs.get_artifact(artifact_id=UUID(ref["artifact_id"]))
-            if native is None or native.content_hash != ref["content_hash"] or canonical_hash(native.payload_json) != native.content_hash:
-                return False
-            native_run = await uow.runs.get_run_scoped(ops_run_id=native.ops_run_id, domain_id=domain_id)
-            if native_run is None or str(native_run.target_id) != str(run.target_id) or not await source_scope_is_current(uow=uow, run=native_run, domain_id=domain_id):
-                return False
-            checked[str(native.artifact_id)] = native
-        baseline = checked[str(frozen["baseline_artifact_id"])]
-        after = [item for item in checked.values() if item.schema_version == "AIOPS_WORKLOAD_REPORT.v2" and str(item.artifact_id) != str(baseline.artifact_id)]
-        if len(after) != 1 or baseline.content_hash != frozen["baseline_hash"]:
-            return False
-        action = ActionVerification.model_validate(verification.payload_json)
-        if action.gap_codes or receipt.schema_version != "EXECUTION_RESULT.v1" or receipt.trust_level != "SOURCE_VERIFIED":
-            return False
-        recomputed = evaluate_effect(
-            frozen=frozen, baseline=baseline.payload_json, after=after[0].payload_json,
-            occurred_at=datetime.fromisoformat(receipt.payload_json["occurred_at"].replace("Z", "+00:00")),
-            direct_status=action.status, controlled_execution=True,
-            baseline_ref=f"artifact:{baseline.artifact_id}",
-            after_ref=f"artifact:{after[0].artifact_id}",
-        )
-        for key in ("measured_effect", "symptom_recovered", "guardrails_passed", "attribution_strength", "measurements"):
-            if recomputed[key] != getattr(result, key):
-                return False
+        return profile.case_kind != "VERIFIED_RESOLUTION" or result.symptom_recovered is True
     except (KeyError, TypeError, ValueError):
         return False
-    return True
