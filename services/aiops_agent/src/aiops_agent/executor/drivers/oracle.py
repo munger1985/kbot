@@ -162,12 +162,15 @@ class OracleDiagnosticDriver:
                     int((time.monotonic() - query_started) * 1000),
                     len(rows),
                 )
+                from aiops_agent.executor.identity import observe_oracle_identity
+                instance_identity = await observe_oracle_identity(connection)
                 result = DriverQueryResult(
                     columns=columns,
                     rows=materialized_rows,
                     truncated=row_truncated or cell_truncated,
                     db_version=str(connection.version),
                     database_types=database_types,
+                    instance_identity=instance_identity,
                 )
                 query_succeeded = True
                 return result

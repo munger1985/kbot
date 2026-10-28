@@ -247,6 +247,8 @@ class DiagnosticExecutorService:
             provenance={
                 "executor_policy": "readonly-catalog.v1",
                 "catalog_hash": grant.capability_snapshot_hash,
+                "instance_identity": dict(raw.instance_identity),
+                "identity_scope": "SAME_CONNECTION_CURRENT" if raw.instance_identity else "UNKNOWN",
             },
         )
 

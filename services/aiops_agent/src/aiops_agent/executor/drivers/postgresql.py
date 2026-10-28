@@ -139,12 +139,15 @@ class PostgreSQLDiagnosticDriver:
                 limits=limits,
             )
             await transaction.rollback()
+            from aiops_agent.executor.identity import observe_postgresql_identity
+            instance_identity = await observe_postgresql_identity(connection)
             return DriverQueryResult(
                 columns=columns,
                 rows=rows,
                 truncated=truncated,
                 db_version=str(version),
                 database_types=database_types,
+                instance_identity=instance_identity,
             )
         except asyncio.CancelledError:
             # 取消时不等待正常关闭握手，禁止未完成查询占用连接或迟到返回。

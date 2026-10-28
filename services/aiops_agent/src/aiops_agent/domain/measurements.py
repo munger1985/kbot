@@ -63,13 +63,15 @@ def _derive_measurement(formula, before, after):
 
 
 def independent_origin_groups(facts):
-    """没有原生映射时按目标保守归组，不能因为 Tool 或 Artifact 不同而增加独立支持。"""
+    """未知物理身份不能由逻辑 Target 数量推导独立性，别名和同源不会增加支持。"""
     groups = []
     for fact in facts:
         if fact.provenance is None:
             origins = {"unknown"}
         else:
             origins = set(fact.provenance.native_origin_ids)
+            if "PHYSICAL_IDENTITY_UNKNOWN" in fact.provenance.quality_flags:
+                origins.add("unknown")
         overlapping = [index for index, group in enumerate(groups) if group & origins or "unknown" in group or "unknown" in origins]
         for index in reversed(overlapping):
             origins.update(groups.pop(index))

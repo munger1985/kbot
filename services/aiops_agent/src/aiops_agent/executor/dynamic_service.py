@@ -328,6 +328,8 @@ class DynamicDiagnosticExecutorService:
                 ),
                 "policy_sha256": grant.policy_sha256,
                 "query_sha256": grant.query_sha256,
+                "instance_identity": dict(raw.instance_identity),
+                "identity_scope": "SAME_CONNECTION_CURRENT" if raw.instance_identity else "UNKNOWN",
             },
         )
 

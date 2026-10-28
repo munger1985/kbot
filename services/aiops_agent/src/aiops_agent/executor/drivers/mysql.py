@@ -221,6 +221,8 @@ class MySQLDiagnosticDriver:
                         )
                         rows = await cursor.fetchmany(limits.max_result_rows + 1)
                         truncated = len(rows) > limits.max_result_rows
+                from aiops_agent.executor.identity import observe_mysql_identity
+                instance_identity = await observe_mysql_identity(cursor)
                 await connection.rollback()
                 return DriverQueryResult(
                     columns=columns,
@@ -230,6 +232,7 @@ class MySQLDiagnosticDriver:
                     ),
                     truncated=truncated,
                     db_version=str(connection.get_server_info()),
+                    instance_identity=instance_identity,
                 )
         except TimeoutError as exc:
             raise DiagnosticDriverError("TIMEOUT", retryable=True) from exc

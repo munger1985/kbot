@@ -28,6 +28,7 @@ class DriverQueryResult:
     truncated: bool
     db_version: str
     database_types: tuple[str, ...] = ()
+    instance_identity: tuple[tuple[str, str], ...] = ()
 
 
 class ReadonlyDatabaseDriver(Protocol):

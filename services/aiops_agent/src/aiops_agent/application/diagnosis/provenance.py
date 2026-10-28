@@ -7,11 +7,13 @@ from datetime import timedelta
 
 def database_provenance(observation):
     native = dict(observation.provenance or {})
-    physical = native.get("instance_identity") or {}
+    physical = (native.get("instance_identity") or {}) if native.get("identity_scope") == "SAME_CONNECTION_CURRENT" else {}
     verified_identity = tuple(sorted((str(key), str(value)) for key, value in physical.items())) if isinstance(physical, dict) else ()
+    from aiops_agent.domain.evidence.native_origin import database_origin_anchor
+    anchor = database_origin_anchor(getattr(observation, "db_type", ""), dict(verified_identity))
     return EvidenceProvenance(
         target_id=str(observation.target_id),
-        native_origin_ids=(f"database:{observation.target_id}",),
+        native_origin_ids=(f"database:{observation.target_id}", *((anchor,) if anchor else ())),
         physical_identity=verified_identity,
         source_version=f"{observation.db_version}:{observation.variant}:{observation.template_sha256}",
         content_hash=observation.result_sha256,
@@ -20,6 +22,7 @@ def database_provenance(observation):
         quality_flags=(
             *(("TRUNCATED",) if observation.truncated else ()),
             *(("PHYSICAL_IDENTITY_UNKNOWN",) if not verified_identity else ()),
+            *(("BOOT_IDENTITY_UNKNOWN",) if verified_identity and "instance_started_at" not in physical else ()),
             "NATIVE_ORIGIN_COARSE",
         ),
     )
