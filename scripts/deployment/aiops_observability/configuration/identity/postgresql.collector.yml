@@ -1,0 +1,16 @@
+collector_name: aiops_database_identity_postgresql_v1
+metrics:
+  - metric_name: aiops_database_identity_info
+    type: gauge
+    help: "PostgreSQL同连接原生身份；不是其他Exporter指标的归属证明。"
+    key_labels: [identity_version, database_type, system_identifier, database_oid, instance_started_at]
+    values: [identity_info]
+    query: |
+      SELECT '1' AS identity_version, 'POSTGRESQL' AS database_type,
+             control.system_identifier::text AS system_identifier,
+             (SELECT oid::text FROM pg_catalog.pg_database
+              WHERE datname = pg_catalog.current_database()) AS database_oid,
+             to_char(pg_catalog.pg_postmaster_start_time() AT TIME ZONE 'UTC',
+                     'YYYY-MM-DD"T"HH24:MI:SS.US') || '+00:00' AS instance_started_at,
+             1 AS identity_info
+      FROM pg_catalog.pg_control_system() AS control

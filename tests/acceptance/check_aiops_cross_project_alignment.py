@@ -13,6 +13,14 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("services/aiops_agent/src/aiops_agent/contracts/physical_identity.py"),
+    Path("services/aiops_agent/src/aiops_agent/domain/evidence/physical_identity.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/diagnosis/physical_identity.py"),
+    Path("tests/unit/aiops_agent/test_aiops_physical_identity_graph.py"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/postgresql.collector.yml"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/mysql.collector.yml"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/oracle.collector.yml"),
+    Path("scripts/deployment/aiops_observability/configuration/identity/README.md"),
     Path("services/aiops_agent/src/aiops_agent/application/diagnosis/evidence_projection.py"),
     Path("services/aiops_agent/src/aiops_agent/application/investigation/prior_sql_replay.py"),
     Path("tests/support/aiops_sql_evidence.py"),

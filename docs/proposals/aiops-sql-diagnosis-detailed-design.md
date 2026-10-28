@@ -19,6 +19,37 @@ SQL Evidence Bundle 与逐项判断是通用调查记录的专项组成，不再
 原生计数器映射、完整实测效果与全局知识治理仍未整体完成。
 具体进度见 [DBA Agent 实施状态](../operations/aiops-dba-agent-implementation.md)。
 
+### 监控原生身份见证与跨源关系（2026-10-28）
+
+新增可选 db.identity.info 指标与 DATABASE_IDENTITY_INFO.v1 见证协议，
+以及 PHYSICAL_IDENTITY_GRAPH.v1 确定性来源图。普通诊断、SQL Evidence Bundle、
+不可变调查记录和报告/案例共用同一见证；报告和案例独立重读原始
+OBSERVATION_SET / DBA_TOOL_RESULT，重新投影并重建关系，不能靠自述图或哈希副本增信。
+类型化时点按值复核，避免Python时区对象repr与JSON重放形式不同而误拒绝。
+
+查询必须在 Source Binding 显式授权的指标集合内，以精确 target_key 定位；
+不自动扩大默认基线、Profile、能力、凭据或权限。身份保留为原始字符串标签，
+避免PG系统标识/Oracle DBID被浮点化；通过timestamp(info)保留原始抓取时间，
+而不是把范围查询求值时点当作原始采样。陈旧、未来、非法、截断及作用域不符均不升级匹配；
+有界保留16条身份见证，图最多64节点/128关系，超限明确标记。
+
+PG与Oracle只确认来源自报的数据库族匹配，不能区分同族主备/RAC/Data Guard；
+MySQL可确认来源自报UUID匹配，但启动代际仍未知。
+Oracle无时区启动时钟不转UTC、不跨来源比较；相同Target/IP/版本不产生身份匹配。
+同一采集作用域身份变化或多义时保持未知；近时原生字段不符单独报告冲突。
+
+三库sql_exporter Collector资产见 scripts/deployment/aiops_observability/configuration/identity/。
+它们是待实际部署审核的同连接见证生产配置，不含凭据、不自动启用或授予权限。
+标准mysqld_exporter没有字符串UUID时保持未知，不能用旁路DSN证明它的来源。
+同一job/instance的身份序列也不证明其他指标来自相同连接；
+metric_series_assignment_verified、exact_runtime_instance_verified、
+window_continuity_verified及independent_corroboration均不因身份自报而置真。
+
+本批已接通来源自报身份关系和原始来源重放，不关闭第①项：
+实际Exporter部署配置、其他指标的同连接归属、剩余计数器语义和真实验收仍待完成。
+未部署、重启、变更Target权限或发布线上Prompt。
+
+
 ### 跨轮原始来源与行投影约束（2026-10-28）
 
 历史 SQL 筛行统一使用确定性投影：保留原始工件、原时间、内容摘要和原生来源，

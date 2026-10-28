@@ -118,6 +118,9 @@ class AIOpsChartSelectionPolicy:
 
     @staticmethod
     def _has_chartable_series(observation: MetricObservation) -> bool:
+        if observation.semantic_role == "DATABASE_IDENTITY":
+            # 身份抓取时点不是性能曲线，不用时间戳上升伪造业务趋势。
+            return False
         return any(
             len(
                 [

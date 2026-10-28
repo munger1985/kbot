@@ -94,7 +94,10 @@ def freeze(facts, engine="POSTGRESQL", frame=None):
         "statement": "累计执行 100 次", "level": "OBSERVED", "applicable_time": NOW,
         "evidence_fields": [{"evidence_ref": direct.evidence_ref, "row_index": 0, "field": "execution_count"}],
         "reasoning": "来自语句计数"}], "goal_satisfied": True})
-    context = SimpleNamespace(run_id=uuid7(), task_id=uuid7(), target_id=uuid7(), plan_snapshot={
+    # 受控观察夹具继承真实采集Target，不以随机Target冻结后再修改调查身份。
+    target_id = next((fact.provenance.target_id for fact in facts
+        if fact.provenance is not None and fact.provenance.collected_end is not None), "target")
+    context = SimpleNamespace(run_id=uuid7(), task_id=uuid7(), target_id=target_id, plan_snapshot={
         "capability_snapshot": {"database_type": engine}, "answer_context": {"question": "分析 SQL", "task_frame": frame or {
             "diagnostic_profile": "SINGLE_SQL_PERFORMANCE", "subject_ref": SUBJECTS[engine]}}})
     return freeze_investigation(draft=draft, evidence=tuple(facts), context=context)

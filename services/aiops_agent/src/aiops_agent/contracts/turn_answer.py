@@ -11,6 +11,7 @@ from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasur
 from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.evidence import SourcePaginationObservation
+from aiops_agent.contracts.physical_identity import SourceIdentityWitness
 from aiops_agent.contracts.sql_plan import SqlPlanDocument
 
 from platform_core.contracts.aiops import (
@@ -55,9 +56,19 @@ class TurnEvidenceFact(BaseModel):
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
+    source_identity_witnesses: tuple[SourceIdentityWitness, ...] = Field(default=(), max_length=16)
 
     @model_validator(mode="after")
     def validate_series_budget(self):
+        if self.source_identity_witnesses and (
+            self.tool_id != "metric.query_range" or self.source_id != "monitoring.overview"
+            or self.trust_level != "SOURCE_VERIFIED" or any(
+                not item.input_ref.startswith(f"artifact:{self.artifact_id}#/observations/")
+                or self.provenance is None or str(item.target_id) != self.provenance.target_id
+                for item in self.source_identity_witnesses
+            )
+        ):
+            raise ValueError("监控身份见证必须保留受控来源、目标及原始序列引用")
         if self.tool_id == "evidence.sql_plan.controlled_estimate" or self.sql_plan is not None and self.sql_plan.origin == "CONTROLLED_ESTIMATE":
             if (self.sql_plan is None or self.sql_plan.origin != "CONTROLLED_ESTIMATE"
                 or self.tool_id != "evidence.sql_plan.controlled_estimate" or self.source_id != "sql.plan_capture"

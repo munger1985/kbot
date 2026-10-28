@@ -18,6 +18,9 @@ from aiops_agent.application.diagnosis.sql_plans import (
 
 
 async def validate_investigation_sources(*, uow, run, payload, plan_capture_reader=None):
+    from aiops_agent.application.diagnosis.physical_identity import validate_identity_witness_sources
+    if not await validate_identity_witness_sources(uow=uow, run=run, payload=payload):
+        return False
     from aiops_agent.application.investigation.prior_sql_replay import validate_prior_sql_facts
     from aiops_agent.application.investigation.prior_sql_evidence import _SQL_TOOLS
     if not await validate_prior_sql_facts(uow=uow, run=run, payload=payload):
@@ -31,7 +34,9 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
     record_payload = payload.get("investigation_record") or {}
     if not isinstance(record_payload, dict):
         return False
-    if (record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs")
+    if (record_payload.get("physical_identity_graph") is None
+            and not any(item.get("source_identity_witnesses") or (item.get("provenance") or {}).get("physical_identity") for item in payload.get("evidence", ()))
+            and record_payload.get("sql_object_graph") is None and not record_payload.get("sql_subject_graphs")
             and not any(item.get("source_id") == "prior_turn.sql_observation" or item.get("followup_run_id") for item in payload.get("evidence", ()))
             and not any(item.get("tool_id") in _SQL_TOOLS for item in payload.get("evidence", ()))
             and not record_payload.get("sql_plan_assessments")
@@ -54,10 +59,11 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
         if record is not None and (record.target_id != str(run.target_id) or record.run_id != str(run.ops_run_id)):
             return False
         if record is not None:
-            record.validate_observations(facts)
             record.validate_access_gaps(tuple(TurnEvidenceGap.model_validate(item) for item in payload.get("evidence_gaps", ())))
         graphs = record.sql_graphs if record is not None else ()
         used = {ref.evidence_ref for graph in graphs for edge in graph.relationships for ref in (edge.anchor, edge.related)}
+        used.update(fact.evidence_ref for fact in facts if fact.provenance is not None and fact.provenance.physical_identity
+                    and fact.tool_id != "metric.query_range")
         used.update(ref.evidence_ref for graph in graphs for reference in graph.references for ref in reference.evidence_refs)
         used.update(fact.evidence_ref for fact in facts if fact.object_access or fact.pagination is not None)
         used.update(fact.evidence_ref for fact in facts if fact.provenance is not None and fact.provenance.native_lineage is not None)
@@ -167,6 +173,8 @@ async def validate_investigation_sources(*, uow, run, payload, plan_capture_read
             if (source.source_id != gap.source_id or len(outcomes) != 1
                     or outcomes[0].gap.code != gap.code or outcomes[0].gap.object_access != gap.object_access):
                 return False
+        if record is not None:
+            record.validate_observations(facts)
     except (ValueError, TypeError, IndexError, KeyError, AttributeError):
         return False
     return True

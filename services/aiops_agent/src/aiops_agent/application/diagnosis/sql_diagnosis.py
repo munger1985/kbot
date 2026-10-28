@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from aiops_agent.domain.evidence.physical_identity import build_physical_identity_graph
+
 from decimal import Decimal
 from datetime import datetime
 from typing import Any
@@ -226,6 +228,7 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         ),
         "subjects": subjects,
         "plan_assessments": [plan for item in subjects for plan in item["plan_assessments"]],
+        "physical_identity_graph": build_physical_identity_graph(evidence).model_dump(mode="json"),
         "comparison_policy": {"separate_subjects": True, "implicit_aggregation": False,
                               "cumulative_difference_is_window": False, "comparison_is_causal_effect": False},
         "interpretation_policy": {
@@ -241,6 +244,10 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "diagnostic_environment_is_not_application_environment": True,
             "controlled_estimate_is_not_production_execution": True,
             "optimizer_cost_is_not_elapsed_time": True,
+            "source_identity_report_is_not_physical_attestation": True,
+            "database_family_is_not_runtime_instance": True,
+            "identity_metric_does_not_assign_other_series": True,
+            "identity_match_is_not_window_continuity_or_sql_causality": True,
         },
     }
 

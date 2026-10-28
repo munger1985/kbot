@@ -402,7 +402,8 @@ def test_cursor_source_gate_does_not_require_a_record_or_plan_assessment(documen
 
 @pytest.mark.parametrize("tamper", ["drop", "identity", "bind_refs", "representative", "execution"])
 def test_frozen_cursor_assessment_cannot_be_relabelled_as_a_verified_execution(tamper):
-    values = (direct(), fact(observation()), fact(observation(BINDS)))
+    plan_observation = observation()
+    values = (direct(), fact(plan_observation), fact(observation(BINDS, target_id=plan_observation.target_id)))
     record = freeze(values, "ORACLE")
     body = record.model_dump(mode="json")
     if tamper == "drop":

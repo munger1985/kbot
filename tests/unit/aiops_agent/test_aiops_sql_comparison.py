@@ -62,7 +62,9 @@ def comparison_draft(bundle, facts):
 
 
 def answer_context(frame, facts, engine):
-    return TaskExecutionContext(run_id=uuid7(), task_id=uuid7(), task_key="answer:compose", target_id=uuid7(),
+    target_id = next((fact.provenance.target_id for fact in facts
+        if fact.provenance is not None and fact.provenance.collected_end is not None), str(uuid7()))
+    return TaskExecutionContext(run_id=uuid7(), task_id=uuid7(), task_key="answer:compose", target_id=target_id,
         agent_id=uuid7(), actor_id=uuid7(), trigger_type="MANUAL", trace_id="comparison", attempt=1,
         deadline_at=None, policy_snapshot={}, plan_snapshot={"capability_snapshot": {"database_type": engine},
         "answer_context": {"question": "比较这两条 SQL 的成本与措施", "task_frame": frame, "model": {}, "prompts": {}}},

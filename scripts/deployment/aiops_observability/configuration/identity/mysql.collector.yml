@@ -1,0 +1,10 @@
+collector_name: aiops_database_identity_mysql_v1
+metrics:
+  - metric_name: aiops_database_identity_info
+    type: gauge
+    help: "MySQL同连接server_uuid；不证明启动代际或其他Exporter指标归属。"
+    key_labels: [identity_version, database_type, server_uuid]
+    values: [identity_info]
+    query: |
+      SELECT '1' AS identity_version, 'MYSQL' AS database_type,
+             @@server_uuid AS server_uuid, 1 AS identity_info

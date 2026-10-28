@@ -12,6 +12,7 @@ from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasur
 from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.evidence import SourcePaginationObservation
+from aiops_agent.contracts.physical_identity import SourceIdentityWitness, PhysicalIdentityGraph
 from aiops_agent.contracts.implementation import ImplementationRunbook
 from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
 from aiops_agent.contracts.sql_plan import SqlPlanDocument, SqlPlanAssessment
@@ -154,6 +155,7 @@ class InvestigationObservation(BaseModel):
     derivations: tuple[DerivedMeasurement, ...] = ()
     calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
     series_computations: tuple[SeriesComputation, ...] = Field(default=(), max_length=128)
+    source_identity_witnesses: tuple[SourceIdentityWitness, ...] = Field(default=(), max_length=16)
 
     @model_validator(mode="after")
     def validate_series_budget(self):
@@ -217,6 +219,7 @@ class InvestigationRecord(BaseModel):
     sql_subject_graphs: tuple[SqlObjectGraph, ...] = Field(default=(), max_length=20)
     sql_plan_assessments: tuple[SqlPlanAssessment, ...] = Field(default=(), max_length=80)
     access_gaps: tuple[InvestigationAccessGap, ...] = Field(default=(), max_length=128)
+    physical_identity_graph: PhysicalIdentityGraph | None = None
 
     def validate_access_gaps(self, gaps):
         expected = tuple(InvestigationAccessGap(
@@ -241,6 +244,11 @@ class InvestigationRecord(BaseModel):
             claim_revisions=self.claim_revisions,
         )
         refs = {item.evidence_ref for item in self.observations}
+        if self.physical_identity_graph is not None and any(
+            node.evidence_ref not in refs or node.target_id != self.target_id
+            for node in self.physical_identity_graph.nodes
+        ):
+            raise ValueError("跨源身份图必须引用本记录同一目标的冻结观察")
         if len(refs) != len(self.observations):
             raise ValueError("调查观测引用不能重复")
         for claim in draft.claims:
@@ -300,6 +308,10 @@ class InvestigationRecord(BaseModel):
         return self
 
     def validate_observations(self, evidence):
+        from aiops_agent.domain.evidence.physical_identity import build_physical_identity_graph
+        expected_graph = build_physical_identity_graph(evidence)
+        if self.physical_identity_graph != (expected_graph if expected_graph.nodes else None):
+            raise ValueError("调查跨源身份图与原始观察不一致")
         expected = {item.evidence_ref: item for item in self.observations}
         actual = {item.evidence_ref: item for item in evidence}
         if len(actual) != len(evidence) or set(expected) != set(actual):
@@ -307,8 +319,11 @@ class InvestigationRecord(BaseModel):
         for ref, observation in expected.items():
             fact = actual[ref]
             for key in InvestigationObservation.model_fields:
-                if str(getattr(observation, key)) != str(getattr(fact, key)):
-                    raise ValueError("调查记录与原观测的身份、时间、口径或信任标记不一致")
+                left, right = getattr(observation, key), getattr(fact, key)
+                # UUID定位以字符串归一；其余严格类型合同按值比较，避免UTC时区对象repr漂移。
+                equal = str(left) == str(right) if key in {"artifact_id", "followup_run_id"} else left == right
+                if not equal:
+                    raise ValueError(f"调查记录与原观测的身份、时间、口径或信任标记不一致（{key}）")
         from aiops_agent.domain.evidence.sql_object_graph import replay_sql_object_graph
         for graph in self.sql_graphs:
             replay_sql_object_graph(graph, evidence)

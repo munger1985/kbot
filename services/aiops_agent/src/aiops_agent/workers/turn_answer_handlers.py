@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from aiops_agent.domain.evidence.physical_identity import physical_identity_model_context
+
 import hashlib
 import json
 import re
@@ -1050,6 +1052,7 @@ class DbaEvidenceAssessmentHandler:
                         mode="json"
                     ),
                     "measurement_boundaries": _measurement_boundaries(deterministic),
+                    **physical_identity_model_context(scoped.evidence),
                     "sql_evidence_bundle": build_sql_evidence_bundle(
                         task_frame=task_frame,
                         database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
@@ -1281,6 +1284,7 @@ class DbaEvidenceAssessmentHandler:
     ) -> TurnEvidenceFact | None:
         """把同一监控源的多指标时间序列压缩为一个可折叠事实。"""
         from aiops_agent.application.diagnosis.monitoring_calculations import build_monitoring_rows
+        from aiops_agent.application.diagnosis.physical_identity import source_identity_witnesses
         rows, warnings, series_computations = build_monitoring_rows(
             artifact_id=artifact_id, result=result, forecast_horizon_days=forecast_horizon_days,
         )
@@ -1358,6 +1362,7 @@ class DbaEvidenceAssessmentHandler:
             visualizations=visualizations,
             provenance=monitoring_provenance(result),
             series_computations=series_computations,
+            source_identity_witnesses=source_identity_witnesses(artifact_id=artifact_id, result=result),
         )
 
 _HTML_REPORT_TOOLS = {
@@ -2193,6 +2198,7 @@ class DbaAnswerComposeHandler:
             fact.evidence_ref for fact in assessment.evidence
         ]
         payload["measurement_boundaries"] = _measurement_boundaries(assessment)
+        payload.update(physical_identity_model_context(assessment.evidence))
         return payload
 
     @staticmethod

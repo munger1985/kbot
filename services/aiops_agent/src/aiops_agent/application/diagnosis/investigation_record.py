@@ -113,6 +113,7 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             source_pagination=fact.source_pagination,
             calculation_graphs=fact.calculation_graphs,
             series_computations=fact.series_computations,
+            source_identity_witnesses=fact.source_identity_witnesses,
         ) for fact in evidence),
         claims=draft.claims, recommendations=draft.recommendations,
         access_gaps=tuple(InvestigationAccessGap(
@@ -124,6 +125,10 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
         stop_reason="GOAL_ANSWERED" if satisfied else "PARTIAL_ANSWER",
     )
     from aiops_agent.application.implementation.diagnostic_runbook import compile_diagnostic_runbook
+    from aiops_agent.domain.evidence.physical_identity import build_physical_identity_graph
+    identity_graph = build_physical_identity_graph(evidence)
+    if identity_graph.nodes:
+        record = record.model_copy(update={"physical_identity_graph": identity_graph})
     capability = dict(context.plan_snapshot.get("capability_snapshot") or {})
     database = dict(dict(context.plan_snapshot.get("investigation_execution") or {}).get("database") or {})
     if frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"}:
@@ -141,8 +146,8 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             record = record.model_copy(update={"sql_plan_assessments": tuple(
                 SqlPlanAssessment.model_validate(item) for item in bundle.get("plan_assessments", ())
             )})
-        record = type(record).model_validate(record.model_dump(mode="python"))
-        record.validate_observations(evidence)
+    record = type(record).model_validate(record.model_dump(mode="python"))
+    record.validate_observations(evidence)
     runbook = compile_diagnostic_runbook(
         record, database_type=str(capability.get("database_type") or database.get("db_type") or ""),
         database_version=capability.get("database_version"),

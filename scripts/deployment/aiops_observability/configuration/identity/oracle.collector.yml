@@ -1,0 +1,15 @@
+collector_name: aiops_database_identity_oracle_v1
+metrics:
+  - metric_name: aiops_database_identity_info
+    type: gauge
+    help: "Oracle同连接DBID和实例/容器上下文；无时区启动时间保持原值。"
+    key_labels: [identity_version, database_type, dbid, instance_number, container_id, instance_started_at]
+    values: [identity_info]
+    query: |
+      SELECT '1' AS "identity_version", 'ORACLE' AS "database_type",
+             TO_CHAR(db.dbid, 'FM99999999999999999999') AS "dbid",
+             TO_CHAR(inst.instance_number, 'FM9999999999') AS "instance_number",
+             SYS_CONTEXT('USERENV', 'CON_ID') AS "container_id",
+             TO_CHAR(inst.startup_time, 'YYYY-MM-DD"T"HH24:MI:SS') AS "instance_started_at",
+             1 AS "identity_info"
+      FROM SYS.V_$DATABASE db CROSS JOIN SYS.V_$INSTANCE inst

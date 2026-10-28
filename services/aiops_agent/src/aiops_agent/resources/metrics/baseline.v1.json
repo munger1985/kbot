@@ -2,6 +2,60 @@
   "catalog_version": "baseline.v1",
   "metrics": [
     {
+      "metric_code": "db.identity.info",
+      "semantic_role": "DATABASE_IDENTITY",
+      "semantic_version": "1.0.0",
+      "name": "数据库原生身份见证",
+      "description": "可选的同连接采集器原生身份信息；值为Prometheus原始抓取时间戳。来源自报仅用于有界身份比较，不证明其他指标归属、运行节点或历史连续性。",
+      "unit": "unix_seconds",
+      "value_kind": "STATE",
+      "expected_dimensions": [
+        "identity_version",
+        "database_type",
+        "system_identifier",
+        "database_oid",
+        "instance_started_at",
+        "server_uuid",
+        "dbid",
+        "instance_number",
+        "container_id",
+        "target_key",
+        "job",
+        "instance",
+        "cluster",
+        "prometheus",
+        "replica",
+        "namespace",
+        "pod"
+      ],
+      "supported_db_types": [
+        "POSTGRESQL",
+        "MYSQL",
+        "ORACLE"
+      ],
+      "allowed_aggregations": [
+        "LAST"
+      ],
+      "default_window_seconds": 900,
+      "min_step_seconds": 60,
+      "max_points": 120,
+      "max_series": 16,
+      "providers": {
+        "PROMETHEUS": {
+          "template_id": "prom.database.identity.info",
+          "template_version": "1",
+          "query_template": "timestamp(aiops_database_identity_info{target_key=\"${external_target}\",identity_version=\"1\"})",
+          "required_labels": [
+            "target_key",
+            "identity_version",
+            "database_type",
+            "job",
+            "instance"
+          ]
+        }
+      }
+    },
+    {
       "metric_code": "mysql.availability", "semantic_role": "AVAILABILITY", "semantic_version": "1.0.0",
       "name": "MySQL 可用性", "description": "mysqld_exporter 对目标 MySQL 的连接状态。",
       "unit": "state", "value_kind": "STATE", "expected_dimensions": ["target_key"],

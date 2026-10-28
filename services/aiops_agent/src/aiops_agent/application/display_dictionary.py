@@ -14,6 +14,8 @@ _DISPLAY_NAMES = {
     "ORACLE": "Oracle",
     "MYSQL": "MySQL",
     "POSTGRESQL": "PostgreSQL",
+    "REPORTED_DATABASE_FAMILY_MATCH": "来源报告的数据库族匹配（未核验运行节点）",
+    "REPORTED_SERVER_MATCH": "来源报告的节点标识匹配（启动代际未知）",
     "artifact.sql_plan.import": "执行计划（用户材料）",
     "evidence.sql_plan.controlled_estimate": "受控估算计划（非实际运行计划）",
     "PLAN_CAPTURE_SOURCE_UNAVAILABLE": "估算计划来源或当前访问权已变化",
