@@ -12,6 +12,7 @@ from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasur
 from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.series_calculation import SeriesComputation
 from aiops_agent.contracts.implementation import ImplementationRunbook
+from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
 
 
 class InvestigationParent(BaseModel):
@@ -182,6 +183,7 @@ class InvestigationRecord(BaseModel):
     parent: InvestigationParent | None = None
     claim_revisions: tuple[ClaimRevision, ...] = ()
     runbook: ImplementationRunbook | None = None
+    sql_object_graph: SqlObjectGraph | None = None
 
     @model_validator(mode="after")
     def validate_record(self):
@@ -199,6 +201,10 @@ class InvestigationRecord(BaseModel):
         for claim in draft.claims:
             if any(item.evidence_ref not in refs for item in (*claim.evidence_fields, *claim.counterevidence_fields)):
                 raise ValueError("主张必须引用本记录冻结的观测")
+        if self.sql_object_graph is not None:
+            for edge in self.sql_object_graph.relationships:
+                if edge.anchor.evidence_ref not in refs or edge.related.evidence_ref not in refs:
+                    raise ValueError("对象关系必须引用本记录冻结的观测")
         claim_ids = {item.claim_id for item in self.claims}
         if any(not set(goal.claim_refs) <= claim_ids for goal in self.goal_assessments):
             raise ValueError("目标完成状态引用了不存在的主张")
@@ -240,3 +246,6 @@ class InvestigationRecord(BaseModel):
             for key in InvestigationObservation.model_fields:
                 if str(getattr(observation, key)) != str(getattr(fact, key)):
                     raise ValueError("调查记录与原观测的身份、时间、口径或信任标记不一致")
+        if self.sql_object_graph is not None:
+            from aiops_agent.domain.evidence.sql_object_graph import replay_sql_object_graph
+            replay_sql_object_graph(self.sql_object_graph, evidence)

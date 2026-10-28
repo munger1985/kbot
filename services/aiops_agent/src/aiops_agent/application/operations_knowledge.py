@@ -1305,8 +1305,8 @@ class OperationsKnowledgeService:
                 if not dict(artifact.payload_json or {}).get("investigation_record"):
                     break
                 record = dict(artifact.payload_json["investigation_record"])
-                from aiops_agent.application.diagnosis.monitoring_calculations import validate_monitoring_trace_sources
-                if not await validate_monitoring_trace_sources(uow=uow, run=run, payload=dict(artifact.payload_json or {})):
+                from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
+                if not await validate_investigation_sources(uow=uow, run=run, payload=dict(artifact.payload_json or {})):
                     break
                 if (
                     str(record.get("target_id")) != str(run.target_id)

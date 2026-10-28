@@ -176,6 +176,9 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         "task": task_frame,
         "observations": observations,
         "relationships": relationships,
+        "object_graph": sql_object_graph_for_resolution(
+            database_type=database_type, subject=subject, resolution=resolution, evidence=evidence,
+        ),
         "interpretation_policy": {
             "plan_is_not_universal_prerequisite": True,
             "context_is_not_sql_attribution": True,
@@ -183,8 +186,22 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "missing_is_not_negative_evidence": True,
             "cumulative_is_not_window": True,
             "draft_is_not_execution_authority": True,
+            "syntactic_reference_is_not_runtime_access": True,
+            "catalog_index_is_not_plan_usage": True,
         },
     }
+
+
+def sql_object_graph_for_resolution(*, database_type, subject, resolution, evidence):
+    """先使用已消歧的完整统计主体，再建立对象关系；不隐选多个用户或游标。"""
+    if resolution["status"] not in {"RESOLVED", "BOUNDED"} or len(resolution["candidates"]) != 1:
+        return None
+    from aiops_agent.domain.evidence.sql_object_graph import build_sql_object_graph
+    keys = {"subject_type", "query_id", "sql_id", "digest", "database_oid", "user_oid", "top_level",
+            "schema_name", "inst_id", "child_number", "plan_hash_value", "container_id", "dbid"}
+    graph = build_sql_object_graph(database_type=database_type,
+        subject={key: value for key, value in {**subject, **resolution["candidates"][0]["dimensions"]}.items() if key in keys}, evidence=evidence)
+    return graph.model_dump(mode="json")
 
 
 def validate_sql_diagnosis(draft: SqlDiagnosisDraft, bundle: dict) -> None:

@@ -125,7 +125,6 @@ class OracleDiagnosticDriver:
             connection.module = "kbot-aiops-db-executor"
             connection.action = operation_id
             cursor = connection.cursor()
-            query_succeeded = False
             try:
                 async with asyncio.timeout(
                     limits.statement_timeout_seconds
@@ -162,6 +161,9 @@ class OracleDiagnosticDriver:
                     int((time.monotonic() - query_started) * 1000),
                     len(rows),
                 )
+                # 主只读事务先完成清理；可选身份探测失败不再污染主结果的回滚。
+                async with asyncio.timeout(1):
+                    await connection.rollback()
                 from aiops_agent.executor.identity import observe_oracle_identity
                 instance_identity = await observe_oracle_identity(connection)
                 result = DriverQueryResult(
@@ -172,14 +174,9 @@ class OracleDiagnosticDriver:
                     database_types=database_types,
                     instance_identity=instance_identity,
                 )
-                query_succeeded = True
                 return result
             finally:
                 cursor.close()
-                # 失败/取消时直接关闭独占只读连接，不在取消路径再次等待 ROLLBACK。
-                if query_succeeded:
-                    async with asyncio.timeout(1):
-                        await connection.rollback()
         except asyncio.CancelledError:
             if connection is not None:
                 try:

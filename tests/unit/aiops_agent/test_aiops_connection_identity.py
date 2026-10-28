@@ -170,3 +170,56 @@ def test_optional_probe_skips_when_cleanup_reserve_would_consume_primary_budget(
         connection.fetchrow.assert_not_awaited()
         assert identity_probe_budget() == 1
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure", ["query", "cursor_cleanup"])
+def test_mysql_optional_probe_failure_after_rollback_does_not_discard_primary_rows(monkeypatch, failure):
+    from aiops_agent.executor.drivers.mysql import MySQLDiagnosticDriver
+    primary = SimpleNamespace(description=(("value",),), execute=AsyncMock(), fetchmany=AsyncMock(return_value=[(7,)]))
+    probe = SimpleNamespace(execute=AsyncMock(), fetchmany=AsyncMock(return_value=[(MYSQL_UUID,)]))
+    connection = SimpleNamespace(rollback=AsyncMock(), close=Mock(), get_server_info=lambda: "8.4")
+    if failure == "query":
+        probe.execute.side_effect = TimeoutError()
+
+    class CursorContext:
+        def __init__(self, cursor):
+            self.cursor = cursor
+        async def __aenter__(self):
+            if self.cursor is probe:
+                connection.rollback.assert_awaited_once()
+            return self.cursor
+        async def __aexit__(self, *args):
+            if self.cursor is probe and failure == "cursor_cleanup":
+                raise ConnectionError("可选游标已断开")
+
+    connection.cursor = Mock(side_effect=[CursorContext(primary), CursorContext(probe)])
+    monkeypatch.setattr("aiops_agent.executor.drivers.mysql.aiomysql.connect", AsyncMock(return_value=connection))
+    raw = asyncio.run(MySQLDiagnosticDriver().execute_dynamic(
+        profile=SimpleNamespace(host="db.internal", port=3306, database="app", tls_enabled=False, tls_profile_ref=None),
+        secret=SimpleNamespace(values={"username": "diag", "password": "hidden"}), sql="SELECT 7 AS value", parameters={},
+        limits=DiagnosticLimits(statement_timeout_seconds=5, max_result_rows=10, max_result_bytes=65536), trace_id="optional",
+    ))
+    assert raw.rows == ((7,),) and not raw.instance_identity
+    connection.rollback.assert_awaited_once()
+    connection.close.assert_called_once()
+
+
+def test_oracle_optional_probe_failure_cannot_reenter_primary_transaction_cleanup(monkeypatch):
+    from aiops_agent.executor.drivers.oracle import OracleDiagnosticDriver
+    primary = SimpleNamespace(description=(("value", None),), execute=AsyncMock(),
+        fetchmany=AsyncMock(return_value=[(7,)]), close=Mock())
+    connection = SimpleNamespace(version="19.3", rollback=AsyncMock(), close=AsyncMock(), cancel=Mock())
+    async def probe_query(*args):
+        connection.rollback.assert_awaited_once()
+        raise TimeoutError()
+    probe = SimpleNamespace(execute=AsyncMock(side_effect=probe_query), fetchmany=AsyncMock(), close=Mock())
+    connection.cursor = Mock(side_effect=[primary, probe])
+    monkeypatch.setattr("aiops_agent.executor.drivers.oracle.oracledb.connect_async", AsyncMock(return_value=connection))
+    raw = asyncio.run(OracleDiagnosticDriver().execute_dynamic(
+        profile=SimpleNamespace(host="db.internal", port=1521, service="PDB", tls_enabled=False, tls_profile_ref=None),
+        secret=SimpleNamespace(values={"username": "diag", "password": "hidden"}), sql="SELECT 7 AS value FROM DUAL", parameters={},
+        limits=DiagnosticLimits(statement_timeout_seconds=5, max_result_rows=10, max_result_bytes=65536), trace_id="optional",
+    ))
+    assert raw.rows == ((7,),) and not raw.instance_identity
+    connection.rollback.assert_awaited_once()
+    connection.close.assert_awaited_once()

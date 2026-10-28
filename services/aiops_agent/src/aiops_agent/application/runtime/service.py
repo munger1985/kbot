@@ -4609,9 +4609,9 @@ class AIOpsRuntimeService:
         period_kind: str = "AD_HOC",
     ) -> ReportEntity:
         """由用户显式请求，把终态诊断冻结为正式报告。"""
-        from aiops_agent.application.diagnosis.monitoring_calculations import validate_monitoring_trace_sources
-        if not await validate_monitoring_trace_sources(uow=uow, run=run, payload=dict(source_artifact.payload_json or {})):
-            raise state_conflict("监控派生计算与原始证据不一致，不能生成正式报告")
+        from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
+        if not await validate_investigation_sources(uow=uow, run=run, payload=dict(source_artifact.payload_json or {})):
+            raise state_conflict("调查计算或对象关系与原始证据不一致，不能生成正式报告")
         assert uow.inspections is not None
         plan = dict(run.plan_snapshot_json or {})
         question = str(
@@ -7818,9 +7818,9 @@ class AIOpsRuntimeService:
                         "turn_no": int(turn.turn_no),
                     })
                     continue
-                from aiops_agent.application.diagnosis.monitoring_calculations import validate_monitoring_trace_sources
-                if not await validate_monitoring_trace_sources(uow=uow, run=run, payload=dict(artifact.payload_json or {})):
-                    raise state_conflict("监控派生计算来源失效，不能汇入会话报告")
+                from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
+                if not await validate_investigation_sources(uow=uow, run=run, payload=dict(artifact.payload_json or {})):
+                    raise state_conflict("调查计算或对象关系来源失效，不能汇入会话报告")
                 source_rows.append((turn, run, artifact))
             if not source_rows:
                 raise state_conflict("当前会话尚未形成可报告的诊断结果")

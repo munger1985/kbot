@@ -117,6 +117,13 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
     from aiops_agent.application.implementation.diagnostic_runbook import compile_diagnostic_runbook
     capability = dict(context.plan_snapshot.get("capability_snapshot") or {})
     database = dict(dict(context.plan_snapshot.get("investigation_execution") or {}).get("database") or {})
+    if frame.get("diagnostic_profile") == "SINGLE_SQL_PERFORMANCE":
+        from aiops_agent.application.diagnosis.sql_diagnosis import build_sql_evidence_bundle
+        from aiops_agent.contracts.sql_object_graph import SqlObjectGraph
+        bundle = build_sql_evidence_bundle(task_frame=frame,
+            database_type=str(capability.get("database_type") or database.get("db_type") or ""), evidence=evidence)
+        if bundle and bundle.get("object_graph") is not None:
+            record = record.model_copy(update={"sql_object_graph": SqlObjectGraph.model_validate(bundle["object_graph"])})
     runbook = compile_diagnostic_runbook(
         record, database_type=str(capability.get("database_type") or database.get("db_type") or ""),
         database_version=capability.get("database_version"),

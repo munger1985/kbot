@@ -83,6 +83,20 @@ async def observe_mysql_identity(cursor):
         return ()
 
 
+async def observe_mysql_connection_identity(connection):
+    """主游标及只读事务已结束；可选探测游标的关闭失败也不抹掉主结果。"""
+    budget = identity_probe_budget()
+    if budget <= 0:
+        return ()
+    try:
+        async with asyncio.timeout(budget):
+            async with connection.cursor() as cursor:
+                observed = await observe_mysql_identity(cursor)
+        return observed
+    except Exception:
+        return ()
+
+
 async def observe_oracle_identity(connection):
     budget = identity_probe_budget()
     if budget <= 0:
