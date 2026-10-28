@@ -204,7 +204,13 @@ async def validate_case_effect(*, uow, domain_id, profile):
         action = ActionVerification.model_validate(verification.payload_json)
         if action.gap_codes or receipt.schema_version != "EXECUTION_RESULT.v1" or receipt.trust_level != "SOURCE_VERIFIED":
             return False
-        recomputed = evaluate_effect(frozen=frozen, baseline=baseline.payload_json, after=after[0].payload_json, occurred_at=datetime.fromisoformat(receipt.payload_json["occurred_at"].replace("Z", "+00:00")), direct_status=action.status, controlled_execution=True)
+        recomputed = evaluate_effect(
+            frozen=frozen, baseline=baseline.payload_json, after=after[0].payload_json,
+            occurred_at=datetime.fromisoformat(receipt.payload_json["occurred_at"].replace("Z", "+00:00")),
+            direct_status=action.status, controlled_execution=True,
+            baseline_ref=f"artifact:{baseline.artifact_id}",
+            after_ref=f"artifact:{after[0].artifact_id}",
+        )
         for key in ("measured_effect", "symptom_recovered", "guardrails_passed", "attribution_strength", "measurements"):
             if recomputed[key] != getattr(result, key):
                 return False

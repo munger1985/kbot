@@ -171,7 +171,13 @@ class ChangeEffectVerification:
             if occurred_at < datetime.fromisoformat(frozen["frozen_at"]) or occurred_at > now:
                 raise state_conflict("动作时间早于计划冻结或晚于当前时间")
             try:
-                evaluated = evaluate_effect(frozen=frozen, baseline=baseline.payload_json, after=after.payload_json, occurred_at=occurred_at, direct_status=verification.status, controlled_execution=controlled)
+                evaluated = evaluate_effect(
+                    frozen=frozen, baseline=baseline.payload_json, after=after.payload_json,
+                    occurred_at=occurred_at, direct_status=verification.status,
+                    controlled_execution=controlled,
+                    baseline_ref=f"artifact:{baseline.artifact_id}",
+                    after_ref=f"artifact:{after.artifact_id}",
+                )
                 _, after_end = validate_window_report(after.payload_json)
                 if after_end > now:
                     raise ValueError("验证窗口尚未结束")

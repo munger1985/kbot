@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator, field_serial
 
 from aiops_agent.contracts.investigation import DiagnosisAnswerDraft, InvestigationRecord
 from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
+from aiops_agent.contracts.calculation import CalculationEvaluation
 
 from platform_core.contracts.aiops import (
     AnswerBlockType,
@@ -43,6 +44,7 @@ class TurnEvidenceFact(BaseModel):
     visualizations: tuple[ChartSpec, ...] = ()
     provenance: EvidenceProvenance | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
+    calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
 
     @field_serializer("rows", when_used="json")
     def exact_json_rows(self, rows):

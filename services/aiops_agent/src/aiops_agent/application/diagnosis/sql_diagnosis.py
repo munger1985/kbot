@@ -26,12 +26,68 @@ def exact_wire(value: Any) -> Any:
     return value
 
 
+
+_SQL_SCOPE_DIMENSIONS = {
+    "POSTGRESQL": ("database_oid", "user_oid", "top_level"),
+    "MYSQL": ("schema_name",),
+    "ORACLE": ("dbid", "inst_id", "container_id", "child_number", "plan_hash_value"),
+}
+_SQL_STATISTICS_TOOLS = {
+    "POSTGRESQL": ("db.postgresql.statement.details", "db.postgresql.statement.top", "workload.sql.top_window"),
+    "MYSQL": ("db.sql.cursor_details", "db.mysql.statement.digest.top", "workload.sql.top_window"),
+    "ORACLE": ("db.sql.cursor_details", "db.sql.top_current", "workload.sql.top_window"),
+}
+
+
+def sql_scope_resolution(subject, identity, database_type, evidence):
+    """只用本轮语句统计发现多个主体；历史观测和活动会话不会扩大候选集。"""
+    tools = _SQL_STATISTICS_TOOLS[database_type]
+    sources = [fact for fact in evidence if (
+        fact.tool_id in tools and fact.trust_level == "SOURCE_VERIFIED"
+        and fact.source_id != "prior_turn.sql_observation"
+    )]
+    sources.sort(key=lambda fact: (tools.index(fact.tool_id), -_capture_order(fact.captured_at)))
+    for fact in sources:
+        names = [str(column.get("name") or "").lower() for column in fact.columns]
+        if len(names) != len(set(names)):
+            continue
+        candidates, seen = [], set()
+        for index, row in enumerate(fact.rows[:256]):
+            if len(row) != len(names):
+                continue
+            mapped = dict(zip(names, row, strict=True))
+            if not _matches(mapped, subject, identity):
+                continue
+            dimensions = {key: exact_wire(mapped[key]) for key in _SQL_SCOPE_DIMENSIONS[database_type] if key in mapped}
+            signature = tuple(sorted((key, str(value)) for key, value in dimensions.items()))
+            if signature in seen:
+                continue
+            seen.add(signature)
+            candidates.append({"evidence_ref": fact.evidence_ref, "row_index": index, "dimensions": dimensions})
+        if candidates:
+            return {
+                "status": "AMBIGUOUS" if len(candidates) > 1 else "BOUNDED" if fact.truncated or len(fact.rows) > 256 else "RESOLVED",
+                "candidates": candidates[:20], "observed_candidate_count": len(candidates),
+                "truncated": fact.truncated or len(fact.rows) > 256 or len(candidates) > 20,
+                "limitation": "只覆盖本轮凭据可见的统计主体；不合并用户、库、顶层或游标/计划。",
+            }
+    return {"status": "UNOBSERVED", "candidates": [], "observed_candidate_count": 0, "truncated": False}
+
+
+def _capture_order(value):
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.timestamp() if parsed.tzinfo is not None else float("-inf")
+    except (ValueError, OverflowError, OSError):
+        return float("-inf")
+
 def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence: tuple[TurnEvidenceFact, ...]) -> dict | None:
     """保留原字段和行号；没有计划、SLO 或某类指标不阻止其他原因的调查。"""
     subject_spec = _subject(task_frame, database_type)
     if subject_spec is None:
         return None
     subject, (_, identity, _) = subject_spec
+    resolution = sql_scope_resolution(subject, identity, database_type, evidence)
     observations = []
     for fact in evidence:
         names = [str(column.get("name") or "").lower() for column in fact.columns]
@@ -45,9 +101,18 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
                 required_dimensions = [key for key in ("database_oid", "user_oid", "top_level", "schema_name", "inst_id", "child_number", "plan_hash_value") if key in subject]
                 complete = all(key in mapped for key in required_dimensions)
                 role = "SUBJECT" if matches and complete else "SUBJECT_CANDIDATE" if matches else "CONTEXT"
+                if role == "SUBJECT" and resolution["status"] == "AMBIGUOUS":
+                    role = "SUBJECT_CANDIDATE"
             else:
                 role = "CONTEXT"
             records.append({"row_index": index, "role": role, "fields": exact_wire(mapped)})
+        subject_paths = {
+            f"artifact:{fact.artifact_id}#/result/top_statements/{record['row_index']}/"
+            for record in records if record["role"] == "SUBJECT"
+        }
+        calculation_graphs = [graph for graph in fact.calculation_graphs if any(
+            root.input_ref.startswith(path) for root in graph.graph.roots.values() for path in subject_paths
+        )]
         observations.append({
             "evidence_ref": fact.evidence_ref,
             "source_id": fact.source_id,
@@ -64,6 +129,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "lineage": {"artifact_id": str(fact.artifact_id), "step_id": fact.step_id,
                 "provenance": fact.provenance.model_dump(mode="json") if fact.provenance else None},
             "derivations": [item.model_dump(mode="json") for item in fact.derivations],
+            "calculation_graphs": [item.model_dump(mode="json") for item in calculation_graphs[:4]],
+            "calculation_graphs_truncated": len(calculation_graphs) > 4,
         })
     relationships = []
     # 仅对相近时点的已核验活动会话建立 SQL→会话→锁/事务关系，不能跨历史累计视图拼接。
@@ -104,6 +171,7 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
     return {
         "schema_version": "SQL_EVIDENCE_BUNDLE.v1",
         "subject": exact_wire(subject),
+        "subject_resolution": resolution,
         "database_type": database_type,
         "task": task_frame,
         "observations": observations,

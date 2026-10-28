@@ -1533,10 +1533,21 @@ class TurnPlanningService:
                 compact.subject_ref.get("sql_id") or ""
             ).strip().lower()
             if len(sql_id) == 13 and sql_id.isalnum():
-                return {
+                subject = {
                     "subject_type": subject_type,
                     "sql_id": sql_id,
                 }
+                for key in ("dbid", "inst_id", "container_id", "child_number", "plan_hash_value"):
+                    if key not in compact.subject_ref:
+                        continue
+                    raw = compact.subject_ref[key]
+                    if isinstance(raw, bool) or not re.fullmatch(r"0|[1-9][0-9]{0,19}", str(raw)):
+                        return None
+                    value = int(raw)
+                    if value > 2**64 - 1 or (key in {"dbid", "inst_id"} and value == 0):
+                        return None
+                    subject[key] = value
+                return subject
         if subject_type == "MYSQL_DIGEST" and db_type in {"", "MYSQL"}:
             digest = str(
                 compact.subject_ref.get("digest") or ""

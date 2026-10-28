@@ -24,6 +24,7 @@ IDENTITY = {"statement_identity_type": "POSTGRESQL_QUERY_ID", "statement_identit
 def report(start, mean=100, calls=1000):
     payload = {"schema_version": "AIOPS_WORKLOAD_REPORT.v2", "target_id": TARGET, "status": "READY", "database_type": "POSTGRESQL", "period_start": start.isoformat(), "period_end": (start + timedelta(minutes=15)).isoformat(), "continuous_seconds": 900, "snapshot_count": 16, "instance_identity": {"identity_type": "POSTGRESQL_SYSTEM_IDENTIFIER", "identity_value": "9876543210123456789"}, "instance_started_at": "2026-10-01T00:00:00Z", "database_versions": ["16"], "catalog_versions": ["catalog-v1"], "capability_probe_versions": ["probe-v1"], "load_dimension_semantics": {"transactions_per_second": {"value_kind": "COUNTER_RATE", "unit": "transactions/s", "business_volume": True}}, "load_profile": {"transactions_per_second": calls / 900}, "top_statements": [{**IDENTITY, "execution_count": calls, "total_duration_microseconds": calls * mean, "rows_processed": calls * 2}]}
     payload["signal_coverage_version"] = "signal-coverage.v1"
+    payload["load_totals"] = {"transactions": calls}
     payload["top_statements"][0]["covered_seconds"] = 900
     payload["load_dimension_semantics"]["transactions_per_second"]["covered_seconds"] = 900
     return payload
@@ -52,7 +53,7 @@ def test_real_window_improvement_is_not_causal_proof():
 
 @pytest.mark.parametrize("change,expected", [
     ({"instance_identity": {"identity_type": "POSTGRESQL_SYSTEM_IDENTIFIER", "identity_value": "different"}}, "EFFECT_IDENTITY_OR_SOURCE_CHANGED"),
-    ({"load_profile": {"transactions_per_second": 0.1}}, "EFFECT_WORKLOAD_NOT_COMPARABLE"),
+    ({"load_profile": {"transactions_per_second": 0.1}, "load_totals": {"transactions": 90}}, "EFFECT_WORKLOAD_NOT_COMPARABLE"),
     ({"database_versions": ["17"]}, "EFFECT_IDENTITY_OR_SOURCE_CHANGED"),
     ({"instance_started_at": "2026-10-28T00:00:00Z"}, "EFFECT_IDENTITY_OR_SOURCE_CHANGED"),
 ])

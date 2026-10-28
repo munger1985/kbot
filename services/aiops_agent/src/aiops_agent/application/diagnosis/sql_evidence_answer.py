@@ -116,6 +116,8 @@ def rebind_prior_sql_facts(*, payload: dict, artifact_id: str, task_frame: dict,
             "artifact_id": artifact_id, "evidence_ref": f"artifact:{artifact_id}#prior-sql-{index}",
             "source_id": "prior_turn.sql_observation", "step_id": f"prior-sql-{index}",
             "rows": rows, "row_count": len(rows),
+            "derivations": fact.derivations if rows == fact.rows else (),
+            "calculation_graphs": fact.calculation_graphs if rows == fact.rows else (),
             "warnings": (*fact.warnings, "上一轮历史观测，保留原采集时间，不能视为当前值"),
         }))
     return tuple(result)

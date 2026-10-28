@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference, SqlRecommendation
 from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGoal
 from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
+from aiops_agent.contracts.calculation import CalculationEvaluation
 from aiops_agent.contracts.implementation import ImplementationRunbook
 
 
@@ -141,6 +142,7 @@ class InvestigationObservation(BaseModel):
     truncated: bool
     provenance: EvidenceProvenance | None = None
     derivations: tuple[DerivedMeasurement, ...] = ()
+    calculation_graphs: tuple[CalculationEvaluation, ...] = Field(default=(), max_length=128)
 
 
 class InvestigationRecord(BaseModel):

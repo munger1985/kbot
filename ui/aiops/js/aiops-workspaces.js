@@ -1176,7 +1176,7 @@
         : row?.[column.key || column.name || column];
       const followUp = (row) => {
         const rowValues = Object.fromEntries(columns.map((column, index) => [String(column.name || column.key || column).toLowerCase(), cell(row, column, index)]));
-        if (["TOP_SQL_LIST", "CURRENT_SQL_LIST"].includes(payload.result_kind)) {
+        if (["TOP_SQL_LIST", "CURRENT_SQL_LIST", "SQL_SUBJECT_CANDIDATES"].includes(payload.result_kind)) {
           const identifier = rowValues.sql_id || rowValues.digest || rowValues.query_id;
           return identifier ? `继续深入分析 SQL ${identifier}，沿用上一轮数据库资源和证据。` : "";
         }
@@ -1189,7 +1189,7 @@
         return "";
       };
       const primary = payload.presentation_role === "PRIMARY";
-      const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST"].includes(payload.result_kind);
+      const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST", "SQL_SUBJECT_CANDIDATES"].includes(payload.result_kind);
       const orderedColumns = columns.map((column, index) => ({ column, index }))
         .filter(({ column }) => !topSql || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);

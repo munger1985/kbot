@@ -88,7 +88,10 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
     if fact is None or fact.trust_level != "SOURCE_VERIFIED" or index >= len(fact.rows) or _row_hash(fact, index) != data["row_sha256"]:
         raise ValueError("SQL 结果行校验失败，请重新查询")
     subject = subject_from_row(fact, index, str(target.db_type).upper())
-    selected_fact = fact.model_copy(update={"rows": (fact.rows[index],), "row_count": 1})
+    selected_fact = fact.model_copy(update={
+        "rows": (fact.rows[index],), "row_count": 1,
+        "derivations": (), "calculation_graphs": (),
+    })
     return {
         "subject_ref": subject, "target_id": str(target.target_id), "target_row_version": str(target.row_version),
         "source_turn_id": str(source_turn.turn_id), "source_run_id": str(source_run.ops_run_id),

@@ -47,6 +47,7 @@ from aiops_agent.application.diagnosis.investigation_record import (
 )
 from aiops_agent.application.diagnosis.provenance import database_provenance, monitoring_provenance, native_metric_provenance
 from aiops_agent.contracts.measurements import DerivedMeasurement
+from aiops_agent.application.diagnosis.calculations import statement_window_graphs
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -385,7 +386,7 @@ class DbaEvidenceAssessmentHandler:
                             columns=(
                                 {"name": identity_column, "logical_type": "STRING"},
                                 {"name": "normalized_statement", "logical_type": "STRING"},
-                                *({"name": name, "logical_type": "STRING"} for name in (("database_oid", "user_oid", "top_level") if identity_type == "POSTGRESQL_QUERY_ID" else ("schema_name",) if identity_type == "MYSQL_DIGEST" else ())),
+                                *({"name": name, "logical_type": "STRING"} for name in (("database_oid", "user_oid", "top_level") if identity_type == "POSTGRESQL_QUERY_ID" else ("schema_name",) if identity_type == "MYSQL_DIGEST" else ("plan_hash_value",) if identity_type == "ORACLE_SQL_ID" else ())),
                                 {"name": "execution_count", "logical_type": "INTEGER"},
                                 {"name": "total_duration_seconds", "logical_type": "DECIMAL"},
                                 {"name": "mean_duration_seconds", "logical_type": "DECIMAL"},
@@ -394,7 +395,7 @@ class DbaEvidenceAssessmentHandler:
                                 (
                                     item.get("statement_identity_value"),
                                     item.get("normalized_statement"),
-                                    *((item.get("database_name"), item.get("user_identifier"), item.get("top_level")) if identity_type == "POSTGRESQL_QUERY_ID" else (item.get("schema_name", item.get("database_name")),) if identity_type == "MYSQL_DIGEST" else ()),
+                                    *((item.get("database_name"), item.get("user_identifier"), item.get("top_level")) if identity_type == "POSTGRESQL_QUERY_ID" else (item.get("schema_name", item.get("database_name")),) if identity_type == "MYSQL_DIGEST" else (item.get("plan_hash_value"),) if identity_type == "ORACLE_SQL_ID" else ()),
                                     item.get("execution_count"),
                                     str(Decimal(str(item.get("total_duration_microseconds", 0))) / 1_000_000),
                                     str(Decimal(str(item["mean_duration_microseconds"])) / 1_000_000)
@@ -408,6 +409,7 @@ class DbaEvidenceAssessmentHandler:
                                 DerivedMeasurement.model_validate(value)
                                 for item in statements for value in item.get("derivations", ())
                             ),
+                            calculation_graphs=statement_window_graphs(result, artifact_id),
                         )
                     )
                 for code, count in gap_counts.items():
@@ -1015,6 +1017,16 @@ class DbaEvidenceAssessmentHandler:
                 database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
                 evidence=combined.evidence,
             )
+            if bundle and bundle["subject_resolution"]["status"] == "AMBIGUOUS" and value.status != SufficiencyStatus.UNSAFE:
+                question = "同一 SQL 标识对应多个统计主体，不能合并为一个诊断对象。请从下表选择库、用户、顶层语句或游标/计划，再继续诊断。"
+                return combined.model_copy(update={
+                    "status": SufficiencyStatus.NEEDS_CLARIFICATION,
+                    "clarification_question": question,
+                    "gaps": (*combined.gaps, TurnEvidenceGap(
+                        source_id="sql.subject", step_id="sql.subject", code="SQL_SUBJECT_AMBIGUOUS",
+                        detail=question, retryable=False,
+                    )),
+                })
             if task_frame.get("diagnostic_profile") == "SINGLE_SQL_PERFORMANCE" and (not bundle or not any(
                 observation["trust_level"] == "SOURCE_VERIFIED" and row["role"] == "SUBJECT"
                 for observation in bundle["observations"] for row in observation["records"]
@@ -1038,6 +1050,9 @@ class DbaEvidenceAssessmentHandler:
             # 巡检按冻结模板和确定性规则评估覆盖率。通用问题评估模型会
             # 把补证设想追加成新的巡检缺口，导致报告重复并偏离模板范围。
             return with_prior(deterministic)
+        scoped = with_prior(deterministic)
+        if scoped.status == SufficiencyStatus.NEEDS_CLARIFICATION:
+            return scoped
         remaining = (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() if getattr(context, "deadline_at", None) else float("inf")
         if remaining < 25 or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
             return with_prior(deterministic)
@@ -2813,6 +2828,7 @@ class DbaAnswerComposeHandler:
         )
         if evidence_request is not None:
             blocks.append(evidence_request)
+        blocks.extend(DbaAnswerComposeHandler._sql_candidate_blocks(assessment, context))
         waiting_for_user = context.trigger_type != "SCHEDULE" and bool(
             assessment.clarification_question or evidence_request is not None
         )
@@ -2824,6 +2840,37 @@ class DbaAnswerComposeHandler:
             evidence_gaps=assessment.gaps,
             assessment_reasons=assessment.reasons,
         )
+
+    @staticmethod
+    def _sql_candidate_blocks(assessment, context):
+        frame = dict(dict(context.plan_snapshot.get("answer_context") or {}).get("task_frame") or {})
+        if frame.get("diagnostic_profile") != "SINGLE_SQL_PERFORMANCE" or assessment.status != SufficiencyStatus.NEEDS_CLARIFICATION:
+            return ()
+        bundle = build_sql_evidence_bundle(
+            task_frame=frame, database_type=DbaAnswerComposeHandler._database_type(context),
+            evidence=assessment.evidence,
+        )
+        if not bundle or bundle["subject_resolution"]["status"] != "AMBIGUOUS":
+            return ()
+        resolution = bundle["subject_resolution"]
+        source_ref = next((str(item["artifact_id"]) for item in context.input_artifacts if item.get("schema_version") == "DBA_SUFFICIENCY.v1" and item.get("artifact_id")), None)
+        fact = next(item for item in assessment.evidence if item.evidence_ref == resolution["candidates"][0]["evidence_ref"])
+        indices = [item["row_index"] for item in resolution["candidates"]]
+        wanted = {"query_id", "sql_id", "digest", "database_oid", "database_name", "user_oid", "username", "top_level", "schema_name", "inst_id", "container_id", "child_number", "plan_hash_value", "normalized_statement", "sql_text", "digest_text"}
+        columns = [(index, column) for index, column in enumerate(fact.columns) if str(column.get("name") or "").lower() in wanted]
+        return (TurnAnswerBlock(
+            block_type=AnswerBlockType.TABLE, schema_version="AIOPS_TABLE_BLOCK.v1",
+            payload={
+                "title": "选择 SQL 统计主体", "presentation_role": "PRIMARY",
+                "result_kind": "SQL_SUBJECT_CANDIDATES", "follow_up_label": "选择并诊断",
+                "columns": [{**column, "label": _PRIMARY_COLUMN_LABELS.get(str(column["name"]).lower(), str(column["name"]))} for _, column in columns],
+                "rows": [exact_wire([fact.rows[row_index][index] for index, _ in columns]) for row_index in indices],
+                "row_selections": [selection_ref(artifact_id=source_ref, fact=fact, row_index=index) for index in indices] if source_ref else [],
+                "row_count": len(indices), "truncated": resolution["truncated"],
+                "captured_at": fact.captured_at, "measurement_semantics": str(fact.measurement_semantics),
+                "measurement_note": resolution["limitation"],
+            }, evidence_refs=(fact.evidence_ref,),
+        ),)
 
     @staticmethod
     def _evidence_request_block(

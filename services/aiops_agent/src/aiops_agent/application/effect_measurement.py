@@ -52,7 +52,7 @@ def _require_signal_coverage(payload, signal):
         raise ValueError("所选信号没有覆盖完整窗口，不能用部分累计增量比较效果")
 
 
-def measurement(payload, rule):
+def _observed_formula(payload, rule):
     """仅使用报告已通过连续性检查的窗口增量；指标名来自实际证据而非固定画像。"""
     with localcontext() as context:
         context.prec = 80
@@ -104,7 +104,22 @@ def measurement(payload, rule):
         raise ValueError("指标没有经过核验的窗口计算规则")
 
 
-def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, controlled_execution):
+def calculated_measurement(payload, rule, *, source_ref):
+    from aiops_agent.application.effect_calculations import window_calculation
+    _, unit, formula = _observed_formula(payload, rule)
+    start, end = report_window(payload)
+    graph = window_calculation(payload, rule, source_ref=source_ref, start=start, end=end)
+    result = graph.values["result"]
+    if result.quality != "GOOD" or result.measurement.value is None:
+        raise ValueError("受控公式计算失败：" + ";".join(result.reasons))
+    return result.measurement.value, unit, formula, graph.model_dump(mode="json")
+
+
+def measurement(payload, rule):
+    return calculated_measurement(payload, rule, source_ref="window-report")[:3]
+
+
+def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, controlled_execution, baseline_ref="baseline", after_ref="after"):
     """完整复算所有冻结条件；保留每项原值、公式与缺口。"""
     rules = tuple(EffectSignalRule.model_validate(item) for item in frozen["signals"])
     gaps, values = [], {}
@@ -125,8 +140,8 @@ def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, cont
         gaps.append("EFFECT_IDENTITY_OR_SOURCE_CHANGED")
     for rule in rules:
         try:
-            before, unit, formula = measurement(baseline, rule)
-            current, after_unit, after_formula = measurement(after, rule)
+            before, unit, formula, before_graph = calculated_measurement(baseline, rule, source_ref=baseline_ref)
+            current, after_unit, after_formula, after_graph = calculated_measurement(after, rule, source_ref=after_ref)
             if unit != after_unit or formula != after_formula:
                 raise ValueError("指标单位或口径发生变化")
             threshold = number(rule.threshold)
@@ -139,7 +154,8 @@ def evaluate_effect(*, frozen, baseline, after, occurred_at, direct_status, cont
                     passed = {"DECREASE_BY": relative <= -threshold, "INCREASE_BY": relative >= threshold, "STABLE_WITHIN": abs(relative) <= threshold}[rule.comparison]
                 else:
                     passed = current <= threshold if rule.comparison == "AT_MOST" else current >= threshold
-            values[rule.key] = {"role": rule.role, "metric": rule.metric, "baseline": str(before), "after": str(current), "relative_change": str(relative) if relative is not None else None, "unit": unit, "formula": formula, "passed": passed}
+            values[rule.key] = {"role": rule.role, "metric": rule.metric, "baseline": str(before), "after": str(current), "relative_change": str(relative) if relative is not None else None, "unit": unit, "formula": formula, "passed": passed,
+                               "baseline_calculation": before_graph, "after_calculation": after_graph}
         except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
             gaps.append("EFFECT_SIGNAL_UNAVAILABLE")
             values[rule.key] = {"role": rule.role, "metric": rule.metric, "passed": None, "reason": str(exc)}
