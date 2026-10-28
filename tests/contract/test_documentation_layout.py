@@ -53,6 +53,8 @@ class DocumentationLayoutTest(unittest.TestCase):
                 "aiops-network-boundary.md",
                 "aiops-observability-manual-deployment.md",
                 "aiops-observability-production-deployment.md",
+                "aiops-sql-diagnosis-implementation.md",
+                "aiops-sql-evidence-boundaries.md",
                 "deployment.md",
                 "kbot-1.0-complete-offline-installation.md",
                 "oracle-linux-nginx-http-apex-ords.md",
@@ -92,6 +94,7 @@ class DocumentationLayoutTest(unittest.TestCase):
         self.assertTrue(
             {
                 "aiops-cross-project-unified-implementation-plan.md",
+                "aiops-dba-agent-capability-redesign.md",
                 "aiops-monitoring-dashboard-integration-detailed-design.md",
             }.issubset(
                 {

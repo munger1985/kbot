@@ -1,5 +1,13 @@
 # AIOps Agent
 
+2026-10-28 目标架构以
+[DBA Agent 能力、回答、报告与案例统一设计](../proposals/aiops-dba-agent-capability-redesign.md)
+为跨场景实施基线，尚未实现或完成真实验收。下文的现有基础设施继续复用，
+新发现能力、调查记录、判断合同和案例分类不是已发布能力。
+
+统一调查记录是技术判断真相，回答、报告、方案和案例分别投影；
+Finding 不是必需产物，知识引用不升级现场可信级别，配置不等于实际权限。
+
 ## 目标架构原则
 
 AIOps Agent 的架构中心是数据库诊断，不是某一种监控产品。Oracle、MySQL、
@@ -18,9 +26,7 @@ flowchart TD
     A3[定时巡检] --> TURN
 
     SIT --> PLAN[Investigation Planner]
-    TURN --> IP[Intent Plan]
-    IP --> SP[DBA Skill Plan]
-    SP --> PLAN
+    TURN --> PLAN
     PLAN --> MP[Metrics Evidence Port]
     PLAN --> LP[Log Evidence Port]
     PLAN --> DP[Database Evidence Port]
@@ -33,14 +39,15 @@ flowchart TD
     HP --> EI
     TP --> EI
 
-    EI --> SG[Sufficiency Gate]
+    EI --> SG[逐项目标与证据评估]
     SG --> ANS[Natural Answer / Clarification]
     SG --> H[Hypothesis / Counter-evidence Loop]
-    H --> F[Finding / Root Cause / Optimization]
+    H --> F[版本化调查记录 / Claims / 可选 Finding]
     F --> R[Recommendation / Controlled Action]
     R --> V[Verification / Comparison]
-    V --> REP[Report / Proactive Sharing]
-    REP --> KE[Knowledge Case Extraction]
+    V --> F
+    F --> REP[Answer / Report / Runbook]
+    F --> KE[Knowledge Case Candidate]
     KE --> OKB[Operations Knowledge Registry]
     PLAN -. 按需检索 .-> OKB
     OKB --> KC[Knowledge Core Evidence]

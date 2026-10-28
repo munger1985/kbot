@@ -4,6 +4,12 @@
 状态：已批准，实施中
 目标数据库契约：Schema 34 / `aiops-oracle-v24`
 
+2026-10-28：上列版本与后文旧改造前问题保留为原实施背景；跨场景后续目标以
+[DBA Agent 能力、回答、报告与案例统一设计](../proposals/aiops-dba-agent-capability-redesign.md)
+为准。该目标尚未实现，不通过本文旧 Schema 编号推断当前运行结构。
+新设计复用现有 Turn/Run/Artifact，统一 Claim、调查修订和四类产物；
+不以 Skill、固定指标套餐或 Finding 存在作为通用诊断能力准入。
+
 ## 1. 范围和替换原则
 
 本文把

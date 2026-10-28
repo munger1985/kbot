@@ -9,6 +9,7 @@ Git 历史保存，不再作为有效文档。
 - [Knowledge Core](architecture/knowledge-core.md)：文件入库、解析、索引和二阶段检索。
 - [Agent Runtime](architecture/agent-runtime.md)：Execution Spec、Skill、记忆、Artifact 和 SSE。
 - [AIOps Agent](architecture/aiops-agent.md)：监控、诊断、HITL、审批执行和报告。
+- [DBA Agent 能力、回答、报告与案例统一设计（目标态，待实施）](proposals/aiops-dba-agent-capability-redesign.md)：问题驱动调查、统一证据与判断、环境化方案、效果验证及知识回流。
 - [AIOps 跨项目能力对齐与双向演进基线](architecture/aiops-cross-project-alignment.md)：KBot4 与 Ammolite 当前差异、双向吸收顺序和共同验收门禁。
 - [AIOps Agent 专业 DBA 对话诊断详细设计](architecture/aiops-agent-chat-diagnosis.md)：Turn、Skill、证据、表结构、API 与 SSE。
 - [AIOps 智能运维功能入口技术设计](architecture/aiops-conversation-starters.md)：新会话功能菜单、参数表单和自由提问入口。
