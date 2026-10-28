@@ -19,12 +19,14 @@ from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_EVENT_QUERY,
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
+    CAPABILITY_ITEM_HISTORY,
     DiagnosticSourceContext,
     EventEvidenceRequest,
     LogEvidenceRequest,
     LogSourceLocator,
     MetricsEvidenceRequest,
     MetricsDiscoveryRequest,
+    NativeMetricQueryRequest,
     CAPABILITY_METRIC_DISCOVERY,
 )
 from aiops_agent.monitoring import (
@@ -247,21 +249,24 @@ class EvidenceObserveHandler:
             if source["source_type"] != "ZABBIX":
                 continue
             try:
-                if CAPABILITY_METRIC_QUERY_RANGE not in snapshot["effective_capabilities"]:
+                allowed = set(snapshot["effective_capabilities"])
+                if not {CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_ITEM_HISTORY} & allowed:
                     raise ValueError("绑定未授权历史指标查询")
-                if set(item) != {"action_id", "metric_name", "window_seconds", "limit"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 3600:
+                if set(item) != {"action_id", "metric_name", "window_seconds", "limit"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 5184000:
                     raise ValueError("冻结原生指标查询无效")
                 end = _parse_time(window["end"])
-                adapter = self._diagnostic_sources.create(source_context, capability=CAPABILITY_METRIC_QUERY_RANGE)
+                text_authorized = CAPABILITY_ITEM_HISTORY in allowed
+                capability = CAPABILITY_ITEM_HISTORY if text_authorized else CAPABILITY_METRIC_QUERY_RANGE
+                adapter = self._diagnostic_sources.create(source_context, capability=capability)
                 native_metrics.append(await adapter.query_native_metric(
-                    MetricsDiscoveryRequest(
+                    NativeMetricQueryRequest(
                         action_id=item["action_id"], target_id=context.target_id, binding_id=binding_id,
                         source_locator_key=snapshot["source_locator_key"],
                         window_start=end - timedelta(seconds=item["window_seconds"]), window_end=end,
-                        limit=1, max_response_bytes=max(1024, min(262144, monitoring["max_response_bytes"]) // 6),
+                        max_response_bytes=max(1024, min(262144, monitoring["max_response_bytes"]) // 6),
                         trace_id=context.trace_id,
                     ),
-                    metric_name=item["metric_name"], limit=item["limit"],
+                    metric_name=item["metric_name"], limit=item["limit"], allow_text=text_authorized,
                 ))
             except Exception as exc:
                 gaps.append(ObservationGap(

@@ -178,4 +178,36 @@ async def validate_case_effect(*, uow, domain_id, profile):
             return False
         if str(source.payload_json.get("proposal_id")) != str(result.proposal_id):
             return False
+    # 标记不能替代原始窗口复算；没有执行前冻结条件的比较不能背书已验证案例。
+    from datetime import datetime
+    from aiops_agent.application.effect_measurement import evaluate_effect
+    from aiops_agent.contracts.change import ActionVerification
+    from aiops_agent.contracts.report import ComparisonPlan
+    try:
+        checked_plan = ComparisonPlan.model_validate(plan.payload_json)
+        if checked_plan.business_effect is None or checked_plan.result_rule_version != "business-effect.v1":
+            return False
+        frozen = checked_plan.business_effect.model_dump(mode="json")
+        checked = {}
+        for ref in result.measurement_artifact_refs:
+            native = await uow.runs.get_artifact(artifact_id=UUID(ref["artifact_id"]))
+            if native is None or native.content_hash != ref["content_hash"] or canonical_hash(native.payload_json) != native.content_hash:
+                return False
+            native_run = await uow.runs.get_run_scoped(ops_run_id=native.ops_run_id, domain_id=domain_id)
+            if native_run is None or str(native_run.target_id) != str(run.target_id) or not await source_scope_is_current(uow=uow, run=native_run, domain_id=domain_id):
+                return False
+            checked[str(native.artifact_id)] = native
+        baseline = checked[str(frozen["baseline_artifact_id"])]
+        after = [item for item in checked.values() if item.schema_version == "AIOPS_WORKLOAD_REPORT.v2" and str(item.artifact_id) != str(baseline.artifact_id)]
+        if len(after) != 1 or baseline.content_hash != frozen["baseline_hash"]:
+            return False
+        action = ActionVerification.model_validate(verification.payload_json)
+        if action.gap_codes or receipt.schema_version != "EXECUTION_RESULT.v1" or receipt.trust_level != "SOURCE_VERIFIED":
+            return False
+        recomputed = evaluate_effect(frozen=frozen, baseline=baseline.payload_json, after=after[0].payload_json, occurred_at=datetime.fromisoformat(receipt.payload_json["occurred_at"].replace("Z", "+00:00")), direct_status=action.status, controlled_execution=True)
+        for key in ("measured_effect", "symptom_recovered", "guardrails_passed", "attribution_strength", "measurements"):
+            if recomputed[key] != getattr(result, key):
+                return False
+    except (KeyError, TypeError, ValueError):
+        return False
     return True

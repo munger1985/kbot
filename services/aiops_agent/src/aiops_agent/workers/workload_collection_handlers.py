@@ -104,12 +104,15 @@ class WorkloadCollectionHandler:
                 database_oid = str(matching_databases[0]["database_oid"])
         instance_identifier = str(
             performance.get("server_uuid")
-            or probe.get("server_uuid")
             or "UNKNOWN"
         )
         identity_kind = "MYSQL_SERVER_UUID"
         if database_type == "POSTGRESQL":
             identity_kind = "POSTGRESQL_SYSTEM_IDENTIFIER"
+            current_identity = _first_row(observations.get("db.postgresql.workload.identity"))
+            instance_identifier = str(current_identity.get("system_identifier") or "UNKNOWN")
+            if database_oid != str(current_identity.get("database_oid") or ""):
+                instance_identifier = "UNKNOWN"
         if database_type == "ORACLE":
             identity_kind = "ORACLE_DATABASE_INSTANCE_CONTAINER"
             parts = [oracle_identity.get(name) for name in ("database_id", "instance_number", "container_id")]
@@ -125,8 +128,10 @@ class WorkloadCollectionHandler:
         instance_started_at = (
             (performance_captured_at or captured_at) - timedelta(seconds=uptime)
             if uptime is not None
-            else _datetime(probe.get("server_started_at")) or captured_at
+            else None
         )
+        if database_type == "POSTGRESQL":
+            instance_started_at = _datetime(current_identity.get("instance_started_at"))
         if database_type == "ORACLE":
             instance_started_at = _datetime(oracle_identity.get("instance_started_at"))
 
@@ -198,6 +203,11 @@ class WorkloadCollectionHandler:
             ),
             catalog_version=str(diagnostics["catalog_hash"]),
             continuity={
+                "database_stats_reset": {
+                    str(row.get("database_oid")): row.get("stats_reset")
+                    for row in _rows(observations.get("db.postgresql.database.statistics"))
+                    if row.get("database_oid") is not None
+                } if database_type == "POSTGRESQL" else {},
                 "sql_collection": {"mode": collection_mode, "limit": statement_limit, "observed_rows": observed_rows, "accepted_rows": len(statements), "visible_set_read_complete": candidate_complete, "atomic": False, "source_visibility": "DIAGNOSTIC_CREDENTIAL_VISIBLE_ONLY"},
                 "instance": {
                     "identity": instance_identifier,
@@ -282,13 +292,10 @@ class ActivityCollectionHandler:
                 sample_count=0,
                 error_code=error_code,
             )
-        raw_capabilities = dict(
-            diagnostics.get("capability_snapshot") or {}
-        )
-        probe = dict(raw_capabilities.get("capability_probe") or {})
-        if not probe:
-            probe = dict(raw_capabilities.get("probe") or {})
-        instance_identifier = str(probe.get("server_uuid") or "UNKNOWN")
+        current_identity = _first_row(observations.get(
+            "db.instance.performance" if database_type == "MYSQL" else "db.postgresql.workload.identity"
+        ))
+        instance_identifier = str(current_identity.get("server_uuid" if database_type == "MYSQL" else "system_identifier") or "UNKNOWN")
         if instance_identifier == "UNKNOWN":
             error_code = f"{database_type}_ACTIVITY_IDENTITY_UNAVAILABLE"
             await self._service.record_activity_failure(
@@ -754,7 +761,8 @@ def _aggregate_postgresql_database_statistics(
         "deadlocks",
     ):
         values = [_integer(row.get(key)) for row in rows]
-        result[key] = sum(value for value in values if value is not None)
+        if all(value is not None for value in values):
+            result[key] = sum(values)
     return result
 
 

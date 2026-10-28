@@ -1235,7 +1235,8 @@
       const command = payload.command_preview ? `<div class="agent-code-block"><div class="agent-code-toolbar"><span>仅供 DBA 人工核对${manual ? "并在 KBot 外执行" : ""}</span><button type="button" data-copy-code>复制命令</button></div><pre><code>${esc(payload.command_preview)}</code></pre></div>` : "";
       const verification = values(payload.verification_plan).length ? `<p><strong>验证计划：</strong>${values(payload.verification_plan).map(esc).join("、")}</p>` : "";
       const title = manual ? "仅供人工执行" : pending ? "受控变更待审批" : "受控动作建议";
-      return `<section class="ops-proposal"><header><div><strong>${title}</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(displayText(payload.risk_level || "UNKNOWN", dictionary))}</small></div></header><p>${esc(displayText(payload.rationale || "", dictionary))}</p><p><strong>影响范围：</strong>${esc(displayText(payload.impact || "-", dictionary))}</p><p><strong>锁影响：</strong>${esc(displayText(payload.lock_impact || "-", dictionary))}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${command}${verification}${actions}</section>`;
+      const effect = canApprove ? `<details class="ops-effect-verification" data-effect-proposal="${esc(payload.proposal_id)}"><summary data-effect-open>业务效果验证</summary><div data-effect-body><p>执行前冻结业务条件；执行后使用受控证据复算。</p></div></details>` : "";
+      return `<section class="ops-proposal"><header><div><strong>${title}</strong><small>${esc(payload.action_template_id || "Action Template")} · ${esc(displayText(payload.risk_level || "UNKNOWN", dictionary))}</small></div></header><p>${esc(displayText(payload.rationale || "", dictionary))}</p><p><strong>影响范围：</strong>${esc(displayText(payload.impact || "-", dictionary))}</p><p><strong>锁影响：</strong>${esc(displayText(payload.lock_impact || "-", dictionary))}</p>${parameters ? `<ul class="ops-proposal-parameters">${parameters}</ul>` : ""}${command}${verification}${actions}${effect}</section>`;
     }
     if (block.block_type === "EVIDENCE_REFERENCES") return "";
     return markdown.render(displayText(payload.markdown || payload.text || payload.instruction || "", dictionary));
@@ -2524,6 +2525,11 @@
   }
 
   addEventListener("click", (event) => {
+    const effectButton = event.target.closest("[data-effect-open]");
+    if (effectButton) {
+      const root = effectButton.closest("[data-effect-proposal]");
+      if (!root.open) window.AIOpsEffectVerification.load(root, api, (url, init) => KBotAIOpsAuth.request(url, init), message => shell.toast(message)).catch(error => shell.toast(error.message));
+    }
     const copyButton = event.target.closest("[data-copy-code]");
     if (copyButton) markdown.copyCode(copyButton);
     const proposalButton = event.target.closest("[data-approve-proposal],[data-reject-proposal]");

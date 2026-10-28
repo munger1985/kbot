@@ -1362,7 +1362,7 @@ class DiagnosisReportPublishingTest(unittest.TestCase):
 
 
 class ComparisonReportPublishingTest(unittest.TestCase):
-    def test_verified_action_publishes_improved_comparison_report(
+    def test_verified_action_reports_direct_effect_not_business_improvement(
         self,
     ) -> None:
         source_run_id = uuid7()
@@ -1466,7 +1466,11 @@ class ComparisonReportPublishingTest(unittest.TestCase):
                 get_run=AsyncMock(return_value=source_run),
                 get_artifact=AsyncMock(return_value=source_result),
                 get_artifact_by_key=AsyncMock(
-                    return_value=plan_artifact
+                    side_effect=lambda *, ops_run_id, artifact_key: (
+                        plan_artifact
+                        if artifact_key == f"comparison:proposal:{proposal_id}:plan:v1"
+                        else None
+                    )
                 ),
                 list_tasks=AsyncMock(return_value=[]),
                 add_artifact=AsyncMock(side_effect=add_artifact),

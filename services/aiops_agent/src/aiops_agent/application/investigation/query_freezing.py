@@ -138,7 +138,7 @@ def prepare_source_queries(investigation):
             if (set(payload) - {"metric_name", "window_seconds", "limit"}
                 or not isinstance(name, str) or not name.strip() or len(name) > 256
                 or any(ord(char) < 32 for char in name)
-                or type(window) is not int or not 60 <= window <= 3600
+                or type(window) is not int or not 60 <= window <= 5184000
                 or type(limit) is not int or not 1 <= limit <= 1000):
                 raise InvestigationPlanValidationError("原生指标查询只允许精确名称和有界窗口/结果数")
             normalized = {"metric_name": name, "window_seconds": window, "limit": limit}

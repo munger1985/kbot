@@ -1,5 +1,7 @@
 """AIOps 跨服务 Wire 契约。"""
 
+from .effect import EffectEvaluationCommand, EffectPlanCommand, EffectSignalRule, EffectVerificationView
+
 from .errors import AIOpsErrorCode, ProblemDetails
 from .findings import (
     FindingCard,
@@ -362,6 +364,10 @@ from .workload import (
 )
 
 __all__ = [
+    "EffectEvaluationCommand",
+    "EffectPlanCommand",
+    "EffectSignalRule",
+    "EffectVerificationView",
     "AIOpsErrorCode",
     "AIOpsEvent",
     "AnswerBlockType",

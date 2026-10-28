@@ -37,6 +37,7 @@ _MYSQL_ACTIVITY_TOOLS = (
 
 _POSTGRESQL_WORKLOAD_TOOLS = (
     "db.instance.identity",
+    "db.postgresql.workload.identity",
     "db.postgresql.database.statistics",
     "db.postgresql.statement.top",
     "db.postgresql.wait.current",
@@ -50,6 +51,7 @@ _POSTGRESQL_WORKLOAD_TOOLS = (
 )
 _POSTGRESQL_ACTIVITY_TOOLS = (
     "db.instance.identity",
+    "db.postgresql.workload.identity",
     "db.postgresql.activity.sample",
 )
 

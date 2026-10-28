@@ -27,6 +27,7 @@ PROMPT_KEYS = {
     "sql_diagnosis": "aiops_agent.sql_diagnosis",
     "image_evidence_extract": "aiops_agent.image_evidence_extract",
     "knowledge_tag_classify": "aiops_agent.knowledge_tag_classify",
+    "case_semantic_redaction": "aiops_agent.case_semantic_redaction",
     "knowledge_answer_compose": "aiops_agent.knowledge_answer_compose",
 }
 

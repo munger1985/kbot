@@ -19,6 +19,7 @@ from aiops_agent.application.errors import (
     resource_not_found,
     state_conflict,
 )
+from .effect import ChangeEffectVerification
 from aiops_agent.application.configuration.common import ConfigurationScope, SignedCursorCodec
 from aiops_agent.contracts.change import (
     ApprovalDecision,
@@ -69,7 +70,7 @@ def _hash(value) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
 
 
-class AIOpsChangeService:
+class AIOpsChangeService(ChangeEffectVerification):
     def __init__(
         self,
         *,

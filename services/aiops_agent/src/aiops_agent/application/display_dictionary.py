@@ -329,6 +329,8 @@ _DISPLAY_NAMES = {
     "AIOPS_GENERATED": "AIOps 生成报告",
     "EXTERNAL_IMPORTED": "外部导入报告",
     "MYSQL_WORKLOAD": "MySQL 工作负载报告",
+    "ORACLE_WORKLOAD": "Oracle 周期快照工作负载报告（非 AWR）",
+    "ORACLE_WORKLOAD_DIFF": "Oracle 周期快照工作负载对比报告（非 AWR）",
     "MYSQL_WORKLOAD_DIFF": "MySQL 工作负载对比报告",
     "MYSQL_ACTIVITY": "MySQL 活动报告",
     "MYSQL_SQL_HEALTHCHECK": "MySQL SQL 健康检查",

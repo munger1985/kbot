@@ -44,6 +44,8 @@ from aiops_agent.application.managed_credentials import (
     AIOpsManagedCredentialService,
 )
 from aiops_agent.application.workload import WorkloadService
+from aiops_agent.application.changes import AIOpsChangeService
+from aiops_agent.application.changes.effect_followup import BusinessEffectFollowupService
 from aiops_agent.application.work_items import SituationRecoveryProjector
 from aiops_agent.application.operations_knowledge import OperationsKnowledgeService
 from aiops_agent.application.configuration.connection_test import (
@@ -312,6 +314,11 @@ def create_aiops_worker_probe(
             sink=AIOpsDomainOutboxSink(
                 runtime_service=runtime_service,
                 fallback=LoggingOutboxSink(),
+                business_effect_service=BusinessEffectFollowupService(
+                    uow_factory=runtime.uow_factory,
+                    change_service=AIOpsChangeService(uow_factory=runtime.uow_factory),
+                    workload_service=workload_service,
+                ),
                 diagnostic_source_connectivity_service=DiagnosticSourceConnectivityCheckService(
                     uow_factory=runtime.uow_factory,
                     diagnostic_source_registry=diagnostic_source_registry,

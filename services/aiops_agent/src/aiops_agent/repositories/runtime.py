@@ -388,6 +388,48 @@ class OpsRunRepository(AIOpsRepository):
         )
         return list((await self._session.execute(statement)).scalars())
 
+    async def list_effect_artifacts(self, *, domain_id, target_id, agent_id, actor_id, ops_run_id, proposal_id, limit=50):
+        """限定域和目标；同 Agent 复核及本人生成的窗口仍需应用层逐条重验。"""
+        self._check_active()
+        base = (
+            select(OpsArtifactEntity)
+            .join(OpsRunEntity, OpsRunEntity.ops_run_id == OpsArtifactEntity.ops_run_id)
+            .where(
+                OpsRunEntity.domain_id == domain_id,
+                OpsRunEntity.target_id == target_id,
+                or_(
+                    OpsRunEntity.agent_id == agent_id,
+                    (OpsRunEntity.actor_id == actor_id)
+                    & (OpsRunEntity.workflow_kind == "WORKLOAD_REPORT"),
+                ),
+                OpsArtifactEntity.schema_version.in_(("AIOPS_WORKLOAD_REPORT.v2", "ACTION_VERIFICATION.v1")),
+                OpsArtifactEntity.trust_level == "SOURCE_VERIFIED",
+            )
+            .order_by(OpsArtifactEntity.created_at.desc(), OpsArtifactEntity.artifact_id.desc())
+        )
+        windows = base.where(OpsArtifactEntity.schema_version == "AIOPS_WORKLOAD_REPORT.v2").limit(min(max(int(limit), 1), 100))
+        verifications = base.where(
+            OpsArtifactEntity.schema_version == "ACTION_VERIFICATION.v1",
+            or_(
+                OpsRunEntity.ops_run_id == ops_run_id,
+                OpsRunEntity.source_proposal_id == proposal_id,
+            ),
+        ).limit(64)
+        return [
+            *(await self._session.execute(windows)).scalars(),
+            *(await self._session.execute(verifications)).scalars(),
+        ]
+
+    async def get_latest_effect_result(self, *, ops_run_id, proposal_id):
+        """读取同一冻结计划的最新观察结果，保留早期不足或退化结果。"""
+        self._check_active()
+        statement = select(OpsArtifactEntity).where(
+            OpsArtifactEntity.ops_run_id == ops_run_id,
+            OpsArtifactEntity.schema_version == "COMPARISON_RESULT.v1",
+            OpsArtifactEntity.artifact_key.like(f"comparison:proposal:{proposal_id}:result:%:business:v1"),
+        ).order_by(OpsArtifactEntity.created_at.desc(), OpsArtifactEntity.artifact_id.desc()).limit(1)
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_artifact_by_key(
         self,
         *,

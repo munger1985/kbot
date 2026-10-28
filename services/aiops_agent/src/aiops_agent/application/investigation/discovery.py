@@ -20,6 +20,7 @@ from aiops_agent.diagnostics import (
 from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
+    CAPABILITY_ITEM_HISTORY,
     CAPABILITY_METRIC_DISCOVERY,
 )
 from aiops_agent.playbooks import PlaybookRegistry
@@ -85,12 +86,12 @@ def available_tools(
             "input": {"scope": "DATABASE 或 HOST（仅已绑定主机）", "window_seconds": "60 到 3600 秒", "limit": "1 到 100"},
         }
     if any(str(source.source_type) == "ZABBIX" and source.enabled
-           and CAPABILITY_METRIC_QUERY_RANGE in source.capabilities
+           and ({CAPABILITY_METRIC_QUERY_RANGE, CAPABILITY_ITEM_HISTORY} & set(source.capabilities))
            for source in capabilities.source_snapshots):
         tools[("monitor.query_native_metric", "1.0.0")] = {
             "tool_id": "monitor.query_native_metric", "version": "1.0.0", "tool_class": "MONITORING",
-            "description": "读取绑定 Zabbix Host 的精确数值 Item 历史，不接受任意 URL、Host 或 SQL。执行时重验 Item 类型和归属；数值类型不是 counter/gauge 的证明。",
-            "input": {"metric_name": "已发现或已核验的精确 Item key", "window_seconds": "60 到 3600 秒", "limit": "1 到 1000"},
+            "description": "读取绑定 Zabbix Host 的精确 Item 历史；数值使用 metric.query_range，文本/日志另需 item.history 授权。不接受 URL、Host 或 SQL。长窗口按结果/字节限额截断，不自动改用趋势聚合，不推定 counter/gauge 语义。",
+            "input": {"metric_name": "已发现或已核验的精确 Item key", "window_seconds": "60 到 5184000 秒", "limit": "1 到 1000"},
         }
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
         tools[("loki.query_range", "1.0.0")] = {

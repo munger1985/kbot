@@ -709,6 +709,16 @@ class InspectionRepository(AIOpsRepository):
         entity.is_current = 1
         return await self._add(entity)
 
+    async def get_current_effect_report(self, *, ops_run_id, report_key):
+        """由所属 Run 锁串行化同一效果计划的报告修订。"""
+        self._check_active()
+        statement = select(ReportEntity).where(
+            ReportEntity.ops_run_id == ops_run_id,
+            ReportEntity.report_key == report_key,
+            ReportEntity.is_current.is_(True),
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def get_current_report_scoped(
         self,
         *,

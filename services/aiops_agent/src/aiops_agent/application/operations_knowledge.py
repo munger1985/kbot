@@ -11,6 +11,7 @@ from uuid import UUID
 
 from aiops_agent.application.errors import AIOpsApplicationError
 from aiops_agent.application.case_redaction import CaseRedactor
+from aiops_agent.application.case_semantic_redaction import redact_case_for_index, shared_content_hash
 from aiops_agent.application.case_source_validation import validate_case_sources, validate_case_effect
 from aiops_agent.application.reporting import normalize_report_source
 from aiops_agent.adapters.model_serving import AIOpsModelError
@@ -1451,7 +1452,12 @@ class OperationsKnowledgeService:
             contraindications=tuple(str(item).strip() for item in command.contraindications if str(item).strip()),
             source={"conversation_id": str(conversation_id), "turn_ids": preview["included_turn_ids"], "run_ids": [str(internal["run_id"])], "investigation_record_id": internal["investigation_record"].get("record_id"), "investigation_revision": internal["investigation_record"].get("revision")},
         )
-        profile = CaseRedactor().profile(profile)
+        collection = await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
+        display_name, profile = await redact_case_for_index(
+            title=display_name, profile=profile, collection=collection,
+            structured_model=self._structured_model, prompt_registry=self._prompt_registry,
+            model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="served_model_name",
+        )
         closure = DiagnosisClosure(
             conversation_id=conversation_id, source_turn_ids=command.included_turn_ids,
             target_id=internal["target_id"],
@@ -1473,9 +1479,6 @@ class OperationsKnowledgeService:
         asset_id = previous_asset_id or uuid7()
         version_no = (previous_version_no + 1) if previous_version_no is not None else 1
         markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
-        collection = await self._collection(
-            domain_id=domain_id, name=CASE_COLLECTION, context=context
-        )
         response = await self._kc.ingest_user_file(
             domain_id=domain_id,
             collection_id=UUID(str(collection["collection_id"])),
@@ -1672,23 +1675,24 @@ class OperationsKnowledgeService:
             base_status = str(base.status)
             current_version_id = asset.current_version_id
 
-        markdown = _diagnosis_case_markdown(
-            title=command.display_name, profile=profile
+        collection = await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
+        display_name, profile = await redact_case_for_index(
+            title=command.display_name, profile=profile, collection=collection,
+            structured_model=self._structured_model, prompt_registry=self._prompt_registry,
+            model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="served_model_name",
         )
+        markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
         source_hash = hashlib.sha256(json.dumps(
             {"display_name": command.display_name, "profile": profile.model_dump(mode="json")},
             ensure_ascii=False, sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
         if source_hash == base_source_hash:
             raise self._state_conflict("案例内容没有变化，无需创建新版本")
-        collection = await self._collection(
-            domain_id=domain_id, name=CASE_COLLECTION, context=context
-        )
         response = await self._kc.ingest_user_file(
             domain_id=domain_id,
             collection_id=UUID(str(collection["collection_id"])),
             file_name=f"diagnosis-case-{asset_id}-v{next_version_no}.md",
-            display_name=CaseRedactor().text(command.display_name),
+            display_name=display_name,
             media_type="text/markdown",
             body=markdown,
             content_sha256=hashlib.sha256(markdown).hexdigest(),
@@ -1778,7 +1782,7 @@ class OperationsKnowledgeService:
                     message="案例已被其他请求更新，请刷新后重试",
                     status_code=412,
                 )
-            locked_asset.display_name = CaseRedactor().text(command.display_name)
+            locked_asset.display_name = display_name
             locked_asset.updated_by = actor
             if current_version_id is None:
                 locked_asset.status = "PROCESSING"
@@ -2664,15 +2668,18 @@ class OperationsKnowledgeService:
                 },
             )
             profile = CaseRedactor().profile(profile)
-            markdown = _diagnosis_case_markdown(title=report.title, profile=profile)
-        collection = await self._collection(
-            domain_id=domain_id, name=CASE_COLLECTION, context=context
+        collection = await self._collection(domain_id=domain_id, name=CASE_COLLECTION, context=context)
+        display_name, profile = await redact_case_for_index(
+            title=report.title, profile=profile, collection=collection,
+            structured_model=self._structured_model, prompt_registry=self._prompt_registry,
+            model_catalog=self._llm_model_catalog, model_scope={}, technical_name_field="served_model_name",
         )
+        markdown = _diagnosis_case_markdown(title=display_name, profile=profile)
         response = await self._kc.ingest_user_file(
             domain_id=domain_id,
             collection_id=UUID(str(collection["collection_id"])),
             file_name=f"diagnosis-case-{report_id}.md",
-            display_name=CaseRedactor().text(report.title),
+            display_name=display_name,
             media_type="text/markdown",
             body=markdown,
             content_sha256=hashlib.sha256(markdown).hexdigest(),
@@ -2749,7 +2756,7 @@ class OperationsKnowledgeService:
             if previous_case is None:
                 asset = OperationsKnowledgeAssetEntity(
                     asset_id=case_asset_id, domain_id=domain_id,
-                    asset_kind="DIAGNOSIS_CASE", display_name=CaseRedactor().text(report.title),
+                    asset_kind="DIAGNOSIS_CASE", display_name=display_name,
                     status="PROCESSING", security_level=int(report.security_level),
                     created_by=actor, updated_by=actor,
                 )
@@ -2784,7 +2791,7 @@ class OperationsKnowledgeService:
                             )
                         )
                     asset.current_version_id = None
-                asset.display_name = CaseRedactor().text(report.title)
+                asset.display_name = display_name
                 asset.status = "PROCESSING"
                 asset.security_level = int(report.security_level)
                 asset.updated_by = actor
@@ -3475,6 +3482,9 @@ class OperationsKnowledgeService:
                     profile = DiagnosisCaseProfile.model_validate(version.profile_json)
                     if profile.redaction is None:
                         raise self._state_conflict("案例缺少脱敏审阅版本，请创建新版本后再发布")
+                    scan = profile.redaction.semantic_provenance
+                    if scan.get("status") != "SCANNED" or scan.get("output_hash") != shared_content_hash(asset.display_name, profile):
+                        raise self._state_conflict("案例语义脱敏未完成或正文已变化，需创建新版本并重新审阅")
                     if not await validate_case_effect(uow=uow, domain_id=domain_id, profile=profile):
                         raise self._state_conflict("已验证案例缺少可核验的执行、可比效果与护栏产物")
                     profile.redaction = profile.redaction.model_copy(update={"status": "REVIEWED"})

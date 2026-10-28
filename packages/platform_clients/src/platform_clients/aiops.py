@@ -2116,6 +2116,15 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             idempotency_key=command.idempotency_key,
         )
 
+    async def effect_verification_request(self, proposal_id, *, operation="effect", payload=None, auth_context):
+        if operation not in {"effect", "effect-plan", "effect-evaluation"}:
+            raise ValueError("效果验证操作无效")
+        return await self._json(
+            "GET" if operation == "effect" else "POST",
+            f"{INTERNAL_API_V1}/aiops/proposals/{proposal_id}/{operation}",
+            payload=payload, auth_context=auth_context,
+        )
+
     async def get_proposal(
         self,
         proposal_id: UUID,

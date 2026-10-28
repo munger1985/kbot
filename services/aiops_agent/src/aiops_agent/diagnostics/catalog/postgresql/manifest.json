@@ -1,6 +1,7 @@
 {
   "catalog_version": "postgresql-baseline.v1",
   "tools": [
+    {"tool_id":"db.postgresql.workload.identity","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_physical_identity_12_plus","description":"读取本轮物理实例和启动身份；无 pg_control_system 执行权限时保留缺口，不使用缓存探测冒充当前身份。","supported_version_min":12,"supported_version_max_exclusive":20,"required_capabilities":[],"required_entitlements":[],"required_privileges":[],"parameters":[],"output_columns":[{"name":"system_identifier","logical_type":"STRING","nullable":false},{"name":"instance_started_at","logical_type":"DATETIME","nullable":false},{"name":"database_name","logical_type":"STRING","nullable":false},{"name":"database_oid","logical_type":"STRING","nullable":false}],"template_ref":"sql/workload_identity.sql","template_sha256":"c6b6c51fd4c866602394de9deb2b22ce930c6833890367becb5f438eb6573641","timeout_seconds":5,"max_rows":1,"max_bytes":65536,"cost_level":"LOW"},
     {
       "tool_id":"db.sql.object_indexes","version":"1.0.0","db_type":"POSTGRESQL","variant":"postgresql_object_indexes_12_plus",
       "description":"按指定 schema 和表查询可见表、分区及索引；零行可能是对象不存在或不可见，不能证明运行时使用了索引。",

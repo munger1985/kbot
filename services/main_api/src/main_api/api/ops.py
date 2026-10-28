@@ -23,6 +23,11 @@ from starlette.responses import StreamingResponse
 
 from platform_clients.aiops import AIOpsManagementClient
 from platform_core.contracts import PUBLIC_API_V1
+from platform_core.contracts.aiops.effect import (
+    EffectEvaluationCommand,
+    EffectPlanCommand,
+    EffectVerificationView,
+)
 from platform_core.contracts.aiops import (
     ResponsibilityGroupCreate,
     ResponsibilityGroupMemberUpsert,
@@ -182,6 +187,7 @@ def _route_permissions() -> dict[str, str]:
         },
         "aiops:proposal:approve": {
             "reject_proposal", "approve_proposal", "record_manual_result",
+            "get_effect_verification", "freeze_effect_plan", "evaluate_effect_plan",
         },
         "aiops:target_manage": {
             "create_target", "test_target_connection", "get_target",
@@ -1092,6 +1098,32 @@ async def list_proposals(
         auth_context=request.state.auth_context,
     )
     return ProposalPage.model_validate(payload)
+
+
+@router.get("/proposals/{proposal_id}/effect", response_model=EffectVerificationView)
+async def get_effect_verification(proposal_id: UUID, request: Request):
+    payload = await _client(request).effect_verification_request(
+        proposal_id, auth_context=request.state.auth_context,
+    )
+    return EffectVerificationView.model_validate(payload)
+
+
+@router.post("/proposals/{proposal_id}/effect-plan", response_model=EffectVerificationView)
+async def freeze_effect_plan(proposal_id: UUID, body: EffectPlanCommand, request: Request):
+    payload = await _client(request).effect_verification_request(
+        proposal_id, operation="effect-plan", payload=body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return EffectVerificationView.model_validate(payload)
+
+
+@router.post("/proposals/{proposal_id}/effect-evaluation", response_model=EffectVerificationView)
+async def evaluate_effect_plan(proposal_id: UUID, body: EffectEvaluationCommand, request: Request):
+    payload = await _client(request).effect_verification_request(
+        proposal_id, operation="effect-evaluation", payload=body.model_dump(mode="json"),
+        auth_context=request.state.auth_context,
+    )
+    return EffectVerificationView.model_validate(payload)
 
 
 @router.get("/proposals/{proposal_id}", response_model=ProposalView)

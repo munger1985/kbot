@@ -12,6 +12,7 @@ from aiops_agent.api.dependencies import (
     require_service_scope,
 )
 from aiops_agent.application.changes import AIOpsChangeService
+from platform_core.contracts.aiops.effect import EffectEvaluationCommand, EffectPlanCommand, EffectVerificationView
 from platform_core.contracts import AuthContext, PrincipalKind
 from platform_core.contracts.aiops import (
     ApprovalCommand,
@@ -36,6 +37,24 @@ def get_service(request: Request) -> AIOpsChangeService:
 
 Service = Annotated[AIOpsChangeService, Depends(get_service)]
 Auth = Annotated[AuthContext, Depends(get_aiops_auth_context)]
+
+
+@router.get("/{proposal_id}/effect", response_model=EffectVerificationView)
+async def get_effect_verification(proposal_id: UUID, request: Request, service: Service, context: Auth):
+    require_service_scope(request, "aiops.approve")
+    return await service.get_effect_verification(proposal_id=proposal_id, domain_id=_scope(request, context), actor_id=context.asserted_user_id or context.client_id, agent_ids=_agent_filter(context))
+
+
+@router.post("/{proposal_id}/effect-plan", response_model=EffectVerificationView)
+async def freeze_effect_plan(proposal_id: UUID, body: EffectPlanCommand, request: Request, service: Service, context: Auth):
+    require_service_scope(request, "aiops.approve")
+    return await service.freeze_effect_plan(proposal_id=proposal_id, domain_id=_scope(request, context), actor_id=context.asserted_user_id or context.client_id, command=body, trace_id=context.trace_id, agent_ids=_agent_filter(context))
+
+
+@router.post("/{proposal_id}/effect-evaluation", response_model=EffectVerificationView)
+async def evaluate_effect_plan(proposal_id: UUID, body: EffectEvaluationCommand, request: Request, service: Service, context: Auth):
+    require_service_scope(request, "aiops.approve")
+    return await service.evaluate_effect_plan(proposal_id=proposal_id, domain_id=_scope(request, context), actor_id=context.asserted_user_id or context.client_id, command=body, trace_id=context.trace_id, agent_ids=_agent_filter(context))
 
 
 def _agent_filter(context: AuthContext) -> tuple[UUID, ...]:

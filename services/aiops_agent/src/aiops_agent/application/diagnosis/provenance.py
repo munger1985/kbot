@@ -30,7 +30,8 @@ def native_metric_provenance(samples):
         target_id=str(samples.target_id), native_origin_ids=(f"database:{samples.target_id}",),
         source_version=samples.source_version, content_hash=samples.response_sha256,
         window_start=samples.window_start, window_end=samples.window_end,
-        quality_flags=("PHYSICAL_IDENTITY_UNKNOWN", "NATIVE_ORIGIN_COARSE", "COUNTER_SEMANTICS_UNKNOWN",
+        quality_flags=("PHYSICAL_IDENTITY_UNKNOWN", "NATIVE_ORIGIN_COARSE",
+                       "COUNTER_SEMANTICS_UNKNOWN" if samples.sample_kind == "NUMERIC" else "NON_NUMERIC_HISTORY",
                        *(("TRUNCATED",) if samples.truncated else ())),
     )
 

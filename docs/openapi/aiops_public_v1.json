@@ -3064,6 +3064,241 @@
         "title": "DiagnosticSourceSummary",
         "type": "object"
       },
+      "EffectEvaluationCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "after_artifact_id": {
+            "format": "uuid",
+            "title": "After Artifact Id",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "verification_artifact_id": {
+            "format": "uuid",
+            "title": "Verification Artifact Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "after_artifact_id",
+          "verification_artifact_id"
+        ],
+        "title": "EffectEvaluationCommand",
+        "type": "object"
+      },
+      "EffectPlanCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "after_window_seconds": {
+            "default": 900,
+            "maximum": 604800.0,
+            "minimum": 60.0,
+            "title": "After Window Seconds",
+            "type": "integer"
+          },
+          "auto_evaluate": {
+            "default": true,
+            "title": "Auto Evaluate",
+            "type": "boolean"
+          },
+          "baseline_artifact_id": {
+            "format": "uuid",
+            "title": "Baseline Artifact Id",
+            "type": "string"
+          },
+          "expected_row_version": {
+            "minimum": 1.0,
+            "title": "Expected Row Version",
+            "type": "integer"
+          },
+          "max_baseline_age_seconds": {
+            "default": 3600,
+            "maximum": 604800.0,
+            "minimum": 60.0,
+            "title": "Max Baseline Age Seconds",
+            "type": "integer"
+          },
+          "settle_delay_seconds": {
+            "default": 60,
+            "maximum": 86400.0,
+            "minimum": 0.0,
+            "title": "Settle Delay Seconds",
+            "type": "integer"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/EffectSignalRule"
+            },
+            "maxItems": 32,
+            "minItems": 3,
+            "title": "Signals",
+            "type": "array"
+          },
+          "stop_conditions": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Stop Conditions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_row_version",
+          "baseline_artifact_id",
+          "signals",
+          "stop_conditions"
+        ],
+        "title": "EffectPlanCommand",
+        "type": "object"
+      },
+      "EffectSignalRule": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison": {
+            "enum": [
+              "DECREASE_BY",
+              "INCREASE_BY",
+              "STABLE_WITHIN",
+              "AT_MOST",
+              "AT_LEAST"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "key": {
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "metric": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "PRIMARY",
+              "GUARDRAIL",
+              "LOAD",
+              "SYMPTOM"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "statement_identity": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 6,
+            "title": "Statement Identity",
+            "type": "object"
+          },
+          "threshold": {
+            "maxLength": 50,
+            "pattern": "^-?\\d{1,30}(?:\\.\\d{1,18})?$",
+            "title": "Threshold",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "role",
+          "metric",
+          "comparison",
+          "threshold"
+        ],
+        "title": "EffectSignalRule",
+        "type": "object"
+      },
+      "EffectVerificationView": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_candidates": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence Candidates",
+            "type": "array"
+          },
+          "followup": {
+            "additionalProperties": true,
+            "title": "Followup",
+            "type": "object"
+          },
+          "frozen_plan": {
+            "additionalProperties": true,
+            "title": "Frozen Plan",
+            "type": "object"
+          },
+          "plan_artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal_id": {
+            "format": "uuid",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "title": "EffectVerificationView",
+        "type": "object"
+      },
       "FindingCard": {
         "additionalProperties": false,
         "properties": {
@@ -8679,6 +8914,8 @@
       },
       "ReportType": {
         "enum": [
+          "ORACLE_WORKLOAD",
+          "ORACLE_WORKLOAD_DIFF",
           "INCIDENT",
           "PERFORMANCE",
           "INSPECTION_DAILY",
@@ -18201,6 +18438,155 @@
           }
         },
         "summary": "Approve Proposal",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/proposals/{proposal_id}/effect": {
+      "get": {
+        "operationId": "get_effect_verification_api_v1_apps_aiops_proposals__proposal_id__effect_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectVerificationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Effect Verification",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/proposals/{proposal_id}/effect-evaluation": {
+      "post": {
+        "operationId": "evaluate_effect_plan_api_v1_apps_aiops_proposals__proposal_id__effect_evaluation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffectEvaluationCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectVerificationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Evaluate Effect Plan",
+        "tags": [
+          "AIOps"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/proposals/{proposal_id}/effect-plan": {
+      "post": {
+        "operationId": "freeze_effect_plan_api_v1_apps_aiops_proposals__proposal_id__effect_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffectPlanCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectVerificationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Freeze Effect Plan",
         "tags": [
           "AIOps"
         ]

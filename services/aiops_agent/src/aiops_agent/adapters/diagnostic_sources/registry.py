@@ -13,6 +13,7 @@ from aiops_agent.ports.diagnostic_source import (
     CAPABILITY_HEALTH_CHECK,
     CAPABILITY_INSTANCE_DISCOVERY,
     CAPABILITY_METRIC_DISCOVERY,
+    CAPABILITY_ITEM_HISTORY,
     CAPABILITY_LOG_QUERY,
     CAPABILITY_METRIC_QUERY_RANGE,
     DiagnosticSourceAdapterDescriptor,
@@ -88,6 +89,7 @@ class DiagnosticSourceAdapterCatalog:
                     CAPABILITY_METRIC_QUERY_RANGE,
                     CAPABILITY_INSTANCE_DISCOVERY,
                     CAPABILITY_METRIC_DISCOVERY,
+                    CAPABILITY_ITEM_HISTORY,
                 }
             ),
             adapter_type=ZabbixAdapter,

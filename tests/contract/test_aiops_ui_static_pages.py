@@ -107,7 +107,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(19, len(scripts))
+        self.assertEqual(20, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -532,9 +532,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261027_4", "20261027_4"),
-            "situations": ("20261027_1", "20261027_3"),
-            "inspections": ("20261027_1", "20261027_3"),
+            "chat": ("20261027_4", "20261028_1"),
+            "situations": ("20261027_1", "20261028_1"),
+            "inspections": ("20261027_1", "20261028_1"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(

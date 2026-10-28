@@ -938,6 +938,18 @@ SYSTEM_REPORT_TEMPLATES = {
     item.template_ref: item
     for item in (
         _system_template(
+            key="oracle.workload", name="Oracle 周期快照工作负载报告（非 AWR）",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("ORACLE_WORKLOAD",),
+            sections=("EXECUTIVE_SUMMARY", "SCOPE", "INSPECTION_COVERAGE", "TREND", "FINDINGS", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"),
+        ),
+        _system_template(
+            key="oracle.workload_diff", name="Oracle 周期快照工作负载对比（非 AWR）",
+            source_kinds=("INSPECTION",), periods=("CUSTOM",),
+            report_types=("ORACLE_WORKLOAD_DIFF",),
+            sections=("EXECUTIVE_SUMMARY", "SCOPE", "TREND", "FINDINGS", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"),
+        ),
+        _system_template(
             key="diagnosis.standard", name="标准诊断报告",
             source_kinds=("CHAT", "ALERT"), periods=("AD_HOC",),
             report_types=("INCIDENT", "PERFORMANCE"),
@@ -946,6 +958,12 @@ SYSTEM_REPORT_TEMPLATES = {
                 "ROOT_CAUSE", "FINDINGS", "RECOMMENDATIONS", "ACTIONS",
                 "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX",
             ),
+        ),
+        _system_template(
+            key="comparison.business", name="业务效果验证报告",
+            source_kinds=("CHAT", "ALERT"), periods=("AD_HOC",),
+            report_types=("COMPARISON",),
+            sections=("EXECUTIVE_SUMMARY", "SCOPE", "FINDINGS", "RECOMMENDATIONS", "EVIDENCE_BOUNDARY", "EVIDENCE_APPENDIX"),
         ),
         _system_template(
             key="mysql.workload", name="MySQL Workload Report",

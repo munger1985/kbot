@@ -207,6 +207,18 @@ class DiscoveredMetric(BaseModel):
     query_supported: bool = False
 
 
+class NativeHistoryMetadata(BaseModel):
+    """保留日志 Item 的原始语义，不将文本、日志等级当作数值指标。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    nanoseconds: int = Field(ge=0, le=999999999)
+    log_timestamp_seconds: int | None = Field(default=None, ge=0)
+    log_severity: str | None = Field(default=None, max_length=32)
+    log_source: str | None = Field(default=None, max_length=1024)
+    log_event_id: str | None = Field(default=None, max_length=128)
+
+
 class NativeMetricSamples(BaseModel):
     """原生历史采样；数字类型不推定为计数器，也不自动生成速率。"""
 
@@ -218,6 +230,8 @@ class NativeMetricSamples(BaseModel):
     source_id: str
     metric_name: str
     native_value_type: str
+    sample_kind: Literal["NUMERIC", "TEXT", "LOG"] = "NUMERIC"
+    sample_metadata: tuple[NativeHistoryMetadata, ...] = Field(default=(), max_length=1000)
     source_version: str = Field(min_length=1)
     unit: str | None = None
     window_start: UtcDatetime
@@ -226,6 +240,16 @@ class NativeMetricSamples(BaseModel):
     points: tuple[tuple[UtcDatetime, str], ...] = Field(max_length=1000)
     truncated: bool = False
     response_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_samples(self):
+        if self.sample_metadata and len(self.sample_metadata) != len(self.points):
+            raise ValueError("原生历史元数据必须逐条对应采样")
+        if self.sample_kind == "LOG" and len(self.sample_metadata) != len(self.points):
+            raise ValueError("日志历史必须保留逐条日志元数据")
+        if any(not self.window_start <= stamp <= self.window_end or len(value) > 8192 for stamp, value in self.points):
+            raise ValueError("原生采样时间或文本长度越界")
+        return self
 
 
 class MetricDiscoveryResult(BaseModel):
@@ -263,6 +287,9 @@ class ObservationSet(BaseModel):
 
     @model_validator(mode="after")
     def validate_catalog_scope(self):
+        for samples in self.native_metrics:
+            if str(samples.target_id) != str(self.target_id) or str(samples.binding_id) != str(self.binding_id) or str(samples.source_id) != str(self.source_id):
+                raise ValueError("原生历史与冻结的目标、绑定和来源不一致")
         for catalog in self.metric_catalogs:
             if str(catalog.target_id) != str(self.target_id) or str(catalog.binding_id) != str(self.binding_id) or str(catalog.source_id) != str(self.source_id):
                 raise ValueError("指标目录与冻结的目标、绑定和来源不一致")

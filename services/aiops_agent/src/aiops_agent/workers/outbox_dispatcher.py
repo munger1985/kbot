@@ -52,6 +52,7 @@ class AIOpsDomainOutboxSink:
         turn_planning_service=None,
         conversation_turn_service=None,
         situation_recovery_projector=None,
+        business_effect_service=None,
     ):
         self._runtime_service = runtime_service
         self._fallback = fallback
@@ -65,8 +66,14 @@ class AIOpsDomainOutboxSink:
         self._turn_planning_service = turn_planning_service
         self._conversation_turn_service = conversation_turn_service
         self._situation_recovery_projector = situation_recovery_projector
+        self._business_effect_service = business_effect_service
 
     async def publish(self, event_type: str, payload: dict) -> None:
+        if event_type == "OPS_BUSINESS_EFFECT_REQUESTED":
+            if self._business_effect_service is None:
+                raise RuntimeError("自动业务效果验证服务未配置")
+            await self._business_effect_service.execute(payload)
+            return
         if event_type == "aiops.turn.created" and self._turn_queue_service is not None:
             await self._turn_queue_service.accept_created(payload)
             return
@@ -259,6 +266,10 @@ class AIOpsDomainOutboxSink:
         exc: Exception,
     ) -> None:
         """在 Outbox 重试耗尽后收敛关联业务状态。"""
+        if event_type == "OPS_BUSINESS_EFFECT_REQUESTED":
+            if self._business_effect_service is not None:
+                await self._business_effect_service.fail(payload, exc)
+            return
         if event_type == "OPS_SITUATION_AUTO_RUN_REQUESTED":
             logger.opt(exception=exc).error(
                 "告警自动诊断提交 Agent 重试耗尽：situation_id={} "

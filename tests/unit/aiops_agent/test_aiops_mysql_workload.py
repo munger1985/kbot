@@ -100,6 +100,7 @@ def _metric(
         dimension_key=dimension,
         quality_status=quality,
         counter_value=value,
+        unit="COUNT",
     )
 
 

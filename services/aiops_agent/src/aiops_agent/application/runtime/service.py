@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from aiops_agent.application.changes.effect_followup import schedule_effect_followup
+
 from sqlalchemy.exc import IntegrityError
 
 from aiops_agent.application.display_dictionary import (
@@ -5221,6 +5223,11 @@ class AIOpsRuntimeService:
             verification=verification,
             now=now,
             trace_id=trace_id,
+        )
+        await schedule_effect_followup(
+            uow=uow, run=source_run, proposal=proposal,
+            verification_artifact=verification_artifact, receipt=source_result,
+            now=now, trace_id=trace_id,
         )
         return report_artifact
 

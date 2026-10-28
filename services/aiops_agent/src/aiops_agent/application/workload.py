@@ -143,12 +143,34 @@ def build_workload_report(
 
     load_totals: dict[str, Decimal] = defaultdict(Decimal)
     instance_metric_gaps: Counter[str] = Counter()
-    continuous_seconds = 0.0
+    continuous_seconds = Decimal(0)
+    load_coverage_seconds: dict[str, Decimal] = defaultdict(Decimal)
     discontinuities: list[dict[str, Any]] = []
     continuous_pairs: set[tuple[UUID, UUID]] = set()
     for previous, current in zip(ordered, ordered[1:]):
         elapsed = (current.collected_at - previous.collected_at).total_seconds()
+        interval_seconds = max(int(getattr(item, "window_seconds", 0) or 0) for item in (previous, current))
+        if any(str(getattr(item, "status", "READY")) == "FAILED" for item in (previous, current)) or (interval_seconds and elapsed > interval_seconds * 2):
+            discontinuities.append({
+                "previous_snapshot_id": str(previous.workload_snapshot_id),
+                "current_snapshot_id": str(current.workload_snapshot_id),
+                "reason": "FAILED_OR_MISSED_SNAPSHOT",
+            })
+            continue
         same_instance = _same_snapshot_instance(previous, current)
+        source_changed = any(
+            getattr(previous, field, None) != getattr(current, field, None)
+            for field in ("database_version", "catalog_version", "capability_probe_version")
+        )
+        reset_before = dict(getattr(previous, "continuity_json", None) or {}).get("database_stats_reset")
+        reset_after = dict(getattr(current, "continuity_json", None) or {}).get("database_stats_reset")
+        if source_changed or reset_before != reset_after:
+            discontinuities.append({
+                "previous_snapshot_id": str(previous.workload_snapshot_id),
+                "current_snapshot_id": str(current.workload_snapshot_id),
+                "reason": "SOURCE_VERSION_CHANGED" if source_changed else "STATISTICS_RESET_CHANGED",
+            })
+            continue
         if not same_instance or elapsed <= 0:
             discontinuities.append(
                 {
@@ -166,10 +188,12 @@ def build_workload_report(
         continuous_pairs.add(
             (previous.workload_snapshot_id, current.workload_snapshot_id)
         )
-        continuous_seconds += elapsed
+        continuous_seconds += Decimal(str(elapsed))
         before_metrics = dict(previous.instance_metrics_json or {})
         after_metrics = dict(current.instance_metrics_json or {})
         for key in sorted(set(before_metrics) | set(after_metrics)):
+            if str(previous.database_type) == "MYSQL" and key in {"uptime_seconds", "threads_connected", "threads_running"}:
+                continue
             if key not in before_metrics:
                 instance_metric_gaps["NEW_METRIC"] += 1
                 continue
@@ -193,6 +217,7 @@ def build_workload_report(
                 )
                 continue
             load_totals[key] += after_value - before_value
+            load_coverage_seconds[key] += Decimal(str(elapsed))
 
     metric_by_snapshot: dict[
         UUID, dict[tuple[str, str, str], object]
@@ -206,6 +231,9 @@ def build_workload_report(
             )
         ] = item
     metric_totals: dict[str, Decimal] = defaultdict(Decimal)
+    native_metric_totals: dict[tuple[str, str, str], Decimal] = defaultdict(Decimal)
+    native_metric_units: dict[tuple[str, str, str], str] = {}
+    native_metric_coverage: dict[tuple[str, str, str], Decimal] = defaultdict(Decimal)
     metric_discontinuities: list[dict[str, Any]] = []
     metric_gaps: Counter[str] = Counter()
     for previous, current in zip(ordered, ordered[1:]):
@@ -233,6 +261,10 @@ def build_workload_report(
             after_value = after_metric.counter_value
             if before_value is None or after_value is None:
                 continue
+            before_unit, after_unit = str(before_metric.unit), str(after_metric.unit)
+            if not before_unit or before_unit != after_unit or (key in native_metric_units and native_metric_units[key] != after_unit):
+                metric_gaps["UNIT_CHANGED"] += 1
+                continue
             before_number = _number(before_value)
             after_number = _number(after_value)
             if after_number < before_number:
@@ -248,9 +280,12 @@ def build_workload_report(
                 )
                 continue
             metric_totals[key[0]] += after_number - before_number
+            native_metric_totals[key] += after_number - before_number
+            native_metric_units[key] = after_unit
+            native_metric_coverage[key] += Decimal(str((current.collected_at - previous.collected_at).total_seconds()))
 
     statement_by_snapshot: dict[
-        UUID, dict[tuple[str, str, str, str, int], object]
+        UUID, dict[tuple[str, str, str, str, int, str], object]
     ] = defaultdict(dict)
     for item in statements:
         statement_by_snapshot[item.workload_snapshot_id][
@@ -260,10 +295,11 @@ def build_workload_report(
                 str(item.database_name or ""),
                 str(item.user_identifier or ""),
                 int(item.top_level),
+                str(dict(getattr(item, "database_metrics_json", None) or {}).get("plan_hash_value") or ""),
             )
         ] = item
     statement_totals: dict[
-        tuple[str, str, str, str, int], dict[str, Any]
+        tuple[str, str, str, str, int, str], dict[str, Any]
     ] = {}
     statement_gaps: Counter[str] = Counter()
     for previous, current in zip(ordered, ordered[1:]):
@@ -281,6 +317,11 @@ def build_workload_report(
                 continue
             before = left[key]
             after = right[key]
+            before_native = dict(getattr(before, "database_metrics_json", None) or {})
+            after_native = dict(getattr(after, "database_metrics_json", None) or {})
+            if any(before_native.get(field) != after_native.get(field) for field in ("statement_stats_reset", "statement_stats_dealloc", "stats_since", "first_seen")):
+                statement_gaps["IDENTIFIED_RESET_OR_EVICTION"] += 1
+                continue
             reset = any(
                 int(getattr(after, field)) < int(getattr(before, field))
                 for field in _STATEMENT_COUNTER_FIELDS
@@ -296,16 +337,19 @@ def build_workload_report(
                     "database_name": key[2],
                     "user_identifier": key[3],
                     "top_level": None if key[4] < 0 else bool(key[4]),
+                    **({"plan_hash_value": key[5]} if key[5] else {}),
                     "normalized_statement": sanitize_statement_text(
                         getattr(after, "normalized_statement", None)
                     ),
                     **{field: 0 for field in _STATEMENT_COUNTER_FIELDS},
+                    "covered_seconds": Decimal(0),
                 },
             )
             for field in _STATEMENT_COUNTER_FIELDS:
                 aggregate[field] += int(getattr(after, field)) - int(
                     getattr(before, field)
                 )
+            aggregate["covered_seconds"] += Decimal(str((current.collected_at - previous.collected_at).total_seconds()))
 
     top_statements = sorted(
         statement_totals.values(),
@@ -316,6 +360,7 @@ def build_workload_report(
     )[:100]
     for index, item in enumerate(top_statements, start=1):
         item["rank_no"] = index
+        item["covered_seconds"] = _wire_number(item["covered_seconds"])
         executions = int(item["execution_count"])
         item["mean_duration_microseconds"] = (
             _wire_number(Decimal(item["total_duration_microseconds"]) / executions)
@@ -381,9 +426,28 @@ def build_workload_report(
                 if getattr(item, "capability_probe_version", None)
             }
         ),
-        "continuous_seconds": continuous_seconds,
+        "continuous_seconds": _wire_number(continuous_seconds),
+        "signal_coverage_version": "signal-coverage.v1",
         "load_totals": {key: _wire_number(value) for key, value in sorted(load_totals.items())},
         "load_profile": rates,
+        "load_dimension_semantics": {
+            f"{key}_per_second": {
+                "value_kind": "COUNTER_RATE", "unit": f"{unit}/s",
+                "business_volume": business_volume,
+                "covered_seconds": _wire_number(load_coverage_seconds[key]),
+            }
+            for key, (unit, business_volume) in {
+                "MYSQL": {"questions": ("questions", True), "commits": ("commits", True), "rollbacks": ("rollbacks", True), "temp_disk_tables": ("tables", False), "full_table_scans": ("scans", False)},
+                "POSTGRESQL": {
+                    **{name: ("transactions", True) for name in ("xact_commit", "xact_rollback")},
+                    **{name: ("tuples", False) for name in ("tup_returned", "tup_fetched", "tup_inserted", "tup_updated", "tup_deleted")},
+                    **{name: ("blocks", False) for name in ("blks_hit", "blks_read")},
+                    "temp_bytes": ("bytes", False), "temp_files": ("files", False),
+                    "deadlocks": ("deadlocks", False), "conflicts": ("conflicts", False),
+                },
+            }.get(database_type, {}).items()
+            if f"{key}_per_second" in rates
+        },
         "database_type": database_type,
         "top_statements": top_statements,
         "coverage": coverage,
@@ -391,6 +455,14 @@ def build_workload_report(
         "instance_metric_gaps": dict(sorted(instance_metric_gaps.items())),
         "statement_gaps": dict(sorted(statement_gaps.items())),
         "metric_totals_by_family": {key: _wire_number(value) for key, value in sorted(metric_totals.items())},
+        "native_window_metrics": {
+            hashlib.sha256(canonical_report_bytes(key)).hexdigest(): {
+                "metric_family": key[0], "metric_code": key[1], "dimension_key": key[2],
+                "unit": native_metric_units[key], "window_delta": _wire_number(value),
+                "covered_seconds": _wire_number(native_metric_coverage[key]),
+            }
+            for key, value in sorted(native_metric_totals.items())
+        },
         "metric_discontinuities": metric_discontinuities,
         "metric_gaps": dict(sorted(metric_gaps.items())),
     }
@@ -1351,7 +1423,7 @@ class WorkloadService:
 
         async with self._uow_factory() as uow:
             target = await self._require_target(
-                uow=uow, domain_id=domain_id, target_id=target_id
+                uow=uow, domain_id=domain_id, target_id=target_id, allow_oracle=True
             )
             snapshots = await uow.workloads.list_snapshots(
                 domain_id=domain_id,
@@ -1372,6 +1444,8 @@ class WorkloadService:
                 target_id=target_id,
                 workload_snapshot_ids=snapshot_ids,
             )
+            if len(snapshots) < 2:
+                raise validation_failed("该窗口有效快照不足两次，无法生成窗口报告；请等待后续采集，不能追补未采集的历史")
             payload = build_workload_report(
                 target_id=target_id,
                 snapshots=snapshots,
@@ -1415,7 +1489,7 @@ class WorkloadService:
             raise validation_failed("对比窗口必须按时间先后且不重叠")
         async with self._uow_factory() as uow:
             target = await self._require_target(
-                uow=uow, domain_id=domain_id, target_id=target_id
+                uow=uow, domain_id=domain_id, target_id=target_id, allow_oracle=True
             )
             baseline_rows = await uow.workloads.list_snapshots(
                 domain_id=domain_id,
@@ -1445,6 +1519,8 @@ class WorkloadService:
                 row.workload_snapshot_id for row in baseline_rows
             }
             after_ids = {row.workload_snapshot_id for row in after_rows}
+            if len(baseline_rows) < 2 or len(after_rows) < 2:
+                raise validation_failed("前后窗口各需至少两次有效快照，当前无法比较")
             baseline = build_workload_report(
                 target_id=target_id,
                 snapshots=baseline_rows,
@@ -1889,6 +1965,7 @@ class WorkloadService:
             plan_snapshot_json={
                 "report_type": str(report_type),
                 "source_ids": [str(value) for value in source_ids],
+                "target": {"target_id": str(target.target_id), "row_version": target.row_version},
             },
             policy_snapshot_json={"deterministic_report": True},
             final_artifact_id=content_artifact_id,
@@ -2030,7 +2107,7 @@ class WorkloadService:
 
     @staticmethod
     async def _require_target(
-        *, uow, domain_id: int, target_id: UUID, lock: bool = False
+        *, uow, domain_id: int, target_id: UUID, lock: bool = False, allow_oracle: bool = False
     ):
         target = await uow.targets.get_scoped(
             target_id=target_id,
@@ -2039,8 +2116,8 @@ class WorkloadService:
         )
         if target is None:
             raise resource_not_found("Target")
-        if str(target.db_type) not in {"MYSQL", "POSTGRESQL"}:
-            raise validation_failed("仅MySQL或PostgreSQL Target支持工作负载采集")
+        if str(target.db_type) not in ({"MYSQL", "POSTGRESQL", "ORACLE"} if allow_oracle else {"MYSQL", "POSTGRESQL"}):
+            raise validation_failed("此数据库类型不支持所请求的报告种类")
         return target
 
 
@@ -2145,7 +2222,7 @@ def _report_key(report_type: WorkloadReportType) -> str:
 
 def _report_type_name(report_type: WorkloadReportType) -> str:
     database_type, kind = str(report_type).split("_", 1)
-    database_name = "PostgreSQL" if database_type == "POSTGRESQL" else "MySQL"
+    database_name = {"POSTGRESQL": "PostgreSQL", "MYSQL": "MySQL", "ORACLE": "Oracle 周期快照（非 AWR）"}[database_type]
     return f"{database_name} {kind.replace('_', ' ').title()} Report"
 
 

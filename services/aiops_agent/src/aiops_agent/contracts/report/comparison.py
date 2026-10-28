@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from platform_core.contracts.aiops.types import UtcDatetime
+from platform_core.contracts.aiops.effect import FrozenEffectPlan
 
 
 class _ComparisonContract(BaseModel):
@@ -28,7 +29,24 @@ class ComparisonPlan(_ComparisonContract):
     guardrail_signals: tuple[str, ...] = ()
     required_tool_refs: tuple[str, ...]
     baseline_evidence_refs: tuple[str, ...]
-    result_rule_version: Literal["action-effect.v1"] = "action-effect.v1"
+    result_rule_version: Literal["action-effect.v1", "business-effect.v1"] = "action-effect.v1"
+    business_effect: FrozenEffectPlan | None = None
+
+    @model_validator(mode="after")
+    def validate_effect_rule(self):
+        if (self.business_effect is not None) != (self.result_rule_version == "business-effect.v1"):
+            raise ValueError("动作复核与业务效果规则版本不得混用")
+        if self.business_effect is not None:
+            frozen = self.business_effect
+            if (
+                frozen.settle_delay_seconds != self.settle_delay_seconds
+                or frozen.after_window_seconds != self.after_window_seconds
+                or self.primary_signals != tuple(item.key for item in frozen.signals if item.role == "PRIMARY")
+                or self.guardrail_signals != tuple(item.key for item in frozen.signals if item.role == "GUARDRAIL")
+                or self.baseline_evidence_refs != (f"artifact:{frozen.baseline_artifact_id}",)
+            ):
+                raise ValueError("业务效果的窗口、条件或基线与冻结计划不一致")
+        return self
 
 
 class ComparisonResult(_ComparisonContract):
@@ -64,3 +82,7 @@ class ComparisonResult(_ComparisonContract):
     symptom_recovered: bool | None = None
     guardrails_passed: bool | None = None
     attribution_strength: Literal["SUPPORTED", "LIMITED", "UNKNOWN"] = "UNKNOWN"
+    measurements: dict = Field(default_factory=dict)
+    load_signals: dict[str, bool | None] = Field(default_factory=dict)
+    measurement_artifact_refs: tuple[dict[str, str], ...] = ()
+    execution_source: Literal["SOURCE_VERIFIED", "USER_PROVIDED", "UNKNOWN"] = "UNKNOWN"

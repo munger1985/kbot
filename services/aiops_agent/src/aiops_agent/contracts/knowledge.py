@@ -121,6 +121,7 @@ class CaseRedaction(BaseModel):
     policy_version: str
     status: Literal["REVIEW_REQUIRED", "REVIEWED"] = "REVIEW_REQUIRED"
     replacement_counts: dict[str, int] = Field(default_factory=dict)
+    semantic_provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class DiagnosisCaseProfile(BaseModel):

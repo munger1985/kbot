@@ -13,6 +13,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_CONTRACTS = (
+    Path("packages/platform_core/src/platform_core/contracts/aiops/effect.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/effect_measurement.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/changes/effect.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/case_semantic_redaction.py"),
     Path("packages/platform_core/src/platform_core/contracts/aiops/orchestration.py"),
     Path("packages/platform_core/src/platform_core/contracts/aiops/conversation.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/investigation.py"),
@@ -359,7 +363,7 @@ def _semantic_alignment(root: Path, peer: Path) -> tuple[dict[str, Any], list[st
             if not equal:
                 violations.append(f"关键语义字段不一致: {key}")
 
-    conversation_path = SHARED_CONTRACTS[1]
+    conversation_path = Path("packages/platform_core/src/platform_core/contracts/aiops/conversation.py")
     local_contracts = _classes(root / conversation_path)
     peer_contracts = _classes(peer / conversation_path)
     for class_name, expected_fields in CONTRACT_KEY_FIELDS.items():
