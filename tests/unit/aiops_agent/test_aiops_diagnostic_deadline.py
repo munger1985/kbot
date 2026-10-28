@@ -93,6 +93,8 @@ def test_expired_grant_never_acquires_capacity():
 
 def test_postgresql_driver_cancellation_terminates_connection(monkeypatch):
     from aiops_agent.executor.drivers.postgresql import PostgreSQLDiagnosticDriver
+    observed = Mock()
+    monkeypatch.setattr("aiops_agent.executor.drivers.postgresql.observe_termination", observed)
     async def run():
         entered = asyncio.Event()
         async def prepare(_sql):
@@ -105,6 +107,7 @@ def test_postgresql_driver_cancellation_terminates_connection(monkeypatch):
         connection = SimpleNamespace(
             fetchval=AsyncMock(return_value="16.15"), prepare=prepare,
             transaction=lambda **kwargs: Transaction(), terminate=Mock(), close=AsyncMock(),
+            is_closed=Mock(return_value=False),
         )
         monkeypatch.setattr("aiops_agent.executor.drivers.postgresql.asyncpg.connect", AsyncMock(return_value=connection))
         task = asyncio.create_task(PostgreSQLDiagnosticDriver().execute_dynamic(
@@ -121,12 +124,15 @@ def test_postgresql_driver_cancellation_terminates_connection(monkeypatch):
             await task
         connection.terminate.assert_not_called()
         connection.close.assert_awaited_once()
+        observed.assert_called_once_with("POSTGRESQL", "TERMINATION_CONFIRMED", "POSTGRESQL_PROTOCOL_CLOSE")
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("cancelled", [True, False])
 def test_oracle_cancel_or_query_error_skips_rollback_and_closes(monkeypatch, cancelled):
     from aiops_agent.executor.drivers.oracle import OracleDiagnosticDriver
+    observed = Mock()
+    monkeypatch.setattr("aiops_agent.executor.drivers.oracle.observe_termination", observed)
     async def run():
         entered = asyncio.Event()
         calls = 0
@@ -164,4 +170,5 @@ def test_oracle_cancel_or_query_error_skips_rollback_and_closes(monkeypatch, can
         cursor.close.assert_called_once()
         connection.rollback.assert_not_awaited()
         connection.close.assert_awaited_once()
+        assert observed.call_args.args == ("ORACLE", "CANCEL_REQUESTED", "ORACLE_CANCEL")
     asyncio.run(run())

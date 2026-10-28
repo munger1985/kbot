@@ -14,6 +14,7 @@ let timerId = 0;
 let cancel, refresh;
 const panel = {
   html: "",
+  get innerHTML() { return this.html; },
   set innerHTML(value) { this.html = value; cancel = { disabled: false }; refresh = {}; },
   querySelector(selector) {
     return selector === "[data-refresh-future]" ? refresh

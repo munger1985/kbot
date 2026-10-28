@@ -7140,7 +7140,9 @@ class AIOpsRuntimeService:
                         schema_version=artifact.schema_version,
                         content_hash=artifact.content_hash,
                     )
-            return self._run_summary(run, final_artifact=final)
+            from aiops_agent.application.readonly_lifecycle import read_lifecycle
+            return self._run_summary(run, final_artifact=final).model_copy(
+                update={"readonly_lifecycle": await read_lifecycle(uow=uow, run=run)})
 
     async def get_run_result(
         self, *, ops_run_id: UUID, domain_id: int

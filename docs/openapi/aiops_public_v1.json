@@ -7327,6 +7327,16 @@
             "title": "Ops Run Id",
             "type": "string"
           },
+          "readonly_lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadonlyLifecyclePage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "row_version": {
             "minimum": 1.0,
             "title": "Row Version",
@@ -8031,6 +8041,146 @@
           "row_version"
         ],
         "title": "ProposalView",
+        "type": "object"
+      },
+      "ReadonlyLifecycleItem": {
+        "additionalProperties": false,
+        "properties": {
+          "acquired_at": {
+            "format": "date-time",
+            "title": "Acquired At",
+            "type": "string"
+          },
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "execution_deadline_at": {
+            "format": "date-time",
+            "title": "Execution Deadline At",
+            "type": "string"
+          },
+          "lease_id": {
+            "format": "uuid",
+            "title": "Lease Id",
+            "type": "string"
+          },
+          "observation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadonlyTerminationObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "status": {
+            "enum": [
+              "IN_PROGRESS",
+              "RELEASED",
+              "CANCEL_REQUESTED",
+              "TERMINATION_CONFIRMED",
+              "TERMINATION_UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_id",
+          "acquired_at",
+          "execution_deadline_at",
+          "status"
+        ],
+        "title": "ReadonlyLifecycleItem",
+        "type": "object"
+      },
+      "ReadonlyLifecyclePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReadonlyLifecycleItem"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "title": "ReadonlyLifecyclePage",
+        "type": "object"
+      },
+      "ReadonlyTerminationObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "db_type": {
+            "enum": [
+              "POSTGRESQL",
+              "MYSQL",
+              "ORACLE"
+            ],
+            "title": "Db Type",
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "NONE",
+              "POSTGRESQL_PROTOCOL_CLOSE",
+              "MYSQL_KILL_OWN_QUERY",
+              "ORACLE_CANCEL"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "CANCEL_REQUESTED",
+              "TERMINATION_CONFIRMED",
+              "TERMINATION_UNKNOWN"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "db_type",
+          "status",
+          "method",
+          "observed_at"
+        ],
+        "title": "ReadonlyTerminationObservation",
         "type": "object"
       },
       "RecoveryDrillCreate": {

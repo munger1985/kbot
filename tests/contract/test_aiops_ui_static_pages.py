@@ -23,6 +23,13 @@ class _Parser(HTMLParser):
 
 
 class AIOpsUiStaticPagesTest(unittest.TestCase):
+    def test_readonly_lifecycle_preserves_unknown_status_and_bounded_terminal_refresh(self):
+        result = subprocess.run(
+            ["node", str(ROOT / "tests" / "contract" / "aiops_readonly_lifecycle.mjs")],
+            check=False, capture_output=True, text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_query_starters_render_primary_tables_with_safe_row_follow_up(self):
         script = (AIOPS_ROOT / "js" / "aiops-workspaces.js").read_text(
             encoding="utf-8"

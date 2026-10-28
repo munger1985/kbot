@@ -16,7 +16,9 @@ from platform_core.contracts.aiops.executor import (
     ResourceReleaseReceipt,
     ReadonlyExecutionFenceRequest,
     ReadonlyExecutionFenceReceipt,
+    ReadonlyTerminationRequest,
 )
+from platform_core.contracts.aiops.readonly_lifecycle import ReadonlyTerminationReceipt
 from platform_core.contracts.aiops.internal import EventReceipt
 from platform_core.security import (
     build_scoped_internal_auth_headers,
@@ -87,6 +89,11 @@ class AIOpsExecutionClient:
         return await self._post(path="/internal/v1/aiops/readonly-executions:check",
             payload=ReadonlyExecutionFenceRequest(grant=grant, resource_lease=receipt).model_dump(mode="json"),
             scope="aiops.readonly.check", trace_id=trace_id, response_type=ReadonlyExecutionFenceReceipt)
+
+    async def report_readonly_termination(self, report: ReadonlyTerminationRequest, *, trace_id: str) -> ReadonlyTerminationReceipt:
+        return await self._post(path="/internal/v1/aiops/readonly-executions:report-termination",
+            payload=report.model_dump(mode="json"), scope="aiops.readonly.report", trace_id=trace_id,
+            response_type=ReadonlyTerminationReceipt)
 
     async def _post(
         self,

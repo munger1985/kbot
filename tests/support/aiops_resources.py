@@ -24,6 +24,7 @@ def bind_resource_control(control, codec):
             resource_lease=resource_receipt(grant))
     control.issue_credential.side_effect = issue
     control.release_resource = AsyncMock()
+    control.report_readonly_termination = AsyncMock()
     async def check(_token, receipt, *, trace_id):
         return ReadonlyExecutionFenceReceipt(allowed=True, checked_at=receipt.execution_deadline_at - timedelta(microseconds=1),
             execution_deadline_at=receipt.execution_deadline_at)

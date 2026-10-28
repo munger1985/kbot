@@ -122,7 +122,7 @@ def test_postgresql_cleanup_waits_for_protocol_ack_and_falls_back_without_claimi
             if failure == "timeout":
                 raise TimeoutError
             raise asyncio.CancelledError("second-cancellation")
-        connection = SimpleNamespace(close=AsyncMock(side_effect=close), terminate=Mock())
+        connection = SimpleNamespace(close=AsyncMock(side_effect=close), terminate=Mock(), is_closed=Mock(return_value=False))
         if failure == "external_cancel":
             with pytest.raises(asyncio.CancelledError):
                 await _cancel_owned_connection(connection)
@@ -194,7 +194,7 @@ def test_request_secrets_are_not_in_repr_and_response_cannot_fabricate_allowance
 
 
 def executor_fixture():
-    grant = SimpleNamespace(grant_id=uuid7(), trace_id="fence-regression",
+    grant = SimpleNamespace(grant_id=uuid7(), trace_id="fence-regression", db_type="POSTGRESQL",
         expires_at=now() + timedelta(seconds=30))
     receipt = resource_receipt(grant)
     def allowed():
@@ -203,6 +203,7 @@ def executor_fixture():
         issue_credential=AsyncMock(return_value=CredentialIssueResponse(username="readonly", password="hidden", resource_lease=receipt)),
         check_readonly_execution=AsyncMock(side_effect=lambda *_args, **_kwargs: allowed()),
         release_resource=AsyncMock(),
+        report_readonly_termination=AsyncMock(),
     )
     return SimpleNamespace(grant=grant, receipt=receipt, control=control, allowed=allowed)
 

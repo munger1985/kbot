@@ -5,6 +5,7 @@ from datetime import UTC
 from sqlalchemy import case, func, literal_column, select
 
 from aiops_agent.entities.resource_governance import ResourceLeaseEntity, ResourcePoolEntity
+from aiops_agent.entities import OpsArtifactEntity
 from aiops_agent.repositories._base import AIOpsRepository
 
 
@@ -40,3 +41,19 @@ class ResourceGovernanceRepository(AIOpsRepository):
 
     async def add_lease(self, entity):
         return await self._add(entity)
+
+    async def list_database_lifecycle(self, run_id, *, limit):
+        """同 Run 有界读取；原始秘密 token 及数据库连接信息不离开仓储。"""
+        self._check_active()
+        lease, artifact = ResourceLeaseEntity, OpsArtifactEntity
+        statement = select(lease).where(lease.run_id == run_id, lease.source_kind == "DATABASE").order_by(
+            lease.acquired_at.desc(), lease.lease_id.desc()).limit(min(max(limit, 1), 51))
+        leases = list((await self._session.execute(statement)).scalars())
+        if not leases:
+            return []
+        # 不把 Oracle RAW UUID 强制转成字符串参与连接；两平台都用正式 UUID 转换生成键。
+        keys = [f"readonly-termination:{item.lease_id}" for item in leases]
+        artifacts = (await self._session.execute(select(artifact).where(
+            artifact.ops_run_id == run_id, artifact.artifact_key.in_(keys)))).scalars()
+        by_key = {item.artifact_key: item for item in artifacts}
+        return [(item, by_key.get(key)) for item, key in zip(leases, keys, strict=True)]

@@ -188,6 +188,7 @@ def test_formal_mysql_driver_and_executor_fence_cancel_server_query_before_socke
         monkeypatch.setattr("aiops_agent.executor.identity.observe_mysql_connection_identity",
             AsyncMock(return_value=(("server_uuid", server),)))
         f = executor_fixture()
+        f.grant.db_type = "MYSQL"
         if revoked:
             from datetime import datetime, timezone
             from platform_core.contracts.aiops.executor import ReadonlyExecutionFenceReceipt
@@ -215,6 +216,12 @@ def test_formal_mysql_driver_and_executor_fence_cancel_server_query_before_socke
         assert kill_statements == ["KILL QUERY 71"]
         assert connection.closed and control.closed
         f.control.release_resource.assert_not_awaited()
+        f.control.report_readonly_termination.assert_awaited_once()
+        report = f.control.report_readonly_termination.await_args.args[0]
+        assert report.resource_lease == f.receipt
+        assert report.observation.db_type == "MYSQL"
+        assert report.observation.status == "TERMINATION_CONFIRMED"
+        assert report.observation.method == "MYSQL_KILL_OWN_QUERY"
         assert connect.await_count == 2
         assert connect.await_args_list[0].kwargs["user"] == connect.await_args_list[1].kwargs["user"]
     asyncio.run(run())

@@ -10,6 +10,7 @@ from typing import Any
 
 import oracledb
 from loguru import logger
+from aiops_agent.executor.readonly_lifecycle import observe_termination
 
 from aiops_agent.diagnostics.registry import ResolvedDiagnosticTool
 from aiops_agent.ports.secret_store import ResolvedSecret
@@ -200,17 +201,21 @@ class OracleDiagnosticDriver:
             finally:
                 cursor.close()
         except asyncio.CancelledError:
+            observe_termination("ORACLE", "TERMINATION_UNKNOWN", "ORACLE_CANCEL")
             if connection is not None:
                 try:
                     connection.cancel()
+                    observe_termination("ORACLE", "CANCEL_REQUESTED", "ORACLE_CANCEL")
                     logger.info("Oracle 只读查询清理：termination_status=CANCEL_REQUESTED")
                 except oracledb.Error:
                     logger.warning("Oracle 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
             raise
         except TimeoutError as exc:
+            observe_termination("ORACLE", "TERMINATION_UNKNOWN", "ORACLE_CANCEL")
             if connection is not None:
                 try:
                     connection.cancel()
+                    observe_termination("ORACLE", "CANCEL_REQUESTED", "ORACLE_CANCEL")
                     logger.info("Oracle 只读查询清理：termination_status=CANCEL_REQUESTED")
                 except oracledb.Error:
                     logger.warning("Oracle 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")

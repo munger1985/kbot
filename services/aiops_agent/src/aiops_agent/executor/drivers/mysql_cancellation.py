@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from loguru import logger
+from aiops_agent.executor.readonly_lifecycle import observe_termination
 
 
 MYSQL_CANCEL_TIMEOUT_SECONDS = 3.0
@@ -85,6 +86,7 @@ class OwnedMySQLExecution:
     async def _stop_query(self, open_control_connection):
         connection = self.connection
         control = None
+        observe_termination("MYSQL", "TERMINATION_UNKNOWN", "MYSQL_KILL_OWN_QUERY")
         try:
             # 没有完整原生身份不发 KILL；原连接已关闭也不再使用可能被复用的编号。
             if (connection is None or connection.closed or not self.server_uuid
@@ -106,6 +108,7 @@ class OwnedMySQLExecution:
                     await cursor.execute(f"KILL QUERY {self.session_id}")
                 await self.query_finished.wait()
             self.termination_confirmed = True
+            observe_termination("MYSQL", "TERMINATION_CONFIRMED", "MYSQL_KILL_OWN_QUERY")
             logger.info("MySQL 只读查询清理：termination_status=QUERY_TERMINATION_ACKNOWLEDGED")
         except asyncio.CancelledError:
             logger.warning("MySQL 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")

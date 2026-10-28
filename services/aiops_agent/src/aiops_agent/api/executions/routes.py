@@ -19,6 +19,9 @@ from platform_core.contracts.aiops.executor import (
 )
 from aiops_agent.application.credential_issuance import CredentialIssuanceService, CredentialIssueError
 from aiops_agent.application.execution_fence import ReadonlyExecutionFenceService
+from aiops_agent.application.readonly_lifecycle import ReadonlyLifecycleService, ReadonlyLifecycleError
+from platform_core.contracts.aiops.executor import ReadonlyTerminationRequest
+from platform_core.contracts.aiops.readonly_lifecycle import ReadonlyTerminationReceipt
 from platform_core.contracts.aiops.executor import ReadonlyExecutionFenceRequest, ReadonlyExecutionFenceReceipt
 from aiops_agent.application.resource_governance import ResourceGovernanceService, ResourceAdmissionError
 from platform_core.contracts.aiops.executor import ResourceLeaseReceipt, ResourceReleaseReceipt
@@ -113,3 +116,15 @@ async def check_readonly_execution(body: ReadonlyExecutionFenceRequest, request:
         audience="kbot-aiops-db-executor",
     )
     return await service.check(body)
+
+
+@event_router.post("/readonly-executions:report-termination", response_model=ReadonlyTerminationReceipt)
+async def report_readonly_termination(body: ReadonlyTerminationRequest, request: Request) -> ReadonlyTerminationReceipt:
+    """已取消运行也接收只追加回执；独立 scope 不授予执行权。"""
+    require_service_scope(request, "aiops.readonly.report")
+    service = ReadonlyLifecycleService(uow_factory=request.app.state.configuration_service._uow_factory)
+    try:
+        return await service.record(body)
+    except ReadonlyLifecycleError as exc:
+        raise HTTPException(status_code=409 if exc.code == "READONLY_TERMINATION_CONFLICT" else 403,
+            detail={"code": exc.code}) from exc

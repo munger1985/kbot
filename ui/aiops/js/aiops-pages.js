@@ -7,6 +7,8 @@
   let sourceReloadTimer = null;
   let sourceReloadAttempts = 0;
   let futureRefreshTimer = null;
+  let lifecycleRunId = "";
+  let terminalLifecycleRefreshes = 0;
   const configs = {
     targets: { path: "/targets", cols: [["display_name", "目标"], ["importance_level", "重要程度", "importance"], ["db_type", "数据库"], ["_access", "访问模式", "target-access"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["observed_status", "观测状态", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "target-actions"]] },
     "diagnostic-sources": { path: "/diagnostic-sources", cols: [["display_name", "监控源"], ["source_type", "类型"], ["status", "启用状态", "badge"], ["connectivity_status", "连通性", "badge"], ["updated_at", "更新时间", "date"], ["_actions", "操作", "source-actions"]], detail: "diagnostic-source-detail.html?id=" },
@@ -1222,6 +1224,30 @@
     });
   }
 
+  function readonlyLifecycleHtml(run) {
+    const page = run.readonly_lifecycle;
+    if (!page?.items?.length) return "";
+    const labels = { IN_PROGRESS: "执行租约有效，尚无终止回执", RELEASED: "连接清理完成，额度已归还",
+      CANCEL_REQUESTED: "已请求取消，尚未确认终止", TERMINATION_CONFIRMED: "自有查询清理已获协议确认",
+      TERMINATION_UNKNOWN: "终止状态未知，不能确认数据库已停止" };
+    return `<section class="ops-panel-body" aria-label="只读查询清理回执"><h3>只读查询清理回执</h3><p>仅描述本次执行器自有查询的清理状态，不是 SQL 根因证据。运行已取消不等于数据库已停止；回执可能稍后到达，可刷新查看。</p><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>数据库</th><th>清理状态</th><th>租约</th></tr></thead><tbody>${page.items.map((item) => `<tr><td>${shell.escape(item.observation?.db_type ?? "—")}</td><td>${shell.escape(labels[item.status] ?? "终止状态未知")}</td><td>${shell.escape(item.lease_id)}</td></tr>`).join("")}</tbody></table></div>${page.truncated ? "<p>仅展示最近 50 条自有查询租约，不代表本次运行的全部查询。</p>" : ""}</section>`;
+  }
+
+  function scheduleRunRefresh(run, panel) {
+    const terminal = new Set(["COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED"]);
+    if (lifecycleRunId !== run.ops_run_id || !terminal.has(run.status)) {
+      lifecycleRunId = run.ops_run_id;
+      terminalLifecycleRefreshes = 0;
+    }
+    const pending = run.readonly_lifecycle?.items?.some((item) => ["IN_PROGRESS", "CANCEL_REQUESTED", "TERMINATION_UNKNOWN"].includes(item.status));
+    window.clearTimeout(futureRefreshTimer);
+    if (!terminal.has(run.status) || (pending && terminalLifecycleRefreshes++ < 3)) {
+      futureRefreshTimer = window.setTimeout(() => {
+        if (document.contains(panel)) renderDetail("run-detail");
+      }, 3000);
+    }
+  }
+
   async function renderFutureObservation(run, panel) {
     const terminal = new Set(["COMPLETED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED"]);
     const result = await KBotAIOpsAuth.request(`${appApi}/runs/${encodeURIComponent(run.ops_run_id)}/result`);
@@ -1237,7 +1263,8 @@
       return `<section class="ops-panel-body"><h3>${shell.escape(shell.fmt(observation.captured_at))} · ${shell.escape(observation.row_count)} 行${observation.truncated ? " · 已截断" : ""}</h3><div class="ops-table-wrap"><table class="ops-table"><thead><tr>${observation.columns.map((column) => `<th>${shell.escape(column.name)}</th>`).join("")}</tr></thead><tbody>${observation.rows.map((row) => `<tr>${row.map((value) => `<td><span class="ops-future-cell" tabindex="0" title="${shell.escape(valueText(value))}">${shell.escape(valueText(value))}</span></td>`).join("")}</tr>`).join("")}</tbody></table></div>${observation.row_count ? "" : "<p>此采集时点没有匹配记录；不是未执行查询。</p>"}</section>`;
     }).join("");
     panel.innerHTML = `<div class="ops-panel-body"><h2>后台未来观察 · ${cell(run, ["status", "", "run-status"])}</h2><p>${summary ? `已采集 ${shell.escape(summary.completed_count)}/${shell.escape(summary.requested.count)} 次，间隔至少 ${shell.escape(summary.requested.interval_seconds)} 秒。` : "等待后续采样，页面会自动更新。"}仅代表实际采集时点，不覆盖过去请求窗口，未自动计算差分。</p>${points}<div class="ops-actions">${terminal.has(run.status) ? "" : '<button type="button" data-cancel-future>取消后续采样</button>'}<button type="button" data-refresh-future>刷新</button></div></div>`;
-    panel.querySelector("[data-refresh-future]").onclick = () => renderDetail("run-detail");
+    panel.innerHTML += readonlyLifecycleHtml(run);
+    panel.querySelector("[data-refresh-future]").onclick = () => { terminalLifecycleRefreshes = 0; return renderDetail("run-detail"); };
     const cancel = panel.querySelector("[data-cancel-future]");
     if (cancel) cancel.onclick = async () => {
       if (!confirm("取消后续采样？已采集的原始结果仍保留。")) return;
@@ -1252,10 +1279,7 @@
         await renderDetail("run-detail");
       } catch (error) { shell.toast(error.message); cancel.disabled = false; }
     };
-    window.clearTimeout(futureRefreshTimer);
-    if (!terminal.has(run.status)) futureRefreshTimer = window.setTimeout(() => {
-      if (document.contains(panel)) renderDetail("run-detail");
-    }, 3000);
+    scheduleRunRefresh(run, panel);
   }
 
   async function renderDetail(page) {
@@ -1279,6 +1303,11 @@
         : page === "diagnostic-source-detail"
           ? sourceDetailHtml(data)
           : `<dl class="ops-detail">${Object.entries(data).filter(([, value]) => typeof value !== "object").map(([key, value]) => `<dt>${shell.escape(key)}</dt><dd>${shell.escape(value ?? "—")}</dd>`).join("")}</dl><pre class="ops-code">${shell.escape(JSON.stringify(data, null, 2))}</pre>`;
+      if (page === "run-detail") {
+        panel.innerHTML += `${readonlyLifecycleHtml(data)}<div class="ops-actions"><button type="button" data-refresh-run>刷新详情</button></div>`;
+        panel.querySelector("[data-refresh-run]").onclick = () => { terminalLifecycleRefreshes = 0; return renderDetail("run-detail"); };
+        scheduleRunRefresh(data, panel);
+      }
       if (page === "target-detail") {
         const editTargetAccess = document.getElementById("edit-target-access");
         if (editTargetAccess) {

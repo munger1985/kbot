@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .readonly_lifecycle import ReadonlyLifecyclePage
 
 from .configuration import (
     AgentBindingCreate,
@@ -249,6 +250,7 @@ class OpsRunSummary(AIOpsContract):
     row_version: int = Field(ge=1)
     created_at: UtcDatetime
     completed_at: UtcDatetime | None = None
+    readonly_lifecycle: ReadonlyLifecyclePage | None = None
 
 
 class OpsRunPage(CursorPage):

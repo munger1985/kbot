@@ -13,6 +13,7 @@ from loguru import logger
 
 from aiops_agent.diagnostics.registry import ResolvedDiagnosticTool
 from aiops_agent.executor.tls_profiles import TLSProfileError, TLSProfileResolver
+from aiops_agent.executor.readonly_lifecycle import observe_termination
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import DiagnosticConnectionProfile, DiagnosticLimits
 from .base import DiagnosticDriverError, DriverQueryResult
@@ -24,17 +25,24 @@ _NAMED_BIND = re.compile(r"(?<!:):([a-z][a-z0-9_]*)\b", re.IGNORECASE)
 async def _cancel_owned_connection(connection):
     """asyncpg 以原后端密钥发送取消并等待协议关闭；超宽限仅标记未知。"""
     try:
+        if connection.is_closed():
+            observe_termination("POSTGRESQL", "TERMINATION_UNKNOWN", "POSTGRESQL_PROTOCOL_CLOSE")
+            logger.warning("PostgreSQL 原连接已断开，不能确认远端查询终止")
+            return
         # close 会等候已经发出的 CancelRequest/ReadyForQuery，再关闭原后端连接。
         # 不能先 terminate，否则会丢掉驱动待发送的取消请求及服务端回执。
         async with asyncio.timeout(2):
             await connection.close()
+        observe_termination("POSTGRESQL", "TERMINATION_CONFIRMED", "POSTGRESQL_PROTOCOL_CLOSE")
         logger.info("PostgreSQL 只读查询清理：termination_status=OWN_CONNECTION_CLOSE_ACKNOWLEDGED")
     except asyncio.CancelledError:
         connection.terminate()
+        observe_termination("POSTGRESQL", "TERMINATION_UNKNOWN", "POSTGRESQL_PROTOCOL_CLOSE")
         logger.warning("PostgreSQL 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
         raise
     except Exception:
         connection.terminate()
+        observe_termination("POSTGRESQL", "TERMINATION_UNKNOWN", "POSTGRESQL_PROTOCOL_CLOSE")
         logger.warning("PostgreSQL 只读查询清理：termination_status=TERMINATION_UNCONFIRMED")
 
 

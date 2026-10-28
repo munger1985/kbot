@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from .investigation import DiagnosticPagination
+from .readonly_lifecycle import ReadonlyTerminationObservation
 
 from .types import (
     AIOpsContract,
@@ -396,6 +397,12 @@ class ResourceLeaseReceipt(AIOpsContract):
 
 class ResourceReleaseReceipt(AIOpsContract):
     released: Literal[True] = True
+
+
+class ReadonlyTerminationRequest(AIOpsContract):
+    """原租约仅证明追加生命周期回执的资格，不允许重新执行。"""
+    resource_lease: ResourceLeaseReceipt = Field(repr=False)
+    observation: ReadonlyTerminationObservation
 
 
 class ReadonlyExecutionFenceRequest(AIOpsContract):

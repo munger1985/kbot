@@ -351,13 +351,13 @@ def test_monitor_admission_checks_current_run_task_source_and_deadline(mutation)
 @pytest.mark.parametrize("mode", ["success", "quota", "missing", "different_grant", "expired", "failure", "cancel"])
 def test_executor_never_queries_without_receipt_or_releases_uncertain_execution(mode):
     async def run():
-        grant = SimpleNamespace(grant_id=uuid7(), trace_id="test", expires_at=now() + timedelta(seconds=10))
+        grant = SimpleNamespace(grant_id=uuid7(), trace_id="test", db_type="POSTGRESQL", expires_at=now() + timedelta(seconds=10))
         receipt = resource_receipt(grant)
         if mode == "different_grant": receipt = receipt.model_copy(update={"lease_id": uuid7()})
         if mode == "expired": receipt = receipt.model_copy(update={"execution_deadline_at": now() - timedelta(seconds=1)})
         control = SimpleNamespace(issue_credential=AsyncMock(return_value=CredentialIssueResponse(
             username="readonly", password="hidden", resource_lease=None if mode == "missing" else receipt)),
-            release_resource=AsyncMock(), check_readonly_execution=AsyncMock(return_value=ReadonlyExecutionFenceReceipt(
+            release_resource=AsyncMock(), report_readonly_termination=AsyncMock(), check_readonly_execution=AsyncMock(return_value=ReadonlyExecutionFenceReceipt(
                 allowed=True, checked_at=now(), execution_deadline_at=grant.expires_at)))
         if mode == "quota":
             control.issue_credential.side_effect = AIOpsExecutionClientError("RESOURCE_QUOTA_TARGET_EXHAUSTED")
