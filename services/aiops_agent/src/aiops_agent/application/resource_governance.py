@@ -88,7 +88,8 @@ class ResourceGovernanceService:
             bindings = (run.plan_snapshot_json or {}).get("monitoring", {}).get("bindings", ())
             if not any(str(item.get("source", {}).get("source_id")) == str(source_id) for item in bindings):
                 raise ResourceAdmissionError("RESOURCE_SOURCE_SCOPE_INVALID")
-            deadline = min(run.deadline_at, task.lease_until, task.started_at + timedelta(seconds=int(task.timeout_seconds)))
+            from aiops_agent.domain.operations.budget import task_deadline
+            deadline = min(run.deadline_at, task.lease_until, task_deadline(task))
             receipt = await reserve_readonly_resource(uow=uow, lease_id=lease_id, run_id=run.ops_run_id,
                 target_id=run.target_id, source_kind="MONITOR", source_id=source_id, deadline_at=deadline)
             await uow.commit()

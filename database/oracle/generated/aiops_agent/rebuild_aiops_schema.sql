@@ -709,6 +709,10 @@ CREATE TABLE KBOT_OPS_RUN (
     POLICY_SNAPSHOT_JSON JSON,
     FINAL_ARTIFACT_ID RAW(16),
     DEADLINE_AT TIMESTAMP(6) WITH TIME ZONE,
+    BUDGET_PAUSED_AT TIMESTAMP(6) WITH TIME ZONE,
+    BUDGET_REMAINING_MS NUMBER(19),
+    HUMAN_WAIT_UNTIL TIMESTAMP(6) WITH TIME ZONE,
+    BUDGET_WAITED_MS NUMBER(19) DEFAULT 0 NOT NULL,
     CANCEL_REQUESTED_AT TIMESTAMP(6) WITH TIME ZONE,
     CANCEL_REQUESTED_BY VARCHAR2(256 CHAR),
     ERROR_CODE VARCHAR2(128 CHAR),
@@ -772,6 +776,10 @@ CREATE TABLE KBOT_OPS_TASK (
     ATTEMPT_COUNT NUMBER(8) DEFAULT 0 NOT NULL,
     MAX_ATTEMPTS NUMBER(8) DEFAULT 3 NOT NULL,
     TIMEOUT_SECONDS NUMBER(10) NOT NULL,
+    EXECUTION_DEADLINE_AT TIMESTAMP(6) WITH TIME ZONE,
+    BUDGET_PAUSED_AT TIMESTAMP(6) WITH TIME ZONE,
+    BUDGET_REMAINING_MS NUMBER(19),
+    RESUME_PENDING NUMBER(1) DEFAULT 0 NOT NULL,
     LEASE_OWNER VARCHAR2(256 CHAR),
     LEASE_TOKEN RAW(16),
     LEASE_UNTIL TIMESTAMP(6) WITH TIME ZONE,
@@ -1927,8 +1935,8 @@ CREATE PROPERTY GRAPH KBOT_OPS_RESOURCE_GRAPH
 CREATE OR REPLACE VIEW KBOT_V_OPS_SCHEMA_VERSION AS
 SELECT
     'AIOPS' AS COMPONENT,
-    51 AS SCHEMA_VERSION,
-    'aiops-oracle-v51-resource-governance' AS CONTRACT_VERSION
+    52 AS SCHEMA_VERSION,
+    'aiops-oracle-v52-run-wait-budget' AS CONTRACT_VERSION
 FROM DUAL;
 
 COMMENT ON COLUMN KBOT_OPS_RUN.FINAL_ARTIFACT_ID IS
@@ -3617,7 +3625,7 @@ BEGIN
         raise_application_error(-20005, 'KBOT_OPS_RUN.WORKFLOW_KIND 缺失或允许为空。');
     END IF;
     IF l_required_column_count <> 30 THEN
-        raise_application_error(-20008, 'Schema 51 必需列缺失或允许为空。');
+        raise_application_error(-20008, 'Schema 52 必需列缺失或允许为空。');
     END IF;
     IF l_report_summary_count <> 1 THEN
         raise_application_error(-20013, 'KBOT_OPS_REPORT.SUMMARY 必须为 CLOB。');
@@ -3630,8 +3638,8 @@ BEGIN
         raise_application_error(-20014, 'AIOps 属性图集合不符合 Schema 合同。');
     END IF;
     IF l_component <> 'AIOPS'
-       OR l_schema_version <> 51
-       OR l_contract_version <> 'aiops-oracle-v51-resource-governance' THEN
+       OR l_schema_version <> 52
+       OR l_contract_version <> 'aiops-oracle-v52-run-wait-budget' THEN
         raise_application_error(
             -20006,
             'AIOps Schema 合同错误：'
@@ -3641,7 +3649,7 @@ BEGIN
 
     dbms_output.put_line(
         '验证通过：79 张表、10 个视图，Schema Version '
-        || '51，合同 aiops-oracle-v51-resource-governance。'
+        || '52，合同 aiops-oracle-v52-run-wait-budget。'
     );
 END;
 /

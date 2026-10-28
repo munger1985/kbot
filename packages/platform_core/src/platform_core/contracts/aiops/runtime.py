@@ -140,6 +140,7 @@ class TaskLease(AIOpsContract):
     trace_id: str
     original_request: str
     deadline_at: UtcDatetime | None = None
+    task_deadline_at: UtcDatetime | None = None
     plan_snapshot: JsonObject = Field(default_factory=dict)
     policy_snapshot: JsonObject = Field(default_factory=dict)
     input_artifacts: tuple[LeasedArtifact, ...] = ()

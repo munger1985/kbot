@@ -252,6 +252,40 @@ def issuance_fixture():
         uow=uow, credentials=credentials, codec=codec, factory=Factory())
 
 
+@pytest.mark.parametrize("source", ["DATABASE", "MONITOR"])
+def test_resumed_task_uses_checkpoint_deadline_but_never_extends_grant_or_lease(source):
+    async def run():
+        f = issuance_fixture()
+        # 保留首次执行时间，实际可用期限必须来自审批恢复后的检查点。
+        f.task.started_at -= timedelta(hours=1)
+        f.task.execution_deadline_at = now() + timedelta(seconds=8)
+        if source == "DATABASE":
+            receipt = (await f.service.issue("signed-token")).resource_lease
+        else:
+            source_id = uuid7()
+            f.run.plan_snapshot_json = {"monitoring": {"bindings": [{"source": {"source_id": str(source_id)}}]}}
+            ctx = SimpleNamespace(run_id=f.run.ops_run_id, task_id=f.task.ops_task_id,
+                target_id=f.run.target_id, lease_token=str(f.task.lease_token))
+            receipt = await ResourceGovernanceService(uow_factory=f.factory).acquire_monitor(
+                context=ctx, source_id=source_id, lease_id=uuid7())
+        assert receipt.execution_deadline_at == f.task.execution_deadline_at
+        assert receipt.execution_deadline_at <= f.task.lease_until
+        assert receipt.execution_deadline_at <= f.grant.expires_at
+    asyncio.run(run())
+
+
+def test_resumed_task_cannot_reactivate_an_expired_signed_grant():
+    async def run():
+        f = issuance_fixture()
+        f.task.execution_deadline_at = now() + timedelta(seconds=8)
+        f.grant.expires_at = now() - timedelta(seconds=1)
+        with pytest.raises(CredentialIssueError):
+            await f.service.issue("signed-token")
+        f.credentials.read.assert_not_awaited()
+        f.uow.resources.add_lease.assert_not_awaited()
+    asyncio.run(run())
+
+
 def test_credential_issuance_reserves_in_same_transaction_before_reading_secrets():
     async def run():
         f = issuance_fixture()
@@ -420,7 +454,7 @@ def test_canonical_deployment_initializes_shared_pool_but_runtime_never_creates_
         folder = root / "database/oracle/aiops_agent"
         ddl = (folder / "013_ops_resource_governance.sql").read_text()
         manifest = json.loads((folder / "schema_manifest.json").read_text())
-        assert manifest["schema_version"] == 51
+        assert manifest["schema_version"] == 52
         item = next(item for item in manifest["scripts"] if item["name"] == "013_ops_resource_governance.sql")
         assert item["sha256"] == hashlib.sha256(ddl.encode()).hexdigest()
         assert ddl in (root / "database/oracle/operations/apply_aiops_schema_51.sql").read_text()

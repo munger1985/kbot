@@ -50,6 +50,8 @@ RUN_TRANSITIONS: dict[
     DomainOpsRunStatus.WAITING_INPUT: frozenset(
         {
             DomainOpsRunStatus.RUNNING,
+            DomainOpsRunStatus.WAITING_APPROVAL,
+            DomainOpsRunStatus.PARTIAL,
             DomainOpsRunStatus.FAILED,
             DomainOpsRunStatus.CANCELLED,
             DomainOpsRunStatus.EXPIRED,
@@ -58,6 +60,7 @@ RUN_TRANSITIONS: dict[
     DomainOpsRunStatus.WAITING_APPROVAL: frozenset(
         {
             DomainOpsRunStatus.RUNNING,
+            DomainOpsRunStatus.WAITING_INPUT,
             DomainOpsRunStatus.COMPLETED,
             DomainOpsRunStatus.PARTIAL,
             DomainOpsRunStatus.FAILED,
@@ -79,9 +82,9 @@ TASK_TYPE_TO_RUN_PHASE: dict[str, DomainOpsRunStatus | None] = {
     "ACTION_PLAN": DomainOpsRunStatus.RUNNING,
     "PROPOSAL": DomainOpsRunStatus.RUNNING,
     "ANSWER": DomainOpsRunStatus.RUNNING,
-    "REQUEST_INPUT": DomainOpsRunStatus.WAITING_INPUT,
+    "REQUEST_INPUT": DomainOpsRunStatus.RUNNING,
     "PROPOSE": DomainOpsRunStatus.RUNNING,
-    "APPROVE": DomainOpsRunStatus.WAITING_APPROVAL,
+    "APPROVE": DomainOpsRunStatus.RUNNING,
     "EXECUTE": DomainOpsRunStatus.RUNNING,
     "VERIFY": DomainOpsRunStatus.RUNNING,
     "ROLLBACK": DomainOpsRunStatus.RUNNING,

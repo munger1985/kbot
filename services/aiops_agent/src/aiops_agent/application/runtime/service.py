@@ -10,6 +10,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from aiops_agent.domain.operations.budget import (
+    ExecutionBudgetError, ensure_run_resumable, pause_task_budget, resume_task_budget,
+    sync_run_budget, task_deadline,
+)
+
 from aiops_agent.application.changes.effect_followup import schedule_effect_followup
 from aiops_agent.application.investigation.future_observation import (
     FOLLOWUP_WORKFLOW, followup_access_error, future_observation_payload, preserve_future_observation, schedule_future_observation,
@@ -334,13 +339,15 @@ def _runtime_error(
     )
 
 
-def _replan_budget_exhausted(turn: object, *, now: datetime, max_replans: int, max_seconds: int) -> bool:
+def _replan_budget_exhausted(turn: object, *, now: datetime, max_replans: int, max_seconds: int,
+    excluded_wait_milliseconds: int = 0) -> bool:
     started_at = getattr(turn, "started_at", None) or getattr(turn, "created_at", None)
     if started_at is not None and started_at.tzinfo is None:
         started_at = started_at.replace(tzinfo=UTC)
     return (
         int(getattr(turn, "current_plan_revision", 1) or 1) > max_replans
-        or (started_at is not None and now >= started_at + timedelta(seconds=max_seconds))
+        or (started_at is not None and now >= started_at + timedelta(seconds=max_seconds,
+            milliseconds=max(0, int(excluded_wait_milliseconds))))
     )
 
 
@@ -1762,7 +1769,7 @@ class AIOpsRuntimeService:
             assert run is not None
             lease_limits = [
                 now + timedelta(seconds=command.lease_seconds),
-                now + timedelta(seconds=int(task.timeout_seconds)),
+                task_deadline(task),
             ]
             if run.deadline_at is not None:
                 lease_limits.append(run.deadline_at)
@@ -1792,7 +1799,7 @@ class AIOpsRuntimeService:
                 event_type="task.status",
                 event_key=(
                     f"task:{task.ops_task_id}:claimed:"
-                    f"{int(task.attempt_count)}"
+                    f"{int(task.attempt_count)}:{hashlib.sha256(str(lease_token).encode()).hexdigest()}"
                 ),
                 visibility="USER",
                 payload_json={
@@ -1940,9 +1947,7 @@ class AIOpsRuntimeService:
             requested_until = now + timedelta(
                 seconds=command.lease_seconds
             )
-            timeout_until = (task.started_at or now) + timedelta(
-                seconds=int(task.timeout_seconds)
-            )
+            timeout_until = task_deadline(task)
             limits = [requested_until, timeout_until]
             if run.deadline_at is not None:
                 limits.append(run.deadline_at)
@@ -2181,6 +2186,7 @@ class AIOpsRuntimeService:
                 await uow.commit()
                 return self._mutation_receipt(run, task, int(event.sequence_no), artifact.artifact_id)
             released = self._release_successors(tasks, now=now)
+            await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
             if run.workflow_kind == FOLLOWUP_WORKFLOW:
                 interval = int(run.plan_snapshot_json["future_observation"]["requested"]["interval_seconds"])
                 for successor in released:
@@ -2508,7 +2514,8 @@ class AIOpsRuntimeService:
                 getattr(self._diagnosis_config, "max_investigation_replan_seconds", 180)
             )
             replan_budget_exhausted = _replan_budget_exhausted(
-                turn, now=now, max_replans=replan_limit, max_seconds=replan_seconds
+                turn, now=now, max_replans=replan_limit, max_seconds=replan_seconds,
+                excluded_wait_milliseconds=run.budget_waited_ms or 0,
             )
             task_frame = dict(
                 dict(run.plan_snapshot_json or {}).get("answer_context") or {}
@@ -5589,6 +5596,10 @@ class AIOpsRuntimeService:
                     "人工补证请求的有效期已结束",
                     status_code=422,
                 )
+            human_wait_until = run.human_wait_until or now + timedelta(days=1)
+            if command.expires_at > human_wait_until:
+                raise validation_failed("人工等待不能超过本 Run 首次人工请求后一天的期限")
+            run.human_wait_until = human_wait_until
             content = command.request_artifact.payload
             if content is None:
                 raise _runtime_error(
@@ -5645,20 +5656,17 @@ class AIOpsRuntimeService:
                 if waiting_for_approval
                 else DomainOpsTaskStatus.WAITING_INPUT
             )
-            run_waiting_status = (
-                DomainOpsRunStatus.WAITING_APPROVAL
-                if waiting_for_approval
-                else DomainOpsRunStatus.WAITING_INPUT
-            )
+            try:
+                pause_task_budget(task, now=now)
+            except ExecutionBudgetError as exc:
+                raise state_conflict(str(exc)) from exc
             ensure_task_transition(
                 DomainOpsTaskStatus(task.status), task_waiting_status
             )
             task.status = task_waiting_status.value
             self._clear_lease(task)
-            ensure_run_transition(
-                DomainOpsRunStatus(run.status), run_waiting_status
-            )
-            run.status = run_waiting_status.value
+            tasks = await uow.runs.list_tasks(ops_run_id=run.ops_run_id, lock=True)
+            await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
             await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
@@ -5705,7 +5713,7 @@ class AIOpsRuntimeService:
             await self._project_turn_interaction_status(
                 uow=uow,
                 run=run,
-                status="WAITING_USER",
+                status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
                 event_type=(
                     "diagnostic.query_approval_required"
                     if waiting_for_approval
@@ -6211,6 +6219,7 @@ class AIOpsRuntimeService:
                         summary=policy.safe_message,
                         actor_id=run.actor_id,
                     )
+            await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
             await uow.commit()
             return self._mutation_receipt(
                 run, task, int(event.sequence_no), None
@@ -6264,12 +6273,16 @@ class AIOpsRuntimeService:
                     DomainOpsTaskStatus.PENDING,
                     DomainOpsTaskStatus.READY,
                     DomainOpsTaskStatus.RETRY_WAIT,
+                    DomainOpsTaskStatus.WAITING_INPUT,
+                    DomainOpsTaskStatus.WAITING_APPROVAL,
                 }:
                     ensure_task_transition(
                         current, DomainOpsTaskStatus.CANCELLED
                     )
                     task.status = DomainOpsTaskStatus.CANCELLED.value
                     task.completed_at = now
+                    self._clear_lease(task)
+            await self._close_pending_hitls(uow=uow, run=run, now=now, status="CANCELLED")
             event = await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 event_type="run.cancel_requested",
@@ -6322,6 +6335,7 @@ class AIOpsRuntimeService:
                 tasks = await uow.runs.list_tasks(
                     ops_run_id=run.ops_run_id, lock=True
                 )
+                await self._close_pending_hitls(uow=uow, run=run, now=now, status="EXPIRED")
                 for task in tasks:
                     current = DomainOpsTaskStatus(task.status)
                     if current not in {
@@ -6459,11 +6473,6 @@ class AIOpsRuntimeService:
                     if approval_request
                     else DomainOpsTaskStatus.WAITING_INPUT
                 )
-                expected_run_status = (
-                    DomainOpsRunStatus.WAITING_APPROVAL
-                    if approval_request
-                    else DomainOpsRunStatus.WAITING_INPUT
-                )
                 if (
                     task_status
                     in {
@@ -6475,7 +6484,7 @@ class AIOpsRuntimeService:
                     }
                     or run_status in TERMINAL_RUN_STATUSES
                     or task_status != expected_task_status
-                    or run_status != expected_run_status
+                    or run.cancel_requested_at is not None
                 ):
                     # Reconciler 必须能够清理旧版本或并发遗留的孤儿 HITL，
                     # 不能尝试把终态 Task/Run 重新推进到诊断态。
@@ -6550,15 +6559,11 @@ class AIOpsRuntimeService:
                 task.status = DomainOpsTaskStatus.SUCCEEDED.value
                 task.output_artifact_id = artifact.artifact_id
                 task.completed_at = now
-                ensure_run_transition(
-                    run_status,
-                    DomainOpsRunStatus.RUNNING,
-                )
-                run.status = DomainOpsRunStatus.RUNNING.value
                 tasks = await uow.runs.list_tasks(
                     ops_run_id=run.ops_run_id, lock=True
                 )
                 self._release_successors(tasks, now=now)
+                await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
                 await uow.runs.append_event(
                     ops_run_id=run.ops_run_id,
                     ops_task_id=task.ops_task_id,
@@ -6574,7 +6579,7 @@ class AIOpsRuntimeService:
                 await self._project_turn_interaction_status(
                     uow=uow,
                     run=run,
-                    status="COLLECTING",
+                    status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
                     event_type="diagnostic.input_expired",
                     payload={
                         "hitl_id": str(hitl.hitl_id),
@@ -8869,6 +8874,7 @@ class AIOpsRuntimeService:
                 )
             if task.status != DomainOpsTaskStatus.WAITING_INPUT.value:
                 raise state_conflict("人工补证 Task 未处于等待状态")
+            self._ensure_hitl_budget(run, now=now)
             submission_body = {
                 "hitl_id": str(hitl_id),
                 "submitted_by": actor_id,
@@ -8934,15 +8940,11 @@ class AIOpsRuntimeService:
             task.status = DomainOpsTaskStatus.SUCCEEDED.value
             task.output_artifact_id = artifact.artifact_id
             task.completed_at = now
-            ensure_run_transition(
-                DomainOpsRunStatus(run.status),
-                DomainOpsRunStatus.RUNNING,
-            )
-            run.status = DomainOpsRunStatus.RUNNING.value
             tasks = await uow.runs.list_tasks(
                 ops_run_id=run.ops_run_id, lock=True
             )
             released = self._release_successors(tasks, now=now)
+            await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
             await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
@@ -8974,6 +8976,9 @@ class AIOpsRuntimeService:
                         "trace_id": trace_id,
                     },
                 )
+            await self._project_turn_interaction_status(uow=uow, run=run,
+                status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
+                event_type="diagnostic.input_received", payload={"hitl_id": str(hitl.hitl_id), "status": "ANSWERED"})
             await uow.commit()
             return HitlResult(
                 hitl_id=hitl.hitl_id,
@@ -9052,9 +9057,9 @@ class AIOpsRuntimeService:
                 )
             if (
                 task.status != DomainOpsTaskStatus.WAITING_APPROVAL.value
-                or run.status != DomainOpsRunStatus.WAITING_APPROVAL.value
             ):
                 raise state_conflict("诊断查询未处于等待审批状态")
+            self._ensure_hitl_budget(run, now=now)
             request_artifact = await self._hitl_request_artifact(uow, hitl)
             request = DiagnosticQueryApprovalRequest.model_validate(
                 request_artifact.payload_json
@@ -9063,6 +9068,7 @@ class AIOpsRuntimeService:
                 request.run_id != str(run.ops_run_id)
                 or request.task_id != str(task.ops_task_id)
                 or request.target_id != str(run.target_id)
+                or request.expires_at <= now
             ):
                 raise state_conflict("诊断查询审批与 Run 上下文不匹配")
             changed = await uow.changes.answer_hitl(
@@ -9112,11 +9118,10 @@ class AIOpsRuntimeService:
                     DomainOpsTaskStatus.READY,
                 )
                 task.status = DomainOpsTaskStatus.READY.value
-                ensure_run_transition(
-                    DomainOpsRunStatus(run.status),
-                    DomainOpsRunStatus.RUNNING,
-                )
-                run.status = DomainOpsRunStatus.RUNNING.value
+                try:
+                    resume_task_budget(task, now=now)
+                except ExecutionBudgetError as exc:
+                    raise state_conflict(str(exc)) from exc
                 event_type = "diagnostic.query_approved"
             else:
                 outcome = HitlOutcome(
@@ -9151,17 +9156,14 @@ class AIOpsRuntimeService:
                 task.status = DomainOpsTaskStatus.SUCCEEDED.value
                 task.output_artifact_id = artifact.artifact_id
                 task.completed_at = now
-                ensure_run_transition(
-                    DomainOpsRunStatus(run.status),
-                    DomainOpsRunStatus.RUNNING,
-                )
-                run.status = DomainOpsRunStatus.RUNNING.value
                 tasks = await uow.runs.list_tasks(
                     ops_run_id=run.ops_run_id, lock=True
                 )
                 self._release_successors(tasks, now=now)
                 accepted_artifact = self._artifact_ref(artifact)
                 event_type = "diagnostic.query_rejected"
+            tasks = await uow.runs.list_tasks(ops_run_id=run.ops_run_id, lock=True)
+            await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
             await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
@@ -9177,7 +9179,7 @@ class AIOpsRuntimeService:
             await self._project_turn_interaction_status(
                 uow=uow,
                 run=run,
-                status="COLLECTING",
+                status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
                 event_type=event_type,
                 payload={
                     "hitl_id": str(hitl.hitl_id),
@@ -9368,6 +9370,9 @@ class AIOpsRuntimeService:
                     "人工补证请求版本已变化",
                     status_code=412,
                 )
+            self._ensure_hitl_budget(run, now=now)
+            if hitl.expires_at <= now:
+                raise _runtime_error("OPS_HITL_EXPIRED", "人工补证请求已经过期", status_code=410)
             outcome = HitlOutcome(
                 hitl_id=str(hitl_id),
                 status="SKIPPED",
@@ -9418,15 +9423,11 @@ class AIOpsRuntimeService:
             task.status = DomainOpsTaskStatus.SUCCEEDED.value
             task.output_artifact_id = artifact.artifact_id
             task.completed_at = now
-            ensure_run_transition(
-                DomainOpsRunStatus(run.status),
-                DomainOpsRunStatus.RUNNING,
-            )
-            run.status = DomainOpsRunStatus.RUNNING.value
             tasks = await uow.runs.list_tasks(
                 ops_run_id=run.ops_run_id, lock=True
             )
             self._release_successors(tasks, now=now)
+            await self._sync_run_budget(uow=uow, run=run, tasks=tasks, now=now)
             await uow.runs.append_event(
                 ops_run_id=run.ops_run_id,
                 ops_task_id=task.ops_task_id,
@@ -9439,6 +9440,9 @@ class AIOpsRuntimeService:
                     "trace_id": trace_id,
                 },
             )
+            await self._project_turn_interaction_status(uow=uow, run=run,
+                status="WAITING_USER" if run.budget_paused_at is not None else "COLLECTING",
+                event_type="diagnostic.input_skipped", payload={"hitl_id": str(hitl.hitl_id), "status": "SKIPPED"})
             await uow.commit()
             return HitlResult(
                 hitl_id=hitl.hitl_id,
@@ -9701,6 +9705,7 @@ class AIOpsRuntimeService:
             trace_id=run.trace_id,
             original_request=run.original_request or "",
             deadline_at=run.deadline_at,
+            task_deadline_at=task_deadline(task),
             plan_snapshot=dict(run.plan_snapshot_json or {}),
             policy_snapshot=dict(run.policy_snapshot_json or {}),
             input_artifacts=artifacts,
@@ -9729,11 +9734,50 @@ class AIOpsRuntimeService:
                 "OPS_RUN_CANCEL_REQUESTED",
                 "Run 已请求取消，拒绝提交新的任务结果",
             )
+        if not allow_expired and str(getattr(run, "status", "RUNNING")) in TERMINAL_RUN_STATUSES:
+            raise self._stale_lease()
         if not allow_expired and run.deadline_at is not None and run.deadline_at <= now:
             raise _runtime_error(
                 "OPS_RUN_DEADLINE_EXCEEDED",
                 "Run 已超过截止时间",
             )
+        execution_deadline = task_deadline(task)
+        if not allow_expired and execution_deadline is not None and execution_deadline <= now:
+            raise _runtime_error("OPS_TASK_DEADLINE_EXCEEDED", "Task 剩余执行预算已用尽")
+
+    @staticmethod
+    def _ensure_hitl_budget(run, *, now):
+        try:
+            ensure_run_resumable(run, now=now)
+        except ExecutionBudgetError as exc:
+            raise state_conflict(str(exc)) from exc
+
+    async def _sync_run_budget(self, *, uow, run, tasks, now):
+        if str(run.status) in TERMINAL_RUN_STATUSES or run.cancel_requested_at is not None:
+            return
+        previous = (run.status, run.budget_paused_at)
+        sync_run_budget(run, tasks, now=now)
+        if previous == (run.status, run.budget_paused_at):
+            return
+        paused = run.budget_paused_at is not None
+        payload = {"status": run.status, "deadline_at": run.deadline_at.isoformat() if run.deadline_at else None,
+            "remaining_milliseconds": int(run.budget_remaining_ms) if run.budget_remaining_ms is not None else None,
+            "human_wait_until": run.human_wait_until.isoformat() if run.human_wait_until else None,
+            "public_summary": "等待人工处理，已暂停机器执行预算" if paused else "继续执行，仅结转尚未使用的机器预算"}
+        await uow.runs.append_event(ops_run_id=run.ops_run_id, event_type="run.budget_changed",
+            event_key=None, visibility="USER", payload_json=payload)
+        await self._project_turn_interaction_status(uow=uow, run=run,
+            status="WAITING_USER" if paused else "COLLECTING", event_type="run.budget_changed", payload=payload)
+
+    @staticmethod
+    async def _close_pending_hitls(*, uow, run, now, status):
+        """调用方持 Run/Task 锁；终止后不遗留可恢复的人工请求。"""
+        for hitl in await uow.changes.list_pending_hitls(ops_run_id=run.ops_run_id, lock=True):
+            hitl.status = status
+            hitl.responded_at = now
+            hitl.responded_by = None
+            hitl.response_json = {"reason": f"RUN_{status}"}
+            hitl.response_hash = sha256_json(hitl.response_json)
 
     @staticmethod
     def _stale_lease() -> AIOpsApplicationError:

@@ -280,6 +280,15 @@ class ChangeRepository(AIOpsRepository):
         )
         return (await self._session.execute(statement)).scalars().first()
 
+    async def list_pending_hitls(self, *, ops_run_id: UUID, lock: bool = False) -> list[HitlEntity]:
+        self._check_active()
+        statement = select(HitlEntity).where(
+            HitlEntity.ops_run_id == ops_run_id, HitlEntity.status == "PENDING"
+        ).order_by(HitlEntity.hitl_id)
+        if lock:
+            statement = statement.with_for_update()
+        return list((await self._session.execute(statement)).scalars())
+
     async def find_expired_proposal(
         self, *, now: datetime
     ) -> ChangeProposalEntity | None:

@@ -96,6 +96,11 @@ class AIOpsTaskWorker:
                 (lease.deadline_at - datetime.now(UTC)).total_seconds()
                 if lease.deadline_at is not None else float("inf")
             )
+            task_remaining = ((lease.task_deadline_at - datetime.now(UTC)).total_seconds()
+                if lease.task_deadline_at is not None else lease.timeout_seconds)
+            if task_remaining <= 0:
+                error_code = "HANDLER_TIMEOUT"
+                raise TimeoutError("任务剩余执行预算已用尽，未调用 Handler")
             if deadline_remaining <= 1:
                 error_code = "RUN_DEADLINE_EXCEEDED"
                 raise TimeoutError("任务领取时全流程预算已用完，未调用 Handler")
@@ -109,7 +114,7 @@ class AIOpsTaskWorker:
             heartbeat = asyncio.create_task(
                 self._heartbeat_loop(current)
             )
-            execution_timeout = max(0, min(lease.timeout_seconds, deadline_remaining - 1))
+            execution_timeout = max(0, min(task_remaining, deadline_remaining - 1))
             try:
                 done, _ = await asyncio.wait(
                     {execution, heartbeat},
@@ -118,7 +123,7 @@ class AIOpsTaskWorker:
                 )
                 if not done:
                     await self._cancel_execution(execution)
-                    error_code = "RUN_DEADLINE_EXCEEDED" if deadline_remaining <= lease.timeout_seconds else "HANDLER_TIMEOUT"
+                    error_code = "RUN_DEADLINE_EXCEEDED" if deadline_remaining - 1 <= task_remaining else "HANDLER_TIMEOUT"
                     raise TimeoutError("Handler 执行超过本轮截止时间或 Task 超时")
                 if heartbeat in done:
                     await self._cancel_execution(execution)
@@ -322,6 +327,8 @@ class AIOpsTaskWorker:
 
     @staticmethod
     def _context(lease: TaskLease) -> TaskExecutionContext:
+        deadlines = [item for item in (lease.deadline_at, lease.task_deadline_at) if item is not None]
+        execution_deadline = min(deadlines) if deadlines else None
         return TaskExecutionContext(
             run_id=str(lease.run_id),
             task_id=str(lease.task_id),
@@ -337,8 +344,8 @@ class AIOpsTaskWorker:
             attempt=lease.attempt,
             max_attempts=lease.max_attempts,
             deadline_at=(
-                lease.deadline_at.isoformat()
-                if lease.deadline_at is not None
+                execution_deadline.isoformat()
+                if execution_deadline is not None
                 else None
             ),
             lease_token=str(lease.lease_token),

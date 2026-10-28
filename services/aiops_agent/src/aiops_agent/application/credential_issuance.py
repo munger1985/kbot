@@ -1,6 +1,6 @@
 """签名凭据发放、当前授权及只读资源准入在同一个事务内完成。"""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 import hashlib
 import secrets
 
@@ -8,6 +8,7 @@ from aiops_agent.diagnostics.grants import DiagnosticGrantError
 from aiops_agent.actions import MutationGrantError
 from aiops_agent.entities import InboxEntity
 from aiops_agent.application.resource_governance import reserve_readonly_resource
+from aiops_agent.domain.operations.budget import task_deadline
 from platform_core.identity import uuid7
 from platform_core.contracts.aiops.executor import CredentialIssueResponse
 
@@ -80,7 +81,7 @@ class CredentialIssuanceService:
                     uow=uow, lease_id=grant.grant_id, run_id=grant.run_id, target_id=grant.target_id,
                     source_kind="DATABASE", source_id=grant.target_id,
                     deadline_at=min(grant.expires_at, run.deadline_at or grant.expires_at,
-                        task.lease_until, task.started_at + timedelta(seconds=int(task.timeout_seconds))),
+                        task.lease_until, task_deadline(task)),
                 )
             if grant.expires_at <= datetime.now(UTC):
                 raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")

@@ -1,7 +1,7 @@
 {
   "component": "aiops_agent",
-  "schema_version": 51,
-  "contract_version": "aiops-oracle-v51-resource-governance",
+  "schema_version": 52,
+  "contract_version": "aiops-oracle-v52-run-wait-budget",
   "oracle_baseline": "26ai",
   "scripts": [
     {
@@ -12,7 +12,7 @@
     {
       "name": "002_ops_runtime.sql",
       "statements": 38,
-      "sha256": "243326981219b0ea5adb66b5cdccf6ae5530fbfa4a739d6d841cca7711b41d2b"
+      "sha256": "40fd93af2b5a338f98a1d4ef67d720d92c7f5b36d6a911c3b2849c60aa31b2f2"
     },
     {
       "name": "003_ops_change.sql",
@@ -32,7 +32,7 @@
     {
       "name": "006_ops_fks_views.sql",
       "statements": 37,
-      "sha256": "6b77f9b16933d82aadc0e19a4ba4400e9d6e86207ea158db71a294895687c84f"
+      "sha256": "65ed573433133a340f6dbe7f7797176f23ef578b22a0ece0afb1d52a31fcafbc"
     },
     {
       "name": "007_ops_agents.sql",

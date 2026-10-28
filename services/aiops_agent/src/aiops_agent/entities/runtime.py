@@ -54,6 +54,10 @@ class OpsRunEntity(BaseEntity):
     deadline_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
+    budget_paused_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    budget_remaining_ms: Mapped[int | None] = mapped_column(Numeric(19, 0))
+    human_wait_until: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    budget_waited_ms: Mapped[int] = mapped_column(Numeric(19, 0), nullable=False, default=0, server_default="0")
     cancel_requested_at: Mapped[datetime | None] = mapped_column(
         UniversalTimestamp(timezone=True)
     )
@@ -119,6 +123,10 @@ class OpsTaskEntity(BaseEntity):
     timeout_seconds: Mapped[int] = mapped_column(
         Numeric(10, 0), nullable=False
     )
+    execution_deadline_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    budget_paused_at: Mapped[datetime | None] = mapped_column(UniversalTimestamp(timezone=True))
+    budget_remaining_ms: Mapped[int | None] = mapped_column(Numeric(19, 0))
+    resume_pending: Mapped[int] = mapped_column(Numeric(1, 0), nullable=False, default=0, server_default="0")
     lease_owner: Mapped[str | None] = mapped_column(String(256))
     lease_token: Mapped[UUID | None] = mapped_column(UUIDv7Type())
     lease_until: Mapped[datetime | None] = mapped_column(

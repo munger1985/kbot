@@ -130,7 +130,8 @@ def fixture(*, engine="POSTGRESQL", kind="DIRECT"):
         artifact_type="EVIDENCE", payload_uri=None)
     store.artifacts[artifact.artifact_id] = artifact
     task = SimpleNamespace(task_key="diagnostic:a1" if kind == "DIRECT" else "dynamic:a1", ops_task_id=artifact.ops_task_id)
-    uow = SimpleNamespace(runs=store, targets=SimpleNamespace(get_scoped=AsyncMock(return_value=target)),
+    uow = SimpleNamespace(runs=store, changes=SimpleNamespace(list_pending_hitls=AsyncMock(return_value=[])),
+        targets=SimpleNamespace(get_scoped=AsyncMock(return_value=target)),
         agents=SimpleNamespace(get_active=AsyncMock(return_value=SimpleNamespace(binding_id=version_id, policy_id=None))),
         policies=SimpleNamespace(get_scoped=AsyncMock()), commit=AsyncMock())
     return uow, run, task, artifact
@@ -397,6 +398,8 @@ class RuntimeStore(Store):
     async def claim_task(self, *, now, lease_owner, lease_token, lease_until):
         for task in self.tasks:
             if task.status == "READY" and task.available_at <= now:
+                task.started_at = task.started_at or now
+                task.execution_deadline_at = task.execution_deadline_at or task.started_at + timedelta(seconds=int(task.timeout_seconds))
                 task.status, task.lease_owner, task.lease_token, task.lease_until = "RUNNING", lease_owner, lease_token, lease_until
                 task.attempt_count += 1
                 return task

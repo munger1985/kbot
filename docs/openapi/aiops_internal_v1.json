@@ -16688,6 +16688,18 @@
             "title": "Target Id",
             "type": "string"
           },
+          "task_deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Deadline At"
+          },
           "task_id": {
             "format": "uuid",
             "title": "Task Id",

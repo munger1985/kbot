@@ -8,6 +8,7 @@ from sqlalchemy import Select, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.application.errors import StateConflictError
+from aiops_agent.domain.operations.budget import ensure_run_resumable, sync_run_budget, run_is_due, task_deadline
 from aiops_agent.entities import (
     SituationEntity,
     OpsArtifactEntity,
@@ -551,8 +552,8 @@ class OpsRunRepository(AIOpsRepository):
                         OpsTaskEntity.status == "READY",
                         OpsTaskEntity.available_at
                         <= literal_column("SYSTIMESTAMP"),
-                        OpsTaskEntity.attempt_count
-                        < OpsTaskEntity.max_attempts,
+                        or_(OpsTaskEntity.attempt_count < OpsTaskEntity.max_attempts,
+                            OpsTaskEntity.resume_pending == 1),
                         OpsRunEntity.status.not_in(
                             (
                                 "COMPLETED",
@@ -585,6 +586,7 @@ class OpsRunRepository(AIOpsRepository):
             if (
                 run is None
                 or run.cancel_requested_at is not None
+                or run_is_due(run, now=now)
                 or run.status
                 in {
                     "COMPLETED",
@@ -610,16 +612,22 @@ class OpsRunRepository(AIOpsRepository):
                 entity is None
                 or entity.status != "READY"
                 or entity.available_at > now
-                or int(entity.attempt_count) >= int(entity.max_attempts)
+                or (int(entity.attempt_count) >= int(entity.max_attempts) and entity.resume_pending != 1)
             ):
                 continue
+            ensure_run_resumable(run, now=now)
+            # 暂停中的 Run 只在真实任务恢复时结转，锁序始终是 Run → Task。
+            sync_run_budget(run, [entity], now=now)
+            entity.execution_deadline_at = task_deadline(entity) or now + timedelta(seconds=int(entity.timeout_seconds))
             entity.status = "RUNNING"
             entity.lease_owner = lease_owner
             entity.lease_token = lease_token
             entity.lease_until = lease_until
             entity.heartbeat_at = now
             entity.started_at = entity.started_at or now
-            entity.attempt_count = int(entity.attempt_count) + 1
+            if entity.resume_pending != 1:
+                entity.attempt_count = int(entity.attempt_count) + 1
+            entity.resume_pending = 0
             entity.error_code = None
             entity.error_message = None
             await self._session.flush()
@@ -742,9 +750,11 @@ class OpsRunRepository(AIOpsRepository):
                             "EXPIRED",
                         )
                     ),
-                    OpsRunEntity.deadline_at.is_not(None),
-                    OpsRunEntity.deadline_at
-                    <= literal_column("SYSTIMESTAMP"),
+                    or_(
+                        OpsRunEntity.deadline_at <= literal_column("SYSTIMESTAMP"),
+                        (OpsRunEntity.budget_paused_at.is_not(None)
+                            & (OpsRunEntity.human_wait_until <= literal_column("SYSTIMESTAMP"))),
+                    ),
                 )
                 .order_by(
                     OpsRunEntity.deadline_at,
@@ -759,8 +769,7 @@ class OpsRunRepository(AIOpsRepository):
             )
             if (
                 run is not None
-                and run.deadline_at is not None
-                and run.deadline_at <= now
+                and run_is_due(run, now=now)
                 and run.status
                 not in {
                     "COMPLETED",
