@@ -123,8 +123,10 @@ class DatabaseDiagnosticHandler:
         self._ttl = grant_ttl_seconds
 
     async def execute(
-        self, context: TaskExecutionContext
+        self, context: TaskExecutionContext, *, execution_key_suffix: str = ""
     ) -> DatabaseDiagnosticResult:
+        if execution_key_suffix not in {"", ":sample:1", ":sample:2", ":sample:3", ":sample:4"}:
+            raise ValueError("数据库请求的采样身份无效")
         tool_id = investigation_task_identity(context.task_key, "diagnostic:")
         snapshot = context.plan_snapshot["database_diagnostics"]
         if not snapshot.get("automatic_access_enabled", True):
@@ -241,7 +243,7 @@ class DatabaseDiagnosticHandler:
             grant=self._codec.issue(grant),
             parameters=parameters,
             idempotency_key=(
-                f"{context.task_id}:{context.attempt}:{tool_id}"
+                f"{context.task_id}:{context.attempt}:{tool_id}{execution_key_suffix}"
             ),
         )
         try:

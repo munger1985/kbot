@@ -4904,6 +4904,30 @@
         "title": "DiagnosticQueryApprovalDecision",
         "type": "object"
       },
+      "DiagnosticSampling": {
+        "additionalProperties": false,
+        "description": "本轮低成本只读追加采样，不补造过去窗口。",
+        "properties": {
+          "count": {
+            "maximum": 4.0,
+            "minimum": 2.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "interval_seconds": {
+            "maximum": 10.0,
+            "minimum": 2.0,
+            "title": "Interval Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "interval_seconds"
+        ],
+        "title": "DiagnosticSampling",
+        "type": "object"
+      },
       "DiagnosticSourceConnectionTestResult": {
         "additionalProperties": false,
         "properties": {
@@ -17296,6 +17320,16 @@
             "minLength": 1,
             "title": "Question",
             "type": "string"
+          },
+          "sampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagnosticSampling"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sql_text": {
             "anyOf": [

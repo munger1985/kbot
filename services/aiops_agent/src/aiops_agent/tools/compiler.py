@@ -9,6 +9,7 @@ from platform_core.contracts.aiops.playbooks import DbaPlaybookPlan
 
 from aiops_agent.playbooks import PlaybookRegistry
 from aiops_agent.application.top_sql_window import TOP_SQL_WINDOW_TOOL
+from .sampling import validate_sampling_plan
 
 
 class InvestigationCatalogChangedError(ValueError):
@@ -65,6 +66,7 @@ class InvestigationTaskCompiler:
             for action in investigation_actions
             if not getattr(action, "deferred", False)
         )
+        validate_sampling_plan(investigation_actions)
         task_keys: dict[int, str] = {}
         tasks: list[TaskSpec] = []
         suffix = "" if revision_no == 1 else f":r{revision_no}"
@@ -248,8 +250,8 @@ class InvestigationTaskCompiler:
                     input_artifact_keys=dependencies,
                     # 固定目录中包含原生 AWR/ASH 报告等长查询；具体数据库
                     # 语句仍由 Executor 按冻结 Tool 限制收紧。
-                    timeout_seconds=300,
-                    max_attempts=2,
+                    timeout_seconds=60 if getattr(action, "sampling", None) is not None else 300,
+                    max_attempts=1 if getattr(action, "sampling", None) is not None else 2,
                     priority=47,
                 )
             )

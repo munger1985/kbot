@@ -3145,6 +3145,11 @@ class TurnPlanningService:
     ):
         """在任务编译前冻结所有模型生成的 Tool 输入。"""
         target_context = getattr(context, "target_context", {}) or {}
+        from aiops_agent.tools.sampling import validate_sampling_plan
+        try:
+            validate_sampling_plan(investigation.plan.actions)
+        except ValueError as exc:
+            raise InvestigationPlanValidationError(str(exc)) from exc
         investigation, dynamic_queries = prepare_dynamic_queries(
             investigation,
             database_type=str(

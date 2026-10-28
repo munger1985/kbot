@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from typing import Literal
+from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from platform_core.contracts.aiops.investigation import DiagnosticSampling
 
 from aiops_agent.contracts.artifacts.database import EvidenceGap
 from platform_core.contracts.aiops.playbooks import PresentationPreference
@@ -23,6 +25,16 @@ class ToolOutcome(BaseModel):
     gap: EvidenceGap | None = None
 
 
+class DiagnosticSamplingSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requested: DiagnosticSampling
+    completed_count: int = Field(ge=0, le=4)
+    started_at: datetime
+    finished_at: datetime
+    stop_reason: Literal["COMPLETE", "QUERY_GAP", "BUDGET_EXHAUSTED", "RESULT_LIMIT", "INVALID_SAMPLE_TIME"]
+
+
 class DbaToolResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -36,6 +48,7 @@ class DbaToolResult(BaseModel):
     presentation_kind: PresentationPreference
     status: Literal["SUCCEEDED", "PARTIAL", "FAILED"]
     tool_outcomes: tuple[ToolOutcome, ...]
+    sampling: DiagnosticSamplingSummary | None = None
 
 
 def is_turn_evidence_outcome(

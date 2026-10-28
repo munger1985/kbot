@@ -42,6 +42,10 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
                         columns=tuple(column.model_dump(mode="json") for column in observation.columns),
                         rows=observation.rows, row_count=observation.row_count,
                         truncated=observation.truncated,
+                        warnings=(*observation.warnings, *(
+                            (f"本轮按需采样实际完成 {source.sampling.completed_count}/{source.sampling.requested.count} 次；仅代表实际采集时点，不覆盖请求的历史窗口",)
+                            if source.sampling is not None else ()
+                        )),
                     )
         except (ValidationError, ValueError, TypeError):
             continue

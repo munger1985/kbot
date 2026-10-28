@@ -690,7 +690,10 @@ class DbaEvidenceAssessmentHandler:
                             rows=observation.rows,
                             row_count=observation.row_count,
                             truncated=observation.truncated,
-                            warnings=observation.warnings,
+                            warnings=(*observation.warnings, *(
+                                (f"本轮按需采样：实际完成 {result.sampling.completed_count}/{result.sampling.requested.count} 次；间隔至少 {result.sampling.requested.interval_seconds} 秒；仅代表实际采集时点，不覆盖请求的历史窗口",)
+                                if result.sampling is not None else ()
+                            )),
                             provenance=database_provenance(observation),
                         )
                     )

@@ -265,6 +265,8 @@ def compact_tool_cards(tools: tuple[dict, ...]) -> tuple[dict, ...]:
             card["policy"] = dict(tool["policy"])
         if tool.get("database_access") is not None:
             card["database_access"] = dict(tool["database_access"])
+        if tool.get("sampling_policy") is not None:
+            card["sampling_policy"] = dict(tool["sampling_policy"])
         if tool.get("discovery_tool_id"):
             card["discovery_tool_id"] = str(tool["discovery_tool_id"])
         cards.append(card)

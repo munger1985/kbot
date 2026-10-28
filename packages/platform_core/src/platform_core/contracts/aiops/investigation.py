@@ -286,6 +286,13 @@ class InvestigationHypothesis(AIOpsContract):
     evidence_refs: tuple[str, ...] = Field(default=(), max_length=24)
 
 
+class DiagnosticSampling(AIOpsContract):
+    """本轮低成本只读追加采样，不补造过去窗口。"""
+
+    count: int = Field(ge=2, le=4, strict=True)
+    interval_seconds: int = Field(ge=2, le=10, strict=True)
+
+
 class InvestigationAction(AIOpsContract):
     action_id: str = Field(pattern=r"^a[0-9]+$")
     question: str = Field(min_length=1, max_length=2000)
@@ -300,6 +307,16 @@ class InvestigationAction(AIOpsContract):
     evidence_need: str | None = Field(default=None, max_length=2000)
     decision_impact: str | None = Field(default=None, max_length=2000)
     stop_condition: str | None = Field(default=None, max_length=1000)
+    sampling: DiagnosticSampling | None = None
+
+    @model_validator(mode="after")
+    def validate_sampling_purpose(self):
+        if self.sampling is not None and (
+            not self.evidence_need or not self.evidence_need.strip()
+            or not self.decision_impact or not self.decision_impact.strip()
+        ):
+            raise ValueError("追加采样必须说明证据需求及其对判断的作用")
+        return self
 
 
 class InvestigationPlan(AIOpsContract):

@@ -20,6 +20,7 @@ from platform_core.contracts.aiops.playbooks import (
 )
 
 from .compiler import CompiledInvestigationPlan
+from .sampling import freeze_sampling, validate_sampling_plan
 
 
 class ToolExecutionSnapshotBuilder:
@@ -129,6 +130,12 @@ class ToolExecutionSnapshotBuilder:
             }
             if definition.discovery_tool_id:
                 card["discovery_tool_id"] = definition.discovery_tool_id
+            if definition.cost_level == "LOW":
+                card["sampling_policy"] = {
+                    "count": "2..4", "interval_seconds": "2..10", "max_groups_per_round": 1,
+                    "max_rows_per_sample": 200, "max_bytes_per_sample": 131072,
+                    "semantics": "CURRENT_ACTIVITY or CUMULATIVE_SINCE_LOAD; not requested historical window",
+                }
             discovered.append(card)
         return tuple(
             sorted(
@@ -144,6 +151,7 @@ class ToolExecutionSnapshotBuilder:
         capabilities: DbaCapabilitySnapshot,
     ) -> dict[str, dict[str, object]]:
         """在编译前校验模型选择的固定目录 Tool 参数并补齐默认值。"""
+        validate_sampling_plan(actions)
         normalized = {}
         for action in actions:
             if action.tool_id == TOP_SQL_WINDOW_TOOL:
@@ -162,6 +170,7 @@ class ToolExecutionSnapshotBuilder:
                     f"工具 {action.tool_id} 输入无效：{exc}"
                 ) from exc
             normalized[action.action_id] = parameters
+            freeze_sampling(action, resolved.definition, parameters)
         return normalized
 
     def _resolve_direct_action(
@@ -319,6 +328,7 @@ class ToolExecutionSnapshotBuilder:
             if not getattr(action, "deferred", False)
         )
         direct_invocations = {}
+        validate_sampling_plan(direct_actions)
         for action, task_key in zip(
             direct_actions, compiled.diagnostic_task_keys, strict=True
         ):
@@ -340,12 +350,14 @@ class ToolExecutionSnapshotBuilder:
                 capabilities=capabilities,
             )
             definition = resolved.definition
+            sampling = freeze_sampling(action, definition, self._tools.validate_parameters(resolved, dict(action.input)))
             direct_invocations[task_key] = {
                 "action_id": action.action_id,
                 "question": action.question,
                 "measurement_semantics": action.measurement_semantics,
                 "presentation_kind": "TABLE",
                 "catalog_hash": self._tools.catalog_hash,
+                "sampling": sampling,
                 "execution_condition": (
                     TOP_SQL_REFERENCE_CONDITION
                     if getattr(action, "optional", False)
@@ -378,10 +390,10 @@ class ToolExecutionSnapshotBuilder:
                     ],
                     "limits": {
                         "statement_timeout_seconds": (
-                            definition.timeout_seconds
+                            min(5, definition.timeout_seconds) if sampling else definition.timeout_seconds
                         ),
-                        "max_result_rows": definition.max_rows,
-                        "max_result_bytes": definition.max_bytes,
+                        "max_result_rows": min(200, definition.max_rows) if sampling else definition.max_rows,
+                        "max_result_bytes": min(131072, definition.max_bytes) if sampling else definition.max_bytes,
                         "max_columns": 128,
                         "max_cell_chars": 32768,
                     },

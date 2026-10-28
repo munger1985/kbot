@@ -2800,6 +2800,11 @@ class AIOpsRuntimeService:
             lock=True,
         )
         outcomes_by_tool = {item.tool_id: item for item in result.tool_outcomes}
+        if result.sampling is not None:
+            # 追加采样后续缺口不能抹去前面已取得的真实观测。
+            for item in result.tool_outcomes:
+                if item.observation is not None:
+                    outcomes_by_tool[item.tool_id] = item
         for tool_row in tool_rows:
             if tool_row.ops_task_id != task.ops_task_id:
                 continue
@@ -2807,7 +2812,8 @@ class AIOpsRuntimeService:
             if outcome is None:
                 continue
             tool_row.status = (
-                "SKIPPED" if outcome.status == "SKIPPED"
+                "PARTIAL" if result.sampling is not None and result.status == "PARTIAL"
+                else "SKIPPED" if outcome.status == "SKIPPED"
                 else "SUCCEEDED" if outcome.observation is not None
                 else "FAILED" if outcome.gap is not None
                 else "NO_DATA"
@@ -2828,7 +2834,9 @@ class AIOpsRuntimeService:
                     "tool_id": tool_row.tool_id,
                     "status": tool_row.status,
                     "public_summary": (
-                        "本步骤按计划跳过"
+                        f"按需采样完成 {result.sampling.completed_count}/{result.sampling.requested.count} 次；仅代表实际采集时点"
+                        if result.sampling is not None
+                        else "本步骤按计划跳过"
                         if outcome.status == "SKIPPED"
                         else "数据库只读观测已经完成"
                         if outcome.observation is not None
