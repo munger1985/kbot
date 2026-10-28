@@ -251,6 +251,7 @@ _DISPLAY_NAMES = {
     "POLICY_TEMPLATE": "策略模板",
     "EXPLICIT_USER_DECISION": "用户明确决定",
     "SQLPLUS": "SQL*Plus",
+    "PSQL": "PostgreSQL psql",
     "RMAN": "RMAN",
     "DGMGRL": "Data Guard Broker 命令行",
     "SHELL": "Shell 命令",

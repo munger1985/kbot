@@ -49,6 +49,15 @@ class _Response:
     async def __aexit__(self, *_args):
         return None
 
+    @property
+    def content(self):
+        return self
+
+    async def iter_chunked(self, size):
+        raw = await self.read()
+        for start in range(0, len(raw), size):
+            yield raw[start:start + size]
+
     async def read(self):
         return self._raw
 

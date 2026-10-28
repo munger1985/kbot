@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class KnowledgeScopeInput(BaseModel):
@@ -115,10 +115,18 @@ class ManualProfile(BaseModel):
     source_evidence_ids: tuple[str, ...] = ()
 
 
+class CaseRedaction(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy_version: str
+    status: Literal["REVIEW_REQUIRED", "REVIEWED"] = "REVIEW_REQUIRED"
+    replacement_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class DiagnosisCaseProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["OPS_DIAGNOSIS_CASE.v1"] = "OPS_DIAGNOSIS_CASE.v1"
-    case_kind: Literal["DIAGNOSTIC_REFERENCE", "VERIFIED_RESOLUTION"]
+    case_kind: Literal["DIAGNOSTIC_REFERENCE", "VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION", "NEGATIVE_EXPERIENCE"]
     problem_signature: dict[str, Any]
     environment: dict[str, Any]
     root_cause: dict[str, Any]
@@ -127,6 +135,28 @@ class DiagnosisCaseProfile(BaseModel):
     applicability: tuple[str, ...] = ()
     contraindications: tuple[str, ...] = ()
     source: dict[str, Any]
+    redaction: CaseRedaction | None = None
+
+    @model_validator(mode="after")
+    def validate_verified_effect(self):
+        if self.case_kind in {"VERIFIED_RESOLUTION", "VERIFIED_OPTIMIZATION"}:
+            measured = self.verification
+            if not (
+                measured.get("controlled_verification_ref")
+                and measured.get("comparability") == "COMPARABLE"
+                and measured.get("guardrails_passed") is True
+                and measured.get("measured_effect") == "IMPROVED"
+                and self.actions and all(item.get("evidence_refs") for item in self.actions)
+            ):
+                raise ValueError("已验证案例必须关联真实执行、同口径改善和护栏证据")
+            if self.case_kind == "VERIFIED_RESOLUTION" and measured.get("symptom_recovered") is not True:
+                raise ValueError("已验证解决案例必须有目标症状恢复证据")
+        if self.case_kind == "NEGATIVE_EXPERIENCE" and not (
+            self.actions and all(item.get("evidence_refs") for item in self.actions)
+            and self.verification.get("result") in {"NOT_ACHIEVED", "ADVERSE", "DEGRADED", "UNCHANGED"}
+        ):
+            raise ValueError("失败经验必须有可追溯的尝试动作及失败或无效结果")
+        return self
 
 
 class DiagnosisCaseDraft(BaseModel):

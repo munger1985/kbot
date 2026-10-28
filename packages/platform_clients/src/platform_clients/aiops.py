@@ -725,6 +725,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
             auth_context=auth_context,
         )
 
+    async def record_operations_case_feedback(
+        self, asset_id: UUID, *, payload: dict[str, Any], auth_context: AuthContext,
+    ) -> dict[str, Any]:
+        return await self._json(
+            "POST", f"{INTERNAL_API_V1}/aiops/operations-knowledge/cases/{asset_id}/feedback",
+            payload=payload, auth_context=auth_context,
+        )
+
     async def get_operations_diagnosis_case_eligibility(
         self, report_id: UUID, *, auth_context: AuthContext
     ) -> dict[str, Any]:

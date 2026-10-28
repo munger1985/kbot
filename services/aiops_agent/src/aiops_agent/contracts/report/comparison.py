@@ -59,3 +59,8 @@ class ComparisonResult(_ComparisonContract):
     causal_limitations: tuple[str, ...] = (
         "时间相关性不能单独证明因果关系",
     )
+    direct_effect: Literal["ACHIEVED", "NOT_ACHIEVED", "ADVERSE", "UNKNOWN"] = "UNKNOWN"
+    measured_effect: Literal["IMPROVED", "UNCHANGED", "DEGRADED", "INCONCLUSIVE"] = "INCONCLUSIVE"
+    symptom_recovered: bool | None = None
+    guardrails_passed: bool | None = None
+    attribution_strength: Literal["SUPPORTED", "LIMITED", "UNKNOWN"] = "UNKNOWN"

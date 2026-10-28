@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import datetime, timedelta, timezone
 
 from platform_core.contracts.aiops.playbooks import (
     DbaCapabilitySnapshot,
@@ -16,8 +17,10 @@ def build_capability_snapshot(
     agent_version: object,
     target: object,
     sources: Iterable[object],
+    now: datetime | None = None,
 ) -> DbaCapabilitySnapshot:
     """只根据已持久化且可审计的配置生成规划快照。"""
+    now = now or datetime.now(timezone.utc)
     target_payload = dict(getattr(target, "capabilities_json", None) or {})
     target_capabilities = set(target_capability_names(target))
     privileges = set(_string_values(target_payload.get("privileges")))
@@ -25,30 +28,12 @@ def build_capability_snapshot(
         SourceCapabilitySnapshot(
             source_id=str(source.diagnostic_source_id),
             source_type=str(source.source_type),
+            **_source_freshness(source, now),
             enabled=str(source.status) == "ENABLED",
             reachable=str(source.connectivity_status)
             in {"CONNECTED", "DEGRADED"},
             capabilities=tuple(
-                sorted(
-                    set(
-                        _capability_names(
-                            getattr(
-                                source,
-                                "declared_capabilities_json",
-                                None,
-                            )
-                        )
-                    )
-                    | set(
-                        _capability_names(
-                            getattr(
-                                source,
-                                "discovered_capabilities_json",
-                                None,
-                            )
-                        )
-                    )
-                )
+                sorted(dict(getattr(source, "declared_capabilities_json", None) or {}))
             ),
         )
         for source in sorted(
@@ -72,6 +57,19 @@ def build_capability_snapshot(
         ),
         source_snapshots=source_snapshots,
     )
+
+
+def _source_freshness(source, now):
+    checked = getattr(source, "last_connectivity_check_at", None)
+    updated = getattr(source, "updated_at", None)
+    expires = checked + timedelta(minutes=5) if checked is not None else None
+    fresh = bool(checked and expires and checked <= now < expires and (updated is None or updated <= checked))
+    status = str(getattr(source, "connectivity_status", "UNKNOWN"))
+    return {
+        "configuration_version": getattr(source, "row_version", None),
+        "checked_at": checked, "expires_at": expires,
+        "health_state": ("AVAILABLE" if status in {"CONNECTED", "DEGRADED"} else "UNAVAILABLE") if fresh else "UNKNOWN",
+    }
 
 
 def target_capability_names(target: object) -> tuple[str, ...]:

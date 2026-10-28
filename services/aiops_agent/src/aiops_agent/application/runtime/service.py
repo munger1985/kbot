@@ -5010,6 +5010,8 @@ class AIOpsRuntimeService:
             evidence_hashes=verification.evidence_hashes,
             result=result,
             rationale_codes=rationale,
+            direct_effect={"VERIFIED": "ACHIEVED", "NOT_ACHIEVED": "NOT_ACHIEVED", "ADVERSE": "ADVERSE"}.get(verification.status, "UNKNOWN"),
+            measured_effect="DEGRADED" if verification.status == "ADVERSE" else "INCONCLUSIVE",
         )
         comparison_payload = comparison.model_dump(mode="json")
         comparison_hash = sha256_json(comparison_payload)
@@ -5052,6 +5054,8 @@ class AIOpsRuntimeService:
             "DEGRADED": "处理后发现直接效果或护栏指标退化",
             "INCONCLUSIVE": "处理后证据不足，无法形成可靠对比结论",
         }[result]
+        if comparison.direct_effect == "ACHIEVED" and result == "INCONCLUSIVE":
+            summary = "动作后置条件已核验满足；业务恢复、可比性能改善及护栏尚未完成测量"
         report_content = ReportContent(
             report_key=report_key,
             report_type="COMPARISON",
@@ -5081,6 +5085,11 @@ class AIOpsRuntimeService:
                     "causal_limitations": list(
                         comparison.causal_limitations
                     ),
+                    "direct_effect": comparison.direct_effect,
+                    "measured_effect": comparison.measured_effect,
+                    "symptom_recovered": comparison.symptom_recovered,
+                    "guardrails_passed": comparison.guardrails_passed,
+                    "attribution_strength": comparison.attribution_strength,
                 },
             ),
             gaps=tuple(
@@ -5404,7 +5413,7 @@ class AIOpsRuntimeService:
         if verification.status == "INCONCLUSIVE" or verification.gap_codes:
             return "INCONCLUSIVE", ("EVIDENCE_NOT_COMPARABLE",)
         if verification.status == "VERIFIED":
-            return "RESOLVED", ("ACTION_EFFECT_VERIFIED",)
+            return "INCONCLUSIVE", ("DIRECT_ACTION_POSTCONDITION_VERIFIED", "BUSINESS_EFFECT_NOT_MEASURED")
         if verification.status == "NOT_ACHIEVED":
             return "UNCHANGED", ("EXPECTED_DIRECT_EFFECT_NOT_OBSERVED",)
         return "INCONCLUSIVE", ("VERIFICATION_STATE_UNSUPPORTED",)
@@ -7956,12 +7965,17 @@ class AIOpsRuntimeService:
         root_assessments: list[dict[str, str]] = []
         effective_grade = "INCONCLUSIVE"
         ready = not missing_turns
-        for turn, run, artifact in sorted(source_rows, key=lambda row: int(row[0].turn_no)):
-            source = normalize_report_source(
+        from aiops_agent.application.diagnosis.revisions import merge_investigation_sources
+        normalized_rows = [
+            (run, artifact, normalize_report_source(
                 schema_version=artifact.schema_version,
-                payload=dict(artifact.payload_json or {}),
-                source_kind="CHAT",
-            )
+                payload=dict(artifact.payload_json or {}), source_kind="CHAT",
+            ))
+            for turn, run, artifact in sorted(source_rows, key=lambda row: int(row[0].turn_no))
+        ]
+        current_sources, claim_history = merge_investigation_sources(normalized_rows)
+        for turn, run, artifact in sorted(source_rows, key=lambda row: int(row[0].turn_no)):
+            source = current_sources[str(artifact.artifact_id)]
             facts.extend(source.get("facts") or ())
             turn_rationale = str(
                 source.get("diagnosis_rationale") or ""
@@ -8052,6 +8066,7 @@ class AIOpsRuntimeService:
                 "included_turn_ids": [str(turn.turn_id) for turn, _, _ in source_rows],
                 "snapshot_hash": snapshot_hash,
                 "question_summaries": list(dict.fromkeys(questions)),
+                "claim_revision_history": list(claim_history),
             },
         }
 

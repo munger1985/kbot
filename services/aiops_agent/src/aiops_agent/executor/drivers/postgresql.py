@@ -116,26 +116,29 @@ class PostgreSQLDiagnosticDriver:
                     },
                 )
             version = await connection.fetchval("SHOW server_version")
-            async with connection.transaction(readonly=True):
-                statement = await connection.prepare(sql)
-                attributes = tuple(statement.get_attributes())
-                if len(attributes) > limits.max_columns:
-                    raise DiagnosticDriverError(
-                        "RESULT_COLUMN_LIMIT_EXCEEDED"
-                    )
-                columns = tuple(str(item.name) for item in attributes)
-                database_types = tuple(
-                    str(getattr(item.type, "name", ""))
-                    for item in attributes
+            # 独占连接显式管理事务；取消时直接 terminate，不先等待上下文自动回滚。
+            transaction = connection.transaction(readonly=True)
+            await transaction.start()
+            statement = await connection.prepare(sql)
+            attributes = tuple(statement.get_attributes())
+            if len(attributes) > limits.max_columns:
+                raise DiagnosticDriverError(
+                    "RESULT_COLUMN_LIMIT_EXCEEDED"
                 )
-                cursor = statement.cursor(
-                    *(parameters[name] for name in names),
-                    prefetch=min(limits.max_result_rows + 1, 100),
-                )
-                rows, truncated = await _read_bounded_rows(
-                    cursor,
-                    limits=limits,
-                )
+            columns = tuple(str(item.name) for item in attributes)
+            database_types = tuple(
+                str(getattr(item.type, "name", ""))
+                for item in attributes
+            )
+            cursor = statement.cursor(
+                *(parameters[name] for name in names),
+                prefetch=min(limits.max_result_rows + 1, 100),
+            )
+            rows, truncated = await _read_bounded_rows(
+                cursor,
+                limits=limits,
+            )
+            await transaction.rollback()
             return DriverQueryResult(
                 columns=columns,
                 rows=rows,
@@ -143,6 +146,12 @@ class PostgreSQLDiagnosticDriver:
                 db_version=str(version),
                 database_types=database_types,
             )
+        except asyncio.CancelledError:
+            # 取消时不等待正常关闭握手，禁止未完成查询占用连接或迟到返回。
+            if connection is not None:
+                connection.terminate()
+                connection = None
+            raise
         except TimeoutError as exc:
             if connection is not None:
                 connection.terminate()
@@ -187,7 +196,14 @@ class PostgreSQLDiagnosticDriver:
             ) from exc
         finally:
             if connection is not None:
-                await connection.close()
+                try:
+                    async with asyncio.timeout(1):
+                        await connection.close()
+                except asyncio.CancelledError:
+                    connection.terminate()
+                    raise
+                except Exception:
+                    connection.terminate()
 
     def _resolve_tls_profile(self, profile_ref: str):
         if self._tls_profile_resolver is None:

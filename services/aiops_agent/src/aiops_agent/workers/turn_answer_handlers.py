@@ -45,6 +45,8 @@ from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.application.diagnosis.investigation_record import (
     freeze_investigation, render_investigation, sql_investigation_draft,
 )
+from aiops_agent.application.diagnosis.provenance import database_provenance, monitoring_provenance, native_metric_provenance
+from aiops_agent.contracts.measurements import DerivedMeasurement
 from aiops_agent.application.exacheck_report import (
     EXACHECK_FACT_COLUMNS,
     EXACHECK_FACT_TOOL_ID,
@@ -402,6 +404,10 @@ class DbaEvidenceAssessmentHandler:
                             row_count=len(statements),
                             truncated=False,
                             warnings=warnings,
+                            derivations=tuple(
+                                DerivedMeasurement.model_validate(value)
+                                for item in statements for value in item.get("derivations", ())
+                            ),
                         )
                     )
                 for code, count in gap_counts.items():
@@ -512,12 +518,25 @@ class DbaEvidenceAssessmentHandler:
                         trust_level="SOURCE_VERIFIED", measurement_semantics="NOT_APPLICABLE",
                         presentation_kind="TABLE", captured_at=catalog.captured_at.isoformat(),
                         columns=tuple({"name": name} for name in (
-                            "metric_name", "label_names", "metric_type", "window_start", "window_end",
+                            "metric_name", "label_names", "metric_type", "window_start", "window_end", "unit", "help_text", "metadata_state", "native_value_type", "query_supported",
                         )),
                         rows=tuple((entry.name, ", ".join(entry.label_names), entry.metric_type,
-                            catalog.window_start.isoformat(), catalog.window_end.isoformat()) for entry in catalog.entries),
+                            catalog.window_start.isoformat(), catalog.window_end.isoformat(), entry.unit, entry.help_text, entry.metadata_state, entry.native_value_type, entry.query_supported) for entry in catalog.entries),
                         row_count=len(catalog.entries), truncated=catalog.truncated,
                         warnings=catalog.warnings,
+                    ))
+                for index, samples in enumerate(result.native_metrics):
+                    facts.append(TurnEvidenceFact(
+                        evidence_ref=f"artifact:{artifact['artifact_id']}#native-metric/{index}",
+                        artifact_id=str(artifact["artifact_id"]), source_id=str(samples.source_id),
+                        step_id=samples.action_id, tool_id="monitor.query_native_metric",
+                        trust_level="SOURCE_VERIFIED", measurement_semantics="HISTORICAL_SAMPLES",
+                        presentation_kind="TABLE", captured_at=samples.captured_at.isoformat(),
+                        columns=tuple({"name": name} for name in ("observed_at", "metric_name", "value", "unit", "native_value_type")),
+                        rows=tuple((stamp.isoformat(), samples.metric_name, value, samples.unit, samples.native_value_type) for stamp, value in samples.points),
+                        row_count=len(samples.points), truncated=samples.truncated,
+                        provenance=native_metric_provenance(samples),
+                        warnings=("原始历史样本；未推定计数器语义、采样覆盖或物理实例身份。",),
                     ))
                 fact = self._monitoring_fact(
                     artifact_id=str(artifact["artifact_id"]),
@@ -655,6 +674,7 @@ class DbaEvidenceAssessmentHandler:
                             row_count=observation.row_count,
                             truncated=observation.truncated,
                             warnings=observation.warnings,
+                            provenance=database_provenance(observation),
                         )
                     )
                 if outcome.gap is not None:
@@ -1566,6 +1586,7 @@ class DbaEvidenceAssessmentHandler:
             truncated=any(item.truncated for item in result.observations),
             warnings=tuple(dict.fromkeys(warnings)),
             visualizations=visualizations,
+            provenance=monitoring_provenance(result),
         )
 
 _HTML_REPORT_TOOLS = {
@@ -1705,9 +1726,12 @@ class DbaAnswerComposeHandler:
             )
             status = (
                 "COMPLETED"
-                if draft.goal_satisfied and assessment.status == SufficiencyStatus.ANSWERABLE
+                if record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE
                 else "PARTIAL"
             )
+            if record.runbook is not None:
+                index = next((index for index, block in enumerate(blocks) if block.block_type == AnswerBlockType.EVIDENCE_REQUEST), len(blocks))
+                blocks.insert(index, self._record_runbook_block(record))
             return AIOpsTurnResult(
                 status=status,
                 sufficiency_status=assessment.status,
@@ -1857,6 +1881,7 @@ class DbaAnswerComposeHandler:
         draft = None
         receipt = None
         fallback_reason = None
+        record = None
         if self._model is not None and self._prompts is not None:
             answer_context = self._answer_context(context)
             try:
@@ -1870,6 +1895,8 @@ class DbaAnswerComposeHandler:
                     input_payload={
                         "question": answer_context.get("question", ""),
                         "evidence_bundle": bundle,
+                        "parent_investigation": answer_context.get("parent_investigation"),
+                        "goal_catalog": self._goal_catalog(task_frame),
                         "investigation": assessment.investigation.model_dump(mode="json") if assessment.investigation else None,
                         "resource_capabilities": context.plan_snapshot.get("capability_snapshot", {}),
                         "gaps": [item.model_dump(mode="json") for item in assessment.gaps],
@@ -1879,17 +1906,19 @@ class DbaAnswerComposeHandler:
                 )
                 draft = SqlDiagnosisDraft.model_validate(generated.output.model_dump(mode="python"))
                 validate_sql_diagnosis(draft, bundle)
+                record = freeze_investigation(
+                    draft=sql_investigation_draft(draft, "SQL " + str(bundle["subject"].get("query_id") or bundle["subject"].get("sql_id") or bundle["subject"].get("digest") or "当前选定语句")),
+                    evidence=assessment.evidence, context=context, gaps=assessment.gaps,
+                )
                 receipt = generated.receipt.model_dump(mode="json")
             except (AIOpsModelError, ValidationError, ValueError, LookupError) as exc:
                 logger.warning("SQL 诊断降级为证据摘要：task_id={} error_type={}", context.task_id, type(exc).__name__)
+                draft = None
+                record = None
                 fallback_reason = "诊断生成未通过证据校验或服务不可用；本次仅提供已核验画像，原因与方案尚未完成。"
         else:
             fallback_reason = "诊断模型未配置；本次仅提供已核验画像，不能视为已完成根因分析。"
         if draft is not None:
-            record = freeze_investigation(
-                draft=sql_investigation_draft(draft, "SQL " + str(bundle["subject"].get("query_id") or bundle["subject"].get("sql_id") or bundle["subject"].get("digest") or "当前选定语句")),
-                evidence=assessment.evidence, context=context, gaps=assessment.gaps,
-            )
             analysis, solution, refs = render_investigation(record)
         else:
             record = None
@@ -1920,8 +1949,10 @@ class DbaAnswerComposeHandler:
                 block = block.model_copy(update={"payload": {**block.payload, "title": f"上一轮历史观测 · {block.payload['title']}"}})
             blocks.append(block)
         reasons = tuple(dict.fromkeys((*assessment.reasons, *((fallback_reason,) if fallback_reason else ()))))
+        if record is not None and record.runbook is not None:
+            blocks.append(self._record_runbook_block(record))
         return AIOpsTurnResult(
-            status="COMPLETED" if draft and draft.goal_satisfied and assessment.status == SufficiencyStatus.ANSWERABLE else "PARTIAL",
+            status="COMPLETED" if record and record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE else "PARTIAL",
             sufficiency_status=assessment.status, blocks=tuple(blocks),
             evidence=assessment.evidence, evidence_gaps=assessment.gaps,
             assessment_reasons=reasons, model_receipt=receipt,
@@ -2263,6 +2294,20 @@ class DbaAnswerComposeHandler:
             blocks.append(evidence_request)
         return blocks
 
+    @staticmethod
+    def _goal_catalog(task_frame):
+        criteria = task_frame.get("success_criteria") or ()
+        return [{"goal_id": f"g{index}", "description": value} for index, value in enumerate(criteria, start=1)] or [{"goal_id": "answer", "description": "回答当前问题"}]
+
+    @staticmethod
+    def _record_runbook_block(record):
+        return TurnAnswerBlock(
+            block_type=AnswerBlockType.IMPLEMENTATION_RUNBOOK,
+            schema_version="AIOPS_IMPLEMENTATION_RUNBOOK_BLOCK.v3",
+            payload=record.runbook.model_dump(mode="json"),
+            evidence_refs=record.runbook.evidence_refs,
+        )
+
     def _diagnosis_model_input(
         self,
         *,
@@ -2278,6 +2323,8 @@ class DbaAnswerComposeHandler:
             "question": str(answer_context.get("question", "")),
             "input_envelope": dict(answer_context.get("input_envelope", {})),
             "task_frame": task_frame,
+            "parent_investigation": answer_context.get("parent_investigation"),
+            "goal_catalog": self._goal_catalog(task_frame),
             "workflow_kind": str(answer_context.get("workflow_kind") or ""),
             "findings": compilation.model_dump(mode="json"),
             "response_presentation": "先回答用户问题；没有相关发现卡片时，只说明证据支持的结论及关键缺口，不解释内部卡片状态。",
@@ -2300,6 +2347,8 @@ class DbaAnswerComposeHandler:
             ]
             payload["trend_computation_policy"] = "USE_SERVER_FIELDS"
         payload["user_facing_dictionary"] = dictionary_for_payload(payload)
+        from aiops_agent.domain.measurements import independent_origin_groups
+        payload["evidence_origin_groups"] = independent_origin_groups(assessment.evidence)
         return payload
 
     @classmethod

@@ -7,12 +7,25 @@ from uuid import NAMESPACE_URL, uuid5
 
 from aiops_agent.contracts.investigation import (
     DiagnosisAnswerDraft, InvestigationClaim, InvestigationGoal,
-    InvestigationObservation, InvestigationRecord,
+    InvestigationObservation, InvestigationRecord, InvestigationParent,
 )
 
 
 def validate_diagnosis(draft, evidence):
     facts = {fact.evidence_ref: fact for fact in evidence}
+    for action in draft.recommendations:
+        for parameter in action.parameters:
+            if parameter.source != "OBSERVATION":
+                continue
+            ref = parameter.evidence_field
+            fact = facts.get(ref.evidence_ref)
+            if fact is None or fact.trust_level != "SOURCE_VERIFIED":
+                raise ValueError("参数来源不是本轮已核验观测")
+            names = [str(column.get("name")) for column in fact.columns]
+            if ref.field not in names or ref.row_index >= len(fact.rows):
+                raise ValueError("参数来源字段不存在")
+            if str(fact.rows[ref.row_index][names.index(ref.field)]) != parameter.value:
+                raise ValueError("参数值与原始观测不一致")
     for claim in draft.claims:
         supporting = []
         for reference in (*claim.evidence_fields, *claim.counterevidence_fields):
@@ -41,8 +54,28 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
     validate_diagnosis(draft, evidence)
     answer = dict(context.plan_snapshot.get("answer_context") or {})
     frame = dict(answer.get("task_frame") or {})
-    return InvestigationRecord(
-        record_id=str(uuid5(NAMESPACE_URL, f"aiops:{context.run_id}:{context.task_id}")),
+    parent_data = answer.get("parent_investigation")
+    parent = InvestigationParent.model_validate(parent_data) if draft.continues_investigation and parent_data else None
+    if draft.continues_investigation and parent is None:
+        raise ValueError("没有已授权的上一调查记录，不能建立修订")
+    expected_goals = {f"g{index}" for index, _ in enumerate(frame.get("success_criteria", ()), start=1)}
+    goals = draft.goal_assessments or (InvestigationGoal(
+        goal_id=next(iter(expected_goals)) if len(expected_goals) == 1 else "answer",
+        status="SATISFIED" if draft.goal_satisfied else "PARTIAL",
+        claim_refs=tuple(item.claim_id for item in draft.claims if item.revision_state == "ACTIVE"),
+        blocking_gaps=tuple(dict.fromkeys(str(gap.code) for gap in gaps)) if not draft.goal_satisfied else (),
+    ),)
+    if draft.goal_assessments and {item.goal_id for item in goals} != (expected_goals or {"answer"}):
+        raise ValueError("必须逐项评估冻结任务的全部完成标准，不能增删目标")
+    if len(expected_goals) > 1 and not draft.goal_assessments:
+        # 未逐目标评估时保留局部回答，不能用一个布尔值掩盖未完成目标。
+        goals = tuple(InvestigationGoal(goal_id=key, status="PARTIAL", explanation="尚未逐项核验") for key in sorted(expected_goals))
+    satisfied = all(goal.status in {"SATISFIED", "NOT_APPLICABLE"} for goal in goals)
+    record = InvestigationRecord(
+        revision=parent.revision + 1 if parent else 1,
+        previous_revision=parent.artifact_id if parent else None,
+        parent=parent, claim_revisions=draft.claim_revisions,
+        record_id=parent.record_id if parent else str(uuid5(NAMESPACE_URL, f"aiops:{context.run_id}:{context.task_id}")),
         target_id=str(context.target_id), run_id=str(context.run_id), task_id=str(context.task_id),
         original_request=str(answer.get("question") or ""),
         task_kind=str(frame.get("task_kind") or frame.get("diagnostic_profile") or "DIAGNOSIS"),
@@ -52,17 +85,21 @@ def freeze_investigation(*, draft, evidence, context, gaps=()):
             tool_id=fact.tool_id, source_id=fact.source_id, captured_at=fact.captured_at,
             measurement_semantics=str(fact.measurement_semantics), trust_level=fact.trust_level,
             row_count=fact.row_count, truncated=fact.truncated,
+            provenance=fact.provenance, derivations=fact.derivations,
         ) for fact in evidence),
         claims=draft.claims, recommendations=draft.recommendations,
-        goal_assessments=(InvestigationGoal(
-            goal_id="answer",
-            status="SATISFIED" if draft.goal_satisfied else "PARTIAL",
-            claim_refs=tuple(item.claim_id for item in draft.claims if item.revision_state == "ACTIVE"),
-            blocking_gaps=tuple(dict.fromkeys(str(gap.code) for gap in gaps)) if not draft.goal_satisfied else (),
-        ),),
+        goal_assessments=goals,
         unresolved_questions=draft.unresolved_questions,
-        stop_reason="GOAL_ANSWERED" if draft.goal_satisfied else "PARTIAL_ANSWER",
+        stop_reason="GOAL_ANSWERED" if satisfied else "PARTIAL_ANSWER",
     )
+    from aiops_agent.application.implementation.diagnostic_runbook import compile_diagnostic_runbook
+    capability = dict(context.plan_snapshot.get("capability_snapshot") or {})
+    database = dict(dict(context.plan_snapshot.get("investigation_execution") or {}).get("database") or {})
+    runbook = compile_diagnostic_runbook(
+        record, database_type=str(capability.get("database_type") or database.get("db_type") or ""),
+        database_version=capability.get("database_version"),
+    )
+    return record.model_copy(update={"runbook": runbook})
 
 
 def sql_investigation_draft(draft, subject):
@@ -79,6 +116,8 @@ def sql_investigation_draft(draft, subject):
         ) for item in draft.conclusions),
         recommendations=draft.recommendations,
         unresolved_questions=draft.unresolved_questions, goal_satisfied=draft.goal_satisfied,
+        goal_assessments=draft.goal_assessments,
+        continues_investigation=draft.continues_investigation, claim_revisions=draft.claim_revisions,
     )
 
 
@@ -102,6 +141,13 @@ def render_investigation(record):
             parts.append("待确认与审批建议，本轮未执行。")
         if action.draft_sql:
             parts.append("待验证草案（不构成执行授权）：\n\n```sql\n" + action.draft_sql + "\n```")
+        if action.missing_parameters:
+            parts.append("待补齐参数：" + "；".join(action.missing_parameters))
+        if action.parameters:
+            parts.append("参数及来源：" + "；".join(
+                f"{item.name}={item.value if item.value is not None else '未知'}（{item.source}）"
+                for item in action.parameters
+            ))
         solutions.append("\n\n".join(parts))
     if record.unresolved_questions:
         solutions.append("下一步需核实：" + "；".join(record.unresolved_questions))
@@ -129,4 +175,5 @@ def investigation_report_source(record):
         "solution": {"long_term_remediations": (solution,) if solution else ()},
         "evidence_refs": refs,
         "investigation_record": record.model_dump(mode="json"),
+        "implementation_runbook": record.runbook.model_dump(mode="json") if record.runbook else None,
     }

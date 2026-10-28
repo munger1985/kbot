@@ -3649,10 +3649,10 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
                     status="ENABLED",
                     connectivity_status="UNREACHABLE",
                     declared_capabilities_json={
-                        "capabilities": ["PROMETHEUS_QUERY"]
+                        "metric.query_range": {}
                     },
                     discovered_capabilities_json={
-                        "metric.query_range": {"supported": True}
+                        "metric.discover": {"supported": True}
                     },
                 ),
                 SimpleNamespace(
@@ -3705,7 +3705,7 @@ class DbaPlaybookFrameworkTest(unittest.TestCase):
         )
         self.assertIn("ALLSTATS LAST", display_cursor["description"])
         self.assertEqual(
-            frozenset({"PROMETHEUS_QUERY", "metric.query_range"}),
+            frozenset({"metric.query_range"}),
             snapshot.available_source_capabilities,
         )
         self.assertFalse(snapshot.source_snapshots[0].reachable)

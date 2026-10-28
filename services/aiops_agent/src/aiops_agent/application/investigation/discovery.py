@@ -75,14 +75,22 @@ def available_tools(
             },
         }
     if any(
-        str(source.source_type) == "PROMETHEUS" and source.enabled
+        str(source.source_type) in {"PROMETHEUS", "ZABBIX"} and source.enabled
         and CAPABILITY_METRIC_DISCOVERY in source.capabilities
         for source in capabilities.source_snapshots
     ):
         tools[("monitor.discover_metrics", "1.0.0")] = {
             "tool_id": "monitor.discover_metrics", "version": "1.0.0", "tool_class": "PROMETHEUS",
-            "description": "发现已授权绑定目标在指定窗口可见的指标名与标签名，不受显示 Profile 限制。目录不代表当前数值，类型/帮助未核验；结果有界且可能截断。先发现再按实际名称查询，不能猜指标。",
+            "description": "发现已授权绑定目标的原生指标名、单位和可得元数据，不受显示 Profile 限制。目录不代表采样覆盖；未知类型保持未知。Prometheus 用 query_range，Zabbix 精确 Item 用 query_native_metric。",
             "input": {"scope": "DATABASE 或 HOST（仅已绑定主机）", "window_seconds": "60 到 3600 秒", "limit": "1 到 100"},
+        }
+    if any(str(source.source_type) == "ZABBIX" and source.enabled
+           and CAPABILITY_METRIC_QUERY_RANGE in source.capabilities
+           for source in capabilities.source_snapshots):
+        tools[("monitor.query_native_metric", "1.0.0")] = {
+            "tool_id": "monitor.query_native_metric", "version": "1.0.0", "tool_class": "MONITORING",
+            "description": "读取绑定 Zabbix Host 的精确数值 Item 历史，不接受任意 URL、Host 或 SQL。执行时重验 Item 类型和归属；数值类型不是 counter/gauge 的证明。",
+            "input": {"metric_name": "已发现或已核验的精确 Item key", "window_seconds": "60 到 3600 秒", "limit": "1 到 1000"},
         }
     if CAPABILITY_LOG_QUERY in capabilities.available_source_capabilities:
         tools[("loki.query_range", "1.0.0")] = {
@@ -341,6 +349,7 @@ def build_playbook_plan(registry: PlaybookRegistry) -> DbaPlaybookPlan:
 SPECIAL_PLAN_TOOL_IDS = {
     "monitor.query_range",
     "monitor.discover_metrics",
+    "monitor.query_native_metric",
     "loki.query_range",
     "db.oracle.readonly_query",
     "db.postgresql.readonly_query",

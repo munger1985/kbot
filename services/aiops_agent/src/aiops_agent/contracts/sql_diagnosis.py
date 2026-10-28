@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGoal
+
 
 class EvidenceFieldReference(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -37,6 +39,23 @@ class SqlConclusion(BaseModel):
         return self
 
 
+class RecommendationParameter(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(min_length=1, max_length=128)
+    value: str | None = Field(default=None, max_length=2000)
+    source: Literal["OBSERVATION", "USER_INPUT", "DOCUMENT", "UNRESOLVED"]
+    evidence_field: EvidenceFieldReference | None = None
+
+    @model_validator(mode="after")
+    def validate_origin(self):
+        if self.source == "OBSERVATION" and (self.evidence_field is None or self.value is None):
+            raise ValueError("观测参数必须有原始字段引用及值")
+        if self.source == "UNRESOLVED" and self.value is not None:
+            raise ValueError("未知参数不能填入猜测值")
+        return self
+
+
 class SqlRecommendation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -50,6 +69,8 @@ class SqlRecommendation(BaseModel):
     rollback_or_stop: str = Field(min_length=1, max_length=2000)
     requires_approval: bool
     draft_sql: str | None = Field(default=None, max_length=12000)
+    parameters: tuple[RecommendationParameter, ...] = Field(default=(), max_length=24)
+    missing_parameters: tuple[str, ...] = Field(default=(), max_length=24)
 
     @model_validator(mode="after")
     def validate_draft(self):
@@ -69,6 +90,9 @@ class SqlDiagnosisDraft(BaseModel):
     recommendations: tuple[SqlRecommendation, ...] = Field(min_length=1, max_length=12)
     unresolved_questions: tuple[str, ...] = Field(default=(), max_length=12)
     goal_satisfied: bool
+    goal_assessments: tuple[InvestigationGoal, ...] = Field(default=(), max_length=16)
+    continues_investigation: bool = False
+    claim_revisions: tuple[ClaimRevision, ...] = Field(default=(), max_length=16)
 
     @model_validator(mode="after")
     def validate_links(self):

@@ -40,6 +40,8 @@ class RunbookCommandType(StrEnum):
 
 
 class RunbookExecutor(StrEnum):
+    PSQL = "PSQL"
+    MYSQL = "MYSQL"
     SQLPLUS = "SQLPLUS"
     RMAN = "RMAN"
     DGMGRL = "DGMGRL"
@@ -193,6 +195,8 @@ class ImplementationRunbook(BaseModel):
     schema_version: str = "AIOPS_IMPLEMENTATION_RUNBOOK.v3"
     profile: ImplementationProfile
     title: str = Field(min_length=1, max_length=256)
+    database_type: str | None = None
+    database_version: str | None = None
     status: RunbookStatus
     execution_policy: str = Field(min_length=1, max_length=1000)
     generation: RunbookGenerationContext | None = None

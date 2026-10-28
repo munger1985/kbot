@@ -61,7 +61,9 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
             "row_count": fact.row_count,
             "truncated": fact.truncated or len(fact.rows) > 40,
             "warnings": list(fact.warnings),
-            "lineage": {"artifact_id": str(fact.artifact_id), "step_id": fact.step_id},
+            "lineage": {"artifact_id": str(fact.artifact_id), "step_id": fact.step_id,
+                "provenance": fact.provenance.model_dump(mode="json") if fact.provenance else None},
+            "derivations": [item.model_dump(mode="json") for item in fact.derivations],
         })
     relationships = []
     # 仅对相近时点的已核验活动会话建立 SQL→会话→锁/事务关系，不能跨历史累计视图拼接。

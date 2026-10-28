@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from datetime import datetime
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -136,6 +138,10 @@ class SourceCapabilitySnapshot(AIOpsContract):
     enabled: bool
     reachable: bool
     capabilities: tuple[str, ...] = ()
+    configuration_version: int | None = None
+    checked_at: datetime | None = None
+    expires_at: datetime | None = None
+    health_state: Literal["AVAILABLE", "UNAVAILABLE", "UNKNOWN"] = "UNKNOWN"
 
 
 class DbaCapabilitySnapshot(AIOpsContract):

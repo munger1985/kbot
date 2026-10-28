@@ -166,6 +166,7 @@ class EvidenceObserveHandler:
         credentials: dict[str, str] = {}
         observations = ()
         metric_catalogs = []
+        native_metrics = []
         active_alerts = ()
         try:
             if source.get("secret_ref"):
@@ -215,7 +216,7 @@ class EvidenceObserveHandler:
                     detail="指标目录发现未在该监控绑定中授权，不扩大来源权限",
                 ))
                 continue
-            if source["source_type"] != "PROMETHEUS":
+            if source["source_type"] not in {"PROMETHEUS", "ZABBIX"}:
                 gaps.append(ObservationGap(
                     source_id=source["source_id"], binding_id=binding_id,
                     code="SOURCE_QUERY_UNSUPPORTED", detail="当前来源未实现指标目录发现",
@@ -240,6 +241,33 @@ class EvidenceObserveHandler:
                     source_id=source["source_id"], binding_id=binding_id,
                     code=getattr(exc, "code", "METRIC_DISCOVERY_FAILED"),
                     detail="指标目录本次发现未完成，不能猜测缺失指标或将其视为零",
+                    retryable=bool(getattr(exc, "retryable", False)),
+                ))
+        for item in monitoring.get("native_metric_queries", ())[:4]:
+            if source["source_type"] != "ZABBIX":
+                continue
+            try:
+                if CAPABILITY_METRIC_QUERY_RANGE not in snapshot["effective_capabilities"]:
+                    raise ValueError("绑定未授权历史指标查询")
+                if set(item) != {"action_id", "metric_name", "window_seconds", "limit"} or type(item["window_seconds"]) is not int or not 60 <= item["window_seconds"] <= 3600:
+                    raise ValueError("冻结原生指标查询无效")
+                end = _parse_time(window["end"])
+                adapter = self._diagnostic_sources.create(source_context, capability=CAPABILITY_METRIC_QUERY_RANGE)
+                native_metrics.append(await adapter.query_native_metric(
+                    MetricsDiscoveryRequest(
+                        action_id=item["action_id"], target_id=context.target_id, binding_id=binding_id,
+                        source_locator_key=snapshot["source_locator_key"],
+                        window_start=end - timedelta(seconds=item["window_seconds"]), window_end=end,
+                        limit=1, max_response_bytes=max(1024, min(262144, monitoring["max_response_bytes"]) // 6),
+                        trace_id=context.trace_id,
+                    ),
+                    metric_name=item["metric_name"], limit=item["limit"],
+                ))
+            except Exception as exc:
+                gaps.append(ObservationGap(
+                    source_id=source["source_id"], binding_id=binding_id,
+                    code=getattr(exc, "code", "NATIVE_METRIC_QUERY_FAILED"),
+                    detail="精确原生指标历史本次不可用，不把失败或缺样本改写为零",
                     retryable=bool(getattr(exc, "retryable", False)),
                 ))
         if CAPABILITY_METRIC_QUERY_RANGE in snapshot[
@@ -445,6 +473,7 @@ class EvidenceObserveHandler:
             source_id=source["source_id"],
             observations=observations,
             metric_catalogs=tuple(metric_catalogs),
+            native_metrics=tuple(native_metrics),
             active_alerts=active_alerts,
             gaps=tuple(gaps),
             collected_at=datetime.now(UTC),

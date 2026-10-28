@@ -82,6 +82,21 @@ class PlatformNotificationRepository:
             ),
         )
 
+    async def emit_case_review_required(self, *, asset, version, run):
+        """暂停案例后通知原维护人；不在通知中暴露已撤权正文。"""
+        return await publish_notification(
+            uow=self._uow, producer_service="aiops",
+            event_key=f"aiops-case:{version.asset_version_id}:source-invalidated",
+            envelope=NotificationEnvelope(
+                domain_id=int(asset.domain_id), event_type="aiops.knowledge.review_required",
+                resource_type="aiops_run", resource_id=str(run.ops_run_id),
+                resource_name="AIOps 案例", initiator_actor_id=None,
+                recipient_actor_ids=[asset.created_by],
+                summary="一个已发布案例的来源或授权发生变化，已暂停新检索。请在历史诊断案例中重新核验并审核。",
+                correlation_id=run.trace_id,
+            ),
+        )
+
     async def emit_situation_event(
         self,
         *,

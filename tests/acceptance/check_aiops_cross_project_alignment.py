@@ -17,6 +17,18 @@ SHARED_CONTRACTS = (
     Path("packages/platform_core/src/platform_core/contracts/aiops/conversation.py"),
     Path("services/aiops_agent/src/aiops_agent/contracts/investigation.py"),
     Path("services/aiops_agent/src/aiops_agent/application/diagnosis/investigation_record.py"),
+    Path("services/aiops_agent/src/aiops_agent/contracts/diagnosis_state.py"),
+    Path("services/aiops_agent/src/aiops_agent/contracts/measurements.py"),
+    Path("services/aiops_agent/src/aiops_agent/domain/measurements.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/diagnosis/provenance.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/diagnosis/revisions.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/implementation/diagnostic_runbook.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/case_redaction.py"),
+    Path("services/aiops_agent/src/aiops_agent/application/source_authorization.py"),
+    Path("services/aiops_agent/src/aiops_agent/domain/evidence/observations.py"),
+    Path("packages/platform_core/src/platform_core/contracts/aiops/knowledge.py"),
+    Path("tests/evaluation/evaluate_aiops_dba_chat.py"),
+    Path("services/aiops_agent/src/aiops_agent/executor/diagnostic_deadline.py"),
 )
 AGENT_APPLICATION = Path(
     "services/aiops_agent/src/aiops_agent/application/agents.py"

@@ -141,7 +141,7 @@ def build_workload_report(
     if len(ordered) < 2:
         raise ValueError("工作负载报告至少需要两个快照")
 
-    load_totals: dict[str, float] = defaultdict(float)
+    load_totals: dict[str, Decimal] = defaultdict(Decimal)
     instance_metric_gaps: Counter[str] = Counter()
     continuous_seconds = 0.0
     discontinuities: list[dict[str, Any]] = []
@@ -205,7 +205,7 @@ def build_workload_report(
                 str(item.dimension_key),
             )
         ] = item
-    metric_totals: dict[str, float] = defaultdict(float)
+    metric_totals: dict[str, Decimal] = defaultdict(Decimal)
     metric_discontinuities: list[dict[str, Any]] = []
     metric_gaps: Counter[str] = Counter()
     for previous, current in zip(ordered, ordered[1:]):
@@ -318,7 +318,7 @@ def build_workload_report(
         item["rank_no"] = index
         executions = int(item["execution_count"])
         item["mean_duration_microseconds"] = (
-            int(item["total_duration_microseconds"]) / executions
+            _wire_number(Decimal(item["total_duration_microseconds"]) / executions)
             if executions
             else None
         )
@@ -341,7 +341,7 @@ def build_workload_report(
         for family, counts in sorted(coverage_counts.items())
     }
     rates = {
-        key + "_per_second": value / continuous_seconds
+        key + "_per_second": _wire_number(value / Decimal(str(continuous_seconds)))
         for key, value in sorted(load_totals.items())
         if continuous_seconds > 0
     }
@@ -356,6 +356,10 @@ def build_workload_report(
         "period_start": ordered[0].collected_at.isoformat(),
         "period_end": ordered[-1].collected_at.isoformat(),
         "snapshot_count": len(ordered),
+        "instance_identity": dict(ordered[0].instance_identity_json) if all(
+            dict(item.instance_identity_json) == dict(ordered[0].instance_identity_json) for item in ordered
+        ) else None,
+        "instance_started_at": ordered[0].instance_started_at.isoformat(),
         "database_versions": sorted(
             {
                 str(getattr(item, "database_version", ""))
@@ -378,7 +382,7 @@ def build_workload_report(
             }
         ),
         "continuous_seconds": continuous_seconds,
-        "load_totals": dict(sorted(load_totals.items())),
+        "load_totals": {key: _wire_number(value) for key, value in sorted(load_totals.items())},
         "load_profile": rates,
         "database_type": database_type,
         "top_statements": top_statements,
@@ -386,7 +390,7 @@ def build_workload_report(
         "discontinuities": discontinuities,
         "instance_metric_gaps": dict(sorted(instance_metric_gaps.items())),
         "statement_gaps": dict(sorted(statement_gaps.items())),
-        "metric_totals_by_family": dict(sorted(metric_totals.items())),
+        "metric_totals_by_family": {key: _wire_number(value) for key, value in sorted(metric_totals.items())},
         "metric_discontinuities": metric_discontinuities,
         "metric_gaps": dict(sorted(metric_gaps.items())),
     }
@@ -559,10 +563,27 @@ def build_top_sql_window(
         key=lambda item: (-item["total_duration_microseconds"], item["statement_identity_type"], item["statement_identity_value"], str(item.get("schema_name", item["database_name"])), item["user_identifier"], str(item["top_level"]), str(item.get("plan_hash_value", ""))),
     )[:limit]
     for item in ranked:
-        item["mean_duration_microseconds"] = (
-            str(Decimal(item["total_duration_microseconds"]) / Decimal(item["execution_count"]))
-            if item["execution_count"] else None
+        from aiops_agent.contracts.measurements import ScalarMeasurement
+        from aiops_agent.domain.measurements import derive_measurement
+        identity = tuple((key, str(item.get(key))) for key in (
+            "statement_identity_type", "statement_identity_value", "database_name", "schema_name", "user_identifier", "top_level", "plan_hash_value",
+        ))
+        common = dict(
+            series_identity=identity, native_origin_id="workload.statement.window",
+            source_version="WORKLOAD_WINDOW.v1", observed_at=period_end,
+            quality="GOOD", kind="GAUGE",
         )
+        total = ScalarMeasurement(
+            **common, input_ref="window:total_duration_microseconds",
+            value=Decimal(item["total_duration_microseconds"]), unit="microsecond",
+        )
+        count = ScalarMeasurement(
+            **common, input_ref="window:execution_count",
+            value=Decimal(item["execution_count"]), unit="execution",
+        )
+        mean = derive_measurement("TOTAL_DIVIDED_BY_COUNT", total, count)
+        item["mean_duration_microseconds"] = str(mean.value) if mean.value is not None else None
+        item["derivations"] = [mean.model_dump(mode="json")]
     if len(ordered) < 2:
         gaps["INSUFFICIENT_SNAPSHOTS"] += 1
     if not intervals or not boundary_ok or any(left[1] != right[0] for left, right in zip(intervals, intervals[1:])):
@@ -571,6 +592,12 @@ def build_top_sql_window(
     visible_complete = bool(ordered) and all(item.get("mode") == "VISIBLE_SET" and item.get("visible_set_read_complete") is True for item in collection_metadata)
     if intervals and not visible_complete:
         gaps["LIMITED_CANDIDATE_SET"] += 1
+    if gaps:
+        for item in ranked:
+            for derivation in item["derivations"]:
+                if derivation["quality"] == "GOOD":
+                    derivation["quality"] = "PARTIAL"
+                    derivation["reasons"].append("WINDOW_OR_SOURCE_COVERAGE_PARTIAL")
     return {
         "requested_start": period_start.isoformat(),
         "requested_end": period_end.isoformat(),
@@ -611,9 +638,43 @@ def build_workload_diff_report(
     changes: dict[str, dict[str, Any]] = {}
     left = dict(baseline.get("load_profile") or {})
     right = dict(after.get("load_profile") or {})
+    comparison_gaps = []
+    if baseline.get("target_id") != after.get("target_id") or baseline.get("database_type") != after.get("database_type"):
+        comparison_gaps.append("TARGET_OR_DATABASE_TYPE_MISMATCH")
+    before_identity, after_identity = baseline.get("instance_identity"), after.get("instance_identity")
+    if not before_identity or not after_identity:
+        comparison_gaps.append("PHYSICAL_IDENTITY_UNKNOWN")
+    elif before_identity != after_identity:
+        comparison_gaps.append("PHYSICAL_IDENTITY_CHANGED")
+    try:
+        starts = [datetime.fromisoformat(source["instance_started_at"]) for source in (baseline, after)]
+        tolerance = 2 if after.get("database_type") == "MYSQL" else 0
+        if any(item.tzinfo is None for item in starts) or abs((starts[1] - starts[0]).total_seconds()) > tolerance:
+            comparison_gaps.append("INSTANCE_GENERATION_CHANGED")
+    except (KeyError, TypeError, ValueError):
+        comparison_gaps.append("INSTANCE_GENERATION_UNKNOWN")
+    for name in ("database_versions", "catalog_versions", "capability_probe_versions"):
+        if not baseline.get(name) or not after.get(name):
+            comparison_gaps.append("SOURCE_VERSION_UNKNOWN")
+        elif baseline[name] != after[name]:
+            comparison_gaps.append("SOURCE_VERSION_CHANGED")
+    identity_gaps = set(comparison_gaps)
     for key in sorted(set(left) | set(right)):
-        before = float(left.get(key, 0) or 0)
-        current = float(right.get(key, 0) or 0)
+        if key not in left or key not in right or left[key] is None or right[key] is None:
+            changes[key] = {
+                "baseline": left.get(key), "after": right.get(key), "delta": None,
+                "change_status": "MISSING_INPUT", "change_percent": None,
+            }
+            comparison_gaps.append("MISSING_METRIC")
+            continue
+        before = _number(left[key])
+        current = _number(right[key])
+        if identity_gaps:
+            changes[key] = {
+                "baseline": _wire_number(before), "after": _wire_number(current), "delta": None,
+                "change_status": "INCOMPARABLE", "change_percent": None,
+            }
+            continue
         if before == 0:
             changes[key] = {
                 "baseline": before,
@@ -632,6 +693,10 @@ def build_workload_diff_report(
                 "change_status": "COMPARABLE",
                 "change_percent": (current - before) / before * 100,
             }
+        changes[key] = {
+            field: _wire_number(value) if isinstance(value, Decimal) else value
+            for field, value in changes[key].items()
+        }
 
     baseline_statements = {
         (
@@ -657,8 +722,19 @@ def build_workload_diff_report(
     for key in sorted(set(baseline_statements) | set(after_statements), key=str):
         before_item = baseline_statements.get(key)
         after_item = after_statements.get(key)
-        before = int((before_item or {}).get("total_duration_microseconds", 0))
-        current = int((after_item or {}).get("total_duration_microseconds", 0))
+        before = int(before_item["total_duration_microseconds"]) if before_item is not None else None
+        current = int(after_item["total_duration_microseconds"]) if after_item is not None else None
+        durations = []
+        for source in (baseline, after):
+            try:
+                durations.append((datetime.fromisoformat(source["period_end"]) - datetime.fromisoformat(source["period_start"])).total_seconds())
+            except (KeyError, TypeError, ValueError):
+                durations.append(None)
+        comparable_totals = (
+            before is not None and current is not None
+            and durations[0] is not None and durations[0] == durations[1] and durations[0] > 0
+            and not identity_gaps
+        )
         statement_changes.append(
             {
                 "statement_identity_type": key[0],
@@ -666,23 +742,26 @@ def build_workload_diff_report(
                 "database_name": key[2],
                 "user_identifier": key[3],
                 "top_level": key[4],
-                "baseline_total_duration_microseconds": before,
-                "after_total_duration_microseconds": current,
-                "delta_total_duration_microseconds": current - before,
+                "baseline_total_duration_microseconds": _wire_number(before) if before is not None else None,
+                "after_total_duration_microseconds": _wire_number(current) if current is not None else None,
+                "delta_total_duration_microseconds": _wire_number(current - before) if comparable_totals else None,
                 "change_status": (
-                    "NEW_ACTIVITY"
+                    "NOT_IN_BASELINE_TOP"
                     if before_item is None
                     else "NO_LONGER_TOP"
                     if after_item is None
-                    else "COMPARABLE"
+                    else "COMPARABLE" if comparable_totals else "INCOMPARABLE_TOTALS"
                 ),
                 "baseline_rank": (before_item or {}).get("rank_no"),
                 "after_rank": (after_item or {}).get("rank_no"),
+                "normalized_comparison": _statement_window_comparison(
+                    before_item, after_item, durations, comparable=not identity_gaps,
+                ),
             }
         )
     statement_changes.sort(
         key=lambda item: (
-            -int(item["delta_total_duration_microseconds"]),
+            -int(item["delta_total_duration_microseconds"] or 0),
             str(item["statement_identity_value"]),
         )
     )
@@ -692,7 +771,7 @@ def build_workload_diff_report(
         "report_origin": str(ReportOrigin.AIOPS_GENERATED),
         "status": (
             "READY"
-            if baseline.get("status") == after.get("status") == "READY"
+            if baseline.get("status") == after.get("status") == "READY" and not comparison_gaps
             else "PARTIAL"
         ),
         "target_id": after.get("target_id"),
@@ -704,12 +783,40 @@ def build_workload_diff_report(
         "database_type": after.get("database_type"),
         "statement_changes": statement_changes[:100],
         "gaps": {
+            "comparison": sorted(set(comparison_gaps)),
             "baseline_discontinuities": baseline.get(
                 "discontinuities", []
             ),
             "after_discontinuities": after.get("discontinuities", []),
         },
+        "verification_boundary": "统计窗口可比不等于业务负载相同；差异不是执行归因或优化成功证明，仍需动作、业务基线与护栏。",
     }
+
+
+def _statement_window_comparison(before, after, durations, *, comparable):
+    """比较吞吐和每次代价，禁止把不同长度窗口的累计总量直接作差。"""
+    if before is None or after is None or not comparable or any(value is None or value <= 0 for value in durations):
+        return {"status": "INCOMPARABLE", "reason": "身份、来源、窗口或榜单中的匹配记录不足"}
+    result = {"status": "COMPARABLE_STATISTICS_ONLY"}
+    for label, field, per_second in (
+        ("executions_per_second", "execution_count", True),
+        ("duration_microseconds_per_second", "total_duration_microseconds", True),
+        ("mean_duration_microseconds", "total_duration_microseconds", False),
+    ):
+        values = []
+        for item, seconds in zip((before, after), durations, strict=True):
+            numerator = item.get(field)
+            denominator = seconds if per_second else item.get("execution_count")
+            if numerator is None or denominator is None or _number(denominator) <= 0:
+                values.append(None)
+            else:
+                values.append(_number(numerator) / _number(denominator))
+        result[label] = {
+            "baseline": _wire_number(values[0]) if values[0] is not None else None,
+            "after": _wire_number(values[1]) if values[1] is not None else None,
+            "delta": _wire_number(values[1] - values[0]) if all(value is not None for value in values) else None,
+        }
+    return result
 
 
 def build_activity_report(samples: Sequence[object]) -> dict[str, Any]:
@@ -1937,10 +2044,20 @@ class WorkloadService:
         return target
 
 
-def _number(value: object) -> float:
-    if isinstance(value, Decimal):
-        return float(value)
-    return float(value)
+def _number(value: object) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
+        raise ValueError("累计指标必须是数值")
+    number = Decimal(str(value))
+    if not number.is_finite():
+        raise ValueError("累计指标必须有限")
+    return number
+
+
+def _wire_number(value):
+    number = _number(value)
+    if number == number.to_integral_value() and abs(number) <= 9007199254740991:
+        return int(number)
+    return str(number)
 
 
 def _hash_dimension(value: object) -> str | None:
@@ -2264,7 +2381,10 @@ def _report_content_payload(
     if report_kind == "WORKLOAD_DIFF":
         for key, items in dict(payload.get("gaps") or {}).items():
             for item in items or ():
-                gaps.append({"code": str(key).upper(), **dict(item)})
+                gaps.append(
+                    {"code": str(item), "category": "COMPARISON"}
+                    if key == "comparison" else {"code": str(key).upper(), **dict(item)}
+                )
     facts: list[dict[str, Any]] = []
     recommendations: list[str] = []
     trends: list[str] = []
@@ -2305,16 +2425,32 @@ def _report_content_payload(
                 f"状态 {item.get('change_status')}"
             )
         for item in payload.get("statement_changes") or ():
+            normalized = dict(item.get("normalized_comparison") or {})
+            description = []
+            for key, label in (
+                ("executions_per_second", "每秒执行次数"),
+                ("duration_microseconds_per_second", "每秒累计耗时（微秒/秒）"),
+                ("mean_duration_microseconds", "每次平均耗时（微秒）"),
+            ):
+                values = normalized.get(key)
+                if values and values.get("baseline") is not None and values.get("after") is not None:
+                    description.append(f"{label}：{values['baseline']} → {values['after']}")
+            total_delta = item.get("delta_total_duration_microseconds")
+            description.insert(0, (
+                f"等长窗口总耗时差：{total_delta} 微秒"
+                if total_delta is not None else "窗口总量不可直接比较或匹配记录不足"
+            ))
             facts.append(
                 {
                     "kind": "database_statement_change",
                     "summary": (
-                        f"语句 {item.get('statement_identity_value')} 耗时变化 "
-                        f"{item.get('delta_total_duration_microseconds')} us，"
-                        f"状态 {item.get('change_status')}"
+                        f"语句 {item.get('statement_identity_value')}；"
+                        + "；".join(description) + f"；状态 {item.get('change_status')}"
                     ),
                 }
             )
+        if payload.get("verification_boundary"):
+            trends.append(str(payload["verification_boundary"]))
     else:
         coverage_summary = (
             f"共 {int(payload.get('sample_count') or 0)} 个样本，"

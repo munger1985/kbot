@@ -468,6 +468,15 @@ class _HealthResponse:
     async def json(self):
         return self._payload
 
+    @property
+    def content(self):
+        return self
+
+    async def iter_chunked(self, size):
+        raw = await self.read()
+        for start in range(0, len(raw), size):
+            yield raw[start:start + size]
+
     async def read(self):
         return json.dumps(self._payload).encode("utf-8")
 

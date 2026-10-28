@@ -58,6 +58,7 @@ def _database_gap_detail(code: str, *, dynamic: bool = False) -> str:
         "TIMEOUT": "受控只读查询执行超时",
         "TARGET_CONNECTION_TIMEOUT": "Target 数据库只读连接建立超时",
         "QUERY_TIMEOUT": "受控只读查询执行超时",
+        "EXECUTION_DEADLINE_EXCEEDED": "排队、凭据领取或查询超过本轮授权期限，未采纳迟到结果",
         "QUERY_INCOMPATIBLE": "查询与当前 Oracle 版本或视图列定义不兼容",
         "QUERY_OBJECT_UNAVAILABLE": "查询引用的对象在当前数据库中不存在或不可见",
         "QUERY_COLUMN_INVALID": "查询引用了当前数据库中不存在的列",
@@ -191,6 +192,8 @@ class DatabaseDiagnosticHandler:
         now = datetime.now(UTC)
         lease_until = _utc(context.lease_until)
         expires_at = min(lease_until, now + timedelta(seconds=self._ttl))
+        if getattr(context, "deadline_at", None):
+            expires_at = min(expires_at, _utc(context.deadline_at))
         if expires_at <= now + timedelta(seconds=1):
             return self._finish(
                 context,
@@ -372,6 +375,8 @@ class DynamicQueryInvocationHandler:
             _utc(context.lease_until),
             now + timedelta(seconds=self._ttl),
         )
+        if getattr(context, "deadline_at", None):
+            expires_at = min(expires_at, _utc(context.deadline_at))
         if expires_at <= now + timedelta(seconds=1):
             return self._finish(
                 context,

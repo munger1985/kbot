@@ -87,6 +87,7 @@ class DiagnosticSourceAdapterCatalog:
                     CAPABILITY_EVENT_QUERY,
                     CAPABILITY_METRIC_QUERY_RANGE,
                     CAPABILITY_INSTANCE_DISCOVERY,
+                    CAPABILITY_METRIC_DISCOVERY,
                 }
             ),
             adapter_type=ZabbixAdapter,

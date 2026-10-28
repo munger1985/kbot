@@ -34,6 +34,15 @@ class _LokiResponse:
     async def __aexit__(self, *_):
         return None
 
+    @property
+    def content(self):
+        return self
+
+    async def iter_chunked(self, size):
+        raw = await self.read()
+        for start in range(0, len(raw), size):
+            yield raw[start:start + size]
+
     async def read(self) -> bytes:
         return self._raw
 

@@ -22,6 +22,7 @@ from aiops_agent.contracts.knowledge import (
     ManualUploadMetadata,
 )
 from platform_core.contracts import AuthContext
+from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
 
 
 router = APIRouter(
@@ -139,6 +140,16 @@ async def overview(
         domain_id=domain_id
     )
 
+
+@router.post("/cases/{asset_id}/feedback", status_code=201)
+async def record_case_reuse_feedback(
+    asset_id: UUID, payload: KnowledgeReuseFeedback, request: Request,
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    _, domain_id, _ = _use_scope(request, context)
+    return await request.app.state.operations_knowledge_service.record_reuse_feedback(
+        domain_id=domain_id, asset_id=asset_id, command=payload, context=context,
+    )
 
 @router.get("/cases/overview")
 async def cases_overview(request: Request, context: AuthContext = Depends(get_aiops_auth_context)):

@@ -3,7 +3,7 @@
 from collections.abc import Callable, Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiops_agent.contracts.knowledge import KnowledgeTagScopeSnapshot
@@ -498,6 +498,20 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )).scalars())
         return {"scopes": scopes, "sources": sources, "indexes": indexes, "reviews": reviews}
 
+    async def get_review(self, *, domain_id, review_id):
+        """反馈幂等键必须属于当前域；其他域不能探测已有反馈。"""
+        self._check_active()
+        statement = (
+            select(OperationsKnowledgeReviewEntity)
+            .join(OperationsKnowledgeVersionEntity,
+                OperationsKnowledgeVersionEntity.asset_version_id == OperationsKnowledgeReviewEntity.asset_version_id)
+            .join(OperationsKnowledgeAssetEntity,
+                OperationsKnowledgeAssetEntity.asset_id == OperationsKnowledgeVersionEntity.asset_id)
+            .where(OperationsKnowledgeReviewEntity.review_id == review_id,
+                   OperationsKnowledgeAssetEntity.domain_id == domain_id)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
+
     async def add_review(self, review: OperationsKnowledgeReviewEntity) -> None:
         await self._add(review)
 
@@ -678,6 +692,40 @@ class OperationsKnowledgeRepository(AIOpsRepository):
         )
         summary["index_abnormal"] = int(abnormal or 0)
         return summary
+
+    async def next_case_index_for_validation(self, *, before):
+        """以有界队列复核已发布案例，不把全库扫描放进一次用户请求。"""
+        self._check_active()
+        statement = (
+            select(OperationsKnowledgeIndexEntity.index_ref_id, OperationsKnowledgeAssetEntity.domain_id)
+            .select_from(OperationsKnowledgeIndexEntity)
+            .join(OperationsKnowledgeVersionEntity,
+                OperationsKnowledgeVersionEntity.asset_version_id == OperationsKnowledgeIndexEntity.asset_version_id)
+            .join(OperationsKnowledgeAssetEntity,
+                OperationsKnowledgeAssetEntity.asset_id == OperationsKnowledgeVersionEntity.asset_id)
+            .where(
+                OperationsKnowledgeAssetEntity.asset_kind == "DIAGNOSIS_CASE",
+                OperationsKnowledgeAssetEntity.current_version_id == OperationsKnowledgeVersionEntity.asset_version_id,
+                OperationsKnowledgeVersionEntity.status == "PUBLISHED",
+                OperationsKnowledgeIndexEntity.index_status == "READY",
+                or_(OperationsKnowledgeIndexEntity.last_checked_at.is_(None),
+                    OperationsKnowledgeIndexEntity.last_checked_at < before),
+            )
+            .order_by(OperationsKnowledgeIndexEntity.last_checked_at.asc().nullsfirst(),
+                      OperationsKnowledgeIndexEntity.index_ref_id)
+            .limit(1)
+        )
+        candidate = (await self._session.execute(statement)).first()
+        if candidate is None:
+            return None
+        # Oracle 不允许分页 SELECT 同时 FOR UPDATE；定位后按主键加锁并重验时效。
+        locked = select(OperationsKnowledgeIndexEntity).where(
+            OperationsKnowledgeIndexEntity.index_ref_id == candidate[0],
+            or_(OperationsKnowledgeIndexEntity.last_checked_at.is_(None),
+                OperationsKnowledgeIndexEntity.last_checked_at < before),
+        ).with_for_update(skip_locked=True)
+        index = (await self._session.execute(locked)).scalar_one_or_none()
+        return (index, candidate[1]) if index is not None else None
 
     async def next_processing_version(
         self,

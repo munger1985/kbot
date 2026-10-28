@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_serializer
 
 from aiops_agent.contracts.investigation import DiagnosisAnswerDraft, InvestigationRecord
+from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
 
 from platform_core.contracts.aiops import (
     AnswerBlockType,
@@ -40,6 +41,23 @@ class TurnEvidenceFact(BaseModel):
     truncated: bool = False
     warnings: tuple[str, ...] = ()
     visualizations: tuple[ChartSpec, ...] = ()
+    provenance: EvidenceProvenance | None = None
+    derivations: tuple[DerivedMeasurement, ...] = ()
+
+    @field_serializer("rows", when_used="json")
+    def exact_json_rows(self, rows):
+        from decimal import Decimal
+        def exact(value):
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, Decimal) or isinstance(value, int) and abs(value) > 9007199254740991:
+                return str(value)
+            if isinstance(value, (list, tuple)):
+                return [exact(item) for item in value]
+            if isinstance(value, dict):
+                return {key: exact(item) for key, item in value.items()}
+            return value
+        return exact(rows)
 
 
 class TurnEvidenceGap(BaseModel):

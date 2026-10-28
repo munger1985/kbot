@@ -38,6 +38,7 @@ from aiops_agent.application.investigation.discovery_binding import (
 from aiops_agent.application.investigation.errors import TurnPlanningStageError
 from aiops_agent.application.investigation.direct_list import add_top_sql_reference
 from aiops_agent.application.investigation.prior_sql_evidence import load_prior_sql_evidence
+from aiops_agent.application.investigation.prior_investigation import load_parent_investigation
 from aiops_agent.application.investigation.query_freezing import (
     prepare_attachment_searches,
     prepare_dynamic_queries,
@@ -2947,7 +2948,7 @@ class TurnPlanningService:
                 )
             )
 
-        for tool_id in ("monitor.query_range", "loki.query_range", "monitor.discover_metrics"):
+        for tool_id in ("monitor.query_range", "loki.query_range", "monitor.discover_metrics", "monitor.query_native_metric"):
             action_ids = [
                 action.action_id
                 for action in source_actions
@@ -3374,7 +3375,7 @@ class TurnPlanningService:
                     action.action_id,
                     (None, None),
                 )
-                if action.tool_id in {"monitor.query_range", "monitor.discover_metrics"}:
+                if action.tool_id in {"monitor.query_range", "monitor.discover_metrics", "monitor.query_native_metric"}:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
@@ -3476,6 +3477,7 @@ class TurnPlanningService:
                 "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
+                    "parent_investigation": context.parent_investigation,
                     "workflow_kind": str(context.workflow_kind or ""),
                     "input_envelope": investigation.input_envelope.model_dump(
                         mode="json"
@@ -4126,6 +4128,14 @@ class TurnPlanningService:
                 ),
                 recovery_assurance=recovery_assurance,
                 source_run_evidence=source_run_evidence,
+                parent_investigation=await load_parent_investigation(
+                    uow=uow, turn=turn, run=run, target=target,
+                    capabilities=build_capability_snapshot(
+                        agent_id=run.agent_id, agent_version=agent_version,
+                        target=target, sources=sources,
+                    ),
+                    sources=sources,
+                ),
             )
 
     async def _prepare_monitoring(
@@ -4786,7 +4796,7 @@ class TurnPlanningService:
                 playbook_invocation_id = (
                     playbook_context[1] if playbook_context else None
                 )
-                if action.tool_id in {"monitor.query_range", "monitor.discover_metrics"}:
+                if action.tool_id in {"monitor.query_range", "monitor.discover_metrics", "monitor.query_native_metric"}:
                     task_id = monitoring_task_id
                 elif action.tool_id == "loki.query_range":
                     task_id = log_task_id
@@ -4873,6 +4883,7 @@ class TurnPlanningService:
                 "attachment_search": list(attachment_searches),
                 "answer_context": {
                     "question": context.question,
+                    "parent_investigation": context.parent_investigation,
                     "workflow_kind": str(context.workflow_kind or ""),
                     "input_envelope": investigation.input_envelope.model_dump(
                         mode="json"

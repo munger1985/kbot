@@ -15,7 +15,9 @@
 [DBA Agent 能力、回答、报告与案例统一设计](aiops-dba-agent-capability-redesign.md)。
 SQL Evidence Bundle 与逐项判断是通用调查记录的专项组成，不再形成独立于其他诊断的
 结果真相；本文的语句身份、窗口、计划、安全与真实验收要求继续累积适用。
-统一调查记录与案例新分类尚待实施，不因本 SQL 核心代码已交付而视为已实现。
+统一调查记录、跨轮显式修订和案例四类用途已有代码；
+原生计数器映射、完整实测效果与全局知识治理仍未整体完成。
+具体进度见 [DBA Agent 实施状态](../operations/aiops-dba-agent-implementation.md)。
 
 ## 1. 目标、问题与非目标
 

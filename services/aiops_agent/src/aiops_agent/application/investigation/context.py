@@ -40,6 +40,7 @@ class TurnPlanningContext:
     recovery_assurance: dict = field(default_factory=dict)
     source_run_evidence: dict | None = None
     prior_sql_evidence: dict | None = None
+    parent_investigation: dict | None = None
     raw_uploads: tuple[ConversationUploadSource, ...] = ()
     resolved_uploads: tuple[ResolvedConversationUpload, ...] = ()
     input_artifact_id: UUID | None = None

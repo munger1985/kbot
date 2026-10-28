@@ -125,6 +125,7 @@ class OracleDiagnosticDriver:
             connection.module = "kbot-aiops-db-executor"
             connection.action = operation_id
             cursor = connection.cursor()
+            query_succeeded = False
             try:
                 async with asyncio.timeout(
                     limits.statement_timeout_seconds
@@ -161,16 +162,28 @@ class OracleDiagnosticDriver:
                     int((time.monotonic() - query_started) * 1000),
                     len(rows),
                 )
-                return DriverQueryResult(
+                result = DriverQueryResult(
                     columns=columns,
                     rows=materialized_rows,
                     truncated=row_truncated or cell_truncated,
                     db_version=str(connection.version),
                     database_types=database_types,
                 )
+                query_succeeded = True
+                return result
             finally:
                 cursor.close()
-                await connection.rollback()
+                # 失败/取消时直接关闭独占只读连接，不在取消路径再次等待 ROLLBACK。
+                if query_succeeded:
+                    async with asyncio.timeout(1):
+                        await connection.rollback()
+        except asyncio.CancelledError:
+            if connection is not None:
+                try:
+                    connection.cancel()
+                except oracledb.Error:
+                    pass
+            raise
         except TimeoutError as exc:
             error_code = (
                 "TARGET_CONNECTION_TIMEOUT"
@@ -236,9 +249,11 @@ class OracleDiagnosticDriver:
         finally:
             if connection is not None:
                 try:
-                    await connection.close()
+                    # 仅允许有界清理宽限，不能把已经结束的调查拖成另一次长等待。
+                    async with asyncio.timeout(1):
+                        await connection.close()
                 except Exception:
-                    pass
+                    logger.warning("Oracle 诊断连接清理未能在有界宽限内完成")
 
     @classmethod
     def _oracle_error_evidence(

@@ -201,6 +201,31 @@ class DiscoveredMetric(BaseModel):
     label_names: tuple[str, ...] = Field(default=(), max_length=128)
     metric_type: str = "UNKNOWN"
     help_text: str | None = None
+    unit: str | None = Field(default=None, max_length=64)
+    metadata_state: Literal["VERIFIED", "UNKNOWN", "CONFLICT"] = "UNKNOWN"
+    native_value_type: str | None = None
+    query_supported: bool = False
+
+
+class NativeMetricSamples(BaseModel):
+    """原生历史采样；数字类型不推定为计数器，也不自动生成速率。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action_id: str
+    target_id: str
+    binding_id: str
+    source_id: str
+    metric_name: str
+    native_value_type: str
+    source_version: str = Field(min_length=1)
+    unit: str | None = None
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    captured_at: UtcDatetime
+    points: tuple[tuple[UtcDatetime, str], ...] = Field(max_length=1000)
+    truncated: bool = False
+    response_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class MetricDiscoveryResult(BaseModel):
@@ -231,6 +256,7 @@ class ObservationSet(BaseModel):
     source_id: str
     observations: tuple[MetricObservation, ...] = ()
     metric_catalogs: tuple[MetricDiscoveryResult, ...] = Field(default=(), max_length=1)
+    native_metrics: tuple[NativeMetricSamples, ...] = Field(default=(), max_length=4)
     active_alerts: tuple[dict[str, Any], ...] = ()
     gaps: tuple[ObservationGap, ...] = ()
     collected_at: UtcDatetime

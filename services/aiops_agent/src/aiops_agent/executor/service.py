@@ -20,6 +20,7 @@ from aiops_agent.executor.drivers import (
     DiagnosticDriverError,
     ReadonlyDatabaseDriver,
 )
+from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
 from aiops_agent.adapters.aiops_execution_client import AIOpsExecutionClient
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
@@ -77,10 +78,10 @@ class DiagnosticExecutorService:
                 return self._gap(
                     request, "VERSION_UNSUPPORTED", retryable=False
                 )
-            issued = await self._control_plane.issue_credential(request.grant, trace_id=grant.trace_id)
-            secret = ResolvedSecret(values={"username": issued.username, "password": issued.password}, fingerprint="issued")
-            started = datetime.now(UTC)
-            async with self._semaphore:
+            async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
+                issued = await self._control_plane.issue_credential(request.grant, trace_id=grant.trace_id)
+                secret = ResolvedSecret(values={"username": issued.username, "password": issued.password}, fingerprint="issued")
+                started = datetime.now(UTC)
                 raw = await driver.execute(
                     profile=grant.connection_profile,
                     secret=secret,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import math
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -19,6 +18,7 @@ from aiops_agent.contracts.evidence import (
     ObservationGap,
 )
 from aiops_agent.domain.evidence import summarize_points
+from aiops_agent.domain.evidence.observations import numeric_wire, parse_numeric_sample
 from aiops_agent.ports.diagnostic_source import (
     EventEvidenceRequest,
     LogEvidenceRequest,
@@ -211,22 +211,12 @@ class BaseDiagnosticSourceAdapter:
                 quality = "GOOD"
                 parsed: float | str | bool | None = value
                 if definition.value_kind == "STATE":
-                    try:
-                        numeric_state = float(value)
-                        parsed = (
-                            int(numeric_state)
-                            if numeric_state.is_integer()
-                            else numeric_state
-                        )
-                    except (TypeError, ValueError):
-                        parsed = value
+                    numeric_state = parse_numeric_sample(value)
+                    parsed = numeric_wire(numeric_state) if numeric_state is not None else value
                 else:
-                    try:
-                        parsed = float(value)
-                        if not math.isfinite(parsed):
-                            raise ValueError
-                    except (TypeError, ValueError):
-                        parsed = None
+                    number = parse_numeric_sample(value)
+                    parsed = numeric_wire(number)
+                    if number is None:
                         quality = "INVALID"
                 points.append(
                     MetricPoint(
@@ -329,11 +319,20 @@ class BaseDiagnosticSourceAdapter:
                 "诊断源暂时不可用",
                 retryable=True,
             )
-        raw = await response.read()
-        if len(raw) > max_bytes:
-            raise DiagnosticSourceAdapterError(
-                "SOURCE_RESULT_TRUNCATED", "诊断源响应超过字节预算"
-            )
+        chunks = []
+        size = 0
+        remaining = getattr(self, "_remaining_response_bytes", None)
+        limit = min(max_bytes, remaining) if remaining is not None else max_bytes
+        async for chunk in response.content.iter_chunked(min(16384, max(1, limit + 1))):
+            size += len(chunk)
+            if remaining is not None:
+                self._remaining_response_bytes = max(0, remaining - size)
+            if size > limit:
+                raise DiagnosticSourceAdapterError(
+                    "SOURCE_RESULT_TRUNCATED", "诊断源响应超过字节预算"
+                )
+            chunks.append(chunk)
+        raw = b"".join(chunks)
         return self._json(raw), hashlib.sha256(raw).hexdigest()
 
     async def query_metrics(

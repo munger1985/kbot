@@ -26,6 +26,7 @@ from aiops_agent.diagnostics.grants import (
     canonical_sha256,
 )
 from aiops_agent.executor.drivers import DiagnosticDriverError
+from aiops_agent.executor.diagnostic_deadline import diagnostic_execution_window
 from aiops_agent.ports.secret_store import ResolvedSecret
 from platform_core.contracts.aiops.executor import (
     DatabaseColumn,
@@ -117,18 +118,18 @@ class DynamicDiagnosticExecutorService:
                     "动态查询与 Grant 冻结内容不匹配",
                 )
             limits = self._effective_limits(grant.limits, validated.max_rows)
-            issued = await self._control_plane.issue_credential(
-                request.grant, trace_id=grant.trace_id
-            )
-            secret = ResolvedSecret(
-                values={
-                    "username": issued.username,
-                    "password": issued.password,
-                },
-                fingerprint="issued",
-            )
-            started = datetime.now(UTC)
-            async with self._semaphore:
+            async with diagnostic_execution_window(self._semaphore, expires_at=grant.expires_at):
+                issued = await self._control_plane.issue_credential(
+                    request.grant, trace_id=grant.trace_id
+                )
+                secret = ResolvedSecret(
+                    values={
+                        "username": issued.username,
+                        "password": issued.password,
+                    },
+                    fingerprint="issued",
+                )
+                started = datetime.now(UTC)
                 if grant.db_type not in self._drivers:
                     raise DiagnosticDriverError("CAPABILITY_UNAVAILABLE")
                 raw = await self._drivers[grant.db_type].execute_dynamic(

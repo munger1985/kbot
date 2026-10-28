@@ -128,7 +128,23 @@ def prepare_source_queries(investigation):
     prom_queries = []
     log_queries = []
     metric_discoveries = []
+    native_metric_queries = []
     for action in investigation.plan.actions:
+        if action.tool_id == "monitor.query_native_metric":
+            payload = dict(action.input)
+            name = payload.get("metric_name")
+            window = payload.get("window_seconds", 900)
+            limit = payload.get("limit", 300)
+            if (set(payload) - {"metric_name", "window_seconds", "limit"}
+                or not isinstance(name, str) or not name.strip() or len(name) > 256
+                or any(ord(char) < 32 for char in name)
+                or type(window) is not int or not 60 <= window <= 3600
+                or type(limit) is not int or not 1 <= limit <= 1000):
+                raise InvestigationPlanValidationError("原生指标查询只允许精确名称和有界窗口/结果数")
+            normalized = {"metric_name": name, "window_seconds": window, "limit": limit}
+            actions.append(action.model_copy(update={"input": normalized}))
+            native_metric_queries.append({"action_id": action.action_id, **normalized})
+            continue
         if action.tool_id == "monitor.discover_metrics":
             payload = dict(action.input)
             scope = payload.get("scope", "DATABASE")
@@ -190,6 +206,8 @@ def prepare_source_queries(investigation):
     )
     if len(metric_discoveries) > 1:
         raise InvestigationPlanValidationError("单轮指标目录发现最多一次")
+    if len(native_metric_queries) > 4:
+        raise InvestigationPlanValidationError("单轮原生历史查询不能超过四次")
     if len(prom_queries) > 4 or len(log_queries) > 4:
         raise InvestigationPlanValidationError(
             "单轮临时 PromQL 或 LogQL 查询不能超过 4 条"
@@ -198,6 +216,7 @@ def prepare_source_queries(investigation):
         investigation.model_copy(update={"plan": updated_plan}),
         {
             "metric_discoveries": metric_discoveries,
+            "native_metric_queries": native_metric_queries,
             "ad_hoc_prometheus_queries": prom_queries,
             "ad_hoc_log_queries": log_queries,
         },

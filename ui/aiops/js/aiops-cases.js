@@ -2,10 +2,10 @@
   "use strict";
   const api = "/api/v1/apps/aiops/operations-knowledge";
   const shell = globalThis.KBotAIOpsShell;
-  const state = { cases: [], detail: null, canManage: false, editing: false };
+  const state = { cases: [], detail: null, canManage: false, editing: false, feedbackId: null };
   const escape = (value) => shell.escape(value == null ? "" : value);
   const statusLabel = (value) => ({ PROCESSING: "提炼中", DRAFT: "待完善", REVIEW_REQUIRED: "待审核", PUBLISHED: "已发布", RETIRED: "已退役", REJECTED: "已拒绝", FAILED: "处理失败" }[value] || value || "—");
-  const kindLabel = (value) => value === "VERIFIED_RESOLUTION" ? "已验证解决方案" : "诊断参考";
+  const kindLabel = (value) => ({ DIAGNOSTIC_REFERENCE: "诊断参考", VERIFIED_RESOLUTION: "已验证解决方案", VERIFIED_OPTIMIZATION: "已验证优化", NEGATIVE_EXPERIENCE: "失败与无效经验" }[value] || "未分类");
   const badge = (value) => shell.badge(value, statusLabel(value));
 
   function renderOverview(summary) {
@@ -65,8 +65,10 @@
     if (state.canManage && detail.version.status === "PUBLISHED") actionsHtml.push('<button class="danger" type="button" data-action="retire">退役</button>');
     if (state.canManage && detail.version.status === "FAILED") actionsHtml.push('<button class="primary" type="button" data-action="retry">重试处理</button>');
     document.getElementById("case-detail-actions").innerHTML = actionsHtml.join("");
+    document.getElementById("case-detail-body").insertAdjacentHTML("beforeend", `<form id="case-feedback-form" class="knowledge-form-section case-edit-form"><header><b>06</b><div><strong>登记复用反馈</strong><small>人工报告单独留痕，不改变验证等级或发布状态。</small></div></header><label>关联本人的诊断 Run（可选）<input name="source_run_id" maxlength="36"></label><label>环境适用性<select name="applicability"><option value="UNCERTAIN">尚未核实</option><option value="APPLICABLE">适用</option><option value="NOT_APPLICABLE">不适用</option></select></label><label>检查路径价值<select name="check_value"><option value="UNKNOWN">尚未判断</option><option value="USEFUL">有帮助</option><option value="NOT_USEFUL">无帮助</option></select></label><label>报告的措施效果<select name="action_effect"><option value="NOT_ATTEMPTED">尚未实施</option><option value="IMPROVED">有改善</option><option value="UNCHANGED">无变化</option><option value="DEGRADED">出现恶化</option><option value="INCONCLUSIVE">无法判断</option></select></label><label>差异、检查结果或失败原因<textarea name="notes" required maxlength="1000" rows="3"></textarea></label><button type="submit">保存人工反馈</button></form>`);
   }
   async function openCase(assetId) {
+    state.feedbackId = crypto.randomUUID();
     state.detail = await KBotAIOpsAuth.request(`${api}/cases/${encodeURIComponent(assetId)}`);
     renderDetail(state.detail);
     document.getElementById("case-drawer").showModal();
@@ -102,6 +104,7 @@
       return;
     }
     const version = state.detail.version;
+    if (action === "publish" && !confirm("确认已核对脱敏预览、来源有效性、适用条件及失败风险，再发布供 Agent 检索？自动脱敏不保证识别全部敏感信息。")) return;
     const options = action === "reconcile" ? { method: "POST" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expected_row_version: Number(version.row_version), comment: null }) };
     await KBotAIOpsAuth.request(`${api}/versions/${encodeURIComponent(version.asset_version_id)}:${action}`, options);
     shell.toast("案例状态已更新");
@@ -109,6 +112,27 @@
     await load();
   }
   shell.ready.then(async (access) => {
+    document.getElementById("case-detail-body").addEventListener("submit", async (event) => {
+      if (event.target.id !== "case-feedback-form" || !state.detail) return;
+      event.preventDefault();
+      const form = event.target;
+      const submit = form.querySelector('[type="submit"]');
+      if (submit.disabled || !form.reportValidity()) return;
+      submit.disabled = true;
+      const data = new FormData(form);
+      try {
+        await KBotAIOpsAuth.request(`${api}/cases/${encodeURIComponent(state.detail.asset.asset_id)}/feedback`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ feedback_id: state.feedbackId, asset_version_id: state.detail.version.asset_version_id,
+            source_run_id: String(data.get("source_run_id") || "").trim() || null,
+            applicability: data.get("applicability"), check_value: data.get("check_value"),
+            action_effect: data.get("action_effect"), notes: String(data.get("notes") || "").trim() }),
+        });
+        shell.toast("复用反馈已留痕，不改变案例验证等级或发布状态");
+        await openCase(state.detail.asset.asset_id);
+      } catch (error) { shell.toast(error.message); }
+      finally { submit.disabled = false; }
+    });
     state.canManage = new Set(access.permissions || []).has("aiops:knowledge_manage");
     document.querySelectorAll("[data-close]").forEach((button) => { button.onclick = () => button.closest("dialog").close(); });
     document.getElementById("case-search").oninput = renderRows;

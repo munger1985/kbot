@@ -36,6 +36,11 @@ STARTED_AT = datetime(2026, 9, 22, 1, 0, tzinfo=UTC)
 TARGET_ID = uuid7()
 DIGEST_A = "A" * 64
 DIGEST_B = "B" * 64
+COMPARISON_IDENTITY = {
+    "instance_identity": {"identity_type": "MYSQL_SERVER_UUID", "identity_value": "server-a"},
+    "instance_started_at": STARTED_AT.isoformat(), "database_versions": ["8.4"],
+    "catalog_versions": ["catalog-a"], "capability_probe_versions": ["mysql-capabilities.v1"],
+}
 
 
 def _snapshot(*, minute: int, questions: int, server_uuid: str = "server-a"):
@@ -161,7 +166,7 @@ def test_workload_report_calculates_only_continuous_deltas() -> None:
     assert report["status"] == "READY"
     assert report["continuous_seconds"] == 300
     assert report["load_totals"]["questions"] == 60
-    assert report["load_profile"]["questions_per_second"] == 0.2
+    assert Decimal(report["load_profile"]["questions_per_second"]) == Decimal("0.2")
     assert report["top_statements"][0]["execution_count"] == 4
     assert report["top_statements"][0]["mean_duration_microseconds"] == 200
     assert "123" not in report["top_statements"][0]["normalized_statement"]
@@ -444,6 +449,7 @@ def test_diff_marks_zero_baseline_as_new_activity() -> None:
             "period_start": STARTED_AT.isoformat(),
             "period_end": (STARTED_AT + timedelta(minutes=5)).isoformat(),
             "load_profile": {"questions_per_second": 0},
+            **COMPARISON_IDENTITY,
             "database_type": "MYSQL",
             "top_statements": [],
         },
@@ -453,6 +459,7 @@ def test_diff_marks_zero_baseline_as_new_activity() -> None:
             "period_start": (STARTED_AT + timedelta(minutes=5)).isoformat(),
             "period_end": (STARTED_AT + timedelta(minutes=10)).isoformat(),
             "load_profile": {"questions_per_second": 2},
+            **COMPARISON_IDENTITY,
             "database_type": "MYSQL",
             "top_statements": [{
                 "statement_identity_type": "MYSQL_DIGEST",
@@ -473,7 +480,56 @@ def test_diff_marks_zero_baseline_as_new_activity() -> None:
         "change_percent": None,
         "change_status": "NEW_ACTIVITY",
     }
-    assert report["statement_changes"][0]["change_status"] == "NEW_ACTIVITY"
+    assert report["statement_changes"][0]["change_status"] == "NOT_IN_BASELINE_TOP"
+
+
+
+def test_window_comparison_normalizes_different_lengths_and_requires_physical_identity():
+    baseline = {
+        **COMPARISON_IDENTITY, "status": "READY", "target_id": str(TARGET_ID), "database_type": "MYSQL",
+        "period_start": STARTED_AT.isoformat(), "period_end": (STARTED_AT + timedelta(minutes=5)).isoformat(),
+        "load_profile": {"questions_per_second": 1},
+        "top_statements": [{"statement_identity_type": "MYSQL_DIGEST", "statement_identity_value": DIGEST_A,
+            "execution_count": 10, "total_duration_microseconds": 1000}],
+    }
+    after = {**baseline, "period_end": (STARTED_AT + timedelta(minutes=10)).isoformat(),
+        "top_statements": [{**baseline["top_statements"][0], "execution_count": 20, "total_duration_microseconds": 2000}]}
+    result = build_workload_diff_report(baseline=baseline, after=after)
+    comparison = result["statement_changes"][0]
+    assert comparison["delta_total_duration_microseconds"] is None
+    normalized = comparison["normalized_comparison"]
+    assert Decimal(normalized["mean_duration_microseconds"]["baseline"]) == 100
+    assert normalized["mean_duration_microseconds"]["delta"] == 0
+    assert normalized["executions_per_second"]["delta"] == 0
+    for changed in (
+        {"instance_identity": {"identity_value": "server-b"}},
+        {"instance_identity": None},
+        {"instance_started_at": None},
+        {"catalog_versions": ["different"]},
+    ):
+        invalid = build_workload_diff_report(baseline=baseline, after={**after, **changed})
+        assert invalid["statement_changes"][0]["normalized_comparison"]["status"] == "INCOMPARABLE"
+        assert invalid["status"] == "PARTIAL"
+
+
+def test_workload_diff_preserves_large_statement_totals_on_wire():
+    total = 900719925474099312345
+    baseline = {
+        **COMPARISON_IDENTITY, "status": "READY", "target_id": str(TARGET_ID), "database_type": "MYSQL",
+        "period_start": STARTED_AT.isoformat(), "period_end": (STARTED_AT + timedelta(minutes=5)).isoformat(),
+        "load_profile": {},
+        "top_statements": [{"statement_identity_type": "MYSQL_DIGEST", "statement_identity_value": DIGEST_A,
+            "execution_count": 10, "total_duration_microseconds": str(total)}],
+    }
+    after = {
+        **baseline, "period_start": baseline["period_end"],
+        "period_end": (STARTED_AT + timedelta(minutes=10)).isoformat(),
+        "top_statements": [{**baseline["top_statements"][0], "total_duration_microseconds": str(total * 2)}],
+    }
+    result = build_workload_diff_report(baseline=baseline, after=after)["statement_changes"][0]
+    assert result["baseline_total_duration_microseconds"] == str(total)
+    assert result["after_total_duration_microseconds"] == str(total * 2)
+    assert result["delta_total_duration_microseconds"] == str(total)
 
 
 def test_activity_report_discloses_sampling_boundary() -> None:

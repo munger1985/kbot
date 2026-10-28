@@ -7,6 +7,35 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference, SqlRecommendation
+from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGoal
+from aiops_agent.contracts.measurements import EvidenceProvenance, DerivedMeasurement
+from aiops_agent.contracts.implementation import ImplementationRunbook
+
+
+class InvestigationParent(BaseModel):
+    """服务端从已重新授权的不可变上一轮读取，不能由模型填写。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    record_id: str
+    revision: int = Field(ge=1)
+    target_id: str
+    run_id: str
+    artifact_id: str
+    content_hash: str = Field(min_length=1)
+    claims: tuple["InvestigationClaim", ...] = Field(max_length=16)
+    historical_claims: tuple["InvestigationHistoricalClaim", ...] = Field(default=(), max_length=128)
+
+
+class InvestigationHistoricalClaim(BaseModel):
+    """跨多轮仍有效的判断以原 Artifact 和行标识定位，不混入本轮观测。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    artifact_id: str
+    content_hash: str
+    run_id: str
+    claim: "InvestigationClaim"
 
 
 class InvestigationClaim(BaseModel):
@@ -48,6 +77,9 @@ class DiagnosisAnswerDraft(BaseModel):
     recommendations: tuple[SqlRecommendation, ...] = Field(default=(), max_length=12)
     unresolved_questions: tuple[str, ...] = Field(default=(), max_length=12)
     goal_satisfied: bool
+    goal_assessments: tuple[InvestigationGoal, ...] = Field(default=(), max_length=16)
+    continues_investigation: bool = False
+    claim_revisions: tuple[ClaimRevision, ...] = Field(default=(), max_length=16)
 
     @model_validator(mode="after")
     def validate_links(self):
@@ -58,6 +90,30 @@ class DiagnosisAnswerDraft(BaseModel):
         if len(action_ids) != len(self.recommendations):
             raise ValueError("建议 ID 不能重复")
         active_ids = {item.claim_id for item in self.claims if item.revision_state == "ACTIVE"}
+        if self.claim_revisions and not self.continues_investigation:
+            raise ValueError("修订必须显式声明继续上一调查")
+        if any(item.current_claim_id not in active_ids for item in self.claim_revisions):
+            raise ValueError("修订必须引用本轮有效判断")
+        prior_ids = [(item.prior_artifact_id, item.prior_claim_id) for item in self.claim_revisions]
+        if len(prior_ids) != len(set(prior_ids)):
+            raise ValueError("同一旧判断不能在一次修订中被多次处置")
+        goal_ids = [item.goal_id for item in self.goal_assessments]
+        if len(goal_ids) != len(set(goal_ids)):
+            raise ValueError("子目标 ID 不能重复")
+        for goal in self.goal_assessments:
+            if not set(goal.claim_refs) <= active_ids:
+                raise ValueError("子目标只能引用本轮有效判断")
+            if goal.status == "SATISFIED" and not any(
+                item.claim_id in goal.claim_refs and item.level in {"OBSERVED", "SUPPORTED"}
+                for item in self.claims
+            ):
+                raise ValueError("已完成子目标必须有有效事实或支持判断")
+            if goal.status in {"BLOCKED", "NOT_APPLICABLE"} and not goal.explanation:
+                raise ValueError("阻塞或不适用的子目标必须解释原因")
+        if self.goal_assessments and self.goal_satisfied != all(
+            item.status in {"SATISFIED", "NOT_APPLICABLE"} for item in self.goal_assessments
+        ):
+            raise ValueError("整体完成状态必须与全部子目标一致")
         for action in self.recommendations:
             if not set(action.conclusion_ids) <= active_ids:
                 raise ValueError("建议只能引用当前有效主张")
@@ -83,15 +139,8 @@ class InvestigationObservation(BaseModel):
     trust_level: Literal["SOURCE_VERIFIED", "USER_PROVIDED", "MODEL_INFERENCE"]
     row_count: int = Field(ge=0)
     truncated: bool
-
-
-class InvestigationGoal(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    goal_id: str
-    status: Literal["SATISFIED", "PARTIAL", "BLOCKED", "NOT_APPLICABLE"]
-    claim_refs: tuple[str, ...] = ()
-    blocking_gaps: tuple[str, ...] = ()
+    provenance: EvidenceProvenance | None = None
+    derivations: tuple[DerivedMeasurement, ...] = ()
 
 
 class InvestigationRecord(BaseModel):
@@ -117,13 +166,19 @@ class InvestigationRecord(BaseModel):
     stop_reason: Literal["GOAL_ANSWERED", "EVIDENCE_EXHAUSTED", "BUDGET_EXHAUSTED", "PARTIAL_ANSWER", "SAFETY_STOP", "NEEDS_AUTHORIZATION"]
     execution_refs: tuple[str, ...] = ()
     verification_refs: tuple[str, ...] = ()
+    parent: InvestigationParent | None = None
+    claim_revisions: tuple[ClaimRevision, ...] = ()
+    runbook: ImplementationRunbook | None = None
 
     @model_validator(mode="after")
     def validate_record(self):
         draft = DiagnosisAnswerDraft(
             claims=self.claims, recommendations=self.recommendations,
             unresolved_questions=self.unresolved_questions,
-            goal_satisfied=any(goal.status == "SATISFIED" for goal in self.goal_assessments),
+            goal_satisfied=self.stop_reason == "GOAL_ANSWERED",
+            goal_assessments=self.goal_assessments,
+            continues_investigation=self.parent is not None,
+            claim_revisions=self.claim_revisions,
         )
         refs = {item.evidence_ref for item in self.observations}
         if len(refs) != len(self.observations):
@@ -136,6 +191,30 @@ class InvestigationRecord(BaseModel):
             raise ValueError("目标完成状态引用了不存在的主张")
         if (self.revision == 1) != (self.previous_revision is None):
             raise ValueError("调查修订必须关联前一不可变版本")
+        if self.parent is not None:
+            if self.target_id != self.parent.target_id or self.record_id != self.parent.record_id:
+                raise ValueError("调查修订不能改变目标或调查身份")
+            if self.revision != self.parent.revision + 1 or self.previous_revision != self.parent.artifact_id:
+                raise ValueError("调查修订必须连续关联服务端冻结的上一版本")
+            previous_claims = {(self.parent.artifact_id, item.claim_id): item for item in self.parent.claims if item.revision_state == "ACTIVE"}
+            previous_claims.update({
+                (item.artifact_id, item.claim.claim_id): item.claim for item in self.parent.historical_claims
+                if item.claim.revision_state == "ACTIVE"
+            })
+            current_claims = {item.claim_id: item for item in self.claims}
+            changed_keys = set()
+            for change in self.claim_revisions:
+                key = (change.prior_artifact_id or self.parent.artifact_id, change.prior_claim_id)
+                if key in changed_keys:
+                    raise ValueError("同一来源判断不能重复修订")
+                changed_keys.add(key)
+                old, new = previous_claims.get(key), current_claims[change.current_claim_id]
+                if old is None or old.subject != new.subject or old.applicable_time != new.applicable_time:
+                    raise ValueError("修订不能引用缺失、已撤回、不同对象或不同时间阶段的判断")
+                if change.relation == "REFUTES" and not new.evidence_fields:
+                    raise ValueError("驳回历史判断必须有本轮反证引用")
+        elif self.revision != 1 or self.claim_revisions:
+            raise ValueError("缺少授权来源不能生成跨轮修订")
         return self
 
     def validate_observations(self, evidence):

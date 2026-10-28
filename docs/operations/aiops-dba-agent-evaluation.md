@@ -1,0 +1,86 @@
+# DBA Agent 三库场景评测
+
+本说明对应统一 DBA 设计的 S6 发布门禁。评测工具并未在本批对生产环境运行。
+本地测试、确定性规则得分和模型裁判得分都不能单独证明诊断有效。
+
+## 环境与授权
+
+分别为 Oracle、PostgreSQL、MySQL 准备已授权的 Agent 和业务资源，
+按数据集的 fixture_requirements 由独立人员核验真实状态。
+故障注入、DDL、终止会话、采集开关和恢复演练必须使用隔离或明确批准的环境。
+工具本身只提交诊断问题；任何审批/执行事件都构成发布阻断。
+需要来源的 SQL 续查、报告或效果场景须传入真实、同域可读的 source-run-id，
+它是首轮 Turn 的来源，不是顶层会话参数。
+
+公共路径存在平台差异，必须明确指定：
+
+| 平台 | api-path-prefix |
+| --- | --- |
+| KBot4 | /api/v1/apps/aiops |
+| Ammolite | /api/v1/apps/aiops/domains/实际业务域编码/ops |
+
+API 鉴权由实际部署配置决定，密钥通过环境注入，不能写进命令示例、真值文件或日志。
+API、裁判和日志端点应由运维确认，不能直接把数据集或模型返回的 URL 当作端点。
+
+## 独立场景真值
+
+JSON 顶层以数据集真实 case_id 为键；每项至少包含：
+
+```json
+{
+  "数据集中实际的场景标识": {
+    "resource_id": "本次已授权资源标识",
+    "database_type": "POSTGRESQL",
+    "observed_conditions": [
+      "独立核验的故障条件、时间范围、业务负载与边界"
+    ],
+    "evidence_refs": [
+      "受控证据库中的精确引用，不粘贴凭据或业务样本"
+    ],
+    "verified_at": "2026-10-28T01:00:00+00:00"
+  }
+}
+```
+
+真值由独立检查或受控场景生成器提供，不能复制待评 Agent 的结论或用裁判自评分代替。
+执行前重新核对条件未漂移；三库不能共用错误引擎或资源的真值。
+缺少真值仍可诊断排查工具本身，但评测输出会阻断发布通过。
+
+## 命令
+
+先校验场景集，不连接任何目标：
+
+```bash
+python tests/evaluation/evaluate_aiops_dba_chat.py --validate-only
+```
+
+运行前由安全配置注入 KBOT_AIOPS_EVAL_BASE_URL、KBOT_AIOPS_EVAL_API_KEY、
+KBOT_AIOPS_EVAL_AGENT_ID、AIOPS_EVAL_RESOURCE_ID 以及裁判的
+KBOT_AIOPS_EVAL_JUDGE_URL、KBOT_AIOPS_EVAL_JUDGE_KEY、KBOT_AIOPS_EVAL_JUDGE_MODEL。
+这些是沿用现有评测器的变量名，两仓相同。
+
+```bash
+python tests/evaluation/evaluate_aiops_dba_chat.py \
+  --database-type POSTGRESQL \
+  --api-path-prefix /api/v1/apps/aiops/domains/demo/ops \
+  --ground-truth-file /已授权目录/postgresql-fixtures.json \
+  --source-run-id 实际来源Run标识 \
+  --report /已授权目录/postgresql-evaluation.json
+```
+
+KBot 使用对应 App 前缀；其他引擎分别使用 ORACLE、MYSQL 和各自真实资源。
+仅运行部分场景时用 --case 指定数据集 case_id，不能把部分场景通过当作整套验收。
+--deterministic-only 只检查协议与确定性行为，不构成完整专业或发布验收。
+如需关联在线日志，显式指定当前环境 --operations-logs-url；
+默认不猜测另一平台或旧部署的端点。
+
+## 通过标准与归档
+
+记录每个场景的资源、数据库、独立真值、Turn/Run、引用、禁止行为和评审覆盖。
+安全失败、越权、未请求的执行、累计冒充窗口、错误 VERIFIED、
+缺语义评审和未评审能力不能被平均分抵消。
+诊断总耗时与包含裁判的评测耗时分开；并发 P95、取消后的目标库活动和预算
+须另做真实负载试验，不能从单次耗时或本地替身推断。
+报告只输出安全错误类别，不复制服务器原始错误正文。
+最终验收还需浏览器走通回答、方案、报告、案例审核与适用/不适用复用，
+经另行授权的执行效果、护栏和回退另留独立实测证据。

@@ -157,7 +157,9 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
             environment={"database_type": "Oracle"},
             root_cause={"summary": "连接泄漏", "confidence": "HIGH", "evidence_refs": ["root-1"]},
             actions=({"summary": "重启连接池", "evidence_refs": ["action-1"]},),
-            verification={"result": "RESOLVED", "before_refs": ["before-1"], "after_refs": ["after-1"]},
+            verification={"result": "RESOLVED", "before_refs": ["before-1"], "after_refs": ["after-1"],
+                "controlled_verification_ref": "comparison-1", "comparability": "COMPARABLE",
+                "guardrails_passed": True, "measured_effect": "IMPROVED", "symptom_recovered": True},
             source={"report_id": "report-1"},
         )
         submitted = base.model_copy(deep=True)
@@ -165,6 +167,7 @@ class OperationsKnowledgeContractTest(unittest.TestCase):
         submitted.root_cause["evidence_refs"] = ["forged"]
         submitted.source["report_id"] = "forged-report"
         submitted.actions = (*submitted.actions, {"summary": "新增动作"})
+        submitted.case_kind = "DIAGNOSTIC_REFERENCE"
         revised = _prepare_case_revision(
             command=DiagnosisCaseDraft(
                 expected_asset_row_version=2,
@@ -400,6 +403,10 @@ class _DetachingKnowledgeUnitOfWork(_KnowledgeUnitOfWork):
     def __init__(self, repository, state):
         super().__init__(repository)
         self.state = state
+
+    async def __aenter__(self):
+        self.state.active = True
+        return self
 
     async def __aexit__(self, *_args):
         self.state.active = False

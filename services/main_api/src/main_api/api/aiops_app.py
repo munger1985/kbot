@@ -40,6 +40,7 @@ from platform_core.contracts.aiops import (
     WorkloadDiffRequest,
 )
 from platform_core.contracts.aiops.workload import PGBADGER_MAX_UPLOAD_BYTES
+from platform_core.contracts.aiops.knowledge import KnowledgeReuseFeedback
 from platform_core.contracts.aiops.conversation import SqlDiagnosisSelection
 
 
@@ -421,6 +422,15 @@ async def operations_knowledge_overview(request: Request):
         auth_context=request.state.auth_context
     )
 
+
+@router.post("/operations-knowledge/cases/{asset_id}/feedback", status_code=201)
+async def record_operations_case_feedback(
+    asset_id: UUID, payload: KnowledgeReuseFeedback, request: Request,
+):
+    await _require(request, "aiops:use")
+    return await _client(request).record_operations_case_feedback(
+        asset_id, payload=payload.model_dump(mode="json"), auth_context=request.state.auth_context,
+    )
 
 @router.get("/operations-knowledge/cases/overview")
 async def operations_diagnosis_cases_overview(request: Request):

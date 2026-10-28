@@ -55,7 +55,7 @@ def test_adapter_discovery_is_target_bound_bounded_and_does_not_invent_metric_ty
     assert len(result.entries) == 1 and result.truncated
     assert result.entries[0].metric_type == "UNKNOWN"
     assert calls[0]["params"]["match[]"] == ['{instance="bound-target"}', '{target_key="bound-target"}']
-    assert value._response_json.call_args.kwargs["max_bytes"] == 262144
+    assert sum(call.kwargs["max_bytes"] for call in value._response_json.call_args_list) == 262144
     assert result.warnings
 
 
@@ -75,6 +75,38 @@ def test_label_catalog_truncation_is_reported():
     result = asyncio.run(value.discover_metrics(request()))
     assert result.truncated
     assert len(result.entries[0].label_names) == 128
+
+
+def test_target_bound_metadata_is_verified_and_conflicts_remain_unknown():
+    value, calls = adapter({})
+    series = {"status": "success", "data": [{"__name__": "custom_latency", "instance": "bound-target"}]}
+    metadata = {"status": "success", "data": [{
+        "target": {"instance": "bound-target"}, "metric": "custom_latency",
+        "type": "gauge", "help": "workload latency", "unit": "second",
+    }]}
+    value._response_json = AsyncMock(side_effect=[(series, "a" * 64), (metadata, "b" * 64), ({"status": "success", "data": []}, "c" * 64)])
+    result = asyncio.run(value.discover_metrics(request()))
+    entry = result.entries[0]
+    assert entry.metric_type == "GAUGE" and entry.unit == "second" and entry.metadata_state == "VERIFIED"
+    assert "match_target" in calls[1]["params"] and calls[1]["params"]["match_target"] == '{instance="bound-target"}'
+    assert sum(call.kwargs["max_bytes"] for call in value._response_json.call_args_list) == 262144
+
+
+def test_metadata_content_change_invalidates_discovery_response_hash():
+    series = {"status": "success", "data": [{"__name__": "custom_latency", "instance": "bound-target"}]}
+    hashes = []
+    for marker in ("b", "d"):
+        value, _ = adapter({})
+        metadata = {"status": "success", "data": [{
+            "target": {"instance": "bound-target"}, "metric": "custom_latency",
+            "type": "gauge", "help": "workload latency", "unit": "second",
+        }]}
+        value._response_json = AsyncMock(side_effect=[
+            (series, "a" * 64), (metadata, marker * 64),
+            ({"status": "success", "data": []}, "c" * 64),
+        ])
+        hashes.append(asyncio.run(value.discover_metrics(request())).response_sha256)
+    assert hashes[0] != hashes[1]
 
 
 def test_metric_discovery_requires_explicit_source_capability():
@@ -176,3 +208,32 @@ def test_worker_checks_binding_authorization_then_projects_catalog_for_replannin
         assert fact.trust_level == "SOURCE_VERIFIED"
 
     asyncio.run(run())
+
+def test_metadata_response_is_rejected_as_a_whole_if_a_later_row_is_outside_scope():
+    value, _ = adapter({})
+    series = {"status": "success", "data": [{"__name__": "latency", "instance": "bound-target"}]}
+    metadata = {"status": "success", "data": [
+        {"target": {"instance": "bound-target"}, "metric": "latency", "type": "gauge"},
+        {"target": {"instance": "foreign"}, "metric": "other", "type": "counter"},
+    ]}
+    value._response_json = AsyncMock(side_effect=[
+        (series, "a" * 64), (metadata, "b" * 64), ({"status": "success", "data": []}, "c" * 64),
+    ])
+    result = asyncio.run(value.discover_metrics(request()))
+    assert result.entries[0].metadata_state == "UNKNOWN"
+
+
+def test_real_response_reader_stops_before_consuming_unbounded_body():
+    from aiops_agent.adapters.diagnostic_sources.base import BaseDiagnosticSourceAdapter
+    consumed = []
+    class Body:
+        async def iter_chunked(self, size):
+            for index in range(1000):
+                consumed.append(index)
+                yield b"x" * size
+    value = BaseDiagnosticSourceAdapter.__new__(BaseDiagnosticSourceAdapter)
+    response = SimpleNamespace(status=200, content=Body())
+    with pytest.raises(DiagnosticSourceAdapterError) as caught:
+        asyncio.run(value._response_json(response, max_bytes=1024))
+    assert caught.value.code == "SOURCE_RESULT_TRUNCATED"
+    assert len(consumed) == 1

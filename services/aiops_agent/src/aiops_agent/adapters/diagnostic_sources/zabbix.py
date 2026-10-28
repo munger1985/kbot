@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import aiohttp
 
 from aiops_agent.contracts.evidence import (
+    DiscoveredMetric, MetricDiscoveryResult, NativeMetricSamples,
     NormalizedSignalEvent,
     NormalizedSignalBatch,
 )
@@ -16,6 +18,7 @@ from aiops_agent.domain.evidence import (
     SignalSeverity,
 )
 from aiops_agent.ports.diagnostic_source import (
+    MetricsDiscoveryRequest,
     EventEvidenceRequest,
     EventEvidenceResult,
     InstanceDiscoveryCandidate,
@@ -85,6 +88,110 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
                 if marker in name:
                     template_types.add(db_type)
         return next(iter(template_types)) if len(template_types) == 1 else None
+
+    async def _metric_host(self, request, *, max_bytes):
+        hosts, response_hash = await self._rpc(
+            "host.get", {"output": ["hostid", "host"], "filter": {"host": [request.source_locator_key]}, "limit": 2},
+            max_bytes=max_bytes,
+        )
+        if not isinstance(hosts, list) or any(
+            not isinstance(item, dict) or item.get("host") != request.source_locator_key for item in hosts
+        ):
+            raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "来源返回非绑定 Host")
+        if len(hosts) != 1:
+            raise DiagnosticSourceAdapterError("SOURCE_TARGET_NOT_FOUND", "绑定 Host 不存在或不唯一")
+        return str(hosts[0]["hostid"]), response_hash
+
+    async def discover_metrics(self, request: MetricsDiscoveryRequest) -> MetricDiscoveryResult:
+        """使用真实 JSON-RPC Item 目录，不以当前值伪装请求窗口历史覆盖。"""
+        self._remaining_response_bytes = request.max_response_bytes
+        if request.scope != "DATABASE":
+            raise DiagnosticSourceAdapterError("SOURCE_QUERY_UNSUPPORTED", "Zabbix 仅发现当前绑定 Host，不推定关联主机权限")
+        host_id, host_hash = await self._metric_host(request, max_bytes=request.max_response_bytes // 4)
+        items, digest = await self._rpc(
+            "item.get", {
+                "output": ["itemid", "hostid", "key_", "name", "description", "units", "value_type", "status", "state"],
+                "hostids": [host_id], "sortfield": "key_", "limit": request.limit + 1,
+            }, max_bytes=request.max_response_bytes * 3 // 4,
+        )
+        if not isinstance(items, list) or any(
+            not isinstance(item, dict) or str(item.get("hostid")) != host_id for item in items
+        ):
+            raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "Item 目录包含绑定范围外对象")
+        entries = []
+        for item in items[:request.limit]:
+            name = str(item.get("key_") or "")
+            if not name or len(name) > 256 or any(ord(char) < 32 for char in name):
+                continue
+            entries.append(DiscoveredMetric(
+                name=name, metric_type="UNKNOWN", native_value_type=str(item.get("value_type", "")),
+                unit=str(item.get("units") or "")[:64] or None,
+                help_text=str(item.get("description") or item.get("name") or "")[:2000] or None,
+                metadata_state="VERIFIED",
+                query_supported=(str(item.get("value_type")) in {"0", "3"}
+                    and str(item.get("status")) == "0" and str(item.get("state")) == "0"),
+            ))
+        return MetricDiscoveryResult(
+            action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
+            source_id=self.context.source_id, scope=request.scope,
+            window_start=request.window_start, window_end=request.window_end,
+            captured_at=datetime.now(UTC), entries=tuple(entries),
+            response_sha256=hashlib.sha256(f"{host_hash}:{digest}".encode()).hexdigest(),
+            truncated=len(items) > request.limit or len(entries) < min(len(items), request.limit),
+            warnings=("Item 元数据已读取；数值存储类型不证明 counter/gauge 语义，目录不证明请求窗口有采样。",),
+        )
+
+    async def query_native_metric(self, request, *, metric_name, limit):
+        """精确 Host 与 Item 在执行端重验；保留原始数值，不猜单位、不自动差分。"""
+        self._remaining_response_bytes = request.max_response_bytes
+        if not isinstance(metric_name, str) or not 0 < len(metric_name) <= 256 or any(ord(char) < 32 for char in metric_name):
+            raise DiagnosticSourceAdapterError("SOURCE_QUERY_INVALID", "精确 Item key 无效")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise DiagnosticSourceAdapterError("SOURCE_QUERY_INVALID", "历史结果上限无效")
+        host_id, host_hash = await self._metric_host(request, max_bytes=request.max_response_bytes // 4)
+        items, item_hash = await self._rpc(
+            "item.get", {
+                "output": ["itemid", "hostid", "key_", "value_type", "units", "status", "state"],
+                "hostids": [host_id], "filter": {"key_": [metric_name]}, "limit": 2,
+            }, max_bytes=request.max_response_bytes // 4,
+        )
+        if not isinstance(items, list) or any(
+            not isinstance(item, dict) or str(item.get("hostid")) != host_id or item.get("key_") != metric_name for item in items
+        ):
+            raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "Item 不属于精确绑定对象")
+        if len(items) != 1:
+            raise DiagnosticSourceAdapterError("SOURCE_ITEM_AMBIGUOUS", "精确 Item 不存在或不唯一")
+        item = items[0]
+        if str(item.get("value_type")) not in {"0", "3"} or str(item.get("status")) != "0" or str(item.get("state")) != "0":
+            raise DiagnosticSourceAdapterError("SOURCE_METRIC_TYPE_MISMATCH", "Item 不是可查询的已启用数值项")
+        history, digest = await self._rpc(
+            "history.get", {
+                "output": ["itemid", "clock", "ns", "value"], "history": int(item["value_type"]),
+                "itemids": [item["itemid"]], "time_from": int(request.window_start.timestamp()),
+                "time_till": int(request.window_end.timestamp()), "sortfield": ["clock", "ns"],
+                "sortorder": "ASC", "limit": limit + 1,
+            }, max_bytes=request.max_response_bytes // 2,
+        )
+        if not isinstance(history, list):
+            raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "历史响应格式无效")
+        points = []
+        for row in history:
+            if not isinstance(row, dict) or str(row.get("itemid")) != str(item["itemid"]):
+                raise DiagnosticSourceAdapterError("SOURCE_TARGET_MISMATCH", "历史采样来自其他 Item")
+            stamp = datetime.fromtimestamp(int(row["clock"]), tz=UTC) + timedelta(microseconds=int(row.get("ns", 0)) // 1000)
+            value = str(row["value"])
+            if not request.window_start <= stamp <= request.window_end or not Decimal(value).is_finite():
+                raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "历史采样越界或数值无效")
+            points.append((stamp, value))
+        return NativeMetricSamples(
+            action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
+            source_id=self.context.source_id, metric_name=metric_name,
+            native_value_type=str(item["value_type"]), unit=str(item.get("units") or "")[:64] or None,
+            source_version=f"{self.context.adapter_version}:{self.context.config_version}",
+            window_start=request.window_start, window_end=request.window_end, captured_at=datetime.now(UTC),
+            points=tuple(points[:limit]), truncated=len(points) > limit,
+            response_sha256=hashlib.sha256(f"{host_hash}:{item_hash}:{digest}".encode()).hexdigest(),
+        )
 
     async def discover_instances(
         self, request: InstanceDiscoveryRequest

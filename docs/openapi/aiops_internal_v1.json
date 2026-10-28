@@ -1901,6 +1901,36 @@
         "title": "CancelRunCommand",
         "type": "object"
       },
+      "CaseRedaction": {
+        "additionalProperties": false,
+        "properties": {
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "replacement_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Replacement Counts",
+            "type": "object"
+          },
+          "status": {
+            "default": "REVIEW_REQUIRED",
+            "enum": [
+              "REVIEW_REQUIRED",
+              "REVIEWED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_version"
+        ],
+        "title": "CaseRedaction",
+        "type": "object"
+      },
       "CitationEvidenceView": {
         "additionalProperties": false,
         "description": "回答引用中可直接展示的安全结构化证据。",
@@ -4577,7 +4607,9 @@
           "case_kind": {
             "enum": [
               "DIAGNOSTIC_REFERENCE",
-              "VERIFIED_RESOLUTION"
+              "VERIFIED_RESOLUTION",
+              "VERIFIED_OPTIMIZATION",
+              "NEGATIVE_EXPERIENCE"
             ],
             "title": "Case Kind",
             "type": "string"
@@ -4599,6 +4631,16 @@
             "additionalProperties": true,
             "title": "Problem Signature",
             "type": "object"
+          },
+          "redaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseRedaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "root_cause": {
             "additionalProperties": true,
@@ -7665,6 +7707,78 @@
           "models"
         ],
         "title": "KnowledgeBaseWrite",
+        "type": "object"
+      },
+      "KnowledgeReuseFeedback": {
+        "additionalProperties": false,
+        "properties": {
+          "action_effect": {
+            "default": "NOT_ATTEMPTED",
+            "enum": [
+              "IMPROVED",
+              "UNCHANGED",
+              "DEGRADED",
+              "INCONCLUSIVE",
+              "NOT_ATTEMPTED"
+            ],
+            "title": "Action Effect",
+            "type": "string"
+          },
+          "applicability": {
+            "enum": [
+              "APPLICABLE",
+              "NOT_APPLICABLE",
+              "UNCERTAIN"
+            ],
+            "title": "Applicability",
+            "type": "string"
+          },
+          "asset_version_id": {
+            "format": "uuid",
+            "title": "Asset Version Id",
+            "type": "string"
+          },
+          "check_value": {
+            "default": "UNKNOWN",
+            "enum": [
+              "USEFUL",
+              "NOT_USEFUL",
+              "UNKNOWN"
+            ],
+            "title": "Check Value",
+            "type": "string"
+          },
+          "feedback_id": {
+            "format": "uuid",
+            "title": "Feedback Id",
+            "type": "string"
+          },
+          "notes": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Notes",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          }
+        },
+        "required": [
+          "feedback_id",
+          "asset_version_id",
+          "applicability",
+          "notes"
+        ],
+        "title": "KnowledgeReuseFeedback",
         "type": "object"
       },
       "KnowledgeReviewCommand": {
@@ -25213,6 +25327,57 @@
           }
         },
         "summary": "Get Case",
+        "tags": [
+          "AIOps Operations Knowledge"
+        ]
+      }
+    },
+    "/internal/v1/aiops/operations-knowledge/cases/{asset_id}/feedback": {
+      "post": {
+        "operationId": "record_case_reuse_feedback_internal_v1_aiops_operations_knowledge_cases__asset_id__feedback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeReuseFeedback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Case Reuse Feedback",
         "tags": [
           "AIOps Operations Knowledge"
         ]

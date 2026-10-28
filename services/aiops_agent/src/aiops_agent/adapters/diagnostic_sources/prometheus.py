@@ -42,6 +42,7 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
 
     async def discover_metrics(self, request: MetricsDiscoveryRequest) -> MetricDiscoveryResult:
         """只访问绑定目标的系列目录，字节与结果规模均有界。"""
+        self._remaining_response_bytes = request.max_response_bytes
         if request.scope == "HOST":
             if not request.host_target_key:
                 raise DiagnosticSourceAdapterError("SOURCE_TARGET_MAPPING_MISSING", "未绑定主机，不能发现其他主机指标")
@@ -56,7 +57,7 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                 "end": request.window_end.timestamp(), "limit": 1001,
             }, timeout=self._timeout,
         ) as response:
-            payload, digest = await self._response_json(response, max_bytes=request.max_response_bytes)
+            payload, digest = await self._response_json(response, max_bytes=request.max_response_bytes // 2)
         if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(payload.get("data"), list):
             raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "指标目录响应格式无效")
         names: dict[str, set[str]] = {}
@@ -76,17 +77,70 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
             or any(len(labels) > 128 for labels in names.values())
             or bool(payload.get("warnings"))
         )
+        metadata, metadata_warnings, metadata_hashes = await self._target_metric_metadata(
+            locators=locators, names=set(sorted(names)[:request.limit]),
+            max_bytes=request.max_response_bytes // 2,
+        )
         return MetricDiscoveryResult(
             action_id=request.action_id, target_id=request.target_id, binding_id=request.binding_id,
             source_id=self.context.source_id, scope=request.scope,
             window_start=request.window_start, window_end=request.window_end,
-            captured_at=datetime.now(UTC), response_sha256=digest,
-            entries=tuple(DiscoveredMetric(name=name, label_names=tuple(sorted(names[name])[:128]))
+            captured_at=datetime.now(UTC), response_sha256=hashlib.sha256(
+                ":".join((digest, *metadata_hashes)).encode("ascii")
+            ).hexdigest(),
+            entries=tuple(DiscoveredMetric(name=name, label_names=tuple(sorted(names[name])[:128]), **metadata.get(name, {}))
                           for name in sorted(names)[:request.limit]),
             truncated=truncated,
-            warnings=("系列目录只能说明请求窗口曾可见；不能证明当前有采样。类型、单位和帮助信息尚未核验。",
+            warnings=("系列目录只能说明请求窗口曾可见；不能证明当前有采样。元数据不证明数值或历史覆盖。",
+                      *metadata_warnings,
                       *(("目录达到上限或源返回警告，不代表完整指标清单。",) if truncated else ())),
         )
+
+    async def _target_metric_metadata(self, *, locators, names, max_bytes):
+        """按绑定目标补元数据；不读取全局 metadata，三次请求合计预算不超过目录限额。"""
+        metadata = {}
+        warnings = []
+        response_hashes = []
+        for label, locator in locators:
+            try:
+                async with self._session.get(
+                    f"{self._endpoint().rstrip('/')}/api/v1/targets/metadata",
+                    headers=self._headers(),
+                    params={"match_target": '{' + label + '="' + _escape_prometheus_label(locator) + '"}', "limit": 1001},
+                    timeout=self._timeout,
+                ) as response:
+                    payload, response_hash = await self._response_json(response, max_bytes=max_bytes // len(locators))
+                response_hashes.append(response_hash)
+                if not isinstance(payload, dict) or payload.get("status") != "success" or not isinstance(payload.get("data"), list):
+                    raise ValueError("元数据格式无效")
+                if len(payload["data"]) > 1000:
+                    warnings.append("目标元数据达到上限，未返回条目仍标未知。")
+                rows = payload["data"][:1000]
+                if any(
+                    not isinstance(item, dict) or not isinstance(item.get("target"), dict)
+                    or item["target"].get(label) != locator for item in rows
+                ):
+                    raise ValueError("元数据超出绑定目标范围")
+                for item in rows:
+                    name = item.get("metric")
+                    if name not in names:
+                        continue
+                    kind = str(item.get("type") or "UNKNOWN").upper()
+                    if kind not in {"COUNTER", "GAUGE", "HISTOGRAM", "SUMMARY", "INFO", "STATESET", "UNTYPED"}:
+                        kind = "UNKNOWN"
+                    entry = {
+                        "metric_type": kind, "help_text": str(item.get("help") or "")[:2000] or None,
+                        "unit": str(item.get("unit") or "")[:64] or None,
+                        "metadata_state": "VERIFIED" if kind != "UNKNOWN" else "UNKNOWN",
+                    }
+                    if name in metadata and metadata[name] != entry:
+                        metadata[name] = {"metric_type": "UNKNOWN", "metadata_state": "CONFLICT"}
+                        warnings.append("同名指标元数据冲突，未选择其中一种类型。")
+                    else:
+                        metadata[name] = entry
+            except (DiagnosticSourceAdapterError, ValueError, TypeError):
+                warnings.append("目标元数据未核验；缺失类型、单位和帮助信息保持未知。")
+        return metadata, tuple(dict.fromkeys(warnings)), tuple(response_hashes)
 
     async def discover_instances(
         self, request: InstanceDiscoveryRequest

@@ -57,6 +57,10 @@ class AIOpsReconciler:
                     )
             if self._operations_knowledge_service is not None:
                 try:
+                    worked = await self._operations_knowledge_service.revalidate_next_case() or worked
+                except Exception as exc:
+                    logger.exception("AIOps 案例来源复核失败：type={}", type(exc).__name__)
+                try:
                     worked = (
                         await self._operations_knowledge_service.reconcile_next(
                             caller_service=self._caller_service

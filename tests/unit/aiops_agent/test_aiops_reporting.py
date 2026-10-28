@@ -1500,7 +1500,7 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         )
         self.assertEqual(report.ops_run_id, source_run_id)
         self.assertEqual(report.report_type, "COMPARISON")
-        self.assertEqual(report.result, "RESOLVED")
+        self.assertEqual(report.result, "INCONCLUSIVE")
         self.assertEqual("system:comparison.standard", report.template_id)
         self.assertEqual("1", report.template_version)
         self.assertEqual(report.baseline_start, baseline_start)
@@ -1525,8 +1525,11 @@ class ComparisonReportPublishingTest(unittest.TestCase):
         self.assertEqual(comparison_artifact.security_level, 1)
         self.assertEqual(report_artifact.security_level, 1)
         self.assertEqual(
-            comparison_artifact.payload_json["result"], "RESOLVED"
+            comparison_artifact.payload_json["result"], "INCONCLUSIVE"
         )
+        self.assertEqual(comparison_artifact.payload_json["direct_effect"], "ACHIEVED")
+        self.assertIsNone(comparison_artifact.payload_json["symptom_recovered"])
+        self.assertIsNone(comparison_artifact.payload_json["guardrails_passed"])
 
     def test_evidence_gap_forces_inconclusive_result(self) -> None:
         verification = ActionVerification(

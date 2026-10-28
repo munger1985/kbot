@@ -9256,6 +9256,78 @@
         "title": "KnowledgeRetrievalSemanticModelValidationPayload",
         "type": "object"
       },
+      "KnowledgeReuseFeedback": {
+        "additionalProperties": false,
+        "properties": {
+          "action_effect": {
+            "default": "NOT_ATTEMPTED",
+            "enum": [
+              "IMPROVED",
+              "UNCHANGED",
+              "DEGRADED",
+              "INCONCLUSIVE",
+              "NOT_ATTEMPTED"
+            ],
+            "title": "Action Effect",
+            "type": "string"
+          },
+          "applicability": {
+            "enum": [
+              "APPLICABLE",
+              "NOT_APPLICABLE",
+              "UNCERTAIN"
+            ],
+            "title": "Applicability",
+            "type": "string"
+          },
+          "asset_version_id": {
+            "format": "uuid",
+            "title": "Asset Version Id",
+            "type": "string"
+          },
+          "check_value": {
+            "default": "UNKNOWN",
+            "enum": [
+              "USEFUL",
+              "NOT_USEFUL",
+              "UNKNOWN"
+            ],
+            "title": "Check Value",
+            "type": "string"
+          },
+          "feedback_id": {
+            "format": "uuid",
+            "title": "Feedback Id",
+            "type": "string"
+          },
+          "notes": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Notes",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          }
+        },
+        "required": [
+          "feedback_id",
+          "asset_version_id",
+          "applicability",
+          "notes"
+        ],
+        "title": "KnowledgeReuseFeedback",
+        "type": "object"
+      },
       "LeadershipBriefing": {
         "additionalProperties": false,
         "description": "正式报告的领导简报投影；不展开 SID/SQL 明细。",
@@ -27877,6 +27949,57 @@
           }
         },
         "summary": "Get Operations Diagnosis Case",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/operations-knowledge/cases/{asset_id}/feedback": {
+      "post": {
+        "operationId": "record_operations_case_feedback_api_v1_apps_aiops_operations_knowledge_cases__asset_id__feedback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeReuseFeedback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Operations Case Feedback",
         "tags": [
           "AIOps App"
         ]
