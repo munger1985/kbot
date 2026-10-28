@@ -7,6 +7,80 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class NativeFieldLineage(BaseModel):
+    """固定模板的输出字段到原生计数器的映射，不替代原始数值或窗口证据。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    column: str = Field(min_length=1, max_length=128)
+    native_columns: tuple[str, ...] = Field(min_length=1, max_length=8)
+    native_unit: str = Field(min_length=1, max_length=64)
+    observed_unit: str = Field(min_length=1, max_length=64)
+    kind: Literal["ADDITIVE_COUNTER", "GAUGE", "MAXIMUM", "CUMULATIVE_AVERAGE"]
+    unit: str = Field(min_length=1, max_length=64)
+    scale_to_canonical: Decimal
+    projection: Literal["IDENTITY", "SUM", "ROUNDED"] = "IDENTITY"
+
+    @model_validator(mode="after")
+    def validate_scale(self):
+        scale = self.scale_to_canonical
+        if (not scale.is_finite() or scale <= 0 or len(scale.as_tuple().digits) > 32
+                or abs(scale.as_tuple().exponent) > 32):
+            raise ValueError("原生单位换算比例无效或超出预算")
+        if len(self.native_columns) != len(set(self.native_columns)):
+            raise ValueError("原生字段映射不能重复计算同一计数器")
+        if self.projection == "SUM" and len(self.native_columns) < 2:
+            raise ValueError("原生求和必须保留多个输入")
+        if self.projection != "SUM" and len(self.native_columns) != 1:
+            raise ValueError("非求和字段必须映射唯一原生输入")
+        return self
+
+
+class NativeSeriesScope(BaseModel):
+    """原始结果逐行的统计维度；缺失和数据库原生 NULL 保持不同。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    row_index: int = Field(ge=0)
+    dimensions: tuple[tuple[str, str | None], ...] = Field(max_length=16)
+    missing_dimensions: tuple[str, ...] = Field(max_length=16)
+
+    @model_validator(mode="after")
+    def validate_dimensions(self):
+        keys = [key for key, _ in self.dimensions]
+        if (len(keys) != len(set(keys)) or len(self.missing_dimensions) != len(set(self.missing_dimensions))
+                or set(keys) & set(self.missing_dimensions)):
+            raise ValueError("原生统计维度不能重复或同时标记为缺失")
+        return self
+
+
+class NativeMeasurementLineage(BaseModel):
+    """模板固定的逐字段血缘；不宣称已解决跨 Exporter 身份或可计算窗口增量。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["NATIVE_MEASUREMENT_LINEAGE.v1"] = "NATIVE_MEASUREMENT_LINEAGE.v1"
+    mapping_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    template_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    database_type: Literal["POSTGRESQL", "MYSQL", "ORACLE"]
+    relation: str = Field(min_length=1, max_length=256)
+    fields: tuple[NativeFieldLineage, ...] = Field(min_length=1, max_length=128)
+    series: tuple[NativeSeriesScope, ...] = Field(max_length=64)
+    reset_scope: Literal["DATABASE_STATISTICS", "STATEMENT_ENTRY", "CURSOR_LIFETIME"]
+    reset_context_columns: tuple[str, ...] = Field(max_length=8)
+    series_truncated: bool
+    comparable_window_verified: Literal[False] = False
+    exporter_identity_verified: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_budget(self):
+        if len({item.column for item in self.fields}) != len(self.fields):
+            raise ValueError("输出字段的原生映射不能重复")
+        if tuple(item.row_index for item in self.series) != tuple(range(len(self.series))):
+            raise ValueError("原生统计身份必须按原始行顺序保留")
+        return self
+
+
 class EvidenceProvenance(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -20,6 +94,7 @@ class EvidenceProvenance(BaseModel):
     window_start: datetime | None = None
     window_end: datetime | None = None
     quality_flags: tuple[str, ...] = ()
+    native_lineage: NativeMeasurementLineage | None = None
 
     @model_validator(mode="after")
     def validate_times(self):

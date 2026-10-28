@@ -4,6 +4,7 @@ from uuid import UUID
 
 from aiops_agent.application.diagnosis.monitoring_calculations import validate_monitoring_trace_sources
 from aiops_agent.application.diagnosis.provenance import database_provenance
+from aiops_agent.application.diagnosis.native_measurements import native_mapping_tool_ids
 from aiops_agent.contracts.investigation import InvestigationRecord
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact, TurnEvidenceGap
@@ -34,6 +35,9 @@ async def validate_investigation_sources(*, uow, run, payload):
             and not any(item.get("source_pagination") for item in record_payload.get("observations", ()))
             and not any(item.get("pagination") for item in record_payload.get("observations", ()))
             and not any(item.get("object_access") for item in record_payload.get("observations", ()))
+            and not any((item.get("provenance") or {}).get("native_lineage") for item in record_payload.get("observations", ()))
+            and not any((item.get("provenance") or {}).get("native_lineage") for item in payload.get("evidence", ()))
+            and not any(item.get("tool_id") in native_mapping_tool_ids() and item.get("source_id") != "prior_turn.sql_observation" for item in payload.get("evidence", ()))
             and not any(item.get("object_access") for item in payload.get("evidence", ()))
             and not any(item.get("object_access") for item in payload.get("evidence_gaps", ()))):
         return True
@@ -49,6 +53,8 @@ async def validate_investigation_sources(*, uow, run, payload):
         used = {ref.evidence_ref for graph in graphs for edge in graph.relationships for ref in (edge.anchor, edge.related)}
         used.update(ref.evidence_ref for graph in graphs for reference in graph.references for ref in reference.evidence_refs)
         used.update(fact.evidence_ref for fact in facts if fact.object_access or fact.pagination is not None)
+        used.update(fact.evidence_ref for fact in facts if fact.provenance is not None and fact.provenance.native_lineage is not None)
+        used.update(fact.evidence_ref for fact in facts if fact.tool_id in native_mapping_tool_ids() and fact.source_id != "prior_turn.sql_observation")
         used.update(fact.evidence_ref for fact in facts if fact.sql_plan is not None or fact.tool_id in {SQL_PLAN_TOOL_ID, CURSOR_PLAN_TOOL_ID, CURSOR_BINDS_TOOL_ID})
         used.update(plan.anchor_ref for plan in (record.sql_plan_assessments if record is not None else ()) if plan.anchor_ref is not None)
         used.update(ref for plan in (record.sql_plan_assessments if record is not None else ()) for ref in plan.bind_metadata_refs)
@@ -87,10 +93,12 @@ async def validate_investigation_sources(*, uow, run, payload):
                 and item.tool_id == fact.tool_id and item.status == "SUCCEEDED" and item.observation is not None]
             if len(outcomes) != 1 or fact.source_id != source.source_id:
                 return False
-            if fact.measurement_semantics != source.measurement_semantics or fact.presentation_kind != source.presentation_kind:
-                return False
             observation = outcomes[0].observation
+            semantics = "SNAPSHOT_DELTA" if observation.variant == "mysql_8_digest_window" and fact.tool_id == "db.sql.top_current" else source.measurement_semantics
+            if fact.measurement_semantics != semantics or fact.presentation_kind != source.presentation_kind:
+                return False
             if (fact.evidence_ref != f"artifact:{identity}#{fact.step_id}"
+                or fact.trust_level != "SOURCE_VERIFIED"
                 or str(observation.target_id) != str(run.target_id)
                 or (graphs and observation.db_type not in {graph.database_type for graph in graphs})
                 or fact.captured_at != observation.captured_at.isoformat()

@@ -132,7 +132,13 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
                            if _matches(mapped, item["subject_ref"], identity)] if role == "SUBJECT" else []
             if resolution["status"] == "COMPARISON" and len(subject_ids) != 1:
                 role = "SUBJECT_CANDIDATE" if _matches(mapped, subject, identity) else "CONTEXT"
-            records.append({"row_index": index, "role": role, "subject_ids": subject_ids, "fields": exact_wire(mapped)})
+            record = {"row_index": index, "role": role, "subject_ids": subject_ids, "fields": exact_wire(mapped)}
+            if role == "SUBJECT":
+                from aiops_agent.application.diagnosis.native_measurements import native_row_projection
+                native_values = native_row_projection(fact.provenance, row_index=index, row=mapped)
+                if native_values:
+                    record["native_measurements"] = native_values
+            records.append(record)
         subject_paths = {
             f"artifact:{fact.artifact_id}#/result/top_statements/{record['row_index']}/"
             for record in records if record["role"] == "SUBJECT"
