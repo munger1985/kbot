@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Agent 管理 · AIOps</title>
   <link rel="stylesheet" href="./css/aiops.css?v=20261020_3">
-  <link rel="stylesheet" href="./css/aiops-agents.css?v=20261029-ammolite-1">
+  <link rel="stylesheet" href="./css/aiops-agents.css?v=20261029-boundaries-1">
 </head>
 <body data-page="agents">
   <main class="ops-main aiops-agents-page">
@@ -18,12 +18,12 @@
     </div></div></section>
   </main>
   <dialog id="agent-dialog" class="agent-editor-panel" aria-labelledby="agent-dialog-title">
-    <header class="admin-drawer-header"><div><p class="eyebrow">AIOps Agent</p><h2 id="agent-dialog-title">新建 Agent</h2><p>按步骤配置业务范围、自动化策略和必需模型角色。</p></div><button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button></header>
+    <header class="admin-drawer-header"><div><p class="eyebrow">AIOps Agent</p><h2 id="agent-dialog-title">新建 Agent</h2><p>按步骤配置业务范围、诊断边界和必需模型角色。</p></div><button class="icon-button" data-close-dialog type="button" aria-label="关闭">×</button></header>
     <div class="agent-editor-layout">
       <nav class="agent-wizard-rail" aria-label="Agent 配置步骤">
         <button type="button" data-agent-step-button="1" class="active"><b>01</b><span><strong>角色信息</strong><small>名称与职责</small></span></button>
         <button type="button" data-agent-step-button="2"><b>02</b><span><strong>工作范围</strong><small>系统、能力与知识</small></span></button>
-        <button type="button" data-agent-step-button="3"><b>03</b><span><strong>自动化</strong><small>触发与执行边界</small></span></button>
+        <button type="button" data-agent-step-button="3"><b>03</b><span><strong>诊断边界</strong><small>监控、只读与变更</small></span></button>
         <button type="button" data-agent-step-button="4"><b>04</b><span><strong>模型与指令</strong><small>必需模型与图片能力</small></span></button>
         <button type="button" data-agent-step-button="5"><b>05</b><span><strong>确认配置</strong><small>核对并保存</small></span></button>
         <p><strong>五步配置</strong>模型角色单独配置并明确标注运行时必选条件。</p>
@@ -49,13 +49,37 @@
             </div>
           </article>
         </section>
-        <section class="agent-step-panel" data-agent-step="3" hidden><header><p class="eyebrow">STEP 03</p><h3>自动化</h3><span>自动触发不影响聊天、知识问答和报告查询。</span></header><div class="drawer-form-section execution-policy-form">
-          <section class="dq-form-section"><header><span>01</span><div><h3>诊断边界</h3><p>这些规则只作用于当前 Agent，用于控制自动诊断范围和告警触发频率。</p></div></header>
-            <label class="check-field"><input name="readonly_database_enabled" type="checkbox" checked><span class="check-field-copy"><strong>允许只读数据库诊断</strong><small>允许 AIOps 使用目标中受管的只读凭据采集诊断证据，不执行变更语句。</small></span></label>
-            <div class="dq-form-grid"><label class="control-field"><span class="field-label">自动观察最低告警级别</span><select name="auto_observe_min_severity"><option value="INFO">信息及以上</option><option value="WARNING">警告及以上</option><option value="HIGH">高危及以上</option><option value="CRITICAL" selected>仅严重告警</option></select><small class="field-help">达到该级别的监控告警才允许自动创建诊断任务。</small></label><label class="control-field"><span class="field-label">自动观察最低 Target 重要级</span><select name="auto_observe_min_target_level"><option value="1">L1 及以上</option><option value="2">L2 及以上</option><option value="3">L3 及以上</option><option value="4">L4 及以上</option><option value="5">仅 L5</option></select><small class="field-help">只有重要级达到门槛的 Target 告警才会自动创建诊断任务。</small></label><label class="control-field"><span class="field-label">相同告警冷却时间（秒）</span><input name="alert_cooldown_seconds" required type="number" min="0" max="86400" step="1" value="900"><small class="field-help">同一目标和告警指纹在此时间内不会重复创建诊断任务；0 表示不冷却。</small></label></div>
-          </section>
-          <section class="dq-form-section"><header><span>02</span><div><h3>变更执行</h3><p>决定 AIOps 是否可以从诊断建议进入受控执行流程。</p></div></header><label class="check-field"><input name="allow_agent_execution" type="checkbox"><span class="check-field-copy"><strong>允许 Agent 执行变更</strong><small>开启后仍需目标授权、可用执行凭据，并对每条命令进行人工审批；关闭时只生成建议。</small></span></label></section>
-        </div></section>
+        <section class="agent-step-panel" data-agent-step="3" hidden><header><p class="eyebrow">STEP 03</p><h3>诊断边界</h3><span>监控始终开启；只读和变更独立选择，实际权限以 Target 为上限。</span></header><div class="drawer-form-section execution-policy-form">
+  <section class="dq-form-section">
+    <header><span>01</span><div><h3>监控分析</h3><p>基础能力，始终启用；仅使用工作范围内已绑定的监控源。</p></div></header>
+    <label class="check-field"><input type="checkbox" checked disabled /><span class="check-field-copy"><strong>监控分析（必选）</strong><small>读取指标、告警与趋势，不连接业务数据库。</small></span></label>
+  </section>
+
+  <section class="dq-form-section">
+    <header><span>02</span><div><h3>只读数据库</h3><p>可选扩展，与允许变更独立选择。</p></div></header>
+    <label class="check-field">
+      <input name="readonly_database_enabled" type="checkbox" />
+      <span class="check-field-copy"><strong>允许只读数据库诊断</strong><small>使用 Target 已配置的只读账号读取计划、统计和运行证据；账号与连接在业务系统资源中维护。</small></span>
+    </label>
+  </section>
+
+  <section class="dq-form-section">
+    <header><span>03</span><div><h3>允许变更</h3><p>Agent 不能扩大 Target 授权，Target 只读时禁止变更。</p></div></header>
+    <label class="check-field">
+      <input name="allow_agent_execution" type="checkbox" />
+      <span class="check-field-copy"><strong>允许 Agent 执行变更</strong><small>仍需资源动作与对象范围授权、Target 变更开关和执行账号、平台权限及逐次审批；不会自动开通权限。只读前置核验缺授权时阻止执行，不使用变更账号替代诊断账号。</small></span>
+    </label>
+  </section>
+
+  <details class="agent-alert-rules">
+    <summary>告警触发规则</summary>
+    <div class="dq-form-grid">
+      <label class="control-field"><span class="field-label">自动观察最低告警级别</span><select name="auto_observe_min_severity"><option value="INFO">信息及以上</option><option value="WARNING">警告及以上</option><option value="HIGH">高危及以上</option><option value="CRITICAL">仅严重告警</option></select><small class="field-help">达到该级别的监控告警才允许自动创建诊断任务。</small></label>
+      <label class="control-field"><span class="field-label">自动观察最低 Target 重要级</span><select name="auto_observe_min_target_level"><option value="1">L1 及以上</option><option value="2">L2 及以上</option><option value="3">L3 及以上</option><option value="4">L4 及以上</option><option value="5">仅 L5</option></select><small class="field-help">只有重要级达到门槛的 Target 告警才会自动创建诊断任务。</small></label>
+      <label class="control-field"><span class="field-label">相同告警冷却时间（秒）</span><input name="alert_cooldown_seconds" required type="number" min="0" max="86400" step="1" /><small class="field-help">同一目标和告警指纹在此时间内不会重复创建诊断任务；0 表示不冷却。</small></label>
+    </div>
+  </details>
+<section id="agent-boundary-resources" class="agent-boundary-resources" aria-label="Target 配置摘要"></section></div></section>
         <section class="agent-step-panel" data-agent-step="4" hidden><header><p class="eyebrow">STEP 04</p><h3>模型与指令</h3><span>运行中的 Agent 必须配置规划和回答组织模型；启用智能诊断时还必须配置诊断模型。</span></header><div class="drawer-form-section"><div class="form-grid-two">
           <label class="control-field"><span class="field-label">规划模型（运行必选）</span><select id="agent-planner-model" name="planner_model_id"></select></label><label class="control-field"><span class="field-label">回答组织模型（运行必选）</span><select id="agent-composer-model" name="composer_model_id"></select></label><label class="control-field"><span id="agent-diagnosis-label" class="field-label">诊断模型（智能诊断必选）</span><select id="agent-model" name="diagnosis_model_id"></select></label><label class="control-field"><span class="field-label">会话摘要模型（可选）</span><select id="agent-memory-model" name="memory_model_id"></select></label><label class="control-field"><span class="field-label">OCR 模型（可选）</span><select id="agent-ocr-model" name="ocr_model_id"></select></label><label class="control-field"><span class="field-label">VLM 模型（可选）</span><select id="agent-vlm-model" name="vlm_model_id"></select></label><label class="control-field form-span"><span class="field-label">专业指令（可选）</span><textarea name="instruction" maxlength="32000" rows="5" placeholder="补充诊断边界、关注重点或输出要求"></textarea></label>
         </div></div></section>
@@ -69,6 +93,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-agents.js?v=20261029-read-existing-3"></script>
+  <script src="./js/aiops-agents.js?v=20261029-boundaries-1"></script>
 </body>
 </html>

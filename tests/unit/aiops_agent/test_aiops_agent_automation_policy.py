@@ -79,18 +79,19 @@ def test_real_create_edit_freezes_flags_and_exact_cooldown(seconds):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("agent_allows,binding_allows,expected", [
-    (False, True, ["AGENT_MUTATION_DISABLED"]),
-    (True, False, ["BINDING_MUTATION_DISABLED"]),
-    (True, True, []),
+@pytest.mark.parametrize("agent_allows,binding_allows,target_allows,expected", [
+    (False, True, True, ["AGENT_MUTATION_DISABLED"]),
+    (True, False, True, ["BINDING_MUTATION_DISABLED"]),
+    (True, True, True, []),
+    (True, True, False, ["TARGET_CONTROLLED_CHANGE_DISABLED"]),
 ])
-def test_real_run_creation_keeps_agent_opt_out_and_resource_authorization(agent_allows, binding_allows, expected):
+def test_real_run_creation_keeps_agent_opt_out_and_resource_authorization(agent_allows, binding_allows, target_allows, expected):
     now = datetime.now(UTC)
     agent_id, version_id, target_id, policy_id = uuid7(), uuid7(), uuid7(), uuid7()
     target = SimpleNamespace(target_id=target_id, row_version=1, db_type="ORACLE", domain_id=100, display_name="生产库",
         version_code="19c", environment="PROD", db_role="PRIMARY", deployment_type="SINGLE_INSTANCE", rac_node_number=None,
         connectivity_status="CONNECTED", endpoint_json={}, diagnostic_credential_id=None, execution_credential_id=uuid7(),
-        readonly_connection_enabled=True, controlled_change_enabled=True, capabilities_json={})
+        readonly_connection_enabled=True, controlled_change_enabled=target_allows, capabilities_json={})
     binding = SimpleNamespace(binding_id=uuid7(), agent_id=agent_id, policy_id=policy_id, status="ACTIVE", row_version=1,
         allow_mutation=binding_allows, allowed_actions_json=["db.session.terminate"])
     policy = SimpleNamespace(policy_id=policy_id, status="ACTIVE", rules_json={"allow_agent_execution": agent_allows},

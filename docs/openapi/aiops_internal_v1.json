@@ -19228,6 +19228,52 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/internal/v1/aiops/agents/boundary-resources": {
+      "get": {
+        "operationId": "boundary_resources_internal_v1_aiops_agents_boundary_resources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "business_system_ids",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 32,
+              "title": "Business System Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Boundary Resources",
+        "tags": [
+          "AIOps Agents"
+        ]
+      }
+    },
     "/internal/v1/aiops/config/business-system-drafts": {
       "get": {
         "operationId": "list_business_system_drafts_internal_v1_aiops_config_business_system_drafts_get",

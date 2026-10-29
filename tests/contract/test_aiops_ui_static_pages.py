@@ -1504,7 +1504,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('KBotAIOpsAuth.request("/api/v1/model-catalog")', script)
         self.assertNotIn("/agent-model-catalog", script)
         self.assertNotIn('models: modelId ? { diagnosis:', script)
-        self.assertIn("自动触发不影响聊天、知识问答和报告查询", page)
+        self.assertIn("实际权限以 Target 为上限", page)
         self.assertNotIn('id="agent-binding-summary"', page)
         self.assertIn('class="agent-step-panel"', page)
         self.assertIn('class="agent-picker"', page)

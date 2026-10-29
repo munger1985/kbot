@@ -203,7 +203,7 @@ class AIOpsResourceControlledActionExecution(_Payload):
 
 
 class AIOpsAgentCreatePayload(_Payload):
-    readonly_database_enabled: bool = True
+    readonly_database_enabled: bool = False
     allow_agent_execution: bool = False
     alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     display_name: str = Field(min_length=1, max_length=256)
@@ -897,6 +897,17 @@ async def action_catalog(resource_id: UUID, request: Request):
     await _require(request, "aiops:agent_manage")
     return await _client(request).get_private_action_catalog(
         resource_id, auth_context=request.state.auth_context
+    )
+
+
+@router.get("/agents/boundary-resources")
+async def agent_boundary_resources(
+    request: Request,
+    business_system_ids: list[UUID] = Query(default=[], max_length=32),
+):
+    await _require(request, "aiops:agent_manage")
+    return await _client(request).agent_boundary_resources(
+        business_system_ids, auth_context=request.state.auth_context,
     )
 
 

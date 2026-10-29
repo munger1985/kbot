@@ -24,6 +24,52 @@
     oci: "API 调用 · OCI",
   };
 
+  const boundaryStates = new Map();
+  const boundaryKey = (ids) => [...new Set(ids)].sort().join(",");
+  const boundaryLabels = (agent) => ["监控分析", ...(agent.readonly_database_enabled !== false ? ["只读数据库"] : []), ...(agent.allow_agent_execution === true ? ["允许变更"] : [])];
+  function configurationStatus(ids, field) {
+    if (!ids.length) return "请先选择业务系统";
+    const state = boundaryStates.get(boundaryKey(ids));
+    if (!state || state.status === "loading") return "配置核验中";
+    if (state.status === "error") return "配置状态未知";
+    if (!state.items.length) return "尚无数据库 Target";
+    return `${state.items.filter(item => item[field] === true).length}/${state.items.length} 个 Target 配置就绪`;
+  }
+  async function loadBoundary(ids, force = false) {
+    const key = boundaryKey(ids);
+    if (!key || (!force && boundaryStates.has(key))) return;
+    const requestState = { status: "loading", items: [] };
+    boundaryStates.set(key, requestState);
+    try {
+      const query = new URLSearchParams();
+      key.split(",").forEach(id => query.append("business_system_ids", id));
+      const result = await KBotAIOpsAuth.request(`${api}/agents/boundary-resources?${query}`);
+      if (!Array.isArray(result.items)) throw new Error("配置摘要无效");
+      if (boundaryStates.get(key) === requestState) boundaryStates.set(key, { status: "ready", items: result.items });
+    } catch {
+      if (boundaryStates.get(key) === requestState) boundaryStates.set(key, { status: "error", items: [] });
+    }
+    renderRows();
+    renderBoundaryResources();
+  }
+  function renderBoundaryResources() {
+    if (!document.getElementById("agent-dialog").open) return;
+    const ids = [...selectionSets.systems];
+    const form = document.getElementById("agent-form");
+    const state = boundaryStates.get(boundaryKey(ids));
+    const readonly = form.elements.readonly_database_enabled.checked;
+    const change = form.elements.allow_agent_execution.checked;
+    const gaps = (item) => [
+      !item.target_enabled && "Target 未启用",
+      !item.scope_enabled && "业务系统未上线",
+      !item.monitoring_configured && "监控绑定未就绪",
+      readonly && !item.readonly_configured && "只读连接或凭据未就绪",
+      change && !item.change_configured && "Target 未允许变更或执行凭据未就绪",
+    ].filter(Boolean).join("；") || "所选边界的 Target 配置已就绪";
+    document.getElementById("agent-boundary-resources").innerHTML = `<h4>工作范围内的 Target 配置</h4><p>账号和连接由业务系统资源（Target）维护；配置就绪不代表连接健康或动作可执行。</p><p>监控：${configurationStatus(ids, "monitoring_configured")}</p>${readonly ? `<p>只读：${configurationStatus(ids, "readonly_configured")}</p>` : ""}${change ? `<p>变更：${configurationStatus(ids, "change_configured")}</p><p class="agent-inline-note">${escape(document.getElementById("agent-controlled-change-note").textContent)}</p>` : ""}<ul>${values(state?.items).map(item => `<li><strong>${escape(item.display_name)} · ${escape(item.db_type)}</strong><small>${escape(gaps(item))}</small><a href="business-system-workspace.html?view=readonly&id=${encodeURIComponent(item.business_system_ids[0])}" target="_blank" rel="noopener">查看业务系统资源 ↗</a></li>`).join("")}</ul><button id="retry-boundary" class="secondary-button" type="button" ${!ids.length || state?.status === "loading" ? "disabled" : ""}>重新核验配置</button>`;
+    document.getElementById("retry-boundary")?.addEventListener("click", () => { loadBoundary(ids, true); });
+  }
+
   let agents = [];
   let systems = [];
   let models = [];
@@ -79,7 +125,7 @@
   function renderResources() {
     document.getElementById("agent-capabilities").innerHTML = capabilityCatalog
       .filter(([key]) => queryCapabilities.includes(key))
-      .map(([key, label, help]) => `<label><input type="checkbox" name="capabilities" value="${key}"><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
+      .map(([key, label, help]) => `<label><input type="checkbox" name="capabilities" value="${key}" ${key === "MONITORING_QUERY" ? "checked disabled" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
     ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答组织模型" : id === "agent-model" ? "不启用主动诊断" : "请选择"));
     renderModelOptions("agent-ocr-model", 6, "不启用 OCR");
     renderModelOptions("agent-vlm-model", 5, "不启用 VLM");
@@ -107,6 +153,7 @@
 
   function renderSelectionSummaries() {
     renderSelectionSummary("systems", "agent-business-system-summary");
+    if (document.getElementById("agent-dialog").open) { renderBoundaryResources(); void loadBoundary([...selectionSets.systems]); }
     renderSelectionSummary("knowledgeBases", "agent-knowledge-base-summary");
     renderSelectionSummary("tags", "agent-knowledge-tag-summary");
     const count = selectionSets.tags.size;
@@ -136,7 +183,7 @@
       const capabilities = values(agent.capabilities).map((item) => capabilityLabels[item] || item);
       const status = { ACTIVE: ["运行中", "status-success"], DRAFT: ["草稿", "status-warning"], DISABLED: ["已停用", "status-muted"] }[agent.status] || [agent.status, "status-muted"];
       const button = (action, label, danger = false) => `<button type="button" class="${danger ? "danger-row-action" : "row-action"}" data-agent-action="${action}" data-agent-id="${escape(agent.agent_id)}" ${saving ? "disabled" : ""}>${label}</button>`;
-      return `<article class="management-catalog-card"><header><div><p class="eyebrow">AIOPS AGENT</p><h3>${escape(agent.display_name)}</h3></div><span class="status-pill ${status[1]}">${escape(status[0])}</span></header><p>${escape(agent.description || "尚未填写 Agent 说明。")}</p><dl><div><dt>业务系统</dt><dd>${names.length} 个</dd></div><div><dt>能力范围</dt><dd class="agent-scope" title="${escape(capabilities.join("、"))}"><span>${escape(capabilities.slice(0, 3).join("、") || "未配置")}</span>${capabilities.length > 3 ? `<small>+${capabilities.length - 3}</small>` : ""}</dd></div></dl><footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">${button("edit", "编辑")}${agent.status === "ACTIVE" ? button("disable", "停用", true) : ["DRAFT", "DISABLED"].includes(agent.status) ? button("enable", "启用") : ""}</div><div class="management-catalog-overflow"><button type="button" class="row-action management-catalog-more" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden>${button("delete", "删除 Agent", true)}</div></div></footer></article>`;
+      return `<article class="management-catalog-card"><header><div><p class="eyebrow">AIOPS AGENT</p><h3>${escape(agent.display_name)}</h3></div><span class="status-pill ${status[1]}">${escape(status[0])}</span></header><p>${escape(agent.description || "尚未填写 Agent 说明。")}</p><dl><div><dt>业务系统</dt><dd>${names.length} 个</dd></div><div><dt>能力范围</dt><dd class="agent-scope" title="${escape(capabilities.join("、"))}"><span>${escape(capabilities.slice(0, 3).join("、") || "未配置")}</span>${capabilities.length > 3 ? `<small>+${capabilities.length - 3}</small>` : ""}</dd></div></dl><div class="agent-boundary-badges" aria-label="已选诊断边界">${boundaryLabels(agent).map(label => `<span class="status-pill status-muted">${escape(label)}</span>`).join("")}</div><p class="agent-boundary-status">监控：${configurationStatus(values(agent.allowed_business_system_ids), "monitoring_configured")}${agent.readonly_database_enabled !== false ? `<br>只读：${configurationStatus(values(agent.allowed_business_system_ids), "readonly_configured")}` : ""}${agent.allow_agent_execution === true ? `<br>变更：${configurationStatus(values(agent.allowed_business_system_ids), "change_configured")} · 仍需动作授权与审批` : ""}</p><footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">${button("edit", "编辑")}${agent.status === "ACTIVE" ? button("disable", "停用", true) : ["DRAFT", "DISABLED"].includes(agent.status) ? button("enable", "启用") : ""}</div><div class="management-catalog-overflow"><button type="button" class="row-action management-catalog-more" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden>${button("delete", "删除 Agent", true)}</div></div></footer></article>`;
     }).join("");
     body.querySelectorAll("[data-agent-action]").forEach((button) => {
       button.onclick = () => {
@@ -165,6 +212,7 @@
   }
 
   function renderCapabilityGroups() {
+    document.querySelector('[name="capabilities"][value="MONITORING_QUERY"]').checked = true;
     const capabilities = selected("capabilities");
     const count = queryCapabilities.filter((key) => capabilities.includes(key)).length;
     document.getElementById("agent-query-capabilities").checked = count === queryCapabilities.length;
@@ -185,7 +233,7 @@
   }
 
   function resetChecks() {
-    document.querySelectorAll('#agent-form input[type="checkbox"]').forEach((input) => { input.checked = false; });
+    document.querySelectorAll('#agent-form input[type="checkbox"]').forEach((input) => { input.checked = input.disabled; });
     Object.values(selectionSets).forEach((selection) => selection.clear());
     renderSelectionSummaries();
   }
@@ -266,6 +314,7 @@
     const capabilities = selected("capabilities").map((item) => capabilityLabels[item] || item);
     const knowledgeEnabled = document.getElementById("agent-form").elements.knowledge_enabled.checked;
     document.getElementById("agent-review").innerHTML = [
+      `<article><span>已选诊断边界</span><strong>${escape(boundaryLabels({ readonly_database_enabled: document.getElementById("agent-form").elements.readonly_database_enabled.checked, allow_agent_execution: document.getElementById("agent-form").elements.allow_agent_execution.checked }).join("、"))}</strong><small>实际执行以 Target、动作授权和审批为准</small></article>`,
       `<article><span>业务系统</span><strong>${selectionSets.systems.size} 个</strong><small>${escape(selectionRows("systems").map((item) => item.title).join("、") || "未选择")}</small></article>`,
       `<article><span>能力范围</span><strong>${capabilities.length} 项</strong><small>${escape(capabilities.join("、") || "未启用")}</small></article>`,
       `<article><span>运维知识</span><strong>${knowledgeEnabled ? `${selectionSets.knowledgeBases.size} 个知识库` : "未启用"}</strong><small>${knowledgeEnabled ? `最高 L${escape(document.getElementById("agent-form").elements.max_security_level.value)} · ${selectionSets.tags.size ? `${selectionSets.tags.size} 个标签` : "全部标签"}` : ""}</small></article>`,
@@ -287,6 +336,7 @@
     document.getElementById("agent-next-step").hidden = currentStep === 5;
     document.getElementById("save-agent").hidden = currentStep !== 5;
     if (currentStep === 5) renderReview();
+    if (currentStep === 3) { renderBoundaryResources(); void loadBoundary([...selectionSets.systems]); }
   }
 
   function nextStep() {
@@ -360,7 +410,9 @@
     setChecked("capabilities", ["RESOURCE_CATALOG_QUERY", "KNOWLEDGE_QA", "MONITORING_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY", "ACTIVE_DIAGNOSIS"]);
     setChecked("knowledge_source_kinds", ["MANUAL", "DIAGNOSIS_CASE"]);
     form.elements.knowledge_enabled.checked = true;
-    form.elements.readonly_database_enabled.checked = true;
+    form.elements.readonly_database_enabled.checked = false;
+    form.elements.auto_observe_min_severity.value = "CRITICAL";
+    form.elements.auto_observe_min_target_level.value = "1";
     form.elements.allow_agent_execution.checked = false;
     form.elements.alert_cooldown_seconds.value = "900";
     form.elements.max_security_level.value = "3";
@@ -370,6 +422,7 @@
     setStep(1);
     showResult();
     document.getElementById("agent-dialog").showModal();
+    void loadBoundary([...selectionSets.systems], true);
   }
 
   async function openEdit(agentId) {
@@ -409,6 +462,7 @@
     setStep(1);
     showResult();
     document.getElementById("agent-dialog").showModal();
+    void loadBoundary([...selectionSets.systems], true);
   }
 
   function imageCapability(form, name) {
@@ -417,7 +471,7 @@
   }
 
   function buildPayload(form) {
-    const capabilityValues = selected("capabilities");
+    const capabilityValues = [...new Set([...selected("capabilities"), "MONITORING_QUERY"])];
     if (editing && values(editing.capabilities).includes("CONTROLLED_CHANGE")) capabilityValues.push("CONTROLLED_CHANGE");
     const knowledgeEnabled = form.elements.knowledge_enabled.checked;
     const modelsPayload = {
@@ -546,6 +600,7 @@
         KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
       ]);
       agents = values(agentRows);
+      boundaryStates.clear();
       systems = values(systemPage?.items);
       models = values(modelRows);
       knowledgeTags = values(tagPage?.items || tagPage);
@@ -554,6 +609,7 @@
       const environments = [...new Set(systems.filter((item) => item.status === "ENABLED").map((item) => item.environment).filter(Boolean))].sort((left, right) => String(left).localeCompare(String(right), "zh"));
       document.getElementById("agent-picker-environment").innerHTML = '<option value="">全部环境</option>' + environments.map((item) => `<option value="${escape(item)}">${escape(item)}</option>`).join("");
       renderRows();
+      for (const agent of agents) void loadBoundary(values(agent.allowed_business_system_ids));
       catalogReady = true;
     } catch (error) {
       pageError.textContent = `Agent 加载失败：${error.message}`;
@@ -585,7 +641,7 @@
       document.querySelectorAll('[name="capabilities"]').forEach((input) => { if (queryCapabilities.includes(input.value)) input.checked = event.target.checked; });
       renderCapabilityGroups();
     };
-    document.getElementById("agent-form").addEventListener("change", renderCapabilityGroups);
+    document.getElementById("agent-form").addEventListener("change", () => { renderCapabilityGroups(); renderBoundaryResources(); });
     document.addEventListener("click", (event) => { if (!event.target.closest(".management-catalog-overflow")) closeMenus(); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenus(); });
     document.getElementById("agent-form").onsubmit = save;

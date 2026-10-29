@@ -40,7 +40,8 @@ async def validate_diagnostic_fence(*, uow, grant, now):
     if task_deadline(task) <= now:
         raise ExecutionFenceError("EXECUTION_DEADLINE_EXCEEDED")
     target = await uow.targets.get_scoped(target_id=grant.target_id, domain_id=int(grant.domain_id), lock=True)
-    if (target is None or int(target.row_version) != int(grant.target_row_version)
+    if (target is None or target.status != "ENABLED" or not target.readonly_connection_enabled
+        or int(target.row_version) != int(grant.target_row_version)
         or target.diagnostic_credential_id != grant.diagnostic_credential_id):
         raise ExecutionFenceError("EXECUTION_AUTHORIZATION_REVOKED")
     return run, task, target

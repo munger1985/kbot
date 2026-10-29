@@ -57,7 +57,8 @@ class CredentialIssuanceService:
                 target = await uow.targets.get_scoped(
                     target_id=grant.target_id, domain_id=int(grant.domain_id), lock=True,
                 )
-                if (target is None or int(target.row_version) != int(target_version)
+                if (target is None or target.status != "ENABLED" or not target.controlled_change_enabled
+                    or int(target.row_version) != int(target_version)
                     or target.execution_credential_id != credential_id):
                     raise CredentialIssueError("CREDENTIAL_GRANT_INVALID")
             existing = await uow.inbox.get_by_message(source_system="AIOPS_CREDENTIAL_ISSUE", message_key=grant_hash, lock=True)

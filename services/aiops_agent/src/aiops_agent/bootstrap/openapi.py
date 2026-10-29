@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException
 
 from aiops_agent.api.management import router as internal_config_router
+from aiops_agent.api.agents.routes import boundary_router as internal_agent_boundaries_router
 from aiops_agent.api.monitoring import (
     router as internal_monitoring_router,
     target_router as internal_target_monitoring_router,
@@ -48,6 +49,9 @@ def create_internal_contract_app() -> FastAPI:
     """创建 AIOps API 内部调用契约快照 App。"""
     app = FastAPI(title="KBot AIOps Internal Contract", version="1.0.0")
     app.include_router(internal_config_router)
+    app.include_router(
+        internal_agent_boundaries_router, prefix="/internal/v1/aiops/agents", tags=["AIOps Agents"],
+    )
     app.include_router(internal_monitoring_router)
     app.include_router(internal_target_monitoring_router)
     app.include_router(internal_runtime_router)

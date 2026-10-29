@@ -232,7 +232,7 @@ def issuance_fixture():
     run = SimpleNamespace(ops_run_id=grant.run_id, tenant_id=grant.tenant_id, domain_id=grant.domain_id,
         target_id=grant.target_id, cancel_requested_at=None, status="RUNNING",
         deadline_at=stamp + timedelta(seconds=60), workflow_kind="CHAT_TURN")
-    target = SimpleNamespace(row_version=1, diagnostic_credential_id=grant.diagnostic_credential_id)
+    target = SimpleNamespace(row_version=1, status="ENABLED", readonly_connection_enabled=True, diagnostic_credential_id=grant.diagnostic_credential_id)
     uow = SimpleNamespace(resources=resource_repository(stamp),
         runs=SimpleNamespace(get_run=AsyncMock(return_value=run), get_task=AsyncMock(return_value=task)),
         targets=SimpleNamespace(get_fully_scoped=AsyncMock(return_value=target), get_scoped=AsyncMock(return_value=target)),

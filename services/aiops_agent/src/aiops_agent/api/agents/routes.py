@@ -3,7 +3,7 @@
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiops_agent.api.dependencies import get_aiops_auth_context, require_service_scope
@@ -20,6 +20,7 @@ from platform_core.contracts import AuthContext
 
 
 router = APIRouter(prefix="/internal/v1/aiops/agents", tags=["AIOps Agents"])
+boundary_router = APIRouter()
 
 
 class _Request(BaseModel):
@@ -27,7 +28,7 @@ class _Request(BaseModel):
 
 
 class AgentCreateRequest(_Request):
-    readonly_database_enabled: bool = True
+    readonly_database_enabled: bool = False
     allow_agent_execution: bool = False
     alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     display_name: str = Field(min_length=1, max_length=256)
@@ -161,6 +162,25 @@ async def create_agent(
         )
     except AIOpsAgentError as exc:
         _raise(exc)
+
+
+@boundary_router.get("/boundary-resources")
+async def boundary_resources(
+    request: Request,
+    business_system_ids: list[UUID] = Query(default=[], max_length=32),
+    context: AuthContext = Depends(get_aiops_auth_context),
+):
+    domain_id, _ = _scope(request, context)
+    try:
+        return await request.app.state.agent_service.boundary_resources(
+            domain_id=domain_id,
+            business_system_ids=tuple(business_system_ids),
+        )
+    except AIOpsAgentError as exc:
+        _raise(exc)
+
+
+router.include_router(boundary_router)
 
 
 @router.get("/{agent_id}")

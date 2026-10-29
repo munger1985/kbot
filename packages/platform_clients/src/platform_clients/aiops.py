@@ -2199,6 +2199,14 @@ class AIOpsManagementClient(_BaseAIOpsClient):
         )
 
 
+    async def agent_boundary_resources(self, business_system_ids, *, auth_context: AuthContext):
+        """读取业务系统内无秘密的 Target 配置摘要。"""
+        query = "&".join(f"business_system_ids={UUID(str(item))}" for item in business_system_ids)
+        return await self._json(
+            "GET", f"{INTERNAL_API_V1}/aiops/agents/boundary-resources?{query}",
+            auth_context=auth_context,
+        )
+
     async def list_private_agents(self, *, auth_context: AuthContext):
         return await self._json(
             "GET", f"{INTERNAL_API_V1}/aiops/agents",

@@ -254,6 +254,16 @@ class ApprovalServiceTest(unittest.TestCase):
         service._snapshot = AsyncMock(  # type: ignore[method-assign]
             return_value=SimpleNamespace(target_version=3)
         )
+        target.controlled_change_enabled = False
+        with self.assertRaises(AIOpsApplicationError):
+            asyncio.run(service.approve_proposal(
+                proposal_id=proposal_id, domain_id=200, actor_id="portal:user-1",
+                command=ApprovalCommand(expected_row_version=1, expected_proposal_hash="a" * 64, note="核验 Target 上限"),
+                idempotency_key="rejected-by-target", trace_id="trace-target-denied",
+            ))
+        changes.add_approval_token.assert_not_awaited()
+        changes.add_execution.assert_not_awaited()
+        target.controlled_change_enabled = True
         receipt = asyncio.run(
             service.approve_proposal(
                 proposal_id=proposal_id,
@@ -371,6 +381,7 @@ class ExecutionClaimTest(unittest.TestCase):
             domain_id=200,
             execution_credential_id=uuid7(),
             row_version=7,
+            controlled_change_enabled=True,
             db_type="MYSQL",
             version_code="8.0.36",
             capabilities_json={"session_management": True},
@@ -442,6 +453,14 @@ class ExecutionClaimTest(unittest.TestCase):
             executor_instance_id="executor-01",
             action_catalog_hash=registry.catalog_hash,
         )
+        target.controlled_change_enabled = False
+        with self.assertRaises(AIOpsApplicationError):
+            asyncio.run(service.claim_execution(
+                execution_id=execution_id, command=command, trace_id="trace-target-denied",
+            ))
+        self.assertEqual(token.status, "ISSUED")
+        uow.commit.assert_not_awaited()
+        target.controlled_change_enabled = True
         first = asyncio.run(
             service.claim_execution(
                 execution_id=execution_id,

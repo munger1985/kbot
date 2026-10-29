@@ -45,7 +45,7 @@ def service_fixture():
 @pytest.mark.parametrize("mode", [
     "valid", "cancel", "terminal", "run_scope", "run_target", "run_deadline",
     "task_run", "task_status", "task_token", "task_lease", "task_budget",
-    "target_version", "credential", "lease_missing", "lease_id", "lease_run",
+    "target_version", "target_disabled", "target_readonly_disabled", "credential", "lease_missing", "lease_id", "lease_run",
     "lease_target", "lease_source_kind", "lease_source", "released", "token",
     "receipt_deadline", "receipt_grace", "expired_grant", "audience",
 ])
@@ -63,6 +63,8 @@ def test_service_checks_current_persisted_fences_without_issuing_credentials_or_
         if mode == "task_lease": f.task.lease_until = now() - timedelta(seconds=1)
         if mode == "task_budget": f.task.execution_deadline_at = now() - timedelta(seconds=1)
         if mode == "target_version": f.target.row_version += 1
+        if mode == "target_disabled": f.target.status = "DISABLED"
+        if mode == "target_readonly_disabled": f.target.readonly_connection_enabled = False
         if mode == "credential": f.target.diagnostic_credential_id = uuid7()
         if mode == "lease_missing": f.uow.resources.get_lease.return_value = None
         if mode == "lease_id": f.lease.lease_id = uuid7()

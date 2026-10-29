@@ -327,6 +327,7 @@ class AIOpsChangeService(ChangeEffectVerification):
             if (
                 target is None
                 or target.status != "ENABLED"
+                or not target.controlled_change_enabled
                 or target.connectivity_status
                 not in {"CONNECTED", "DEGRADED"}
                 or not target.execution_credential_id
@@ -868,6 +869,7 @@ class AIOpsChangeService(ChangeEffectVerification):
             if (
                 target is None
                 or target.status != "ENABLED"
+                or not target.controlled_change_enabled
                 or target.connectivity_status
                 not in {"CONNECTED", "DEGRADED"}
                 or not target.execution_credential_id

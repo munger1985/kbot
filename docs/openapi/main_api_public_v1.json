@@ -133,7 +133,7 @@
             "type": "object"
           },
           "readonly_database_enabled": {
-            "default": true,
+            "default": false,
             "title": "Readonly Database Enabled",
             "type": "boolean"
           },
@@ -23502,6 +23502,52 @@
           }
         },
         "summary": "Create Agent",
+        "tags": [
+          "AIOps App"
+        ]
+      }
+    },
+    "/api/v1/apps/aiops/agents/boundary-resources": {
+      "get": {
+        "operationId": "agent_boundary_resources_api_v1_apps_aiops_agents_boundary_resources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "business_system_ids",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 32,
+              "title": "Business System Ids",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Agent Boundary Resources",
         "tags": [
           "AIOps App"
         ]

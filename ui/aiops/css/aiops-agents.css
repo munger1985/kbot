@@ -368,6 +368,7 @@ body[data-page="agents"] .admin-drawer-header .icon-button:focus-visible { borde
 .agent-form input[type="checkbox"] { width:16px;height:16px;min-height:0;accent-color:var(--accent); }
 .form-span { grid-column:1/-1; }
 .execution-policy-form { display:grid;gap:16px; }
+.agent-boundary-badges{display:flex;flex-wrap:wrap;gap:var(--space-2,8px)}.agent-boundary-status{font-size:var(--font-size-sm,12px);color:var(--muted)}.agent-boundary-resources{padding:var(--space-4,16px);border:1px solid var(--line);border-radius:var(--radius-md,8px);background:var(--surface)}.agent-boundary-resources h4{margin:0}.agent-boundary-resources p,.agent-boundary-resources small{color:var(--muted);font-size:var(--font-size-sm,12px)}.agent-boundary-resources ul{list-style:none;padding:0;margin:0}.agent-boundary-resources li{display:grid;gap:var(--space-2,8px);padding:var(--space-3,12px) 0;border-top:1px solid var(--line)}.agent-boundary-resources a{color:var(--accent-strong);font-size:var(--font-size-sm,12px)}.agent-alert-rules summary{cursor:pointer;color:var(--accent-strong);font-weight:600}.agent-alert-rules[open] summary{margin-bottom:var(--space-3,12px)}
 .agent-step-panel { flex:1; }
 body[data-page="agents"] .agent-wizard-footer { display:grid;gap:9px;padding-top:15px; }
 body[data-page="agents"] .form-error { color:var(--danger); }

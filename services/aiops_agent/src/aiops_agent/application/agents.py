@@ -171,7 +171,7 @@ class ResourceControlledActionExecution(_Model):
 
 
 class CreateAIOpsAgentCommand(_Model):
-    readonly_database_enabled: bool = True
+    readonly_database_enabled: bool = False
     allow_agent_execution: bool = False
     alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     domain_id: int = Field(ge=1)
@@ -206,6 +206,8 @@ class CreateAIOpsAgentCommand(_Model):
             raise ValueError("allowed_business_system_ids 不能重复")
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("capabilities 不能重复")
+        if AIOpsCapability.MONITORING_QUERY not in self.capabilities:
+            self.capabilities = (*self.capabilities, AIOpsCapability.MONITORING_QUERY)
         policy_resources = [item.resource_id for item in self.controlled_action_execution]
         if len(set(policy_resources)) != len(policy_resources):
             raise ValueError("每个资源只能声明一份受控动作策略")
@@ -262,6 +264,8 @@ class UpdateAIOpsAgentCommand(_Model):
             ]
             if len(set(policy_resources)) != len(policy_resources):
                 raise ValueError("每个资源只能声明一份受控动作策略")
+        if self.capabilities is not None and AIOpsCapability.MONITORING_QUERY not in self.capabilities:
+            self.capabilities = (*self.capabilities, AIOpsCapability.MONITORING_QUERY)
         return self
 
 
@@ -350,6 +354,25 @@ class AIOpsAgentService:
                     "AIOPS_AGENT_CONFLICT", "AIOps Agent 名称或资源组合冲突"
                 ) from exc
         return await self.get(domain_id=command.domain_id, agent_id=agent_id)
+
+    async def boundary_resources(
+        self, *, domain_id: int, business_system_ids: tuple[UUID, ...],
+    ) -> dict[str, Any]:
+        """预览工作范围，不修改 Agent、Target 或资源动作授权。"""
+        from aiops_agent.application.agent_boundaries import summarize_boundary_resources
+
+        async with self._uow_factory() as uow:
+            systems = []
+            for system_id in dict.fromkeys(business_system_ids):
+                system = await uow.business_systems.get_scoped(
+                    business_system_id=system_id, domain_id=domain_id,
+                )
+                if system is None:
+                    raise AIOpsAgentError(
+                        "AIOPS_AGENT_RESOURCE_NOT_FOUND", "业务系统不存在或不在当前空间", status_code=404,
+                    )
+                systems.append(system)
+            return await summarize_boundary_resources(uow, systems=systems, domain_id=domain_id)
 
     async def list(self, *, domain_id: int) -> list[dict[str, Any]]:
         async with self._uow_factory() as uow:

@@ -335,7 +335,7 @@ class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
             [str(uow.system.business_system_id)],
             result["allowed_business_system_ids"],
         )
-        self.assertEqual(["KNOWLEDGE_QA"], result["capabilities"])
+        self.assertEqual(["KNOWLEDGE_QA", "MONITORING_QUERY"], result["capabilities"])
         self.assertEqual(
             [uow.knowledge_base_id],
             next(iter(uow.agents.version_knowledge_bases.values())),
