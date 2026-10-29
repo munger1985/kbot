@@ -16,6 +16,7 @@ from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
 )
 from aiops_agent.application.turn_replay import pending_diagnosis_dispatch
+from aiops_agent.application.target_identity import target_identity_snapshot
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     dependency_unavailable,
@@ -491,6 +492,18 @@ class TurnPlannerService:
             selection = dict(dict(payload.get("execution_context") or {}).get("sql_selection") or {})
             if selection and str(target_id) != selection["target_id"]:
                 raise validation_failed("SQL 选择与执行资源不匹配")
+            target = await uow.targets.get_scoped(
+                target_id=target_id, domain_id=domain_id, lock=True
+            )
+            if target is None:
+                raise resource_not_found("Target")
+            if str(target.status) != "ENABLED":
+                raise state_conflict("诊断资源已下线，不能创建新的 Run")
+            target_snapshot = target_identity_snapshot(target)
+            if selection and str(target_snapshot["row_version"]) != str(
+                selection["target_row_version"]
+            ):
+                raise validation_failed("所选 SQL 的 Target 已变更，请重新查询并选择")
             facts = await uow.targets.list_target_facts(
                 target_id=target_id, domain_id=domain_id, active_only=True
             )
@@ -540,6 +553,7 @@ class TurnPlannerService:
                     status="RUNNING",
                     plan_snapshot_json={
                         "schema_version": "aiops.turn-planning-context.v2",
+                        "target": target_snapshot,
                         "conversation_id": str(turn.conversation_id),
                         "turn_id": str(turn_id),
                         "capability_plan": dict(turn.capability_plan_json or {}),

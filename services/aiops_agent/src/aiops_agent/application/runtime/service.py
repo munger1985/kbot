@@ -53,6 +53,7 @@ from aiops_agent.application.runtime.dashboard import (
     project_ops_dashboard,
 )
 from aiops_agent.application.monitoring_snapshot import MonitoringSnapshotBuilder
+from aiops_agent.application.target_identity import target_identity_snapshot
 from aiops_agent.application.work_items import route_completed_run_work_items
 from aiops_agent.application.diagnosis.findings import compile_findings
 from aiops_agent.domain.operations import (
@@ -629,10 +630,9 @@ class AIOpsRuntimeService:
                     policy = configured_policy
 
             target_snapshot = {
-                "target_id": str(target.target_id),
+                **target_identity_snapshot(target),
                 "domain_id": int(target.domain_id),
                 "display_name": target.display_name,
-                "db_type": target.db_type,
                 "version_code": target.version_code,
                 "environment": target.environment,
                 "db_role": target.db_role,
@@ -654,7 +654,6 @@ class AIOpsRuntimeService:
                     target.controlled_change_enabled
                 ),
                 "capabilities": dict(target.capabilities_json or {}),
-                "row_version": int(target.row_version),
             }
             binding_snapshot = {
                 "binding_id": str(binding.binding_id),

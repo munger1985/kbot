@@ -89,6 +89,8 @@ async def resolve_sql_selection(*, uow, reference: str, conversation, actor_id, 
         raise ValueError("SQL 选择引用已过期，请重新查询")
     target = await uow.targets.get_scoped(target_id=source_run.target_id, domain_id=conversation.domain_id)
     frozen = dict(dict(source_run.plan_snapshot_json or {}).get("target") or {})
+    if frozen.get("row_version") is None or not frozen.get("db_type"):
+        raise ValueError("SQL 来源缺少可核验的 Target 身份快照，请重新执行 Top SQL 后选择")
     if target is None or str(target.status) != "ENABLED" or str(frozen.get("row_version")) != str(target.row_version) or str(frozen.get("db_type")).upper() != str(target.db_type).upper():
         raise ValueError("Target 已变更或下线，请重新查询并选择")
     if not await uow.agents.version_has_target(agent_version_id=conversation.agent_version_id, target_id=target.target_id):

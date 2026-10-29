@@ -528,6 +528,7 @@ class _Uow:
         )
         self.target = SimpleNamespace(
             target_id=uuid7(),
+            row_version=1,
             status="ENABLED",
             readonly_connection_enabled=True,
             db_type="ORACLE",
@@ -689,7 +690,8 @@ class _Uow:
         self.assertEqual_values(source_ids, [])
         return []
 
-    async def _get_target(self, *, target_id, domain_id):
+    async def _get_target(self, *, target_id, domain_id, lock=False):
+        del lock
         if domain_id == 7 and target_id == self.target.target_id:
             return self.target
         return None

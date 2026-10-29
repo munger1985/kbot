@@ -310,6 +310,12 @@ SQL Bundle 使用程序计算的 `native_measurements`，只换算已返回输�
 5. 无法追补的历史窗口立即说明边界；新采样只能回答新观察区间。
 6. 无关缺口不降低已被支持的局部判断，也不延长本轮。
 
+主动诊断的 Turn 与 Runtime Run 创建入口必须在同一事务内冻结顶层 `plan_snapshot_json.target` 的
+`target_id / row_version / db_type`，作为选行、历史证据重放和报告来源校验的统一身份。
+仅有 `change_context.target` 不构成该身份快照；后续规划保留原值，重投不得刷新版本。
+缺失快照仍拒绝复用，不从当前配置补造历史身份；验收覆盖三库 Run 创建、Top SQL
+计划提交到行引用复验的正向链，并保留变更、下线和撤权拒绝用例。
+
 规划 Outbox 按持久化阶段恢复：路由已提交而诊断计划未提交时，
 从冻结的能力计划和所选范围重新委派，不因 Turn 已离开 ACCEPTED 就空操作确认成功。
 复用已建立的 Primary Run、原始期限及已有输入检查点；计划 Artifact 已提交后，
