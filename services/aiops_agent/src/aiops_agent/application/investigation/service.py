@@ -19,6 +19,9 @@ from aiops_agent.application.investigation.context import (
     PlanningAlreadyApplied,
     TurnPlanningContext,
 )
+from aiops_agent.application.investigation.selected_sql import selected_sql_investigation
+from aiops_agent.domain.operations.model_budget import work_deadline
+from aiops_agent.config import AIOpsDiagnosisConfig
 from aiops_agent.application.investigation.discovery import (
     available_playbooks,
     available_tools,
@@ -193,6 +196,7 @@ class TurnPlanningService:
         monitoring_profile_catalog=None,
         conversation_input_resolver: ConversationInputResolver | None = None,
         plan_capture_reader=None,
+        diagnosis_config=None,
     ) -> None:
         self._uow_factory = uow_factory
         self._investigation_reasoner = investigation_reasoner
@@ -204,6 +208,11 @@ class TurnPlanningService:
         self._monitoring_profile_catalog = monitoring_profile_catalog
         self._conversation_input_resolver = conversation_input_resolver
         self._plan_capture_reader = plan_capture_reader
+        self._diagnosis_config = diagnosis_config or AIOpsDiagnosisConfig()
+
+    def _work_deadline(self, context):
+        config = getattr(self, "_diagnosis_config", None) or AIOpsDiagnosisConfig()
+        return work_deadline(context.deadline, answer_reserve_seconds=config.answer_reserve_seconds)
 
     async def execute(self, payload: dict) -> dict:
         """执行首轮规划，并把未预期异常转换为可审计的阶段错误。"""
@@ -355,6 +364,22 @@ class TurnPlanningService:
                 )
             )
             planning_receipt = None
+        elif context.target_context.get("sql_selection") and self._compact_question(context) is not None:
+            investigation = selected_sql_investigation(
+                question=context.question, target_context=context.target_context, tools=discovered_tools,
+            )
+            planning_tools, planning_playbooks = discovered_tools, discovered_playbooks
+            investigation = self._bind_target_to_plan(
+                investigation=investigation, target_context=context.target_context, available_tools=planning_tools,
+            )
+            investigation, dynamic_queries, source_queries, attachment_searches = self._prepare_query_inputs(
+                investigation=investigation, context=context,
+            )
+            planning_receipt = None
+            planning_route = {
+                "mode": "SELECTED_SQL_EVIDENCE_FIRST",
+                "public_summary": "已定位所选 SQL，先读取主体事实，再按证据决定后续调查",
+            }
         else:
             planned, planning_tools, planning_playbooks, planning_route = (
                 await self._plan_initial(
@@ -1159,7 +1184,7 @@ class TurnPlanningService:
                 available_tools=available_tools,
                 available_playbooks=available_playbooks,
                 model_snapshot=planner_model_snapshot,
-                deadline=context.deadline,
+                deadline=self._work_deadline(context),
                 idempotency_key=f"turn:{context.turn_id}:investigation:1",
             )
             return planned, available_tools, available_playbooks, {
@@ -1175,7 +1200,7 @@ class TurnPlanningService:
             tool_cards=compact_tool_cards(available_tools),
             available_playbooks=available_playbooks,
             model_snapshot=planner_model_snapshot,
-            deadline=context.deadline,
+            deadline=self._work_deadline(context),
             idempotency_key=f"turn:{context.turn_id}:compact-planning:1",
         )
         compact = routed.output
@@ -1373,7 +1398,7 @@ class TurnPlanningService:
             available_tools=selected_tools,
             available_playbooks=selected_playbooks,
             model_snapshot=planner_model_snapshot,
-            deadline=context.deadline,
+            deadline=self._work_deadline(context),
             idempotency_key=f"turn:{context.turn_id}:investigation:1",
         )
         planned = StructuredModelResult(
@@ -2360,7 +2385,7 @@ class TurnPlanningService:
             available_tools=discovered_tools,
             available_playbooks=discovered_playbooks,
             model_snapshot=planner_model_snapshot,
-            deadline=context.deadline,
+            deadline=self._work_deadline(context),
             idempotency_key=(
                 f"turn:{context.turn_id}:investigation:{revision_no}"
             ),
@@ -2800,6 +2825,22 @@ class TurnPlanningService:
                             else source_queries
                         ),
                     )
+            # 已合规的独立主题动作先执行，不能因一条越界 SQL 再串行重做整份规划。
+            try:
+                subset = self._prepare_valid_query_subset(
+                    investigation=planned.output, context=context, revision_no=revision_no,
+                )
+            except InvestigationPlanValidationError:
+                subset = None
+            if subset is not None and any(
+                action.tool_id != "db.instance.identity" for action in subset[0].plan.actions
+            ):
+                investigation, dynamic_queries, source_queries, attachment_searches = subset
+                return (
+                    StructuredModelResult(output=investigation, receipt=planned.receipt),
+                    investigation, dynamic_queries,
+                    {**source_queries, **({"attachment_search": attachment_searches} if attachment_searches else {})},
+                )
             logger.warning(
                 "AIOps Tool 输入未通过策略，正在请求模型修正："
                 "turn_id={} revision_no={} reason={}",
@@ -2819,7 +2860,7 @@ class TurnPlanningService:
                     available_tools=available_tools,
                     available_playbooks=available_playbooks,
                     model_snapshot=model_snapshot,
-                    deadline=context.deadline,
+                    deadline=self._work_deadline(context),
                     idempotency_key=(
                         f"turn:{context.turn_id}:investigation:"
                         f"{revision_no}:policy-repair"
@@ -3050,7 +3091,14 @@ class TurnPlanningService:
         retained_plan = investigation.plan.model_copy(
             update={"actions": retained_actions}
         )
-        retained = investigation.model_copy(update={"plan": retained_plan})
+        retained = investigation.model_copy(update={
+            "plan": retained_plan,
+            "task_frame": investigation.task_frame.model_copy(update={
+                "constraints": (*investigation.task_frame.constraints, *(
+                    f"调查动作 {action_id} 未执行：{reason}" for action_id, reason in rejected_reasons.items()
+                )),
+            }),
+        })
         return self._prepare_query_inputs(
             investigation=retained,
             context=context,

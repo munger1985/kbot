@@ -242,6 +242,7 @@ def create_aiops_worker_probe(
         from aiops_agent.application.resource_governance import ResourceGovernanceService
 
         handler_registry = create_runtime_handler_registry(
+            diagnosis_config=resolved.diagnosis,
             resource_governance=ResourceGovernanceService(uow_factory=runtime.uow_factory),
             diagnostic_source_registry=diagnostic_source_registry,
             secret_store=secret_store,
@@ -393,6 +394,7 @@ def create_aiops_worker_probe(
                     },
                 ),
                 turn_planning_service=TurnPlanningService(
+                    diagnosis_config=resolved.diagnosis,
                     plan_capture_reader=plan_capture_reader,
                     uow_factory=runtime.uow_factory,
                     investigation_reasoner=InvestigationReasoner(

@@ -2701,12 +2701,29 @@ class AIOpsRuntimeService:
             return False
         artifacts = await uow.runs.list_artifacts(ops_run_id=run.ops_run_id)
         projected_ids = {str(item.artifact_id) for item in await uow.turns.list_evidence(turn_id=turn.turn_id)}
+        from aiops_agent.application.investigation.prior_sql_replay import validate_reused_prior_sql
+        from aiops_agent.application.diagnosis.source_validation import validate_investigation_sources
+
+        artifacts = [item for item in artifacts if str(item.artifact_id) in projected_ids and sha256_json(item.payload_json) == item.content_hash]
+        projected_ids.intersection_update(str(item.artifact_id) for item in artifacts)
+        validated_prior_ids = set()
+        validated_assessment_ids = set()
+        for item in artifacts:
+            if item.schema_version == "PRIOR_TURN_SQL_EVIDENCE.v1" and await validate_reused_prior_sql(uow=uow, run=run, artifact=item, turn=turn):
+                validated_prior_ids.add(str(item.artifact_id))
+            if item.schema_version == "DBA_SUFFICIENCY.v1" and item.trust_level == "SOURCE_VERIFIED" and await validate_investigation_sources(
+                uow=uow, run=run, payload={"evidence": list(item.payload_json.get("evidence") or ())},
+                plan_capture_reader=getattr(self, "_plan_capture_reader", None),
+            ):
+                validated_assessment_ids.add(str(item.artifact_id))
         plan = dict(run.plan_snapshot_json or {})
         result = deadline_result(
             artifacts=artifacts,
             task_frame=dict(dict(plan.get("answer_context") or {}).get("task_frame") or {}),
             database_type=str(dict(plan.get("capability_snapshot") or {}).get("database_type") or "").upper(),
             projected_ids=projected_ids,
+            validated_prior_ids=frozenset(validated_prior_ids),
+            validated_assessment_ids=frozenset(validated_assessment_ids),
         )
         if result is None:
             return False
@@ -2717,7 +2734,10 @@ class AIOpsRuntimeService:
             schema_version="AIOPS_TURN_RESULT.v1", payload_json=payload,
             content_hash=sha256_json(payload), byte_size=len(canonical_bytes(payload)),
             provenance_json={"producer": "execution.deadline", "producer_version": "1"},
-            trust_level="SOURCE_VERIFIED", security_level=1,
+            trust_level="SOURCE_VERIFIED", security_level=max(
+                item.security_level for item in artifacts
+                if str(item.artifact_id) in {str(fact.artifact_id) for fact in result.evidence}
+            ),
         ))
         await self._project_turn_answer(uow=uow, turn=turn, artifact=artifact, payload=payload, now=now)
         turn.sufficiency_json = DbaSufficiencyAssessment(

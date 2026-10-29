@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer
+from aiops_agent.application.diagnosis.sql_evidence_answer import build_sql_evidence_answer, rebind_prior_sql_facts
+from aiops_agent.application.diagnosis.evidence_projection import database_evidence_fact, top_sql_window_evidence_fact
 from aiops_agent.contracts.tool_execution import DbaToolResult
 from aiops_agent.contracts.turn_answer import (
     AIOpsTurnResult,
@@ -15,39 +16,43 @@ from aiops_agent.contracts.turn_answer import (
 )
 
 
-def deadline_result(*, artifacts, task_frame: dict, database_type: str, projected_ids: set[str]) -> AIOpsTurnResult | None:
+def deadline_result(*, artifacts, task_frame: dict, database_type: str, projected_ids: set[str], validated_prior_ids: frozenset[str] = frozenset(), validated_assessment_ids: frozenset[str] = frozenset()) -> AIOpsTurnResult | None:
     """仅使用已投影、可追溯的受控结果；没有任何事实时不伪造部分成功。"""
     facts: dict[str, TurnEvidenceFact] = {}
     for artifact in artifacts:
         if str(artifact.artifact_id) not in projected_ids:
             continue
         try:
-            if artifact.schema_version == "DBA_SUFFICIENCY.v1":
-                assessment = DbaSufficiencyAssessment.model_validate(artifact.payload_json)
-                for fact in assessment.evidence:
-                    if fact.trust_level == "SOURCE_VERIFIED" and str(fact.artifact_id) in projected_ids:
-                        facts[fact.evidence_ref] = fact
-            elif artifact.schema_version == "DBA_TOOL_RESULT.v1" and artifact.trust_level == "SOURCE_VERIFIED":
+            if artifact.trust_level != "SOURCE_VERIFIED":
+                continue
+            if artifact.schema_version == "DBA_TOOL_RESULT.v1":
                 source = DbaToolResult.model_validate(artifact.payload_json)
                 for outcome in source.tool_outcomes:
                     observation = outcome.observation
                     if observation is None or outcome.status != "SUCCEEDED":
                         continue
                     reference = f"artifact:{artifact.artifact_id}#{outcome.step_id}"
-                    facts[reference] = TurnEvidenceFact(
-                        evidence_ref=reference, artifact_id=str(artifact.artifact_id),
-                        source_id=source.source_id, step_id=outcome.step_id,
-                        tool_id=outcome.tool_id, measurement_semantics=source.measurement_semantics,
-                        presentation_kind=source.presentation_kind, captured_at=observation.captured_at.isoformat(),
-                        columns=tuple(column.model_dump(mode="json") for column in observation.columns),
-                        rows=observation.rows, row_count=observation.row_count,
-                        truncated=observation.truncated,
-                        warnings=(*observation.warnings, *(
-                            (f"本轮按需采样实际完成 {source.sampling.completed_count}/{source.sampling.requested.count} 次；仅代表实际采集时点，不覆盖请求的历史窗口",)
-                            if source.sampling is not None else ()
-                        )),
+                    facts[reference] = database_evidence_fact(
+                        result=source, outcome=outcome, artifact_id=artifact.artifact_id,
+                        provenance=getattr(artifact, "provenance_json", None),
                     )
-        except (ValidationError, ValueError, TypeError):
+            elif artifact.schema_version == "TOP_SQL_WINDOW_RESULT.v1":
+                fact = top_sql_window_evidence_fact(result=artifact.payload_json["result"], artifact_id=artifact.artifact_id)
+                if fact is not None:
+                    facts[fact.evidence_ref] = fact
+            elif artifact.schema_version == "PRIOR_TURN_SQL_EVIDENCE.v1" and str(artifact.artifact_id) in validated_prior_ids:
+                for fact in rebind_prior_sql_facts(
+                    payload=artifact.payload_json, artifact_id=str(artifact.artifact_id),
+                    task_frame=task_frame, database_type=database_type,
+                ):
+                    facts[fact.evidence_ref] = fact
+            elif artifact.schema_version == "DBA_SUFFICIENCY.v1" and str(artifact.artifact_id) in validated_assessment_ids:
+                # 监控、计划及未来观察的副本须经正式来源复核，不能只相信副本自述。
+                assessment = DbaSufficiencyAssessment.model_validate(artifact.payload_json)
+                for fact in assessment.evidence:
+                    if fact.trust_level == "SOURCE_VERIFIED" and str(fact.artifact_id) in projected_ids:
+                        facts.setdefault(fact.evidence_ref, fact)
+        except (ValidationError, ValueError, TypeError, KeyError):
             continue
     if not facts:
         return None

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from aiops_agent.domain.evidence.physical_identity import physical_identity_model_context
+from aiops_agent.domain.operations.model_budget import work_deadline
+from aiops_agent.config import AIOpsDiagnosisConfig
 
 import hashlib
 import json
@@ -290,9 +292,10 @@ def _fact_trust_level(value: object) -> str:
 class DbaEvidenceAssessmentHandler:
     """归一真实Evidence，并让模型评估假设、证据需求和下一步。"""
 
-    def __init__(self, *, model_client=None, prompts=None) -> None:
+    def __init__(self, *, model_client=None, prompts=None, diagnosis_config=None) -> None:
         self._model = model_client
         self._prompts = prompts
+        self._diagnosis_config = diagnosis_config or AIOpsDiagnosisConfig()
 
     async def execute(
         self, context: TaskExecutionContext
@@ -1027,9 +1030,12 @@ class DbaEvidenceAssessmentHandler:
         scoped = with_prior(deterministic)
         if scoped.status == SufficiencyStatus.NEEDS_CLARIFICATION:
             return scoped
-        remaining = (datetime.fromisoformat(context.deadline_at) - datetime.now(UTC)).total_seconds() if getattr(context, "deadline_at", None) else float("inf")
-        if remaining < 25 or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
-            return with_prior(deterministic)
+        assessment_deadline = work_deadline(
+            datetime.fromisoformat(context.deadline_at) if getattr(context, "deadline_at", None) else None,
+            answer_reserve_seconds=self._diagnosis_config.answer_reserve_seconds,
+        )
+        if (assessment_deadline is not None and assessment_deadline <= datetime.now(UTC)) or direct_list_result_kind(task_frame) or self._model is None or self._prompts is None:
+            return scoped
         model_snapshot = dict(answer_context.get("model") or {})
         if not model_snapshot:
             return with_prior(deterministic)
@@ -1056,14 +1062,10 @@ class DbaEvidenceAssessmentHandler:
                     "sql_evidence_bundle": build_sql_evidence_bundle(
                         task_frame=task_frame,
                         database_type=str(dict(context.plan_snapshot.get("capability_snapshot") or {}).get("database_type") or "").upper(),
-                        evidence=with_prior(deterministic).evidence,
+                        evidence=scoped.evidence,
                     ),
                 },
-                deadline=(
-                    datetime.fromisoformat(context.deadline_at)
-                    if context.deadline_at
-                    else None
-                ),
+                deadline=assessment_deadline,
                 idempotency_key=(
                     f"turn:{context.run_id}:assessment:{context.attempt}"
                 ),

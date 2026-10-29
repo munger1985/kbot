@@ -186,6 +186,8 @@ def available_tools(
                 "parameters": "与 SQL bind 名称完全一致的标量对象",
             },
             "policy": {
+                "allow_diagnostics_pack": dynamic_policy.allow_diagnostics_pack,
+                "allow_tuning_pack": dynamic_policy.allow_tuning_pack,
                 "allowed_functions": list(dynamic_policy.allowed_functions),
                 "allowed_packages": list(dynamic_policy.allowed_packages),
                 "allowed_package_functions": ["DISPLAY_CURSOR"] + (["DISPLAY_AWR"] if dynamic_policy.allow_diagnostics_pack else []),

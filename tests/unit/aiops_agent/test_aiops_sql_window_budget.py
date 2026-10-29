@@ -21,6 +21,12 @@ from platform_core.contracts.aiops.executor import DiagnosticConnectionProfile, 
 from platform_core.identity import uuid7
 
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import observation, task_frame
+from tests.support.aiops_sql_evidence import backed_sql_fact
+
+
+def backed_observation():
+    run = SimpleNamespace(ops_run_id=uuid7(), target_id=uuid7(), plan_snapshot_json={"target": {"db_type": "POSTGRESQL"}})
+    return backed_sql_fact(observation(), run)
 
 
 def window_fixture(*, mode="BOUNDED_CANDIDATES", complete=False):
@@ -104,12 +110,13 @@ def test_invalid_budget_cannot_reserve_more_than_total():
 
 
 def test_deadline_retains_verified_sql_observation_without_a_model():
-    fact = observation()
+    original, fact = backed_observation()
     artifact = SimpleNamespace(
         artifact_id=uuid7(), schema_version="DBA_SUFFICIENCY.v1",
         payload_json=DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,)).model_dump(mode="json"),
+        trust_level="SOURCE_VERIFIED",
     )
-    result = deadline_result(artifacts=[artifact], task_frame=task_frame(), database_type="POSTGRESQL", projected_ids={str(artifact.artifact_id), str(fact.artifact_id)})
+    result = deadline_result(artifacts=[original, artifact], task_frame=task_frame(), database_type="POSTGRESQL", projected_ids={str(artifact.artifact_id), str(fact.artifact_id)})
     assert result.status == "PARTIAL"
     assert result.evidence == (fact,)
     assert result.evidence_gaps[0].code == "RUN_DEADLINE_EXCEEDED"
@@ -119,7 +126,7 @@ def test_deadline_retains_verified_sql_observation_without_a_model():
 
 def test_deadline_never_uses_unprojected_or_model_only_observations():
     fact = observation(trust_level="MODEL_INFERENCE")
-    artifact = SimpleNamespace(artifact_id=uuid7(), schema_version="DBA_SUFFICIENCY.v1", payload_json=DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,)).model_dump(mode="json"))
+    artifact = SimpleNamespace(artifact_id=uuid7(), schema_version="DBA_SUFFICIENCY.v1", trust_level="MODEL_INFERENCE", payload_json=DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,)).model_dump(mode="json"))
     assert deadline_result(artifacts=[artifact], task_frame=task_frame(), database_type="POSTGRESQL", projected_ids={str(artifact.artifact_id), str(fact.artifact_id)}) is None
 
 
@@ -172,8 +179,7 @@ def test_failure_writeback_after_deadline_still_requires_current_owned_lease():
 
 def test_deadline_partial_is_persisted_then_projected_without_new_tasks():
     async def exercise():
-        fact = observation()
-        source = SimpleNamespace(artifact_id=uuid7(), schema_version="DBA_SUFFICIENCY.v1", payload_json=DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,)).model_dump(mode="json"))
+        source, fact = backed_observation()
         turn = SimpleNamespace(turn_id=uuid7(), status="COLLECTING")
         uow = SimpleNamespace(
             runs=SimpleNamespace(list_artifacts=AsyncMock(return_value=[source]), add_artifact=AsyncMock(side_effect=lambda artifact: artifact)),
@@ -191,9 +197,32 @@ def test_deadline_partial_is_persisted_then_projected_without_new_tasks():
         assert payload["status"] == "PARTIAL"
         assert payload["evidence"][0]["rows"] == [list(fact.rows[0])]
         assert uow.runs.add_artifact.await_count == 1
+        assert uow.runs.add_artifact.await_args.args[0].security_level == source.security_level
         turn.status = "PARTIAL"
         assert not await runtime._project_deadline_partial(uow=uow, run=run, now=datetime.now(UTC))
         assert uow.runs.add_artifact.await_count == 1
+    asyncio.run(exercise())
+
+
+def test_deadline_rejects_modified_source_payload_before_projection():
+    async def exercise():
+        source, _ = backed_observation()
+        source.content_hash = "0" * 64
+        turn = SimpleNamespace(turn_id=uuid7(), status="COLLECTING")
+        uow = SimpleNamespace(
+            runs=SimpleNamespace(list_artifacts=AsyncMock(return_value=[source]), add_artifact=AsyncMock()),
+            turns=SimpleNamespace(
+                get_run_link_by_ops_run_id=AsyncMock(return_value=SimpleNamespace(turn_id=turn.turn_id)),
+                get_turn=AsyncMock(return_value=turn),
+                list_evidence=AsyncMock(return_value=[SimpleNamespace(artifact_id=source.artifact_id)]),
+            ),
+        )
+        run = SimpleNamespace(workflow_kind="CHAT_TURN", ops_run_id=uuid7(), domain_id=uuid7(), plan_snapshot_json={})
+        runtime = object.__new__(AIOpsRuntimeService)
+        runtime._project_turn_answer = AsyncMock()
+        assert not await runtime._project_deadline_partial(uow=uow, run=run, now=datetime.now(UTC))
+        runtime._project_turn_answer.assert_not_awaited()
+        uow.runs.add_artifact.assert_not_awaited()
     asyncio.run(exercise())
 
 

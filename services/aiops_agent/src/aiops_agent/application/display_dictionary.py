@@ -192,6 +192,7 @@ _DISPLAY_NAMES = {
     "READ_ONLY_LOOKUP": "只读查询",
     "CONTROLLED_ACTION": "受控动作",
     "FULL_INVESTIGATION": "完整诊断",
+    "SELECTED_SQL_EVIDENCE_FIRST": "所选 SQL 先取证",
     "NONE": "无",
     "ADVISORY": "仅生成处置建议",
     "EXECUTE": "申请受控执行",

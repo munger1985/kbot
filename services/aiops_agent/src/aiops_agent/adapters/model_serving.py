@@ -80,7 +80,6 @@ class AIOpsStructuredModelClient:
         deadline: datetime | None,
         idempotency_key: str,
     ) -> StructuredModelResult:
-        del idempotency_key
         technical_name = str(model_snapshot["technical_name"])
         prompt_content = str(prompt_ref["content"])
         if (
@@ -134,6 +133,10 @@ class AIOpsStructuredModelClient:
                 if remaining <= 1:
                     raise AIOpsModelError("MODEL_DEADLINE_EXCEEDED")
                 timeout = min(timeout, remaining)
+            logger.info(
+                "AIOps 结构化模型阶段开始：purpose={} request_id={} attempt={} timeout_seconds={}",
+                purpose, idempotency_key, attempt + 1, timeout,
+            )
             try:
                 async with self._session.post(
                     self._url,
@@ -208,6 +211,10 @@ class AIOpsStructuredModelClient:
                 ) from exc
             break
         duration_ms = int((time.monotonic() - started) * 1000)
+        logger.info(
+            "AIOps 结构化模型阶段完成：purpose={} request_id={} duration_ms={} prompt_tokens={} completion_tokens={}",
+            purpose, idempotency_key, duration_ms, prompt_tokens, completion_tokens,
+        )
         receipt = ModelInvocationReceipt(
             purpose=purpose,
             schema_id=_output_schema_id(output_model),

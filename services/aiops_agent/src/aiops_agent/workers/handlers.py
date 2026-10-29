@@ -167,6 +167,7 @@ def create_runtime_handler_registry(
     action_execution_enabled: bool = False,
     conversation_upload_store=None,
     workload_service=None,
+    diagnosis_config=None,
 ) -> HandlerRegistry:
     """组合运行内核及各阶段 Handler，版本必须精确匹配。"""
     kernel = create_kernel_handler_registry()
@@ -362,6 +363,7 @@ def create_runtime_handler_registry(
                     implementation=DbaEvidenceAssessmentHandler(
                         model_client=diagnosis_model_client,
                         prompts=diagnosis_prompt_registry,
+                        diagnosis_config=diagnosis_config,
                     ),
                 ),
                 HandlerManifest(
