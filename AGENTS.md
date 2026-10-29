@@ -49,6 +49,12 @@ KBot 业务表只使用主键、外键和列级 `NOT NULL` 保障结构完整性
 
 AIOps App 的领域行为、公共/内部合同、数据库模型、部署工件、测试和用户可见功能必须与 Ammolite 同步维护。若平台基础设施不同，只允许实现层采用各自数据库或运行环境所需的差异；产品语义与能力边界必须保持一致，并在同一项工作中分别验证两个仓库。
 
+## Prompt Development Version Policy
+
+开发过程中，代码仓库中的 Prompt 文件及开发数据库（包括本地和线上开发环境）的代码同步统一保持 `1.0.0`；定向原地更新文件基线并激活，不得以新增管理员版本代替开发同步。Ammolite 基线来源为 `BUILTIN`，KBot 为 `FILE_SEED`。只有用户通过网页手工编辑、维护 Prompt 时才按管理流程增加版本号。
+
+开发同步不得覆盖网页手工维护版本，不得用全库初始化或 `--force-reset` 清空真实版本历史。同步前核对目标环境、Prompt Key、来源及内容 Hash，保留已冻结运行的证据，不将历史运行改写为新 Prompt；同步后核验数据库激活指针和运行时解析结果。
+
 ## Commit & Pull Request Guidelines
 
 Recent history uses Conventional Commit-style prefixes, commonly `feat(scope):`, `fix(scope):`, and `fix:`; write concise imperative summaries, for example `feat(search): add graph reranking`. Keep commits scoped. Pull requests should explain the behavior change, identify configuration or schema impacts, list tests run, link related issues, and include request/response examples or screenshots for API/UI-visible changes.
