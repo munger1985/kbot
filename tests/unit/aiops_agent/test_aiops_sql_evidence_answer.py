@@ -122,9 +122,9 @@ def test_identity_bound_accumulated_evidence(db_type, subject, tool_id, columns,
     assert result.has_statistics
     assert result.evidence_refs == (entry.evidence_ref,)
     assert expected in result.analysis
-    assert "累计值，不代表指定时间窗口" in result.analysis
+    assert "统计口径为累计值" in result.analysis and "不能还原指定窗口增量" in result.analysis
     assert "累计最大耗时不能通过两次快照相减" in result.solution
-    assert "不能单独证明" in result.analysis
+    assert "已确认根因" not in result.analysis and "SQL 无需优化" not in result.analysis
     assert ("共享块命中" in result.analysis) == (db_type == "POSTGRESQL")
     assert "观测结论：" in result.analysis
     assert "Finding" not in result.analysis
@@ -218,8 +218,8 @@ def test_prior_sql_is_rebound_to_current_artifact_and_labeled_historical():
     result = build_sql_evidence_answer(task_frame=frame(subject), database_type="POSTGRESQL", evidence=(*rebound, current))
     assert not result.historical_only and "执行次数 200" in result.analysis
     assert result.evidence_refs == (current.evidence_ref, rebound[0].evidence_ref)
-    assert "存在相同标识的历史统计" in result.analysis
-    assert "不能单凭此确认实际实例未切换" in result.analysis
+    assert f"已有历史统计采集于 {entry.captured_at}" in result.analysis
+    assert "未与本轮合并" in result.analysis
 
 
 def test_historical_citation_has_a_separately_labeled_table():

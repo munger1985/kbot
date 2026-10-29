@@ -26,6 +26,7 @@ from aiops_agent.application.sql_plan_execution import RESULT_KEY, RESULT_SCHEMA
 from aiops_agent.application.sql_plan_materials import _source_rows
 from aiops_agent.contracts.investigation import DiagnosisAnswerDraft
 from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
+from aiops_agent.contracts.sql_diagnostic_response import SqlDiagnosticResponse
 from aiops_agent.contracts.sql_plan import SqlPlanDocument, SqlPlanAssessment
 from aiops_agent.contracts.turn_answer import AIOpsTurnResult, TurnAnswerBlock, TurnEvidenceFact
 from aiops_agent.playbooks import canonical_hash
@@ -36,6 +37,7 @@ from tests.unit.aiops_agent.test_aiops_sql_capture_approval import call
 from tests.unit.aiops_agent.test_aiops_sql_plan_material import SECRET
 from tests.unit.aiops_agent.test_aiops_sql_comparison import answer_context
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
+from tests.support.aiops_sql_review import diagnostic_response
 
 
 def scenario(engine="POSTGRESQL", *, status="SUCCEEDED", native_verification=None):
@@ -457,8 +459,11 @@ def test_answer_compose_uses_captured_estimate_for_conditional_diagnosis_without
             "requires_approval": True,
         })
         draft["unresolved_questions"] = ["原解析环境、参数代表性与实际运行路径仍未核验。"]
+        response = diagnostic_response(SqlDiagnosisDraft.model_validate(draft), plan).model_dump(mode="json")
+        response["plan_reviews"][0]["conclusion_id"] = "c2"
         model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(
-            output=SqlDiagnosisDraft.model_validate(draft), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
+            output=SqlDiagnosticResponse.model_validate(response),
+            receipt=SimpleNamespace(model_dump=lambda **_: {}))))
         prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="估算诊断", ref=lambda: {})))
         context = answer_context(store.frame, assessment.evidence, engine)
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(context)
@@ -471,7 +476,8 @@ def test_answer_compose_uses_captured_estimate_for_conditional_diagnosis_without
         assert match["runtime_statistics"] == "NONE" and not match["production_execution_verified"]
         assert result.investigation_record is not None
         assert result.investigation_record.sql_plan_assessments[0].origin == "CONTROLLED_ESTIMATE"
-        assert result.status == "PARTIAL" and result.blocks[0].payload["sql_diagnosis"] is not None
+        analysis = next(block for block in result.blocks if str(block.block_type) == "ANALYSIS_MARKDOWN")
+        assert result.status == "PARTIAL" and analysis.payload["sql_diagnosis"] is not None
         solution = next(block for block in result.blocks if str(block.block_type) == "SOLUTION_MARKDOWN")
         assert "利用已有估算" in solution.payload["markdown"] and "组合索引" in solution.payload["markdown"]
         assert all(block.payload.get("result_kind") != "TOP_SQL_LIST" for block in result.blocks)

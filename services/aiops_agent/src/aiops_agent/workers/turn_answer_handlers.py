@@ -1772,8 +1772,8 @@ class DbaAnswerComposeHandler:
             cause = f"诊断生成未完成（{exc.code}）" if isinstance(exc, AIOpsModelError) else "诊断生成未通过证据校验"
             fallback_reason = cause + "；保留已核验观测，不将生成失败解释为 SQL 故障或正常。"
         if draft is not None:
-            analysis, solution, refs = render_investigation(record)
-            analysis = "结论：" + draft.summary + "\n\n" + analysis
+            from aiops_agent.application.diagnosis.sql_review import render_sql_review
+            analysis, solution, refs = render_sql_review(draft, record)
             if fallback_reason:
                 analysis = fallback_reason + "\n\n" + analysis
         else:
@@ -1790,14 +1790,16 @@ class DbaAnswerComposeHandler:
         data_blocks = self._data_blocks(assessment.evidence, primary_result_kind="SINGLE_SQL_DETAIL")
         plan_blocks = [block for block in data_blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN"
                        and any(ref in matched_plans for ref in block.evidence_refs)]
+        completed = bool(record and record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE)
         blocks = [
+            *plan_blocks,
             TurnAnswerBlock(
                 block_type=AnswerBlockType.ANALYSIS_MARKDOWN,
                 schema_version="AIOPS_ANALYSIS_BLOCK.v1",
-                payload={"markdown": analysis, "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
+                payload={"markdown": analysis, "diagnosis_status": "COMPLETED" if completed else "PARTIAL" if draft else "INCOMPLETE",
+                         "sql_diagnosis": draft.model_dump(mode="json") if draft else None,
                          "subject": bundle["subject"], "subject_resolution": bundle["subject_resolution"]}, evidence_refs=refs,
             ),
-            *plan_blocks,
             TurnAnswerBlock(
                 block_type=AnswerBlockType.SOLUTION_MARKDOWN,
                 schema_version="AIOPS_SOLUTION_BLOCK.v1",
@@ -1822,7 +1824,7 @@ class DbaAnswerComposeHandler:
         if record is not None and record.runbook is not None:
             blocks.append(self._record_runbook_block(record))
         return AIOpsTurnResult(
-            status="COMPLETED" if record and record.stop_reason == "GOAL_ANSWERED" and assessment.status == SufficiencyStatus.ANSWERABLE else "PARTIAL",
+            status="COMPLETED" if completed else "PARTIAL",
             sufficiency_status=assessment.status, blocks=tuple(blocks),
             evidence=assessment.evidence, evidence_gaps=assessment.gaps,
             assessment_reasons=reasons, model_receipt=receipt,

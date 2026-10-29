@@ -89,6 +89,7 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
     else:
         text += f"\n\n已保留 {len(evidence)} 项受控数据库观测；具体采集时点、原始行与统计口径见诊断证据。"
     solution = summary.solution if summary is not None else None
+    checkpoint_used = False
     for checkpoint in reversed(checkpoints):
         draft = reusable_checkpoint(checkpoint, task_frame=task_frame, database_type=database_type, evidence=evidence, current_only=False)
         if draft is None:
@@ -102,12 +103,13 @@ def deadline_result(*, artifacts, task_frame: dict, database_type: str, projecte
         except (ValueError, TypeError, KeyError):
             continue
         text = "本轮已达到执行时限，停止继续补证；保留下列阶段已核验判断和原适用时点，尚未分析的新增证据不视为已完成诊断。\n\n阶段结论：" + draft.summary + "\n\n" + analysis
+        checkpoint_used = True
         break
-    blocks = [TurnAnswerBlock(
+    blocks = [plan_table_block(fact) for fact in evidence if fact.evidence_ref in matched_plans and fact.sql_plan is not None]
+    blocks.append(TurnAnswerBlock(
             block_type="ANALYSIS_MARKDOWN", schema_version="aiops.analysis.v1",
-            payload={"markdown": text, "budget_exhausted": True}, evidence_refs=refs,
-        )]
-    blocks.extend(plan_table_block(fact) for fact in evidence if fact.evidence_ref in matched_plans and fact.sql_plan is not None)
+            payload={"markdown": text, "budget_exhausted": True, "diagnosis_status": "PARTIAL" if checkpoint_used else "INCOMPLETE"}, evidence_refs=refs,
+        ))
     if solution is not None:
         blocks.append(TurnAnswerBlock(block_type="SOLUTION_MARKDOWN", schema_version="AIOPS_SOLUTION_BLOCK.v1",
             payload={"markdown": solution}, evidence_refs=refs))

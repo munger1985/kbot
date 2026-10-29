@@ -249,17 +249,14 @@ def build_sql_evidence_answer(
             if fact.warnings:
                 analysis += "\n\n" + "\n".join(fact.warnings)
         else:
-            analysis += "\n\n这些是累计值，不代表指定时间窗口；仍可用于分析单次平均开销及与其他证据结合判断机制。近期是否退化需相应窗口或基线，而非所有诊断都需历史窗口。"
-        analysis += ("共享块命中或对象级扫描统计不能单独证明该 SQL 的扫描方式或根因。" if database_type == "POSTGRESQL"
-                     else "逻辑读、物理读或对象级统计不能单独证明该 SQL 的访问路径或瓶颈。" if database_type == "ORACLE"
-                     else "Digest 累计扫描行数或对象级统计不能单独证明该 SQL 的访问路径或瓶颈。")
+            analysis += "\n\n统计口径为累计值；可分析单次开销，但不能还原指定窗口增量。"
         if database_type == "POSTGRESQL" and any(row.get("statement_stats_reset") for row in rows):
             analysis += "语句统计全局重置时间见原始证据；单条语句仍可能被单独重置或淘汰，不能将该时间当作其确定起点。"
         refs = (fact.evidence_ref,)
         if fact.source_id != "prior_turn.sql_observation":
             prior = next((item for item in candidates if item.source_id == "prior_turn.sql_observation" and any(_matches(row, subject, identity) for row in _row_dicts(item))), None)
             if prior is not None:
-                analysis += f"\n\n同一授权会话及逻辑 Target 存在相同标识的历史统计（采集时间 {prior.captured_at}）；口径和覆盖区间以原始证据为准，不能跨时段或跨口径直接合并，也不能单凭此确认实际实例未切换。"
+                analysis += f"\n\n已有历史统计采集于 {prior.captured_at}，未与本轮合并。"
                 refs = (*refs, prior.evidence_ref)
     relevant_gaps = tuple(gap for gap in gaps if gap.source_id.startswith(("db.", "workload.sql.")))
     if relevant_gaps:
@@ -267,7 +264,7 @@ def build_sql_evidence_answer(
             f"{gap.source_id}：{gap.detail}（{gap.code}）" for gap in relevant_gaps[:5]
         ) + "。这些是取证缺口，不能解释为 SQL 无负载或身份不匹配。"
     if fallback_reason:
-        analysis += "\n\n" + fallback_reason
+        analysis = "诊断未完成：" + fallback_reason + "\n\n以下仅保留已采集事实，不是 SQL 故障或健康结论。\n\n" + analysis
     solution = (
         "先核对统计身份及覆盖区间；仅在快照可比较且未发生可识别的重置或淘汰时计算执行次数、总耗时及平均耗时增量。"
         "累计最大耗时不能通过两次快照相减得到窗口最大值；需要逐次执行记录或专门采样。\n\n"
@@ -278,13 +275,7 @@ def build_sql_evidence_answer(
     plans = [item for item in evidence if item.evidence_ref in matched_plan_refs and item.sql_plan is not None
              and _matches(item.sql_plan.subject, subject, identity)]
     if plans:
-        paths = []
-        for item in plans:
-            document = item.sql_plan
-            origin = {"DATABASE_CURSOR": "缓存计划", "CONTROLLED_ESTIMATE": "受控估算计划", "USER_UPLOAD": "人工声明计划"}[document.origin]
-            operations = " → ".join("`" + node.operation.replace("`", "\\`") + "`" for node in document.nodes[:8])
-            paths.append(f"{origin}（{len(document.nodes)} 个节点）：{operations}" + ("…" if len(document.nodes) > 8 else ""))
-        analysis += "\n\n已取得的计划材料：" + "；".join(paths) + "。完整节点见执行计划表；路径描述不等于已证实性能故障，估算或人工材料不能当作生产实际执行。"
+        analysis += "\n\n已保留匹配执行计划，见计划节点表；本次未完成计划机制及性能影响判断。"
         refs = tuple(dict.fromkeys((*refs, *(item.evidence_ref for item in plans))))
         solution = (
             "已取得并展示匹配计划，不需要重复采集同一材料。当前未完成的是诊断生成，应先恢复此阶段并复用已有证据，"

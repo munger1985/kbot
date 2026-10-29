@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, Callable
 from loguru import logger
@@ -208,14 +209,19 @@ class LLMService:
 
             # Step 5: Handle non-streaming responses
             else:
-                response = await model.chat(processed_messages, stream=False, **kwargs)
+                # 使用调用方本次剩余预算终止 Provider，而非只让 Agent 断开后继续生成。
+                pending = model.chat(processed_messages, stream=False, **kwargs)
+                response = await asyncio.wait_for(pending, timeout=timeout) if timeout is not None else await pending
                 logger.debug(f"收到非流式响应（{current_provider}）")
                 return response
                 
         # General error handling with context
+        except TimeoutError:
+            logger.warning("模型调用超过本次执行预算：served_model_name={} timeout_seconds={}", served_model_name, timeout)
+            raise
         except Exception as e:
             error_context = (
-                f"模型：{served_model_name}，消息：{messages}，"
+                f"模型：{served_model_name}，消息数：{len(processed_messages)}，"
                 f"流式：{stream}，工具数：{len(tools) if tools else 0}"
             )
             logger.exception(f"生成对话响应失败，{error_context}，错误：{e}")

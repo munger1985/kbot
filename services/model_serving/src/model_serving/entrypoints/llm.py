@@ -393,6 +393,8 @@ async def handle_chat_completions(
             usage=UsageInfo(**usage),
         )
 
+    except TimeoutError:
+        raise HTTPException(status_code=408, detail={"code": "MODEL_REQUEST_TIMEOUT", "message": "模型调用超过本次执行预算"})
     except Exception as e:
         logger.exception("Error occurred while generating chat response")
         raise HTTPException(status_code=500, detail=str(e))

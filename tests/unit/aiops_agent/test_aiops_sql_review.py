@@ -23,6 +23,8 @@ from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
 from tests.unit.aiops_agent.test_aiops_sql_plan_import import SUBJECTS, anchor
 from tests.unit.aiops_agent.test_aiops_sql_plan_priority import frame
 from tests.unit.aiops_agent.test_aiops_turn_answer import _context, _tool_artifact
+from tests.support.aiops_sql_review import diagnostic_response
+from aiops_agent.contracts.sql_diagnostic_response import SingleSqlDiagnosticResponse
 
 
 def review(fact, *, needs_more=False):
@@ -47,7 +49,7 @@ def setup(engine="POSTGRESQL", *, needs_more=False):
     context = replace(_context(task_frame_overrides=task), target_id="target")
     context.plan_snapshot["capability_snapshot"] = {"database_type": engine}
     task = context.plan_snapshot["answer_context"]["task_frame"]
-    model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=review(fact, needs_more=needs_more), receipt=None)))
+    model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=diagnostic_response(review(fact, needs_more=needs_more)), receipt=None)))
     prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="按观测诊断", ref=lambda: {})))
     gap = TurnEvidenceGap(source_id="window", step_id="window", code="WINDOW_NOT_FULLY_COVERED", detail="未覆盖历史窗口", retryable=True)
     assessment = DbaSufficiencyAssessment(status="PARTIAL", evidence=(fact,), gaps=(gap,))
@@ -76,7 +78,7 @@ def test_review_and_both_answers_share_one_diagnosis_despite_unrelated_window_ga
         assert "停止或回退" not in solution and "风险：" not in solution
         model.generate_structured.assert_awaited_once()
         call = model.generate_structured.await_args.kwargs
-        assert call["purpose"] == "aiops.sql-diagnosis" and call["output_model"] is SqlDiagnosisReview
+        assert call["purpose"] == "aiops.sql-diagnosis" and issubclass(call["output_model"], SingleSqlDiagnosticResponse)
         assert "resource_capabilities" not in call["input_payload"]
         assert call["input_payload"]["evidence_bundle"]["observations"][0]["records"]
     asyncio.run(exercise())
@@ -106,7 +108,7 @@ def test_full_assessment_invokes_sql_review_instead_of_generic_assessment(engine
         ], rows=[list(entry.rows[0])], row_count=1)
         source = DbaToolResult.model_validate(raw["payload"])
         projected = database_evidence_fact(result=source, outcome=source.tool_outcomes[0], artifact_id=raw["artifact_id"])
-        model.generate_structured.return_value.output = review(projected)
+        model.generate_structured.return_value.output = diagnostic_response(review(projected))
         context = replace(context, input_artifacts=(raw,))
         assessed = await DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts).execute(context)
         assert assessed.sql_checkpoint is not None and assessed.status == "ANSWERABLE"
@@ -118,7 +120,7 @@ def test_full_assessment_invokes_sql_review_instead_of_generic_assessment(engine
 def test_unchanged_evidence_does_not_repeat_diagnosis_and_problem_measures_survive():
     async def exercise():
         fact, task, context, model, prompts, assessment = setup()
-        model.generate_structured.return_value.output = diagnosis(fact)
+        model.generate_structured.return_value.output = diagnostic_response(diagnosis(fact))
         handler = DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts)
         assessed = await handler._review_sql(context, assessment, task)
         context.plan_snapshot["answer_context"]["sql_checkpoint"] = assessed.sql_checkpoint.model_dump(mode="json")
@@ -253,7 +255,7 @@ def test_review_projection_preserves_records_and_physical_identity_without_dupli
     bundle = build_sql_evidence_bundle(task_frame=task, database_type="POSTGRESQL", evidence=(fact,))
     projected = review_context(bundle)
     assert "object_graph" not in projected
-    assert projected["subjects"] == bundle["subjects"]
+    assert projected["subjects"] == [{key: value for key, value in item.items() if key != "plan_assessments"} for item in bundle["subjects"]]
     assert projected["observations"][0]["records"] == bundle["observations"][0]["records"]
     assert projected["observations"][0]["lineage"]["provenance"]["physical_identity"]
 
@@ -274,9 +276,9 @@ def test_mixed_observation_and_repair_does_not_create_empty_rollback_runbook_ste
     async def exercise():
         fact, task, context, model, prompts, assessment = setup()
         original = diagnosis(fact)
-        model.generate_structured.return_value.output = original.model_copy(update={"recommendations": (
+        model.generate_structured.return_value.output = diagnostic_response(original.model_copy(update={"recommendations": (
             *original.recommendations, review(fact).recommendations[0].model_copy(update={"recommendation_id": "r2"}),
-        )})
+        )}))
         assessed = await DbaEvidenceAssessmentHandler(model_client=model, prompts=prompts)._review_sql(context, assessment, task)
         answer_context = replace(context, input_artifacts=({"schema_version": "DBA_SUFFICIENCY.v1", "payload": assessed.model_dump(mode="json")},))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(answer_context)

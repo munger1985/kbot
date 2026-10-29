@@ -21,6 +21,7 @@ from platform_core.contracts.aiops.conversation import MeasurementSemantics
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis, observation
 from tests.unit.aiops_agent.test_aiops_sql_subject_resolution import scenario
 from tests.unit.aiops_agent.test_aiops_sql_subject_search import load, search_fixture
+from tests.support.aiops_sql_review import diagnostic_response
 
 
 def comparison_fixture(engine="POSTGRESQL"):
@@ -210,7 +211,7 @@ def test_each_independent_graph_and_diagnosis_survives_answer_and_report_freeze(
     bundle = build_sql_evidence_bundle(task_frame=frame, database_type=engine, evidence=facts)
     draft = comparison_draft(bundle, facts)
     model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(
-        output=draft, receipt=SimpleNamespace(model_dump=lambda **_: {}))))
+        output=diagnostic_response(draft), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
     context = answer_context(frame, facts, engine)
     result = asyncio.run(DbaAnswerComposeHandler(model_client=model,
         prompts=SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="诊断", ref=lambda: {})))).execute(context))

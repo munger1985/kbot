@@ -19,6 +19,7 @@ from aiops_agent.workers.handlers import TaskExecutionContext
 from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler
 from platform_core.identity import uuid7
 from tests.support.aiops_sql_evidence import backed_sql_fact
+from tests.support.aiops_sql_review import diagnostic_response
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis, observation, task_frame, selection_scope
 from tests.unit.aiops_agent.test_aiops_sql_subject_resolution import scenario
 
@@ -225,7 +226,7 @@ def test_comparison_reaches_model_and_frozen_report_instead_of_stopping_for_arbi
                             draft.conclusions[0].evidence_fields[0].model_copy(update={"row_index": 1}))})
     draft = draft.model_copy(update={"conclusions": (conclusion,)})
     model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(
-        output=draft, receipt=SimpleNamespace(model_dump=lambda **_: {}))))
+        output=diagnostic_response(draft), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
     context = TaskExecutionContext(run_id=uuid7(), task_id=uuid7(), task_key="answer:compose", target_id=uuid7(),
         agent_id=uuid7(), actor_id=uuid7(), trigger_type="MANUAL", trace_id="test", attempt=1,
         deadline_at=None, policy_snapshot={}, plan_snapshot={"capability_snapshot": {"database_type": engine},

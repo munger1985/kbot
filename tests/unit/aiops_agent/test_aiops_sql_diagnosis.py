@@ -26,6 +26,7 @@ from aiops_agent.workers.turn_answer_handlers import DbaAnswerComposeHandler
 from platform_core.contracts.aiops.conversation import TurnCreate
 from platform_core.identity import uuid7
 from tests.support.aiops_sql_evidence import backed_sql_fact
+from tests.support.aiops_sql_review import diagnostic_response
 
 
 def observation(names=("query_id", "database_oid", "execution_count", "pid"), rows=(("1285382359565720997", 16510, 100, 42),), **overrides):
@@ -158,7 +159,7 @@ def test_repair_and_draft_never_become_execution_authority():
 def test_single_sql_calls_structured_diagnosis_and_never_redisplays_top_list():
     fact = observation(tool_id="db.postgresql.statement.top")
     assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(fact,))
-    model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=diagnosis(fact), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
+    model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=diagnostic_response(diagnosis(fact)), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
     prompt = SimpleNamespace(content="诊断", ref=lambda: {})
     prompts = SimpleNamespace(resolve=AsyncMock(return_value=prompt))
     ctx = TaskExecutionContext(

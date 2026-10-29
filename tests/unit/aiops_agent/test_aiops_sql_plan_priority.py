@@ -24,6 +24,7 @@ from tests.unit.aiops_agent.test_aiops_oracle_cursor_plan import PLAN, SUBJECT, 
 from tests.unit.aiops_agent.test_aiops_sql_diagnosis import diagnosis
 from tests.unit.aiops_agent.test_aiops_sql_plan_import import SUBJECTS, anchor, upload
 from tests.unit.aiops_agent.test_aiops_turn_answer import _context, _tool_artifact
+from tests.support.aiops_sql_review import diagnostic_response
 
 
 def frame(engine="ORACLE", subject=None):
@@ -192,7 +193,7 @@ def test_no_anomaly_conclusion_and_plan_survive_both_answer_modes():
                 "preconditions": (), "risks": (), "rollback_or_stop": "",
             }),),
         })
-        model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=draft, receipt=SimpleNamespace(model_dump=lambda **_: {}))))
+        model = SimpleNamespace(generate_structured=AsyncMock(return_value=SimpleNamespace(output=diagnostic_response(draft, plan), receipt=SimpleNamespace(model_dump=lambda **_: {}))))
         prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="按证据诊断", ref=lambda: {})))
         ctx = _context(task_frame_overrides=frame(subject={"subject_type": "ORACLE_SQL_ID", **SUBJECT}))
         assessment = DbaSufficiencyAssessment(status="ANSWERABLE", evidence=(entry, plan))
@@ -201,7 +202,10 @@ def test_no_anomaly_conclusion_and_plan_survive_both_answer_modes():
         handler = DbaAnswerComposeHandler(model_client=model, prompts=prompts)
         result = await handler.execute(ctx)
         assert result.status == "COMPLETED"
-        assert result.blocks[0].payload["markdown"].startswith("结论：在已观察范围未发现明显异常")
+        assert result.blocks[0].payload["result_kind"] == "SQL_EXECUTION_PLAN"
+        analysis = next(block for block in result.blocks if block.block_type == "ANALYSIS_MARKDOWN")
+        assert analysis.payload["markdown"].startswith("结论：在已观察范围未发现明显异常")
+        assert "计划节点 1" in analysis.payload["markdown"]
         shown = next(block for block in result.blocks if block.payload.get("result_kind") == "SQL_EXECUTION_PLAN")
         assert shown.payload["presentation_role"] == "PRIMARY"
         assert shown.evidence_refs == (plan.evidence_ref,)
@@ -268,8 +272,10 @@ def test_model_timeout_keeps_acquired_plan_and_does_not_request_the_same_plan_ag
         prompts = SimpleNamespace(resolve=AsyncMock(return_value=SimpleNamespace(content="诊断", ref=lambda: {})))
         result = await DbaAnswerComposeHandler(model_client=model, prompts=prompts).execute(ctx)
         assert result.status == "PARTIAL"
-        assert "TABLE ACCESS FULL" in result.blocks[0].payload["markdown"]
-        assert "MODEL_DEADLINE_EXCEEDED" in result.blocks[0].payload["markdown"]
+        assert result.blocks[0].payload["result_kind"] == "SQL_EXECUTION_PLAN"
+        analysis = next(block for block in result.blocks if block.block_type == "ANALYSIS_MARKDOWN")
+        assert "MODEL_DEADLINE_EXCEEDED" in analysis.payload["markdown"]
+        assert analysis.payload["diagnosis_status"] == "INCOMPLETE"
         solution = next(block for block in result.blocks if str(block.block_type) == "SOLUTION_MARKDOWN")
         assert "不需要重复采集同一材料" in solution.payload["markdown"]
         assert any(block.payload.get("result_kind") == "SQL_EXECUTION_PLAN" for block in result.blocks)
@@ -287,6 +293,8 @@ def test_hard_deadline_keeps_only_revalidated_matching_plan_visible_without_new_
     assert deadline_result(**args) is None
     result = deadline_result(**args, validated_assessment_ids=frozenset({assessment_id}))
     assert result.status == "PARTIAL"
-    assert "TABLE ACCESS FULL" in result.blocks[0].payload["markdown"]
-    assert any(block.payload.get("result_kind") == "SQL_EXECUTION_PLAN" for block in result.blocks)
+    assert result.blocks[0].payload.get("result_kind") == "SQL_EXECUTION_PLAN"
+    analysis = next(block for block in result.blocks if str(block.block_type) == "ANALYSIS_MARKDOWN")
+    assert "匹配执行计划" in analysis.payload["markdown"]
+    assert analysis.payload["diagnosis_status"] == "INCOMPLETE"
     assert "RUN_DEADLINE_EXCEEDED" in {gap.code for gap in result.evidence_gaps}

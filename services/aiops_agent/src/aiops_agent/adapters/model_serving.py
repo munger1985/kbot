@@ -135,9 +135,12 @@ class AIOpsStructuredModelClient:
                     raise AIOpsModelError("MODEL_DEADLINE_EXCEEDED")
                 timeout = min(timeout, remaining)
             logger.info(
-                "AIOps 结构化模型阶段开始：purpose={} request_id={} attempt={} timeout_seconds={}",
+                "AIOps 结构化模型阶段开始：purpose={} request_id={} attempt={} timeout_seconds={} input_chars={} schema_chars={}",
                 purpose, idempotency_key, attempt + 1, timeout,
+                sum(len(item["content"]) for item in messages), len(json.dumps(output_schema)),
             )
+            # 把本次剩余预算传到模型托管，避免调用方截止后 Provider 仍继续生成长报告。
+            request_payload["timeout"] = timeout
             try:
                 async with self._session.post(
                     self._url,
@@ -146,6 +149,11 @@ class AIOpsStructuredModelClient:
                     timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as response:
                     if response.status != 200:
+                        if response.status == 408:
+                            code = "MODEL_DEADLINE_EXCEEDED" if deadline is not None and (
+                                deadline.astimezone(UTC) - datetime.now(UTC)
+                            ).total_seconds() <= 1 else "MODEL_SERVICE_UNAVAILABLE"
+                            raise AIOpsModelError(code)
                         response_text = (await response.text())[:1000]
                         logger.error(
                             "AIOps 结构化模型调用失败：purpose={} model={} "
@@ -166,6 +174,8 @@ class AIOpsStructuredModelClient:
                 code = "MODEL_DEADLINE_EXCEEDED" if deadline is not None and (
                     deadline.astimezone(UTC) - datetime.now(UTC)
                 ).total_seconds() <= 1 else "MODEL_SERVICE_UNAVAILABLE"
+                logger.warning("AIOps 模型阶段超时：purpose={} request_id={} code={} elapsed_ms={} timeout_seconds={}",
+                               purpose, idempotency_key, code, int((time.monotonic() - started) * 1000), timeout)
                 raise AIOpsModelError(code) from exc
             except (aiohttp.ClientError, ValueError) as exc:
                 raise AIOpsModelError("MODEL_SERVICE_UNAVAILABLE") from exc
@@ -185,6 +195,7 @@ class AIOpsStructuredModelClient:
                 json.JSONDecodeError,
                 ValidationError,
             ) as exc:
+                error_detail = json.dumps(exc.errors(include_input=False, include_context=False), ensure_ascii=False) if isinstance(exc, ValidationError) else type(exc).__name__
                 logger.warning(
                     "AIOps 模型结构化输出校验失败：purpose={} model={} "
                     "schema={} attempt={}/2 error={}",
@@ -192,7 +203,7 @@ class AIOpsStructuredModelClient:
                     technical_name,
                     output_model.__name__,
                     attempt + 1,
-                    str(exc),
+                    error_detail,
                 )
                 if attempt == 0:
                     messages = [
@@ -207,13 +218,13 @@ class AIOpsStructuredModelClient:
                                 "上一份 JSON 未通过既定输出合同。请保持原任务"
                                 "和事实不变，只依据以下校验错误修正 JSON，并重新"
                                 "返回满足同一 JSON Schema 的完整对象：\n"
-                                + str(exc)[:6000]
+                                + error_detail[:6000]
                             ),
                         },
                     ]
                     continue
                 raise AIOpsModelError(
-                    "MODEL_OUTPUT_INVALID", str(exc)
+                    "MODEL_OUTPUT_INVALID", error_detail
                 ) from exc
             break
         duration_ms = int((time.monotonic() - started) * 1000)

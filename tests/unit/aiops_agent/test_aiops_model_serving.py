@@ -133,6 +133,7 @@ class AIOpsStructuredModelClientTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("max_tokens", session.payload)
         system_prompt = session.payload["messages"][0]["content"]
+        self.assertEqual(session.payload["timeout"], 30)
         self.assertIn("JSON Schema", system_prompt)
         self.assertIn('"answer"', system_prompt)
         self.assertEqual(result.output.answer, "正常")

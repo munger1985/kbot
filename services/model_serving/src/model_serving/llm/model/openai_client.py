@@ -168,6 +168,8 @@ class OpenaiClient(BaseLLM[OpenaiLLMConfig]):
             "tools": kwargs.get('tools'),
             "tool_choice": kwargs.get('tool_choice'),
             "response_format": kwargs.get('response_format'),  # Support for JSON mode
+            # 本次预算仅影响本次请求，不修改模型配置或共享客户端。
+            "timeout": kwargs.get('timeout'),
         }
         
         # Filter out None values to use API defaults
