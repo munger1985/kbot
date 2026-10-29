@@ -1133,6 +1133,28 @@ MySQL 管理口未取得有效认证；没有读取或打印密码，没有改�
 Ammolite 开发日志服务可达，但当前部署代码不等于本轮新提交；未部署、未重启，
 不把这些读检查写成新版本生产闭环已通过。
 
+### 监控活动事件与诊断事实闭环（2026-10-28）
+
+监控事件不是装饰性告警计数：已采集的Prometheus/Zabbix/OEM事件必须成为可引用事实，
+进入普通评估、重规划、回答及巡检报告；正式报告/案例重新读取原始ObservationSet重放，
+不能删除口径警告或把事件相关性升级为SQL因果。查询成功但零行仍保留实际查询口径；
+查询失败不伪装零行。没有完整历史的来源不据此证明历史无告警。
+
+新增SourceEventQuery保留来源/Target/Binding、请求窗口、实际采集时间、版本、响应哈希和截断。
+Prometheus CURRENT_ALERTS表示当前规则状态，包括可能尚未触发的pending；
+Zabbix RECENT_PROBLEMS包含当前及供应商留存的近期恢复问题，
+按r_eventid区分FIRING/RESOLVED，缺失则UNKNOWN，不能继续一律标为触发中。
+OEM CURRENT_OPEN_INCIDENTS使用官方/em/api/incidents：先核实绑定GUID的Target名称和类型，
+关闭includeMemberTargets，用官方age筛选扩大至整小时，再投影为创建时间的精确半开窗口；
+这不是完整历史或所有持续中的旧Incident。旧/已关闭事件可能缺失，不能补造覆盖率。
+严验目标、事件身份、时间、顺序和重复；单页100条及总字节预算有界，不跟随来源URL，
+达到页上限或有next链接则保留截断。Basic认证、禁止重定向及绑定隔离沿用原生Adapter。
+
+已有原始工件不改写；普通回答及巡检报告新增事件事实，保留原始引用、口径和不完整标记。
+报告/案例独立重放来源；没有InvestigationRecord也不能跳过。告警与数据库指标同源粗归组，
+不因同时出现即增强独立性或根因等级。本增量不代表OEM旧标准指标Provider映射完成，
+不声明真实OMS、绑定凭据、模型、外部撤回ACK或三库全业务验收。
+
 ### OEM 原生长尾指标取证（2026-10-28）
 
 OEM 使用13.5官方只读接口：先按绑定的32位Target GUID读取Target身份，

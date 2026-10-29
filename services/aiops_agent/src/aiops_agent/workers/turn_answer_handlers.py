@@ -21,6 +21,7 @@ from aiops_agent.application.changes.proposal_snapshot import (
     proposal_summary_payload,
 )
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
+from aiops_agent.application.diagnosis.event_evidence import source_event_fact
 from aiops_agent.domain.evidence.source_history import CATALOG_COLUMNS, metric_catalog_rows, NATIVE_COLUMNS, native_history_rows, native_history_warnings, log_pagination_warnings
 from aiops_agent.workers.attachment_handlers import AttachmentEvidenceSet
 from aiops_agent.contracts.tool_execution import (
@@ -501,6 +502,9 @@ class DbaEvidenceAssessmentHandler:
                 continue
             if schema_version == "OBSERVATION_SET.v1":
                 result = ObservationSet.model_validate(artifact["payload"])
+                event_fact = source_event_fact(artifact_id=artifact["artifact_id"], result=result)
+                if event_fact is not None:
+                    facts.append(event_fact)
                 for index, catalog in enumerate(result.metric_catalogs):
                     facts.append(TurnEvidenceFact(
                         evidence_ref=f"artifact:{artifact['artifact_id']}#metric-catalog/{index}",

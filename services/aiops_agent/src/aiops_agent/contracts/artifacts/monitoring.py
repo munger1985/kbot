@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiops_agent.contracts.evidence import ObservationSet
+from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from platform_core.contracts.aiops.types import UtcDatetime
 
 
@@ -46,6 +47,7 @@ class ObserveReport(BaseModel):
     availability: tuple[dict[str, Any], ...] = ()
     metric_summaries: tuple[dict[str, Any], ...] = ()
     active_alerts: tuple[dict[str, Any], ...] = ()
+    event_evidence: tuple[TurnEvidenceFact, ...] = Field(default=(), exclude_if=lambda value: not value)
     gaps: tuple[dict[str, Any], ...] = ()
     evidence_artifact_ids: tuple[str, ...] = ()
     provenance: dict[str, Any] = Field(default_factory=dict)

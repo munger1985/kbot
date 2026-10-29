@@ -14,6 +14,7 @@ from aiops_agent.contracts.evidence import (
     LogEvidenceSet,
     NormalizedSignalBatch,
     ObservationGap,
+    SourceEventQuery,
 )
 from platform_core.contracts.aiops.types import DatabaseType, UtcDatetime
 from platform_core.contracts.aiops.investigation import DiagnosticPagination
@@ -223,6 +224,7 @@ class EventEvidenceRequest(BaseModel):
     window_start: UtcDatetime
     window_end: UtcDatetime
     max_events: int = Field(ge=1, le=10000)
+    max_response_bytes: int = Field(default=1048576, ge=1024, le=1048576)
     trace_id: str
 
 
@@ -231,6 +233,7 @@ class EventEvidenceResult(BaseModel):
 
     events: tuple[dict[str, Any], ...] = ()
     gaps: tuple[ObservationGap, ...] = ()
+    query: SourceEventQuery | None = None
 
 
 class LogSourceLocator(BaseModel):

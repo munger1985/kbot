@@ -6,86 +6,16 @@ from datetime import UTC, datetime
 from urllib.parse import quote
 
 from aiops_agent.ports.diagnostic_source import (
-    EventEvidenceRequest,
-    EventEvidenceResult,
     MetricsEvidenceRequest,
     MetricsEvidenceResult,
 )
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
 from .oem_native import OEMNativeMetrics
+from .oem_events import OEMEvents
 
 
-class OEMAdapter(OEMNativeMetrics, BaseDiagnosticSourceAdapter):
-    async def query_events(
-        self, request: EventEvidenceRequest
-    ) -> EventEvidenceResult:
-        path = (
-            f"{self.context.endpoint.rstrip('/')}/targets/"
-            f"{quote(request.source_locator_key, safe='')}/incidents"
-        )
-        try:
-            async with self._session.get(
-                path,
-                headers=self._headers(),
-                params={
-                    "startTime": request.window_start.isoformat(),
-                    "endTime": request.window_end.isoformat(),
-                    "limit": request.max_events,
-                },
-                timeout=self._timeout,
-            ) as response:
-                payload, _ = await self._response_json(
-                    response, max_bytes=1024 * 1024
-                )
-            items = (
-                payload.get("items", [])
-                if isinstance(payload, dict)
-                else []
-            )
-            return EventEvidenceResult(
-                events=tuple(
-                    {
-                        "source_type": "OEM",
-                        "incident_id": str(
-                            item.get("incidentId", "")
-                        ),
-                        "name": str(
-                            item.get("summary", "oem.incident")
-                        )[:128],
-                        "severity": str(
-                            item.get("severity", "UNKNOWN")
-                        ).upper(),
-                        "status": str(
-                            item.get("status", "OPEN")
-                        ).upper(),
-                        "active_at": item.get("createdTime"),
-                    }
-                    for item in items[: request.max_events]
-                )
-            )
-        except (DiagnosticSourceAdapterError, TypeError, ValueError) as exc:
-            code = (
-                exc.code
-                if isinstance(exc, DiagnosticSourceAdapterError)
-                else "SOURCE_RESPONSE_INVALID"
-            )
-            return EventEvidenceResult(
-                gaps=(
-                    self._gap(
-                        request,  # type: ignore[arg-type]
-                        metric_code=None,
-                        code=code,
-                        detail="OEM Incident 读取失败",
-                        retryable=(
-                            exc.retryable
-                            if isinstance(exc, DiagnosticSourceAdapterError)
-                            else False
-                        ),
-                    ),
-                )
-            )
-
+class OEMAdapter(OEMEvents, OEMNativeMetrics, BaseDiagnosticSourceAdapter):
     async def query_metrics(
         self, request: MetricsEvidenceRequest
     ) -> MetricsEvidenceResult:

@@ -344,6 +344,34 @@ class MetricDiscoveryResult(BaseModel):
     warnings: tuple[str, ...] = ()
 
 
+class SourceEventQuery(BaseModel):
+    """来源返回的事件查询口径；零行也保留未关闭事件与历史覆盖的边界。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_type: Literal["OEM", "PROMETHEUS", "ZABBIX"]
+    source_id: str
+    target_id: str
+    binding_id: str
+    query_scope: Literal["CURRENT_OPEN_INCIDENTS", "CURRENT_ALERTS", "RECENT_PROBLEMS"]
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    captured_at: UtcDatetime
+    source_version: str = Field(min_length=1, max_length=128)
+    response_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    truncated: bool = False
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if self.window_start >= self.window_end:
+            raise ValueError("事件筛选窗口必须为非空半开区间")
+        if self.query_scope != {
+            "OEM": "CURRENT_OPEN_INCIDENTS", "PROMETHEUS": "CURRENT_ALERTS", "ZABBIX": "RECENT_PROBLEMS",
+        }[self.source_type]:
+            raise ValueError("事件查询口径与供应商实际接口不一致")
+        return self
+
+
 class ObservationSet(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -355,11 +383,19 @@ class ObservationSet(BaseModel):
     metric_catalogs: tuple[MetricDiscoveryResult, ...] = Field(default=(), max_length=1)
     native_metrics: tuple[NativeMetricSamples, ...] = Field(default=(), max_length=4)
     active_alerts: tuple[dict[str, Any], ...] = ()
+    event_query: SourceEventQuery | None = Field(default=None, exclude_if=lambda value: value is None)
     gaps: tuple[ObservationGap, ...] = ()
     collected_at: UtcDatetime
 
     @model_validator(mode="after")
     def validate_catalog_scope(self):
+        if self.event_query is not None:
+            query = self.event_query
+            if (query.target_id != self.target_id or query.binding_id != self.binding_id
+                or query.source_id != self.source_id):
+                raise ValueError("事件查询与冻结的目标、绑定和来源不一致")
+            if any(event.get("source_type") != query.source_type for event in self.active_alerts):
+                raise ValueError("事件内容与查询来源类型不一致")
         for samples in self.native_metrics:
             if str(samples.target_id) != str(self.target_id) or str(samples.binding_id) != str(self.binding_id) or str(samples.source_id) != str(self.source_id):
                 raise ValueError("原生历史与冻结的目标、绑定和来源不一致")

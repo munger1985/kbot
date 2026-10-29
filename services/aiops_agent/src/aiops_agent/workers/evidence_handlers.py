@@ -40,6 +40,7 @@ from aiops_agent.monitoring import (
 )
 from aiops_agent.domain.evidence import METRIC_ROLE_AVAILABILITY
 from aiops_agent.domain.evidence.source_history import validate_source_page_receipt, SourceResultMismatch
+from aiops_agent.application.diagnosis.event_evidence import source_event_fact
 
 from .handlers import TaskExecutionContext, investigation_task_identity
 
@@ -172,6 +173,7 @@ class EvidenceObserveHandler:
         metric_catalogs = []
         native_metrics = []
         active_alerts = ()
+        event_query = None
         try:
             if source.get("secret_ref"):
                 secret = await self._secrets.resolve(
@@ -475,10 +477,21 @@ class EvidenceObserveHandler:
                         window_start=_parse_time(window["start"]),
                         window_end=_parse_time(window["end"]),
                         max_events=100,
+                        max_response_bytes=min(monitoring.get("max_response_bytes", 1048576), 1048576),
                         trace_id=context.trace_id,
                     )
                 )
                 gaps.extend(event_result.gaps)
+                if event_result.query is not None and (
+                    event_result.query.source_type != source_context.source_type
+                    or event_result.query.source_id != source_context.source_id
+                    or str(event_result.query.target_id) != str(context.target_id)
+                    or str(event_result.query.binding_id) != str(binding_id)
+                    or event_result.query.window_start != _parse_time(window["start"])
+                    or event_result.query.window_end != _parse_time(window["end"])
+                ):
+                    raise ValueError("事件查询返回了不同来源或范围")
+                event_query = event_result.query
                 active_alerts = event_result.events
             except LookupError as exc:
                 gaps.append(
@@ -507,6 +520,7 @@ class EvidenceObserveHandler:
             metric_catalogs=tuple(metric_catalogs),
             native_metrics=tuple(native_metrics),
             active_alerts=active_alerts,
+            event_query=event_query,
             gaps=tuple(gaps),
             collected_at=datetime.now(UTC),
         )
@@ -816,9 +830,17 @@ class EvidenceReportHandler:
             for item in observations
         )
         availability = _availability_metric_summaries(metric_summaries)
+        event_evidence = tuple(
+            fact for artifact in observation_artifacts
+            if artifact["payload"].get("event_query") or artifact["payload"].get("active_alerts")
+            if (fact := source_event_fact(
+                artifact_id=artifact["artifact_id"],
+                result=ObservationSet.model_validate(artifact["payload"]),
+            )) is not None
+        )
         return ObserveReport(
             target_id=context.target_id,
-            status="PARTIAL" if gaps else "READY",
+            status="PARTIAL" if gaps or any(item.truncated for item in event_evidence) else "READY",
             window_start=_parse_time(monitoring["window"]["start"]),
             window_end=_parse_time(monitoring["window"]["end"]),
             source_count=len(observation_artifacts),
@@ -828,6 +850,7 @@ class EvidenceReportHandler:
             availability=availability,
             metric_summaries=metric_summaries,
             active_alerts=tuple(alerts),
+            event_evidence=event_evidence,
             gaps=tuple(gaps),
             evidence_artifact_ids=tuple(
                 item["artifact_id"] for item in observation_artifacts

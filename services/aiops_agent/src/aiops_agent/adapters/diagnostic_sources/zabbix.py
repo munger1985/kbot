@@ -13,6 +13,7 @@ from aiops_agent.contracts.evidence import (
     DiscoveredMetric, MetricDiscoveryResult, NativeMetricSamples, NativeHistoryMetadata,
     NormalizedSignalEvent,
     NormalizedSignalBatch,
+    SourceEventQuery,
 )
 from aiops_agent.domain.evidence import (
     SignalEventStatus,
@@ -398,14 +399,15 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
     async def query_events(
         self, request: EventEvidenceRequest
     ) -> EventEvidenceResult:
+        self._remaining_response_bytes = request.max_response_bytes
         try:
-            hosts, _ = await self._rpc(
+            hosts, host_hash = await self._rpc(
                 "host.get",
                 {
                     "output": ["hostid", "host"],
                     "filter": {"host": [request.source_locator_key]},
                 },
-                max_bytes=1024 * 1024,
+                max_bytes=request.max_response_bytes,
             )
             exact = [
                 item
@@ -421,19 +423,36 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
                     ),
                     "Zabbix 精确 Host 不存在或不唯一",
                 )
-            problems, _ = await self._rpc(
+            problems, response_hash = await self._rpc(
                 "problem.get",
                 {
-                    "output": ["eventid", "name", "severity", "clock"],
+                    "output": ["eventid", "name", "severity", "clock", "r_eventid"],
                     "hostids": [exact[0]["hostid"]],
                     "recent": True,
                     "sortfield": ["clock"],
                     "sortorder": "DESC",
                     "limit": request.max_events,
                 },
-                max_bytes=1024 * 1024,
+                max_bytes=request.max_response_bytes,
             )
+            if not isinstance(problems, list) or len(problems) > request.max_events:
+                raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "问题列表超出来源合同")
+            for problem in problems:
+                if not isinstance(problem, dict):
+                    raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "问题记录格式无效")
+                recovery = problem.get("r_eventid")
+                if recovery is not None and (type(recovery) not in {str, int} or not str(recovery).isdecimal()):
+                    raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "恢复事件标识无法核验")
             return EventEvidenceResult(
+                query=SourceEventQuery(
+                    source_type="ZABBIX", source_id=self.context.source_id,
+                    target_id=request.target_id, binding_id=request.binding_id, query_scope="RECENT_PROBLEMS",
+                    window_start=request.window_start, window_end=request.window_end,
+                    captured_at=datetime.now(UTC),
+                    response_sha256=hashlib.sha256(f"{host_hash}:{response_hash}".encode()).hexdigest(),
+                    source_version=f"{self.context.adapter_id}:{self.context.adapter_version}:{self.context.config_version}",
+                    truncated=len(problems) >= request.max_events,
+                ),
                 events=tuple(
                     {
                         "source_type": "ZABBIX",
@@ -442,7 +461,13 @@ class ZabbixAdapter(BaseDiagnosticSourceAdapter):
                             :128
                         ],
                         "severity": str(item.get("severity", "")),
-                        "status": "FIRING",
+                        "status": (
+                            "UNKNOWN" if item.get("r_eventid") is None
+                            else "FIRING" if str(item["r_eventid"]) == "0" else "RESOLVED"
+                        ),
+                        "is_open": (
+                            None if item.get("r_eventid") is None else str(item["r_eventid"]) == "0"
+                        ),
                         "active_at": datetime.fromtimestamp(
                             int(item["clock"]), tz=UTC
                         ).isoformat(),

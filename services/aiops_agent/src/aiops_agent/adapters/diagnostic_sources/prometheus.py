@@ -23,7 +23,7 @@ from aiops_agent.ports.diagnostic_source import (
     SourceHealthResult,
 )
 
-from aiops_agent.contracts.evidence import DiscoveredMetric, MetricDiscoveryResult
+from aiops_agent.contracts.evidence import DiscoveredMetric, MetricDiscoveryResult, SourceEventQuery
 
 from .base import BaseDiagnosticSourceAdapter, DiagnosticSourceAdapterError
 
@@ -288,17 +288,27 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
     async def query_events(
         self, request: EventEvidenceRequest
     ) -> EventEvidenceResult:
+        self._remaining_response_bytes = request.max_response_bytes
         try:
             async with self._session.get(
                 f"{self._endpoint().rstrip('/')}/api/v1/alerts",
                 headers=self._headers(),
                 timeout=self._timeout,
+                allow_redirects=False,
             ) as response:
-                payload, _ = await self._response_json(
-                    response, max_bytes=1024 * 1024
+                if response.status != 200 and response.status not in {401, 403, 429} and response.status < 500:
+                    raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "活动告警接口未返回成功状态")
+                payload, response_hash = await self._response_json(
+                    response, max_bytes=request.max_response_bytes
                 )
             alerts = []
+            if (not isinstance(payload, dict) or payload.get("status") != "success"
+                or not isinstance(payload.get("data"), dict)
+                or not isinstance(payload["data"].get("alerts"), list)):
+                raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "活动告警正文不符合来源合同")
             for item in payload.get("data", {}).get("alerts", []):
+                if not isinstance(item, dict) or not isinstance(item.get("labels"), dict):
+                    raise DiagnosticSourceAdapterError("SOURCE_RESPONSE_INVALID", "活动告警标签无法核验")
                 labels = item.get("labels") or {}
                 if labels.get("instance") != request.source_locator_key:
                     continue
@@ -317,7 +327,14 @@ class PrometheusAdapter(BaseDiagnosticSourceAdapter):
                 )
                 if len(alerts) >= request.max_events:
                     break
-            return EventEvidenceResult(events=tuple(alerts))
+            return EventEvidenceResult(events=tuple(alerts), query=SourceEventQuery(
+                source_type="PROMETHEUS", source_id=self.context.source_id,
+                target_id=request.target_id, binding_id=request.binding_id, query_scope="CURRENT_ALERTS",
+                window_start=request.window_start, window_end=request.window_end,
+                captured_at=datetime.now(UTC), response_sha256=response_hash,
+                source_version=f"{self.context.adapter_id}:{self.context.adapter_version}:{self.context.config_version}",
+                truncated=len(alerts) >= request.max_events,
+            ))
         except (
             DiagnosticSourceAdapterError,
             KeyError,

@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from aiops_agent.application.diagnosis.provenance import native_metric_provenance
+from aiops_agent.application.diagnosis.event_evidence import source_event_fact
 from aiops_agent.contracts.evidence import LogEvidenceSet, ObservationSet
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from aiops_agent.domain.evidence.source_history import CATALOG_COLUMNS, metric_catalog_rows, NATIVE_COLUMNS, native_history_rows, native_history_warnings, log_pagination_warnings
@@ -13,7 +14,7 @@ async def validate_source_history_facts(*, uow, run, payload):
     sources = {}
     try:
         for raw in payload.get("evidence", ()):
-            if raw.get("tool_id") not in {"monitor.discover_metrics", "monitor.query_native_metric", "loki.query_range"}:
+            if raw.get("tool_id") not in {"monitor.event.query", "monitor.discover_metrics", "monitor.query_native_metric", "loki.query_range"}:
                 if raw.get("source_pagination"):
                     return False
                 continue
@@ -29,7 +30,16 @@ async def validate_source_history_facts(*, uow, run, payload):
             artifact = sources[identity]
             if fact.trust_level != "SOURCE_VERIFIED" or fact.presentation_kind != "TABLE":
                 return False
-            if fact.tool_id == "monitor.discover_metrics":
+            if fact.tool_id == "monitor.event.query":
+                if artifact.schema_version != "OBSERVATION_SET.v1":
+                    return False
+                source = ObservationSet.model_validate(artifact.payload_json)
+                expected = source_event_fact(artifact_id=identity, result=source)
+                if (str(source.target_id) != str(run.target_id) or expected is None
+                    or fact.model_dump(mode="json") != expected.model_dump(mode="json")):
+                    return False
+                continue
+            elif fact.tool_id == "monitor.discover_metrics":
                 if artifact.schema_version != "OBSERVATION_SET.v1" or fact.measurement_semantics != "NOT_APPLICABLE":
                     return False
                 source = ObservationSet.model_validate(artifact.payload_json)
