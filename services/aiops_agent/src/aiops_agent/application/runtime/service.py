@@ -1080,6 +1080,11 @@ class AIOpsRuntimeService:
                             "DEPLOYMENT_MUTATION_DISABLED",
                         ),
                         (
+                            policy is not None
+                            and dict(policy.rules_json or {}).get("allow_agent_execution") is False,
+                            "AGENT_MUTATION_DISABLED",
+                        ),
+                        (
                             not bool(target.controlled_change_enabled),
                             "TARGET_CONTROLLED_CHANGE_DISABLED",
                         ),

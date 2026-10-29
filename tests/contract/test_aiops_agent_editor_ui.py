@@ -36,8 +36,8 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_page_uses_repaired_agent_editor_bundle(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
 
-        self.assertIn("aiops-forms.css?v=20261022_2", page)
-        self.assertIn("aiops-agents.js?v=20261029-catalog-1", page)
+        self.assertIn("aiops-agents.css?v=20261029-ammolite-1", page)
+        self.assertIn("aiops-agents.js?v=20261029-ammolite-1", page)
 
     def test_models_are_a_dedicated_wizard_step(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
@@ -56,7 +56,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         script = SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("button.onclick = () => setStep(button.dataset.agentStepButton)", script)
-        self.assertIn("button.disabled = false", script)
+        self.assertIn("button.disabled = saving", script)
         self.assertNotIn("buttonStep > currentStep", script)
 
     def test_agent_does_not_maintain_monitor_mappings(self) -> None:
@@ -90,7 +90,7 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
     def test_agent_list_exposes_versioned_delete(self) -> None:
         script = SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn('data-agent-action="delete"', script)
+        self.assertIn('button("delete", "删除 Agent", true)', script)
         self.assertIn('method: "DELETE"', script)
         self.assertIn('"If-Match": `"rv-${agent.row_version}"`', script)
 

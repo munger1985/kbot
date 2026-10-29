@@ -28,6 +28,9 @@ class _Request(BaseModel):
 
 
 class AgentCreateRequest(_Request):
+    readonly_database_enabled: bool = True
+    allow_agent_execution: bool = False
+    alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     sql_plan_capture: SqlPlanCapturePolicy = Field(default_factory=SqlPlanCapturePolicy)
     display_name: str = Field(min_length=1, max_length=256)
     description: str | None = Field(default=None, max_length=1000)
@@ -55,6 +58,9 @@ class AgentCreateRequest(_Request):
 
 
 class AgentUpdateRequest(_Request):
+    readonly_database_enabled: bool | None = None
+    allow_agent_execution: bool | None = None
+    alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     sql_plan_capture: SqlPlanCapturePolicy | None = None
     expected_row_version: int = Field(ge=1)
     display_name: str | None = Field(default=None, min_length=1, max_length=256)

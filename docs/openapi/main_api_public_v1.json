@@ -11,6 +11,24 @@
             "title": "Alert Cooldown Minutes",
             "type": "integer"
           },
+          "alert_cooldown_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Cooldown Seconds"
+          },
+          "allow_agent_execution": {
+            "default": false,
+            "title": "Allow Agent Execution",
+            "type": "boolean"
+          },
           "allowed_business_system_ids": {
             "items": {
               "format": "uuid",
@@ -114,6 +132,11 @@
             "title": "Models",
             "type": "object"
           },
+          "readonly_database_enabled": {
+            "default": true,
+            "title": "Readonly Database Enabled",
+            "type": "boolean"
+          },
           "sql_plan_capture": {
             "$ref": "#/components/schemas/SqlPlanCapturePolicy"
           },
@@ -150,6 +173,30 @@
               }
             ],
             "title": "Alert Cooldown Minutes"
+          },
+          "alert_cooldown_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Cooldown Seconds"
+          },
+          "allow_agent_execution": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Agent Execution"
           },
           "allowed_business_system_ids": {
             "anyOf": [
@@ -331,6 +378,17 @@
               }
             ],
             "title": "Models"
+          },
+          "readonly_database_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readonly Database Enabled"
           },
           "sql_plan_capture": {
             "anyOf": [

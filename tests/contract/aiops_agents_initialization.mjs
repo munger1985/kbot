@@ -31,8 +31,8 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
   const redirects = [];
   const elements = new Map();
   function element() {
-    return { innerHTML: "", textContent: "", disabled: false, dataset: {},
-      querySelectorAll: () => [], remove() {} };
+    return { innerHTML: "", textContent: "", value: "", disabled: false, dataset: {}, hidden: false,
+      querySelectorAll: () => [], addEventListener() {}, remove() {} };
   }
   for (const match of html.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
     const node = element();
@@ -42,7 +42,6 @@ function setup({ session = true, accessResult = access, responses = {} } = {}) {
   elements.get("agent-rows").innerHTML = "正在加载 Agent…";
   const controls = new Map([
     ['[name="knowledge_enabled"]', element()],
-    ['[name="auto_alert_enabled"]', element()],
   ]);
   const document = {
     body: {
@@ -115,7 +114,10 @@ test("实际 Shell 与页面脚本完成列表渲染和事件绑定", async () =
   assert.deepEqual(app.errors, []);
   assert.deepEqual(app.requests.slice(1), paths);
   assert.match(app.elements.get("agent-rows").innerHTML, /诊断 &lt;Agent&gt;/);
-  assert.match(app.elements.get("agent-rows").innerHTML, /生产系统/);
+  assert.match(app.elements.get("agent-rows").innerHTML, /业务系统<\/dt><dd>1 个/);
+  app.elements.get("agent-search").value = "生产系统";
+  app.elements.get("agent-search").oninput();
+  assert.match(app.elements.get("agent-rows").innerHTML, /诊断 &lt;Agent&gt;/);
   assert.match(app.elements.get("agent-planner-model").innerHTML, /测试模型/);
   assert.match(app.elements.get("agent-ocr-model").innerHTML, /测试 OCR/);
   assert.match(app.elements.get("agent-vlm-model").innerHTML, /测试 VLM/);
@@ -161,7 +163,7 @@ test("公共 Shell 认证失败时结束加载并显示原因", async () => {
   await app.start();
   assert.deepEqual(app.errors, []);
   assert.deepEqual(app.requests, [`${api}/access`]);
-  assert.match(app.elements.get("agent-rows").innerHTML, /Agent 加载失败.*会话已过期/);
+  assert.match(app.elements.get("agent-page-error").textContent, /Agent 加载失败.*会话已过期/);
   assert.doesNotMatch(app.elements.get("agent-rows").innerHTML, /正在加载/);
   assert.equal(app.elements.get("create-agent").disabled, true);
 });
@@ -172,9 +174,23 @@ for (const path of paths) {
     await app.start();
     assert.deepEqual(app.errors, []);
     const content = app.elements.get("agent-rows").innerHTML;
-    assert.match(content, /Agent 加载失败.*接口失败/);
-    assert.match(content, /&lt;img/);
+    assert.match(app.elements.get("agent-page-error").textContent, /Agent 加载失败.*接口失败/);
+    assert.equal(app.elements.get("agent-page-error").hidden, false);
+    assert.doesNotMatch(content, /接口失败/);
     assert.doesNotMatch(content, /正在加载|<img/);
     assert.equal(app.elements.get("create-agent").disabled, true);
+    assert.equal(app.elements.get("refresh-agents").disabled, false);
   });
 }
+
+test("目录加载失败后可原地刷新恢复", async () => {
+  const responses = { [paths[2]]: new Error("目录暂不可用") };
+  const app = setup({ responses });
+  await app.start();
+  assert.equal(app.elements.get("create-agent").disabled, true);
+  responses[paths[2]] = [];
+  await app.elements.get("refresh-agents").onclick();
+  assert.equal(app.elements.get("agent-page-error").hidden, true);
+  assert.match(app.elements.get("agent-rows").innerHTML, /暂无 Agent/);
+  assert.equal(app.elements.get("create-agent").disabled, false);
+});

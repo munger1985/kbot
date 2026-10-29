@@ -1,5 +1,21 @@
 # KBot 4.0 AIOps Agent 产品能力与完整流程
 
+## 2026-10-29 Agent 管理页对齐
+
+Agent 管理页以 Ammolite 的 `AIOpsAgentsView.vue` 和 `ExecutionPolicyForm.vue` 为界面基线：
+卡片目录、搜索刷新、启用/停用、主题化删除确认，以及“角色信息、工作范围、自动化、模型与指令、确认配置”
+五步抽屉保持一致。业务系统和知识库最多各选 32 个，选择器每页 12 项；知识库不自动勾选。
+
+KBot 保留自身认证与 Main API 路由，模型目录使用 `/api/v1/model-catalog`；更新 Agent 的请求体必须包含
+`expected_row_version`，删除使用 `If-Match`。不复用 Ammolite 的 Domain 路由或启停命令地址。
+
+自动化配置新增透传 `readonly_database_enabled`、`allow_agent_execution` 和 `alert_cooldown_seconds`，
+写入已有版本化 Policy JSON，不修改数据库结构。冷却时间精确到秒，支持 0；修改其他配置不丢失秒数和开关。
+允许执行开关只是当前 Agent 的额外限制，不替代资源级动作授权、平台开关、目标执行凭据及逐次人工审批。
+
+跨仓库浏览器回归位于 Ammolite 的 `apps/portal-web/tests/aiops-agent-management-parity.spec.mjs`，
+同时运行两个真实页面组件并比较关键视觉规格；页面测试不代替线上部署与真实目标执行验收。
+
 ## 2026-10-28 能力重设计（首批实现，整体待验收）
 
 统一目标见

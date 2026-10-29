@@ -172,6 +172,9 @@ class ResourceControlledActionExecution(_Model):
 
 
 class CreateAIOpsAgentCommand(_Model):
+    readonly_database_enabled: bool = True
+    allow_agent_execution: bool = False
+    alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     sql_plan_capture: SqlPlanCapturePolicy = Field(default_factory=SqlPlanCapturePolicy)
     domain_id: int = Field(ge=1)
     display_name: str = Field(min_length=1, max_length=256)
@@ -212,6 +215,9 @@ class CreateAIOpsAgentCommand(_Model):
 
 
 class UpdateAIOpsAgentCommand(_Model):
+    readonly_database_enabled: bool | None = None
+    allow_agent_execution: bool | None = None
+    alert_cooldown_seconds: int | None = Field(default=None, ge=0, le=86400)
     sql_plan_capture: SqlPlanCapturePolicy | None = None
     domain_id: int = Field(ge=1)
     agent_id: UUID
@@ -519,9 +525,15 @@ class AIOpsAgentService:
                 exclude={"domain_id", "agent_id", "expected_row_version", "actor_id"},
                 exclude_unset=True,
             )
-            if changes.get("sql_plan_capture") is None:
-                # 可选更新的空值不删除既有授权范围；停用须提交显式禁用策略。
-                changes.pop("sql_plan_capture", None)
+            # 可选更新的空值不删除既有策略；停用须提交显式禁用值。
+            for field in (
+                "sql_plan_capture",
+                "readonly_database_enabled",
+                "allow_agent_execution",
+                "alert_cooldown_seconds",
+            ):
+                if changes.get(field) is None:
+                    changes.pop(field, None)
             effective_business_system_ids = tuple(
                 changes.get("allowed_business_system_ids", tuple(current_business_systems))
             )
@@ -531,6 +543,21 @@ class AIOpsAgentService:
                 if policy
             ]
             effective = {
+                "readonly_database_enabled": changes.get(
+                    "readonly_database_enabled",
+                    current_rules.get("readonly_database_enabled", True),
+                ),
+                "allow_agent_execution": changes.get(
+                    "allow_agent_execution",
+                    current_rules.get("allow_agent_execution", False),
+                ),
+                "alert_cooldown_seconds": (
+                    changes["alert_cooldown_seconds"]
+                    if changes.get("alert_cooldown_seconds") is not None
+                    else int(changes["alert_cooldown_minutes"]) * 60
+                    if changes.get("alert_cooldown_minutes") is not None
+                    else int(current_rules.get("alert_cooldown_seconds", 900))
+                ),
                 "sql_plan_capture": changes.get("sql_plan_capture", current_rules.get("sql_plan_capture", {})),
                 "domain_id": command.domain_id,
                 "allowed_business_system_ids": effective_business_system_ids,
@@ -575,6 +602,9 @@ class AIOpsAgentService:
                 effective,
             )
             version_fields = {
+                "readonly_database_enabled",
+                "allow_agent_execution",
+                "alert_cooldown_seconds",
                 "sql_plan_capture",
                 "allowed_business_system_ids",
                 "capabilities",
@@ -662,6 +692,9 @@ class AIOpsAgentService:
             "models": row["models"],
             "instruction": row["instruction"],
             "resource_context": {
+                "readonly_database_enabled": row["readonly_database_enabled"],
+                "allow_agent_execution": row["allow_agent_execution"],
+                "alert_cooldown_seconds": row["alert_cooldown_seconds"],
                 "policy_id": row["policy_id"],
                 "allowed_business_system_ids": row["allowed_business_system_ids"],
                 "capabilities": row["capabilities"],
@@ -1034,7 +1067,8 @@ class AIOpsAgentService:
         rules = {
             "sql_plan_capture": SqlPlanCapturePolicy.model_validate(values.get("sql_plan_capture", {})).model_dump(mode="json"),
             "schema_version": "ops.policy.v1",
-            "readonly_database_enabled": True,
+            "readonly_database_enabled": bool(values.get("readonly_database_enabled", True)),
+            "allow_agent_execution": bool(values.get("allow_agent_execution", False)),
             "auto_alert_enabled": bool(values.get("auto_alert_enabled", True)),
             "auto_observe_min_severity": values.get(
                 "auto_observe_min_severity", "CRITICAL"
@@ -1042,10 +1076,11 @@ class AIOpsAgentService:
             "auto_observe_min_target_level": int(
                 values.get("auto_observe_min_target_level", 1)
             ),
-            "alert_cooldown_seconds": int(
-                values.get("alert_cooldown_minutes", 15)
-            )
-            * 60,
+            "alert_cooldown_seconds": (
+                int(values["alert_cooldown_seconds"])
+                if values.get("alert_cooldown_seconds") is not None
+                else int(values.get("alert_cooldown_minutes", 15)) * 60
+            ),
         }
         policy = PolicyEntity(
             policy_id=uuid7(),
@@ -1173,6 +1208,9 @@ class AIOpsAgentService:
         )
         rules = dict(policy.rules_json or {}) if policy is not None else {}
         return {
+            "readonly_database_enabled": bool(rules.get("readonly_database_enabled", True)),
+            "allow_agent_execution": bool(rules.get("allow_agent_execution", False)),
+            "alert_cooldown_seconds": int(rules.get("alert_cooldown_seconds", 900)),
             "sql_plan_capture": SqlPlanCapturePolicy.model_validate(rules.get("sql_plan_capture", {})).model_dump(mode="json"),
             "agent_id": str(agent.agent_id),
             "domain_id": str(agent.domain_id),

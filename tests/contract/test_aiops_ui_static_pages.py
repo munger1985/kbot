@@ -74,7 +74,10 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
             page = path.read_text(encoding="utf-8")
-            self.assertIn('class="ops-head', page, path.name)
+            if path.name == "agents.html":
+                self.assertIn('class="page-header app-page-head"', page)
+            else:
+                self.assertIn('class="ops-head', page, path.name)
 
         stylesheet = (AIOPS_ROOT / "css" / "aiops.css").read_text(encoding="utf-8")
         self.assertIn(".ops-main>.ops-head{box-sizing:border-box;align-items:flex-start", stylesheet)
@@ -1510,7 +1513,10 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertNotIn('name="allow_change_execution"', page)
         self.assertIn("controlled_action_execution:", script)
         self.assertNotIn('/action-catalog/', script)
-        self.assertIn('name="auto_alert_enabled"', page)
+        self.assertNotIn('name="auto_alert_enabled"', page)
+        self.assertIn('name="readonly_database_enabled"', page)
+        self.assertIn('name="allow_agent_execution"', page)
+        self.assertIn('name="alert_cooldown_seconds"', page)
         self.assertIn('name="auto_observe_min_target_level"', page)
         self.assertIn("auto_observe_min_target_level:", script)
         self.assertNotIn('name="diagnosis_model_id" required', page)
@@ -1520,7 +1526,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn('data-agent-step="4"', page)
         self.assertIn('data-agent-step="5"', page)
         self.assertIn('<h3>模型与指令</h3>', page)
-        self.assertIn("setStep(4)", script)
+        self.assertIn("if (!validateStep(step)) { setStep(step); return; }", script)
         self.assertIn("运行中的 Agent 必须配置", script)
         self.assertIn('planner_llm: form.elements.planner_model_id.value', script)
         self.assertIn('diagnosis_llm: form.elements.diagnosis_model_id.value', script)
@@ -1530,7 +1536,7 @@ if (!/^ui-[0-9]+-[0-9a-f]+$/.test(value)) process.exit(1);
         self.assertIn("自动触发不影响聊天、知识问答和报告查询", page)
         self.assertNotIn('id="agent-binding-summary"', page)
         self.assertIn('class="agent-step-panel"', page)
-        self.assertIn('class="agent-picker-dialog"', page)
+        self.assertIn('class="agent-picker"', page)
         self.assertNotIn("/source-bindings", script)
         self.assertNotIn("assertExistingBindings", script)
         self.assertNotIn("ensureSourceBindings", script)

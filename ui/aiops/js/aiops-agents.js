@@ -6,12 +6,12 @@
   const escape = (value) => shell.escape(value ?? "—");
   const values = (items) => Array.isArray(items) ? items : [];
   const capabilityCatalog = [
-    ["RESOURCE_CATALOG_QUERY", "资源信息", "查询业务系统拓扑、主机、IP 与资源属性"],
-    ["KNOWLEDGE_QA", "运维知识", "检索已审批手册与历史诊断案例"],
-    ["MONITORING_QUERY", "监控现状", "查询业务系统当前指标与趋势"],
-    ["ALERT_QUERY", "告警查询", "查询当前与历史告警"],
-    ["INSPECTION_QUERY", "巡检查询", "读取巡检结果与报告"],
-    ["REPORT_CASE_QUERY", "历史案例", "查询已审核发布的诊断案例"],
+    ["RESOURCE_CATALOG_QUERY", "资源信息", "业务系统拓扑、主机、IP 与资源属性"],
+    ["KNOWLEDGE_QA", "运维知识", "已审批手册与历史诊断案例"],
+    ["MONITORING_QUERY", "监控现状", "实时指标、趋势与资源状态"],
+    ["ALERT_QUERY", "告警查询", "当前告警与历史告警"],
+    ["INSPECTION_QUERY", "巡检查询", "巡检执行结果与报告"],
+    ["REPORT_CASE_QUERY", "历史案例", "已审核发布的诊断案例"],
     ["ACTIVE_DIAGNOSIS", "主动诊断", "按自然语言范围执行有界诊断"],
     ["CONTROLLED_CHANGE", "受控变更", "仅保留已有资源级授权；新增授权需在资源治理中完成"],
   ];
@@ -33,25 +33,30 @@
   let currentStep = 1;
   let pickerKind = null;
   let pickerPage = 1;
+  let saving = false;
+  let loading = true;
+  let catalogReady = false;
   const pickerPageSize = 12;
+  const queryCapabilities = ["RESOURCE_CATALOG_QUERY", "MONITORING_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY"];
   const selectionSets = {
     systems: new Set(),
     knowledgeBases: new Set(),
     tags: new Set(),
   };
 
-  const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || shell.short(id);
+  const systemName = (id) => systems.find((item) => item.business_system_id === id)?.display_name || "业务系统已不可用";
   const selected = (name) => [...document.querySelectorAll(`[name="${name}"]:checked`)].map((input) => input.value);
 
   function showResult(message = "", tone = "") {
     const result = document.getElementById("agent-result");
     result.textContent = message;
     result.dataset.tone = tone;
+    result.hidden = !message;
   }
 
   function modelLabel(model) {
     const provider = providerLabels[String(model.provider || "").toLowerCase()] || model.provider || "未知提供方";
-    return `${model.display_name} · ${model.served_model_name} · ${provider}`;
+    return `${model.display_name} · ${provider}`;
   }
 
   function llmModels() {
@@ -67,15 +72,15 @@
   }
 
   function renderModelOptions(elementId, category, emptyLabel) {
-    const rows = models.filter((item) => Number(item.category) === category);
-    document.getElementById(elementId).innerHTML = `<option value="">${emptyLabel}</option>${rows.map((item) => `<option value="${escape(item.model_id)}">${escape(category === 1 ? modelLabel(item) : `${item.display_name} · ${item.served_model_name}`)}</option>`).join("")}`;
+    const rows = category === 1 ? llmModels() : models.filter((item) => Number(item.category) === category);
+    document.getElementById(elementId).innerHTML = `<option value="">${emptyLabel}</option>${rows.map((item) => `<option value="${escape(item.model_id)}">${escape(category === 1 ? modelLabel(item) : item.display_name)}</option>`).join("")}`;
   }
 
   function renderResources() {
     document.getElementById("agent-capabilities").innerHTML = capabilityCatalog
-      .filter(([key]) => key !== "KNOWLEDGE_QA")
-      .map(([key, label, help]) => `<label class="agent-switch-row"><input type="checkbox" name="capabilities" value="${key}" ${key === "CONTROLLED_CHANGE" ? "disabled" : ""}><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
-    ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答模型" : "请选择 LLM"));
+      .filter(([key]) => queryCapabilities.includes(key))
+      .map(([key, label, help]) => `<label><input type="checkbox" name="capabilities" value="${key}"><span><strong>${label}</strong><small>${help}</small></span></label>`).join("");
+    ["agent-planner-model", "agent-model", "agent-composer-model", "agent-memory-model"].forEach((id) => renderModelOptions(id, 1, id === "agent-memory-model" ? "复用回答组织模型" : id === "agent-model" ? "不启用主动诊断" : "请选择"));
     renderModelOptions("agent-ocr-model", 6, "不启用 OCR");
     renderModelOptions("agent-vlm-model", 5, "不启用 VLM");
     renderSelectionSummaries();
@@ -91,6 +96,7 @@
     const rows = selectionRows(kind);
     const element = document.getElementById(elementId);
     element.innerHTML = rows.map((item) => `<span class="agent-selection-chip">${escape(item.title)}<button type="button" data-remove-selection="${kind}" data-selection-id="${escape(item.id)}" aria-label="移除 ${escape(item.title)}">×</button></span>`).join("");
+    if (!rows.length && kind !== "tags") element.innerHTML = `<p class="agent-empty-selection">${kind === "systems" ? "尚未选择业务系统。" : "尚未绑定知识库。"}</p>`;
     element.querySelectorAll("[data-remove-selection]").forEach((button) => {
       button.onclick = () => {
         selectionSets[button.dataset.removeSelection].delete(button.dataset.selectionId);
@@ -105,46 +111,70 @@
     renderSelectionSummary("tags", "agent-knowledge-tag-summary");
     const count = selectionSets.tags.size;
     document.getElementById("agent-knowledge-tag-help").textContent = count
-      ? `仅检索 ${count} 个标签。`
-      : "不限制标签，使用所选知识库中的全部已审批知识。";
+      ? `仅检索 ${count} 个标签`
+      : "不限制标签，使用所选知识库中的全部已审批知识";
+    document.getElementById("open-agent-tag-picker").textContent = count ? "调整标签" : "限制标签";
   }
 
-  function renderSummary() {
-    const active = agents.filter((item) => item.status === "ACTIVE").length;
-    document.getElementById("agent-summary").innerHTML = [
-      `<span><strong>${agents.length}</strong> 全部</span>`,
-      `<span><strong>${active}</strong> 已启用</span>`,
-      `<span><strong>${systems.length}</strong> 业务系统</span>`,
-    ].join("");
+  function setBusy() {
+    document.getElementById("create-agent").disabled = saving || loading || !catalogReady;
+    document.getElementById("refresh-agents").disabled = saving || loading;
+    document.getElementById("refresh-agents").textContent = loading ? "刷新中…" : "刷新目录";
+    document.querySelectorAll('#agent-rows button, #agent-dialog button').forEach((button) => { button.disabled = saving; });
   }
 
   function renderRows() {
     const body = document.getElementById("agent-rows");
-    renderSummary();
-    if (!agents.length) {
-      body.innerHTML = '<tr><td class="ops-empty" colspan="6">当前范围内暂无 Agent</td></tr>';
+    const keyword = document.getElementById("agent-search").value.trim().toLocaleLowerCase();
+    const visibleAgents = agents.filter((agent) => !keyword || [agent.display_name, agent.description || "", ...values(agent.allowed_business_system_ids).map(systemName), ...values(agent.capabilities).map((item) => capabilityLabels[item] || item)].join(" ").toLocaleLowerCase().includes(keyword));
+    if (!visibleAgents.length) {
+      body.innerHTML = `<p class="resource-list-empty">${keyword ? "没有匹配的 Agent" : "当前范围内暂无 Agent"}</p>`;
       return;
     }
-    body.innerHTML = agents.map((agent) => {
+    body.innerHTML = visibleAgents.map((agent) => {
       const names = values(agent.allowed_business_system_ids).map(systemName);
       const capabilities = values(agent.capabilities).map((item) => capabilityLabels[item] || item);
-      const knowledge = agent.knowledge_policy?.enabled
-        ? `${values(agent.knowledge_policy.source_kinds).length} 类来源 · 最多 ${agent.knowledge_policy.maximum_references || 8} 条引用`
-        : "未启用";
-      return `<tr>
-        <td><strong>${escape(agent.display_name)}</strong><small class="agent-row-description">${escape(agent.description || "未填写说明")}</small></td>
-        <td>${shell.badge(agent.status)}</td>
-        <td><strong>${names.length} 个业务系统</strong><small class="agent-row-description">${escape(names.join("、") || "—")}</small></td>
-        <td><strong>${capabilities.length} 项能力</strong><small class="agent-row-description">${escape(capabilities.join("、") || "—")}</small></td>
-        <td><strong>${escape(knowledge)}</strong><small class="agent-row-description">${agent.auto_alert_enabled ? `自动观察 ${escape(agent.auto_observe_min_severity || "CRITICAL")} 起` : "自动观察已关闭"}</small></td>
-        <td><div class="ops-actions"><button type="button" data-agent-action="edit" data-agent-id="${escape(agent.agent_id)}">编辑</button><button type="button" class="danger" data-agent-action="delete" data-agent-id="${escape(agent.agent_id)}">删除</button></div></td>
-      </tr>`;
+      const status = { ACTIVE: ["运行中", "status-success"], DRAFT: ["草稿", "status-warning"], DISABLED: ["已停用", "status-muted"] }[agent.status] || [agent.status, "status-muted"];
+      const button = (action, label, danger = false) => `<button type="button" class="${danger ? "danger-row-action" : "row-action"}" data-agent-action="${action}" data-agent-id="${escape(agent.agent_id)}" ${saving ? "disabled" : ""}>${label}</button>`;
+      return `<article class="management-catalog-card"><header><div><p class="eyebrow">AIOPS AGENT</p><h3>${escape(agent.display_name)}</h3></div><span class="status-pill ${status[1]}">${escape(status[0])}</span></header><p>${escape(agent.description || "尚未填写 Agent 说明。")}</p><dl><div><dt>业务系统</dt><dd>${names.length} 个</dd></div><div><dt>能力范围</dt><dd class="agent-scope" title="${escape(capabilities.join("、"))}"><span>${escape(capabilities.slice(0, 3).join("、") || "未配置")}</span>${capabilities.length > 3 ? `<small>+${capabilities.length - 3}</small>` : ""}</dd></div></dl><footer class="management-catalog-actions management-catalog-action-bar"><div class="management-catalog-primary-actions">${button("edit", "编辑")}${agent.status === "ACTIVE" ? button("disable", "停用", true) : ["DRAFT", "DISABLED"].includes(agent.status) ? button("enable", "启用") : ""}</div><div class="management-catalog-overflow"><button type="button" class="row-action management-catalog-more" aria-haspopup="menu" aria-expanded="false"><span>更多</span><span aria-hidden="true">⌄</span></button><div class="management-catalog-menu" role="menu" hidden>${button("delete", "删除 Agent", true)}</div></div></footer></article>`;
     }).join("");
     body.querySelectorAll("[data-agent-action]").forEach((button) => {
-      button.onclick = () => button.dataset.agentAction === "edit"
-        ? openEdit(button.dataset.agentId)
-        : deleteAgent(agents.find((item) => item.agent_id === button.dataset.agentId), button);
+      button.onclick = () => {
+        const agent = agents.find((item) => item.agent_id === button.dataset.agentId);
+        closeMenus();
+        if (button.dataset.agentAction === "edit") openEdit(button.dataset.agentId).catch((error) => shell.toast(error.message));
+        else if (button.dataset.agentAction === "delete") deleteAgent(agent);
+        else commandAgent(agent, button.dataset.agentAction);
+      };
     });
+    body.querySelectorAll(".management-catalog-more").forEach((button) => {
+      button.onclick = () => {
+        const open = button.getAttribute("aria-expanded") !== "true";
+        closeMenus();
+        button.setAttribute("aria-expanded", String(open));
+        button.nextElementSibling.hidden = !open;
+      };
+    });
+  }
+
+  function closeMenus() {
+    document.querySelectorAll(".management-catalog-more").forEach((button) => {
+      button.setAttribute("aria-expanded", "false");
+      button.nextElementSibling.hidden = true;
+    });
+  }
+
+  function renderCapabilityGroups() {
+    const capabilities = selected("capabilities");
+    const count = queryCapabilities.filter((key) => capabilities.includes(key)).length;
+    document.getElementById("agent-query-capabilities").checked = count === queryCapabilities.length;
+    document.getElementById("agent-query-capabilities").indeterminate = count > 0 && count < queryCapabilities.length;
+    document.getElementById("agent-query-capability-count").textContent = `资源、监控、告警、巡检与报告 · 已启用 ${count}/${queryCapabilities.length} 项`;
+    document.getElementById("agent-query-group").classList.toggle("selected", count > 0);
+    document.getElementById("agent-diagnosis-group").classList.toggle("selected", capabilities.includes("ACTIVE_DIAGNOSIS"));
+    document.getElementById("agent-diagnosis-label").textContent = `诊断模型${capabilities.includes("ACTIVE_DIAGNOSIS") ? "（智能诊断必选）" : "（可选）"}`;
+    document.getElementById("agent-controlled-change-note").hidden = !values(editing?.capabilities).includes("CONTROLLED_CHANGE");
+    document.querySelectorAll('[name="knowledge_source_kinds"]').forEach((input) => input.closest("label").classList.toggle("selected", input.checked));
   }
 
   function resetChecks() {
@@ -181,13 +211,6 @@
     document.querySelector('[name="knowledge_enabled"] + span').textContent = enabled ? "已启用" : "未启用";
   }
 
-  function toggleAlertSettings() {
-    const enabled = document.querySelector('[name="auto_alert_enabled"]').checked;
-    document.getElementById("agent-alert-settings").hidden = !enabled;
-    document.getElementById("agent-alert-settings").querySelectorAll("select,input").forEach((input) => { input.disabled = !enabled; });
-    document.querySelector('[name="auto_alert_enabled"] + span').textContent = enabled ? "已启用" : "未启用";
-  }
-
   function validateStep(step) {
     const form = document.getElementById("agent-form");
     showResult();
@@ -199,7 +222,7 @@
       showResult("请至少选择一个业务系统。", "bad");
       return false;
     }
-    if (step === 2 && !selected("capabilities").length) {
+    if (step === 2 && !selected("capabilities").length && !values(editing?.capabilities).includes("CONTROLLED_CHANGE")) {
       showResult("请至少启用一项能力。", "bad");
       return false;
     }
@@ -211,11 +234,19 @@
       showResult("请至少绑定一个运维知识库。", "bad");
       return false;
     }
+    if (step === 2 && form.elements.knowledge_enabled.checked && !form.elements.maximum_references.checkValidity()) {
+      showResult("最多引用须为 1 到 20 的整数。", "bad");
+      return false;
+    }
     if (step === 3 && form.elements.capture_enabled.checked && !form.elements.capture_objects.value.trim()) {
       showResult("开启计划采集前请明确允许对象范围。", "bad");
       return false;
     }
-    if (step === 4 && form.elements.status.value === "ACTIVE") {
+    if (step === 3 && (!form.elements.alert_cooldown_seconds.checkValidity() || !form.elements.capture_timeout.checkValidity())) {
+      showResult("请填写有效的冷却时间和单语句时限。", "bad");
+      return false;
+    }
+    if (step === 4 && editing?.status === "ACTIVE") {
       const missing = [];
       if (!form.elements.planner_model_id.value) missing.push("规划模型");
       if (!form.elements.composer_model_id.value) missing.push("回答组织模型");
@@ -234,7 +265,7 @@
     document.getElementById("agent-review").innerHTML = [
       `<article><span>业务系统</span><strong>${selectionSets.systems.size} 个</strong><small>${escape(selectionRows("systems").map((item) => item.title).join("、") || "未选择")}</small></article>`,
       `<article><span>能力范围</span><strong>${capabilities.length} 项</strong><small>${escape(capabilities.join("、") || "未启用")}</small></article>`,
-      `<article><span>运维知识</span><strong>${knowledgeEnabled ? `${selectionSets.knowledgeBases.size} 个知识库` : "未启用"}</strong><small>${knowledgeEnabled ? `${selectionSets.tags.size ? `${selectionSets.tags.size} 个标签` : "全部标签"}` : "不检索知识"}</small></article>`,
+      `<article><span>运维知识</span><strong>${knowledgeEnabled ? `${selectionSets.knowledgeBases.size} 个知识库` : "未启用"}</strong><small>${knowledgeEnabled ? `最高 L${escape(document.getElementById("agent-form").elements.max_security_level.value)} · ${selectionSets.tags.size ? `${selectionSets.tags.size} 个标签` : "全部标签"}` : ""}</small></article>`,
       `<article><span>模型角色</span><strong>${["planner_model_id", "composer_model_id", "diagnosis_model_id"].filter((name) => document.getElementById("agent-form").elements[name].value).length} 个已配置</strong><small>规划、回答组织与诊断模型</small></article>`,
     ].join("");
   }
@@ -246,7 +277,7 @@
       const buttonStep = Number(button.dataset.agentStepButton);
       button.classList.toggle("active", buttonStep === currentStep);
       button.classList.toggle("complete", buttonStep < currentStep);
-      button.disabled = false;
+      button.disabled = saving;
       button.querySelector("b").textContent = buttonStep < currentStep ? "✓" : `0${buttonStep}`;
     });
     document.getElementById("agent-previous-step").hidden = currentStep === 1;
@@ -316,9 +347,8 @@
     const form = document.getElementById("agent-form");
     form.reset();
     resetChecks();
-    document.getElementById("agent-dialog-title").textContent = "新增 Agent";
+    document.getElementById("agent-dialog-title").textContent = "新建 Agent";
     document.getElementById("save-agent").textContent = "创建 Agent";
-    form.elements.status.value = "DRAFT";
     const defaultModel = defaultLlmId();
     form.elements.planner_model_id.value = defaultModel;
     form.elements.diagnosis_model_id.value = defaultModel;
@@ -327,17 +357,18 @@
     setChecked("capabilities", ["RESOURCE_CATALOG_QUERY", "KNOWLEDGE_QA", "MONITORING_QUERY", "ALERT_QUERY", "INSPECTION_QUERY", "REPORT_CASE_QUERY", "ACTIVE_DIAGNOSIS"]);
     setChecked("knowledge_source_kinds", ["MANUAL", "DIAGNOSIS_CASE"]);
     form.elements.knowledge_enabled.checked = true;
-    form.elements.auto_alert_enabled.checked = true;
+    form.elements.readonly_database_enabled.checked = true;
+    form.elements.allow_agent_execution.checked = false;
+    form.elements.alert_cooldown_seconds.value = "900";
     form.elements.capture_enabled.checked = false;
     form.elements.capture_distinct.checked = true;
+    form.elements.capture_native_binds.checked = false;
     form.elements.capture_objects.value = "";
     form.elements.capture_timeout.value = "5";
     form.elements.max_security_level.value = "3";
     form.elements.maximum_references.value = "8";
-    const activeBases = knowledgeBases.filter((item) => item.status === "ACTIVE");
-    if (activeBases.length === 1) setChecked("knowledge_base_ids", [activeBases[0].knowledge_base_id]);
     toggleKnowledgePolicy();
-    toggleAlertSettings();
+    renderCapabilityGroups();
     setStep(1);
     showResult();
     document.getElementById("agent-dialog").showModal();
@@ -352,7 +383,6 @@
     document.getElementById("save-agent").textContent = "保存新版本";
     form.elements.display_name.value = editing.display_name || "";
     form.elements.description.value = editing.description || "";
-    form.elements.status.value = editing.status || "DRAFT";
     form.elements.planner_model_id.value = editing.models?.planner_llm || "";
     form.elements.diagnosis_model_id.value = editing.models?.diagnosis_llm || "";
     form.elements.composer_model_id.value = editing.models?.composer_llm || "";
@@ -360,10 +390,11 @@
     form.elements.ocr_model_id.value = editing.image_capabilities?.ocr?.default_model_id || "";
     form.elements.vlm_model_id.value = editing.image_capabilities?.vlm?.default_model_id || "";
     form.elements.instruction.value = editing.instruction || "";
-    form.elements.auto_alert_enabled.checked = editing.auto_alert_enabled !== false;
+    form.elements.readonly_database_enabled.checked = editing.readonly_database_enabled !== false;
+    form.elements.allow_agent_execution.checked = editing.allow_agent_execution === true;
     form.elements.auto_observe_min_severity.value = editing.auto_observe_min_severity || "CRITICAL";
     form.elements.auto_observe_min_target_level.value = String(editing.auto_observe_min_target_level || 1);
-    form.elements.alert_cooldown_minutes.value = String(editing.alert_cooldown_minutes ?? 15);
+    form.elements.alert_cooldown_seconds.value = String(editing.alert_cooldown_seconds ?? 900);
     const capture = editing.sql_plan_capture || {};
     form.elements.capture_enabled.checked = capture.enabled === true;
     form.elements.capture_objects.value = values(capture.allowed_objects).join("\n");
@@ -382,7 +413,7 @@
     const controlled = document.querySelector('[name="capabilities"][value="CONTROLLED_CHANGE"]');
     if (controlled && values(editing.capabilities).includes("CONTROLLED_CHANGE")) controlled.checked = true;
     toggleKnowledgePolicy();
-    toggleAlertSettings();
+    renderCapabilityGroups();
     setStep(1);
     showResult();
     document.getElementById("agent-dialog").showModal();
@@ -424,44 +455,36 @@
         native_bind_comparison_enabled: form.elements.capture_native_binds.checked,
         max_statement_timeout_seconds: Number(form.elements.capture_timeout.value),
       },
-      auto_alert_enabled: form.elements.auto_alert_enabled.checked,
+      readonly_database_enabled: form.elements.readonly_database_enabled.checked,
+      allow_agent_execution: form.elements.allow_agent_execution.checked,
       auto_observe_min_severity: form.elements.auto_observe_min_severity.value,
       auto_observe_min_target_level: Number(form.elements.auto_observe_min_target_level.value || 1),
-      alert_cooldown_minutes: Number(form.elements.alert_cooldown_minutes.value || 15),
+      alert_cooldown_seconds: Number(form.elements.alert_cooldown_seconds.value),
       models: Object.fromEntries(Object.entries(modelsPayload).filter(([, value]) => value)),
       image_capabilities: { ocr: imageCapability(form, "ocr"), vlm: imageCapability(form, "vlm") },
       instruction: form.elements.instruction.value.trim() || null,
       config: editing?.config || {},
-      status: form.elements.status.value,
+      ...(editing ? { expected_row_version: editing.row_version } : {}),
     };
   }
 
   async function save(event) {
     event.preventDefault();
+    if (saving) return;
     if (currentStep < 5) {
       nextStep();
       return;
     }
     const form = event.currentTarget;
-    const body = buildPayload(form);
-    if (!body.allowed_business_system_ids.length) return showResult("请至少选择一个业务系统。", "bad");
-    if (!body.capabilities.length) return showResult("请至少启用一项能力。", "bad");
-    if (body.knowledge_policy.enabled && !body.knowledge_policy.source_kinds.length) return showResult("请至少选择一种知识来源。", "bad");
-    if (body.knowledge_policy.enabled && !body.knowledge_policy.knowledge_base_ids.length) return showResult("请至少绑定一个运维知识库。", "bad");
-    if (body.status === "ACTIVE") {
-      const missing = [];
-      if (!body.models.planner_llm) missing.push("规划模型");
-      if (!body.models.composer_llm) missing.push("回答组织模型");
-      if (body.capabilities.includes("ACTIVE_DIAGNOSIS") && !body.models.diagnosis_llm) missing.push("诊断模型");
-      if (missing.length) {
-        setStep(4);
-        return showResult(`运行中的 Agent 必须配置${missing.join("、")}，请在“模型与指令”中选择。`, "bad");
-      }
+    for (let step = 1; step <= 4; step += 1) {
+      if (!validateStep(step)) { setStep(step); return; }
     }
+    const body = buildPayload(form);
     const button = document.getElementById("save-agent");
     const buttonLabel = button.textContent;
     const wasEditing = Boolean(editing);
-    button.disabled = true;
+    saving = true;
+    setBusy();
     button.textContent = wasEditing ? "保存中…" : "创建中…";
     try {
       const path = editing ? `${api}/agents/${encodeURIComponent(editing.agent_id)}` : `${api}/agents`;
@@ -474,50 +497,112 @@
     } catch (error) {
       showResult(error.message, "bad");
     } finally {
-      button.disabled = false;
+      saving = false;
+      setBusy();
       button.textContent = buttonLabel;
     }
   }
 
-  async function deleteAgent(agent, button) {
-    if (!agent || !globalThis.confirm(`确认删除 Agent“${agent.display_name}”？历史运行和报告仍会保留。`)) return;
-    button.disabled = true;
+  function confirmDelete(agent) {
+    const dialog = document.getElementById("agent-confirm-dialog");
+    document.getElementById("agent-confirm-message").textContent = `“${agent.display_name}”将停止接收新任务，历史运行与报告仍会保留。`;
+    dialog.returnValue = "cancel";
+    return new Promise((resolve) => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+      dialog.showModal();
+      dialog.querySelector('[value="cancel"]').focus();
+    });
+  }
+
+  async function commandAgent(agent, command) {
+    if (!agent || saving) return;
+    saving = true;
+    setBusy();
+    try {
+      await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agent.agent_id)}`, {
+        method: "PATCH", body: JSON.stringify({ expected_row_version: agent.row_version, status: command === "enable" ? "ACTIVE" : "DISABLED" }),
+      });
+      await load();
+    } catch (error) {
+      shell.toast(error.message);
+    } finally {
+      saving = false;
+      setBusy();
+    }
+  }
+
+  async function deleteAgent(agent) {
+    if (!agent || saving || !(await confirmDelete(agent))) return;
+    saving = true;
+    setBusy();
     try {
       await KBotAIOpsAuth.request(`${api}/agents/${encodeURIComponent(agent.agent_id)}`, { method: "DELETE", headers: { "If-Match": `"rv-${agent.row_version}"` } });
       shell.toast("Agent 已删除");
       await load();
     } catch (error) {
       shell.toast(error.message);
-      button.disabled = false;
+    } finally {
+      saving = false;
+      setBusy();
     }
   }
 
   async function load() {
-    const [agentRows, systemPage, modelRows, tagPage, knowledgeBasePage] = await Promise.all([
-      KBotAIOpsAuth.request(`${api}/agents`),
-      KBotAIOpsAuth.request(`${api}/business-systems?limit=200`),
-      KBotAIOpsAuth.request("/api/v1/model-catalog"),
-      KBotAIOpsAuth.request(`${api}/operations-knowledge/tags?limit=200`),
-      KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
-    ]);
-    agents = values(agentRows);
-    systems = values(systemPage?.items);
-    models = values(modelRows);
-    knowledgeTags = values(tagPage?.items || tagPage);
-    knowledgeBases = values(knowledgeBasePage?.items || knowledgeBasePage);
-    renderResources();
-    const environments = [...new Set(systems.filter((item) => item.status === "ENABLED").map((item) => item.environment).filter(Boolean))].sort((left, right) => String(left).localeCompare(String(right), "zh"));
-    document.getElementById("agent-picker-environment").innerHTML = '<option value="">全部环境</option>' + environments.map((item) => `<option value="${escape(item)}">${escape(item)}</option>`).join("");
-    renderRows();
+    loading = true;
+    setBusy();
+    const pageError = document.getElementById("agent-page-error");
+    pageError.hidden = true;
+    try {
+      const [agentRows, systemPage, modelRows, tagPage, knowledgeBasePage] = await Promise.all([
+        KBotAIOpsAuth.request(`${api}/agents`),
+        KBotAIOpsAuth.request(`${api}/business-systems?limit=200`),
+        KBotAIOpsAuth.request("/api/v1/model-catalog"),
+        KBotAIOpsAuth.request(`${api}/operations-knowledge/tags?limit=200`),
+        KBotAIOpsAuth.request(`${api}/operations-knowledge/knowledge-bases`),
+      ]);
+      agents = values(agentRows);
+      systems = values(systemPage?.items);
+      models = values(modelRows);
+      knowledgeTags = values(tagPage?.items || tagPage);
+      knowledgeBases = values(knowledgeBasePage?.items || knowledgeBasePage);
+      renderResources();
+      const environments = [...new Set(systems.filter((item) => item.status === "ENABLED").map((item) => item.environment).filter(Boolean))].sort((left, right) => String(left).localeCompare(String(right), "zh"));
+      document.getElementById("agent-picker-environment").innerHTML = '<option value="">全部环境</option>' + environments.map((item) => `<option value="${escape(item)}">${escape(item)}</option>`).join("");
+      renderRows();
+      catalogReady = true;
+    } catch (error) {
+      pageError.textContent = `Agent 加载失败：${error.message}`;
+      pageError.hidden = false;
+      if (!catalogReady) document.getElementById("agent-rows").innerHTML = '<p class="resource-list-empty">无法读取 Agent 目录，请点击“刷新目录”重试。</p>';
+    } finally {
+      loading = false;
+      setBusy();
+    }
   }
 
   shell.ready.then(async (access) => {
     if (!access) return;
     const dialog = document.getElementById("agent-dialog");
-    dialog.querySelectorAll("[data-close-dialog]").forEach((button) => { button.onclick = () => dialog.close(); });
+    dialog.querySelectorAll("[data-close-dialog]").forEach((button) => { button.onclick = () => { if (!saving) dialog.close(); }; });
+    [dialog, document.getElementById("agent-picker-dialog"), document.getElementById("agent-confirm-dialog")].forEach((panel) => {
+      panel.addEventListener("cancel", (event) => { if (saving) event.preventDefault(); });
+      panel.addEventListener("click", (event) => {
+        if (event.target !== panel || saving) return;
+        const rect = panel.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) panel.close();
+      });
+    });
     document.getElementById("create-agent").onclick = openCreate;
-    document.querySelector('[name="knowledge_enabled"]').onchange = toggleKnowledgePolicy;
-    document.querySelector('[name="auto_alert_enabled"]').onchange = toggleAlertSettings;
+    document.getElementById("refresh-agents").onclick = load;
+    document.getElementById("agent-search").oninput = renderRows;
+    document.querySelector('[name="knowledge_enabled"]').onchange = () => { toggleKnowledgePolicy(); renderCapabilityGroups(); };
+    document.getElementById("agent-query-capabilities").onchange = (event) => {
+      document.querySelectorAll('[name="capabilities"]').forEach((input) => { if (queryCapabilities.includes(input.value)) input.checked = event.target.checked; });
+      renderCapabilityGroups();
+    };
+    document.getElementById("agent-form").addEventListener("change", renderCapabilityGroups);
+    document.addEventListener("click", (event) => { if (!event.target.closest(".management-catalog-overflow")) closeMenus(); });
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenus(); });
     document.getElementById("agent-form").onsubmit = save;
     document.querySelectorAll("[data-agent-step-button]").forEach((button) => { button.onclick = () => setStep(button.dataset.agentStepButton); });
     document.getElementById("agent-previous-step").onclick = () => setStep(currentStep - 1);
@@ -532,10 +617,11 @@
     document.getElementById("agent-picker-previous").onclick = () => { pickerPage -= 1; renderPicker(); };
     document.getElementById("agent-picker-next").onclick = () => { pickerPage += 1; renderPicker(); };
     await load();
-    document.getElementById("create-agent").disabled = false;
   }).catch((error) => {
     document.getElementById("create-agent").disabled = true;
-    document.getElementById("agent-summary").textContent = "";
-    document.getElementById("agent-rows").innerHTML = `<tr><td class="ops-empty" colspan="6">Agent 加载失败：${escape(error?.message || "请稍后重试")}。请刷新页面重试。</td></tr>`;
+    const pageError = document.getElementById("agent-page-error");
+    pageError.textContent = `Agent 加载失败：${error.message}`;
+    pageError.hidden = false;
+    document.getElementById("agent-rows").innerHTML = '<p class="resource-list-empty">无法读取 Agent 目录。</p>';
   });
 })();
