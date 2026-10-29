@@ -275,7 +275,7 @@ def build_sql_evidence_answer(
     plans = [item for item in evidence if item.evidence_ref in matched_plan_refs and item.sql_plan is not None
              and _matches(item.sql_plan.subject, subject, identity)]
     if plans:
-        analysis += "\n\n已保留匹配执行计划，见计划节点表；本次未完成计划机制及性能影响判断。"
+        analysis += "\n\n已保留匹配执行计划，可切换图形计划与原始计划；本次未完成计划机制及性能影响判断。"
         refs = tuple(dict.fromkeys((*refs, *(item.evidence_ref for item in plans))))
         solution = (
             "已取得并展示匹配计划，不需要重复采集同一材料。当前未完成的是诊断生成，应先恢复此阶段并复用已有证据，"

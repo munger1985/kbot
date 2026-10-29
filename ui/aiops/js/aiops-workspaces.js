@@ -1211,6 +1211,10 @@
       const primary = payload.presentation_role === "PRIMARY";
       const topSql = primary && ["TOP_SQL_LIST", "CURRENT_SQL_LIST", "SQL_SUBJECT_CANDIDATES", "SQL_SUBJECT_COMPARISON"].includes(payload.result_kind);
       const executionPlan = primary && payload.result_kind === "SQL_EXECUTION_PLAN";
+      if (executionPlan) {
+        const meta = [payload.measurement_note, payload.captured_at ? shell.fmt(payload.captured_at) : ""].filter(Boolean).join(" · ");
+        return `<section class="ops-primary-result is-sql-plan"><header><div><h3>${esc(payload.title || "执行计划")}</h3><p>${esc(meta)}</p></div><span>${esc(payload.row_count || values(payload.rows).length)} 个节点${payload.truncated ? " · 已截断" : ""}</span></header>${globalThis.AIOpsSqlPlanViewer.html(payload)}<footer>原始结果仍保留在诊断证据中</footer></section>`;
+      }
       const orderedColumns = columns.map((column, index) => ({ column, index }))
         .filter(({ column }) => !topSql || payload.result_kind === "SQL_SUBJECT_COMPARISON" || String(column?.name || column?.key || column || "").toLowerCase() !== "digest");
       if (topSql) orderedColumns.sort((left, right) => topSqlColumnPriority(left.column) - topSqlColumnPriority(right.column) || left.index - right.index);

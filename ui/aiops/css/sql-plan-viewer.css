@@ -1,0 +1,75 @@
+/* 数据流与原始计划共用展示规则；所有颜色继承产品主题。 */
+.sql-plan-viewer {
+  --plan-surface: var(--surface, var(--paper));
+  --plan-canvas: var(--canvas, var(--bg));
+  --plan-info: var(--info, var(--accent));
+  --plan-access: var(--success, var(--good));
+  --plan-aggregate: var(--warning, var(--warn));
+  min-width: 0; color: var(--ink); font-family: var(--font-ui, inherit); line-height: 1.55;
+}
+.sql-plan-viewer [hidden] { display: none !important; }
+.sql-plan-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 0; }
+.sql-plan-tabs,.sql-plan-tools { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.sql-plan-tools > span { min-width: 38px; text-align: center; font-size: 12px; color: var(--muted); }
+.sql-plan-viewer [role=tab][aria-selected=true] { box-shadow: inset 0 -2px var(--accent); }
+.sql-plan-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 12px 14px; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-bottom: 0; }
+.sql-plan-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.sql-plan-color-note { margin-left: auto; }
+.sql-plan-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--muted); }
+.sql-plan-dot.is-join { background: var(--plan-info); }
+.sql-plan-dot.is-access { background: var(--plan-access); }
+.sql-plan-dot.is-sort,.sql-plan-dot.is-aggregate { background: var(--plan-aggregate); }
+.sql-plan-workspace { display: grid; grid-template-columns: minmax(0,1fr); min-width: 0; border: 1px solid var(--line); }
+.sql-plan-workspace.has-inspector { grid-template-columns: minmax(0,1fr) 292px; }
+.sql-plan-canvas { min-width: 0; max-height: 470px; overflow: auto; background: var(--plan-canvas); overscroll-behavior: contain; }
+.sql-plan-graph { display: block; max-width: none; }
+.sql-plan-graph marker path { fill: var(--line-strong); }
+.sql-plan-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
+.sql-plan-edge.is-selected { stroke: var(--plan-info); stroke-width: 2; }
+.sql-plan-node { cursor: pointer; outline: none; }
+.sql-plan-node rect { fill: var(--plan-surface); stroke: var(--line-strong); stroke-width: 1.3; }
+.sql-plan-node.is-join rect { fill: color-mix(in srgb,var(--plan-info) 12%,var(--plan-surface)); stroke: var(--plan-info); }
+.sql-plan-node.is-access rect { fill: color-mix(in srgb,var(--plan-access) 12%,var(--plan-surface)); stroke: var(--plan-access); }
+.sql-plan-node.is-sort rect,.sql-plan-node.is-aggregate rect { fill: color-mix(in srgb,var(--plan-aggregate) 12%,var(--plan-surface)); stroke: var(--plan-aggregate); }
+.sql-plan-node:hover rect,.sql-plan-node:focus rect,.sql-plan-node.is-selected rect { stroke: var(--ink); stroke-width: 2.4; }
+.sql-plan-node text { fill: var(--ink); font-family: inherit; pointer-events: none; }
+.sql-plan-node-operation { font-size: 14px; font-weight: 600; }
+.sql-plan-node-kind,.sql-plan-node-object { font-size: 12px; }
+.sql-plan-node text.sql-plan-node-kind,.sql-plan-node text.sql-plan-node-object { fill: var(--muted); }
+.sql-plan-caption,.sql-plan-empty { margin: 0; padding: 10px 0; color: var(--muted); font-size: 12px; }
+.sql-plan-empty { padding: 18px; }
+.sql-plan-inspector { min-width: 0; padding: 14px; max-height: 470px; overflow: auto; border-left: 1px solid var(--line); background: var(--plan-surface); }
+.sql-plan-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; }
+.sql-plan-inspector h4 { margin: 14px 0; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
+.sql-plan-inspector dl { margin: 0; }
+.sql-plan-inspector dl > div { display: grid; grid-template-columns: minmax(90px,.8fr) minmax(0,1fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.sql-plan-inspector dt { color: var(--muted); font-size: 12px; }
+.sql-plan-inspector dd { min-width: 0; margin: 0; color: var(--ink); font-size: 13px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.sql-plan-detail-note,.sql-plan-detail-empty { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.sql-plan-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.sql-plan-raw-scroll { min-width: 0; max-height: 520px; overflow: auto; border: 1px solid var(--line); }
+.sql-plan-viewer table.sql-plan-raw { width: 100%; min-width: max-content; border-collapse: separate; border-spacing: 0; font-family: inherit; font-size: 14px; line-height: 20px; color: var(--ink); }
+.sql-plan-viewer .sql-plan-raw th { position: sticky; top: 0; z-index: 1; padding: 8px; background: var(--surface-subtle,var(--bg)); color: var(--muted); text-align: left; font-weight: 600; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.sql-plan-viewer .sql-plan-raw td { padding: 6px 8px; border: 0; white-space: nowrap; vertical-align: middle; }
+.sql-plan-viewer .sql-plan-raw td:last-child,.sql-plan-viewer .sql-plan-raw th:last-child { position: static; }
+.sql-plan-viewer .sql-plan-raw td.sql-plan-operation { padding: 0 8px; }
+.sql-plan-operation-inner { display: flex; align-items: center; height: 32px; }
+.sql-plan-branches { display: inline-flex; height: 100%; flex-shrink: 0; margin-right: 6px; }
+.sql-plan-branch { position: relative; display: inline-block; width: 18px; height: 100%; flex-shrink: 0; }
+.sql-plan-branch.through::before,.sql-plan-branch.tee::before,.sql-plan-branch.elbow::before { position: absolute; content: ""; left: 4px; top: 0; bottom: 0; border-left: 1px solid var(--line-strong); }
+.sql-plan-branch.elbow::before { bottom: 50%; }
+.sql-plan-branch.tee::after,.sql-plan-branch.elbow::after { position: absolute; content: ""; left: 4px; right: 0; top: 50%; border-top: 1px solid var(--line-strong); }
+.sql-plan-raw-value { text-align: right; font-variant-numeric: tabular-nums; }
+.sql-plan-viewer:fullscreen,.sql-plan-viewer.is-expanded { box-sizing: border-box; padding: 22px; background: var(--plan-surface); overflow: auto; }
+.sql-plan-viewer:fullscreen .sql-plan-canvas,.sql-plan-viewer:fullscreen .sql-plan-inspector,.sql-plan-viewer.is-expanded .sql-plan-canvas,.sql-plan-viewer.is-expanded .sql-plan-inspector { max-height: calc(100dvh - 180px); }
+.sql-plan-viewer.is-expanded { position: fixed; inset: 12px; z-index: 1100; box-shadow: var(--shadow-soft,var(--shadow)); }
+@media(max-width: 900px) {
+  .sql-plan-workspace.has-inspector { grid-template-columns: minmax(0,1fr); }
+  .sql-plan-inspector { max-height: 340px; border-left: 0; border-top: 1px solid var(--line); }
+}
+@media(max-width: 600px) {
+  .sql-plan-toolbar { align-items: flex-start; }
+  .sql-plan-color-note { margin-left: 0; width: 100%; }
+  .sql-plan-canvas { max-height: 350px; }
+  .sql-plan-viewer.is-expanded { inset: 0; padding: 12px; }
+}

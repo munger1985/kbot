@@ -54,6 +54,8 @@ def plan_table_block(fact):
             "rows": [[row[index] for index in indexes] for row in rows], "row_count": len(rows),
             "captured_at": fact.captured_at, "measurement_semantics": str(fact.measurement_semantics),
             "truncated": fact.truncated, "subject": document.subject, "plan_origin": document.origin,
+            "plan_graph": {"schema_version": "SQL_PLAN_GRAPH.v1", "database_type": document.database_type,
+                "nodes": [node.model_dump(mode="json") for node in document.nodes]},
             "runtime_statistics": document.runtime_statistics, "has_row_actions": False},
     )
 
@@ -70,7 +72,7 @@ def plan_availability_block(*, database_type, bundle):
     matched = matching_plan_refs(bundle)
     available = [item for item in assessments if item.get("evidence_ref") in matched]
     if available:
-        message = "已取得主体和物理来源核对一致的执行计划，见计划节点表；人工材料仅为声明匹配，来源、参数及时间边界随表保留。计划仅覆盖已取得的主体，不代表全部子游标。"
+        message = "已取得主体和物理来源核对一致的执行计划，可切换图形计划与原始计划；人工材料仅为声明匹配，来源、参数及时间边界随计划保留。计划仅覆盖已取得的主体，不代表全部子游标。"
     else:
         mechanism = {
             "POSTGRESQL": "pg_stat_statements 保存语句统计，不保存可按 Query ID 直接读取的执行计划。",

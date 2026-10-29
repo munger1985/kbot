@@ -18,6 +18,7 @@ const context = {
   KBotMarkdown: {},
   addEventListener: () => {},
 };
+runInNewContext(readFileSync(fileURLToPath(new URL("../../ui/aiops/js/aiops-sql-plan-viewer.js", import.meta.url)), "utf8"), context);
 runInNewContext(instrumented, context, { filename: sourcePath });
 
 assert.equal(context.testTable.displayText("FIXED TABLE FULL → SYS.TABLE；FIXED；TABLE；`TABLE`", {FIXED: "已修复", TABLE: "数据表格"}),
@@ -186,10 +187,12 @@ assert.ok(executionPlan.includes(escape('MES."<unsafe>"')));
 assert.ok(!executionPlan.includes("data-primary-follow-up"));
 assert.ok(!executionPlan.includes(">操作</th>"));
 assert.ok(executionPlan.includes('class="ops-primary-result is-sql-plan"'));
-assert.ok(executionPlan.includes('class="is-plan-node is-number">节点'));
-assert.ok(executionPlan.includes('class="is-plan-operation">执行操作'));
-assert.ok(executionPlan.includes('class="is-plan-object">对象'));
-assert.ok(executionPlan.includes('aria-label="查询结果表格，可横向滚动"'));
+assert.ok(executionPlan.includes('>节点</th>'));
+assert.ok(executionPlan.includes('>执行操作</th>'));
+assert.ok(executionPlan.includes('>对象</th>'));
+assert.ok(executionPlan.includes('role="tab"'));
+assert.ok(executionPlan.includes('原始计划'));
+assert.ok(executionPlan.includes('aria-label="原始执行计划，可横向滚动"'));
 for (const name of ["cost", "estimated_rows", "actual_rows", "loops", "actual_elapsed_time_us", "actual_total_time_per_loop_ms"]) {
   assert.equal(context.testTable.sqlPlanColumnClass({ name }), "is-number");
 }

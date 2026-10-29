@@ -59,6 +59,17 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_sql_plan_has_graph_and_original_tabs_using_structured_nodes(self):
+        for name in ("chat", "situations", "inspections"):
+            page = (AIOPS_ROOT / f"{name}.html").read_text(encoding="utf-8")
+            self.assertIn("sql-plan-viewer.css?v=20261029_1", page)
+            self.assertLess(page.index("aiops-sql-plan-viewer.js"), page.index("aiops-workspaces.js"))
+        result = subprocess.run(
+            ["node", str(ROOT / "tests" / "contract" / "aiops_sql_plan_viewer.mjs")],
+            check=False, capture_output=True, text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_page_heads_share_one_left_aligned_anatomy(self):
         pages = [path for path in AIOPS_ROOT.glob("*.html") if path.name != "login.html"]
         for path in pages:
@@ -114,7 +125,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
 
     def test_javascript_syntax_and_public_boundary(self):
         scripts = list((AIOPS_ROOT / "js").glob("*.js"))
-        self.assertEqual(22, len(scripts))
+        self.assertEqual(23, len(scripts))
         source = "\n".join(path.read_text(encoding="utf-8") for path in scripts)
         self.assertIn("/api/v1/apps/aiops", source)
         self.assertNotIn("/internal/v1", source)
@@ -569,9 +580,9 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
             encoding="utf-8"
         )
         versions = {
-            "chat": ("20261029_2", "20261029_3"),
-            "situations": ("20261029_2", "20261029_3"),
-            "inspections": ("20261029_2", "20261029_3"),
+            "chat": ("20261029_3", "20261029_4"),
+            "situations": ("20261029_3", "20261029_4"),
+            "inspections": ("20261029_3", "20261029_4"),
         }
         for page_name, (stylesheet_version, script_version) in versions.items():
             page = (AIOPS_ROOT / f"{page_name}.html").read_text(
