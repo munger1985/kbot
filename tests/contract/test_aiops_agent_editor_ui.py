@@ -39,6 +39,17 @@ class AIOpsAgentEditorUiTest(unittest.TestCase):
         self.assertIn("aiops-agents.css?v=20261029-ammolite-1", page)
         self.assertIn("aiops-agents.js?v=20261029-read-existing-3", page)
 
+    def test_automation_only_keeps_actionable_sections_with_contiguous_numbers(self) -> None:
+        page = PAGE.read_text(encoding="utf-8")
+        automation = page.split('data-agent-step="3"', 1)[1].split('data-agent-step="4"', 1)[0]
+
+        self.assertNotIn("执行计划与统计信息", automation)
+        self.assertNotIn("数据库负责统计信息与优化器成本估算", automation)
+        self.assertEqual(2, automation.count('class="dq-form-section"'))
+        self.assertIn('<span>01</span><div><h3>诊断边界</h3>', automation)
+        self.assertIn('<span>02</span><div><h3>变更执行</h3>', automation)
+        self.assertNotIn('<span>03</span>', automation)
+
     def test_models_are_a_dedicated_wizard_step(self) -> None:
         page = PAGE.read_text(encoding="utf-8")
         script = SCRIPT.read_text(encoding="utf-8")
