@@ -329,6 +329,3 @@ def test_plan_object_field_reference_tracks_actual_projected_row_not_node_number
         assert objects[0].node_id == 1 and objects[0].field_ref.row_index == 0
         assert not objects[0].production_execution_verified
     asyncio.run(run())
-
-
-
