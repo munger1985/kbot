@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from aiops_agent.application.conversation_starters import (
     ConversationStarterCatalog,
 )
+from aiops_agent.application.turn_replay import pending_diagnosis_dispatch
 from aiops_agent.application.errors import (
     AIOpsApplicationError,
     dependency_unavailable,
@@ -385,7 +386,9 @@ class TurnPlannerService:
     async def begin(self, payload: dict) -> dict:
         context = await self._load_context(payload)
         if context["status"] != "ACCEPTED":
-            return self._result(context["turn_id"], context["status"])
+            return self._result(
+                context["turn_id"], context["status"], dispatch=context.get("dispatch")
+            )
         plan, receipt = await self._plan(context)
         scope, internal_scope, clarification = self._resolve_scope(context, plan)
         internal_scope = self._attach_runtime_context(
@@ -394,6 +397,12 @@ class TurnPlannerService:
         return await self._persist_route(
             payload, context, plan, receipt, scope, internal_scope, clarification
         )
+
+    async def _replay_route(self, *, uow, turn, payload) -> dict:
+        dispatch = await pending_diagnosis_dispatch(
+            uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)
+        )
+        return self._result(turn.turn_id, turn.status, dispatch=dispatch)
 
     async def resume(self, payload: dict) -> dict:
         """用冻结候选恢复同一 Turn；自由文字重新进入结构化规划。"""
@@ -409,7 +418,7 @@ class TurnPlannerService:
             if turn is None:
                 raise resource_not_found("Conversation Turn")
             if turn.status != "ACCEPTED":
-                return self._result(turn_id, turn.status)
+                return await self._replay_route(uow=uow, turn=turn, payload=payload)
             internal = dict(turn.orchestration_internal_json or {})
             candidate = dict(internal.get("clarification_candidates", {})).get(
                 str(response["candidate_id"])
@@ -1009,7 +1018,7 @@ class TurnPlannerService:
             if turn is None:
                 raise resource_not_found("Conversation Turn")
             if turn.status != "ACCEPTED":
-                return {"turn_id": str(turn_id), "status": turn.status}
+                return await self._replay_route(uow=uow, turn=turn, payload=payload)
             from aiops_agent.application.turn_budget import expire_unstarted_turn
             if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
                 await uow.commit()
@@ -1682,7 +1691,7 @@ class TurnPlannerService:
             if turn is None:
                 raise resource_not_found("Conversation Turn")
             if turn.status != "ACCEPTED":
-                return self._result(turn.turn_id, turn.status)
+                return await self._replay_route(uow=uow, turn=turn, payload=payload)
             from aiops_agent.application.turn_budget import expire_unstarted_turn, pause_turn_budget
             if await expire_unstarted_turn(uow=uow, turn=turn, payload=payload, now=datetime.now(UTC)):
                 await uow.commit()

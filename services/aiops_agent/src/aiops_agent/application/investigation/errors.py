@@ -6,6 +6,7 @@ import re
 import traceback
 
 from aiops_agent.application.errors import is_schema_or_integrity_error
+from platform_core.prompts import PromptIntegrityError, PromptNotFoundError
 
 
 class TurnPlanningStageError(RuntimeError):
@@ -45,7 +46,14 @@ class TurnPlanningStageError(RuntimeError):
             f"detail={detail}; location={location}"
         )
         self.retryable = not is_schema_or_integrity_error(cause)
-        if not self.retryable:
+        if isinstance(cause, (PromptNotFoundError, PromptIntegrityError)):
+            self.retryable = False
+            self.code = (
+                "AIOPS_PROMPT_NOT_FOUND"
+                if isinstance(cause, PromptNotFoundError)
+                else "AIOPS_PROMPT_INTEGRITY_ERROR"
+            )
+        elif not self.retryable:
             self.code = "AIOPS_SCHEMA_INTEGRITY_ERROR"
         elif getattr(cause, "code", None) == "MODEL_SERVICE_UNAVAILABLE":
             self.code = "AIOPS_MODEL_SERVICE_UNAVAILABLE"
@@ -56,6 +64,10 @@ class TurnPlanningStageError(RuntimeError):
 
     @staticmethod
     def _safe_detail(cause: Exception) -> str:
+        if isinstance(cause, PromptNotFoundError):
+            return "prompt-not-found"
+        if isinstance(cause, PromptIntegrityError):
+            return "prompt-integrity-violation"
         if is_schema_or_integrity_error(cause):
             return "database-contract-violation"
         if getattr(cause, "code", None) == "MODEL_SERVICE_UNAVAILABLE":

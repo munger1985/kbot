@@ -12,7 +12,10 @@ from aiops_agent.application.errors import (
     AIOpsApplicationError,
     is_schema_or_integrity_error,
 )
-from aiops_agent.application.investigation import InvestigationPlanValidationError
+from aiops_agent.application.investigation import (
+    InvestigationPlanValidationError,
+    TurnPlanningStageError,
+)
 from aiops_agent.tools import InvestigationCatalogChangedError
 from platform_core.contracts.aiops import CreateOpsRunCommand
 from platform_core.contracts.aiops.executor import (
@@ -245,7 +248,7 @@ class AIOpsDomainOutboxSink:
         )
         if diagnosis_payload.get("multi_resource") is True:
             return
-        if diagnosis_payload.get("status") != "UNDERSTANDING":
+        if diagnosis_payload.get("status") not in {"UNDERSTANDING", "PLANNING"}:
             return
         try:
             await self._turn_planning_service.execute(diagnosis_payload)
@@ -304,7 +307,12 @@ class AIOpsDomainOutboxSink:
         }:
             return
         error_code = getattr(exc, "code", "AIOPS_INVESTIGATION_PLAN_FAILED")
-        logger.opt(exception=exc).error(
+        # 阶段错误已经提取安全位置；不展开可能携带输入或 Prompt 的原始异常链。
+        failure_logger = (
+            logger if isinstance(exc, TurnPlanningStageError)
+            else logger.opt(exception=exc)
+        )
+        failure_logger.error(
             "AIOps Turn 规划重试耗尽：turn_id={} code={} type={} "
             "stage={} detail={} location={}",
             payload.get("turn_id"),
@@ -316,7 +324,13 @@ class AIOpsDomainOutboxSink:
         )
         if self._turn_planner_service is None:
             return
-        await self._turn_planner_service.fail_terminal(
+        terminal_service = (
+            self._turn_planning_service
+            if isinstance(exc, TurnPlanningStageError)
+            and self._turn_planning_service is not None
+            else self._turn_planner_service
+        )
+        await terminal_service.fail_terminal(
             payload,
             error_code=error_code,
             error_message=str(exc),
@@ -423,15 +437,21 @@ class AIOpsOutboxDispatcher:
                 max_attempts=snapshot["max_attempts"],
                 retry=retry,
                 exception_type=type(exc).__name__,
+                error_code=getattr(exc, "code", "OUTBOX_PUBLISH_FAILED"),
+                planning_stage=getattr(exc, "stage", "UNKNOWN"),
             ).warning(
                 "AIOps Outbox 投递失败：event_type={} outbox_id={} "
-                "attempt={}/{} retry={} type={}",
+                "attempt={}/{} retry={} type={} code={} stage={} cause={} detail={}",
                 snapshot["event_type"],
                 snapshot["outbox_id"],
                 snapshot["attempt"],
                 snapshot["max_attempts"],
                 retry,
                 type(exc).__name__,
+                getattr(exc, "code", "OUTBOX_PUBLISH_FAILED"),
+                getattr(exc, "stage", "UNKNOWN"),
+                getattr(exc, "cause_type", type(exc).__name__),
+                getattr(exc, "safe_detail", "not-recorded"),
             )
             async with self._uow_factory() as uow:
                 now = await uow.runs.database_now()

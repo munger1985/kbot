@@ -3752,6 +3752,16 @@ class TurnPlanningService:
 
     @staticmethod
     def _terminal_failure_summary(error_code: str) -> str:
+        if error_code == "AIOPS_PROMPT_NOT_FOUND":
+            return (
+                "诊断所需的 Prompt 尚未发布，本轮没有执行诊断工具。"
+                "请管理员同步缺失的内置 Prompt 后重新提问。"
+            )
+        if error_code == "AIOPS_PROMPT_INTEGRITY_ERROR":
+            return (
+                "诊断所需的 Prompt 版本完整性校验失败，本轮没有执行诊断工具。"
+                "请管理员核对已发布 Prompt 的版本与内容后重新提问。"
+            )
         if error_code == "AIOPS_INVESTIGATION_PLAN_INVALID":
             return (
                 "本轮输入未能形成通过安全校验的调查计划。"
