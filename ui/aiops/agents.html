@@ -39,7 +39,7 @@
           <article class="agent-decision-card"><header><div><strong>开放能力</strong><small>主流程按任务分组；需要时可展开调整细分查询能力。</small></div></header>
             <div class="agent-capability-groups"><label id="agent-query-group" class="agent-capability-group"><input id="agent-query-capabilities" type="checkbox"><span><strong>查询与问答</strong><small id="agent-query-capability-count"></small></span></label><label id="agent-diagnosis-group" class="agent-capability-group"><input name="capabilities" type="checkbox" value="ACTIVE_DIAGNOSIS"><span><strong>智能诊断</strong><small>按自然语言范围执行有界诊断并生成报告</small></span></label></div>
             <details class="agent-capability-details"><summary>调整细分查询能力</summary><div id="agent-capabilities" class="agent-granular-options"></div></details>
-            <p id="agent-controlled-change-note" class="agent-inline-note" hidden>受控变更沿用现有资源级授权；新增授权需在资源治理中完成。</p>
+            <p id="agent-controlled-change-note" class="agent-inline-note" hidden>本页不修改资源动作授权；实际变更仍需授权与审批。</p>
           </article>
           <article class="agent-decision-card"><header><div><strong>运维知识</strong><small>只检索已审批版本，并在回答中保留原文引用。</small></div><label class="agent-policy-switch"><input name="knowledge_enabled" type="checkbox" checked><span>已启用</span></label></header><input name="capabilities" value="KNOWLEDGE_QA" type="checkbox" hidden checked>
             <div id="agent-knowledge-policy-fields" class="knowledge-policy"><div class="agent-knowledge-sources"><label><input type="checkbox" name="knowledge_source_kinds" value="MANUAL" checked><span><strong>运维手册</strong><small>已审批发布的原始资料</small></span></label><label><input type="checkbox" name="knowledge_source_kinds" value="DIAGNOSIS_CASE" checked><span><strong>诊断案例</strong><small>可追溯调查记录提炼</small></span></label></div>
@@ -76,6 +76,6 @@
   <script src="../runtime-config.js"></script>
   <script src="./js/aiops-auth.js"></script>
   <script src="./js/aiops-shell.js?v=20261023_1"></script>
-  <script src="./js/aiops-agents.js?v=20261029-ammolite-1"></script>
+  <script src="./js/aiops-agents.js?v=20261029-authorization-2"></script>
 </body>
 </html>

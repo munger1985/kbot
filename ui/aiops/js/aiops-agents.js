@@ -173,7 +173,14 @@
     document.getElementById("agent-query-group").classList.toggle("selected", count > 0);
     document.getElementById("agent-diagnosis-group").classList.toggle("selected", capabilities.includes("ACTIVE_DIAGNOSIS"));
     document.getElementById("agent-diagnosis-label").textContent = `诊断模型${capabilities.includes("ACTIVE_DIAGNOSIS") ? "（智能诊断必选）" : "（可选）"}`;
-    document.getElementById("agent-controlled-change-note").hidden = !values(editing?.capabilities).includes("CONTROLLED_CHANGE");
+    const changeNote = document.getElementById("agent-controlled-change-note");
+    changeNote.hidden = !values(editing?.capabilities).includes("CONTROLLED_CHANGE");
+    const actionPolicies = editing?.controlled_action_execution;
+    changeNote.textContent = !Array.isArray(actionPolicies)
+      ? "本页不修改资源动作授权；保存时沿用服务端现有配置，实际变更仍需授权与审批。"
+      : actionPolicies.some((policy) => policy.enabled && values(policy.allowed_action_ids).length)
+        ? "受控变更沿用已有资源动作授权配置；实际执行仍需通过目标权限、执行开关和审批校验。"
+        : "当前未配置已启用的资源动作授权；可以保存诊断配置，但不能执行变更。";
     document.querySelectorAll('[name="knowledge_source_kinds"]').forEach((input) => input.closest("label").classList.toggle("selected", input.checked));
   }
 
@@ -447,7 +454,7 @@
         max_security_level: Number(form.elements.max_security_level.value || 3),
         maximum_references: Number(form.elements.maximum_references.value || 8),
       },
-      controlled_action_execution: values(editing?.controlled_action_execution),
+      // 本页不维护资源动作授权，PATCH 省略以保留服务端配置，不将未加载字段写成空授权。
       sql_plan_capture: {
         enabled: form.elements.capture_enabled.checked,
         allowed_objects: form.elements.capture_objects.value.split("\n").map((name) => name.trim()).filter(Boolean),

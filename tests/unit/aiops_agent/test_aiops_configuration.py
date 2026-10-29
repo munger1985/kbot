@@ -387,6 +387,42 @@ class AgentDiagnosisModelTest(unittest.IsolatedAsyncioTestCase):
         )
 
 
+    async def test_change_capability_alone_never_grants_runtime_mutation(self) -> None:
+        for boundary in ("missing", "empty", "disabled", "other_resource", "target_disabled", "capability_missing"):
+            with self.subTest(boundary=boundary):
+                agent_id, version_id, target_id, resource_id, policy_id = (uuid7() for _ in range(5))
+                agent = {
+                    "agent_id": str(agent_id),
+                    "agent_version_id": str(version_id),
+                    "status": "ACTIVE",
+                    "capabilities": ["ACTIVE_DIAGNOSIS", "CONTROLLED_CHANGE"],
+                    "policy_id": str(policy_id),
+                    "target_candidates": [{
+                        "target_id": str(target_id),
+                        "resource_id": str(resource_id),
+                        "controlled_change_enabled": True,
+                    }],
+                }
+                if boundary != "missing":
+                    agent["controlled_action_execution"] = [] if boundary == "empty" else [{
+                        "resource_id": str(uuid7() if boundary == "other_resource" else resource_id),
+                        "enabled": boundary != "disabled",
+                        "allowed_action_ids": ["db.session.terminate"],
+                    }]
+                if boundary == "target_disabled":
+                    agent["target_candidates"][0]["controlled_change_enabled"] = False
+                if boundary == "capability_missing":
+                    agent["capabilities"] = ["ACTIVE_DIAGNOSIS"]
+                service = AsyncMock()
+                service.get.return_value = agent
+                binding = await AIOpsAgentValidator(service).resolve_runtime_binding(
+                    agent_id=agent_id, domain_id=100, target_id=target_id
+                )
+                self.assertFalse(binding.allow_mutation)
+                if boundary in ("missing", "empty", "other_resource"):
+                    self.assertEqual((), binding.allowed_actions_json)
+
+
 class ScheduleAndSecretTest(unittest.IsolatedAsyncioTestCase):
     def test_cron_uses_iana_timezone_and_returns_utc(self) -> None:
         next_run = next_cron_run(

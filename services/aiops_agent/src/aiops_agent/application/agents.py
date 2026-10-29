@@ -795,16 +795,7 @@ class AIOpsAgentService:
                 "配置受控动作前必须启用 CONTROLLED_CHANGE 能力",
                 status_code=422,
             )
-        if (
-            status == "ACTIVE"
-            and AIOpsCapability.CONTROLLED_CHANGE in capabilities
-            and not enabled_policies
-        ):
-            raise AIOpsAgentError(
-                "AIOPS_AGENT_CHANGE_POLICY_REQUIRED",
-                "启用 CONTROLLED_CHANGE 前必须至少授权一个业务资源",
-                status_code=422,
-            )
+        # 能力声明不等于执行授权；零授权仍可运行诊断，变更由资源策略与执行门禁拒绝。
         if (
             status == "ACTIVE"
             and AIOpsCapability.ACTIVE_DIAGNOSIS in capabilities

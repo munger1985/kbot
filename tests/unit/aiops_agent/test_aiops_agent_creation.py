@@ -5,11 +5,13 @@ from types import SimpleNamespace
 
 from pydantic import ValidationError
 
+from aiops_agent.actions import ActionRegistry
 from aiops_agent.application.agents import (
     AIOpsAgentError,
     AIOpsAgentService,
     CreateAIOpsAgentCommand,
     ResourceControlledActionExecution,
+    UpdateAIOpsAgentCommand,
 )
 from platform_core.contracts.aiops import AIOpsCapability, AgentKnowledgePolicy
 from platform_core.identity import uuid7
@@ -28,9 +30,15 @@ class _AgentRepository:
         self.agents[row.agent_id] = row
 
     async def add_version(self, row):
-        if self.agents[row.agent_id].current_version_id is not None:
-            raise AssertionError("版本写入前不得更新 current_version_id")
+        if self.agents[row.agent_id].current_version_id == row.agent_version_id:
+            raise AssertionError("版本插入前不得指向待插入版本")
         self.versions[row.agent_version_id] = row
+
+    async def next_version_no(self, *, agent_id):
+        return 1 + max(
+            (int(row.version_no) for row in self.versions.values() if row.agent_id == agent_id),
+            default=0,
+        )
 
     async def add_version_business_systems(
         self, *, version_id, business_system_ids
@@ -183,6 +191,120 @@ def _database_row():
 
 
 class AIOpsAgentCreationTest(unittest.IsolatedAsyncioTestCase):
+    def _change_context(self):
+        row = _database_row()
+        target = row[3]
+        target.controlled_change_enabled = True
+        target.execution_credential_id = uuid7()
+        target.environment = "DEV"
+        target.capabilities_json = {"session_management": True}
+        uow = _UnitOfWork(rows=(row,))
+        service = AIOpsAgentService(
+            uow_factory=lambda: uow, action_registry=ActionRegistry.load()
+        )
+        values = dict(
+            domain_id=100,
+            display_name="数据库诊断助手",
+            allowed_business_system_ids=(uow.system.business_system_id,),
+            capabilities=(AIOpsCapability.ACTIVE_DIAGNOSIS, AIOpsCapability.CONTROLLED_CHANGE),
+            knowledge_policy=AgentKnowledgePolicy(enabled=False),
+            models={"planner_llm": uuid7(), "diagnosis_llm": uuid7(), "composer_llm": uuid7()},
+            status="ACTIVE",
+            actor_id="tester",
+        )
+        return row, uow, service, values
+
+    async def test_active_change_capability_without_authorization_allows_diagnostic_updates(self):
+        for disabled_policy in (False, True):
+            with self.subTest(disabled_policy=disabled_policy):
+                row, _uow, service, values = self._change_context()
+                row[3].controlled_change_enabled = False
+                row[3].execution_credential_id = None
+                if disabled_policy:
+                    values["controlled_action_execution"] = (
+                        ResourceControlledActionExecution(resource_id=row[1].resource_id, enabled=False),
+                    )
+                created = await service.create(CreateAIOpsAgentCommand(**values))
+                updated = await service.update(
+                    UpdateAIOpsAgentCommand(
+                        domain_id=100,
+                        agent_id=created["agent_id"],
+                        expected_row_version=created["row_version"],
+                        instruction="优先读取执行计划后分析",
+                        capabilities=values["capabilities"],
+                        models=values["models"],
+                        actor_id="tester",
+                    )
+                )
+                self.assertEqual("ACTIVE", updated["status"])
+                self.assertEqual(2, updated["version_no"])
+                self.assertIn("CONTROLLED_CHANGE", updated["capabilities"])
+                self.assertEqual(created["controlled_action_execution"], updated["controlled_action_execution"])
+
+    async def test_action_policy_patch_preserves_or_explicitly_revokes_authorization(self):
+        row, uow, service, values = self._change_context()
+        values["controlled_action_execution"] = (
+            ResourceControlledActionExecution(
+                resource_id=row[1].resource_id, enabled=True,
+                allowed_action_ids=("db.session.terminate",),
+            ),
+        )
+        created = await service.create(CreateAIOpsAgentCommand(**values))
+        updated = await service.update(
+            UpdateAIOpsAgentCommand(
+                domain_id=100, agent_id=created["agent_id"],
+                expected_row_version=created["row_version"],
+                instruction="仅执行审批动作", actor_id="tester",
+            )
+        )
+        self.assertEqual(created["controlled_action_execution"], updated["controlled_action_execution"])
+        revoked = await service.update(
+            UpdateAIOpsAgentCommand(
+                domain_id=100, agent_id=created["agent_id"],
+                expected_row_version=updated["row_version"],
+                controlled_action_execution=(), actor_id="tester",
+            )
+        )
+        self.assertEqual([], revoked["controlled_action_execution"])
+        self.assertEqual("ACTIVE", revoked["status"])
+        self.assertIn("CONTROLLED_CHANGE", revoked["capabilities"])
+        original_policies = uow.agents.resource_policies[next(iter(uow.agents.versions))]
+        self.assertTrue(original_policies[row[1].resource_id]["enabled"])
+
+    async def test_enabled_action_policy_still_requires_execution_authorization(self):
+        for invalid, code in (
+            ("capability", "AIOPS_AGENT_CHANGE_CAPABILITY_REQUIRED"),
+            ("target", "AIOPS_AGENT_CHANGE_TARGET_REQUIRED"),
+            ("credential", "AIOPS_AGENT_CHANGE_TARGET_REQUIRED"),
+            ("action", "AIOPS_AGENT_ACTION_NOT_COMPATIBLE"),
+            ("resource", "AIOPS_AGENT_ACTION_RESOURCE_NOT_ALLOWED"),
+            ("scope", "AIOPS_AGENT_ACTION_SCOPE_REQUIRED"),
+        ):
+            with self.subTest(invalid=invalid):
+                row, uow, service, values = self._change_context()
+                if invalid == "capability":
+                    values["capabilities"] = (AIOpsCapability.ACTIVE_DIAGNOSIS,)
+                if invalid == "target":
+                    row[3].controlled_change_enabled = False
+                if invalid == "credential":
+                    row[3].execution_credential_id = None
+                if invalid == "scope":
+                    row[3].capabilities_json = {"dba_catalog_views": True}
+                action_id = {
+                    "action": "unknown.action", "scope": "db.statistics.gather",
+                }.get(invalid, "db.session.terminate")
+                values["controlled_action_execution"] = (
+                    ResourceControlledActionExecution(
+                        resource_id=uuid7() if invalid == "resource" else row[1].resource_id,
+                        enabled=True,
+                        allowed_action_ids=(action_id,),
+                    ),
+                )
+                with self.assertRaises(AIOpsAgentError) as raised:
+                    await service.create(CreateAIOpsAgentCommand(**values))
+                self.assertEqual(code, raised.exception.code)
+                self.assertEqual(0, uow.commit_count)
+
     async def test_create_freezes_business_system_authorization(self):
         uow = _UnitOfWork()
         service = AIOpsAgentService(uow_factory=lambda: uow)
