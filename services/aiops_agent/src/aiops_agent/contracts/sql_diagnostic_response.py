@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGoal
-from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference, SqlReviewRecommendation
+from aiops_agent.contracts.sql_diagnosis import EvidenceFieldReference, SqlReviewRecommendation, OracleSqlEvidenceRequest
 
 
 class SqlDiagnosticFinding(BaseModel):
@@ -44,6 +44,7 @@ class SqlDiagnosticResponse(BaseModel):
     goal_satisfied: bool
     goal_assessments: tuple[InvestigationGoal, ...] = Field(default=(), max_length=16)
     next_evidence: tuple[Annotated[str, Field(min_length=1, max_length=500)], ...] = Field(default=(), max_length=2)
+    oracle_evidence_requests: tuple[OracleSqlEvidenceRequest, ...] = Field(default=(), max_length=2)
     continues_investigation: bool = False
     claim_revisions: tuple[ClaimRevision, ...] = Field(default=(), max_length=16)
 

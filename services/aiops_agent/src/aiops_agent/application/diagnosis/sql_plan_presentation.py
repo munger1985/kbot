@@ -1,12 +1,41 @@
 """三库共用的计划展示与缺证路径，保留估算、缓存和实际运行口径。"""
 
+import re
 from aiops_agent.contracts.turn_answer import TurnAnswerBlock
 
 
 ORIGINS = {"DATABASE_CURSOR": "数据库缓存计划", "CONTROLLED_ESTIMATE": "受控估算计划", "USER_UPLOAD": "用户提供计划（待核验）"}
 
 
-def plan_table_block(fact):
+def native_xplan_for(fact, evidence):
+    """仅将物理来源与完整游标一致的格式化输出附在原始计划，不能替换结构化行源。"""
+    from aiops_agent.application.diagnosis.sql_evidence_answer import _row_dicts
+    from aiops_agent.domain.sql_subjects import ORACLE_CURSOR_KEYS
+
+    document = fact.sql_plan
+    if document.database_type != "ORACLE" or document.origin != "DATABASE_CURSOR" or not document.physical_identity:
+        return None
+    for candidate in evidence:
+        if (candidate.tool_id != "db.oracle.statement.xplan" or candidate.trust_level != "SOURCE_VERIFIED"
+            or candidate.source_id == "prior_turn.sql_observation" or candidate.followup_run_id is not None
+            or candidate.provenance is None
+            or dict(candidate.provenance.physical_identity) != document.physical_identity):
+            continue
+        rows = _row_dicts(candidate)
+        if not rows or any(any(str(row.get(key)) != str(document.subject.get(key))
+            for key in ORACLE_CURSOR_KEYS) for row in rows):
+            continue
+        lines = [row["plan_table_output"] for row in rows if isinstance(row.get("plan_table_output"), str)]
+        hashes = re.findall(r"Plan hash value:\s*(\d+)", "\n".join(lines), flags=re.IGNORECASE)
+        if not hashes or any(value != str(document.subject["plan_hash_value"]) for value in hashes):
+            continue
+        return {"lines": lines[:256], "captured_at": candidate.captured_at,
+                "truncated": candidate.truncated or len(lines) > 256, "evidence_ref": candidate.evidence_ref,
+                "note": "DBMS_XPLAN 本地游标格式化补充；与 LAST 和 Monitor 不保证同一次执行，不替换结构化计划。"}
+    return None
+
+
+def plan_table_block(fact, native_evidence=()):
     document = fact.sql_plan
     nodes = {node.node_id: node for node in document.nodes}
     def operation(node):
@@ -46,8 +75,10 @@ def plan_table_block(fact):
     subject_label = str(identity.get("sql_id") or identity.get("query_id") or identity.get("digest") or "")
     if oracle:
         subject_label += f" · 实例 {identity.get('inst_id')} / 容器 {identity.get('container_id')} / 子游标 {identity.get('child_number')} / 计划 {identity.get('plan_hash_value')}"
+    native = native_xplan_for(fact, native_evidence)
     return TurnAnswerBlock(
-        block_type="TABLE", schema_version="AIOPS_TABLE_BLOCK.v1", evidence_refs=(fact.evidence_ref,),
+        block_type="TABLE", schema_version="AIOPS_TABLE_BLOCK.v1",
+        evidence_refs=(fact.evidence_ref, *((native["evidence_ref"],) if native else ())),
         payload={"title": "执行计划 · " + ORIGINS[document.origin] + " · " + subject_label, "result_kind": "SQL_EXECUTION_PLAN",
             "presentation_role": "PRIMARY", "measurement_note": boundary + "；" + "；".join(document.warnings),
             "columns": [{"name": columns[index][0], "label": columns[index][1]} for index in indexes],
@@ -56,7 +87,7 @@ def plan_table_block(fact):
             "truncated": fact.truncated, "subject": document.subject, "plan_origin": document.origin,
             "plan_graph": {"schema_version": "SQL_PLAN_GRAPH.v1", "database_type": document.database_type,
                 "nodes": [node.model_dump(mode="json") for node in document.nodes]},
-            "runtime_statistics": document.runtime_statistics, "has_row_actions": False},
+            "runtime_statistics": document.runtime_statistics, "native_plan": native, "has_row_actions": False},
     )
 
 

@@ -53,7 +53,7 @@ def _reference_projection(value, aliases):
     if isinstance(value, list):
         return [_reference_projection(item, aliases) for item in value]
     if isinstance(value, dict):
-        return {key: aliases.get(item, item) if key in {"evidence_ref", "anchor_ref"} and isinstance(item, str)
+        return {key: aliases.get(item, item) if key in {"evidence_ref", "anchor_ref", "plan_evidence_ref"} and isinstance(item, str)
                 else item if key == "fields" else _reference_projection(item, aliases) for key, item in value.items()}
     return value
 
@@ -195,11 +195,20 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
     aliases = {item["evidence_ref"]: f"e{index}" for index, item in enumerate(bundle["observations"], 1)}
     projected = review_context(bundle)
     output_model = diagnostic_response_model(bundle, aliases)
+    from aiops_agent.application.diagnosis.oracle_sql_evidence import (
+        authorized_oracle_sql_tools, oracle_evidence_policy,
+    )
+    oracle_policy = oracle_evidence_policy(
+        task_frame=task_frame, evidence=evidence, gaps=gaps,
+        available_tool_ids=authorized_oracle_sql_tools(dict(context.plan_snapshot.get("capability_snapshot") or {})),
+        prior_actions=tuple(dict(answer.get("investigation_plan") or {}).get("actions") or ()),
+    ) if database_type == "ORACLE" else None
     result = await model.generate_structured(
         purpose="aiops.sql-diagnosis", output_model=output_model,
         model_snapshot=dict(answer.get("model") or {}), prompt_ref={**prompt.ref(), "content": prompt.content},
         input_payload={
             "question": answer.get("question", ""), "evidence_bundle": _reference_projection(projected, aliases),
+            "oracle_evidence_policy": oracle_policy,
             "plan_review_tasks": _reference_projection([
                 {**{key: value for key, value in task.items() if key != "nodes"},
                  "node_ids": [node["node_id"] for node in task["nodes"]]}
@@ -216,6 +225,7 @@ async def generate_sql_review(*, context, task_frame, database_type, evidence, g
                 "execution_plan": "plan_review_tasks 非空时必须填写 plan_reviews，引用真实 evidence_ref、node_ids 和关联 conclusion_id；完整计划在 evidence_bundle 对应观察的 sql_plan.nodes，不重复传送。分别说明机制和对该 SQL 的影响：关键访问/连接/聚合节点如何影响开销，估算与实际有何差异；仅列节点或说已取得计划不算分析。FIXED TABLE FULL 是固定表访问，不等于业务大表全扫。保留技术术语原文。",
                 "evidence": "累计值可用于单次开销和机制分析；仅窗口排名、退化和效果验证要求对应窗口。缺基线不能抹去已有计划、锁等待或错误证据。",
                 "next_evidence": "只有会改变当前问题结论、当前授权可能补齐的关键缺口才填写 next_evidence（每项说明要验证什么及如何改变判断）。可使用数据库、监控、日志等任意适用来源；一般性限制只写结论边界，不触发补证。",
+                "oracle": "Oracle 不降级为三库最低共同能力。已有XPLAN时解释相关谓词和Outline，但不把Outline当作调优建议或某次生产执行。已有Monitor时分析精确单次执行的CPU/等待、I/O及本实例进程行源/工作区，结合匹配计划行解释；不能相加父子或PX计数。ASH用于按计划行、ON CPU/等待及阻塞者的采样归因，样本数/比例不是精确耗时，不能用没有样本证明健康。需要且尚未尝试的Oracle证据用oracle_evidence_requests声明kind、真实subject_id和改变判断的reason，不在next_evidence重复；只申请oracle_evidence_policy中许可允许的工具，ASH显式历史窗口必须带时区且不超过24小时，否则使用已冻结默认窗口；不能冒充未覆盖的历史故障。原生HTML报告按需下载，不作为所有SQL诊断的前置条件。",
                 "recommendations": "没有证据支持问题时不强造优化方案；OBSERVE/VERIFY无需虚构变更风险和回滚。变更建议仍须具备条件、风险、验证、回退和审批。",
                 "continuity": "之前的阶段判断不是新事实；新证据反驳时明确修正，补证失败不抹去仍成立的局部判断。",
             },

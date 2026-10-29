@@ -62,7 +62,7 @@ class AIOpsUiStaticPagesTest(unittest.TestCase):
     def test_sql_plan_has_graph_and_original_tabs_using_structured_nodes(self):
         for name in ("chat", "situations", "inspections"):
             page = (AIOPS_ROOT / f"{name}.html").read_text(encoding="utf-8")
-            self.assertIn("sql-plan-viewer.css?v=20261029_1", page)
+            self.assertIn("sql-plan-viewer.css?v=20261029_2", page)
             self.assertLess(page.index("aiops-sql-plan-viewer.js"), page.index("aiops-workspaces.js"))
         result = subprocess.run(
             ["node", str(ROOT / "tests" / "contract" / "aiops_sql_plan_viewer.mjs")],

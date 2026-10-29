@@ -278,3 +278,44 @@ UI 静态合同 4,155 项及 190 项子测试通过；两端计划及 Top SQL �
 覆盖三库原生字段、深浅主题、移动端、连续树线、键盘操作、多实例隔离及 128 节点计划。
 Portal 类型检查、生产构建、Node 合同及架构边界检查通过；保留已有构建大 chunk
 和第三方 pkg_resources 弃用提示。未执行线上部署或真实数据库计划采集验收。
+
+## 2026-10-29 Oracle 原生单 SQL 诊断证据
+
+本批把 Oracle 的 DBMS_XPLAN、SQL Monitor、内存 ASH 接入单 SQL 取证和诊断闭环，
+不是只增加报告按钮。已有精确游标时确定性读取可用本地 XPLAN 和轻量 Monitor；
+若发现保留的执行，继续按原生执行键采集本实例进程行源。ASH 由诊断结构化请求按需
+补取，支持明确历史窗口或冻结的默认近期窗口。HTML 报告入口保留，不作为诊断前置。
+
+四个新工具分别为 `db.oracle.statement.xplan`、`db.oracle.statement.monitor`、
+`db.oracle.statement.monitor_plan`、`db.oracle.statement.ash`。Monitor 两项要求已确认
+Diagnostics/Tuning Pack，ASH 要求 Diagnostics Pack；权限与许可均沿正式发现和执行门禁，
+不会因查询成功就推定已获许可。每项10秒上限、最多两个完整游标自动增强，剩余工作预算
+不足15秒不启动增强；零行、失败或已调度不反复重跑。
+
+游标、物理来源、计划哈希、单次执行和原生 DATE 严格关联；Monitor 进程序列号来自
+同 KEY 的 Monitor 记录，不能查询 Plan Monitor 不存在的列。计划行源和 ASH 分组达到
+枚举上限时保守标记可能截断。保留执行不参加“当前会话”的锁关联，不因相同 SID 误归因。
+LAST、Monitor、ASH 不被混写为同一次执行；ASH 样本数不是执行次数或精确 CPU 秒数。
+
+“原始计划”Tab 增加可折叠 DBMS_XPLAN 原文，只有完整游标、物理来源和计划哈希一致才
+附加，保留采集时间、转义、对齐和截断提示。结构化计划和图形计划不被原文覆盖。
+新事实与引用进入现有冻结调查、报告、案例原件复核；已取得运行事实不能只复述累计
+统计后宣称诊断完成，仍需解释计划机制并给出问题/未见明显问题/证据不足的范围内结论。
+
+部署需同步 Agent API、Worker、Executor 与各自前端资源。本批没有 Prompt 文件、
+Schema 或开发数据库内容变化，无需激活 Prompt；不改目标库配置、许可或采集策略，
+不重放原 SQL，不自动执行 SQL Monitor/ASH HTML 报告，不自动开启行源跟踪。
+本地自动化不替代真实库与真实模型验收，未自动部署或重启。
+
+Oracle 19c 模板字段核对参考官方
+[V$SQL_PLAN_MONITOR](https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/V-SQL_PLAN_MONITOR.html)
+与 [V$SQL_MONITOR](https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/V-SQL_MONITOR.html)，
+DISPLAY_CURSOR 的调用者权限按 [DBMS_XPLAN](https://docs.oracle.com/en/database/oracle/oracle-database/19/arpls/DBMS_XPLAN.html) 声明；
+其中计划行源不提供精确节点耗时，且不据工作区当前 NULL 推定从未溢出。
+
+本批最终本地验证：Ammolite AIOps 单测4,231项及265项子测试、KBot4 AIOps 单测与
+UI 静态合同4,216项及190项子测试通过；其中两端 Oracle 专项回归各61项，覆盖正式
+签名执行链、有数据/零行/权限不足/截断、结构化补证、身份与时间边界及报告/案例来源复核。
+两端计划与 Top SQL 浏览器回归30项、Portal 类型检查和生产构建、Node 合同、OpenAPI、
+跨项目一致性及两仓架构检查通过。仍有既有大 chunk 和 pkg_resources 弃用提示。
+未连接真实 Oracle 验证新模板，也未验收线上真实模型的分析质量。

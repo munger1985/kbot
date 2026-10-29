@@ -1,6 +1,611 @@
 {
   "catalog_version": "oracle-baseline.v1",
   "tools": [
+    {
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "timeout_seconds": 10,
+      "max_bytes": 1048576,
+      "cost_level": "LOW",
+      "tool_id": "db.oracle.statement.xplan",
+      "variant": "oracle_exact_local_cursor_xplan",
+      "description": "精确本地实例和当前容器的 DBMS_XPLAN ALLSTATS LAST、谓词、别名与 Outline；不读取绑定值，不重放语句。远端 RAC 游标不以本地计划代替；与主计划为相邻时点补充，不能证明同一次执行。",
+      "required_entitlements": [],
+      "required_privileges": [
+        "GV_$SQL",
+        "V_$DATABASE",
+        "V_$INSTANCE",
+        "V_$SQL_PLAN",
+        "V_$SQL",
+        "V_$SESSION",
+        "V_$SQL_PLAN_STATISTICS_ALL"
+      ],
+      "allowed_packages": [
+        "DBMS_XPLAN"
+      ],
+      "parameters": [
+        {
+          "name": "sql_id",
+          "type": "string",
+          "max_length": 13
+        },
+        {
+          "name": "dbid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "inst_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "name": "container_id",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "child_number",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "plan_hash_value",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "dbid",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "inst_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "container_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_id",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "child_number",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_hash_value",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_table_output",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/statement_xplan.sql",
+      "template_sha256": "33437212b6ecdcc091266a6580a55fbfe29917949229df611b4fe6e6ee4518ea",
+      "measurement_semantics": "CURRENT_ACTIVITY",
+      "max_rows": 256
+    },
+    {
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "timeout_seconds": 10,
+      "max_bytes": 1048576,
+      "cost_level": "LOW",
+      "tool_id": "db.oracle.statement.monitor",
+      "variant": "oracle_exact_cursor_monitor_executions",
+      "description": "在已确认许可下按完整游标身份发现最多三次仍保留的 QC/串行 SQL Monitor 执行。不是指定窗口增量；零行常见于短 SQL 或记录已淘汰。sql_exec_start_native 是原生数据库 DATE 标识，不推断为 UTC。",
+      "required_entitlements": [
+        "ORACLE_DIAGNOSTICS_PACK",
+        "ORACLE_TUNING_PACK"
+      ],
+      "required_privileges": [
+        "GV_$SQL_MONITOR",
+        "GV_$SQL",
+        "V_$DATABASE"
+      ],
+      "parameters": [
+        {
+          "name": "sql_id",
+          "type": "string",
+          "max_length": 13
+        },
+        {
+          "name": "dbid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "inst_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "name": "container_id",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "child_number",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "plan_hash_value",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "default": 3,
+          "required": false
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "dbid",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "inst_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "container_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_id",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "child_number",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_hash_value",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_exec_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_exec_start_native",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "status",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "elapsed_time_us",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "cpu_time_us",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "user_io_wait_time_us",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "application_wait_time_us",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "concurrency_wait_time_us",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "cluster_wait_time_us",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "buffer_gets",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "disk_reads",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "physical_read_bytes",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "physical_write_bytes",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "px_servers_allocated",
+          "logical_type": "DECIMAL"
+        }
+      ],
+      "template_ref": "sql/statement_monitor.sql",
+      "template_sha256": "514c9c2c3616895cac06117afe3ff58796f612cbd4310d7a1b197e90c75ed144",
+      "measurement_semantics": "CURRENT_ACTIVITY",
+      "max_rows": 3
+    },
+    {
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "timeout_seconds": 10,
+      "max_bytes": 1048576,
+      "cost_level": "LOW",
+      "tool_id": "db.oracle.statement.monitor_plan",
+      "variant": "oracle_exact_execution_monitor_rows",
+      "description": "精确游标及 sql_exec_id、原生开始 DATE 下，本实例 SQL Monitor 进程行源记录。保留进程维度，不将 PX starts/行数盲加，不冒充全 RAC 或节点 CPU/耗时。",
+      "required_entitlements": [
+        "ORACLE_DIAGNOSTICS_PACK",
+        "ORACLE_TUNING_PACK"
+      ],
+      "required_privileges": [
+        "GV_$SQL_PLAN_MONITOR",
+        "GV_$SQL_MONITOR",
+        "GV_$SQL",
+        "V_$DATABASE"
+      ],
+      "parameters": [
+        {
+          "name": "sql_id",
+          "type": "string",
+          "max_length": 13
+        },
+        {
+          "name": "dbid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "inst_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "name": "container_id",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "child_number",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "plan_hash_value",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "sql_exec_id",
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "name": "sql_exec_start_native",
+          "type": "string",
+          "max_length": 19
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128,
+          "default": 128,
+          "required": false
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "dbid",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "inst_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "container_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_id",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "child_number",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_hash_value",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_exec_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_exec_start_native",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "process_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "session_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "session_serial",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_line_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_operation",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "plan_options",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "plan_object_owner",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "plan_object_name",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "plan_cardinality",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "starts",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "output_rows",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "physical_read_bytes",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "physical_write_bytes",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "workarea_mem",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "workarea_max_mem",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "workarea_tempseg",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "workarea_max_tempseg",
+          "logical_type": "DECIMAL"
+        },
+        {
+          "name": "status",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/statement_monitor_plan.sql",
+      "template_sha256": "3166b2aa6e88a4b523c1dfafb4212d5b89eacbfa5356c913c9b0a2504a8cd4f4",
+      "measurement_semantics": "CURRENT_ACTIVITY",
+      "max_rows": 128,
+      "limit_semantics": "BOUNDED_ENUMERATION"
+    },
+    {
+      "version": "1.0.0",
+      "db_type": "ORACLE",
+      "supported_version_min": 19,
+      "supported_version_max_exclusive": 27,
+      "required_capabilities": [
+        "dynamic_performance_views"
+      ],
+      "timeout_seconds": 10,
+      "max_bytes": 1048576,
+      "cost_level": "LOW",
+      "tool_id": "db.oracle.statement.ash",
+      "variant": "oracle_exact_sql_ash_samples",
+      "description": "精确 SQL 游标及带时区窗口的内存 ASH 分组事实：ON CPU/等待、计划行和阻塞者。样本数不是精确执行时长或执行次数，零行不证明未执行，保留时间不保证覆盖整个请求窗口；不自动读取 AWR 历史或生成实例 HTML。",
+      "required_entitlements": [
+        "ORACLE_DIAGNOSTICS_PACK"
+      ],
+      "required_privileges": [
+        "GV_$ACTIVE_SESSION_HISTORY",
+        "V_$DATABASE"
+      ],
+      "parameters": [
+        {
+          "name": "sql_id",
+          "type": "string",
+          "max_length": 13
+        },
+        {
+          "name": "dbid",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        {
+          "name": "inst_id",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "name": "container_id",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "child_number",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "plan_hash_value",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "name": "begin_time",
+          "type": "string",
+          "max_length": 35
+        },
+        {
+          "name": "end_time",
+          "type": "string",
+          "max_length": 35
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128,
+          "default": 128,
+          "required": false
+        }
+      ],
+      "output_columns": [
+        {
+          "name": "dbid",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "inst_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "container_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "sql_id",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "child_number",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "plan_hash_value",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "session_state",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "wait_class",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "event",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "plan_line_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "blocking_inst_id",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "blocking_session",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "blocking_session_status",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "sample_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "total_sample_count",
+          "logical_type": "INTEGER"
+        },
+        {
+          "name": "first_sample_time_utc",
+          "logical_type": "DATETIME"
+        },
+        {
+          "name": "last_sample_time_utc",
+          "logical_type": "DATETIME"
+        },
+        {
+          "name": "requested_begin_time",
+          "logical_type": "STRING"
+        },
+        {
+          "name": "requested_end_time",
+          "logical_type": "STRING"
+        }
+      ],
+      "template_ref": "sql/statement_ash.sql",
+      "template_sha256": "0b4b9ee8c1e8b6ed2b02d9c313a44b6c8a1ead93b9db59c838e3d8a5a790d5fa",
+      "measurement_semantics": "HISTORICAL_SAMPLES",
+      "max_rows": 128,
+      "limit_semantics": "BOUNDED_ENUMERATION"
+    },
     {"tool_id":"db.sql.object_candidates","version":"1.0.0","measurement_semantics":"CURRENT_ACTIVITY","db_type":"ORACLE","variant":"oracle_object_candidates","description":"按精确对象名在当前容器 ALL_OBJECTS 中有界发现可见表、视图、物化视图及同义词；可指定 OWNER。只读目录，不调用 NAME_RESOLVE、不重放 SQL。唯一候选不证明历史解析；parsing_schema_name 不足以推断私有/PUBLIC 同义词优先级，不跨容器或 DB Link 展开。","supported_version_min":12,"supported_version_max_exclusive":27,"parameters":[{"name":"table_name","type":"string","max_length":128},{"name":"schema_name","type":"string","max_length":128,"required":false,"default":""},{"name":"limit","type":"integer","minimum":1,"maximum":200,"required":false,"default":40}],"output_columns":[{"name":"schema_name","logical_type":"STRING"},{"name":"table_name","logical_type":"STRING"},{"name":"relation_kind","logical_type":"STRING"},{"name":"native_object_id","logical_type":"STRING"},{"name":"container_id","logical_type":"INTEGER"}],"template_ref":"sql/object_candidates.sql","template_sha256":"d24f8b76a84e850682f3ec3987056c227cfa66d22e8d1db5ad74cec65d2ac1bc","timeout_seconds":10,"max_rows":200,"max_bytes":262144,"cost_level":"LOW","limit_semantics":"BOUNDED_ENUMERATION"},
     {
       "tool_id": "db.oracle.statement.plan",

@@ -111,8 +111,14 @@
           + ' title="' + esc(row[i] ?? "—") + '">' + esc(row[i] ?? "—") + "</td>";
       }).join("") + "</tr>";
     }).join("");
+    const native = payload.native_plan;
+    const text = native && Array.isArray(native.lines)
+      ? '<details class="sql-plan-native"><summary>DBMS_XPLAN 原生输出' + (native.truncated ? " · 已截断" : "")
+        + '</summary><p>' + esc(native.note || "") + (native.captured_at ? " · 采集时间 " + esc(native.captured_at) : "")
+        + '</p><pre tabindex="0">' + esc(native.lines.slice(0, 256).join("\n")) + "</pre></details>"
+      : "";
     return '<div class="sql-plan-raw-scroll" tabindex="0" aria-label="原始执行计划，可横向滚动"><table class="sql-plan-raw"><thead><tr>'
-      + heads + "</tr></thead><tbody>" + body + "</tbody></table></div>";
+      + heads + "</tr></thead><tbody>" + body + "</tbody></table></div>" + text;
   }
   function dataFor(payload, uid) {
     return { uid, payload, graph: graphFrom(payload), selected: null, focused: false, collapsed: new Set(), scale: 1, tab: "graph" };

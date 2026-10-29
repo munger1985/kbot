@@ -2302,6 +2302,19 @@ class TurnPlanningService:
             prior_actions=inputs.prior_plan.get("actions", ()),
             available_tool_ids=tuple(item["tool_id"] for item in discovered_tools),
         )
+        from aiops_agent.application.diagnosis.oracle_sql_evidence import pending_oracle_sql_actions
+        checkpoint = dict(inputs.assessment.get("sql_checkpoint") or {})
+        plan_actions += pending_oracle_sql_actions(
+            task_frame=inputs.task_frame, database_type=str(context.capabilities.database_type),
+            evidence=tuple(TurnEvidenceFact.model_validate(item) for item in inputs.assessment.get("evidence", ())),
+            gaps=inputs.assessment.get("gaps", ()), prior_actions=inputs.prior_plan.get("actions", ()),
+            available_tool_ids=tuple(item["tool_id"] for item in discovered_tools),
+            requests=dict(checkpoint.get("draft") or {}).get("oracle_evidence_requests", ()),
+            remaining_seconds=(self._work_deadline(context) - datetime.now(UTC)).total_seconds()
+                if getattr(context, "deadline", None) is not None and self._work_deadline(context) else None,
+        )
+        plan_actions = tuple(action.model_copy(update={"action_id": f"a{index}"})
+                             for index, action in enumerate(plan_actions, 1))
         if plan_actions:
             investigation = self._investigation_from_continuation(
                 context=context, inputs=inputs, actions=plan_actions, revision_no=revision_no,
@@ -2313,7 +2326,7 @@ class TurnPlanningService:
                 context=context, revision_no=revision_no, inputs=inputs, investigation=investigation,
                 planning_receipt=None, dynamic_queries=dynamic_queries, source_queries=source_queries,
                 diagnosis_model_snapshot=diagnosis_model_snapshot, planner_model_snapshot=planner_model_snapshot,
-                public_summary="已按完整 SQL 游标身份直接读取执行计划，不经过模型重规划",
+                public_summary="按完整 SQL 游标及已观测执行直接补齐计划与 Oracle 运行证据，不经过模型重规划",
             )
         decision = decide_discovery_continuation(
             plan=inputs.prior_plan,

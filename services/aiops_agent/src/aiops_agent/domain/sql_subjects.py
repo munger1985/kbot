@@ -68,6 +68,9 @@ def normalize_sql_subject(raw: dict, database_type: str = "") -> dict | None:
     return result
 
 
+ORACLE_CURSOR_KEYS = ("sql_id", "dbid", "inst_id", "container_id", "child_number", "plan_hash_value")
+
+
 def normalize_sql_comparison(raw: dict, database_type: str = "") -> tuple[dict, ...] | None:
     """最多四项且请求范围互斥；同一统计行不能被两个比较请求重复计入。"""
     if not isinstance(raw, dict) or set(raw) != {"subjects"}:

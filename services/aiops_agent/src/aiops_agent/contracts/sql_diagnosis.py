@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from aiops_agent.contracts.diagnosis_state import ClaimRevision, InvestigationGoal
 
@@ -86,6 +86,28 @@ class SqlRecommendation(BaseModel):
         return self
 
 
+class OracleSqlEvidenceRequest(BaseModel):
+    """仅声明诊断所需证据，不由模型提供游标、执行标识或 SQL。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["XPLAN", "SQL_MONITOR", "ASH"]
+    subject_id: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=400)
+    begin_time: AwareDatetime | None = None
+    end_time: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_window(self):
+        if (self.begin_time is None) != (self.end_time is None):
+            raise ValueError("ASH 显式时间必须成对提供")
+        if self.begin_time is not None and (
+            self.kind != "ASH" or not 0 < (self.end_time - self.begin_time).total_seconds() <= 86400
+        ):
+            raise ValueError("只有 ASH 可以提供带时区且不超过24小时的有序窗口")
+        return self
+
+
 class SqlDiagnosisDraft(BaseModel):
     """模型可以提出新原因，但不得越过证据与执行边界。"""
 
@@ -102,6 +124,7 @@ class SqlDiagnosisDraft(BaseModel):
     continues_investigation: bool = False
     claim_revisions: tuple[ClaimRevision, ...] = Field(default=(), max_length=16)
     next_evidence: tuple[Annotated[str, Field(min_length=1, max_length=2000)], ...] = Field(default=(), max_length=3)
+    oracle_evidence_requests: tuple[OracleSqlEvidenceRequest, ...] = Field(default=(), max_length=2)
 
     @model_validator(mode="after")
     def validate_links(self):
@@ -120,7 +143,7 @@ class SqlDiagnosisDraft(BaseModel):
             or any(item.intent in {"MITIGATE", "REPAIR"} for item in self.recommendations)
         ):
             raise ValueError("无明显问题必须有主体直接判断，不能同时要求修复未经证实的问题")
-        if self.goal_satisfied and self.next_evidence:
+        if self.goal_satisfied and (self.next_evidence or self.oracle_evidence_requests):
             raise ValueError("已完成目标不能同时要求阻断交付的补证")
         if any(not item.strip() for item in self.next_evidence):
             raise ValueError("关键补证必须说明需要验证的内容")

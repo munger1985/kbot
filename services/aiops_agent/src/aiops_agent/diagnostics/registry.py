@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -217,7 +217,7 @@ class DiagnosticRegistry:
                 or after_begin >= after_end
             ):
                 raise ValueError("AWR 对比报告的两段快照必须按时间先后且不重叠")
-        elif tool_id == "db.oracle.ash.report":
+        elif tool_id in {"db.oracle.ash.report", "db.oracle.statement.ash"}:
             try:
                 begin = datetime.fromisoformat(
                     parameters["begin_time"].replace("Z", "+00:00")
@@ -233,6 +233,18 @@ class DiagnosticRegistry:
                 raise ValueError("ASH 报告起始时间必须早于结束时间")
             if (end - begin).total_seconds() > 86_400:
                 raise ValueError("ASH 报告时间范围不能超过 24 小时")
+            if tool_id == "db.oracle.statement.ash":
+                parameters["begin_time"] = begin.astimezone(UTC).isoformat(timespec="seconds")
+                parameters["end_time"] = end.astimezone(UTC).isoformat(timespec="seconds")
+                if parameters["begin_time"] >= parameters["end_time"]:
+                    raise ValueError("ASH 窗口不得在秒级规范化后为空")
+        elif tool_id in {"db.oracle.statement.xplan", "db.oracle.statement.monitor",
+                          "db.oracle.statement.monitor_plan"}:
+            if tool_id == "db.oracle.statement.monitor_plan":
+                value = parameters["sql_exec_start_native"]
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", value) is None:
+                    raise ValueError("Monitor 开始标识必须为原生 DATE，不附加猜测时区")
+                datetime.strptime(value, "%Y-%m-%dT%H:%M:%S")
         elif tool_id == "db.oracle.sql_monitor.report":
             sql_id = str(parameters.get("sql_id") or "")
             if re.fullmatch(r"[0-9A-Za-z]{13}", sql_id) is None:

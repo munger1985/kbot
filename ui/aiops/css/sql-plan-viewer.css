@@ -60,6 +60,10 @@
 .sql-plan-branch.elbow::before { bottom: 50%; }
 .sql-plan-branch.tee::after,.sql-plan-branch.elbow::after { position: absolute; content: ""; left: 4px; right: 0; top: 50%; border-top: 1px solid var(--line-strong); }
 .sql-plan-raw-value { text-align: right; font-variant-numeric: tabular-nums; }
+.sql-plan-native { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); }
+.sql-plan-native summary { cursor: pointer; color: var(--ink); font-size: 14px; }
+.sql-plan-native p { margin: 8px 0; color: var(--muted); font-size: 12px; }
+.sql-plan-native pre { max-height: 420px; margin: 8px 0 0; overflow: auto; font: 13px/1.5 var(--font-data, monospace); color: var(--ink); background: var(--plan-canvas); }
 .sql-plan-viewer:fullscreen,.sql-plan-viewer.is-expanded { box-sizing: border-box; padding: 22px; background: var(--plan-surface); overflow: auto; }
 .sql-plan-viewer:fullscreen .sql-plan-canvas,.sql-plan-viewer:fullscreen .sql-plan-inspector,.sql-plan-viewer.is-expanded .sql-plan-canvas,.sql-plan-viewer.is-expanded .sql-plan-inspector { max-height: calc(100dvh - 180px); }
 .sql-plan-viewer.is-expanded { position: fixed; inset: 12px; z-index: 1100; box-shadow: var(--shadow-soft,var(--shadow)); }

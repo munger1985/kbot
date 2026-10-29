@@ -1043,6 +1043,16 @@ class DbaEvidenceAssessmentHandler:
             prior_actions=tuple(dict(answer_context.get("investigation_plan") or {}).get("actions") or ()),
             available_tool_ids=authorized_plan_tools(capability),
         )
+        from aiops_agent.application.diagnosis.oracle_sql_evidence import (
+            authorized_oracle_sql_tools, pending_oracle_sql_actions,
+        )
+        pending_plans += pending_oracle_sql_actions(
+            task_frame=task_frame, database_type=str(capability.get("database_type") or ""),
+            evidence=scoped.evidence, gaps=scoped.gaps,
+            prior_actions=tuple(dict(answer_context.get("investigation_plan") or {}).get("actions") or ()),
+            available_tool_ids=authorized_oracle_sql_tools(capability),
+            remaining_seconds=(assessment_deadline - datetime.now(UTC)).total_seconds() if assessment_deadline else None,
+        )
         if pending_plans and scoped.status != SufficiencyStatus.UNSAFE and (
             assessment_deadline is None or assessment_deadline > datetime.now(UTC)
         ):
@@ -1052,7 +1062,7 @@ class DbaEvidenceAssessmentHandler:
                     round_no=int(context.plan_snapshot.get("revision_no") or 1), sufficiency_status="PARTIAL",
                     next_action="REPLAN", progress_made=True,
                     clarification_question=None,
-                    reason="已取得完整游标身份，先读取可用缓存执行计划，再分析访问路径与运行证据。",
+                    reason="已取得完整游标身份，先补齐可用执行计划及 Oracle 专属运行证据，再分析机制。",
                 ),
             })
         if task_frame.get("diagnostic_profile") in {"SINGLE_SQL_PERFORMANCE", "SQL_COMPARISON"} and scoped.status != SufficiencyStatus.UNSAFE:
@@ -1242,6 +1252,21 @@ class DbaEvidenceAssessmentHandler:
         current = checkpoint is not None and error is None
         draft = checkpoint.draft if current else None
         requests = draft.next_evidence if draft else ()
+        if draft and draft.oracle_evidence_requests:
+            from aiops_agent.application.diagnosis.oracle_sql_evidence import (
+                authorized_oracle_sql_tools, pending_oracle_sql_actions,
+            )
+            capability = dict(context.plan_snapshot.get("capability_snapshot") or {})
+            pending = pending_oracle_sql_actions(
+                task_frame=task_frame, database_type=database_type, evidence=assessment.evidence, gaps=assessment.gaps,
+                available_tool_ids=authorized_oracle_sql_tools(capability), requests=draft.oracle_evidence_requests,
+                prior_actions=tuple(dict(answer_context.get("investigation_plan") or {}).get("actions") or ()),
+                remaining_seconds=(work_deadline(datetime.fromisoformat(context.deadline_at),
+                    answer_reserve_seconds=self._diagnosis_config.answer_reserve_seconds) - datetime.now(UTC)).total_seconds()
+                    if getattr(context, "deadline_at", None) else None,
+            )
+            if pending:
+                requests = (*requests, *(request.reason for request in draft.oracle_evidence_requests))
         complete = bool(record and record.stop_reason == "GOAL_ANSWERED") and not any(gap.code in {
             "COMPLETION_REQUIREMENT_UNSATISFIED", "SQL_COMPARISON_INCOMPLETE", "SQL_SUBJECT_EVIDENCE_UNMATCHED",
         } for gap in assessment.gaps)
@@ -2949,10 +2974,16 @@ class DbaAnswerComposeHandler:
     ) -> tuple[TurnAnswerBlock, ...]:
         blocks: list[TurnAnswerBlock] = []
         top_sql_primary = _top_sql_primary_fact(evidence, primary_result_kind)
+        from aiops_agent.application.diagnosis.sql_plan_presentation import plan_table_block
+        plan_outputs = {fact.evidence_ref: plan_table_block(fact, native_evidence=evidence)
+                        for fact in evidence if fact.sql_plan is not None}
+        native_refs = {block.payload["native_plan"]["evidence_ref"] for block in plan_outputs.values()
+                       if block.payload.get("native_plan")}
         for fact in evidence:
             if fact.sql_plan is not None:
-                from aiops_agent.application.diagnosis.sql_plan_presentation import plan_table_block
-                blocks.append(plan_table_block(fact))
+                blocks.append(plan_outputs[fact.evidence_ref])
+                continue
+            if fact.evidence_ref in native_refs:
                 continue
             probe = next((item for item in fact.object_access if not item.reused and item.state == "READABLE"), None)
             if probe is not None:

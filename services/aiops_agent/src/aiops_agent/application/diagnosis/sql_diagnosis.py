@@ -13,7 +13,8 @@ from aiops_agent.contracts.sql_diagnosis import SqlDiagnosisDraft
 from aiops_agent.contracts.turn_answer import TurnEvidenceFact
 from aiops_agent.playbooks import canonical_hash
 from aiops_agent.domain.evidence.sql_plan_matching import assess_sql_plans
-from aiops_agent.domain.sql_subjects import SQL_STATISTICS_TOOLS as _SQL_STATISTICS_TOOLS
+from aiops_agent.domain.sql_subjects import ORACLE_CURSOR_KEYS, SQL_STATISTICS_TOOLS as _SQL_STATISTICS_TOOLS
+from aiops_agent.application.diagnosis.oracle_sql_evidence import ORACLE_SQL_TOOLS, oracle_runtime_context
 
 
 def exact_wire(value: Any) -> Any:
@@ -116,7 +117,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         def matching(entry):
             return len(entry[1]) == len(names) and _matches(dict(zip(names, entry[1], strict=True)), subject, identity)
         indexed.sort(key=lambda entry: not matching(entry))
-        projection_limit = 128 if fact.sql_plan is not None else 40
+        projection_limit = 256 if fact.tool_id == "db.oracle.statement.xplan" else (
+            128 if fact.sql_plan is not None or fact.tool_id in ORACLE_SQL_TOOLS else 40)
         for index, row in sorted(indexed[:projection_limit]):
             if len(row) != len(names):
                 continue
@@ -132,6 +134,17 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
                 role = "CONTEXT"
             subject_ids = [item["subject_id"] for item in resolution["candidates"]
                            if _matches(mapped, item["subject_ref"], identity)] if role == "SUBJECT" else []
+            if fact.tool_id in ORACLE_SQL_TOOLS:
+                # 原生增强只绑定本轮完整游标及相同物理来源，不借历史、重启前来源或缺失维度。
+                anchors = {item.evidence_ref: item for item in evidence}
+                subject_ids = [item["subject_id"] for item in resolution["candidates"]
+                    if item["subject_id"] in subject_ids and all(key in mapped for key in ORACLE_CURSOR_KEYS)
+                    and fact.source_id != "prior_turn.sql_observation" and fact.followup_run_id is None
+                    and fact.provenance and fact.provenance.physical_identity
+                    and (anchor := anchors.get(item["evidence_ref"])) is not None and anchor.provenance
+                    and dict(fact.provenance.physical_identity) == dict(anchor.provenance.physical_identity)]
+                if not subject_ids:
+                    role = "CONTEXT"
             if resolution["status"] == "COMPARISON" and len(subject_ids) != 1:
                 role = "SUBJECT_CANDIDATE" if _matches(mapped, subject, identity) else "CONTEXT"
             record = {"row_index": index, "role": role, "subject_ids": subject_ids, "fields": exact_wire(mapped)}
@@ -175,7 +188,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
     # 仅对相近时点的已核验活动会话建立 SQL→会话→锁/事务关系，不能跨历史累计视图拼接。
     sessions = []
     for observation in observations:
-        if observation["trust_level"] != "SOURCE_VERIFIED" or observation["measurement_semantics"] != "CURRENT_ACTIVITY":
+        if (observation["trust_level"] != "SOURCE_VERIFIED" or observation["measurement_semantics"] != "CURRENT_ACTIVITY"
+            or observation["tool_id"] in ORACLE_SQL_TOOLS):
             continue
         for record in observation["records"]:
             if record["role"] == "SUBJECT":
@@ -184,7 +198,8 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
                     if value is not None:
                         sessions.append((observation, record, str(value)))
     for observation in observations:
-        if observation["trust_level"] != "SOURCE_VERIFIED" or observation["measurement_semantics"] != "CURRENT_ACTIVITY":
+        if (observation["trust_level"] != "SOURCE_VERIFIED" or observation["measurement_semantics"] != "CURRENT_ACTIVITY"
+            or observation["tool_id"] in ORACLE_SQL_TOOLS):
             continue
         for record in observation["records"]:
             if record["role"] != "CONTEXT":
@@ -229,6 +244,7 @@ def build_sql_evidence_bundle(*, task_frame: dict, database_type: str, evidence:
         "subjects": subjects,
         "plan_assessments": [plan for item in subjects for plan in item["plan_assessments"]],
         "physical_identity_graph": build_physical_identity_graph(evidence).model_dump(mode="json"),
+        "oracle_runtime": oracle_runtime_context(observations, subjects) if database_type == "ORACLE" else [],
         "comparison_policy": {"separate_subjects": True, "implicit_aggregation": False,
                               "cumulative_difference_is_window": False, "comparison_is_causal_effect": False},
         "interpretation_policy": {
@@ -334,11 +350,37 @@ def sql_object_graph_for_resolution(*, database_type, subject, resolution, evide
 
 def validate_sql_diagnosis(draft: SqlDiagnosisDraft, bundle: dict) -> None:
     """校验实际提供给模型的行/字段，不把引用存在误称为已证明因果。"""
+    subject_ids = {item["subject_id"] for item in bundle.get("subjects", ())}
+    if draft.oracle_evidence_requests and (bundle["database_type"] != "ORACLE" or any(
+        request.subject_id not in subject_ids for request in draft.oracle_evidence_requests
+    )):
+        raise ValueError("Oracle 补证请求必须绑定当前已解析的 Oracle 主体")
+    if len({(request.kind, request.subject_id) for request in draft.oracle_evidence_requests}) != len(draft.oracle_evidence_requests):
+        raise ValueError("Oracle 补证请求不能重复")
     records = {
         (item["evidence_ref"], row["row_index"]): (item, row)
         for item in bundle["observations"]
         for row in item["records"]
     }
+    if draft.goal_satisfied:
+        # 已取得直接运行事实时不能仍只复述累计统计就宣称诊断完成。
+        resource_fields = {
+            "db.oracle.statement.monitor": {"cpu_time_us", "elapsed_time_us", "user_io_wait_time_us",
+                "application_wait_time_us", "concurrency_wait_time_us", "cluster_wait_time_us",
+                "physical_read_bytes", "physical_write_bytes", "px_servers_allocated"},
+            "db.oracle.statement.monitor_plan": {"starts", "output_rows", "physical_read_bytes",
+                "physical_write_bytes", "workarea_mem", "workarea_tempseg", "workarea_max_tempseg"},
+            "db.oracle.statement.ash": {"session_state", "event", "wait_class", "sample_count", "blocking_session"},
+        }
+        for subject in bundle.get("subjects", ()):
+            for tool_id, fields in resource_fields.items():
+                available = {(observation["evidence_ref"], row["row_index"]) for observation in bundle["observations"]
+                    if observation["tool_id"] == tool_id and observation["trust_level"] == "SOURCE_VERIFIED"
+                    for row in observation["records"] if subject["subject_id"] in row["subject_ids"]
+                    and row["role"] == "SUBJECT"}
+                if available and not any((ref.evidence_ref, ref.row_index) in available and ref.field in fields
+                    for conclusion in draft.conclusions for ref in conclusion.evidence_fields):
+                    raise ValueError("诊断完成必须解释已取得的 Oracle 运行证据，不得只复述累计统计：" + tool_id)
     for conclusion in draft.conclusions:
         has_subject = False
         cited_subjects = set()

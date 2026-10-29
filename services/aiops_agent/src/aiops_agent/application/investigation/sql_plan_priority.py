@@ -1,11 +1,10 @@
 """明确 SQL 的计划优先取证；不猜参数、不执行原语句，不封闭后续调查目录。"""
 
 from aiops_agent.application.diagnosis.sql_evidence_answer import _matches, sql_subject_specs, _row_dicts
-from aiops_agent.domain.sql_subjects import normalize_sql_subject
+from aiops_agent.domain.sql_subjects import ORACLE_CURSOR_KEYS as CURSOR_KEYS, normalize_sql_subject
 from platform_core.contracts.aiops import InvestigationAction
 
 
-CURSOR_KEYS = ("sql_id", "dbid", "inst_id", "container_id", "child_number", "plan_hash_value")
 PLAN_TOOL = "db.oracle.statement.plan"
 
 
